@@ -42,28 +42,57 @@
 //! outbox and the flag queue repeated: a decision that cannot express the
 //! dangerous act cannot be wired to it by accident.
 //!
+//! # A crossing to another account waits here too
+//!
+//! Since 11-07.2 (Pratik's decision of 2026-09-19) a move or a copy to a
+//! folder on another account completes here first as well. Its row is the
+//! same kind of row with the other account named, its bytes are held in
+//! [`crate::data::message_cache::moves_in_flight`] from the moment the
+//! source hands them over, and [`replay_the_crossings_waiting_for`] runs it
+//! at a check of either account, in the three steps
+//! [`crate::application::mail_across_accounts`] is cut into: fetch and keep,
+//! append and ask, remove at the source, resumed from the held bytes when a
+//! restart came between them. The order is the safeguard that module
+//! states, and nothing here may put a message back here as if it were
+//! nowhere when it may be in two places: an answer nobody could settle is
+//! [`Replayed::NotReached`], and the destination is asked again next time.
+//!
 //! # What has never been checked
 //!
 //! No real server has replayed a move after a restart. The cases below drive
 //! a loopback server that can carry a move out, refuse it, or hang up on it,
 //! which is closer than a mocked error and is not a real mail server; what a
-//! real server does with a message another client changed meanwhile is the
-//! tester's account to settle.
+//! real server does with a message another client changed meanwhile, or
+//! with an appended message it already holds, is the tester's account to
+//! settle.
+
+use std::sync::Arc;
 
 use crate::application::flag_changes_waiting::{WhyThePushFailed, why_the_push_failed};
+use crate::application::mail_across_accounts::{
+    Appended, MovedAcross, TheAccountItIsGoingTo, TheAccountItIsIn, TheAccountItIsLeaving,
+    TheMoveAsThisProgramRecordsIt, append_and_ask, fetch_and_keep, remove_at_the_source,
+    resume_from_the_held_bytes, resume_the_append, why_it_cannot_be_finished_from_here,
+};
+use crate::application::server_delete::after_a_move_across_accounts;
 use crate::common::{Error, Result};
 use crate::data::message_cache::MessageCache;
 use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
 
 /// What a replay of a waiting move answered.
 ///
-/// Four members and none of them means "send now": what sends a waiting move
+/// Five members and none of them means "send now": what sends a waiting move
 /// is the person's own action or a check that already has a session, and
 /// both call the replay directly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Replayed {
     /// The server carried it out. Stop waiting.
     Done,
+    /// The servers carried it out and one of them left something worth a
+    /// sentence: a crossing whose source would not let the message go, so
+    /// it is in both places, or marked it and could not remove it. Stop
+    /// waiting, and say so.
+    DoneWithSomethingToSay(String),
     /// The server refused it, and the message is already where the move
     /// wanted it: the server did it before the restart, or another client
     /// did. Read as done, not as refused, so nothing is put back that is
@@ -133,10 +162,10 @@ pub fn what_a_replay_answered(answer: &Result<()>, now: WhereItIsNow) -> Replaye
 /// delete, a move or a copy says, over the ending the server will give when
 /// it agrees; a second spelling here is the drift the window's own
 /// one-owner test exists to stop, and that test reads the window alone.
-pub fn shown_when_made_here(what: &WhatAWaitingMoveDoes, subject: &str) -> String {
+pub fn shown_when_made_here(waiting: &AWaitingMove, subject: &str) -> String {
     use crate::application::server_delete::{Copied, after_a_copy, after_a_delete, after_a_move};
     use crate::service::protocols::imap::{Deletion, Moved};
-    match what {
+    match &waiting.what {
         WhatAWaitingMoveDoes::Move { into_folder_path } => {
             after_a_move(&Moved::Moved, into_folder_path, subject).said
         }
@@ -146,6 +175,30 @@ pub fn shown_when_made_here(what: &WhatAWaitingMoveDoes, subject: &str) -> Strin
         WhatAWaitingMoveDoes::DeleteOutright => after_a_delete(&Deletion::Removed, subject).said,
         WhatAWaitingMoveDoes::Copy { into_folder_path } => {
             after_a_copy(Copied::WithinTheAccount, into_folder_path, subject).said
+        }
+        WhatAWaitingMoveDoes::MoveAcross {
+            into_folder_path,
+            to_account,
+        } => {
+            after_a_move_across_accounts(
+                &MovedAcross::ItArrivedAndTheSourceLetItGo,
+                into_folder_path,
+                &to_account.name,
+                &waiting.from_folder_path,
+                subject,
+            )
+            .said
+        }
+        WhatAWaitingMoveDoes::CopyAcross {
+            into_folder_path,
+            to_account,
+        } => {
+            after_a_copy(
+                Copied::IntoTheAccount(&to_account.name),
+                into_folder_path,
+                subject,
+            )
+            .said
         }
     }
 }
@@ -159,6 +212,22 @@ pub fn shown_when_made_here(what: &WhatAWaitingMoveDoes, subject: &str) -> Strin
 /// outcome would decide what the second ask means.
 pub const THAT_COPY_HAS_NOT_REACHED_THE_SERVER: &str =
     "That copy has not reached the server yet. Try again after the next check for mail.";
+
+/// What a second ask about a row whose crossing is still waiting is refused
+/// with.
+///
+/// The row sits in the other account's folder here and at neither server
+/// yet as the row says: a move of it from there would name a folder and a
+/// number the other account's server has never heard of, and a delete would
+/// remove it from a server that does not hold it. Refused in words until
+/// the crossing has landed, for the reason the copy above is.
+pub const THAT_MOVE_TO_ANOTHER_ACCOUNT_HAS_NOT_FINISHED: &str = "That message is still on its \
+     way to the other account. Try again after the next check for mail.";
+
+/// What a crossing is refused with when one of its two accounts is no
+/// longer set up on this computer.
+pub const ONE_OF_THE_TWO_ACCOUNTS_IS_GONE: &str = "one of the two accounts it was between is no \
+     longer set up on this computer, so it cannot be finished from here";
 
 /// What is said, at High, when the server refused and the change is undone.
 ///
@@ -182,6 +251,21 @@ pub fn put_back_because_the_server_refused(
         WhatAWaitingMoveDoes::Copy { into_folder_path } => {
             format!("Could not copy {subject} to {into_folder_path}: {reason}. Nothing was copied.")
         }
+        WhatAWaitingMoveDoes::MoveAcross {
+            into_folder_path,
+            to_account,
+        } => format!(
+            "Could not move {subject} to {into_folder_path} in {}: {reason}. It is back where \
+             it was.",
+            to_account.name
+        ),
+        WhatAWaitingMoveDoes::CopyAcross {
+            into_folder_path,
+            to_account,
+        } => format!(
+            "Could not copy {subject} to {into_folder_path} in {}: {reason}. Nothing was copied.",
+            to_account.name
+        ),
     }
 }
 
@@ -228,33 +312,45 @@ impl From<Error> for NotMadeHere {
     }
 }
 
-/// Make the change here: the row into the folder the move names, or marked
-/// deleted, or copied into the folder named, and the waiting row written.
+/// Make the change here: the row into the folder the move names, in this
+/// account or the other, or marked deleted, or copied into the folder named,
+/// and the waiting row written.
 ///
 /// The row leaving the list is the window's to do, since only it holds the
 /// control. A row that is itself a copy not yet at the server is refused
-/// with [`THAT_COPY_HAS_NOT_REACHED_THE_SERVER`].
+/// with [`THAT_COPY_HAS_NOT_REACHED_THE_SERVER`], and a row whose crossing
+/// is still waiting with [`THAT_MOVE_TO_ANOTHER_ACCOUNT_HAS_NOT_FINISHED`]:
+/// the row is in the other account's folder here and the server that holds
+/// the message is still the first one, so a second ask from where the row
+/// now sits would name a folder and a number the wrong server never gave.
 pub fn what_happens_here(
     cache: &MessageCache,
     asked: &AWaitingMove,
     subject: &str,
 ) -> std::result::Result<MadeHere, NotMadeHere> {
     let already_waiting = cache.the_move_waiting_for(asked.message_row_id)?;
-    if already_waiting
-        .as_ref()
-        .is_some_and(|waiting| waiting.what.is_a_copy())
-    {
-        return Err(NotMadeHere::RefusedInWords(
-            THAT_COPY_HAS_NOT_REACHED_THE_SERVER.to_string(),
-        ));
+    if let Some(waiting) = already_waiting.as_ref() {
+        if waiting.what.crosses_to().is_some() {
+            return Err(NotMadeHere::RefusedInWords(
+                THAT_MOVE_TO_ANOTHER_ACCOUNT_HAS_NOT_FINISHED.to_string(),
+            ));
+        }
+        if waiting.what.is_a_copy() {
+            return Err(NotMadeHere::RefusedInWords(
+                THAT_COPY_HAS_NOT_REACHED_THE_SERVER.to_string(),
+            ));
+        }
     }
-    let kept = match (&asked.what, asked.what.destination()) {
+    let going_to = asked.the_account_it_is_going_to();
+    let kept = match (asked.what.is_a_copy(), asked.what.destination()) {
         // A copy of the row, under a number reserved from the top of the
         // destination's range and marked as filed here, waiting under its own
         // row; the server copies from where it still has the original, which
-        // is the original's waiting row's answer when it has one.
-        (WhatAWaitingMoveDoes::Copy { .. }, Some(destination)) => {
-            let into = the_folder_here(cache, &asked.account_id, destination)?;
+        // is the original's waiting row's answer when it has one. The same
+        // for a copy into another account's folder: the folder is one this
+        // computer holds, whichever account it belongs to.
+        (true, Some(destination)) => {
+            let into = the_folder_here(cache, going_to, destination)?;
             let copy = cache.copy_message_here(asked.message_row_id, into.id)?;
             let (from_folder_path, uid) = match already_waiting {
                 Some(waiting) => (waiting.from_folder_path, waiting.uid),
@@ -270,9 +366,10 @@ pub fn what_happens_here(
         // Into the folder as this program moves a row of its own: under a
         // number reserved from the top of the folder's range and marked as
         // filed here, so the next read of that folder neither fetches the
-        // message again nor forgets a row the server never listed.
+        // message again nor forgets a row the server never listed. A
+        // crossing's folder is the other account's, held here like any.
         (_, Some(destination)) => {
-            let into = the_folder_here(cache, &asked.account_id, destination)?;
+            let into = the_folder_here(cache, going_to, destination)?;
             cache.move_message(asked.message_row_id, into.id)?;
             asked.clone()
         }
@@ -286,7 +383,7 @@ pub fn what_happens_here(
     };
     cache.keep_a_move_waiting(&kept)?;
     Ok(MadeHere {
-        shown: shown_when_made_here(&kept.what, subject),
+        shown: shown_when_made_here(&kept, subject),
         kept,
     })
 }
@@ -307,21 +404,21 @@ fn the_folder_here(
 
 /// Undo the change here, because the server refused it: the row back in the
 /// folder and under the number it never left, or the copy made here gone,
-/// and the waiting row gone.
+/// the waiting row gone, and any bytes held for a crossing let go.
+///
+/// A source folder no longer on this computer, which is an account taken
+/// off, leaves the row nowhere true to put it: it goes, and the next read of
+/// wherever the server has the message brings it down.
 pub fn undo_here(cache: &MessageCache, waiting: &AWaitingMove) -> Result<()> {
+    cache.the_move_is_over(waiting.message_row_id)?;
     if waiting.what.is_a_copy() {
         cache.let_the_next_read_bring_it(waiting.message_row_id)?;
         return cache.stop_waiting_for_a_move(waiting.message_row_id);
     }
-    let from = cache
-        .get_folder(&waiting.account_id, &waiting.from_folder_path)?
-        .ok_or_else(|| {
-            Error::InPlainWords(format!(
-                "The folder the message came from, {}, is no longer on this computer.",
-                waiting.from_folder_path
-            ))
-        })?;
-    cache.the_server_holds_it_at(waiting.message_row_id, from.id, waiting.uid)?;
+    match cache.get_folder(&waiting.account_id, &waiting.from_folder_path)? {
+        Some(from) => cache.the_server_holds_it_at(waiting.message_row_id, from.id, waiting.uid)?,
+        None => cache.let_the_next_read_bring_it(waiting.message_row_id)?,
+    }
     cache.stop_waiting_for_a_move(waiting.message_row_id)
 }
 
@@ -394,6 +491,12 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
             WhatAWaitingMoveDoes::Copy { into_folder_path } => {
                 server.copy_it(from, waiting.uid, into_folder_path).await
             }
+            // Two servers' work, which the read above leaves out and
+            // [`replay_the_crossings_waiting_for`] does; a row here would be
+            // a command at the wrong server.
+            WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. } => {
+                continue;
+            }
         };
         // Where the message is, asked only of a server that answered no: a
         // server that hung up cannot be asked, and asking would turn the
@@ -409,7 +512,7 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
             _ => what_a_replay_answered(&answer, WhereItIsNow::NotThere),
         };
         match &what_it_means {
-            Replayed::Done | Replayed::AlreadyDone => {
+            Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
                 settle_the_row(server, cache, &waiting).await?;
                 cache.stop_waiting_for_a_move(waiting.message_row_id)?;
             }
@@ -491,6 +594,256 @@ async fn settle_the_row<S: ReplaysAMove>(
     }
 }
 
+// ── A crossing: two accounts, three steps, resumed from held bytes ─────────
+
+/// The session an account is signed in with, or why there is none.
+///
+/// Three answers, because two of them lead to different things: an account
+/// no longer set up here can never be reached, so the crossing is undone and
+/// said, while a session that could not be opened now may open at the next
+/// check, so the crossing waits.
+pub(crate) enum ASessionFor<S> {
+    Open(Arc<S>),
+    NotSetUpHere,
+    CouldNotBeOpened(Error),
+}
+
+/// What a crossing's replay asks for: the session of each of its two
+/// accounts.
+///
+/// A seam, so the crossing can be held against two loopback servers from this
+/// module's tests; in the program it is the accounts set up here and the
+/// sessions they are signed in with.
+pub(crate) trait OpensASession {
+    type Session: TheAccountItIsIn + TheAccountItIsGoingTo + TheAccountItIsLeaving;
+    async fn session_for(&self, account_id: &str) -> ASessionFor<Self::Session>;
+}
+
+/// What a crossing's ending means for the waiting row, decided in one place.
+///
+/// The two clean arrivals are done; the two where the message is at the
+/// destination and still at the source, marked or not, are done with a
+/// sentence, since two copies is a fact somebody has to hear; a refusal and
+/// an append the destination was asked about and does not hold are refusals
+/// with the reason, since nothing was removed and the row can be put back;
+/// and an append nobody could settle is not reached, never a refusal, since
+/// a message that may be in two places must not be put back here as if it
+/// were nowhere.
+pub fn what_a_crossing_answered(across: &MovedAcross, of: &ACrossingSaidAs<'_>) -> Replayed {
+    match across {
+        MovedAcross::ItArrivedAndTheSourceLetItGo => Replayed::Done,
+        MovedAcross::ItArrivedAndIsStillHereMarked(_)
+        | MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(_) => Replayed::DoneWithSomethingToSay(
+            after_a_move_across_accounts(across, of.into, of.to_account, of.still_in, of.subject)
+                .said,
+        ),
+        MovedAcross::TheDestinationRefusedIt(why) => Replayed::Refused(why.clone()),
+        MovedAcross::ItNeverArrivedSoNothingWasRemoved(why) => Replayed::Refused(format!(
+            "{} stopped answering and does not have the message; {why}",
+            of.to_account
+        )),
+        MovedAcross::ItIsNotKnownWhereItIs(_) => Replayed::NotReached,
+    }
+}
+
+/// What a sentence about a crossing names.
+#[derive(Debug, Clone, Copy)]
+pub struct ACrossingSaidAs<'a> {
+    pub into: &'a str,
+    /// What the account it is going to is called.
+    pub to_account: &'a str,
+    /// The folder the server still has it in.
+    pub still_in: &'a str,
+    pub subject: &'a str,
+}
+
+/// Replay every crossing waiting that this account is one end of, in the
+/// order asked, on the sessions of both accounts, and settle each row by
+/// what the servers answered.
+///
+/// Each crossing is resumed from its held bytes when the store has them,
+/// which is a restart between the fetch and the ending, and run from the
+/// fetch when it does not. A crossing nothing can finish, because one of
+/// its accounts is no longer set up here or its held row cannot be asked
+/// about, is a refusal with that reason and is undone by the window's arm.
+/// A session that could not be opened ends the replay, and the crossings
+/// after that one wait with it. Nothing here sends because the network came
+/// back: the module header says why.
+pub(crate) async fn replay_the_crossings_waiting_for<O: OpensASession>(
+    accounts: &O,
+    cache: &MessageCache,
+    account_id: &str,
+) -> Result<Vec<(AWaitingMove, Replayed)>> {
+    let mut replayed = Vec::new();
+    for waiting in cache.crossings_waiting_touching(account_id)? {
+        let Some(message) = cache.get_message(waiting.message_row_id)? else {
+            cache.the_move_is_over(waiting.message_row_id)?;
+            cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+            continue;
+        };
+        let (answer, was_there_before) =
+            one_crossing(accounts, cache, &waiting, &message.subject).await;
+        match &answer {
+            Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
+                settle_the_crossed_row(accounts, cache, &waiting, was_there_before.as_deref())
+                    .await?;
+                cache.the_move_is_over(waiting.message_row_id)?;
+                cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+            }
+            // The undo is the window's, so the sentence is said beside it
+            // and the bytes go there.
+            Replayed::Refused(_) => {}
+            Replayed::NotReached => {
+                replayed.push((waiting, answer));
+                break;
+            }
+        }
+        replayed.push((waiting, answer));
+    }
+    Ok(replayed)
+}
+
+/// One crossing, from wherever it stopped to an answer, and what the
+/// destination folder held before the message went, for the settle.
+async fn one_crossing<O: OpensASession>(
+    accounts: &O,
+    cache: &MessageCache,
+    waiting: &AWaitingMove,
+    subject: &str,
+) -> (Replayed, Option<Vec<u32>>) {
+    let Some(other) = waiting.what.crosses_to() else {
+        return (
+            Replayed::Refused(ONE_OF_THE_TWO_ACCOUNTS_IS_GONE.to_string()),
+            None,
+        );
+    };
+    let (source, destination) = match (
+        accounts.session_for(&waiting.account_id).await,
+        accounts.session_for(&other.id).await,
+    ) {
+        (ASessionFor::Open(source), ASessionFor::Open(destination)) => (source, destination),
+        (ASessionFor::NotSetUpHere, _) | (_, ASessionFor::NotSetUpHere) => {
+            return (
+                Replayed::Refused(ONE_OF_THE_TWO_ACCOUNTS_IS_GONE.to_string()),
+                None,
+            );
+        }
+        (ASessionFor::CouldNotBeOpened(why), _) | (_, ASessionFor::CouldNotBeOpened(why)) => {
+            tracing::info!(
+                "A move of message {} to another account waits: {why}",
+                waiting.message_row_id
+            );
+            return (Replayed::NotReached, None);
+        }
+    };
+    let Some(into) = waiting.what.destination() else {
+        return (
+            Replayed::Refused(ONE_OF_THE_TWO_ACCOUNTS_IS_GONE.to_string()),
+            None,
+        );
+    };
+    let said_as = ACrossingSaidAs {
+        into,
+        to_account: &other.name,
+        still_in: &waiting.from_folder_path,
+        subject,
+    };
+    let copying = waiting.what.is_a_copy();
+    let held = match cache.the_move_left_unfinished_for(waiting.message_row_id) {
+        Ok(held) => held,
+        Err(why) => return (Replayed::Refused(why.to_string()), None),
+    };
+    let Some(kept) = held else {
+        // No restart came between the fetch and an ending, so the crossing
+        // runs from its first step. The source saying nothing usable, or
+        // never being reached, or this computer's gate refusing, is read
+        // the way the within-account replay reads a push that failed.
+        let fetched = match fetch_and_keep(
+            source.as_ref(),
+            destination.as_ref(),
+            &waiting.from_folder_path,
+            waiting.uid,
+            into,
+            TheMoveAsThisProgramRecordsIt {
+                cache: Some(cache),
+                row: waiting.message_row_id,
+                from_account_id: &waiting.account_id,
+                to_account_id: &other.id,
+            },
+        )
+        .await
+        {
+            Ok(fetched) => fetched,
+            Err(why) => {
+                return (
+                    what_a_replay_answered(&Err(why), WhereItIsNow::NotThere),
+                    None,
+                );
+            }
+        };
+        let ending = match append_and_ask(destination.as_ref(), &fetched.message).await {
+            Appended::ItLanded if copying => MovedAcross::ItArrivedAndTheSourceLetItGo,
+            Appended::ItLanded => remove_at_the_source(source.as_ref(), &fetched.message).await,
+            Appended::ItDidNot(ending) => ending,
+        };
+        return (
+            what_a_crossing_answered(&ending, &said_as),
+            fetched.message.was_there_before,
+        );
+    };
+    if let Some(why) = why_it_cannot_be_finished_from_here(&kept, &other.name) {
+        return (Replayed::Refused(why), kept.was_there_before);
+    }
+    let ending = if copying {
+        match resume_the_append(destination.as_ref(), &kept).await {
+            Appended::ItLanded => MovedAcross::ItArrivedAndTheSourceLetItGo,
+            Appended::ItDidNot(ending) => ending,
+        }
+    } else {
+        resume_from_the_held_bytes(&kept, destination.as_ref(), source.as_ref()).await
+    };
+    (
+        what_a_crossing_answered(&ending, &said_as),
+        kept.was_there_before,
+    )
+}
+
+/// Leave the row where the other account holds the message now that the
+/// crossing is done: under the number the destination folder holds the
+/// identifier under and did not before, unmarked, or gone for the next read
+/// of that folder to bring down when it cannot be told.
+async fn settle_the_crossed_row<O: OpensASession>(
+    accounts: &O,
+    cache: &MessageCache,
+    waiting: &AWaitingMove,
+    was_there_before: Option<&[u32]>,
+) -> Result<()> {
+    let (Some(other), Some(into)) = (waiting.what.crosses_to(), waiting.what.destination()) else {
+        return Ok(());
+    };
+    let Some(message) = cache.get_message(waiting.message_row_id)? else {
+        return Ok(());
+    };
+    let Some(folder) = cache.get_folder(&other.id, into)? else {
+        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+    };
+    let ASessionFor::Open(destination) = accounts.session_for(&other.id).await else {
+        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+    };
+    let now = destination
+        .which_messages_carry(into, &message.message_id)
+        .await
+        .unwrap_or_default();
+    let arrived: Vec<u32> = now
+        .into_iter()
+        .filter(|uid| !was_there_before.is_some_and(|before| before.contains(uid)))
+        .collect();
+    match arrived.as_slice() {
+        [uid] => cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid),
+        _ => cache.let_the_next_read_bring_it(waiting.message_row_id),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,17 +857,20 @@ mod tests {
     };
     use std::path::Path;
 
+    /// One account's Inbox, Archive and Trash, and another account's Work
+    /// folder for a crossing to go to.
     fn a_cache_at(dir: &Path) -> MessageCache {
         let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
-        for (name, kind) in [
-            ("INBOX", "Inbox"),
-            ("Archive", "Archive"),
-            ("Trash", "Trash"),
+        for (account, name, kind) in [
+            ("an account", "INBOX", "Inbox"),
+            ("an account", "Archive", "Archive"),
+            ("an account", "Trash", "Trash"),
+            ("another account", "Work", "Custom"),
         ] {
             cache
                 .save_folder(&CachedFolder {
                     id: 0,
-                    account_id: "an account".to_string(),
+                    account_id: account.to_string(),
                     name: name.to_string(),
                     path: name.to_string(),
                     folder_type: kind.to_string(),
@@ -536,6 +892,37 @@ mod tests {
             .expect("the folder")
             .expect("the folder is there")
             .id
+    }
+
+    /// The other account's Work folder, where a crossing goes.
+    fn the_other_accounts_work(cache: &MessageCache) -> i64 {
+        cache
+            .get_folder("another account", "Work")
+            .expect("the folder")
+            .expect("the folder is there")
+            .id
+    }
+
+    /// The other account as a crossing names it.
+    fn home() -> crate::data::message_cache::moves_waiting::TheOtherAccount {
+        crate::data::message_cache::moves_waiting::TheOtherAccount {
+            id: "another account".to_string(),
+            name: "Home".to_string(),
+        }
+    }
+
+    fn into_the_other_accounts_work() -> WhatAWaitingMoveDoes {
+        WhatAWaitingMoveDoes::MoveAcross {
+            into_folder_path: "Work".to_string(),
+            to_account: home(),
+        }
+    }
+
+    fn a_copy_into_the_other_accounts_work() -> WhatAWaitingMoveDoes {
+        WhatAWaitingMoveDoes::CopyAcross {
+            into_folder_path: "Work".to_string(),
+            to_account: home(),
+        }
     }
 
     fn a_message_in_the_inbox(cache: &MessageCache, uid: u32) -> i64 {
@@ -928,6 +1315,971 @@ mod tests {
         .await
     }
 
+    // ── A crossing: two accounts, replayed at a check of either ─────────────
+
+    use crate::application::mail_across_accounts::for_tests::{
+        ASourceServer, AnAccountAt, THE_IDENTIFIER_AS_IT_IS_HELD, THE_MESSAGE, THE_UID,
+        a_source_server, the_account_it_is_going_to, the_account_it_is_leaving,
+    };
+
+    /// A crossing of the Inbox message, which the source server holds under
+    /// [`THE_UID`], into the other account's Work folder.
+    fn a_crossing_of(row: i64) -> AWaitingMove {
+        a_move_of(row, THE_UID, into_the_other_accounts_work())
+    }
+
+    /// The crossing made here: the row in the other account's Work folder,
+    /// marked, and waiting.
+    fn a_crossing_made_here(home: &MessageCache, row: i64) -> AWaitingMove {
+        what_happens_here(home, &a_crossing_of(row), "Lunch")
+            .expect("made here")
+            .kept
+    }
+
+    /// What a scripted destination does with the append it is sent.
+    #[derive(Clone, Copy)]
+    enum TheAppend {
+        IsNeverAnswered,
+    }
+
+    /// A destination that answers however the test says, without a server:
+    /// a real connection that stops answering is a closed connection, and a
+    /// closed connection cannot then be asked what the folder holds, which is
+    /// the whole subject of the hang-up cases.
+    struct AScriptedDestination {
+        the_append: TheAppend,
+        /// What each successive search answers, oldest first: once before
+        /// the append and once after.
+        searches: tokio::sync::Mutex<std::collections::VecDeque<Result<Vec<u32>>>>,
+        asked: tokio::sync::Mutex<Vec<String>>,
+    }
+
+    impl AScriptedDestination {
+        fn that_hangs_up_and_then(searches: Vec<Result<Vec<u32>>>) -> Self {
+            Self {
+                the_append: TheAppend::IsNeverAnswered,
+                searches: tokio::sync::Mutex::new(searches.into()),
+                asked: tokio::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    /// One end of a crossing as the seam hands it out: a loopback server, or
+    /// the scripted destination above.
+    enum AnEnd {
+        AServer(AnAccountAt),
+        Scripted(AScriptedDestination),
+    }
+
+    fn not_a_source() -> Error {
+        Error::Other("a scripted destination holds no message to fetch".to_string())
+    }
+
+    impl TheAccountItIsIn for AnEnd {
+        async fn the_headers_of(
+            &self,
+            folder: &str,
+            uids: &[u32],
+        ) -> Result<Vec<crate::service::protocols::imap::ImapMessage>> {
+            match self {
+                Self::AServer(at) => at.the_headers_of(folder, uids).await,
+                Self::Scripted(_) => Err(not_a_source()),
+            }
+        }
+
+        async fn the_bytes_of(&self, folder: &str, uid: u32) -> Result<Vec<u8>> {
+            match self {
+                Self::AServer(at) => at.the_bytes_of(folder, uid).await,
+                Self::Scripted(_) => Err(not_a_source()),
+            }
+        }
+    }
+
+    impl TheAccountItIsGoingTo for AnEnd {
+        async fn take_this_message(
+            &self,
+            into: &str,
+            flags: Option<&str>,
+            arrived: Option<&str>,
+            raw: &[u8],
+        ) -> Result<()> {
+            match self {
+                Self::AServer(at) => at.take_this_message(into, flags, arrived, raw).await,
+                Self::Scripted(scripted) => {
+                    scripted.asked.lock().await.push(format!("APPEND {into}"));
+                    match scripted.the_append {
+                        TheAppend::IsNeverAnswered => Err(Error::Network(
+                            "the connection to the mail server failed".to_string(),
+                        )),
+                    }
+                }
+            }
+        }
+
+        async fn which_messages_carry(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
+            match self {
+                Self::AServer(at) => at.which_messages_carry(folder, message_id).await,
+                Self::Scripted(scripted) => {
+                    scripted
+                        .asked
+                        .lock()
+                        .await
+                        .push(format!("SEARCH {folder} {message_id}"));
+                    scripted
+                        .searches
+                        .lock()
+                        .await
+                        .pop_front()
+                        .unwrap_or_else(|| Ok(Vec::new()))
+                }
+            }
+        }
+    }
+
+    impl TheAccountItIsLeaving for AnEnd {
+        async fn take_it_off_the_server(
+            &self,
+            folder: &str,
+            uid: u32,
+        ) -> Result<crate::service::protocols::imap::LetGo> {
+            match self {
+                Self::AServer(at) => at.take_it_off_the_server(folder, uid).await,
+                Self::Scripted(_) => Err(not_a_source()),
+            }
+        }
+    }
+
+    /// The accounts a crossing's replay can open: each by name with its end,
+    /// and the ones whose server cannot be signed in to now.
+    struct TheseAccounts {
+        open: Vec<(&'static str, Arc<AnEnd>)>,
+        unreachable: Vec<&'static str>,
+    }
+
+    impl OpensASession for TheseAccounts {
+        type Session = AnEnd;
+
+        async fn session_for(&self, account_id: &str) -> ASessionFor<AnEnd> {
+            if self.unreachable.contains(&account_id) {
+                return ASessionFor::CouldNotBeOpened(Error::Network(
+                    "the server could not be reached".to_string(),
+                ));
+            }
+            match self.open.iter().find(|(id, _)| *id == account_id) {
+                Some((_, end)) => ASessionFor::Open(end.clone()),
+                None => ASessionFor::NotSetUpHere,
+            }
+        }
+    }
+
+    /// The source account's server holding the message, and the destination
+    /// account at the given server, both open.
+    async fn two_accounts_at(source: &Conversation, destination: &Conversation) -> TheseAccounts {
+        TheseAccounts {
+            open: vec![
+                (
+                    "an account",
+                    Arc::new(AnEnd::AServer(the_account_it_is_leaving(source).await)),
+                ),
+                (
+                    "another account",
+                    Arc::new(AnEnd::AServer(
+                        the_account_it_is_going_to(destination).await,
+                    )),
+                ),
+            ],
+            unreachable: Vec::new(),
+        }
+    }
+
+    /// The source at a real server and the destination scripted.
+    async fn a_source_and_a_scripted_destination(
+        source: &Conversation,
+        destination: AScriptedDestination,
+    ) -> TheseAccounts {
+        TheseAccounts {
+            open: vec![
+                (
+                    "an account",
+                    Arc::new(AnEnd::AServer(the_account_it_is_leaving(source).await)),
+                ),
+                ("another account", Arc::new(AnEnd::Scripted(destination))),
+            ],
+            unreachable: Vec::new(),
+        }
+    }
+
+    /// A destination server that holds nothing carrying the identifier until
+    /// an append has arrived, and number 9 after it: what an arrival looks
+    /// like from the destination's side.
+    async fn a_destination_that_takes_it() -> Conversation {
+        let appended = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        conversing("* OK loopback ready\r\n", move |line| {
+            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
+            let said = line.to_uppercase();
+            let verb = said.split_whitespace().nth(1).unwrap_or_default();
+            match verb {
+                "CAPABILITY" => Turn::Say(format!(
+                    "* CAPABILITY IMAP4rev1 UIDPLUS\r\n{tag} OK done\r\n"
+                )),
+                "LOGIN" | "AUTHENTICATE" => Turn::Say(format!("{tag} OK signed in\r\n")),
+                "SELECT" | "EXAMINE" => Turn::Say(format!(
+                    "* 0 EXISTS\r\n* OK [UIDVALIDITY 1] valid\r\n{tag} OK [READ-WRITE] open\r\n"
+                )),
+                "APPEND" => {
+                    appended.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Turn::TakingALiteral {
+                        done: format!("{tag} OK saved\r\n"),
+                    }
+                }
+                _ if said.contains("SEARCH") => {
+                    if appended.load(std::sync::atomic::Ordering::SeqCst) {
+                        Turn::Say(format!("* SEARCH 9\r\n{tag} OK done\r\n"))
+                    } else {
+                        Turn::Say(format!("* SEARCH\r\n{tag} OK done\r\n"))
+                    }
+                }
+                "LOGOUT" => Turn::Say(format!("* BYE signing off\r\n{tag} OK done\r\n")),
+                _ => Turn::Say(format!("{tag} BAD unscripted\r\n")),
+            }
+        })
+        .await
+    }
+
+    /// Every answer of a replay, in order.
+    fn answers(replayed: &[(AWaitingMove, Replayed)]) -> Vec<Replayed> {
+        replayed.iter().map(|(_, answer)| answer.clone()).collect()
+    }
+
+    /// Whether the source was told to give the message up.
+    async fn the_source_was_told_to_let_go(source: &Conversation) -> bool {
+        source.was_told("UID EXPUNGE 4").await || source.was_told("UID STORE 4 +FLAGS").await
+    }
+
+    #[test]
+    fn test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits() {
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let work = the_other_accounts_work(&home);
+
+        let made = what_happens_here(&home, &a_crossing_of(row), "Lunch").expect("made here");
+
+        assert_eq!(made.shown, "Moved to Work in Home: Lunch");
+        let (folder, uid, deleted, marked) = where_the_row_is(&home, row).expect("the row");
+        assert!(
+            folder == work && !deleted && marked && uid != THE_UID,
+            "(folder, uid, deleted, filed here) = {:?}",
+            (folder, uid, deleted, marked)
+        );
+        let waiting = home
+            .crossings_waiting_touching("another account")
+            .expect("the waiting crossings");
+        assert_eq!(waiting, vec![made.kept]);
+        assert_eq!(
+            (waiting[0].from_folder_path.as_str(), waiting[0].uid),
+            ("INBOX", THE_UID),
+            "the crossing forgot where the server has the message"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_across_accounts_made_here_is_a_marked_copy_in_the_other_accounts_folder() {
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let inbox = the_folder(&home, "INBOX");
+        let work = the_other_accounts_work(&home);
+
+        let made = what_happens_here(
+            &home,
+            &a_move_of(row, THE_UID, a_copy_into_the_other_accounts_work()),
+            "Lunch",
+        )
+        .expect("copied here");
+
+        assert_eq!(made.shown, "Copied to Work in Home: Lunch");
+        assert_ne!(made.kept.message_row_id, row);
+        assert_eq!(
+            where_the_row_is(&home, row),
+            Some((inbox, THE_UID, false, false)),
+            "the original moved"
+        );
+        let (folder, _, _, marked) =
+            where_the_row_is(&home, made.kept.message_row_id).expect("the copy");
+        assert!(folder == work && marked);
+    }
+
+    #[test]
+    fn test_a_second_ask_about_a_row_whose_crossing_is_waiting_is_refused_in_words() {
+        // The row is in Work here and at neither server yet as the row says;
+        // a move from Work would name a folder and a number the other
+        // account's server has never heard of.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+        let reserved = where_the_row_is(&home, row).expect("the row").1;
+
+        let refused = what_happens_here(
+            &home,
+            &AWaitingMove {
+                account_id: "another account".to_string(),
+                from_folder_path: "Work".to_string(),
+                uid: reserved,
+                ..a_move_of(row, reserved, WhatAWaitingMoveDoes::DeleteOutright)
+            },
+            "Lunch",
+        )
+        .expect_err("a delete of a row still on its way");
+
+        let NotMadeHere::RefusedInWords(words) = refused else {
+            panic!("the refusal was handed to the server-first path: {refused}");
+        };
+        assert_eq!(words, THAT_MOVE_TO_ANOTHER_ACCOUNT_HAS_NOT_FINISHED);
+        assert_eq!(
+            home.crossings_waiting_touching("an account")
+                .expect("the waiting crossings")
+                .len(),
+            1,
+            "the crossing was replaced"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_crossing_that_lands_answers_done_and_the_row_settles_in_the_other_account() {
+        // Fetched from the source, appended at the destination, the
+        // identifier read back under 9, removed at the source, the bytes
+        // let go: the whole crossing from a waiting row with no bytes held.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let work = the_other_accounts_work(&home);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        assert!(still_waiting_crossings(&home).is_empty());
+        assert_eq!(
+            where_the_row_is(&home, row),
+            Some((work, 9, false, false)),
+            "(folder, uid, deleted, filed here): the row is not the message the other \
+             account holds under 9"
+        );
+        assert!(
+            home.the_move_left_unfinished_for(row)
+                .expect("read")
+                .is_none(),
+            "the bytes were kept after the crossing landed"
+        );
+        assert!(
+            source.was_told("UID EXPUNGE 4").await,
+            "the message was not removed at the source"
+        );
+        assert!(
+            destination
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().contains("APPEND")),
+            "the message never reached the destination"
+        );
+        assert!(
+            source
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().contains("BODY.PEEK[]")),
+            "nothing was fetched from the source, so what was appended came from nowhere"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_crossing_is_replayed_at_a_check_of_the_destination_account() {
+        // The other account's check is this program in front of the
+        // destination; the source is opened from there.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "another account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        assert!(the_source_was_told_to_let_go(&source).await);
+    }
+
+    #[tokio::test]
+    async fn test_a_destination_that_refuses_the_append_answers_refused_and_the_undo_puts_the_row_back()
+     {
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_server_that_refuses("UIDPLUS", "APPEND").await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let inbox = the_folder(&home, "INBOX");
+        let waiting = a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let Some((_, Replayed::Refused(reason))) = replayed.first() else {
+            panic!("a refusal was read as something else: {replayed:?}");
+        };
+        assert!(reason.contains("could not append"), "{reason}");
+        assert!(
+            !the_source_was_told_to_let_go(&source).await,
+            "the source was told to give up a message the destination refused"
+        );
+        undo_here(&home, &waiting).expect("undone");
+        assert_eq!(
+            where_the_row_is(&home, row),
+            Some((inbox, THE_UID, false, false))
+        );
+        assert!(still_waiting_crossings(&home).is_empty());
+        assert!(
+            home.the_move_left_unfinished_for(row)
+                .expect("read")
+                .is_none(),
+            "the bytes were kept after the crossing was undone"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_destination_that_hung_up_and_then_holds_it_answers_done_and_removes_at_the_source()
+     {
+        let source = a_source_server(ASourceServer::default()).await;
+        let accounts = a_source_and_a_scripted_destination(
+            &source,
+            AScriptedDestination::that_hangs_up_and_then(vec![Ok(vec![]), Ok(vec![9])]),
+        )
+        .await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        assert!(
+            source.was_told("UID EXPUNGE 4").await,
+            "the destination was found to hold the message and the source still has it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_destination_that_hung_up_and_does_not_hold_it_answers_refused() {
+        let source = a_source_server(ASourceServer::default()).await;
+        let accounts = a_source_and_a_scripted_destination(
+            &source,
+            AScriptedDestination::that_hangs_up_and_then(vec![Ok(vec![]), Ok(vec![])]),
+        )
+        .await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let Some((_, Replayed::Refused(reason))) = replayed.first() else {
+            panic!(
+                "an append the destination does not hold was read as something else: {replayed:?}"
+            );
+        };
+        assert!(reason.contains("Home stopped answering"), "{reason}");
+        assert!(!the_source_was_told_to_let_go(&source).await);
+    }
+
+    #[tokio::test]
+    async fn test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay()
+     {
+        // The message may be in one place or in two. Not a refusal: a
+        // refusal is undone, and undoing this would put the row back here
+        // as if the message were nowhere else.
+        let source = a_source_server(ASourceServer::default()).await;
+        let accounts = a_source_and_a_scripted_destination(
+            &source,
+            AScriptedDestination::that_hangs_up_and_then(vec![
+                Ok(vec![]),
+                Err(Error::Protocol("no search here".to_string())),
+            ]),
+        )
+        .await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let work = the_other_accounts_work(&home);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::NotReached]);
+        assert_eq!(still_waiting_crossings(&home), vec![row]);
+        let held = home
+            .the_move_left_unfinished_for(row)
+            .expect("read")
+            .expect("the bytes are held for the next check");
+        assert_eq!(held.raw, THE_MESSAGE.as_bytes());
+        assert_eq!(held.was_there_before, Some(Vec::new()));
+        let (folder, _, _, marked) = where_the_row_is(&home, row).expect("the row");
+        assert!(
+            folder == work && marked,
+            "the row was put back with nobody having refused"
+        );
+        assert!(!the_source_was_told_to_let_go(&source).await);
+    }
+
+    #[tokio::test]
+    async fn test_a_crossing_resumed_from_held_bytes_fetches_nothing_from_the_source() {
+        // A restart between the fetch and the ending: the bytes are here,
+        // the destination is asked first, sent the message since it does not
+        // hold it, and the source is asked to let go. Nothing is fetched.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let work = the_other_accounts_work(&home);
+        a_crossing_made_here(&home, row);
+        home.keep_the_message_while_it_moves(
+            &crate::data::message_cache::moves_in_flight::AMoveStarting {
+                message_row_id: row,
+                to_account_id: "another account",
+                to_folder: "Work",
+                flags: Some("(\\Seen)"),
+                arrived: None,
+                was_there_before: Some(&[]),
+                raw: THE_MESSAGE.as_bytes(),
+            },
+        )
+        .expect("the bytes held from the earlier run");
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        assert!(
+            !source
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().contains("BODY.PEEK[]")),
+            "the message was fetched from the source again, so the held bytes bought nothing"
+        );
+        assert!(source.was_told("UID EXPUNGE 4").await);
+        assert_eq!(where_the_row_is(&home, row), Some((work, 9, false, false)));
+        assert!(
+            home.the_move_left_unfinished_for(row)
+                .expect("read")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_copy_across_accounts_lands_with_nothing_removed_at_the_source() {
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let inbox = the_folder(&home, "INBOX");
+        let work = the_other_accounts_work(&home);
+        let copy = what_happens_here(
+            &home,
+            &a_move_of(row, THE_UID, a_copy_into_the_other_accounts_work()),
+            "Lunch",
+        )
+        .expect("copied here")
+        .kept;
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        let said = source.transcript().await.join("\n").to_uppercase();
+        assert!(
+            !said.contains("STORE") && !said.contains("EXPUNGE"),
+            "{said}"
+        );
+        assert_eq!(
+            where_the_row_is(&home, row),
+            Some((inbox, THE_UID, false, false))
+        );
+        assert_eq!(
+            where_the_row_is(&home, copy.message_row_id),
+            Some((work, 9, false, false))
+        );
+        assert!(still_waiting_crossings(&home).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so() {
+        // The store's ceiling, through the first step: the message still
+        // comes back for the append, and the answer says nothing could be
+        // resumed from here. The window keeps such a message out of the
+        // queue on its size at the key; this is the step's own word.
+        use crate::application::mail_across_accounts::{
+            TheMoveAsThisProgramRecordsIt, fetch_and_keep,
+        };
+        use crate::data::message_cache::moves_in_flight::Held;
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let home = TempHome::named("wixen_moves_waiting_ceiling_", |dir| {
+            a_cache_at(dir).keeping_no_move_larger_than(1)
+        });
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let source_end = the_account_it_is_leaving(&source).await;
+        let destination_end = the_account_it_is_going_to(&destination).await;
+
+        let fetched = fetch_and_keep(
+            &source_end,
+            &destination_end,
+            "INBOX",
+            THE_UID,
+            "Work",
+            TheMoveAsThisProgramRecordsIt {
+                cache: Some(&home),
+                row,
+                from_account_id: "an account",
+                to_account_id: "another account",
+            },
+        )
+        .await
+        .expect("the message fetched");
+
+        assert_eq!(fetched.held, Some(Held::TooLargeToHold));
+        assert_eq!(fetched.message.raw, THE_MESSAGE.as_bytes());
+        assert!(
+            home.the_move_left_unfinished_for(row)
+                .expect("read")
+                .is_none(),
+            "a message over the ceiling was kept anyway"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_crossings_are_replayed_in_the_order_they_were_asked() {
+        // Two source accounts, each holding its message, both going to the
+        // other account's Work; replayed at the destination's check, in the
+        // order asked.
+        let first_source = a_source_server(ASourceServer::default()).await;
+        let second_source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let mut accounts = two_accounts_at(&first_source, &destination).await;
+        accounts.open.push((
+            "a third account",
+            Arc::new(AnEnd::AServer(
+                the_account_it_is_leaving(&second_source).await,
+            )),
+        ));
+        let home = a_cache();
+        home.save_folder(&CachedFolder {
+            id: 0,
+            account_id: "a third account".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .expect("the third account's inbox");
+        let first = a_message_in_the_inbox(&home, THE_UID);
+        let second = home
+            .save_message(&CachedMessage {
+                id: 0,
+                uid: THE_UID,
+                folder_id: home
+                    .get_folder("a third account", "INBOX")
+                    .expect("the folder")
+                    .expect("it is there")
+                    .id,
+                message_id: THE_IDENTIFIER_AS_IT_IS_HELD.to_string(),
+                subject: "Lunch".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-09-19".to_string(),
+                body_plain: None,
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
+            })
+            .expect("the second message");
+        what_happens_here(
+            &home,
+            &AWaitingMove {
+                asked_at: "2026-09-19T06:00:01Z".to_string(),
+                ..a_crossing_of(first)
+            },
+            "Lunch",
+        )
+        .expect("made here");
+        what_happens_here(
+            &home,
+            &AWaitingMove {
+                account_id: "a third account".to_string(),
+                asked_at: "2026-09-19T06:00:02Z".to_string(),
+                ..a_crossing_of(second)
+            },
+            "Lunch",
+        )
+        .expect("made here");
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "another account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            replayed
+                .iter()
+                .map(|(waiting, _)| waiting.message_row_id)
+                .collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        assert_eq!(answers(&replayed), vec![Replayed::Done, Replayed::Done]);
+        assert!(the_source_was_told_to_let_go(&first_source).await);
+        assert!(the_source_was_told_to_let_go(&second_source).await);
+    }
+
+    #[tokio::test]
+    async fn test_a_destination_that_already_held_the_identifier_reads_only_a_new_number_as_the_arrival()
+     {
+        // The folder already holds number 4 carrying the identifier, and the
+        // append's answer never comes; afterwards it still holds 4 and
+        // nothing new. That is not an arrival, and nothing is removed at the
+        // source (T-11-91). A destination that says yes to its own append
+        // is a different matter and is done on that word.
+        let source = a_source_server(ASourceServer::default()).await;
+        let accounts = a_source_and_a_scripted_destination(
+            &source,
+            AScriptedDestination::that_hangs_up_and_then(vec![Ok(vec![4]), Ok(vec![4])]),
+        )
+        .await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert!(
+            matches!(replayed.first(), Some((_, Replayed::Refused(_)))),
+            "a message that was in the folder before the send was counted as the one \
+             that was sent: {replayed:?}"
+        );
+        assert!(!the_source_was_told_to_let_go(&source).await);
+
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_server_that_can("UIDPLUS").await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        assert!(
+            where_the_row_is(&home, row).is_none(),
+            "the destination held 4 before and after, so which number is the message \
+             cannot be told; the row goes for the next read to bring down"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_crossing_whose_other_account_is_gone_is_refused_and_the_undo_puts_the_row_back()
+    {
+        let source = a_source_server(ASourceServer::default()).await;
+        let accounts = TheseAccounts {
+            open: vec![(
+                "an account",
+                Arc::new(AnEnd::AServer(the_account_it_is_leaving(&source).await)),
+            )],
+            unreachable: Vec::new(),
+        };
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let inbox = the_folder(&home, "INBOX");
+        let waiting = a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            answers(&replayed),
+            vec![Replayed::Refused(
+                ONE_OF_THE_TWO_ACCOUNTS_IS_GONE.to_string()
+            )]
+        );
+        assert!(
+            !source
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().contains("FETCH")),
+            "the source was asked for a message with nowhere to send it"
+        );
+        undo_here(&home, &waiting).expect("undone");
+        assert_eq!(
+            where_the_row_is(&home, row),
+            Some((inbox, THE_UID, false, false))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_crossing_whose_other_account_cannot_be_signed_in_to_waits() {
+        let source = a_source_server(ASourceServer::default()).await;
+        let accounts = TheseAccounts {
+            open: vec![(
+                "an account",
+                Arc::new(AnEnd::AServer(the_account_it_is_leaving(&source).await)),
+            )],
+            unreachable: vec!["another account"],
+        };
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::NotReached]);
+        assert_eq!(still_waiting_crossings(&home), vec![row]);
+    }
+
+    #[tokio::test]
+    async fn test_a_held_crossing_nothing_can_settle_is_refused_with_where_to_look() {
+        // Held bytes for a message with no identifier: the destination
+        // cannot be asked, so nothing is sent to either server, the row
+        // comes back, and the sentence says where to look.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = home
+            .save_message(&CachedMessage {
+                id: 0,
+                uid: THE_UID,
+                folder_id: the_folder(&home, "INBOX"),
+                message_id: String::new(),
+                subject: "Lunch".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-09-19".to_string(),
+                body_plain: None,
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
+            })
+            .expect("a message with no identifier");
+        a_crossing_made_here(&home, row);
+        home.keep_the_message_while_it_moves(
+            &crate::data::message_cache::moves_in_flight::AMoveStarting {
+                message_row_id: row,
+                to_account_id: "another account",
+                to_folder: "Work",
+                flags: None,
+                arrived: None,
+                was_there_before: Some(&[]),
+                raw: THE_MESSAGE.as_bytes(),
+            },
+        )
+        .expect("the bytes held from the earlier run");
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let Some((_, Replayed::Refused(reason))) = replayed.first() else {
+            panic!("a crossing nothing can settle was read as something else: {replayed:?}");
+        };
+        assert!(reason.contains("Look in Work in Home"), "{reason}");
+        assert!(
+            !destination
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().contains("APPEND")),
+            "something was sent to the destination about a crossing nothing can settle"
+        );
+        assert!(!the_source_was_told_to_let_go(&source).await);
+    }
+
+    #[test]
+    fn test_an_append_nobody_could_settle_is_not_reached_and_never_a_refusal() {
+        // A message possibly in two places must not be put back here as if
+        // it were nowhere: a refusal is undone, and this must not be.
+        let said_as = ACrossingSaidAs {
+            into: "Work",
+            to_account: "Home",
+            still_in: "INBOX",
+            subject: "Lunch",
+        };
+        assert_eq!(
+            what_a_crossing_answered(
+                &MovedAcross::ItIsNotKnownWhereItIs("no search there".to_string()),
+                &said_as
+            ),
+            Replayed::NotReached
+        );
+        assert_eq!(
+            what_a_crossing_answered(&MovedAcross::ItArrivedAndTheSourceLetItGo, &said_as),
+            Replayed::Done
+        );
+        assert!(matches!(
+            what_a_crossing_answered(
+                &MovedAcross::TheDestinationRefusedIt("over quota".to_string()),
+                &said_as
+            ),
+            Replayed::Refused(_)
+        ));
+        let Replayed::DoneWithSomethingToSay(said) = what_a_crossing_answered(
+            &MovedAcross::ItArrivedAndTheSourceWouldNotLetGo("read-only".to_string()),
+            &said_as,
+        ) else {
+            panic!("a message left in both places was not said");
+        };
+        assert!(
+            said.contains("Work in Home") && said.contains("INBOX"),
+            "{said}"
+        );
+    }
+
+    /// The rows of every crossing still waiting that either account is one
+    /// end of.
+    fn still_waiting_crossings(cache: &MessageCache) -> Vec<i64> {
+        cache
+            .crossings_waiting_touching("an account")
+            .expect("the waiting crossings")
+            .iter()
+            .map(|waiting| waiting.message_row_id)
+            .collect()
+    }
+
     #[test]
     fn test_a_server_that_did_it_is_done() {
         assert_eq!(
@@ -1002,16 +2354,19 @@ mod tests {
     #[test]
     fn test_nothing_here_can_say_send_now() {
         // Guardrail 7, held by the shape of the type rather than by a comment.
+        // The fifth, added 2026-09-19 for a crossing that landed with the
+        // message left in both places, says something; it sends nothing.
         let every_answer = [
             Replayed::Done,
+            Replayed::DoneWithSomethingToSay(String::new()),
             Replayed::AlreadyDone,
             Replayed::Refused(String::new()),
             Replayed::NotReached,
         ];
         assert_eq!(
             every_answer.len(),
-            4,
-            "a fifth answer was added to what a replay can mean. If it means \
+            5,
+            "a sixth answer was added to what a replay can mean. If it means \
              sending one, that is guardrail 7 and it needs an argument rather \
              than an arm"
         );
@@ -1019,7 +2374,7 @@ mod tests {
 
     #[test]
     fn test_the_shown_line_and_the_spoken_refusal_are_plainly_different() {
-        let shown = shown_when_made_here(&into_the_archive(), "Lunch");
+        let shown = shown_when_made_here(&a_move_of(1, 42, into_the_archive()), "Lunch");
         let put_back =
             put_back_because_the_server_refused(&into_the_archive(), "Lunch", "over quota");
         assert_eq!(shown, "Moved to Archive: Lunch");
@@ -1029,16 +2384,35 @@ mod tests {
         );
         assert_eq!(
             shown_when_made_here(
-                &WhatAWaitingMoveDoes::DeleteToTrash {
-                    trash_path: "Trash".to_string()
-                },
+                &a_move_of(
+                    1,
+                    42,
+                    WhatAWaitingMoveDoes::DeleteToTrash {
+                        trash_path: "Trash".to_string()
+                    }
+                ),
                 "Lunch"
             ),
             "Moved to Trash: Lunch"
         );
         assert_eq!(
-            shown_when_made_here(&WhatAWaitingMoveDoes::DeleteOutright, "Lunch"),
+            shown_when_made_here(
+                &a_move_of(1, 42, WhatAWaitingMoveDoes::DeleteOutright),
+                "Lunch"
+            ),
             "Deleted: Lunch"
+        );
+        assert_eq!(
+            shown_when_made_here(&a_move_of(1, 42, into_the_other_accounts_work()), "Lunch"),
+            "Moved to Work in Home: Lunch"
+        );
+        assert_eq!(
+            put_back_because_the_server_refused(
+                &into_the_other_accounts_work(),
+                "Lunch",
+                "over quota"
+            ),
+            "Could not move Lunch to Work in Home: over quota. It is back where it was."
         );
         assert_eq!(
             put_back_because_the_server_refused(

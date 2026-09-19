@@ -325,8 +325,9 @@ instead of growing it and every command acted on one message.
 
 ### Moving, deleting and copying happen here first
 
-Since 2026-09-19, a move, a delete or a copy of a message within one
-account happens on this computer first. The row leaves the list the moment
+Since 2026-09-19, a move, a delete or a copy of a message happens on this
+computer first, within one account and, since later that day, to a folder
+on another account as well. The row leaves the list the moment
 you choose the folder in the Move to window, or press `Delete`, and the
 cursor lands on the next message the way it does after any delete. The
 status bar shows "Moved to Archive: Invoice" or "Moved to Trash: Invoice";
@@ -349,15 +350,34 @@ is put back.
 
 In the Move to window, `Enter` on a folder is the move; on a folder that
 holds other folders it still moves there rather than opening it, and on an
-account row it does nothing. A message moved to a folder on another account
-still waits for both servers before the row leaves, because that move is a
-fetch from one server and an append at the other.
+account row it does nothing.
+
+A move or a copy to a folder on another account completes here at once too,
+and the servers follow: the row leaves, the status bar shows "Moved to
+Work in Home: Invoice", and the message appears in that folder of the other
+account. Behind that, the message is fetched from the first account, kept on
+this computer, uploaded to the second, and only then removed from the first;
+that runs straight away in the background and again at the next check for
+mail of either account, so a restart in between finishes it from the kept
+copy without asking. If the other account refuses the message, or does not
+have it after its connection dropped, the row comes back where it was and
+the refusal is spoken: "Could not move Invoice to Work in Home: over quota.
+It is back where it was." If the first account will not let the message go
+once the second has it, you are told it is in both places. A message larger
+than 25 MB cannot be kept here, so it goes the old way, servers first, and
+the status bar says "Moving Invoice: larger than 25 MB, so it goes now and
+the row leaves when Home has taken it". A message still on its way to
+another account cannot be moved, copied or deleted again until the next
+check for mail, and says so.
 
 Until 2026-09-19 every move and delete waited for the server to agree before
 the row left, which on a slow connection was a noticeable pause on every
-key, and `Enter` on the chosen folder did nothing. Nobody has yet replayed a
-move against a real mail server after a restart; the loopback servers the
-tests use answer the four ways a server can, and a real account settles the
+key, and `Enter` on the chosen folder did nothing; a move to another
+account waited for both servers until later that day, and a restart in the
+middle of one asked whether to finish it. Nobody has yet replayed a move
+against a real mail server after a restart, nor moved a message to another
+account this way; the loopback servers the tests use answer the four ways a
+server can, at each of the two servers, and a real account settles the
 rest.
 
 ## Composing Email

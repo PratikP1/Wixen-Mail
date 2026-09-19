@@ -2116,6 +2116,12 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create moves_waiting table: {}", e)))?;
+        // A crossing to another account (11-07.2, 2026-09-19) is the same
+        // row with the other account named, so a check of either account
+        // finds it; added beside the table rather than into it, since the
+        // table had shipped that morning.
+        self.ensure_column_exists("moves_waiting", "to_account_id", "TEXT")?;
+        self.ensure_column_exists("moves_waiting", "to_account_name", "TEXT")?;
 
         self.conn
             .execute(

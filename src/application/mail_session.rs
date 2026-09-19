@@ -150,6 +150,33 @@ pub(crate) async fn the_session_at(
     Ok(session)
 }
 
+/// The accounts set up on this computer, as a crossing's replay opens their
+/// sessions.
+///
+/// The program's answer to [`crate::application::moves_waiting::OpensASession`]:
+/// an account among these is signed in through [`the_session_at`], one not
+/// among them is one no longer set up here, and a sign-in the server turned
+/// down is a session that could not be opened now.
+pub(crate) struct TheAccountsSetUpHere<'a>(pub &'a [Account]);
+
+impl crate::application::moves_waiting::OpensASession for TheAccountsSetUpHere<'_> {
+    type Session = MailController;
+
+    async fn session_for(
+        &self,
+        account_id: &str,
+    ) -> crate::application::moves_waiting::ASessionFor<MailController> {
+        use crate::application::moves_waiting::ASessionFor;
+        let Some(account) = self.0.iter().find(|account| account.id == account_id) else {
+            return ASessionFor::NotSetUpHere;
+        };
+        match the_session_at(account).await {
+            Ok(session) => ASessionFor::Open(session),
+            Err(why) => ASessionFor::CouldNotBeOpened(why),
+        }
+    }
+}
+
 /// Close this account's session and forget it.
 ///
 /// Forgotten as well as closed, so an account added later under the same id,

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 156 records have arrived since and have not been through it.
+# 162 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26502,7 +26502,7 @@ red = [
     "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 27 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -26537,15 +26537,17 @@ tests_last_seen = [
 # #86). The made-here reading goes red on the target.
 #
 # Measured 2026-09-19 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. The break re-indented
+# on 2026-09-19 by 11-07.2, which nests the loop one level deeper for the
+# asks of several accounts; the code is the same and was measured again.
 [[guard]]
 name = "a row that left at the key has its line shown, not spoken as well"
 file = "src/presentation/wx_app.rs"
 suite = "a_move_completes_here_first"
-before = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
-                    send_shown(tx, rt, &made.shown);"""
-after = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
-                    send_status(tx, rt, &made.shown);"""
+before = """                        take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                        send_shown(tx, rt, &made.shown);"""
+after = """                        take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                        send_status(tx, rt, &made.shown);"""
 red = [
     "test_the_row_leaves_and_the_line_is_shown_before_any_session_is_asked_for",
 ]
@@ -26637,4 +26639,151 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_destination.rs", tests = 6 },
     { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+]
+
+# The bytes not kept before the append goes out, as the first step of a
+# crossing would be with the store filtered away: the message is fetched
+# and appended and nothing here says a crossing is owed, so a restart
+# between the fetch and the ending has nothing to resume from and fetches
+# again, or finds a source that has stopped answering (#86, 11-07.2). The
+# case that reads the store from inside the append goes red, and the
+# queue's cases that read what the store holds after a hang-up or through
+# the ceiling.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "the bytes of a crossing are kept before the append, not never"
+file = "src/application/mail_across_accounts.rs"
+before = """    let held = recording.cache.and_then(|cache| {"""
+after = """    let held = recording.cache.filter(|_| false).and_then(|cache| {"""
+red = [
+    "application::mail_across_accounts::tests::test_the_message_is_already_on_the_disk_when_the_append_goes_out",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
+    "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+]
+
+# An append nobody could settle read as a refusal: the destination hung up
+# and could not be asked, so the message may be in one place or in two, and
+# a refusal is undone, which puts the row back here as if the message were
+# nowhere else. The one line the crossing's replay must not get wrong
+# (T-11-92); the value case and the hang-up case go red (#86, 11-07.2).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "an append nobody could settle is not reached, not a refusal to undo"
+file = "src/application/moves_waiting.rs"
+before = """        MovedAcross::ItIsNotKnownWhereItIs(_) => Replayed::NotReached,"""
+after = """        MovedAcross::ItIsNotKnownWhereItIs(why) => Replayed::Refused(why.clone()),"""
+red = [
+    "application::moves_waiting::tests::test_an_append_nobody_could_settle_is_not_reached_and_never_a_refusal",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+]
+
+# The ceiling on a message kept while it moves taken away: a message of any
+# size is written to the store, which is the store's own ceiling test, the
+# crossing's case over a one-byte ceiling and the queue's reading of the
+# store's answer, all red (#86, 11-07.2; the number is the privacy page's
+# one number for three stores and is not moved).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "a message over the ceiling is not held while it moves"
+file = "src/data/message_cache/moves_in_flight.rs"
+before = """        if i64::try_from(moving.raw.len()).is_ok_and(|size| size > self.largest_move_kept) {"""
+after = """        if i64::try_from(moving.raw.len()).is_ok_and(|size| size > i64::MAX) {"""
+red = [
+    "data::message_cache::moves_in_flight::tests::test_a_message_too_large_to_keep_leaves_nothing_to_resume_from",
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_keep_still_moves",
+    "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+    { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
+]
+
+# A session asked for in the move arm before the change is made here,
+# which is the wait the tester felt on every move: the row leaves once a
+# server has answered and not before. The arms reading goes red on the
+# target (#86, 11-07.2).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a crossing is made here before any session is asked for, not after"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_across_accounts_completes_here_first"
+before = """    let into_for_the_worker = into.clone();"""
+after = """    let _ = rt.block_on(crate::application::mail_session::the_session_at(
+        &destination_account,
+    ));
+    let into_for_the_worker = into.clone();"""
+red = [
+    "test_a_move_or_a_copy_to_another_account_completes_here_first",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_across_accounts_completes_here_first.rs", tests = 11 },
+]
+
+# The store of held bytes read again for a dialog, which is the question
+# at start phase 4.1 asked and 11-07.2 retired: a crossing is what the
+# person asked for, and a restart finishes it from the held bytes at the
+# next check rather than asking. The retirement reading goes red on the
+# target (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a restart asks no question about a crossing, not a dialog from the held bytes"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_across_accounts_completes_here_first"
+before = """    let every_account: Vec<Account> = lock_state(&state).accounts.clone();"""
+after = """    let every_account: Vec<Account> = lock_state(&state).accounts.clone();
+    let _ = crate::data::message_cache::MessageCache::new(std::path::PathBuf::new(), None)
+        .and_then(|cache| cache.moves_that_did_not_finish());"""
+red = [
+    "test_a_restart_asks_no_question_about_a_crossing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_across_accounts_completes_here_first.rs", tests = 11 },
+]
+
+# The crossings offered to the source account's check alone, so a crossing
+# waits for an account whose check may never come while the destination is
+# checked every few minutes; the plan put this record on the sync, but the
+# sync does not read the table, and the query that answers either account
+# does. The table's case, the two of the replay at the destination's check
+# and the made-here case, which reads the waiting crossings from the
+# destination's side, go red (#86, 11-07.2); the first draft named three
+# and the runner answered four, and the record was corrected by hand
+# before it was measured again.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "a crossing is offered at a check of either account, not the source alone"
+file = "src/data/message_cache/moves_waiting.rs"
+before = """                   AND (account_id = ?1 OR to_account_id = ?1)"""
+after = """                   AND account_id = ?1"""
+red = [
+    "data::message_cache::moves_waiting::tests::test_a_crossing_is_offered_at_a_check_of_either_account",
+    "application::moves_waiting::tests::test_a_crossing_is_replayed_at_a_check_of_the_destination_account",
+    "application::moves_waiting::tests::test_two_crossings_are_replayed_in_the_order_they_were_asked",
+    "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+    { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
 ]

@@ -36,7 +36,23 @@
 //! The row keys on the message's own row in this cache, and that row already
 //! carries the uid and the folder, and `folders` already carries the account
 //! and the path. Copying them here would be two records of one fact that can
-//! disagree, so the read joins them instead.
+//! disagree, so the read joins them instead. Since 11-07.2 a crossing is made
+//! here first, so the message's row has already been moved into the other
+//! account's folder under a number this computer reserved; where the server
+//! still has it is then the waiting row's answer
+//! ([`super::moves_waiting`]), and the read takes that over the join when
+//! there is one.
+//!
+//! # Held for the crossing, and the crossing now waits
+//!
+//! Until 2026-09-19 a row here lived for the seconds between the fetch and
+//! the ending, and a row that outlived the program was offered back as a
+//! question at the next start. A crossing completes here first now (#86,
+//! Pratik's decision), so a row here lives from the moment the move is asked
+//! for until the other account has taken the message or the move is undone,
+//! and it is what the replay resumes from without asking anybody. The
+//! backstop below leaves a row alone while its waiting row exists, since a
+//! crossing that is still owed is not one nobody answered about.
 //!
 //! **The bytes are the whole message as it arrived, unencrypted, the same as
 //! every other part of this cache**, and `docs/privacy.md` says so.
@@ -54,14 +70,30 @@ use crate::common::{Error, Result};
 /// justification that sounds like one: it is the size most providers refuse to
 /// accept above, so ordinary mail is under it.
 ///
-/// **A message over it still moves.** Nothing is refused, nothing is warned
-/// about, and the person is not told, because nothing about their move is
-/// worse than it would have been. It goes with the safeguard every other
-/// message already has: the append is first, the removal is last, and if the
-/// append's answer never arrives the destination is asked. This is the pairing
-/// earning its keep. With only the kept bytes, a message over the ceiling
-/// would have no safeguard at all.
+/// **A message over it still moves, and the person is told how.** Nothing is
+/// refused. It goes with the safeguard every other message already has: the
+/// append is first, the removal is last, and if the append's answer never
+/// arrives the destination is asked. What it cannot do, since 11-07.2, is
+/// complete here first: a crossing made here is replayed from these bytes
+/// after a restart, and a message that cannot be held cannot be replayed, so
+/// it goes the way every move went before, server first, with a line saying
+/// so. [`Held::TooLargeToHold`] is how the store says which.
 pub const LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES: i64 = 25 * 1024 * 1024;
+
+/// Whether the store took the message.
+///
+/// Two named answers rather than a silent `Ok(())`, because a caller that
+/// completes a crossing here first needs to know whether a restart could
+/// resume it, and until 11-07.2 a message over the ceiling was kept nowhere
+/// with nothing saying so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Held {
+    /// The bytes are here until the move ends.
+    Kept,
+    /// Over the ceiling, so nothing was written and nothing can be resumed
+    /// from here.
+    TooLargeToHold,
+}
 
 /// How much is held for moves in flight before the newest gives way.
 ///
@@ -185,19 +217,19 @@ impl MessageCache {
     /// second way of recording how a message arrived. It is not one: the
     /// message arrived long ago and is already in this cache, and these bytes
     /// are held for the crossing and nothing else.
-    pub fn keep_the_message_while_it_moves(&self, moving: &AMoveStarting<'_>) -> Result<()> {
+    pub fn keep_the_message_while_it_moves(&self, moving: &AMoveStarting<'_>) -> Result<Held> {
         // Over the ceiling, nothing at all is written, and that is the
         // opposite of what `keep_signed_original` does with a message too
         // large to keep. There the row is what says the message claimed a
-        // signature, which stays true after the bytes go. Here a row is an
-        // offer to finish a move, so a row with no message in it would offer
+        // signature, which stays true after the bytes go. Here a row is what
+        // a replay resumes from, so a row with no message in it would offer
         // to send an empty message to somebody's account.
         //
-        // The move itself goes on. It keeps the safeguard every other message
-        // has, which is why this is not a failure and not worth telling
-        // anybody about.
+        // The move itself goes on, with the safeguard every other message
+        // has; the answer says the store is not behind it, so the caller can
+        // choose the path that needs no store.
         if i64::try_from(moving.raw.len()).is_ok_and(|size| size > self.largest_move_kept) {
-            return Ok(());
+            return Ok(Held::TooLargeToHold);
         }
         self.conn
             .execute(
@@ -245,7 +277,7 @@ impl MessageCache {
         if let Err(e) = self.stay_within_the_budget_for_moves(moving.message_row_id) {
             tracing::warn!("Could not bring the moves in flight back under their limit: {e}");
         }
-        Ok(())
+        Ok(Held::Kept)
     }
 
     /// Bring the total back under the budget, the move just started giving way.
@@ -280,13 +312,19 @@ impl MessageCache {
     /// Nothing is lost. The message is at the account it came from, because a
     /// move puts it at the second account first and takes it off the first
     /// last, so a move that never reached an ending never removed anything.
+    ///
+    /// A row whose crossing is still waiting is left alone however old it
+    /// is: it is not a move nobody answered about but one owed to the queue,
+    /// and the queue lets the bytes go when the crossing lands or is undone.
     pub fn forget_the_moves_nobody_answered_about(&self) -> Result<()> {
         let too_old = (chrono::Utc::now()
             - chrono::TimeDelta::days(A_MOVE_IS_GIVEN_UP_ON_AFTER_DAYS))
         .to_rfc3339();
         self.conn
             .execute(
-                "DELETE FROM move_in_flight WHERE started_at < ?1",
+                "DELETE FROM move_in_flight
+                 WHERE started_at < ?1
+                   AND message_id NOT IN (SELECT message_row_id FROM moves_waiting)",
                 rusqlite::params![too_old],
             )
             .map_err(|e| Error::Other(format!("Failed to give up on an unfinished move: {}", e)))?;
@@ -298,11 +336,6 @@ impl MessageCache {
     /// A local read: it touches no server and needs no session, which is what
     /// lets it run the moment the mail window is ready, before any account has
     /// signed in.
-    ///
-    /// The source side comes through the join rather than out of this table.
-    /// The message row carries the uid and which folder it is in, and `folders`
-    /// carries that folder's account and its path, so all three are already
-    /// written down once and this reads them where they are.
     ///
     /// The backstop runs here, before the read, and it has to run somewhere
     /// like this rather than in a function of its own. This cache has no sweep
@@ -317,15 +350,46 @@ impl MessageCache {
     /// not to offer, so nothing drops a row it is about to read.
     pub fn moves_that_did_not_finish(&self) -> Result<Vec<AMoveLeftUnfinished>> {
         self.forget_the_moves_nobody_answered_about()?;
+        self.read_the_unfinished_moves(None)
+    }
+
+    /// The bytes held for one message's crossing, with everything a replay
+    /// needs to resume it, or nothing when none are held.
+    ///
+    /// The backstop does not run here: a crossing the queue is about to
+    /// resume is not one nobody answered about, and the read that runs it
+    /// would be dropping the row it was asked for.
+    pub fn the_move_left_unfinished_for(
+        &self,
+        message_row_id: i64,
+    ) -> Result<Option<AMoveLeftUnfinished>> {
+        Ok(self.read_the_unfinished_moves(Some(message_row_id))?.pop())
+    }
+
+    /// The rows, or the one row, as a replay needs them.
+    ///
+    /// The source side comes through the join rather than out of this table:
+    /// the message row carries the uid and which folder it is in, and
+    /// `folders` carries that folder's account and its path. Since 11-07.2 a
+    /// crossing is made here first, so the message row has been moved into
+    /// the destination's folder under a number this computer reserved; where
+    /// the server still has it is then the waiting row's answer, taken over
+    /// the join whenever there is one.
+    fn read_the_unfinished_moves(&self, only: Option<i64>) -> Result<Vec<AMoveLeftUnfinished>> {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT i.message_id, m.subject, m.message_id, f.account_id, f.path, m.uid,
+                "SELECT i.message_id, m.subject, m.message_id,
+                        COALESCE(w.account_id, f.account_id),
+                        COALESCE(w.from_folder_path, f.path),
+                        COALESCE(w.uid, m.uid),
                         i.to_account_id, i.to_folder, i.flags, i.arrived,
                         i.was_there_before, i.original, i.started_at
                  FROM move_in_flight i
                  INNER JOIN messages m ON m.id = i.message_id
                  INNER JOIN folders f ON f.id = m.folder_id
+                 LEFT JOIN moves_waiting w ON w.message_row_id = i.message_id
+                 WHERE ?1 IS NULL OR i.message_id = ?1
                  ORDER BY i.started_at ASC, i.message_id ASC",
             )
             .map_err(|e| {
@@ -333,7 +397,7 @@ impl MessageCache {
             })?;
 
         let unfinished = stmt
-            .query_map([], |row| {
+            .query_map(rusqlite::params![only], |row| {
                 Ok(AMoveLeftUnfinished {
                     message_row_id: row.get(0)?,
                     subject: row.get(1)?,
@@ -668,19 +732,136 @@ mod tests {
         let (cache, row) = a_cache_holding_one_message();
         let large = a_message_over_the_ceiling();
 
-        cache
+        let held = cache
             .keep_the_message_while_it_moves(&AMoveStarting {
                 raw: &large,
                 ..moving(row, Some(&[]))
             })
             .expect("a message too large to keep is not a failure");
 
+        assert_eq!(
+            held,
+            Held::TooLargeToHold,
+            "the store said it held a message it did not, so a crossing would be \
+             made here first with nothing to resume it from"
+        );
         assert!(
             cache.moves_that_did_not_finish().expect("read").is_empty(),
             "a message too large to keep left a row that offers to finish a \
              move with no message in it"
         );
         assert_eq!(cache.bytes_kept_for_moves().expect("the total"), 0);
+        assert_eq!(
+            cache
+                .keep_the_message_while_it_moves(&moving(row, Some(&[])))
+                .expect("kept"),
+            Held::Kept
+        );
+    }
+
+    /// The other account's folder, for a row moved here across accounts.
+    fn the_other_accounts_archive(cache: &MessageCache) -> i64 {
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acc-2".to_string(),
+                name: "Archive".to_string(),
+                path: "Archive".to_string(),
+                folder_type: "Archive".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the other account's folder")
+    }
+
+    /// The crossing as the queue keeps it: the message's row already moved
+    /// here into the other account's folder, and the waiting row saying
+    /// where the server still has it.
+    fn a_crossing_made_here(cache: &MessageCache, row: i64) {
+        use crate::data::message_cache::moves_waiting::{
+            AWaitingMove, TheOtherAccount, WhatAWaitingMoveDoes,
+        };
+        let archive = the_other_accounts_archive(cache);
+        cache.move_message(row, archive).expect("moved here");
+        cache
+            .keep_a_move_waiting(&AWaitingMove {
+                message_row_id: row,
+                account_id: "acc-1".to_string(),
+                from_folder_path: "INBOX".to_string(),
+                uid: 4,
+                what: WhatAWaitingMoveDoes::MoveAcross {
+                    into_folder_path: "Archive".to_string(),
+                    to_account: TheOtherAccount {
+                        id: "acc-2".to_string(),
+                        name: "Home".to_string(),
+                    },
+                },
+                asked_at: "2026-09-19T06:00:00Z".to_string(),
+            })
+            .expect("the crossing kept waiting");
+    }
+
+    #[test]
+    fn test_a_crossing_still_waiting_keeps_its_bytes_past_the_backstop() {
+        // The backstop is for a row nobody answered about. A crossing the
+        // queue still owes is answered about at the next check of either
+        // account, and dropping its bytes first would turn a resume from held
+        // bytes into a second fetch, or into nothing where the source has
+        // stopped answering.
+        let (cache, row) = a_cache_holding_one_message();
+        cache
+            .keep_the_message_while_it_moves(&moving(row, Some(&[])))
+            .expect("kept");
+        a_crossing_made_here(&cache, row);
+        for_tests::pretend_it_started_at(
+            &cache,
+            row,
+            chrono::Utc::now() - chrono::TimeDelta::days(A_MOVE_IS_GIVEN_UP_ON_AFTER_DAYS + 1),
+        );
+
+        cache
+            .forget_the_moves_nobody_answered_about()
+            .expect("the backstop");
+
+        assert!(
+            cache
+                .the_move_left_unfinished_for(row)
+                .expect("read")
+                .is_some(),
+            "the bytes of a crossing the queue still owes were given up on"
+        );
+    }
+
+    #[test]
+    fn test_where_the_server_still_has_a_row_moved_here_is_the_waiting_rows_answer() {
+        // The row has been moved into the other account's Archive under a
+        // number this computer reserved, so the join says Archive at acc-2.
+        // The server has never heard of that: it holds the message in the
+        // Inbox at acc-1 under 4, which is what the waiting row keeps and
+        // what the removal at the source has to name.
+        let (cache, row) = a_cache_holding_one_message();
+        cache
+            .keep_the_message_while_it_moves(&moving(row, Some(&[])))
+            .expect("kept");
+        a_crossing_made_here(&cache, row);
+
+        let unfinished = cache
+            .the_move_left_unfinished_for(row)
+            .expect("read")
+            .expect("the bytes are held");
+
+        assert_eq!(
+            (
+                unfinished.from_account_id.as_str(),
+                unfinished.from_folder.as_str(),
+                unfinished.uid
+            ),
+            ("acc-1", "INBOX", 4),
+            "a resume would ask the source to give up a message under a folder and a \
+             number this computer made up"
+        );
+        assert_eq!(unfinished.to_account_id, "acc-2");
+        assert_eq!(unfinished.raw, THE_MESSAGE);
     }
 
     #[test]
