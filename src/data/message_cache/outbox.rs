@@ -319,6 +319,7 @@ impl MessageCache {
                     account_id: account_id.to_string(),
                     message_id: String::new(),
                     refs_header: None,
+                    thread_id: None,
                     subject: what_this_row_is_doing(
                         &waiting_label(&subject, attempts, last_error.as_deref()),
                         &when,

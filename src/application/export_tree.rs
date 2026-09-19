@@ -769,6 +769,7 @@ mod tests {
             account_id: "acct".to_string(),
             message_id: "note-1@example.com".to_string(),
             refs_header: None,
+            thread_id: None,
             subject: "Notes on the engine".to_string(),
             from_addr: "Ada Lovelace <ada@example.com>".to_string(),
             to_addr: "Charles Babbage <charles@example.com>".to_string(),

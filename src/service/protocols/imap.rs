@@ -109,15 +109,22 @@ const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPL
 /// that does not have it, the whole fetch is refused, and that would be every
 /// message in every folder rather than a missing field.
 ///
-/// `X-GM-THRID`, Gmail's own conversation identifier, is deliberately not asked
-/// for. It was unreachable while the library's own reader was in the way; now
-/// that the answer is read here it could be had, and asking for it is still a
-/// separate decision with a cost on every message in every folder. Threading
-/// falls back to the References and In-Reply-To headers, which is what it does
-/// on every other server. Worth revisiting on its own:
-/// `application::threading` already prefers a server thread id over anything it
-/// computes.
-const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-LABELS";
+/// `X-GM-THRID`, Gmail's own conversation identifier, is asked for since
+/// 2026-09-19 (#88). Until then it was deliberately left out: it was
+/// unreachable while the library's own reader was in the way, and once the
+/// attributes were read here the comment saying so stayed, with a note that
+/// asking was a separate decision. The decision came from the tester, whose
+/// threads showed as several rows with one subject, because threading ran on
+/// the `References` and `In-Reply-To` headers alone and a reply a sender's
+/// program sent without them joined nothing, while Gmail's own client showed
+/// one thread. What it costs is one attribute per message in a FETCH already
+/// made: `X-GM-THRID` and a number of up to twenty digits, measured on the
+/// scripted server by
+/// `application::server_thread_ids::tests::test_what_the_field_costs_per_message_on_the_wire`,
+/// which prints both lengths. The number reaches the store as the
+/// conversation's name through
+/// [`crate::application::thread_identity::the_servers_name`].
+const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-THRID X-GM-LABELS";
 
 /// What this client calls itself when a server asks, as RFC 2971 pairs.
 ///
@@ -1933,7 +1940,10 @@ fn message_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<ImapMess
             AttributeValue::GmailMsgId(id) => Some(*id),
             _ => None,
         }),
-        gmail_thread_id: None,
+        gmail_thread_id: attributes.iter().find_map(|attribute| match attribute {
+            AttributeValue::GmailThrId(id) => Some(*id),
+            _ => None,
+        }),
         receipt_to: parsed.receipt_to,
         list_unsubscribe: parsed.list_unsubscribe,
         labels: attributes

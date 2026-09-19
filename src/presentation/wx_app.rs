@@ -13531,7 +13531,9 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
                 .split_whitespace()
                 .map(|r| r.to_string())
                 .collect(),
-            conversation: None,
+            // The store's word, so the page is grouped and named as the
+            // conversation rows are and the tree finds a row's members (#88).
+            conversation: row.thread_id.clone(),
         })
         .collect();
 
@@ -16341,6 +16343,7 @@ fn replace_local_draft(
         has_attachments: false,
         safety: crate::service::safety::Verdict::ordinary(),
         gmail_message_id: None,
+        server_thread_id: None,
         labels: None,
         receipt_to: None,
         // A draft is written here, so there is no list behind it.
@@ -28048,6 +28051,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -30460,6 +30464,7 @@ mod showing_the_mail_with_a_label {
             has_attachments: false,
             safety: crate::service::safety::Verdict::ordinary(),
             gmail_message_id: None,
+            server_thread_id: None,
             labels: None,
             receipt_to: None,
             list_unsubscribe: None,

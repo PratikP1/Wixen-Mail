@@ -2756,6 +2756,12 @@ impl MessageCache {
         // rethread the whole folder on every open.
         self.ensure_column_exists("messages", "thread_id", "TEXT")?;
         self.ensure_column_exists("messages", "thread_depth", "INTEGER")?;
+        // The conversation the server itself filed the message under, where
+        // the server names conversations (Gmail's X-GM-THRID, #88). NULL on
+        // every other server, and for a row stored before 2026-09-19, which
+        // the once-only pass in `application::server_thread_ids` fills at the
+        // account's next check. Additive: nothing dropped, nothing renamed.
+        self.ensure_column_exists("messages", "server_thread_id", "TEXT")?;
         // Whether the server said there are attachments, learned from
         // BODYSTRUCTURE during a sync. The listing used to answer this by
         // looking for saved attachment rows, which only exist once a message

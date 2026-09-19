@@ -68,61 +68,70 @@ pub fn thread_messages(messages: &[ThreadInput]) -> Vec<ThreadPlacement> {
         }
     }
 
-    let mut union = DisjointSet::new();
-    let mut parents: HashMap<i64, Option<i64>> = HashMap::new();
-
+    // The store's word first: messages sharing one are one conversation
+    // whatever the headers say, and the word is the set's name from here on.
+    let mut sets = Conversations::default();
+    let mut first_with: HashMap<&str, i64> = HashMap::new();
     for message in messages {
-        // The nearest reference that is actually present is the parent. The
-        // list runs oldest first, so the last match is the closest ancestor.
+        let Some(word) = message
+            .conversation
+            .as_deref()
+            .map(str::trim)
+            .filter(|word| !word.is_empty())
+        else {
+            continue;
+        };
+        match first_with.get(word) {
+            Some(first) => sets.join(message.id, *first),
+            None => {
+                first_with.insert(word, message.id);
+                sets.name(message.id, word);
+            }
+        }
+    }
+
+    // Then the headers, held to the word. Every reference joins the same
+    // conversation, present or not, which is what merges two trees when a
+    // late message references both; but never across two words, because two
+    // conversations the store keeps apart are two whatever a stranger's
+    // References line says, and the rows on screen were read from the store.
+    for message in messages {
+        for reference in &message.references {
+            if let Some(other) = by_message_id.get(reference.trim()) {
+                sets.join(message.id, *other);
+            }
+        }
+    }
+
+    // The nearest reference that is actually present, and in the same
+    // conversation, is the parent. The list runs oldest first, so the last
+    // match is the closest ancestor.
+    let mut parents: HashMap<i64, Option<i64>> = HashMap::new();
+    for message in messages {
         let parent = message
             .references
             .iter()
             .rev()
             .filter_map(|reference| by_message_id.get(reference.trim()).copied())
-            .find(|candidate| *candidate != message.id);
+            .find(|candidate| *candidate != message.id && sets.together(message.id, *candidate));
         parents.insert(message.id, parent);
-
-        // Every reference joins the same conversation, present or not. That is
-        // what merges two trees when a late message references both.
-        for reference in &message.references {
-            if let Some(other) = by_message_id.get(reference.trim()) {
-                union.union(message.id, *other);
-            }
-        }
     }
 
-    // The store's word overrides everything computed: messages sharing one
-    // are one conversation whatever the headers say.
-    let mut by_conversation: HashMap<&str, i64> = HashMap::new();
-    for message in messages {
-        let Some(conversation) = message.conversation.as_deref() else {
-            continue;
-        };
-        let conversation = conversation.trim();
-        if conversation.is_empty() {
-            continue;
-        }
-        match by_conversation.get(conversation) {
-            Some(first) => union.union(message.id, *first),
-            None => {
-                by_conversation.insert(conversation, message.id);
-            }
-        }
-    }
-
-    // The conversation is named after the least Message-ID it holds, in plain
+    // A conversation with the store's word is named by it, so the name the
+    // list row carries and the name a loaded message carries are one name.
+    // Without one it is named after the least Message-ID it holds, in plain
     // string order, rather than a generated value. Least rather than oldest,
     // because a date can be missing, wrong or in another timezone, and the
     // point of the rule is that the same mailbox threads the same way on every
     // machine and after every restart.
-    let mut root_name: HashMap<i64, String> = HashMap::new();
+    let mut least_id: HashMap<i64, &str> = HashMap::new();
     for message in messages {
-        let root = union.find(message.id);
-        root_name
+        let root = sets.find(message.id);
+        least_id
             .entry(root)
             .and_modify(|name| {
-                if message.message_id.as_str() < name.as_str() {
-                    *name = message.message_id.clone();
+                if message.message_id.as_str() < *name {
+                    *name = message.message_id.as_str();
                 }
                 // Whichever of `<` or `<=` guards the assignment above,
                 // `name` ends up the lexicographic minimum of its previous
@@ -130,19 +139,20 @@ pub fn thread_messages(messages: &[ThreadInput]) -> Vec<ThreadPlacement> {
                 // same string, so replacing one with the other changes
                 // nothing observable. That is why cargo-mutants cannot tell
                 // `<` from `<=` on the line above.
-                debug_assert!(*name <= message.message_id);
+                debug_assert!(*name <= message.message_id.as_str());
             })
-            .or_insert_with(|| message.message_id.clone());
+            .or_insert(message.message_id.as_str());
     }
 
     messages
         .iter()
         .map(|message| {
-            let root = union.find(message.id);
-            let thread_id = root_name
-                .get(&root)
-                .cloned()
-                .unwrap_or_else(|| message.message_id.clone());
+            let root = sets.find(message.id);
+            let thread_id = sets
+                .word_of(root)
+                .or_else(|| least_id.get(&root).copied())
+                .unwrap_or(message.message_id.as_str())
+                .to_string();
             ThreadPlacement {
                 id: message.id,
                 thread_id,
@@ -151,6 +161,60 @@ pub fn thread_messages(messages: &[ThreadInput]) -> Vec<ThreadPlacement> {
             }
         })
         .collect()
+}
+
+/// The conversations as they are being joined, each with the store's word
+/// where one of its members carried one.
+///
+/// The one rule this holds is that a join never brings two words together:
+/// asked to join two sets that each have a word and the words differ, it
+/// does nothing. That is what keeps the in-memory grouping the store's on a
+/// server that names conversations itself, including through a message with
+/// no word of its own whose chain reaches two of them.
+#[derive(Debug, Default)]
+struct Conversations<'a> {
+    sets: DisjointSet,
+    word: HashMap<i64, &'a str>,
+}
+
+impl<'a> Conversations<'a> {
+    fn find(&mut self, id: i64) -> i64 {
+        self.sets.find(id)
+    }
+
+    fn word_of(&mut self, id: i64) -> Option<&'a str> {
+        let root = self.find(id);
+        self.word.get(&root).copied()
+    }
+
+    fn name(&mut self, id: i64, word: &'a str) {
+        let root = self.find(id);
+        self.word.insert(root, word);
+    }
+
+    fn together(&mut self, a: i64, b: i64) -> bool {
+        self.find(a) == self.find(b)
+    }
+
+    fn join(&mut self, a: i64, b: i64) {
+        let (root_a, root_b) = (self.find(a), self.find(b));
+        if root_a == root_b {
+            return;
+        }
+        let (word_a, word_b) = (
+            self.word.get(&root_a).copied(),
+            self.word.get(&root_b).copied(),
+        );
+        if let (Some(x), Some(y)) = (word_a, word_b)
+            && x != y
+        {
+            return;
+        }
+        self.sets.union(a, b);
+        if let Some(word) = word_a.or(word_b) {
+            self.word.insert(self.sets.find(a), word);
+        }
+    }
 }
 
 /// How far a message sits from its root.
@@ -180,10 +244,6 @@ struct DisjointSet {
 }
 
 impl DisjointSet {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     fn find(&mut self, id: i64) -> i64 {
         // Bounded by the number of entries rather than trusting the chain to
         // end on its own, the same reasoning `depth_of` already applies to
@@ -679,7 +739,7 @@ mod tests {
         // which is the only way to drive `find` at the exact state where a
         // comparison-operator slip on either of its two loops turns into a
         // hang instead of a wrong answer.
-        let mut set = DisjointSet::new();
+        let mut set = DisjointSet::default();
         set.parent.insert(1, 1);
 
         assert_eq!(set.find(1), 1);
@@ -693,7 +753,7 @@ mod tests {
         // stored parent map shows whether the walk was shortened for the
         // next lookup, which is the entire point of doing it, so this reads
         // the map directly rather than only asserting what `find` returns.
-        let mut set = DisjointSet::new();
+        let mut set = DisjointSet::default();
         set.union(2, 1); // parent: {2 -> 1}
         set.union(1, 0); // parent: {2 -> 1, 1 -> 0}
 
@@ -711,7 +771,7 @@ mod tests {
         // `thread_messages` returns, so this asks the set directly. Both
         // orders, because a rule that only holds when the larger id is named
         // first is not a rule.
-        let mut set = DisjointSet::new();
+        let mut set = DisjointSet::default();
 
         set.union(5, 3);
         assert_eq!(set.find(5), 3);

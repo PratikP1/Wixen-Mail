@@ -60,7 +60,7 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
                 m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -420,6 +420,7 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
             .collect(),
         receipt_to: row.get(20)?,
         list_unsubscribe: row.get(21)?,
+        thread_id: row.get(22)?,
     })
 }
 
@@ -454,7 +455,7 @@ pub(super) fn unified_inbox_query(order: &str, limit: Option<usize>) -> String {
                 m.size_bytes, m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE f.folder_type = 'Inbox' AND m.deleted = 0
@@ -491,6 +492,14 @@ pub struct MessageListRow {
     pub message_id: String,
     /// `References` and `In-Reply-To`, space separated.
     pub refs_header: Option<String>,
+    /// The conversation the store filed this message under: the server's
+    /// own word on Gmail, the chain's root elsewhere, as
+    /// [`crate::application::thread_identity::the_conversation_of`] answers
+    /// it, and rejoined by the merge as mail arrived. The in-memory threading of
+    /// a loaded page is handed this, so it groups and names a conversation
+    /// as the store does and the conversation rows do (#88). `None` only on a
+    /// row written before the column had a writer and not yet backfilled.
+    pub thread_id: Option<String>,
     pub subject: String,
     pub from_addr: String,
     pub to_addr: String,
@@ -557,6 +566,13 @@ pub struct IncomingMessage {
     pub safety: crate::service::safety::Verdict,
     /// Gmail's own identifier, the same number under every label it carries.
     pub gmail_message_id: Option<u64>,
+    /// The conversation the server itself filed it under, when the server
+    /// names conversations: Gmail's `X-GM-THRID`, spelled by
+    /// [`crate::application::thread_identity::the_servers_name`] so the
+    /// stored value says where it came from. It becomes `thread_id`, over
+    /// whatever the chain says (#88). `None` on every other server, and for
+    /// anything filed here rather than fetched.
+    pub server_thread_id: Option<String>,
     /// The labels Gmail has on it, space separated.
     pub labels: Option<String>,
     /// Where the sender asked a read receipt to go, if they asked.
@@ -1004,11 +1020,13 @@ impl MessageCache {
     /// [`Self::upsert_messages`] is the one to reach for when a sync has a
     /// batch in hand, which is the usual case.
     pub fn upsert_message(&self, incoming: &IncomingMessage) -> Result<i64> {
-        // Which conversation this belongs to, from this message alone. Held in
-        // a name rather than computed inside the parameter list, because the
-        // merge below needs the same answer and computing it twice is two
-        // places able to come to differ.
-        let conversation = crate::application::thread_identity::conversation_root(
+        // Which conversation this belongs to, from this message alone: the
+        // server's word where the server gave one, the chain's root otherwise.
+        // Held in a name rather than computed inside the parameter list,
+        // because the merge below needs the same answer and computing it twice
+        // is two places able to come to differ.
+        let conversation = crate::application::thread_identity::the_conversation_of(
+            incoming.server_thread_id.as_deref(),
             &incoming.message_id,
             incoming.refs_header.as_deref(),
         );
@@ -1028,12 +1046,13 @@ impl MessageCache {
                       size_bytes, refs_header, read, starred, deleted, has_attachments,
                       internaldate, answered, draft, reply_to, safety, safety_reasons,
                       gmail_msgid, labels, receipt_to, list_unsubscribe, pop_uidl,
-                      downloaded_at, thread_id)
+                      downloaded_at, thread_id, server_thread_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
                  ON CONFLICT(folder_id, uid) DO UPDATE SET
                      pop_uidl = excluded.pop_uidl,
                      gmail_msgid = excluded.gmail_msgid,
+                     server_thread_id = excluded.server_thread_id,
                      labels = excluded.labels,
                      receipt_to = excluded.receipt_to,
                      list_unsubscribe = excluded.list_unsubscribe,
@@ -1059,9 +1078,10 @@ impl MessageCache {
                      -- time on purpose: those are facts about this computer
                      -- rather than about the message, and an upsert is not
                      -- authoritative for them. thread_id is the opposite. It
-                     -- is derived from message_id and refs_header, both of
-                     -- which are on this list, so leaving it alone would let a
-                     -- row carry a conversation its own chain contradicts.
+                     -- is derived from the server's word, message_id and
+                     -- refs_header, all of which are on this list, so leaving
+                     -- it alone would let a row carry a conversation its own
+                     -- chain, or its server, contradicts.
                      thread_id = excluded.thread_id
                  RETURNING id",
                 params![
@@ -1109,6 +1129,7 @@ impl MessageCache {
                     // and another when it is sent, which is the thing
                     // `threading::as_stored` says in its own doc comment.
                     &conversation,
+                    incoming.server_thread_id,
                 ],
                 |row| row.get(0),
             )
@@ -2644,6 +2665,7 @@ mod tests {
             has_attachments: false,
             safety: crate::service::safety::Verdict::ordinary(),
             gmail_message_id: None,
+            server_thread_id: None,
             labels: None,
             receipt_to: None,
             list_unsubscribe: None,

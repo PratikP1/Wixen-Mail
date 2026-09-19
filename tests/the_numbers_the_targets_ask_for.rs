@@ -278,6 +278,7 @@ fn a_message(folder_id: i64, n: usize) -> IncomingMessage {
         has_attachments: n.is_multiple_of(7),
         safety: Verdict::ordinary(),
         gmail_message_id: None,
+        server_thread_id: None,
         labels: None,
         receipt_to: None,
         list_unsubscribe: None,

@@ -35,9 +35,19 @@
 //!
 //! [`crate::application::threading::thread_messages`] still runs, in memory,
 //! over one folder's loaded page, and still builds the parent links and depths
-//! the conversation view reads. It is untouched. What it must not be used for
-//! is a value that gets written down or compared across folders. The stored
-//! `thread_id` comes from here and only from here.
+//! the conversation view reads. What it must not be used for is a value that
+//! gets written down or compared across folders. The stored `thread_id` comes
+//! from here and only from here, and since 2026-09-19 the in-memory pass is
+//! handed it as each row's `conversation`, so the two group and name a
+//! conversation the same way and the window that looks a row's members up by
+//! the stored name finds them (#88).
+//!
+//! # The server's word
+//!
+//! On Gmail the server names the conversation itself, `X-GM-THRID`, and
+//! [`the_conversation_of`] puts that word in front of the chain's root: the
+//! conversation here is the one Gmail shows, a chain can only ever join what
+//! Gmail already joins, and [`rejoin`] never rewrites a name the server gave.
 
 /// The conversation this message belongs to.
 ///
@@ -85,9 +95,10 @@ pub fn the_conversation_of(
     message_id: &str,
     refs_header: Option<&str>,
 ) -> String {
-    // Stubbed at the red: the server's word is not yet read.
-    let _ = server;
-    conversation_root(message_id, refs_header)
+    match server.map(str::trim).filter(|word| !word.is_empty()) {
+        Some(word) => word.to_string(),
+        None => conversation_root(message_id, refs_header),
+    }
 }
 
 /// What a server's conversation identifier is stored as.
@@ -267,6 +278,18 @@ pub struct Rerooting {
 /// that reveals nothing, which is what the rejected batch rule did every time a
 /// smaller identifier turned up. It cannot forbid the rename that *is* the
 /// merge.
+///
+/// # The server's word, #88
+///
+/// A conversation named by the server, as [`is_the_servers`] reads it, is
+/// never rewritten: not onto a header root, however the two strings sort,
+/// and not onto another of the server's, because two conversations Gmail
+/// keeps apart are two whatever a stranger's `References` line says. So
+/// the winner is the arriving conversation when it is the server's, else the
+/// first of the server's among those found, in the store's own order, else
+/// the earliest string as before; and the conversations rewritten onto it
+/// are the header-named ones alone. On a server without the extension no
+/// name is the server's and the rule above is the whole of it.
 pub fn rejoin(
     the_arriving_conversation: &str,
     conversations_found: &[String],
@@ -289,20 +312,24 @@ pub fn rejoin(
         }
     }
 
-    let winning_root = merging
-        .iter()
-        .copied()
-        .min()
-        // `merging` always holds the arriving conversation, which the guard
-        // above has already shown is not empty, so this never answers. Written
-        // out because nothing in this crate unwraps outside a test.
-        .unwrap_or(the_arriving_conversation);
+    let the_servers_first = merging.iter().copied().find(|name| is_the_servers(name));
+    let winning_root = the_servers_first.unwrap_or_else(|| {
+        merging
+            .iter()
+            .copied()
+            .min()
+            // `merging` always holds the arriving conversation, which the guard
+            // above has already shown is not empty, so this never answers.
+            // Written out because nothing in this crate unwraps outside a test.
+            .unwrap_or(the_arriving_conversation)
+    });
 
     // Order kept from the list above, so the conversations move in the order
-    // they were named and a guard over this cannot pass or fail by luck.
+    // they were named and a guard over this cannot pass or fail by luck. A
+    // name the server gave stays where it is.
     let roots_to_rewrite: Vec<String> = merging
         .iter()
-        .filter(|root| **root != winning_root)
+        .filter(|root| **root != winning_root && !is_the_servers(root))
         .map(|root| (*root).to_string())
         .collect();
 

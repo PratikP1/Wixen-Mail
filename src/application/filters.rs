@@ -1435,6 +1435,7 @@ mod the_fields_a_rule_may_name {
                     reasons: vec!["Your mail provider's filter marked it as spam.".to_string()],
                 },
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,

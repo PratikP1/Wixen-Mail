@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 167 records have arrived since and have not been through it.
+# 170 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -13628,16 +13628,20 @@ red = [
     "application::thread_identity::tests::the_winner_is_the_earliest_identifier_the_merging_conversations_know_between_them",
 ]
 tests_last_seen = [
-    { file = "src/application/thread_identity.rs", tests = 31 },
+    { file = "src/application/thread_identity.rs", tests = 39 },
 ]
-before = """    let winning_root = merging
-        .iter()
-        .copied()
-        .min()"""
-after = """    let winning_root = merging
-        .iter()
-        .copied()
-        .next()"""
+#
+# Rewritten onto the new text on 2026-09-19 (11-08.1): the earliest rule now
+# sits inside the closure the server's word falls through to, and the break
+# is the same one place, `.min()` to `.next()`, one level further in.
+before = """        merging
+            .iter()
+            .copied()
+            .min()"""
+after = """        merging
+            .iter()
+            .copied()
+            .next()"""
 
 [[guard]]
 name = "a merge reaches the losing conversation in every folder it is filed in"
@@ -26911,4 +26915,66 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 9 },
     { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+]
+
+# ── A conversation is Gmail's own, and a late parent joins it (11-08.1, #88) ─
+#
+# X-GM-THRID dropped from the Gmail fields again, which is the tree as it
+# was until 2026-09-19: the field the tester's threads were split for the
+# absence of. The rewritten pinning test goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the conversation id is asked for where the server has it, not left out"
+file = "src/service/protocols/imap.rs"
+before = """const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-THRID X-GM-LABELS";"""
+after = """const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-LABELS";"""
+red = ["service::protocols::imap::tests::test_the_thread_id_is_asked_for_where_the_server_has_it"]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+# The earliest string beating the server's word in the merge, so a
+# conversation Gmail named is renamed after a header root that happens to
+# sort first, and two Gmail keeps apart settle under one (T-11-98). The
+# four merge cases over the server's word go red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the server's word wins the merge, not the earliest string"
+file = "src/application/thread_identity.rs"
+before = """    let the_servers_first = merging.iter().copied().find(|name| is_the_servers(name));"""
+after = """    let the_servers_first: Option<&str> = None;"""
+red = [
+    "application::thread_identity::tests::the_servers_word_wins_the_merge_over_the_earliest_string",
+    "application::thread_identity::tests::a_conversation_the_server_named_is_not_rewritten_onto_a_header_root",
+    "application::thread_identity::tests::two_conversations_the_server_named_apart_stay_apart",
+    "application::thread_identity::tests::a_header_root_between_two_of_the_servers_conversations_joins_the_first_found",
+]
+tests_last_seen = [
+    { file = "src/application/thread_identity.rs", tests = 39 },
+]
+
+# The in-memory pass joining two conversations the store keeps apart by
+# their headers, so the tree opened from a Gmail row holds a member the
+# row never counted and a reply sits at depth one under a root the store
+# filed elsewhere. The kept-apart case goes red; the naming cases stay
+# green because the name still comes from the word.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the headers do not join two conversations the store keeps apart"
+file = "src/application/threading.rs"
+before = """        if let (Some(x), Some(y)) = (word_a, word_b)
+            && x != y
+        {
+            return;
+        }"""
+after = """        let _ = (word_a, word_b);"""
+red = ["application::threading::tests::test_two_messages_the_store_filed_apart_are_not_joined_by_their_headers"]
+tests_last_seen = [
+    { file = "src/application/threading.rs", tests = 29 },
 ]

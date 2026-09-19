@@ -628,6 +628,11 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
             .clone()
             .and(crate::service::safety::from_folder(in_junk_folder)),
         gmail_message_id: message.gmail_message_id,
+        // The server's own conversation, spelled so the stored name says it
+        // came from the server; the store names the conversation by it (#88).
+        server_thread_id: message
+            .gmail_thread_id
+            .map(crate::application::thread_identity::the_servers_name),
         // Space separated, which is how IMAP writes a flag list and what the
         // labels already are on the wire. A label with a space in it was
         // quoted there and is not quoted here, so this is for showing and for
@@ -2260,6 +2265,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -2325,6 +2331,7 @@ mod tests {
             has_attachments: false,
             safety: crate::service::safety::Verdict::ordinary(),
             gmail_message_id: None,
+            server_thread_id: None,
             labels: None,
             receipt_to: None,
             list_unsubscribe: None,
@@ -2442,6 +2449,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -2527,6 +2535,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -2840,6 +2849,7 @@ mod tests {
                     has_attachments: false,
                     safety: crate::service::safety::Verdict::ordinary(),
                     gmail_message_id: None,
+                    server_thread_id: None,
                     labels: None,
                     receipt_to: None,
                     list_unsubscribe: None,
@@ -3560,6 +3570,7 @@ mod tests {
                     has_attachments: false,
                     safety: crate::service::safety::Verdict::ordinary(),
                     gmail_message_id: None,
+                    server_thread_id: None,
                     labels: None,
                     receipt_to: None,
                     list_unsubscribe: None,
@@ -4481,6 +4492,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
