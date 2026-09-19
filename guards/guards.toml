@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 174 records have arrived since and have not been through it.
+# 175 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26996,7 +26996,7 @@ after = """            conversation: None,"""
 red = ["test_the_page_is_threaded_over_the_stores_word"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 12 },
+    { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 14 },
 ]
 
 # The once-only pass dropped from the check, so the tester's 17,753 stored
@@ -27027,7 +27027,7 @@ after = """"""
 red = ["test_the_stored_mail_gets_its_word_in_the_check_after_the_replay_and_before_the_listing"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 12 },
+    { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 14 },
 ]
 
 # The word written on the row and the merge skipped, so a reply that got its
@@ -27067,4 +27067,34 @@ after = """    cache.record_this_as_done(&marker)?;
 red = ["application::server_thread_ids::tests::test_a_refusal_records_nothing_and_the_next_check_asks_for_what_is_still_missing"]
 tests_last_seen = [
     { file = "src/application/server_thread_ids.rs", tests = 7 },
+]
+
+# The conversation listing grouped by subject rather than by the stored
+# conversation, which is the join this project refuses on purpose and the
+# one a listing that stopped reading thread_id would fall back to. The
+# plan asked for the header root as the break, and `here` carries neither
+# the chain nor the identifier, so that break is a query error and every
+# store case goes red for the wrong reason; measured first, 9 red. Under
+# subject, the cases where one subject spans two conversations go red: two
+# strangers with one subject, a message whose word differs, and the
+# re-threading reading whose three rows share a subject.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the conversation listing groups by the stored conversation, not by the subject"
+file = "src/data/message_cache/messages.rs"
+suite = "a_conversation_is_gmails_own_and_a_late_parent_joins_it"
+before = """         GROUP BY m.thread_id
+         ORDER BY {order}, m.thread_id ASC","""
+after = """         GROUP BY m.subject
+         ORDER BY {order}, m.thread_id ASC","""
+red = [
+    "test_a_message_that_moves_to_another_conversation_changes_both_rows_messages_and_counts",
+    "test_on_gmail_a_message_whose_word_differs_is_its_own_conversation",
+    "test_two_messages_with_one_subject_and_no_chain_stay_two_conversations",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 14 },
 ]

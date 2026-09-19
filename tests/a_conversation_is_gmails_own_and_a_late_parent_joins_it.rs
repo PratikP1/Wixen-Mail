@@ -428,6 +428,95 @@ fn test_two_messages_with_one_subject_and_no_chain_stay_two_conversations() {
     assert!(listed.iter().all(|row| row.messages == 1));
 }
 
+// ── The row and its count follow a re-threading (11-08's rule, read back) ──
+
+/// The one conversation listed, or a complaint.
+fn the_conversation_named(cache: &MessageCache, inbox: i64, name: &str) -> ConversationItem {
+    the_conversations(cache, inbox)
+        .into_iter()
+        .find(|row| row.thread_id == name)
+        .unwrap_or_else(|| panic!("no conversation named {name}"))
+}
+
+#[test]
+fn test_a_message_that_moves_to_another_conversation_changes_both_rows_messages_and_counts() {
+    // Mail stored before the field was asked for: A the originator, B
+    // answering it, C answering B and already read, all under a@x by their
+    // chains. The row stands for A, the first unread by arrival, and counts
+    // three. Then the once-only pass gives C its word, which takes A and B
+    // with it, and A its own, different word, which moves A out again. Two
+    // conversations now: A's, of one, standing for A; and B's, of two,
+    // standing for B, the first unread left in it. Each answer is 11-08's
+    // query over the store's grouping, so a re-threading moves the row
+    // message and the count together and nothing else has to be told.
+    let (_dir, cache, inbox) = a_cache();
+    let rows = stored(
+        &cache,
+        inbox,
+        &[
+            message(1, "a@x", ""),
+            message(2, "b@x", "a@x"),
+            message(3, "c@x", "a@x b@x"),
+        ],
+    );
+    let (a, c) = (rows[0], rows[2]);
+    cache
+        .update_message_flags(c, true, false)
+        .expect("C read before anything moves");
+
+    let before = the_conversation_named(&cache, inbox, "a@x");
+    assert_eq!(before.messages, 3);
+    assert_eq!(before.stands_for.id, a, "the row stood for A before");
+
+    cache
+        .name_the_conversation_after_the_server(c, &the_servers_name(9))
+        .expect("C named");
+    let joined = the_conversation_named(&cache, inbox, &the_servers_name(9));
+    assert_eq!(
+        joined.messages, 3,
+        "C's word took its chain's conversation with it"
+    );
+    assert_eq!(joined.stands_for.id, a);
+
+    cache
+        .name_the_conversation_after_the_server(a, &the_servers_name(8))
+        .expect("A named");
+    let mut after = the_conversations(&cache, inbox);
+    after.sort_by(|x, y| x.thread_id.cmp(&y.thread_id));
+    assert_eq!(after.len(), 2, "{after:#?}");
+    assert_eq!(after[0].thread_id, the_servers_name(8));
+    assert_eq!(after[0].messages, 1);
+    assert_eq!(after[0].stands_for.id, a);
+    assert_eq!(after[1].thread_id, the_servers_name(9));
+    assert_eq!(after[1].messages, 2);
+    assert_eq!(
+        after[1].stands_for.id, rows[1],
+        "B's conversation stands for B now, the first unread left in it, not for A"
+    );
+}
+
+#[test]
+fn test_the_row_stands_for_the_child_until_the_parent_lands_and_counts_two_after() {
+    // (a) read through 11-08's rule: the child alone is a row of one
+    // standing for itself; when the parent lands, unread and earlier by
+    // arrival, the row counts two and stands for the parent.
+    let (_dir, cache, inbox) = a_cache();
+    let child_row = stored(&cache, inbox, &[message(2, "c@x", "p@x")])[0];
+    let alone = the_conversation_named(&cache, inbox, "p@x");
+    assert_eq!((alone.messages, alone.stands_for.id), (1, child_row));
+
+    let parent_row = stored(&cache, inbox, &[message(1, "p@x", "")])[0];
+    let joined = the_conversation_named(&cache, inbox, "p@x");
+    assert_eq!(
+        joined.messages, 2,
+        "the count did not follow the parent landing"
+    );
+    assert_eq!(
+        joined.stands_for.id, parent_row,
+        "the row stands for the child still, though the parent is the first unread by arrival"
+    );
+}
+
 // ── The readings over the window ───────────────────────────────────────────
 
 const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
