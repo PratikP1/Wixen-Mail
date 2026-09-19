@@ -789,6 +789,45 @@ mod tests {
     }
 
     #[test]
+    fn test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads() {
+        // The tester's earcons went silent after hours and nothing said so
+        // (#81). When no output device can be opened, the player's one
+        // sentence for the outage goes to the status bar in place of the
+        // event's own words, whatever channels the event reaches, so the
+        // silence is explained where it is noticed. The event's words still
+        // go to the screen reader: the event happened, and only the sound
+        // did not.
+        let a11y = Accessibility {
+            earcons: feedback::EarconPlayer::that_cannot_open_a_device(),
+            ..Accessibility::new().expect("accessibility")
+        };
+
+        a11y.signal(feedback::Event::NewMail, "3 messages")
+            .expect("signal");
+
+        let shown = a11y.take_visual_feedback().expect("a sentence for the eye");
+        assert!(
+            shown.starts_with("The sounds have stopped"),
+            "the status bar got {shown:?} rather than the outage"
+        );
+        assert!(
+            !shown.contains("New mail"),
+            "the event's words displaced the outage: {shown:?}"
+        );
+        assert!(
+            lines_released(&a11y)
+                .iter()
+                .any(|line| line == "New mail, 3 messages"),
+            "the event's own words were lost with the sound"
+        );
+        assert_eq!(
+            a11y.take_visual_feedback(),
+            None,
+            "the outage is shown once"
+        );
+    }
+
+    #[test]
     fn test_visual_feedback_is_taken_once_and_not_repeated() {
         // A status line that redisplays an old event on every timer tick is
         // saying something happened when nothing did.
