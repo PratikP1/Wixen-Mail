@@ -542,7 +542,13 @@ you can type in, and say so rather than doing nothing.
 
 Select All refuses in a list of more than 5,000 rows and says why. Selecting
 that many at once stops the window answering, which would take your screen
-reader with it.
+reader with it. Every command over a selection in the message list has the
+same bound, since 2026-09-19: Delete, Move to, Copy to, Mark as Read, Star
+and the Labels each refuse above 5,000 selected messages with one sentence
+and write nothing, because each is a write to this computer's store and a
+change queued for the server per message. Marking 5,000 messages read in
+the store took 75 ms on a release build on 2026-09-19; the changes queued
+for the server are not in that figure.
 
 One item, because Find has lived under Edit on Windows for thirty years and
 moving it would cost more than the short menu does. Marking a task done and
@@ -558,23 +564,23 @@ anything.
 
 | Action | Shortcut | Where it applies |
 |--------|----------|-------------|
-| Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail |
+| Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail. The message the cursor is on, whatever else is selected |
 | Next Unread, Previous Unread | `Ctrl+U`, `Ctrl+Shift+U` | Mail |
-| Mark as Read, or Mark as Unread | `M` in the message list | Mail. The item says which way it will go for the message you are on, and the toolbar button says the same |
-| Star or Unstar | `Ctrl+Shift+S` | Mail |
+| Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read" |
+| Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many |
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
 | Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders |
 | Pin or Unpin | `Ctrl+Shift+P` | Notes |
-| Delete | `Delete` | Every module. Deletes whichever item is chosen |
-| Delete Permanently | `Shift+Del` | Mail |
-| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept |
+| Delete | `Delete` | Every module. Deletes whichever item is chosen. In Mail, every selected message: it says "Delete" once and the cursor lands after the last of them once they have gone. A conversation row in the selection asks first, naming how many messages it holds |
+| Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way |
+| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept |
 
 Five submenus hold the rest:
 
 | Submenu | What is on it |
 |--------|----------|
-| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. The first copy stays where it is. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
-| Label | The ten labels, and Remove every label |
+| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
+| Label | The ten labels, and Remove every label. Each acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
@@ -673,14 +679,17 @@ moves the menu, and sorting from the menu moves the headers.
 | Reply All | `Ctrl+Shift+R` | Reply to everyone the message reached and to the person who wrote it, leaving out your own address |
 | Reply to Sender Only | `Alt+Shift+R` | Reply only to the person who wrote it, never to the list. On the Action menu as Reply to Sender Only. |
 | Forward | `Ctrl+L` | Forward selected message |
-| Delete | `Delete` | Move the selected message to the Trash. On a POP account this is the Trash folder on this computer, and it can be switched off per account in the account's settings. If the account does not say which of its folders holds deleted mail, nothing is deleted and a message says so |
-| Flag Message | `Ctrl+Shift+S` | Flag or unflag the selected message |
-| Mark as Read, or Mark as Unread | `M` in the message list | Mark the message you are on as read if it is unread, and as unread if it is read, and say which: "read" or "unread". The same command is on the Action menu, the context menu and the toolbar, and on all three its label says which way it will go, Mark as Read on an unread message and Mark as Unread on a read one. `M` is only the list's: it does nothing in a box you can type in. This is not on `Space`: `Space` reads the item aloud, in every module. |
+| Delete | `Delete` | Move every selected message to the Trash, saying "Delete" once; the cursor lands after the last of them when they have gone. On a POP account this is the Trash folder on this computer, and it can be switched off per account in the account's settings. If the account does not say which of its folders holds deleted mail, nothing is deleted and a message says so |
+| Flag Message | `Ctrl+Shift+S` | Flag or unflag every selected message, flagging when any of them is not, and say how many |
+| Mark as Read, or Mark as Unread | `M` in the message list | Mark the message you are on as read if it is unread, and as unread if it is read, and say which: "read" or "unread". Over more than one selected message it marks them all read when any is unread, else all unread, and says how many: "3 messages marked read". On a conversation row it marks every message in the conversation, wherever it is filed, and says so. The same command is on the Action menu, the context menu and the toolbar, and on all three its label says which way it will go, Mark as Read when any selected message is unread and Mark as Unread otherwise. `M` is only the list's: it does nothing in a box you can type in. This is not on `Space`: `Space` reads the item aloud, in every module. |
 
 ### Labels
 
 Ctrl and a number puts a label on the message you are on, and the same keys take
 it off again. Nine labels have a key; a tenth is reached from the Label menu.
+Over more than one selected message the label goes on when any of them lacks
+it, else comes off, and one sentence says how many: "3 messages labelled
+Important", "Important removed from 3 messages".
 
 An account starts with the five Thunderbird uses, in the same order, so the
 numbers you already know still work: Important, Work, Personal, To Do, Later.
@@ -702,7 +711,7 @@ and go no further.
 | To Do | `Ctrl+4` | The fourth |
 | Later | `Ctrl+5` | The fifth |
 | The sixth to ninth labels | `Ctrl+6` to `Ctrl+9` | Nothing is there until you make a sixth label, and pressing one says so |
-| Remove every label | `Ctrl+0` | Takes them all off, and says how many there were |
+| Remove every label | `Ctrl+0` | Takes them all off every selected message, and says how many labels came off how many messages |
 
 Thunderbird uses the bare number keys for this. Wixen Mail uses Ctrl and the
 number for a reason rather than a preference: a bare digit in a list is also a
@@ -719,6 +728,22 @@ from somebody spelling their way to a message about invoice 4021.
 | Previous Message | `↑` | Move to previous message in list |
 | First Message | `Home` | Jump to first message |
 | Last Message | `End` | Jump to last message |
+| Select the next message as well | `Shift+↓` | Extends the selection down by one row, the way every Windows list does. Your screen reader says "selected" for the row it adds |
+| Select the previous message as well | `Shift+↑` | Extends the selection up by one row, or shrinks it when you came from below; the row that leaves is read as "not selected" |
+| Select to the first message | `Shift+Home` | Selects from the message you are on to the top of the list |
+| Select to the last message | `Shift+End` | Selects from the message you are on to the bottom of the list |
+| Select every message | `Ctrl+A` | Selects everything the list shows, up to 5,000 rows; above that it says so and selects nothing. Your screen reader says the count on its own |
+
+**Selecting more than one message, since 2026-09-19.** Until then the list
+took one selection, so `Shift+Down` moved it instead of growing it.
+The rows you select are the set the commands below act on: Delete, Delete
+Permanently, Move to, Copy to, Mark as Read or Mark as Unread, Star or
+Unstar, and the Label keys, each say one sentence with how many messages
+they took, "3 messages marked read" or "4 messages moved to Archive". Reply,
+Forward, Open and Save As act on the message the cursor is on, whatever else
+is selected. The words your screen reader says as the selection grows and
+shrinks, "selected", "not selected" and the count, are the control's own,
+and nobody has heard them on this list yet.
 
 ### Composition Window
 

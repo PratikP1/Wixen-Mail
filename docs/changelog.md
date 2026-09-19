@@ -693,6 +693,39 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **The message list selects more than one message, and every command acts on the
+  selection with one sentence.** Reported on 2026-09-15 from build `0.125.1+g3e633252` under
+  NVDA (#30): "Shift+arrow keys should allow the user to select multiple messages." And the
+  last sentence of #27: "If a thread has the focus, then the entire thread should be marked."
+  Since 2026-09-19 the list is built the way every Windows list is, so `Shift+Down` and
+  `Shift+Up` grow and shrink the selection a row at a time, `Shift+Home` and `Shift+End`
+  select to either end, and `Ctrl+A` selects everything shown; until then the list took one
+  selection, so `Shift+Down` moved it instead of growing it, `Ctrl+A` selected one row while
+  saying it had selected them all, and every command acted on one message. Delete, Delete
+  Permanently, Move to, Copy to, Mark as Read or Mark as Unread, Star or Unstar, the label
+  keys and Remove every label act on every selected message, each doing per message what it
+  did for one and saying one sentence with the count: "3 messages marked read", "4 messages
+  moved to Archive", "Important removed from 3 messages"; Delete says "Delete" once and the
+  cursor lands after the last of the deleted messages when they have gone, rather than after
+  each. `M` on one message still says the one word. Reply, Forward, Open and Save As act on
+  the message the cursor is on, whatever else is selected. A conversation row stands for
+  every message in it: Mark as Read, Star and a label reach the whole conversation wherever
+  it is filed, so marking a thread from its row marks the whole thread and the sentence says
+  "1 conversation, 5 messages marked read"; Move to and Copy to take the conversation's
+  messages in the folder being read; Delete keeps the reach the "Deleting a conversation row"
+  setting gives it, and asks first. No command runs over more than 5,000 messages, the bound
+  Select All already had; above it one sentence says how many are selected and asks for
+  fewer, and nothing is written. Marking 5,000 messages read in this computer's store took
+  75 ms on a release build on 2026-09-19, measured on synthetic rows; the changes then queue
+  for the server one message at a time. The cursor follows the focused row, which is what a
+  list that selects more than one means by it. Known limitations: nobody has heard a
+  selection of many read, so whether NVDA's "selected", "not selected" and the count after
+  `Ctrl+A` come through on this list, and whether one sentence after a command over many is
+  enough, is the tester's ear; a set moved across accounts has met no server, and what a
+  provider makes of thousands of flag changes queued at once has not been measured; the
+  label sentences for one message changed with the rest, "1 message labelled Work" where
+  "Work added" was said; and a re-read of the folder after the watch keeps the cursor on its
+  message but not the rest of a selection, whose rows the control keeps by position.
 - **How much message text stays on this computer is your choice, and the default is all of
   it.** Reported on 2026-09-15 from build `0.125.1+g3e633252` (#23): message text should come
   down with the mail unless you forbid it. The forbidding was already on the Permissions tab

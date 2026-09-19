@@ -17,3 +17,31 @@ them.
   left these, since a plan's page changes are the ones its keys owe; 11-12's
   read of the four pages as one is where they belong. Not a ledger entry: a
   page claim, not a defect in the program.
+
+## Found by 11-07 task 2, 2026-09-19
+
+- **`test_every_guard_record_still_names_one_place_in_the_tree` is blind for a
+  whole file while any one record of that file looks mid-measurement.** Its
+  exemption, `mid_measurement`, is keyed on the file: when any record's `after`
+  is in the tree and its `before` is not, every record of that file whose
+  `before` is missing is passed over. After 11-07 rewrote the cursor handler,
+  11-06's record on that handler had an `after` (the handler without the
+  refresh line) that matched the new text by coincidence, and the check passed
+  while six records of `wx_app.rs` had lost their `before`. Found by a one-place
+  count over the TOML by hand; the six were rewritten and measured, and are in
+  the 11-07 summary. The fix is an exemption per record, and a pass through it
+  saying so, which is guardrail 4; ledger 545. Not fixed here: `house_style.rs`
+  is named by 27 records, and a test changed there is a plan of its own.
+- **A re-read of the folder keeps the cursor and not the selection.** The
+  control keeps a virtual list's selected rows by position, so the watch's
+  re-read after a delete or an arrival leaves the selection on whichever
+  messages now sit at those positions; 11-06.1 made the cursor follow its
+  message by identity and the selection has no such rule. Said in the
+  changelog's known limitations. A rule for it is work for whoever next
+  changes what the load arm does, likely 11-07.1 or 11-08.
+- **A stale `a_set_leaving` after a local delete's error.** `delete_if_local`'s
+  `Err` path sends a spoken `StatusUpdated` rather than a refusal, so a set
+  whose local delete errs on one message waits for a row that will not leave
+  until the next set replaces it or a refusal arrives; the rows that did leave
+  are landed then. Reachable only when the local store errs mid-set. 11-07.1,
+  which completes a delete here first, changes this path.

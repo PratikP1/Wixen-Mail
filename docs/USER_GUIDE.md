@@ -284,6 +284,43 @@ said "Deleting Invoice..." on the key and "Moved to Trash: Invoice" after the
 server had answered, two sentences with the subject in each, and the wait for
 the second slowed the hand.
 
+### Selecting more than one message
+
+Since 2026-09-19 the message list selects more than one message, the way
+every Windows list does: `Shift+Down` and `Shift+Up` grow the selection a
+row at a time, `Shift+Home` and `Shift+End` select to either end, and
+`Ctrl+A` selects everything shown. Your screen reader says "selected" for
+each row you add, "not selected" for a row you take back, and the count on
+its own after `Ctrl+A`; those are the list control's own words.
+
+The selection is what the commands act on. Delete, Delete Permanently, Move
+to, Copy to, Mark as Read or Mark as Unread, Star or Unstar, and the label
+keys each act on every selected message and say one sentence with the count:
+"3 messages marked read", "4 messages moved to Archive", "Important removed
+from 3 messages". Delete says "Delete" once, and the cursor lands after the
+last of the deleted messages once they have gone. Mark as Read marks every
+selected message read when any of them is unread, and every one unread
+otherwise; the command's label says which way it will go. Reply, Forward,
+Open and Save As act on the message the cursor is on, whatever else is
+selected.
+
+A conversation row stands for every message in it. Mark as Read, Star and a
+label on a conversation row reach every message in the conversation,
+wherever it is filed, so marking a thread from its row marks the whole
+thread, and the sentence says so: "1 conversation, 5 messages marked read".
+Move to and Copy to take the conversation's messages in the folder you are
+reading and no others. Delete reaches as far as the "Deleting a conversation
+row" setting says, and asks first, naming how many messages it holds.
+
+No command runs over more than 5,000 messages at once, the bound Select All
+already had. Above it, one sentence says how many are selected and asks you
+to select fewer, and nothing is written. Marking 5,000 messages read in
+this computer's store took 75 ms on a release build on 2026-09-19; the
+changes then queue for the server one message at a time, and what a server
+makes of thousands at once has not been measured against any provider.
+Until 2026-09-19 the list took one selection, so `Shift+Down` moved it
+instead of growing it and every command acted on one message.
+
 ## Composing Email
 
 ### Creating a New Message
