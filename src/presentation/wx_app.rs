@@ -19998,6 +19998,17 @@ pub fn land_the_cursor_after(
     Some(row)
 }
 
+/// The rows the message list says are selected, in order (#30).
+///
+/// Read from the control at the moment it is asked and kept nowhere,
+/// because the list is virtual and the selection is the control's. Public
+/// so `tests/every_command_acts_on_the_selection.rs` can walk a list it
+/// built.
+pub fn chosen_rows(list: &ListCtrl) -> Vec<usize> {
+    let first = list.get_first_selected_item();
+    usize::try_from(first).ok().into_iter().collect()
+}
+
 /// Keep the cursor on the same message once the rows were replaced (#76).
 ///
 /// `cursor` is the message the cursor was on and `old_index` its row before
