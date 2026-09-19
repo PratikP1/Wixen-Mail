@@ -83,7 +83,9 @@ The Tools menu also opens:
 
 - **Message Filters**, rules that sort, mark, or move messages as they
   arrive. Each rule matches on a field such as subject, sender, or date,
-  and can mark a message read, star it, move it, or tag it.
+  and can mark a message read, star it, move it, tag it, or say a phrase
+  first when its row is read; any rule can also play a sound when a check
+  finds a match. See [Rules that change how a row is announced](#rules-that-change-how-a-row-is-announced).
 - **Contact Manager**, a dialog for the contacts stored for the account you
   are looking at. The [Contacts module](#other-modules) reached with
   `Ctrl+Shift+2` is the fuller way to work with contacts; this dialog
@@ -282,6 +284,51 @@ that profile is active. The step-by-step version, with the names NVDA uses
 and the date they were read, is in
 [Keyboard Shortcuts](KEYBOARD_SHORTCUTS.md) under NVDA Shortcuts. Nobody has
 heard this program under such a profile yet.
+
+### Rules that change how a row is announced
+
+A rule can change what a row says, not only where the message is filed.
+Since 2026-09-19 the rule editor (Tools, then Message Filters) offers three
+things for that.
+
+**A phrase said first.** Choose the action **Say this first** and type a
+few words in the box under it, which is called "Phrase to say first" while
+that action is chosen. Up to 40 characters, "Urgent" or "From the school".
+Every message the rule matches when it arrives keeps the phrase, and the
+phrase is the first thing your screen reader says for the row, before the
+first column, whatever columns you have on and in whatever order: "Urgent,
+Unread, Quarterly report". The comma is a pause. When the first column has
+nothing to say for that row, the phrase is said on its own. The phrase is
+also shown in a column of its own, **Says first**, which you can switch on
+with `F8`; the column can be hidden and the phrase at the start of the row
+cannot, because being heard first is the point of it. Reading the row with
+its headings (`Ctrl+Shift+;`) says the phrase without the words "Says
+first" in front of it.
+
+The rules run once, when mail arrives. A message that arrived before you
+wrote the rule has no phrase, and a message keeps its phrase even if you
+change the rule later. When two rules both say a phrase first, the rule
+lower in the list wins, as it does for the other choices a rule makes.
+
+**A sound when the rule matches.** Tick **Play a sound when this rule
+matches**, which any rule can carry whatever its action. The sound plays
+once after a mail check that found any match for the rule, however many
+messages matched and however many folders they were in, so a folder of
+matches is one sound and not a hundred. It is one event, **Rule matched**,
+shared by every rule with the box ticked; the sound scheme decides what it
+sounds like, and its row on the Feedback tab of Settings decides what else
+happens with it: by default it is also spoken, "Rule matched, 3 messages",
+and shown on the status bar. A rule without the box ticked plays nothing.
+
+**The labels on a row.** The labels you have put on a message, by hand or
+with a rule that adds one, were shown as a colour and heard as nothing.
+There is now a **Labels** column, off by default: switch it on with `F8`, or
+View then Columns, and every row reads its labels by name, "Work, Money".
+On a conversation row it reads every label on any message in the
+conversation, once each.
+
+Nobody has heard a phrase at the start of a row or the sound after a check
+yet; the tester's copy is the first that will.
 
 ### Message Actions
 

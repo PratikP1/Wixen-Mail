@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 522
+open_count: 523
 waived_count: 0
 fixed_count: 33
-total_count: 555
-last_updated: 2026-09-19T17:45:00.000Z
+total_count: 556
+last_updated: 2026-09-19T20:25:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -570,6 +570,7 @@ last_updated: 2026-09-19T17:45:00.000Z
 | 553 | 11 | unrun-verify | src/presentation/accessibility/feedback.rs |  | 11-09.1: the reproduction of #81 on purpose, and the sounds heard again after a real device change, which need a hand on the machine's Sound settings under a running build. The steps: the program built from the branch and started with WIXEN_MAIL_DATA set to an empty folder (src/common/paths.rs, the one override the paths module honours), so it touches nothing under the wixen-mail folder in LOCALAPPDATA; earcons on; the default output device changed in Windows Sound settings; an event with a sound triggered, Settings saved is the nearest; whether it went silent and what the log said at debug; then a headset unplugged with a sound due, and whether the sound after it plays. Never the installed binary, and never without the override. What the cases prove instead is the seam the crates document: the flag the stream's error callback sets, the reopen before the next sound, the reopen after ten seconds' quiet, the outage told once and the resume | open |  | 2026-09-19T15:50:00.000Z |  |
 | 554 | 11 | unrun-verify | src/application/snippet.rs |  | 11-09.2: what only the tester's ear settles for #82. A row whose message opens with an address heard as the message's first sentence and not the address spelled out; a newsletter's row heard as its first real line and not "View this email in your browser"; a reply's row heard as the new words and not the quote; and after the next start, the rows of messages downloaded before this build heard the new way, the log's line saying how many were put right and in how long on his 17,753. The rules are held one by one in application::snippet's cases and the two places they are reached from in tests/a_snippet_is_the_first_relevant_words.rs; none of it has been heard | open |  | 2026-09-19T17:45:00.000Z |  |
 | 555 | 11 | todo | src/application/long_text.rs |  | 11-09.2: the reader gives a layout table's cell as one run with no space between the blocks in it. Read on 2026-09-19 through pieces_of_markup over the Substack message saved as the public fixture for #90: the whole message arrives as one Table piece whose one cell reads "Forwarded this email? Subscribe here for moreTop three ways ... seven daysActions speak louder than wordsGary MarcusSep 19image with no description", every block's last word run into the next block's first. The snippet rules then skip the whole cell as boilerplate, since it holds the forwarding line, and the row says the subtitle the hidden preheader carried, which is a fair hint by luck rather than by rule. The reader's business, not the snippet's: a cell's blocks want a space or a line between them, in the block walk in long_text.rs, with a case over a cell holding two paragraphs; 18 records name the file | open |  | 2026-09-19T17:45:00.000Z |  |
+| 556 | 11 | unrun-verify | src/presentation/virtual_rows.rs |  | 11-10: what only the tester's ear settles for #62. A rule with Say this first and the phrase Urgent: a row the rule matched heard as "Urgent, Unread, ..." with the phrase before the first column, and as "Urgent" alone when the first cell is empty; the Says first column showing the word once switched on with F8, and Ctrl+Shift+; saying the phrase without "Says first" before it; a rule with the sound box ticked playing the Rule matched tone once after a check that found several matches across folders, and its words "Rule matched, 3 messages" on the Feedback tab's default channels; the Labels column, switched on, read as part of the row, "Work, Money", and on a conversation row every label once. The prefix, the columns, the count and the one signal are held by tests/a_rule_can_change_how_a_row_is_announced.rs; none of it has been heard | open |  | 2026-09-19T20:25:00.000Z |  |
 
 ````json
 [
@@ -7231,6 +7232,18 @@ last_updated: 2026-09-19T17:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T17:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 556,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/virtual_rows.rs",
+    "line": null,
+    "description": "11-10: what only the tester's ear settles for #62. A rule with Say this first and the phrase Urgent: a row the rule matched heard as \"Urgent, Unread, ...\" with the phrase before the first column, and as \"Urgent\" alone when the first cell is empty; the Says first column showing the word once switched on with F8, and Ctrl+Shift+; saying the phrase without \"Says first\" before it; a rule with the sound box ticked playing the Rule matched tone once after a check that found several matches across folders, and its words \"Rule matched, 3 messages\" on the Feedback tab's default channels; the Labels column, switched on, read as part of the row, \"Work, Money\", and on a conversation row every label once. The prefix, the columns, the count and the one signal are held by tests/a_rule_can_change_how_a_row_is_announced.rs; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T20:25:00.000Z",
     "resolved_at": null
   }
 ]

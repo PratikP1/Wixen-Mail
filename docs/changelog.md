@@ -876,6 +876,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A rule can change how a row is announced: a phrase said first, a sound once per check, and
+  the labels as a column.** From the Outlook gap report of 2026-08-27 and the audit of
+  2026-09-15 (#62): conditional formatting in the sense that matters to somebody working by
+  ear was absent, since a rule could mark, flag, move, label or delete a message and could not
+  change a word of what its row says, and a label a rule put on a message was shown as a
+  colour and heard as nothing. Since 2026-09-19 the rule editor (Tools, Message Filters)
+  offers the action **Say this first** with a phrase of up to 40 characters: every message the
+  rule matches as it arrives keeps the phrase, the phrase is the first thing a screen reader
+  says for the row before the first column whatever columns are shown, "Urgent, Unread,
+  Quarterly report", or the phrase alone when the first cell is empty, and a **Says first**
+  column shows it for the eye; the column can be hidden and the prefix cannot. Any rule can
+  tick **Play a sound when this rule matches**: the sound scheme's new event **Rule matched**
+  plays once after a mail check that found a match, however many messages matched and
+  however many folders held them, with the count as its words, "Rule matched, 3 messages";
+  the event has its own row on the Feedback tab and reaches every channel by default. A
+  **Labels** column, off by default and switched on with `F8`, reads a message's labels by
+  name, "Work, Money", and on a conversation row every label on any message in it, once
+  each; sorting by it orders on the names. The manager's list now says an action in the
+  editor's words, "Mark as read", rather than its stored name, "mark_as_read", which it did
+  for every action until now. Known limitations: nobody has heard a phrase at the start of a
+  row, the sound after a check, or the Labels column read as part of the row; the sound is one
+  event for every rule, so two rules with the box ticked sound the same; the built-in Soft
+  Chimes scheme has no clip for the new event and plays its generated tone; a message that
+  arrived before the rule was written has no phrase, and a message keeps its phrase when the
+  rule changes, since the rules run once on arrival.
 - **`Ctrl+Shift+;` reads the row you are on column by column with its headings, and the
   headings spoken on every row are your screen reader's setting.** The tester on 2026-09-15
   from build `0.125.1+g3e633252` under NVDA (#26): "when traversing through the list of
