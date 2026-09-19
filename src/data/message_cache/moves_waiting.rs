@@ -24,7 +24,8 @@
 //! message in to the folder the person last chose.
 
 use super::MessageCache;
-use crate::common::Result;
+use crate::common::{Error, Result};
+use rusqlite::{OptionalExtension, params};
 
 /// What a waiting move asks the server to do.
 ///
@@ -41,6 +42,13 @@ pub enum WhatAWaitingMoveDoes {
     /// Take it off the server, which is what Delete Permanently means, and
     /// what the ordinary delete means inside the trash.
     DeleteOutright,
+    /// Copy it into this folder of the same account.
+    ///
+    /// The waiting row is keyed on the copy's own row here, not the
+    /// original's: the original stays where it is and may have a move of its
+    /// own waiting. `from_folder_path` and `uid` still name the original at
+    /// the server, since that is what the server copies from.
+    Copy { into_folder_path: String },
 }
 
 impl WhatAWaitingMoveDoes {
@@ -50,7 +58,24 @@ impl WhatAWaitingMoveDoes {
             Self::Move { into_folder_path } => ("move", Some(into_folder_path)),
             Self::DeleteToTrash { trash_path } => ("delete_to_trash", Some(trash_path)),
             Self::DeleteOutright => ("delete_outright", None),
+            Self::Copy { into_folder_path } => ("copy", Some(into_folder_path)),
         }
+    }
+
+    /// Back from the columns, where the word is one this version knows.
+    fn from_stored(kind: &str, folder: Option<String>) -> Option<Self> {
+        match (kind, folder) {
+            ("move", Some(into_folder_path)) => Some(Self::Move { into_folder_path }),
+            ("delete_to_trash", Some(trash_path)) => Some(Self::DeleteToTrash { trash_path }),
+            ("delete_outright", _) => Some(Self::DeleteOutright),
+            ("copy", Some(into_folder_path)) => Some(Self::Copy { into_folder_path }),
+            _ => None,
+        }
+    }
+
+    /// Whether the waiting row is a copy that has not reached the server.
+    pub fn is_a_copy(&self) -> bool {
+        matches!(self, Self::Copy { .. })
     }
 
     /// Where the message is meant to end up, for the kinds that have one.
@@ -82,7 +107,39 @@ impl MessageCache {
     /// A message already waiting keeps the folder and the number the server
     /// still has it under, and takes the new ask: the module header says why.
     pub fn keep_a_move_waiting(&self, waiting: &AWaitingMove) -> Result<()> {
-        let _ = waiting;
+        let (kind, into) = waiting.what.as_stored();
+        // Where the server still has it: the earlier row's answer when
+        // there is one, this ask's otherwise.
+        let already: Option<(String, i64)> = self
+            .conn
+            .query_row(
+                "SELECT from_folder_path, uid FROM moves_waiting WHERE message_row_id = ?1",
+                params![waiting.message_row_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
+        let (from, uid) = match already {
+            Some((from, uid)) => (from, uid),
+            None => (waiting.from_folder_path.clone(), i64::from(waiting.uid)),
+        };
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO moves_waiting
+                 (message_row_id, account_id, from_folder_path, uid, kind,
+                  into_folder_path, asked_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    waiting.message_row_id,
+                    waiting.account_id,
+                    from,
+                    uid,
+                    kind,
+                    into,
+                    waiting.asked_at,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("A move could not be kept waiting: {e}")))?;
         Ok(())
     }
 
@@ -92,13 +149,101 @@ impl MessageCache {
     /// than refused, so a database written by a later version still hands
     /// back the moves this one understands instead of failing whole.
     pub fn moves_waiting_for(&self, account_id: &str) -> Result<Vec<AWaitingMove>> {
-        let _ = account_id;
-        Ok(Vec::new())
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT message_row_id, account_id, from_folder_path, uid, kind,
+                        into_folder_path, asked_at
+                 FROM moves_waiting WHERE account_id = ?1
+                 ORDER BY asked_at, message_row_id",
+            )
+            .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
+        read_waiting_rows(statement.query_map(params![account_id], read_a_row))
+    }
+
+    /// Copy a message into another folder on this computer, as this program
+    /// files a row of its own: under a number reserved from the top of the
+    /// folder's range and marked as filed here, with its text beside it.
+    ///
+    /// Every column of the row but the four that make it a different row, read
+    /// from the table's own description rather than listed here, so a column
+    /// added later travels with the copy without anybody remembering this.
+    /// Answers the copy's row.
+    pub fn copy_message_here(&self, message_row_id: i64, into_folder: i64) -> Result<i64> {
+        let uid = self.next_reserved_uid(into_folder)?;
+        let columns = self.columns_of("messages")?;
+        let mut into: Vec<String> = Vec::new();
+        let mut from: Vec<String> = Vec::new();
+        for column in columns.iter().filter(|column| column.as_str() != "id") {
+            into.push(column.clone());
+            from.push(match column.as_str() {
+                "folder_id" => "?1".to_string(),
+                "uid" => "?2".to_string(),
+                "filed_here" => "1".to_string(),
+                other => other.to_string(),
+            });
+        }
+        self.conn
+            .execute(
+                &format!(
+                    "INSERT INTO messages ({}) SELECT {} FROM messages WHERE id = ?3",
+                    into.join(", "),
+                    from.join(", ")
+                ),
+                params![into_folder, uid, message_row_id],
+            )
+            .map_err(|e| Error::Other(format!("The message could not be copied here: {e}")))?;
+        let copy = self.conn.last_insert_rowid();
+        let body_columns = self.columns_of("message_bodies")?;
+        let from: Vec<String> = body_columns
+            .iter()
+            .map(|column| match column.as_str() {
+                "message_id" => "?1".to_string(),
+                other => other.to_string(),
+            })
+            .collect();
+        self.conn
+            .execute(
+                &format!(
+                    "INSERT INTO message_bodies ({}) SELECT {} FROM message_bodies \
+                     WHERE message_id = ?2",
+                    body_columns.join(", "),
+                    from.join(", ")
+                ),
+                params![copy, message_row_id],
+            )
+            .map_err(|e| {
+                Error::Other(format!("The message's text could not be copied here: {e}"))
+            })?;
+        Ok(copy)
+    }
+
+    /// The move waiting for one row, if any.
+    ///
+    /// What a copy of a row that is itself still waiting asks before it is
+    /// kept: the server copies from where it still has the original, which is
+    /// the waiting row's answer and not the row's own folder.
+    pub fn the_move_waiting_for(&self, message_row_id: i64) -> Result<Option<AWaitingMove>> {
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT message_row_id, account_id, from_folder_path, uid, kind,
+                        into_folder_path, asked_at
+                 FROM moves_waiting WHERE message_row_id = ?1",
+            )
+            .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
+        let mut rows = read_waiting_rows(statement.query_map(params![message_row_id], read_a_row))?;
+        Ok(rows.pop())
     }
 
     /// Let one waiting move go, because it went or because it was put back.
     pub fn stop_waiting_for_a_move(&self, message_row_id: i64) -> Result<()> {
-        let _ = message_row_id;
+        self.conn
+            .execute(
+                "DELETE FROM moves_waiting WHERE message_row_id = ?1",
+                params![message_row_id],
+            )
+            .map_err(|e| Error::Other(format!("A waiting move could not be let go: {e}")))?;
         Ok(())
     }
 
@@ -121,7 +266,26 @@ impl MessageCache {
         folder_id: i64,
         uid: u32,
     ) -> Result<()> {
-        let _ = (message_row_id, folder_id, uid);
+        let another_row_is_there: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM messages WHERE folder_id = ?1 AND uid = ?2 AND id <> ?3",
+                params![folder_id, uid, message_row_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("The folder could not be read: {e}")))?;
+        if another_row_is_there.is_some() {
+            return self.let_the_next_read_bring_it(message_row_id);
+        }
+        self.conn
+            .execute(
+                "UPDATE messages
+                 SET folder_id = ?1, uid = ?2, deleted = 0, filed_here = 0
+                 WHERE id = ?3",
+                params![folder_id, uid, message_row_id],
+            )
+            .map_err(|e| Error::Other(format!("The message could not be settled: {e}")))?;
         Ok(())
     }
 
@@ -132,9 +296,54 @@ impl MessageCache {
     /// say: the row here carries a number the server never gave, and left in
     /// place it would sit beside the real message once the folder is read.
     pub fn let_the_next_read_bring_it(&self, message_row_id: i64) -> Result<()> {
-        let _ = message_row_id;
+        self.conn
+            .execute(
+                "DELETE FROM messages WHERE id = ?1",
+                params![message_row_id],
+            )
+            .map_err(|e| Error::Other(format!("The row could not be dropped: {e}")))?;
         Ok(())
     }
+}
+
+/// One row of the table as the two queries above select it, with its kind
+/// still in words.
+fn read_a_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(AWaitingMove, String, Option<String>)> {
+    Ok((
+        AWaitingMove {
+            message_row_id: row.get(0)?,
+            account_id: row.get(1)?,
+            from_folder_path: row.get(2)?,
+            uid: row.get::<_, i64>(3)? as u32,
+            what: WhatAWaitingMoveDoes::DeleteOutright,
+            asked_at: row.get(6)?,
+        },
+        row.get(4)?,
+        row.get(5)?,
+    ))
+}
+
+/// The rows a query answered, each with its kind read, and a row whose kind
+/// this version does not know left out.
+fn read_waiting_rows<'a>(
+    rows: rusqlite::Result<
+        impl Iterator<Item = rusqlite::Result<(AWaitingMove, String, Option<String>)>> + 'a,
+    >,
+) -> Result<Vec<AWaitingMove>> {
+    let rows =
+        rows.map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
+    let mut waiting = Vec::new();
+    for row in rows {
+        let (without_its_kind, kind, into) =
+            row.map_err(|e| Error::Other(format!("A waiting move could not be read: {e}")))?;
+        if let Some(what) = WhatAWaitingMoveDoes::from_stored(&kind, into) {
+            waiting.push(AWaitingMove {
+                what,
+                ..without_its_kind
+            });
+        }
+    }
+    Ok(waiting)
 }
 
 #[cfg(test)]
@@ -439,5 +648,80 @@ mod tests {
         home.let_the_next_read_bring_it(row)
             .expect("the row dropped");
         assert!(home.get_message(row).expect("the read").is_none());
+    }
+
+    #[test]
+    fn test_a_copy_made_here_is_a_marked_row_in_the_destination_with_its_text() {
+        // The original stays exactly where it was; the copy sits in Archive
+        // under a reserved number and the marker, with the text beside it, so
+        // it can be opened before the server has it.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let inbox = the_folder(&home, "INBOX");
+        let archive = the_folder(&home, "Archive");
+        home.save_message_body(row, Some("One o'clock?"), None)
+            .expect("the text");
+
+        let copy = home.copy_message_here(row, archive).expect("copied here");
+
+        assert_ne!(copy, row);
+        assert_eq!(where_the_row_is(&home, row), (inbox, 42, false, false));
+        let (folder, uid, deleted, marked) = where_the_row_is(&home, copy);
+        assert!(
+            folder == archive && uid != 42 && !deleted && marked,
+            "(folder, uid, deleted, filed here) = {:?}",
+            (folder, uid, deleted, marked)
+        );
+        assert_eq!(
+            home.get_message(copy)
+                .expect("the copy")
+                .expect("its row")
+                .message_id,
+            "lunch.42@example.com",
+            "the copy lost the identifier the server is asked for it by"
+        );
+        assert_eq!(
+            home.get_message_body(copy)
+                .expect("the copy's text")
+                .and_then(|body| body.body_plain),
+            Some("One o'clock?".to_string())
+        );
+        assert!(
+            home.stored_uids(archive)
+                .expect("the uids the sync compares")
+                .is_empty(),
+            "the sync would forget the copy at the next read of Archive"
+        );
+    }
+
+    #[test]
+    fn test_a_waiting_copy_is_keyed_on_the_copy_and_names_the_original_at_the_server() {
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let copy = home
+            .copy_message_here(row, the_folder(&home, "Archive"))
+            .expect("copied here");
+        home.keep_a_move_waiting(&AWaitingMove {
+            message_row_id: copy,
+            what: WhatAWaitingMoveDoes::Copy {
+                into_folder_path: "Archive".to_string(),
+            },
+            ..a_move_of(row, 42, "INBOX", "Archive")
+        })
+        .expect("a copy kept");
+
+        let waiting = home
+            .the_move_waiting_for(copy)
+            .expect("the read")
+            .expect("it waits");
+        assert_eq!(
+            (waiting.from_folder_path.as_str(), waiting.uid),
+            ("INBOX", 42)
+        );
+        assert!(waiting.what.is_a_copy());
+        assert!(
+            home.the_move_waiting_for(row).expect("the read").is_none(),
+            "the original was recorded as waiting for something"
+        );
     }
 }
