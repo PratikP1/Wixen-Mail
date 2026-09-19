@@ -251,6 +251,36 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **An address written out in a message is a link.** The tester on 2026-09-19, on build
+  `1.0.0-alpha.1` under NVDA (#89): a FanFiction chapter alert, sent as plain text with the
+  chapter's address on a line of its own, showed the address as text and NVDA's link list
+  found nothing. The address was text on purpose, the fix of an older fault: the reader used
+  to guess whether a message was markup by looking for angle brackets, and a bare address in a
+  plain-text message was deleted for looking like a tag, so since then a plain-text message
+  has been shown as characters and nothing made an address a link. Since 2026-09-19 one rule
+  recognises an address in text this program already knows is text: an address beginning
+  `http://`, `https://` or `www.`, a `mailto:`, or a plain email address such as
+  `ada@example.org`. A full stop, a comma, a quote or a closing bracket after the address is
+  left outside it, and a bracket the address opened itself, as a Wikipedia title does, stays
+  part of it, which is the rule the composer already applies to a typed link. A bare site name
+  with nothing in front of it, a version number, a handle, and an address the program would
+  not open are left as words. Every link made this way passes the same check a sender's own
+  link passes before it can be followed. It applies in the preview and the reader window for
+  a plain-text message, in the quoted text of a reply to one, in a note shown as a page, and
+  in an event's or a task's description read aloud, where an address is said as "link to" its
+  site, "link to example.org", rather than letter by letter, and an email address is said
+  whole. The row's snippet still leaves an address out, as it has since #82. The sanitiser was
+  read against the schemes a sender writes and kept them: a `mailto:`, a telephone number, an
+  address with a port, one with a space in it, and a link to a place in the same page all
+  survive. Telephone links, `tel:`, are opened from this build, since Windows opens the
+  dialler or asks which program takes them and runs nothing. A link of any other kind the
+  program will not open, `sms:` for one, kept its address in the page and did nothing on
+  `Enter`; it now keeps its words followed by "(link not opened here:" and the reason. Known
+  limitations: the plain-text reader window, chosen under Settings, Reading, is a text
+  control and has no links, so an address there is still characters with a caret; where a
+  followed link opens is #80's and unchanged here; a script link a sender writes is dropped
+  by the sanitiser before the note can name it, so its words stay with no note; and nobody
+  has listed the links of the tester's message under NVDA yet.
 - **The sounds keep playing after hours open, follow the output device, and say once when no
   device can be opened.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef`
   (#81): after a few hours open the earcons went silent and nothing said so. The output device

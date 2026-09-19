@@ -294,12 +294,16 @@ pub fn spoken(written: &str) -> String {
     // and was read out as brackets, parentheses and the whole address. What
     // decides it now is whether reading it changed anything: if the words that
     // came out match the words that went in, nothing was marked up.
+    //
+    // One thing is said differently even then: an address written out is
+    // said as a link to its host (#89), for the reason a link's words are
+    // said without its address. The words round it are exactly as written.
     if pieces
         .iter()
         .all(|piece| matches!(piece, Piece::Paragraph(_)))
         && the_same_words(&pieces, written)
     {
-        return written.trim().to_string();
+        return with_addresses_said(written.trim());
     }
     // How deep the list already is, as far as anybody listening knows. Cleared
     // by anything that is not a list item, so a list after a heading starts
@@ -313,14 +317,17 @@ pub fn spoken(written: &str) -> String {
                 depth,
                 text,
             } => {
-                let said = an_item_announced(*ordered, *depth, already_at, text);
+                let said =
+                    an_item_announced(*ordered, *depth, already_at, &with_addresses_said(text));
                 already_at = Some(*depth);
                 said
             }
             settled => {
                 already_at = None;
                 match settled {
-                    Piece::Heading { level, text } => format!("heading level {level}, {text}"),
+                    Piece::Heading { level, text } => {
+                        format!("heading level {level}, {}", with_addresses_said(text))
+                    }
                     Piece::Table { columns, rows } => a_table_said(columns, rows),
                     _ => a_settled_piece_said(settled),
                 }
@@ -328,6 +335,12 @@ pub fn spoken(written: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The words with each address written out in them said as a link to its
+/// host: the one rule, in [`crate::application::links_in_text::spoken`].
+fn with_addresses_said(text: &str) -> String {
+    crate::application::links_in_text::spoken(text)
 }
 
 /// One list item, with its depth said only where it is news.
@@ -410,7 +423,7 @@ fn counted(how_many: usize, noun: &str) -> String {
 /// The pieces whose announcement does not depend on what came before them.
 fn a_settled_piece_said(piece: &Piece) -> String {
     match piece {
-        Piece::Quote(text) => format!("quote, {text}"),
+        Piece::Quote(text) => format!("quote, {}", with_addresses_said(text)),
         Piece::Image(described) if described.is_empty() => {
             // Said rather than skipped. The sender left no description,
             // and that is worth knowing: it is why the picture cannot be
@@ -419,7 +432,7 @@ fn a_settled_piece_said(piece: &Piece) -> String {
             format!("image with {NO_DESCRIPTION}")
         }
         Piece::Image(described) => format!("image, {described}"),
-        Piece::Paragraph(text) => text.clone(),
+        Piece::Paragraph(text) => with_addresses_said(text),
         // Reached from the arm above only for the pieces that do not
         // depend on what came before them, so a list item and a table have
         // both already been answered.
@@ -472,8 +485,59 @@ pub fn as_markup(written: &str) -> String {
     });
 
     let mut rendered = String::new();
-    pulldown_cmark::html::push_html(&mut rendered, as_typed);
+    pulldown_cmark::html::push_html(&mut rendered, with_addresses_linked(as_typed));
     ammonia::clean(&rendered)
+}
+
+/// The same events, with every bare address in the text made a link.
+///
+/// Markdown has no rule for an address written out, and the parser this
+/// uses has no option for one, so an address typed into a note is text in
+/// the page and NVDA's link list finds nothing (#89). The text events are
+/// split by the one recogniser and a link is put round each address it
+/// finds, through the same gate a typed link passes. Text inside a code
+/// block, a link that already has words, or a picture's description is
+/// left as it is: an address in code is code, a link's words are its
+/// words, and a picture's description is not a place to put a link.
+fn with_addresses_linked<'a>(
+    events: impl Iterator<Item = Event<'a>>,
+) -> impl Iterator<Item = Event<'a>> {
+    let mut inside_something_that_is_not_text = 0usize;
+    events.flat_map(move |event| {
+        match &event {
+            Event::Start(Tag::CodeBlock(_) | Tag::Link { .. } | Tag::Image { .. }) => {
+                inside_something_that_is_not_text += 1;
+            }
+            Event::End(TagEnd::CodeBlock | TagEnd::Link | TagEnd::Image) => {
+                inside_something_that_is_not_text =
+                    inside_something_that_is_not_text.saturating_sub(1);
+            }
+            _ => {}
+        }
+        match event {
+            Event::Text(run) if inside_something_that_is_not_text == 0 => {
+                crate::application::links_in_text::addresses_in(&run)
+                    .into_iter()
+                    .flat_map(|piece| match piece {
+                        crate::application::links_in_text::Piece::Text(words) => {
+                            vec![Event::Text(words.to_string().into())]
+                        }
+                        crate::application::links_in_text::Piece::Address { shown, href } => vec![
+                            Event::Start(Tag::Link {
+                                link_type: pulldown_cmark::LinkType::Autolink,
+                                dest_url: href.into(),
+                                title: "".into(),
+                                id: "".into(),
+                            }),
+                            Event::Text(shown.to_string().into()),
+                            Event::End(TagEnd::Link),
+                        ],
+                    })
+                    .collect::<Vec<_>>()
+            }
+            kept => vec![kept],
+        }
+    })
 }
 
 pub fn from_markup(html: &str) -> String {

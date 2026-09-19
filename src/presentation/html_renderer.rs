@@ -9,7 +9,12 @@ use std::sync::OnceLock;
 // if one of them is edited into something invalid, which every test in this
 // module would catch on the first run.
 
-const SAFE_URL_SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
+/// The schemes this program hands to Windows to open, and the only ones.
+///
+/// `tel:` since 2026-09-19 (#89): a "call us" link opens the dialler or
+/// asks which program takes it, and runs nothing. Every other scheme the
+/// cleaner admits stays in the page as words with a note beside them.
+const SAFE_URL_SCHEMES: [&str; 4] = ["http://", "https://", "mailto:", "tel:"];
 
 /// The language a message document asks to be read in.
 ///
@@ -85,6 +90,102 @@ fn one_attribute(tag: &str, name: &str) -> Option<String> {
         .captures(tag)?
         .get(1)
         .map(|found| found.as_str().to_string())
+}
+
+/// A plain-text part as the page shows it: characters, with its line
+/// breaks kept and the addresses in it made links.
+///
+/// Escaped rather than sanitised, because it is text and not markup: "if a
+/// < b and c > d" is a sentence, and the sanitiser deletes anything
+/// tag-shaped. What the recogniser adds is an anchor round each address it
+/// finds, through the one gate a sender's link passes, so a bare address on
+/// a line of its own is a link a screen reader lists (#89).
+fn plain_text_as_a_page(text: &str) -> String {
+    format!(
+        "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
+        crate::application::links_in_text::as_html(text)
+    )
+}
+
+/// A whole anchor as ammonia writes it, its opening tag and its words apart.
+///
+/// Only ever run over cleaned markup, where an anchor cannot hold another
+/// and every value is in double quotes, which is why this can be a pattern
+/// rather than a parser.
+fn anchor_whole_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"(?is)<a\b([^>]*)>(.*?)</a>").expect("valid whole anchor regex")
+    })
+}
+
+/// What the page says beside the words of a link this program will not open.
+///
+/// The composer says the same of a typed address it refuses: the words
+/// are left as they are and the refusal is said, rather than the address
+/// going in silence (guardrail 9). One constant, one caller.
+const NOT_OPENED_HERE: &str = "link not opened here";
+
+/// Every link in cleaned markup that this program will not open, turned
+/// into its words with the reason beside them.
+///
+/// The cleaner admits more schemes than this program hands to Windows:
+/// `sms:`, `sip:`, `ftp:` and twenty others survive it, and until 2026-09-19
+/// each stayed a link in the page that Enter did nothing about. The one
+/// rule is [`HtmlRenderer::safe_external_url`], asked here of every href
+/// the cleaner kept; a link it refuses loses its anchor and keeps its words,
+/// followed by the scheme it was refused for, or "the address" when the
+/// scheme is one this opens and the address itself is not. A link with no
+/// scheme is a place in the page, which the page moves to on its own, and
+/// is left alone.
+///
+/// A `javascript:` link never reaches here: the cleaner refuses it and
+/// drops the href on its own, so the words stay with no note. Admitting
+/// the scheme in order to name it would make this pass the only thing
+/// between a script and the page.
+fn say_which_links_are_not_opened_here(cleaned: &str) -> String {
+    anchor_whole_re()
+        .replace_all(cleaned, |caught: &regex::Captures<'_>| {
+            let (whole, opening, words) = (&caught[0], &caught[1], &caught[2]);
+            match one_attribute(opening, "href").and_then(|href| why_not_opened_here(&href)) {
+                Some(why) => format!("{words} ({NOT_OPENED_HERE}: {why})"),
+                None => whole.to_string(),
+            }
+        })
+        .into_owned()
+}
+
+/// Why this program will not open an href, or nothing when it will.
+fn why_not_opened_here(href: &str) -> Option<String> {
+    let scheme = scheme_of(href)?;
+    if HtmlRenderer::safe_external_url(href).is_some() {
+        return None;
+    }
+    let lower = href.to_ascii_lowercase();
+    let the_scheme_is_one_this_opens = SAFE_URL_SCHEMES
+        .iter()
+        .any(|allowed| lower.starts_with(allowed));
+    Some(if the_scheme_is_one_this_opens {
+        "the address".to_string()
+    } else {
+        scheme
+    })
+}
+
+/// The scheme in front of an address, lower case, or nothing when the
+/// address has none and is a place in the page or a path on it.
+///
+/// A scheme is a letter followed by letters, digits, `+`, `-` and `.`, up
+/// to a colon, which is the grammar the cleaner's own parser applies; so
+/// what comes back here is a word made of those characters and nothing a
+/// sender wrote reaches the page through it.
+fn scheme_of(href: &str) -> Option<String> {
+    let (scheme, _) = href.split_once(':')?;
+    let mut letters = scheme.chars();
+    let first = letters.next()?;
+    (first.is_ascii_alphabetic()
+        && letters.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
+    .then(|| scheme.to_ascii_lowercase())
 }
 
 /// An `alt` attribute that is present and empty, which is the decorative mark.
@@ -407,11 +508,17 @@ impl HtmlRenderer {
     /// A caller that shows a message wants both: the markup to show and the
     /// sentence to put above it. Counting a second time somewhere else would be
     /// two answers to one question.
+    ///
+    /// This is the reading path, so a link this program will not open says
+    /// so here. [`Self::sanitize_html`] does not, because it also cleans a
+    /// message on its way out, and the note is for the person reading, not
+    /// for the person being written to.
     pub fn sanitize_and_count_held_back(&self, html: &str) -> (String, usize) {
         if self.plain_text_only {
             return (self.sanitize_html(html), 0);
         }
-        self.hold_back_what_would_be_fetched(&cleaner().clean(html).to_string())
+        let cleaned = say_which_links_are_not_opened_here(&cleaner().clean(html).to_string());
+        self.hold_back_what_would_be_fetched(&cleaned)
     }
 
     /// Convert HTML to accessible plain text
@@ -623,10 +730,7 @@ impl HtmlRenderer {
                     self.what_a_reader_is_told_was_held_back(held_back)
                 )
             }
-            MessageBody::Plain(text) => format!(
-                "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
-                html_escape::encode_text(text)
-            ),
+            MessageBody::Plain(text) => plain_text_as_a_page(text),
         };
         self.wrap_prepared(&content, "Back to message list (Escape)")
     }
@@ -830,10 +934,7 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
                         self.what_a_reader_is_told_was_held_back(held_back)
                     )
                 }
-                MessageBody::Plain(text) => format!(
-                    "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
-                    html_escape::encode_text(text)
-                ),
+                MessageBody::Plain(text) => plain_text_as_a_page(text),
             };
             body.push_str(&content);
             body.push('\n');
@@ -875,6 +976,9 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
                 }
             }
             if lower.starts_with("mailto:") && !trimmed[7..].contains('@') {
+                return None;
+            }
+            if lower.starts_with("tel:") && trimmed[4..].is_empty() {
                 return None;
             }
             return Some(trimmed.to_string());
@@ -2144,6 +2248,108 @@ mod tests {
         assert_eq!(links[0].url, "mailto:test@example.com");
     }
 
+    // ── The schemes a sender writes, read through the cleaner ───────────
+    //
+    // A corpus, one case per shape (#89). A link the reader keeps has its
+    // href and its words in the page; a link it will not open keeps its
+    // words and says so beside them, on the row of the link, rather than
+    // losing its address in silence.
+
+    /// A sender's anchor, read the way a message is shown.
+    fn a_senders_link_shown(href: &str) -> String {
+        HtmlRenderer::with_fetching(Fetching::Blocked)
+            .sanitize_and_count_held_back(&format!("<p>Call <a href=\"{href}\">us</a> today</p>"))
+            .0
+    }
+
+    #[test]
+    fn test_a_mailto_link_a_sender_writes_is_kept() {
+        let shown = a_senders_link_shown("mailto:ada@example.org");
+        assert!(shown.contains("href=\"mailto:ada@example.org\""), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_telephone_link_a_sender_writes_is_kept() {
+        // Opening it hands the number to Windows, which opens the dialler or
+        // asks, and runs nothing.
+        let shown = a_senders_link_shown("tel:+441234567");
+        assert!(shown.contains("href=\"tel:+441234567\""), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_web_link_with_a_port_is_kept() {
+        let shown = a_senders_link_shown("https://example.org:8443/path");
+        assert!(
+            shown.contains("href=\"https://example.org:8443/path\""),
+            "{shown}"
+        );
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_web_link_with_a_space_in_it_is_kept_as_the_cleaner_leaves_it() {
+        // Measured rather than assumed: the cleaner checks the scheme and
+        // writes the value back as it was, space included, and the gate
+        // refuses only a control character, which a space is not.
+        let shown = a_senders_link_shown("https://example.org/a b");
+        assert!(
+            shown.contains("href=\"https://example.org/a b\""),
+            "{shown}"
+        );
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_link_to_a_place_in_the_same_page_is_kept() {
+        // Not this program's to open: the page moves to it on its own.
+        let shown = a_senders_link_shown("#section");
+        assert!(shown.contains("href=\"#section\""), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_link_with_a_scheme_this_will_not_open_keeps_its_words_and_says_so() {
+        // The cleaner admits sms: on its own, and this program will not hand
+        // it to Windows, so the page said nothing and Enter did nothing.
+        let shown = a_senders_link_shown("sms:+441234567");
+        assert!(!shown.contains("sms:"), "the address is gone: {shown}");
+        assert!(
+            shown.contains("<p>Call us (link not opened here: sms) today</p>"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn test_a_link_refused_for_its_address_rather_than_its_scheme_says_the_address() {
+        // https is a scheme this opens; a name before the host is not an
+        // address it will follow, since it reads as one site and goes to
+        // another.
+        let shown = a_senders_link_shown("https://apple.example@evil.example");
+        assert!(
+            !shown.contains("evil.example"),
+            "the address is gone: {shown}"
+        );
+        assert!(
+            shown.contains("<p>Call us (link not opened here: the address) today</p>"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn test_a_script_link_loses_its_address_before_this_program_sees_it() {
+        // The cleaner refuses javascript: and drops the href on its own, so
+        // there is nothing left to say which scheme it was; the words stay,
+        // with no note. Admitting the scheme so as to write the note would
+        // make the note's pass the only thing between the script and the
+        // page, which is not a trade to make for a sentence.
+        let shown = a_senders_link_shown("javascript:alert(1)");
+        assert!(!shown.contains("javascript:"), "{shown}");
+        assert!(shown.contains("us"), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
     // ── Hostile input ───────────────────────────────────────────────────
     //
     // Message bodies arrive from strangers. Everything below is an assertion
@@ -2515,6 +2721,19 @@ mod tests {
     }
 
     #[test]
+    fn test_safe_external_url_allows_a_telephone_number_and_refuses_an_empty_one() {
+        // A "call us" link. Windows opens the dialler or asks which program
+        // takes it, and runs nothing; a tel: with no number is nothing to
+        // hand over.
+        assert_eq!(
+            HtmlRenderer::safe_external_url("tel:+441234567"),
+            Some("tel:+441234567".to_string())
+        );
+        assert!(HtmlRenderer::safe_external_url("TEL:0123").is_some());
+        assert!(HtmlRenderer::safe_external_url("tel:").is_none());
+    }
+
+    #[test]
     fn test_fuzz_no_fuzzed_body_yields_an_openable_dangerous_url() {
         for seed in 0..4000u64 {
             let body = fuzz_body(seed);
@@ -2524,7 +2743,8 @@ mod tests {
                     assert!(
                         lower.starts_with("http://")
                             || lower.starts_with("https://")
-                            || lower.starts_with("mailto:"),
+                            || lower.starts_with("mailto:")
+                            || lower.starts_with("tel:"),
                         "seed {} produced openable {:?}",
                         seed,
                         openable

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 191 records have arrived since and have not been through it.
+# 197 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16925,7 +16925,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/drafts.rs", tests = 6 },
-    { file = "src/presentation/html_renderer.rs", tests = 83 },
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
 ]
 
 # ── An empty description quietly becoming a decorative mark ─────────────────
@@ -17053,7 +17053,7 @@ red = [
     "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 83 },
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
 ]
 
 # ── This reader's words reaching somebody else's message ────────────────────
@@ -17074,6 +17074,17 @@ tests_last_seen = [
 # One is the sanitiser assertion the decorative mark rests on.
 #
 # Measured by hand on 2026-09-06 the same way. Three tests in 6,427.
+#
+# Two of the three read this machine's profile. `editor_document` builds its
+# renderer through `HtmlRenderer::new`, which takes the announcing answer
+# from the stored settings, and on 2026-09-19 the profile the tests read on
+# this machine held `announce_decorative_pictures` false, so the break's
+# rewrite answered silence and the two trips stayed green with the guard
+# broken: 1 of 3 here, 3 of 3 on a runner, whose profile is fresh and whose
+# default is on. Measured that day through `scripts/guards.sh --remeasure`
+# with `WIXEN_MAIL_DATA` pointed at an empty folder, which is a fresh
+# profile: the three named, as recorded. A record that reads the profile is
+# measured that way from here on, and says so.
 
 [[guard]]
 name = "a message on its way out does not pick up this reader's own words"
@@ -17086,7 +17097,7 @@ red = [
     "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 83 },
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
 ]
 
 # ── An owner of credential store entries that nobody registered ─────────────
@@ -17586,6 +17597,9 @@ tests_last_seen = [
 # two reading paths lost the count rather than both at once.
 #
 # Measured by hand with --all-targets --no-fail-fast from a green tree.
+# Rewritten 2026-09-19 onto the branch as 11-10.1 left it, the plain arm now
+# one call to `plain_text_as_a_page`, and measured again through
+# `scripts/guards.sh --remeasure`: the same three.
 
 [[guard]]
 name = "the count of held-back pictures reaches the reader"
@@ -17597,19 +17611,13 @@ before = """            MessageBody::Html(html) | MessageBody::Multipart { html,
                     self.what_a_reader_is_told_was_held_back(held_back)
                 )
             }
-            MessageBody::Plain(text) => format!(
-                "<pre style=\\"white-space:pre-wrap;font-family:inherit\\">{}</pre>",
-                html_escape::encode_text(text)
-            ),
+            MessageBody::Plain(text) => plain_text_as_a_page(text),
         };
         self.wrap_prepared(&content, "Back to message list (Escape)")"""
 after = """            MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
                 self.sanitize_and_count_held_back(html).0
             }
-            MessageBody::Plain(text) => format!(
-                "<pre style=\\"white-space:pre-wrap;font-family:inherit\\">{}</pre>",
-                html_escape::encode_text(text)
-            ),
+            MessageBody::Plain(text) => plain_text_as_a_page(text),
         };
         self.wrap_prepared(&content, "Back to message list (Escape)")"""
 red = [
@@ -17618,7 +17626,7 @@ red = [
     "presentation::html_renderer::tests::test_a_message_being_written_is_not_told_its_own_sender_would_have_learned",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 83 },
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
 ]
 [[guard]]
 name = "the composer asks for the renderer that does not name a sender"
@@ -17645,7 +17653,7 @@ red = [
     "presentation::html_renderer::tests::test_the_constructor_the_composer_calls_is_the_one_that_stays_quiet",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 83 },
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
 ]
 
 # ── An ordinary message grows nothing ───────────────────────────────────────
@@ -17679,7 +17687,7 @@ red = [
     "presentation::html_renderer::tests::test_a_message_with_nothing_held_back_says_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 83 },
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
 ]
 
 # ── Unblocking one address, by taking off the domain block over it ──────────
@@ -27543,4 +27551,145 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
+]
+
+# ── 11-10.1: an address written out is a link (#89) ─────────────────────────
+
+# The closing bracket at the end of an address is treated as part of it
+# whether or not the address opened it, which is the truncation the
+# composer's link rule was written against, turned round: "(see
+# https://x.org/s/1)" makes a link to "https://x.org/s/1)", a page that
+# does not exist, with nothing said. The break makes the bracket arm answer
+# that a closing bracket is always the address's own. The two bracket cases
+# go red; the case with a balanced pair stays green, since it was never cut.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an address keeps the bracket it opened and not the one that closes the sentence round it"
+file = "src/application/links_in_text.rs"
+before = """            ')' => closes_more_than_it_opens(candidate, '(', ')'),"""
+after = """            ')' => false,"""
+red = [
+    "application::links_in_text::tests::test_a_balanced_bracket_is_kept_and_the_one_closing_the_sentence_is_not",
+    "application::links_in_text::tests::test_a_bracket_closing_a_pair_the_address_did_not_open_is_left_outside_it",
+]
+tests_last_seen = [
+    { file = "src/application/links_in_text.rs", tests = 29 },
+]
+
+# The shape rule loosened to any word with a dot in it, so a version
+# number, a decimal and a bare host are addresses by shape. The message is
+# held by a second rule the break does not touch: a word with no scheme is
+# given mailto: and the sanitiser refuses a mailto: with nobody in it, so
+# "a.b" stays text there and the recogniser's own non-address cases stay
+# green. The snippet has no second rule, since a hint drops what looks like
+# an address without asking whether it opens, and its cases with a dotted
+# word in them go red. The record measures the shape rule where it is bare.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a word with a dot in it is a word and not an address, by the one shape rule"
+file = "src/application/links_in_text.rs"
+before = """        || is_a_bare_email_address(&lower)"""
+after = """        || lower.contains('.')"""
+red = [
+    "application::links_in_text::tests::test_the_shape_rule_names_the_five_shapes_and_nothing_looser",
+    "application::snippet::tests::test_a_word_with_a_dot_or_an_at_sign_in_it_is_not_an_address",
+]
+tests_last_seen = [
+    { file = "src/application/links_in_text.rs", tests = 29 },
+    { file = "src/application/snippet.rs", tests = 39 },
+]
+
+# The gate skipped: an address by shape becomes a link whatever the
+# sanitiser says of it, so "https://apple.example@evil.example" is a link
+# the program made to a page that reads as one site and goes to another,
+# which is the one rewriting T-11-99 forbids. The break hands the address
+# on without asking. The case that names three refused addresses goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an address the sanitiser refuses stays text rather than becoming a link the program made"
+file = "src/application/links_in_text.rs"
+before = """    let href = HtmlRenderer::safe_external_url(&as_followed(shown))?;"""
+after = """    let href = as_followed(shown);"""
+red = [
+    "application::links_in_text::tests::test_an_address_the_sanitiser_refuses_stays_text",
+]
+tests_last_seen = [
+    { file = "src/application/links_in_text.rs", tests = 29 },
+]
+
+# The plain branch put back to escaping alone, which is the page as the
+# tester met it: a plain-text message is characters and its chapter
+# address is not a link. The break is the one call in the branch; both
+# plain branches of the renderer go through it, so both lose the links at
+# once. On the target the tester's message and the angle-bracket case go
+# red; the reply's cases go through the composer's own call and stay green.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a plain-text message shown as a page has its addresses as links, not as characters"
+file = "src/presentation/html_renderer.rs"
+suite = "an_address_written_out_is_a_link"
+before = """        crate::application::links_in_text::as_html(text)
+    )"""
+after = """        html_escape::encode_text(text)
+    )"""
+red = [
+    "test_a_plain_message_keeps_its_angle_brackets_as_characters_round_a_link",
+    "test_the_testers_message_shown_as_a_page_has_its_three_addresses_as_links",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "tests/an_address_written_out_is_a_link.rs", tests = 11 },
+]
+
+# A code block's text linked like any other text: the recogniser stops
+# counting a code block as somewhere it must not look, so an address in a
+# fenced block becomes an anchor inside the block. A code span is not the
+# same break, since the parser hands a span over as a code event and never
+# as text, so no one-line edit here makes a span's address a link. On the
+# target the code case goes red on its block half; the note with a bare
+# address and the note with a link that has words stay green.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "an address in a note's code block stays code, not a link inside the block"
+file = "src/application/long_text.rs"
+suite = "an_address_written_out_is_a_link"
+before = """            Event::Start(Tag::CodeBlock(_) | Tag::Link { .. } | Tag::Image { .. }) => {"""
+after = """            Event::Start(Tag::Link { .. } | Tag::Image { .. }) => {"""
+red = [
+    "test_a_note_with_an_address_in_code_keeps_it_as_code",
+]
+tests_last_seen = [
+    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "tests/an_address_written_out_is_a_link.rs", tests = 11 },
+]
+
+# tel: gone from the schemes this program opens, spelled as tel:// so the
+# array keeps its length: a sender's "call us" link is refused at the gate
+# and the page says so beside its words, which is what the page did before
+# 2026-09-19 without the note. The corpus case for a telephone link and the
+# gate's own tel: case go red; every other scheme's case stays green.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a telephone link is one this program opens, not one it refuses with a note"
+file = "src/presentation/html_renderer.rs"
+before = """const SAFE_URL_SCHEMES: [&str; 4] = ["http://", "https://", "mailto:", "tel:"];"""
+after = """const SAFE_URL_SCHEMES: [&str; 4] = ["http://", "https://", "mailto:", "tel://"];"""
+red = [
+    "presentation::html_renderer::tests::test_a_telephone_link_a_sender_writes_is_kept",
+    "presentation::html_renderer::tests::test_safe_external_url_allows_a_telephone_number_and_refuses_an_empty_one",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
 ]

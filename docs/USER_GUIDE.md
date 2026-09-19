@@ -217,6 +217,44 @@ message that has text. The whole message, addresses and all, is in the message
 itself. Until 2026-09-19 the column held the first 200 characters as written,
 so a message that opened with a link read the whole link out.
 
+### Addresses written out are links
+
+A web address or an email address written out in a message is a link, since
+2026-09-19. That matters most in a message sent as plain text, such as a
+chapter alert or a notification, where the sender typed the address on a line
+of its own rather than putting it behind words: the address is a link in the
+preview and in the reader window, your screen reader's link list finds it,
+and it goes where any link in a message goes. Until then a plain-text message
+was shown as characters only, so the address was there to read and nowhere to
+go.
+
+What is recognised: an address beginning `http://` or `https://`, one
+beginning `www.`, a `mailto:` address, and a plain email address such as
+`ada@example.org`. A full stop, a comma or a closing bracket after an address
+is left outside it, so "see https://example.org/page." links to the page and
+not to the page with a full stop on the end; a bracket the address itself
+opened, as in a Wikipedia title, stays part of it. What is not recognised: a
+bare site name with nothing in front of it, `example.org`; a version number,
+`1.2.3`; a handle, `@ada`; and anything the program would not open, such as an
+address with a name before the site, which is left as words.
+
+The same rule reaches the other areas. A note shown as a page has its
+addresses as links. An event's or a task's description read aloud with
+`Space`, and a note read back, say an address as "link to" its site, "link to
+example.org", rather than spelling it out letter by letter; an email address
+is said whole. In a reply, the quoted text of a plain-text message carries the
+sender's addresses as links too.
+
+A link the program will not open says so beside its words. Wixen Mail hands
+web addresses, email addresses and, since 2026-09-19, telephone numbers to
+Windows and nothing else, because anything else could start a program on your
+machine that the sender chose. A sender's link of any other kind keeps its
+words, followed by "(link not opened here:" and the reason, so nothing goes
+missing in silence: "Text us (link not opened here: sms)".
+
+The row's Snippet column is the one place an address is not a link and not
+said at all: a row is a hint, and the address is in the message.
+
 ### When a message counts as read
 
 Moving through the list never marks anything. You can arrow through a folder,

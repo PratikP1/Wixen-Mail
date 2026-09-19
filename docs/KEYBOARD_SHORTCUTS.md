@@ -184,9 +184,9 @@ again replaces what was said rather than reading both answers out.
 ### The Reader Window
 
 `Enter` on a message opens it, formatted: the sender's headings are headings so
-`H` moves between them, their links are links your screen reader can list, and a
-table is a table. `Enter` on a message that belongs to a conversation opens the
-conversation tree first.
+`H` moves between them, their links are links your screen reader can list,
+including an address the sender wrote out, and a table is a table. `Enter` on
+a message that belongs to a conversation opens the conversation tree first.
 
 **To read in plain text instead**, set Settings, Reading, "Open messages" to
 plain text. That gives you the text control described below, with a caret you
