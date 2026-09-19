@@ -706,30 +706,31 @@ impl Default for ScreenReaderBridge {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A `tracing` subscriber that keeps every event's level and message, so a
     /// test can see which one fired without asking a real screen reader to
     /// listen for it.
     ///
-    /// Nothing else in this crate captures what `tracing` emits: every other
-    /// guard in this file pins behaviour through the bridge's own state
-    /// instead. `set_live_region`'s two log lines are the one place here
-    /// where correct and broken code differ only in which line is written, so
-    /// this exists to see that difference.
+    /// Written here for `set_live_region`'s two log lines, the one place in
+    /// this file where correct and broken code differ only in which line is
+    /// written. Since 2026-09-19 the earcon player's outage tests in
+    /// `feedback.rs` read it too, to count that a device that stays gone is
+    /// written to the log once and not once per sound, which is why it and
+    /// its two readers are `pub(crate)`.
     #[derive(Clone, Default)]
-    struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<(tracing::Level, String)>>>);
+    pub(crate) struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<(tracing::Level, String)>>>);
 
     impl CapturedLogs {
-        fn events(&self) -> Vec<(tracing::Level, String)> {
+        pub(crate) fn events(&self) -> Vec<(tracing::Level, String)> {
             self.0
                 .lock()
                 .expect("a fresh mutex is not poisoned")
                 .clone()
         }
 
-        fn has(&self, level: tracing::Level, contains: &str) -> bool {
+        pub(crate) fn has(&self, level: tracing::Level, contains: &str) -> bool {
             self.events()
                 .iter()
                 .any(|(seen, message)| *seen == level && message.contains(contains))

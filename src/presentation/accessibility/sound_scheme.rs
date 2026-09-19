@@ -51,9 +51,9 @@ impl SoundScheme {
     /// The scheme every installation starts on: no files, every event plays
     /// its own synthesized tone.
     ///
-    /// Off by default is the earcon channel's own choice
-    /// (`FeedbackSettings::default`); this is a separate, second default,
-    /// for what plays on the occasions it is on.
+    /// Whether the earcon channel is on is that channel's own choice
+    /// (`FeedbackSettings::default`, on since 2026-09-18); this is a
+    /// separate, second default, for what plays when it is.
     pub fn generated() -> Self {
         Self {
             id: "generated".to_string(),

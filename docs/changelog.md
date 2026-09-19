@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The sounds are on from the start, and landing on a message with an attachment says the
+  word once.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef` under NVDA
+  (#77): landing on a message with an attachment said "attachment" more than once, from the
+  Attachment column NVDA reads in the row, from the spoken "Has attachment" event, and from
+  the sound when it was on. Pratik's decision the same day: the sound on by default for this
+  event, the spoken announcement off by default, the column kept, since it carries the fact
+  in the row; and the sounds on by default for every event, which his own settings already
+  had. Since 2026-09-19 a new installation plays every event's sound, where until then the
+  sounds were off until somebody turned them on; the one box on the Feedback tab still turns
+  them all off, and an installation that had turned them off keeps them off. Landing on a
+  message with an attachment plays the attachment sound and shows "Has attachment" on the
+  status bar, and the words are neither spoken nor sent to a braille display, because both
+  ride the one screen reader notification and either would be the row's own word a second
+  time; the guide says how to have it spoken again, under Settings, Feedback, One event at a
+  time. The Feedback tab shows this event's boxes as the sound and the status bar with the
+  line beneath saying it is the default, where until 2026-09-19 an event nobody had answered
+  for showed every box ticked whatever its default was. Known limitations: nobody has heard
+  the row with the sound; whether it is heard once, and the sound alone when the status bar
+  is off, is the tester's ear.
 - **A move, a delete or a copy within one account completes on this computer first, and
   Enter on a folder in the Move dialog is the move.** The tester on 2026-09-18, on build
   `1.0.0-alpha.1` at `7573a812` under NVDA against Gmail (#86): a move takes a noticeable time
@@ -202,6 +221,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The sounds keep playing after hours open, follow the output device, and say once when no
+  device can be opened.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef`
+  (#81): after a few hours open the earcons went silent and nothing said so. The output device
+  was opened once when the program started and never again, so a device that went away or
+  was invalidated, a headset unplugged, a monitor's speakers switched off, Windows resetting
+  the audio service, ended the stream underneath the mixer and every later sound was played
+  into nothing, with the program still counting it as played. Since 2026-09-19 the stream's
+  own error report marks the device gone and the next sound opens the default device again
+  before it plays; and because a change of default device while the old one stays is one the
+  stream never reports, the next sound after ten seconds' quiet opens the default device
+  again as well, which was measured to cost about eleven milliseconds on the development
+  machine and so is paid on every sound after a gap. When no device can be opened, the log
+  says so once for the outage rather than once per sound, the status bar says "The sounds
+  have stopped: no audio output device could be opened", with Windows' reason and that they
+  come back when one can be, and they do, with one line in the log, when a device can be
+  opened again; a machine with no device at start says so in the log only. Known
+  limitations: what silenced the tester's sounds after hours is not known, only the two ways
+  the sources show a stream can end and a device can change; the reopening was proved at the
+  seam the audio crates document, a stream's error report and the flag it sets, and not by
+  pulling a device on a running build, and nobody has heard the sounds come back after a
+  real device change. If the sounds stop again, the log at its default level (11-04) holds the
+  moment and the reason.
 - **On Gmail a conversation is the conversation Gmail shows, and on every server a reply that
   arrived before its parent joins it when the parent lands.** The tester on 2026-09-19 on
   Gmail (#88): messages of one thread show as several rows with the same subject. Two causes.

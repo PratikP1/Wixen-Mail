@@ -14,7 +14,10 @@
 //! 1. **Nothing is signalled by sound alone** unless the user has switched the
 //!    text channels off themselves. A sound with no written equivalent is
 //!    invisible to a deaf-blind user and meaningless to anyone who has not
-//!    learned it yet.
+//!    learned it yet. The one event whose words are already in the row the
+//!    cursor is on ([`Event::text_is_already_on_the_row`]) has its written
+//!    equivalent there, so for it the rule adds the status bar and never
+//!    speech.
 //! 2. **Sibling events sound different.** An earcon that cannot be told apart
 //!    from the one before it carries no information, so each event maps to its
 //!    own tone rather than to a generic "something happened".
@@ -178,6 +181,29 @@ impl Event {
 
     fn from_key(key: &str) -> Option<Self> {
         Event::ALL.into_iter().find(|e| e.key() == key)
+    }
+
+    /// Whether the event's words are already in the row the cursor is on.
+    ///
+    /// The cursor landing on a message with an attachment is such an event:
+    /// the list's Attachment column reads "Has attachment" in the row, which
+    /// a screen reader says as it says the row, so this event's own words
+    /// spoken beside it are the same word a second time (#77, the tester on
+    /// 2026-09-18). Two things read this mark. [`FeedbackSettings::the_default_for`]
+    /// leaves the words out of such an event's default, so it reaches the
+    /// tone and the status bar; and the never-sound-alone rule in
+    /// [`FeedbackSettings::channels_for`] falls back to the status bar alone
+    /// for it, never to speech and never to braille, since both ride the one
+    /// screen reader notification and either would put the word back over
+    /// the row.
+    ///
+    /// Not the conversation event. A conversation row's cells say how many
+    /// messages it holds, not the word "Conversation", so the event's words
+    /// add something there. Decided for every event by
+    /// `tests/landing_on_an_attachment_says_it_once.rs`, so a later event
+    /// whose words are on the row is added here on purpose.
+    pub fn text_is_already_on_the_row(&self) -> bool {
+        matches!(self, Event::HasAttachment)
     }
 
     /// The written equivalent, used for speech, braille, and the status line.
@@ -501,14 +527,28 @@ pub struct FeedbackSettings {
 }
 
 impl Default for FeedbackSettings {
-    /// Speech, braille, and the status line on; earcons off.
+    /// Every channel on, and no event answered for by hand.
     ///
-    /// Off by default because an application that starts making noises nobody
-    /// asked for is one people switch the sounds off in, permanently, before
-    /// they ever find out which sound meant what.
+    /// The earcons were off here until 2026-09-18, for phase 6's reason: an
+    /// application that starts making noises nobody asked for is one people
+    /// switch the sounds off in, permanently, before they ever find out
+    /// which sound meant what. Pratik's decision on #77 that day turned them
+    /// on for every event, because the tester who filed it had turned them
+    /// on himself and the one thing the sounds were then doing wrong was
+    /// being a third voice for a fact the row already carried. The Feedback
+    /// tab's one box still turns them all off, and a profile that did so
+    /// before the default moved keeps them off, since `from_stored` keeps a
+    /// stored off group.
+    ///
+    /// The one event whose default is not every channel is written in
+    /// [`FeedbackSettings::the_default_for`], not here: it is the event's own
+    /// default, read wherever no answer was given for it, and not an answer
+    /// a fresh profile is born holding. A profile stored as `off=` with no
+    /// per-event group, which is the tester's own, reaches it the same way a
+    /// fresh one does.
     fn default() -> Self {
         Self {
-            disabled: [Channel::Earcon].into_iter().collect(),
+            disabled: BTreeSet::new(),
             per_event: Vec::new(),
         }
     }
@@ -574,6 +614,30 @@ impl FeedbackSettings {
         self.per_event.retain(|(e, _)| *e != event);
     }
 
+    /// What an event reaches when nobody has answered for it.
+    ///
+    /// Every channel, but for an event whose words are already in the row
+    /// the cursor is on: that one reaches the tone and the status bar and no
+    /// words, so the word is heard once, from the row (#77). Pratik's words
+    /// for it were the earcon plus the status bar and braille, no speech,
+    /// and braille is not in the set because this program has no braille
+    /// route apart from speech: a set holding [`Channel::Braille`] calls the
+    /// one screen reader notification, which is spoken. Braille added here
+    /// is the word spoken over the row again, which is what the issue exists
+    /// to stop; if the words are wanted on the display at that cost, this is
+    /// the set to add them to.
+    ///
+    /// Public because the Feedback tab paints an event nobody has answered
+    /// for from it, so the boxes show the default that is really in force
+    /// rather than four ticks for an event that reaches two channels.
+    pub fn the_default_for(event: Event) -> BTreeSet<Channel> {
+        if event.text_is_already_on_the_row() {
+            [Channel::Earcon, Channel::Visual].into_iter().collect()
+        } else {
+            Channel::ALL.into_iter().collect()
+        }
+    }
+
     /// The channels an event actually reaches.
     ///
     /// The never-sound-alone rule lives here rather than at the call sites, so
@@ -581,7 +645,7 @@ impl FeedbackSettings {
     pub fn channels_for(&self, event: Event) -> BTreeSet<Channel> {
         let chosen: BTreeSet<Channel> = match self.per_event.iter().find(|(e, _)| *e == event) {
             Some((_, channels)) => channels.clone(),
-            None => Channel::ALL.into_iter().collect(),
+            None => Self::the_default_for(event),
         };
         let mut active: BTreeSet<Channel> = chosen
             .into_iter()
@@ -591,10 +655,23 @@ impl FeedbackSettings {
         // Sound with nothing written alongside it. If any text channel is
         // available at all, add the quietest one rather than let the event go
         // out as a noise with no meaning.
+        //
+        // For an event whose words are already in the row, the only written
+        // channel that adds nothing spoken is the status bar. Speech and
+        // braille both ride the one screen reader notification, so either
+        // would say the word a second time over the row's own reading; with
+        // the status bar off too, the sound goes out alone, and the row's
+        // words are what stand beside it.
         let sound_only = !active.is_empty() && !active.iter().any(Channel::carries_text);
+        let quietest_first: &[Channel] = if event.text_is_already_on_the_row() {
+            &[Channel::Visual]
+        } else {
+            &[Channel::Braille, Channel::Visual, Channel::Speech]
+        };
         if sound_only
-            && let Some(fallback) = [Channel::Braille, Channel::Visual, Channel::Speech]
-                .into_iter()
+            && let Some(fallback) = quietest_first
+                .iter()
+                .copied()
                 .find(|c| self.is_channel_enabled(*c))
         {
             active.insert(fallback);
@@ -756,39 +833,245 @@ fn sound_for(tone: Tone) -> impl Source<Item = f32> {
     }
 }
 
+/// Where sounds go: a mixer, the open device behind it when there is one,
+/// and the flag the device's own stream sets when it goes.
+///
+/// The mixer is separate from the device because a mixer does not need one.
+/// A test gets a detached mixer and can read back what was played, which is
+/// a stronger question than the boolean, and it asks that question on a
+/// machine with no sound card. GitHub's Windows runners have none, and
+/// `rodio` 0.22.2 does not fail cleanly there: it opens something and then
+/// faults on the first write, taking the whole test binary with it.
+struct Output {
+    mixer: rodio::mixer::Mixer,
+    /// The open output device. Held for as long as this output is and read
+    /// by nothing: `rodio` stops playing the moment it is dropped, so there
+    /// is nowhere shorter-lived it could live. `None` in a test and under
+    /// `WIXEN_NO_AUDIO`, which play into a mixer of their own.
+    _device: Option<rodio::MixerDeviceSink>,
+    /// Set by the stream's own error callback when the device goes away or
+    /// is invalidated (#81). cpal's output loop hands the error to the
+    /// callback and ends the stream's thread, so from that moment every
+    /// sound mixed here plays into nothing; the flag is how the player
+    /// finds out before the next sound rather than never.
+    ended: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Output {
+    fn has_ended(&self) -> bool {
+        self.ended.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// An output that mixes somewhere real, with no device behind it.
+    ///
+    /// The returned source is where the sound goes. Dropping it is safe:
+    /// `rodio::mixer::Mixer::add` ignores the send when nothing is
+    /// listening, so an output whose source has gone is silent rather than
+    /// broken.
+    fn detached() -> (Self, rodio::mixer::MixerSource) {
+        // Both are `NonZero` in rodio's types, and neither can be zero here:
+        // mono, at the rate `sound_for` produces, so a sample read back is
+        // the sample that was written rather than a resampled one.
+        let channels = std::num::NonZero::new(1).unwrap_or(std::num::NonZero::<u16>::MIN);
+        let rate =
+            std::num::NonZero::new(TONE_SAMPLE_RATE).unwrap_or(std::num::NonZero::<u32>::MIN);
+        let (mixer, source) = rodio::mixer::mixer(channels, rate);
+        (
+            Self {
+                mixer,
+                _device: None,
+                ended: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            },
+            source,
+        )
+    }
+
+    /// The default output device, opened with a callback that marks this
+    /// output ended when the stream does.
+    ///
+    /// The same walk `rodio::DeviceSinkBuilder::open_default_sink` takes,
+    /// written out because that path installs rodio's own callback, which
+    /// only logs: the default device with its default configuration, then
+    /// every other configuration it supports, then every other output device
+    /// whose driver is not "null", so a machine whose default device cannot
+    /// be opened still gets the second one it got before.
+    fn on_the_default_device() -> Result<Self, String> {
+        use rodio::cpal::traits::{DeviceTrait, HostTrait};
+
+        let ended = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let on_error = {
+            let ended = std::sync::Arc::clone(&ended);
+            move |err: rodio::cpal::StreamError| {
+                tracing::warn!(
+                    "The audio output stream ended ({err}); the next sound opens the \
+                     default device again"
+                );
+                ended.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        };
+        let opened = match rodio::DeviceSinkBuilder::from_default_device().and_then(|builder| {
+            builder
+                .with_error_callback(on_error.clone())
+                .open_sink_or_fallback()
+        }) {
+            Ok(device) => Ok(device),
+            Err(refusal) => rodio::cpal::default_host()
+                .output_devices()
+                .ok()
+                .and_then(|devices| {
+                    devices
+                        .filter(|device| {
+                            device
+                                .description()
+                                .map(|about| about.driver().is_some_and(|driver| driver != "null"))
+                                .unwrap_or(false)
+                        })
+                        .find_map(|device| {
+                            rodio::DeviceSinkBuilder::from_device(device)
+                                .and_then(|builder| {
+                                    builder
+                                        .with_error_callback(on_error.clone())
+                                        .open_sink_or_fallback()
+                                })
+                                .ok()
+                        })
+                })
+                .ok_or(refusal),
+        };
+        let mut device = opened.map_err(|refusal| the_whole_reason(&refusal))?;
+        // This program chooses when an output is dropped, at a reopen, and
+        // says so itself where it matters; rodio's line on every drop would
+        // be one more line for nothing.
+        device.log_on_drop(false);
+        Ok(Self {
+            mixer: device.mixer().clone(),
+            _device: Some(device),
+            ended,
+        })
+    }
+}
+
+/// An error with the errors behind it, joined, because rodio's own words
+/// for a refused device ("Error opening the stream with the OS") say
+/// nothing about why and the reason is one level down.
+fn the_whole_reason(err: &dyn std::error::Error) -> String {
+    let mut words = err.to_string();
+    let mut cause = err.source();
+    while let Some(next) = cause {
+        words.push_str(": ");
+        words.push_str(&next.to_string());
+        cause = next.source();
+    }
+    words
+}
+
+/// How a player gets somewhere to play: asked at start and, from #81 on,
+/// again when the device has gone.
+type Opener = Box<dyn Fn() -> Result<Output, String> + Send + Sync>;
+
+/// One outage of the sounds, told once.
+///
+/// One small value with its state rather than two booleans on the player,
+/// so that "was this outage told" and "is there a sentence waiting for the
+/// status bar" cannot disagree.
+#[derive(Default)]
+struct Outage {
+    /// Whether the log has been told about this outage. One line per outage,
+    /// not one per sound: a syncing mailbox raises the same event forty times
+    /// a second, and forty lines saying the device is still gone is a log
+    /// nobody reads.
+    told: bool,
+    /// The sentence for the status bar, until it is taken.
+    complaint: Option<String>,
+}
+
+impl Outage {
+    /// The outage as told once, in the log and for the eye.
+    fn told(why: &str) -> Self {
+        tracing::warn!(
+            "The sounds have stopped: no audio output device could be opened ({why}); it is \
+             asked for again before a sound once every {} seconds until one can be",
+            REOPEN_AFTER.as_secs()
+        );
+        Self {
+            told: true,
+            complaint: Some(format!(
+                "The sounds have stopped: no audio output device could be opened ({why}). They \
+                 come back when one can be."
+            )),
+        }
+    }
+
+    /// A machine that had no device at start: said in the log, at the level
+    /// a fact about the machine deserves, and not on the status bar, since
+    /// nothing has stopped. The device is still asked for again after each
+    /// gap, and the sounds start when one can be opened.
+    fn from_the_start(why: &str) -> Self {
+        tracing::info!(
+            "No audio output device could be opened at start ({why}); the sounds wait until \
+             one can be"
+        );
+        Self {
+            told: true,
+            complaint: None,
+        }
+    }
+}
+
+/// What the player holds behind its lock.
+#[derive(Default)]
+struct Inner {
+    last_played: Option<std::time::Instant>,
+    /// Where a sound goes. `None` when there is nothing to play through, and
+    /// that is what makes `play` answer false rather than pretend.
+    output: Option<Output>,
+    /// When the output was last opened, so a sound after a gap since the
+    /// later of this and the last sound opens the device again.
+    opened_at: Option<std::time::Instant>,
+    /// When the device was last asked for, so a device that stays gone is
+    /// asked for again after a gap rather than on every sound.
+    last_attempt: Option<std::time::Instant>,
+    outage: Outage,
+}
+
 /// Plays earcons, one at a time and never faster than the ear can separate.
 ///
 /// Guardrail: feedback must be bounded. A syncing mailbox can raise the same
 /// event forty times a second, and forty overlapping tones is not information,
 /// it is noise that drives people to switch sound off for good.
 pub struct EarconPlayer {
-    last_played: std::sync::Mutex<Option<std::time::Instant>>,
-    /// The open output device. Held for as long as the player exists and read
-    /// by nothing: `rodio` stops playing the moment this is dropped, so there
-    /// is nowhere shorter-lived it could live. `None` on a machine with no
-    /// audio device to open, and `None` in a test, which plays into a mixer
-    /// of its own.
-    _device: Option<rodio::MixerDeviceSink>,
-    /// Where a sound goes, which is the device's own mixer in the running
-    /// program. `None` when there is nothing to play through, and that is
-    /// what makes `play` answer false rather than pretend.
-    ///
-    /// Separate from the device because a mixer does not need one. A test
-    /// gets a detached mixer and can read back what was played, which is a
-    /// stronger question than the boolean, and it asks that question on a
-    /// machine with no sound card. GitHub's Windows runners have none, and
-    /// `rodio` 0.22.2 does not fail cleanly there: it opens something and
-    /// then faults on the first write, taking the whole test binary with it.
-    mixer: Option<rodio::mixer::Mixer>,
+    inner: std::sync::Mutex<Inner>,
+    /// How this player gets somewhere to play. The running program's opens
+    /// the default output device; a test's hands out a detached mixer each
+    /// time and records how often it was asked.
+    open: Opener,
 }
 
 /// Written out because `rodio::mixer::Mixer` has no `Debug`, and derived
 /// `Debug` on a struct holding one does not compile.
 impl std::fmt::Debug for EarconPlayer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = self.inner.lock();
         f.debug_struct("EarconPlayer")
-            .field("last_played", &self.last_played)
-            .field("has_somewhere_to_play", &self.mixer.is_some())
+            .field(
+                "last_played",
+                &inner.as_ref().ok().map(|inner| inner.last_played),
+            )
+            .field(
+                "has_somewhere_to_play",
+                &inner
+                    .as_ref()
+                    .ok()
+                    .is_some_and(|inner| inner.output.is_some()),
+            )
+            .field(
+                "the_device_has_gone",
+                &inner
+                    .as_ref()
+                    .ok()
+                    .and_then(|inner| inner.output.as_ref())
+                    .is_some_and(Output::has_ended),
+            )
             .finish()
     }
 }
@@ -797,6 +1080,28 @@ impl std::fmt::Debug for EarconPlayer {
 ///
 /// Below about a tenth of a second two tones stop being heard as two events.
 const EARCON_GAP: std::time::Duration = std::time::Duration::from_millis(120);
+
+/// How long the sounds have to have been quiet for the next one to open the
+/// default output device again before it plays (#81).
+///
+/// The stream's own error callback covers a device that goes away or is
+/// invalidated: cpal reports it and the flag is set. It does not cover the
+/// default device changing while the old one stays, a headset plugged in
+/// beside the speakers: cpal keeps writing to the old device and reports
+/// nothing, and the sounds move to the new device only when it is opened
+/// again. Opening the default device cost a median of 11 ms and at worst
+/// 26 ms on the development machine, `probe_81_device_open_cost` on
+/// 2026-09-19, twenty opens through `open_default_sink` and twenty through
+/// the builder this player uses; so the next sound after a gap pays that
+/// once and follows the device, which is the simplest mechanism and always
+/// right, where Windows' own notice of a default-device change would have
+/// been a second mechanism to hold. Ten seconds so that a run of sounds,
+/// a sync's arrivals or a burst of navigation ticks, never reopens in the
+/// middle of itself.
+///
+/// The same gap paces a device that stays gone: an outage asks for the
+/// device again this long after it last refused, not on every sound.
+const REOPEN_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Says this machine cannot play sound, whatever its audio device claims.
 ///
@@ -835,15 +1140,33 @@ impl EarconPlayer {
             );
             return Self::into_the_air().0;
         }
-        // A machine with no audio device, or one none of rodio's own
-        // fallback attempts could open, gets a silent player rather
-        // than a construction failure: a missing sound is a smaller
-        // problem than an application that will not start over one.
-        let device = rodio::DeviceSinkBuilder::open_default_sink().ok();
+        Self::with_opener(Box::new(Output::on_the_default_device))
+    }
+
+    /// A player that gets somewhere to play through `open`, asked once now.
+    ///
+    /// A machine with no audio device, or one none of the fallback attempts
+    /// could open, gets a silent player rather than a construction failure:
+    /// a missing sound is a smaller problem than an application that will
+    /// not start over one.
+    fn with_opener(open: Opener) -> Self {
+        let now = std::time::Instant::now();
+        let inner = match (open)() {
+            Ok(output) => Inner {
+                output: Some(output),
+                opened_at: Some(now),
+                last_attempt: Some(now),
+                ..Inner::default()
+            },
+            Err(why) => Inner {
+                last_attempt: Some(now),
+                outage: Outage::from_the_start(&why),
+                ..Inner::default()
+            },
+        };
         Self {
-            last_played: std::sync::Mutex::new(None),
-            mixer: device.as_ref().map(|sink| sink.mixer().clone()),
-            _device: device,
+            inner: std::sync::Mutex::new(inner),
+            open,
         }
     }
 
@@ -852,20 +1175,16 @@ impl EarconPlayer {
     /// The returned source is where the sound goes. Dropping it is safe and
     /// is what `new` does: `rodio::mixer::Mixer::add` ignores the send when
     /// nothing is listening, so a player whose source has gone is silent
-    /// rather than broken.
+    /// rather than broken. Its opener answers the same silence each time.
     fn into_the_air() -> (Self, rodio::mixer::MixerSource) {
-        // Both are `NonZero` in rodio's types, and neither can be zero here:
-        // mono, at the rate `sound_for` produces, so a sample read back is
-        // the sample that was written rather than a resampled one.
-        let channels = std::num::NonZero::new(1).unwrap_or(std::num::NonZero::<u16>::MIN);
-        let rate =
-            std::num::NonZero::new(TONE_SAMPLE_RATE).unwrap_or(std::num::NonZero::<u32>::MIN);
-        let (mixer, source) = rodio::mixer::mixer(channels, rate);
+        let (output, source) = Output::detached();
         (
             Self {
-                last_played: std::sync::Mutex::new(None),
-                _device: None,
-                mixer: Some(mixer),
+                inner: std::sync::Mutex::new(Inner {
+                    output: Some(output),
+                    ..Inner::default()
+                }),
+                open: Box::new(|| Ok(Output::detached().0)),
             },
             source,
         )
@@ -881,6 +1200,89 @@ impl EarconPlayer {
     #[cfg(test)]
     fn detached() -> (Self, rodio::mixer::MixerSource) {
         Self::into_the_air()
+    }
+
+    /// A player whose device opened at start, has since gone, and cannot be
+    /// opened again, for the case in `accessibility.rs` that hands its
+    /// complaint to the eye.
+    #[cfg(test)]
+    pub(crate) fn whose_device_has_gone_for_good() -> Self {
+        let opened_once = std::sync::atomic::AtomicBool::new(false);
+        let player = Self::with_opener(Box::new(move || {
+            if opened_once.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                Err("Could not find any output device".to_string())
+            } else {
+                Ok(Output::detached().0)
+            }
+        }));
+        if let Ok(inner) = player.inner.lock()
+            && let Some(output) = &inner.output
+        {
+            output
+                .ended
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        player
+    }
+
+    /// The sentence for the status bar when the sounds have stopped and no
+    /// device could be opened again, once per outage: taken, then `None`.
+    pub fn take_complaint(&self) -> Option<String> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|mut inner| inner.outage.complaint.take())
+    }
+
+    /// The mixer to play into, opening the default output device again
+    /// first when the one held has gone, when a gap has passed since it was
+    /// last used, or when there is none and a gap has passed since it was
+    /// last asked for (#81).
+    fn somewhere_to_play(
+        &self,
+        inner: &mut Inner,
+        now: std::time::Instant,
+    ) -> Option<rodio::mixer::Mixer> {
+        let a_gap_since = |then: Option<std::time::Instant>| {
+            then.is_some_and(|then| now.duration_since(then) > REOPEN_AFTER)
+        };
+        let must_open = match &inner.output {
+            Some(output) => {
+                let last_used = inner.last_played.max(inner.opened_at);
+                output.has_ended() || a_gap_since(last_used)
+            }
+            None => a_gap_since(inner.last_attempt) || inner.last_attempt.is_none(),
+        };
+        if must_open {
+            self.open_the_device_again(inner, now);
+        }
+        inner.output.as_ref().map(|output| output.mixer.clone())
+    }
+
+    /// Ask the opener once, and tell the outage or the resume once.
+    ///
+    /// The output being replaced is dropped here, which stops anything
+    /// still playing through it; rodio's own line on that drop is off, set
+    /// where the device was opened, since this is the program's choice and
+    /// the log says what matters about it below.
+    fn open_the_device_again(&self, inner: &mut Inner, now: std::time::Instant) {
+        inner.last_attempt = Some(now);
+        match (self.open)() {
+            Ok(output) => {
+                inner.output = Some(output);
+                inner.opened_at = Some(now);
+                if inner.outage.told {
+                    tracing::info!("The sounds are back: an audio output device was opened again");
+                    inner.outage = Outage::default();
+                }
+            }
+            Err(why) => {
+                inner.output = None;
+                if !inner.outage.told {
+                    inner.outage = Outage::told(&why);
+                }
+            }
+        }
     }
 
     /// Play an event's sound, under `scheme`, if enough time has passed
@@ -900,26 +1302,26 @@ impl EarconPlayer {
         scheme: &super::sound_scheme::SoundScheme,
         now: std::time::Instant,
     ) -> bool {
-        let Some(mixer) = &self.mixer else {
-            return false;
-        };
-        let Ok(mut last) = self.last_played.lock() else {
+        let Ok(mut inner) = self.inner.lock() else {
             // A poisoned lock means another thread panicked mid-play. Staying
             // silent is the safe answer; a stuck tone is worse than none.
             return false;
         };
-        if let Some(previous) = *last
+        if let Some(previous) = inner.last_played
             && now.duration_since(previous) < EARCON_GAP
         {
             return false;
         }
-        *last = Some(now);
+        let Some(mixer) = self.somewhere_to_play(&mut inner, now) else {
+            return false;
+        };
+        inner.last_played = Some(now);
         // Fire and forget: rodio plays this on its own thread and returns
         // immediately, unlike the Beep() this replaced, which blocked the
         // calling thread for the tone's own length. A caller that needs the
         // old wait-for-it-to-finish behaviour has to ask for that itself now
         // rather than getting it as a side effect of playing a sound.
-        if !self.play_file(mixer, scheme, event) {
+        if !self.play_file(&mixer, scheme, event) {
             mixer.add(sound_for(event.tone()));
         }
         true
@@ -1070,6 +1472,284 @@ mod tests {
         assert!(player.play(Event::NewMail, &scheme));
     }
 
+    // ── The device going, and coming back (#81) ─────────────────────────
+
+    /// An opener a test controls: hands out a fresh detached output each
+    /// time it is asked, refuses while told to, counts how often it was
+    /// asked, and keeps every source so a test can read back where a sound
+    /// went.
+    ///
+    /// The seam the crates document is what these cases drive: cpal hands a
+    /// `StreamError` to the callback and ends the stream, and the callback
+    /// sets the flag. Nothing here opens a device, so every case holds on
+    /// the runner too.
+    struct Scripted {
+        asked: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        refuses: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        sources: std::sync::Arc<std::sync::Mutex<Vec<rodio::mixer::MixerSource>>>,
+    }
+
+    impl Scripted {
+        fn player() -> (EarconPlayer, Self) {
+            let script = Self {
+                asked: Default::default(),
+                refuses: Default::default(),
+                sources: Default::default(),
+            };
+            let opener: Opener = {
+                let asked = script.asked.clone();
+                let refuses = script.refuses.clone();
+                let sources = script.sources.clone();
+                Box::new(move || {
+                    asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if refuses.load(std::sync::atomic::Ordering::SeqCst) {
+                        return Err("Could not find any output device".to_string());
+                    }
+                    let (output, source) = Output::detached();
+                    sources
+                        .lock()
+                        .expect("a fresh mutex is not poisoned")
+                        .push(source);
+                    Ok(output)
+                })
+            };
+            (EarconPlayer::with_opener(opener), script)
+        }
+
+        fn times_asked(&self) -> usize {
+            self.asked.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        fn refuse(&self, refuse: bool) {
+            self.refuses
+                .store(refuse, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        /// The loudest sample in the first tenth of a second of the source
+        /// handed out `at`th, nought for silence.
+        fn loudest_in(&self, at: usize) -> f32 {
+            let mut sources = self.sources.lock().expect("a fresh mutex is not poisoned");
+            sources[at]
+                .by_ref()
+                .take(TONE_SAMPLE_RATE as usize / 10)
+                .fold(0.0f32, |loudest, sample| loudest.max(sample.abs()))
+        }
+    }
+
+    /// What cpal's output loop does when the device goes: the error callback
+    /// sets the flag and the stream thread ends. The source is dropped here
+    /// as well, since a stream that has ended reads nothing more.
+    fn the_device_goes(player: &EarconPlayer, script: &Scripted) {
+        player
+            .inner
+            .lock()
+            .expect("a fresh mutex is not poisoned")
+            .output
+            .as_ref()
+            .expect("an output to lose")
+            .ended
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        script
+            .sources
+            .lock()
+            .expect("a fresh mutex is not poisoned")
+            .clear();
+    }
+
+    #[test]
+    fn test_a_player_whose_device_went_opens_the_default_device_again_before_the_next_sound() {
+        // The tester's earcons went silent after a few hours (#81). The
+        // player opened the device once at start and never again, so a
+        // stream ended underneath the mixer left every later sound played
+        // into nothing, with `play` answering true. The stream's own error
+        // callback now marks the device gone, and the next sound opens the
+        // default device again and plays into it.
+        let (player, script) = Scripted::player();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        let start = std::time::Instant::now();
+        assert_eq!(script.times_asked(), 1, "opened once at start");
+        assert!(player.play_at(Event::NewMail, &scheme, start));
+        assert!(
+            script.loudest_in(0) > 0.0,
+            "the first sound reached the first device"
+        );
+
+        the_device_goes(&player, &script);
+
+        assert!(player.play_at(
+            Event::NewMail,
+            &scheme,
+            start + std::time::Duration::from_secs(1)
+        ));
+        assert_eq!(
+            script.times_asked(),
+            2,
+            "the device went and the next sound did not open it again"
+        );
+        assert!(
+            script.loudest_in(0) > 0.0,
+            "the sound after the device went was played into nothing"
+        );
+    }
+
+    #[test]
+    fn test_two_sounds_inside_the_reopen_gap_ask_for_the_device_once() {
+        // A device that is still there is not opened again for every sound;
+        // a burst of navigation ticks plays through the one it has.
+        let (player, script) = Scripted::player();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        let start = std::time::Instant::now();
+        assert!(player.play_at(Event::NewMail, &scheme, start));
+        assert!(player.play_at(
+            Event::NewMail,
+            &scheme,
+            start + std::time::Duration::from_secs(1)
+        ));
+        assert!(player.play_at(Event::NewMail, &scheme, start + REOPEN_AFTER));
+        assert_eq!(script.times_asked(), 1);
+    }
+
+    #[test]
+    fn test_a_sound_after_a_gap_opens_the_default_device_again() {
+        // The default device changing while the old one stays is the case
+        // the callback cannot see, because cpal keeps writing to the old
+        // device and reports nothing. The next sound after a gap opens the
+        // default device again and so follows it; the cost was measured and
+        // is on `REOPEN_AFTER`.
+        let (player, script) = Scripted::player();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        let start = std::time::Instant::now();
+        assert!(player.play_at(Event::NewMail, &scheme, start));
+        assert!(player.play_at(
+            Event::NewMail,
+            &scheme,
+            start + REOPEN_AFTER + std::time::Duration::from_secs(1)
+        ));
+        assert_eq!(
+            script.times_asked(),
+            2,
+            "a sound after the gap did not open the default device again"
+        );
+        assert!(
+            script.loudest_in(1) > 0.0,
+            "the sound after the gap did not reach the device opened again"
+        );
+    }
+
+    #[test]
+    fn test_an_outage_is_told_once_and_the_sounds_come_back_when_a_device_does() {
+        // A device that stays gone is written to the log once for the
+        // outage and said once for the eye, not once per sound: forty sounds
+        // a second under a sync is forty lines and forty sentences. When a
+        // device can be opened again the sounds resume, the log says so once,
+        // and a second outage is told again.
+        use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
+
+        let (player, script) = Scripted::player();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        let start = std::time::Instant::now();
+        let a_gap = REOPEN_AFTER + std::time::Duration::from_secs(1);
+        let captured = CapturedLogs::default();
+
+        the_device_goes(&player, &script);
+        script.refuse(true);
+        tracing::subscriber::with_default(captured.clone(), || {
+            assert!(!player.play_at(Event::NewMail, &scheme, start));
+            assert!(!player.play_at(Event::NewMail, &scheme, start + a_gap));
+            assert!(!player.play_at(Event::NewMail, &scheme, start + a_gap * 2));
+        });
+        let warned = captured
+            .events()
+            .iter()
+            .filter(|(level, _)| *level == tracing::Level::WARN)
+            .count();
+        assert_eq!(
+            warned,
+            1,
+            "the outage was logged {warned} times: {:?}",
+            captured.events()
+        );
+        let complaint = player
+            .take_complaint()
+            .expect("the outage said once for the eye");
+        assert!(
+            complaint
+                .starts_with("The sounds have stopped: no audio output device could be opened"),
+            "{complaint}"
+        );
+        assert!(
+            complaint.contains("Could not find any output device"),
+            "{complaint}"
+        );
+        assert!(
+            complaint.ends_with("They come back when one can be."),
+            "{complaint}"
+        );
+        assert_eq!(player.take_complaint(), None, "the sentence is given once");
+
+        script.refuse(false);
+        tracing::subscriber::with_default(captured.clone(), || {
+            assert!(player.play_at(Event::NewMail, &scheme, start + a_gap * 3));
+        });
+        assert!(
+            captured.has(tracing::Level::INFO, "The sounds are back"),
+            "the resume was not logged: {:?}",
+            captured.events()
+        );
+        assert_eq!(player.take_complaint(), None, "a resume is not a complaint");
+        assert!(
+            script.loudest_in(0) > 0.0,
+            "the sound after the resume was not heard"
+        );
+
+        the_device_goes(&player, &script);
+        script.refuse(true);
+        assert!(!player.play_at(Event::NewMail, &scheme, start + a_gap * 4));
+        assert!(
+            player.take_complaint().is_some(),
+            "a second outage was not told again"
+        );
+    }
+
+    #[test]
+    fn test_a_device_that_stays_gone_is_asked_for_again_after_a_gap_not_on_every_sound() {
+        // One open per outage per gap at most (T-11-59): a device that stays
+        // gone under a syncing mailbox is not asked for eight times a second.
+        let (player, script) = Scripted::player();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        let start = std::time::Instant::now();
+        let asked_at_start = script.times_asked();
+
+        the_device_goes(&player, &script);
+        script.refuse(true);
+        assert!(!player.play_at(Event::NewMail, &scheme, start));
+        assert!(!player.play_at(
+            Event::NewMail,
+            &scheme,
+            start + std::time::Duration::from_secs(1)
+        ));
+        assert!(!player.play_at(
+            Event::NewMail,
+            &scheme,
+            start + std::time::Duration::from_secs(2)
+        ));
+        assert_eq!(
+            script.times_asked(),
+            asked_at_start + 1,
+            "three sounds inside one gap asked for a gone device more than once"
+        );
+        assert!(!player.play_at(
+            Event::NewMail,
+            &scheme,
+            start + REOPEN_AFTER + std::time::Duration::from_secs(1)
+        ));
+        assert_eq!(
+            script.times_asked(),
+            asked_at_start + 2,
+            "a sound after the gap did not ask again"
+        );
+    }
+
     #[test]
     fn test_playing_puts_a_real_sound_where_the_device_would_hear_it() {
         // Every other test here asks whether `play` answered true, which is a
@@ -1216,9 +1896,10 @@ mod tests {
         // launch and never work out why it comes back.
         let restored = FeedbackSettings::from_stored("off=speech");
         assert!(!restored.is_channel_enabled(Channel::Speech));
-        // Earcons are off in the default and on in what was stored, so this is
-        // the assertion that says the stored value was kept rather than
-        // quietly replaced by the default.
+        // Speech is on in the default and off in what was stored, so the
+        // first assertion is the one that says the stored value was kept
+        // rather than quietly replaced by the default; the second says the
+        // rest of the channels came through untouched.
         assert!(restored.is_channel_enabled(Channel::Earcon));
     }
 
@@ -1335,13 +2016,17 @@ mod tests {
     }
 
     #[test]
-    fn test_earcons_are_off_until_someone_turns_them_on() {
-        // An application that starts making noises nobody asked for is one
-        // people mute permanently before learning what the sounds mean.
+    fn test_the_tones_are_on_until_someone_turns_them_off() {
+        // Pratik's decision of 2026-09-18 on #77. Until then the sounds were
+        // off for a fresh profile, because an application that starts making
+        // noises nobody asked for is one people mute permanently before
+        // learning what the sounds mean; the tester's own profile had turned
+        // them on, and the decision made that the default. One box on the
+        // Feedback tab still turns them all off.
         let settings = FeedbackSettings::default();
-        assert!(!settings.is_channel_enabled(Channel::Earcon));
+        assert!(settings.is_channel_enabled(Channel::Earcon));
         assert!(
-            !settings
+            settings
                 .channels_for(Event::NewMail)
                 .contains(&Channel::Earcon)
         );

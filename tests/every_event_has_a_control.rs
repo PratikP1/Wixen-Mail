@@ -75,6 +75,9 @@ fn test_every_event_is_reachable_and_keeps_what_it_was_given() {
             every_control_carries_its_own_label(&widgets, &mut wrong);
             the_global_section_offers_three_answers(&widgets, &mut wrong);
             the_screen_says_whose_choice_speech_or_braille_is(&widgets, &mut wrong);
+            a_fresh_profile_opens_with_the_sounds_on_and_the_attachment_event_on_its_own_default(
+                &widgets, &mut wrong,
+            );
             a_tick_survives_moving_away_and_coming_back(&widgets, &mut wrong);
             the_button_puts_one_event_back_to_the_default(&widgets, &mut wrong);
             pressing_ok_saves_what_the_panel_holds(&widgets, &config, &mut wrong);
@@ -233,6 +236,82 @@ fn the_screen_says_whose_choice_speech_or_braille_is(
                 format!("does not {what}. It says {said:?}"),
             ));
         }
+    }
+}
+
+/// What a fresh profile sees on the tab: the box that answers for every
+/// event's sound is on, and the attachment event's row shows the sound and
+/// the status bar with the words off, under the line saying it is the
+/// default (#77, Pratik's decision of 2026-09-18).
+///
+/// Read off the built controls rather than off the model, because the model's
+/// default and what the painter shows for an event nobody has answered for
+/// are two things, and until 2026-09-19 the painter showed every channel for
+/// such an event whatever its default was.
+fn a_fresh_profile_opens_with_the_sounds_on_and_the_attachment_event_on_its_own_default(
+    widgets: &wx_settings::SettingsWidgets,
+    wrong: &mut Wrong,
+) {
+    let sounds_for_every_event = widgets
+        .feedback()
+        .global
+        .iter()
+        .find(|(switch, _)| *switch == Switch::Sounded)
+        .map(|(_, tick)| tick.get_value());
+    if sounds_for_every_event != Some(true) {
+        wrong.push((
+            "the box that answers for every event's sound".to_string(),
+            format!(
+                "reads {sounds_for_every_event:?} on a fresh profile, where the sounds are on by \
+                 default since 2026-09-18"
+            ),
+        ));
+    }
+
+    let per_event = &widgets.feedback().per_event;
+    let Some(attachment) = Event::ALL
+        .iter()
+        .position(|event| *event == Event::HasAttachment)
+    else {
+        wrong.push((
+            "the event picker".to_string(),
+            "has no entry for the attachment event".to_string(),
+        ));
+        return;
+    };
+    per_event.show(attachment);
+    for (switch, tick) in &per_event.ticks {
+        let wanted = match switch {
+            Switch::SpokenOrBrailled => false,
+            Switch::Sounded | Switch::Shown => true,
+        };
+        if tick.get_value() != wanted {
+            wrong.push((
+                format!("the attachment event's {switch:?} box"),
+                format!(
+                    "reads {} on a fresh profile, where its default is the sound and the status \
+                     bar with no words, since the row's Attachment column already says it",
+                    tick.get_value()
+                ),
+            ));
+        }
+    }
+    let whose = per_event.whose_answer.get_label();
+    if !whose.contains("default") {
+        wrong.push((
+            "the line saying whose answer the attachment event's is".to_string(),
+            format!(
+                "says {whose:?}, where nobody has answered for it and the boxes show its own \
+                 default"
+            ),
+        ));
+    }
+    let really = per_event.what_really_happens.get_label();
+    if really.contains("announced") || !really.contains("sound") || !really.contains("status bar") {
+        wrong.push((
+            "the line saying what the attachment event will really do".to_string(),
+            format!("says {really:?}, where the event reaches the sound and the status bar only"),
+        ));
     }
 }
 

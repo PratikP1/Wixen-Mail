@@ -712,6 +712,41 @@ Delete stays disabled while only the built-in scheme is present, since one
 scheme must always exist. [Accessibility](accessibility.md#hearing-and-non-speech-audio)
 has the fuller explanation of what earcons are for.
 
+**The sounds are on from the start.** Since 2026-09-18 a new installation
+plays every event's sound; until then the sounds were off until you turned
+them on. One box on the Feedback tab, "Play a short sound for each event",
+turns them all off, and if you had turned them off before this change they
+stay off.
+
+**A message with an attachment is said once.** When you land on it, the
+Attachment column in the row reads "Has attachment" as your screen reader
+reads the row, and the attachment sound plays. The event's own words are not
+spoken for it, and are not sent to a braille display, because either would
+be the same word a second time: the words go to the status bar instead.
+Until 2026-09-18 the event was spoken as well, so the word was heard twice,
+or three times with the sound on. To have it spoken again:
+
+1. Open Settings (`Ctrl+,`) and go to the Feedback tab.
+2. Under **One event at a time**, choose "Has attachment" in the list of
+   events.
+3. Tick "Announce this event through your screen reader".
+4. Press OK.
+
+The line under the boxes says what the event will really do once you have
+changed it. **Use the default for this event** puts it back the way it
+started, the sound and the status bar.
+
+**The sounds follow your output device.** A headset or a monitor with
+speakers coming or going does not silence them: when the device the sounds
+were playing through goes away, or when you have chosen a different default
+device in Windows, the next sound after a few seconds' quiet opens the
+default device again and plays through it. Until 2026-09-19 the device was
+opened once when the program started and never again, so the sounds could
+stop after a few hours with nothing said. If no device can be opened at
+all, the status bar says so once, "The sounds have stopped: no audio output
+device could be opened", with the reason Windows gave, and the sounds come
+back on their own when a device can be opened again.
+
 ## Troubleshooting
 
 ### Connection Issues

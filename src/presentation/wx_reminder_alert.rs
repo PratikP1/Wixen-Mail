@@ -922,10 +922,12 @@ mod tests {
         // anybody heard either. Under `WIXEN_NO_AUDIO` the tone goes to a
         // mixer nothing listens to and is still reported as sounded.
         //
-        // Sounds are off by default, so the first half switches them on. The
-        // fixture as first written assumed the default was on and was red
-        // against working code for that reason; the second half is what that
-        // taught, that the sentence goes out whatever the sound setting says.
+        // The first half switches the sounds on by hand rather than relying
+        // on the default, which has been on since 2026-09-18 (#77) and was
+        // off before: the fixture as first written assumed it was on and was
+        // red against working code for that reason. The second half is what
+        // that taught, that the sentence goes out whatever the sound setting
+        // says.
         let a11y = Accessibility::new().expect("accessibility");
         let mut settings = a11y.feedback_settings();
         settings.set_channel_enabled(
@@ -960,7 +962,17 @@ mod tests {
         // Sounds off: the tone is reported as not sounded rather than
         // assumed, and the sentence still goes out, because the sentence is
         // the written half and a sound switched off does not switch it off.
+        // Switched off by hand for the same reason the first half switches
+        // them on: this half read the default as off until 2026-09-19 and
+        // went red the day the default moved, on the whole gate rather than
+        // on the commit, since nothing here had changed.
         let quiet = Accessibility::new().expect("accessibility");
+        let mut settings = quiet.feedback_settings();
+        settings.set_channel_enabled(
+            crate::presentation::accessibility::feedback::Channel::Earcon,
+            false,
+        );
+        quiet.set_feedback_settings(settings);
         let said_quietly = say(std::slice::from_ref(&item), now, dates, &quiet);
         assert!(
             !said_quietly.tone_sounded,

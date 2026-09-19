@@ -2635,15 +2635,22 @@ const THIS_EVENT_IS_USING_THE_DEFAULT: &str =
 
 /// Which of the three controls a stored answer paints as ticked.
 ///
-/// `None` is nobody having touched the event, which paints as the default:
-/// every channel. A switch is ticked where the answer holds any of the channels
+/// `None` is nobody having touched the event, which paints as that event's
+/// own default, `FeedbackSettings::the_default_for`: every channel for all but
+/// the attachment event, whose default is the sound and the status bar (#77).
+/// Painted from the event's default rather than from every channel so the
+/// boxes show what is really in force, and the line beneath still says it is
+/// the default. A switch is ticked where the answer holds any of the channels
 /// it stands for rather than all of them, because a settings file can hold
 /// speech on and braille off. Older builds really could write that, since the
 /// two boxes standing here were independent. Painting it as unticked would show
 /// silence to somebody who has announcements, and saving that screen would then
 /// make it true.
-fn ticks_for(chosen: Option<&BTreeSet<Channel>>) -> [bool; Switch::ALL.len()] {
-    let default: BTreeSet<Channel> = Channel::ALL.into_iter().collect();
+fn ticks_for(
+    event: feedback::Event,
+    chosen: Option<&BTreeSet<Channel>>,
+) -> [bool; Switch::ALL.len()] {
+    let default = FeedbackSettings::the_default_for(event);
     let answer = chosen.unwrap_or(&default);
     Switch::ALL.map(|switch| switch.channels().iter().any(|c| answer.contains(c)))
 }
@@ -2695,7 +2702,7 @@ impl PerEventControls {
     pub fn remember_what_is_on_screen(&self) {
         let event = self.shown();
         let mut working = self.working.borrow_mut();
-        let as_painted = ticks_for(working.what_was_chosen_for(event).as_ref());
+        let as_painted = ticks_for(event, working.what_was_chosen_for(event).as_ref());
         let now: Vec<bool> = self
             .ticks
             .iter()
@@ -2743,14 +2750,15 @@ impl PerEventControls {
     ///
     /// The ticks come from `what_was_chosen_for` and the first line from
     /// `channels_for`, and those are different questions. `channels_for`
-    /// defaults a missing entry to every channel, drops the channels switched
-    /// off everywhere and adds a written channel where only a sound was picked,
-    /// so ticks painted from it would show somebody answers they never gave.
+    /// fills a missing entry with the event's own default, drops the channels
+    /// switched off everywhere and adds a written channel where only a sound
+    /// was picked, so ticks painted from it would show somebody answers they
+    /// never gave.
     fn paint_the_shown_event(&self) {
         let event = self.shown();
         let working = self.working.borrow();
         let chosen = working.what_was_chosen_for(event);
-        for ((_, tick), on) in self.ticks.iter().zip(ticks_for(chosen.as_ref())) {
+        for ((_, tick), on) in self.ticks.iter().zip(ticks_for(event, chosen.as_ref())) {
             tick.set_value(on);
         }
         self.whose_answer.set_label(match chosen {

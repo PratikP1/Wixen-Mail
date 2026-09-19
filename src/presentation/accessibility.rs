@@ -227,7 +227,18 @@ impl Accessibility {
             return Ok(false);
         }
         let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
-        Ok(self.earcons.play(event, &scheme))
+        let played = self.earcons.play(event, &scheme);
+        if let Some(complaint) = self.earcons.take_complaint() {
+            self.show(complaint);
+        }
+        Ok(played)
+    }
+
+    /// Put a sentence where the status line picks it up.
+    fn show(&self, sentence: String) {
+        if let Ok(mut visual) = self.visual.lock() {
+            *visual = Some(sentence);
+        }
     }
 
     /// Signal an event on whichever channels the user has chosen.
@@ -251,9 +262,19 @@ impl Accessibility {
 
         let text = event.text_with(detail);
 
+        let mut shown = channels
+            .contains(&feedback::Channel::Visual)
+            .then(|| text.clone());
         if channels.contains(&feedback::Channel::Earcon) {
             let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
             self.earcons.play(event, &scheme);
+            // The player's one sentence for an outage goes to the status bar
+            // in place of the event's words, whatever channels the event
+            // reaches (#81): the silence is explained where it is noticed,
+            // and the event's words still go out below.
+            if let Some(complaint) = self.earcons.take_complaint() {
+                shown = Some(complaint);
+            }
         }
         // Speech and braille both ride the one screen reader notification, so
         // announcing once serves either. Announcing twice would double the
@@ -263,10 +284,8 @@ impl Accessibility {
         {
             self.announce_topic(&text, event.priority(), event.key())?;
         }
-        if channels.contains(&feedback::Channel::Visual)
-            && let Ok(mut visual) = self.visual.lock()
-        {
-            *visual = Some(text);
+        if let Some(shown) = shown {
+            self.show(shown);
         }
         Ok(())
     }
@@ -632,12 +651,20 @@ mod tests {
         //
         // The shortest tone in the set, because on Windows the middle call
         // here really does sound.
+        //
+        // The sounds are switched off by hand first rather than relied on
+        // being off: they have been on by default since 2026-09-18 (#77),
+        // and this test is about the answer with them off, whatever the
+        // default is.
         let a11y = Accessibility::new().expect("accessibility");
+        let mut settings = a11y.feedback_settings();
+        settings.set_channel_enabled(feedback::Channel::Earcon, false);
+        a11y.set_feedback_settings(settings);
         assert!(
             !a11y
                 .earcon(feedback::Event::MisspelledWord)
                 .expect("earcon"),
-            "sounds are off by default, so nothing should have played"
+            "with the sounds off nothing should have played"
         );
 
         let mut settings = a11y.feedback_settings();
@@ -781,6 +808,45 @@ mod tests {
     }
 
     #[test]
+    fn test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads() {
+        // The tester's earcons went silent after hours and nothing said so
+        // (#81). When no output device can be opened, the player's one
+        // sentence for the outage goes to the status bar in place of the
+        // event's own words, whatever channels the event reaches, so the
+        // silence is explained where it is noticed. The event's words still
+        // go to the screen reader: the event happened, and only the sound
+        // did not.
+        let a11y = Accessibility {
+            earcons: feedback::EarconPlayer::whose_device_has_gone_for_good(),
+            ..Accessibility::new().expect("accessibility")
+        };
+
+        a11y.signal(feedback::Event::NewMail, "3 messages")
+            .expect("signal");
+
+        let shown = a11y.take_visual_feedback().expect("a sentence for the eye");
+        assert!(
+            shown.starts_with("The sounds have stopped"),
+            "the status bar got {shown:?} rather than the outage"
+        );
+        assert!(
+            !shown.contains("New mail"),
+            "the event's words displaced the outage: {shown:?}"
+        );
+        assert!(
+            lines_released(&a11y)
+                .iter()
+                .any(|line| line == "New mail, 3 messages"),
+            "the event's own words were lost with the sound"
+        );
+        assert_eq!(
+            a11y.take_visual_feedback(),
+            None,
+            "the outage is shown once"
+        );
+    }
+
+    #[test]
     fn test_visual_feedback_is_taken_once_and_not_repeated() {
         // A status line that redisplays an old event on every timer tick is
         // saying something happened when nothing did.
@@ -834,16 +900,20 @@ mod tests {
         // ignoring the mutex and handing back `Default::default()` on every
         // call. This one changes the setting first, so default and stored
         // disagree, and only reads the getter after that.
+        //
+        // Speech is the channel switched, because it is on in the default
+        // and this test needs a value that differs from it. The sounds used
+        // to be that channel until they went on by default too (#77).
         let a11y = Accessibility::new().expect("accessibility");
         let mut changed = a11y.feedback_settings();
-        changed.set_channel_enabled(feedback::Channel::Earcon, true);
+        changed.set_channel_enabled(feedback::Channel::Speech, false);
         a11y.set_feedback_settings(changed.clone());
 
         assert_eq!(a11y.feedback_settings(), changed);
         assert_ne!(
             a11y.feedback_settings(),
             feedback::FeedbackSettings::default(),
-            "earcons are off by default, so a settings value with them on must not read back as the default"
+            "speech is on by default, so a settings value with it off must not read back as the default"
         );
     }
 
