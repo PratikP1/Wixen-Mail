@@ -31,15 +31,41 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   folder that holds others as much as on any other, and on an account row it does nothing;
   Enter on Cancel stays Cancel, because no button was made the default. Every move and delete
   until this build waited for the server, and Enter on the chosen folder did nothing because
-  nothing listened to the tree. Known limitations: a move or a copy to a folder on another
-  account still waits for both servers before the row leaves, because it is a fetch and an
-  append rather than a move, and 11-07.2 makes it complete here first; nobody has replayed a
-  move against a real mail server after a restart, and what a real server does with a replayed
-  move, or with a message another client changed meanwhile, is what the tester's account
-  settles, so #63's move, copy and delete proofs are re-taken after this; the loopback servers
-  the tests run against answer the four ways a server can, done, already done, refused and not
-  reached, and are not a real mail server; a set that includes a message on another account
-  keeps the server-first path for the whole set.
+  nothing listened to the tree. Known limitations: nobody has replayed a move against a real
+  mail server after a restart, and what a real server does with a replayed move, or with a
+  message another client changed meanwhile, is what the tester's account settles, so #63's
+  move, copy and delete proofs are re-taken after this; the loopback servers the tests run
+  against answer the four ways a server can, done, already done, refused and not reached, and
+  are not a real mail server. A move or a copy to a folder on another account completes here
+  first as well since later the same day, below.
+- **A move or a copy to a folder on another account completes on this computer first as
+  well.** Pratik's decision of 2026-09-19 on #86, overruling the entry above's limitation: the
+  row leaves at once, "Moved to Work in Home" is shown and not spoken, and the message is in
+  the other account's folder here straight away; a copy appears there with its text and
+  "Copied to Work in Home" is spoken. Behind that the message is fetched from the first
+  account, kept on this computer, uploaded to the second and asked about if the upload's
+  answer never came, and only then removed from the first, in that order, which is the
+  safeguard phase 4.1 built; that runs in the background on the two accounts' sessions and
+  again at the next check for mail of either account before any folder of it is read, so a
+  restart finishes the move from the kept message without asking, and the question phase 4.1
+  asked at start is gone. The kept message is held, unencrypted like the rest of the cache,
+  from the moment the move is asked for until the other account has taken it or the move is
+  undone, under the same 25 MB ceiling and 64 MB budget as before; the privacy page says so. A
+  refusal at either server puts the row back where it was and is spoken with the reason; an
+  upload nobody could settle is asked about again at the next check and never put back as if
+  the message were nowhere; a message the first account would not let go once the second has
+  it is said to be in both places. A message larger than 25 MB, or of a size this computer
+  does not know, cannot be kept here and goes the old way, servers first, and the status bar
+  says "larger than 25 MB, so it goes now and the row leaves when Home has taken it". A
+  message still on its way to another account is refused a second move, copy or delete in
+  words until the next check. Known limitations: ledger 187's three questions from phase 4.1
+  are still the tester's account's, what a real provider does with a ten megabyte upload,
+  what Gmail makes of a message uploaded from another account, and what any provider does
+  with a message carrying an identifier the folder already holds, which the replay leans on;
+  #63's copy and move across accounts are re-taken after this; nobody has moved a message to
+  another account this way, and the loopback servers answer the four ways at each of the two
+  servers and are not a real mail server; a message over the ceiling whose upload's answer
+  never came is not replayed from here and is asked about at the servers as before.
 - **The log starts at Debug while the build is an alpha or a beta, and writes what a report
   needs.** Reported on 2026-09-17 from build `1.0.0-alpha.1+114.g44bff634` (#71), and decided
   the same day: the level a fresh profile starts at follows the version the build carries,

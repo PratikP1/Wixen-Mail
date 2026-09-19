@@ -128,15 +128,22 @@ Moving a message to a folder on a different account means fetching it from one m
 and uploading it to the other. While that is happening, the whole message is kept in the
 `cache` folder, and it is not encrypted, like everything else in that folder.
 
-Normally that is a few seconds. If Wixen Mail closes part way through a move, the message
-stays there until you answer the question you are asked the next time you start it, and at
-most seven days. Answer it either way and the copy goes immediately. Say nothing, and it
-goes on its own after the seven days.
+Since 2026-09-19 the move happens on this computer first and the servers follow, so the
+message is kept here from the moment you ask for the move until the other account has taken
+it or the move is undone, and not only for the seconds of the crossing. Normally that is
+still a few seconds. With no network it is until the next check for mail after the network
+is back, and if Wixen Mail closes in between, the message stays here and the move is finished
+at the next check of either account after you start it again, without asking you anything.
+A copy kept this way is one more place the message sits until then. It goes the moment the
+move lands or is undone. Until 2026-09-19 a move interrupted by closing the program was a
+question at the next start, and the copy went when you answered it or after seven days;
+the seven days still apply to a copy nothing is waiting for.
 
-A message larger than 25 MB is not kept at all, and the move happens exactly as it would
-have. If several interrupted moves add up to more than 64 MB, the newest one is not kept,
-so a move you have not been asked about yet is never dropped to make room for one happening
-now.
+A message larger than 25 MB is not kept at all, and the move happens the way every move did
+before 2026-09-19: at the servers first, with the row leaving when the other account has
+taken it, and the status bar says so when you ask for it. If several interrupted moves add
+up to more than 64 MB, the newest one is not kept, so a move already waiting is never dropped
+to make room for one happening now.
 
 **This copy does not protect your message, and nothing else here should be read as saying
 it does.** A move puts the message at the second account first and only takes it off the
