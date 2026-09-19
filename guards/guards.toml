@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 141 records have arrived since and have not been through it.
+# 143 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -6040,15 +6040,20 @@ tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
+# Rewritten 2026-09-18 by 11-06.1 onto the new shape of the agreed case,
+# which hands the answer to show_or_say_what_happened_next; the break is the
+# same, the window wording a delete's outcome for itself, on the shown
+# channel now, and the same one test goes red on the library.
 [[guard]]
 name = "the delete path says what the one owner of that sentence gave it"
 file = "src/presentation/wx_app.rs"
-before = """                        say(UIUpdate::StatusUpdated(next.said));
+before = """                        show_or_say_what_happened_next(&say, message_row_id, next);
                     }
                 }
                 return;"""
 after = """                        let _ = next.said;
-                        say(UIUpdate::StatusUpdated(format!("Deleted: {subject}")));
+                        say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                        say(UIUpdate::Shown(format!("Deleted: {subject}")));
                     }
                 }
                 return;"""
@@ -25043,7 +25048,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 13 },
+    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 15 },
 ]
 
 # ── The new-mail sound means mail arrived, not that the watch woke (#38) ───
@@ -25073,7 +25078,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 13 },
+    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 15 },
 ]
 
 # ── A check that found nothing says nothing about what arrived (#38) ────────
@@ -26176,7 +26181,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 12 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
 ]
 
 # A re-read that puts the cursor on its message's row whatever row it was
@@ -26200,5 +26205,49 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 12 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
+]
+
+# #83, the third task: a delete says Delete once at the key and nothing on
+# success; the outcome is shown for the eye when the row left and spoken
+# when it stayed. Two breaks, each the tree before this plan on one half.
+
+# The success line sent as StatusUpdated again, which is spoken at Normal,
+# so "Deleted: subject" follows the landed row's reading as it did before
+# 2026-09-18. The outcome reading goes red; the companions read snippets.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a delete that went through is shown for the eye, not spoken over the landed row"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """            say(UIUpdate::Shown(next.said));"""
+after = """            say(UIUpdate::StatusUpdated(next.said));"""
+red = [
+    "test_the_outcome_of_a_delete_is_shown_when_the_row_left_and_spoken_when_it_stayed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
+]
+
+# The subject back in the spoken word at the key, "Deleting subject...",
+# which is the first of the two sentences the tester was waiting through.
+# The one-word reading goes red.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a delete says the one word delete at the key, not the subject again"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """                                say_the_one_word(&a11y, "Delete");"""
+after = """                                say_the_one_word(&a11y, &format!("Deleting {subject}..."));"""
+red = [
+    "test_a_delete_says_the_one_word_delete_at_the_key_and_writes_the_fuller_line",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
 ]

@@ -260,6 +260,22 @@ column counts as changing the arrangement.
   which. `Space` reads the message aloud; until 2026-09-18 this line said it
   toggled read and unread, and it never did.
 
+### What a delete says
+
+`Delete` says the one word "Delete" and then the next message's row, which the
+cursor lands on: the message after the one you deleted, or the one before it
+when you deleted the last. Nothing more is said when the delete went through;
+the row you land on is the confirmation. If the delete failed, the reason is
+spoken. The status bar at the bottom of the window shows the fuller line,
+"Deleting Invoice..." and then "Moved to Trash: Invoice", for anybody who
+looks. Move to Trash, Move to Folder and Copy to Folder work the same way: one
+word on the key, the fuller line on the status bar, and the outcome spoken only
+when the message stayed where it was, which for a copy is always, since the
+copy is the only thing that tells you it happened. Since 2026-09-18; until then a delete
+said "Deleting Invoice..." on the key and "Moved to Trash: Invoice" after the
+server had answered, two sentences with the subject in each, and the wait for
+the second slowed the hand.
+
 ## Composing Email
 
 ### Creating a New Message

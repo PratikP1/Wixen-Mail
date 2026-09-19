@@ -4241,6 +4241,7 @@ impl WxMailApp {
                                 app,
                                 &message_cache,
                                 &frame,
+                                &a11y,
                                 id == ID_COPY_TO_FOLDER,
                             );
                         }
@@ -4973,13 +4974,21 @@ impl WxMailApp {
                                 if cancel_if_queued(app, &message_cache, cache_id) {
                                     return;
                                 }
+                                // One word at the key and the fuller line for
+                                // the eye (#83). The subject was just read on
+                                // the row, and what is said next is the row
+                                // the cursor lands on, or a refusal; a spoken
+                                // "Deleting subject..." here and "Deleted:
+                                // subject" after the server were the two
+                                // sentences the tester was waiting through.
+                                say_the_one_word(&a11y, "Delete");
+                                send_shown(&ui_tx, &runtime, &format!("Deleting {subject}..."));
                                 // A message on this computer. POP mail is all
                                 // of it, and the route below needs a session
                                 // with a server this account has never had.
                                 if delete_if_local(app, &message_cache, cache_id, &subject, asked) {
                                     return;
                                 }
-                                send_status(&ui_tx, &runtime, &format!("Deleting {}...", subject));
                                 spawn_server_change(
                                     app,
                                     cache_id,
@@ -14974,6 +14983,33 @@ pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     });
 }
 
+/// A line for the eye alone: written to the status bar and spoken by nothing.
+///
+/// For a line the ear has already had another way (#83, 2026-09-18): a
+/// delete's success, where the row the cursor lands on is what is heard.
+/// Not for an answer to a key, which is [`send_status`], and not for a
+/// refusal, which is [`send_refusal`]; a line sent through this that nothing
+/// else says is a line written to nobody, which is the fault the shown-only
+/// register in the window's tests exists to keep out.
+pub(crate) fn send_shown(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
+    let tx = tx.clone();
+    let msg = msg.to_string();
+    rt.spawn(async move {
+        let _ = tx.send(UIUpdate::Shown(msg)).await;
+    });
+}
+
+/// The one word said at a key, at Normal, before the act it names is done.
+///
+/// "Delete" on Delete, "Move" on a move (#83): the subject was just read on
+/// the row and is not said again, and what happens next is the row the
+/// cursor lands on, not a sentence. Normal, so it is heard above a sync's
+/// steps and not above a refusal.
+fn say_the_one_word(a11y: &Accessibility, word: &str) {
+    use crate::presentation::accessibility::announcements::Priority;
+    let _ = a11y.announce(word, Priority::Normal);
+}
+
 /// A step on the way, shown always and spoken only under Say every step.
 pub(crate) fn send_progress(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     let tx = tx.clone();
@@ -17929,6 +17965,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // as the newest rather than all of them.
             let _ = a11y.announce_topic(status, Priority::Normal, "status");
         }
+        UIUpdate::Shown(shown) => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = shown.clone();
+            }
+            frame.set_status_text(shown, 0);
+            // Shown and not said, on purpose (#83). What rides this is a line
+            // the ear has already had another way: a delete's success, where
+            // the row the cursor lands on is what is heard, and a spoken
+            // "Deleted: subject" after it was the second sentence the tester
+            // was waiting through. The eye may still want the line, so it is
+            // written. Registered as quiet in this window's tests with this
+            // reason, so the check that every arm which shows something says
+            // it holds this one to it.
+        }
         UIUpdate::Progress(said) => {
             {
                 let mut s = lock_state(state);
@@ -19234,6 +19285,7 @@ fn move_or_copy_message(
     app: AppHandles<'_>,
     cache: &Option<Arc<crate::data::message_cache::MessageCache>>,
     frame: &Frame,
+    a11y: &Accessibility,
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
@@ -19368,14 +19420,16 @@ fn move_or_copy_message(
         return send_status(tx, rt, "The message is not in a folder we know about");
     };
 
-    send_status(
-        tx,
-        rt,
-        &format!(
-            "{} {subject}...",
-            if copying { "Copying" } else { "Moving" }
-        ),
-    );
+    // One word at the key and the fuller line for the eye (#83), the shape
+    // a delete has: a move whose row leaves is confirmed by the row the
+    // cursor lands on, and a copy, whose row stays, by its spoken outcome.
+    let (word, doing) = if copying {
+        ("Copy", "Copying")
+    } else {
+        ("Move", "Moving")
+    };
+    say_the_one_word(a11y, word);
+    send_shown(tx, rt, &format!("{doing} {subject}..."));
     spawn_folder_move(app, row_id, uid, subject, from, into, copying);
 }
 
@@ -19595,15 +19649,37 @@ fn spawn_folder_move(
         };
 
         match outcome {
-            Ok(next) => {
-                if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
-                    say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                }
-                say(UIUpdate::StatusUpdated(next.said));
-            }
+            Ok(next) => show_or_say_what_happened_next(&say, message_row_id, next),
             Err(e) => fail(e.to_string()),
         }
     });
+}
+
+/// Take the row out and show the line, or leave the row and say the line.
+///
+/// The one place a delete's or a move's outcome reaches the window from,
+/// so the row and the sentence, decided together in `server_delete`, are
+/// delivered together. When the row leaves, the row the cursor lands on is
+/// what is heard and the line is written for the eye alone (#83, Pratik's
+/// decision of 2026-09-18: say "Delete" on the key and nothing more, and
+/// something only when the delete did not go through). When the row stays,
+/// which is the copy that landed with the original untouched or a move
+/// across accounts that got nowhere, nothing else says anything happened,
+/// so the line is spoken, at Normal, as an answer to the key. A refusal the
+/// server gave never comes here; it goes out as a refusal, at High.
+fn show_or_say_what_happened_next(
+    say: &impl Fn(UIUpdate),
+    row_id: i64,
+    next: crate::application::server_delete::WhatToDoNext,
+) {
+    use crate::application::server_delete::ThenWhat;
+    match next.then {
+        ThenWhat::MarkItDeletedHere => {
+            say(UIUpdate::MessageDeletedFromCache(row_id));
+            say(UIUpdate::Shown(next.said));
+        }
+        ThenWhat::LeaveTheRow => say(UIUpdate::StatusUpdated(next.said)),
+    }
 }
 
 /// Ask which folders this account keeps up to date, and record the answer.
@@ -19969,7 +20045,9 @@ fn delete_if_local(
                     // other variant would mark it deleted where it landed.
                     let _ = tx_now.send(UIUpdate::MessageLeftTheFolder(row_id)).await;
                 });
-                send_status(tx, rt, &format!("{}: {subject}", outcome.said));
+                // Shown and not said (#83): the row the cursor lands on is
+                // what is heard, the same as when a server agreed.
+                send_shown(tx, rt, &format!("{}: {subject}", outcome.said));
             } else {
                 // Its own topic and above the ordinary run of status: this is
                 // the answer to a key somebody just pressed, and a message that
@@ -21068,12 +21146,7 @@ fn spawn_server_change(
                     Deleted::TheServerDidThis(deletion) => {
                         let next =
                             crate::application::server_delete::after_a_delete(&deletion, &subject);
-                        if next.then
-                            == crate::application::server_delete::ThenWhat::MarkItDeletedHere
-                        {
-                            say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                        }
-                        say(UIUpdate::StatusUpdated(next.said));
+                        show_or_say_what_happened_next(&say, message_row_id, next);
                     }
                 }
                 return;
@@ -26933,6 +27006,20 @@ mod what_the_status_line_says {
                  would tell somebody they had moved to Tasks when they had not. One \
                  update doing two jobs is the real fault and splitting it is its own \
                  change.",
+            ),
+            (
+                "Shown",
+                "Quiet by definition, since 2026-09-18 (#83): a line the eye may want \
+                 and the ear has already had another way. A delete's success rides it, \
+                 because the row the cursor lands on after the delete is what is heard, \
+                 and the spoken \"Deleted: subject\" that used to follow was the second \
+                 sentence the tester was waiting through on every delete. The same for \
+                 a move whose row left the folder. A refusal never rides it: a delete \
+                 or a move that did not go through is spoken, at High, through \
+                 CommandRefused or ErrorOccurred, and an outcome that left the row \
+                 where it was is spoken through StatusUpdated, because then nothing \
+                 else says anything happened. tests/deleting_a_message_lands_on_the_next_one.rs \
+                 holds the sorting.",
             ),
         ]
     }
