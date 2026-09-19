@@ -3796,9 +3796,11 @@ the caveat at the top of this file binds every `[D]` line.
   - [S] NVDA's own selected and not selected as he extends, the count after Ctrl+A, one
     sentence after a command over many, and the refusal above the bound, are his ear's.
 
-- [ ] **LIST-06**: A conversation row stands for the originator when every message in it is
+- [x] **LIST-06**: A conversation row stands for the originator when every message in it is
   unread and for the first unread message otherwise, reports that message's sender first,
   previews and opens on it, and selecting it fetches the conversation's text.
+  - Ticked 2026-09-19 by 11-08 at `75c211fe` on its `[D]` lines, the orchestrator's
+    instruction overruling the README's "11-12 ticks"; the `[S]` line is ledger 548.
   - Evidence: every conversation column is one SQL expression used for the cell and the sort
     (`message_columns.rs:208-250`, `messages.rs:258-330`): Correspondent is every distinct
     sender in stored order, Snippet the newest message's, and nothing names a message the row
@@ -4566,7 +4568,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
 | LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544 |
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544 |
-| LIST-06 | Phase 11 | Pending, 11-08 |
+| LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548) |
 | LIST-07 | Phase 11 | Pending, 11-09 |
 | LIST-08 | Phase 11 | Pending, 11-10 |
 | LIST-09 | Phase 11 | Pending, 11-11 |
