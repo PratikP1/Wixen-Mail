@@ -88,8 +88,10 @@ pub fn whether_to_move(old_index: Option<usize>, new_index: Option<usize>) -> Op
 /// and it is still there, else the first row under the sort, and nothing
 /// when the list holds no row.
 pub fn where_to_land_on_arrival(remembered: Option<usize>, len: usize) -> Option<usize> {
-    let _ = (remembered, len);
-    None
+    if len == 0 {
+        return None;
+    }
+    Some(remembered.filter(|row| *row < len).unwrap_or(0))
 }
 
 #[cfg(test)]

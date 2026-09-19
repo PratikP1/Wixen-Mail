@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 143 records have arrived since and have not been through it.
+# 145 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26134,7 +26134,7 @@ red = [
     "presentation::landing_after_a_removal::tests::test_a_set_holding_both_ends_lands_on_the_last_row_left",
 ]
 tests_last_seen = [
-    { file = "src/presentation/landing_after_a_removal.rs", tests = 12 },
+    { file = "src/presentation/landing_after_a_removal.rs", tests = 16 },
 ]
 
 # A re-read that moves the cursor on every load, whatever row the cursor's
@@ -26153,7 +26153,7 @@ red = [
     "presentation::landing_after_a_removal::tests::test_a_message_still_on_its_row_is_no_move_and_neither_is_one_that_is_gone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/landing_after_a_removal.rs", tests = 12 },
+    { file = "src/presentation/landing_after_a_removal.rs", tests = 16 },
 ]
 
 # The landing dropped from the control: the helper still answers the row
@@ -26250,4 +26250,53 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
+]
+
+# ── 11-06.2: focus arriving on the list lands on a row (#87) ──────────────
+
+# The landing fired on every focus event, not only when the control holds
+# no row: coming back to the list with the cursor on row 1 asks the rule
+# and moves the cursor to the remembered row, which takes a screen
+# reader's cursor away under the person, the fault the folder tree was
+# fixed for. The built window's third step goes red, inside the one test.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "focus arriving on a list that holds a row moves nothing, not the cursor on every focus event"
+file = "src/presentation/list_arrival.rs"
+suite = "tab_from_the_tree_lands_on_the_newest_message"
+before = """        if the_focused_row_of(&owner).is_some() {
+            return;
+        }"""
+after = """        let _ = the_focused_row_of(&owner);"""
+red = [
+    "test_focus_arriving_from_the_tree_lands_on_the_remembered_row_or_the_first_and_an_empty_list_says_so",
+]
+tests_last_seen = [
+    { file = "src/presentation/list_arrival.rs", tests = 0 },
+    { file = "tests/tab_from_the_tree_lands_on_the_newest_message.rs", tests = 1 },
+]
+
+# The first row whatever is remembered: somebody who left the list on row
+# 40 and comes back to it after the control lost the row lands at the top.
+# The built window's second step goes red, inside the one test; the rule's
+# own case for a remembered row still there goes red on the library too,
+# which this record, measured on the target, does not see.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "focus arriving lands on the remembered row when it is still there, not the first row whatever was remembered"
+file = "src/presentation/landing_after_a_removal.rs"
+suite = "tab_from_the_tree_lands_on_the_newest_message"
+before = """    Some(remembered.filter(|row| *row < len).unwrap_or(0))"""
+after = """    let _ = remembered;
+    Some(0)"""
+red = [
+    "test_focus_arriving_from_the_tree_lands_on_the_remembered_row_or_the_first_and_an_empty_list_says_so",
+]
+tests_last_seen = [
+    { file = "src/presentation/landing_after_a_removal.rs", tests = 16 },
+    { file = "tests/tab_from_the_tree_lands_on_the_newest_message.rs", tests = 1 },
 ]

@@ -27,7 +27,13 @@
 //! list, the thing that is read on arrival.
 //! `tests/tab_from_the_tree_lands_on_the_newest_message.rs` moves focus from
 //! a built tree to a built list through this binding and reads the focused
-//! item back from the control.
+//! item back from the control, under a hook recording which child each
+//! focus event named. Measured 2026-09-19: an arrival on a list holding no
+//! row raised the list itself, then row 0 twice; coming back to a list
+//! holding row 1 raised the list itself, then row 1. The first event of
+//! each is the system's own for the window, raised by `SetFocus` before
+//! `WM_SETFOCUS` is sent, and every list gets it; the row's is the one the
+//! tester did not hear.
 
 use wxdragon::prelude::*;
 
@@ -40,5 +46,33 @@ where
     C: Fn() -> Option<usize> + 'static,
     E: Fn() + 'static,
 {
-    let _ = (list, choose, on_empty);
+    let owner = *list;
+    list.bind_internal(EventType::SET_FOCUS, move |event| {
+        // Skipped, so the control's own focus handling runs after this,
+        // with the row already set.
+        event.skip(true);
+        if the_focused_row_of(&owner).is_some() {
+            return;
+        }
+        match choose() {
+            Some(row) => land_on(&owner, row),
+            None => on_empty(),
+        }
+    });
+}
+
+/// The row the control holds as focused, or nothing.
+fn the_focused_row_of(list: &ListCtrl) -> Option<usize> {
+    usize::try_from(list.get_next_item(-1, ListNextItemFlag::All, ListItemState::Focused)).ok()
+}
+
+/// Select and focus `row` and bring it into view.
+///
+/// The control holds no focused row when this runs, so there is no state
+/// to clear first; the setter in the window's file that lands after a
+/// removal clears because the control may already hold the row there.
+fn land_on(list: &ListCtrl, row: usize) {
+    let both = ListItemState::Selected | ListItemState::Focused;
+    list.set_item_state(row as i64, both, both);
+    list.ensure_visible(row as i64);
 }
