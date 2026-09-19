@@ -18667,10 +18667,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // wakes, so the sound means mail arrived. No detail: the counts
             // are the sentence below, and the event's own word is enough.
             let _ = a11y.signal(FeedbackEvent::NewMail, "");
-            // The count and never a subject or a phrase (#62): what a rule
-            // with a sound matched is a number in the log, and the report
-            // 11-04 asks for reads counts.
-            tracing::debug!("{matches_with_a_sound} matches of a rule with a sound this check");
+            // A rule somebody gave a sound matched (#62): once per check,
+            // here beside the new-mail event and after it, with the count
+            // as the detail, however many messages matched and however
+            // many folders held them. Never per message and never per
+            // folder, which is what keeps a folder of matches from
+            // flooding; the check sends this update once, after its loop,
+            // and `tests/a_rule_can_change_how_a_row_is_announced.rs`
+            // holds both halves of that bound. The count and never a
+            // subject or a phrase, so the log's line and the words say a
+            // number.
+            if *matches_with_a_sound > 0 {
+                let matched = crate::service::caldav::how_many(*matches_with_a_sound, "message");
+                tracing::debug!("{matched} matched a rule with a sound this check");
+                let _ = a11y.signal(FeedbackEvent::RuleMatched, &matched);
+            }
             // Once per check, with the counts, at Normal on its own topic so
             // a step arriving behind it cannot replace it; silent only under
             // Errors only.

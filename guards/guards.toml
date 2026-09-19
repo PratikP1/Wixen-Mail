@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 187 records have arrived since and have not been through it.
+# 190 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -10931,8 +10931,8 @@ before = """    pub fn show(&self, at: usize) {
 after = """    pub fn show(&self, at: usize) {"""
 red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
 tests_last_seen = [
-    { file = "tests/every_event_has_a_control.rs", tests = 1 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
 ]
 
 # "The setting survives a restart" is a claim about the join between two halves
@@ -11000,8 +11000,8 @@ after = """            "Choose whether events are announced, sounded, or shown. 
              covers both speech and braille.","""
 red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
 tests_last_seen = [
-    { file = "tests/every_event_has_a_control.rs", tests = 1 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
 ]
 
 # The second rule of the same panel, and the plan for this task asked for one
@@ -11029,8 +11029,8 @@ after = """        self.working
             .set_event_channels(self.shown(), BTreeSet::new());"""
 red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
 tests_last_seen = [
-    { file = "tests/every_event_has_a_control.rs", tests = 1 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
 ]
 
 # Four records retired on 2026-09-18 by 11-03, all on `names.rs`'s
@@ -22613,17 +22613,20 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-14 against the target,
 # `cargo test --test the_list_reads_only_memory`: 1 passed and exactly these
-# five failed.
+# five failed. The `before` rewritten on 2026-09-19 by 11-10, which made the
+# function read the column's index as well as the column for the phrase it
+# prefixes to the first cell, and measured again through
+# `scripts/guards.sh --remeasure`, the target named.
 
 [[guard]]
 name = "the function the list paints with cannot open the cache"
 file = "src/presentation/virtual_rows.rs"
 suite = "the_list_reads_only_memory"
 before = """) -> String {
-    let Some(column) = usize::try_from(column)"""
+    let Some((at, column)) = usize::try_from(column)"""
 after = """) -> String {
     let _ = crate::data::message_cache::MessageCache::new(std::path::PathBuf::new(), None);
-    let Some(column) = usize::try_from(column)"""
+    let Some((at, column)) = usize::try_from(column)"""
 red = [
     "test_the_message_list_paints_from_memory_and_its_closure_only_calls_the_function",
     "test_a_function_that_opened_the_cache_would_be_named",
@@ -27417,7 +27420,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/filters.rs", tests = 49 },
-    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 6 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
 ]
 
 # Every match counted as one that sounds, whether or not the rule carries
@@ -27441,5 +27444,81 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 149 },
-    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 6 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
+]
+
+# The prefix dropped: the first visible cell is painted as it was, so the
+# phrase a rule kept on a message is heard nowhere unless the Says first
+# column is switched on, which it is not by default. The break keeps the
+# arm's shape and hands the cell back. On the target the two prefix cases,
+# one per view, go red; the case where the Says first column is itself
+# first stays green, since nothing is prefixed there either way, and the
+# cell cases do not go through text_for.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a rule's phrase is said before the row's first cell, not only shown in its column"
+file = "src/presentation/virtual_rows.rs"
+suite = "a_rule_can_change_how_a_row_is_announced"
+before = """        (Some(phrase), true) => said_first(phrase, &cell),"""
+after = """        (Some(_), true) => cell,"""
+red = [
+    "test_the_phrase_is_said_before_the_first_visible_cell_of_a_conversation_row",
+    "test_the_phrase_is_said_before_the_first_visible_cell_of_a_message_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/virtual_rows.rs", tests = 6 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
+]
+
+# The count sent per folder as well as once after the loop: the arm runs
+# per update it is sent, so a check over a mailbox of matches plays the
+# Rule matched sound once per folder that held one, which is the flood
+# guardrail 5 exists to stop. The break keeps the one send after the loop
+# and adds one inside it, with the folder's own count. On the target the
+# reading that holds both halves of the bound goes red at its second
+# half; the readings' companions plant their own faults and stay green.
+# 10-04's reading in progress_is_shown_and_results_are_said would redden
+# too, and is not in the red list because the record's suite is the
+# target.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the rule-matched sound plays once per check, not once per folder that held a match"
+file = "src/presentation/wx_app.rs"
+suite = "a_rule_can_change_how_a_row_is_announced"
+before = """                        matches_with_a_sound += result.filtered.matches_with_a_sound;"""
+after = """                        matches_with_a_sound += result.filtered.matches_with_a_sound;
+                        say(UIUpdate::WhatArrived {
+                            what: String::new(),
+                            matches_with_a_sound: result.filtered.matches_with_a_sound,
+                        });"""
+red = [
+    "test_a_check_with_matches_plays_the_sound_once_and_never_per_folder_or_per_message",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
+]
+
+# The event given another event's tone: a match sounds like a search that
+# came up empty, so somebody who learned the scheme by ear hears the wrong
+# fact. The break copies NothingFound's tone onto RuleMatched. In the
+# library the walk over every event that requires each tone its own goes
+# red; nothing else reads the pair.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the rule-matched event has a tone of its own, not another event's"
+file = "src/presentation/accessibility/feedback.rs"
+before = """            Event::RuleMatched => Tone::new(1175, 80),"""
+after = """            Event::RuleMatched => Tone::new(300, 130),"""
+red = [
+    "presentation::accessibility::feedback::tests::test_every_event_has_its_own_tone",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
 ]

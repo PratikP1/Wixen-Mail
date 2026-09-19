@@ -213,6 +213,11 @@ impl MessageColumn {
     /// column added later lands in the second arm and is heard with its
     /// heading, which is the safe side; the target that reads a row on
     /// request walks [`Self::ALL`] so the choice is made on purpose.
+    ///
+    /// Says first joined the six on 2026-09-19 (#62): its cell is a phrase
+    /// whose whole point is to be heard first, and "Says first, Urgent"
+    /// puts the column's name in front of it. Labels stays in the second
+    /// arm, because "Work" alone does not say which cell the word is.
     pub fn heading_is_worth_saying(self) -> bool {
         !matches!(
             self,
@@ -222,6 +227,7 @@ impl MessageColumn {
                 | MessageColumn::Answered
                 | MessageColumn::Draft
                 | MessageColumn::Safety
+                | MessageColumn::SaysFirst
         )
     }
 

@@ -757,6 +757,17 @@ fn the_sound_plays_once_per_check(app: &str) -> Result<(), String> {
                 .to_string(),
         );
     }
+    // The other half of the bound: the arm runs once per update it is
+    // sent, so the update has to go out once per check, after the loop,
+    // which 10-04's reading holds for the words and this holds for the
+    // count that rides with them.
+    let sent = check.matches("UIUpdate::WhatArrived").count();
+    if sent != 1 {
+        return Err(format!(
+            "the mail check sends WhatArrived {sent} times, so the sound would play that many \
+             times per check rather than once"
+        ));
+    }
     Ok(())
 }
 
@@ -789,6 +800,10 @@ fn spawn_mail_sync(
             for folder in worth_syncing {
                 say(UIUpdate::Progress(what));
             }
+            say(UIUpdate::WhatArrived {
+                what,
+                matches_with_a_sound,
+            });
 }
 ";
 
@@ -807,6 +822,15 @@ fn test_the_sound_reading_complains_when_the_signal_is_per_folder_or_unguarded_o
     );
     let complaint = the_sound_plays_once_per_check(&per_folder).expect_err("per folder");
     assert!(complaint.contains("2 places"), "{complaint}");
+
+    let the_count_per_folder = A_WINDOW_SHAPED_AS_IT_SHOULD_BE.replace(
+        "                say(UIUpdate::Progress(what));",
+        "                say(UIUpdate::Progress(what));\n                say(UIUpdate::WhatArrived \
+         { what, matches_with_a_sound });",
+    );
+    let complaint =
+        the_sound_plays_once_per_check(&the_count_per_folder).expect_err("the count per folder");
+    assert!(complaint.contains("2 times, so the sound"), "{complaint}");
 
     let unguarded = A_WINDOW_SHAPED_AS_IT_SHOULD_BE.replace("*matches_with_a_sound > 0", "true");
     let complaint = the_sound_plays_once_per_check(&unguarded).expect_err("unguarded");

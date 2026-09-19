@@ -68,26 +68,51 @@ pub fn text_for(
     dates: DateSettings,
     now: DateTime<Local>,
 ) -> String {
-    let Some(column) = usize::try_from(column)
+    let Some((at, column)) = usize::try_from(column)
         .ok()
-        .and_then(|at| columns.get(at))
-        .copied()
+        .and_then(|at| columns.get(at).map(|column| (at, *column)))
     else {
         return String::new();
     };
     let Ok(row) = usize::try_from(row) else {
         return PLACEHOLDER.to_string();
     };
-    match listed.showing {
-        Showing::Messages => listed
-            .messages
-            .get(row)
-            .map(|message| message_rows::cell_text(message, column, dates, now)),
+    let (cell, says_first) = match listed.showing {
+        Showing::Messages => listed.messages.get(row).map(|message| {
+            (
+                message_rows::cell_text(message, column, dates, now),
+                message.says_first.as_deref(),
+            )
+        }),
         Showing::Conversations => listed.conversations.get(row).map(|conversation| {
-            message_rows::conversation_cell_text(conversation, column, dates, now)
+            (
+                message_rows::conversation_cell_text(conversation, column, dates, now),
+                conversation.says_first.as_deref(),
+            )
         }),
     }
-    .unwrap_or_else(|| PLACEHOLDER.to_string())
+    .unwrap_or_else(|| (PLACEHOLDER.to_string(), None));
+    match (says_first, at == 0 && column != MessageColumn::SaysFirst) {
+        (Some(phrase), true) => said_first(phrase, &cell),
+        _ => cell,
+    }
+}
+
+/// The phrase in front of the row's first cell (#62).
+///
+/// A screen reader says a row from its first cell, so a phrase put there is
+/// the first thing heard for the row whatever columns are shown and in
+/// whatever order; a column can be hidden and the prefix cannot, which the
+/// guide says. The phrase, a comma for the pause, then the cell, or the
+/// phrase alone when the cell is empty, so "Urgent, " is never heard with
+/// nothing after it. Not applied when the Says first column is itself
+/// first, since that cell is the phrase already.
+fn said_first(phrase: &str, cell: &str) -> String {
+    if cell.is_empty() {
+        phrase.to_string()
+    } else {
+        format!("{phrase}, {cell}")
+    }
 }
 
 #[cfg(test)]
