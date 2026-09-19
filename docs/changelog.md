@@ -805,6 +805,32 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **`Ctrl+Shift+;` reads the row you are on column by column with its headings, and the
+  headings spoken on every row are your screen reader's setting.** The tester on 2026-09-15
+  from build `0.125.1+g3e633252` under NVDA (#26): "when traversing through the list of
+  messages, column headers should not be announced each time. The user should be able to
+  specifically request the reading of columns and corresponding text by pressing a keyboard
+  command. use control+shift+; if not already assigned." It was not assigned. Since
+  2026-09-19 `Ctrl+Shift+;`, and Read the Row's Headings and Text on the Action menu, read the
+  row under the cursor in the message list once, each heading then its text in the order the
+  columns are shown, "Subject, Quarterly report. Correspondent, Ada Lovelace. Unread.
+  Received, yesterday."; a cell that is empty is left out, a cell whose text already says
+  what its column is (Unread, Has attachment, Flagged, Answered, Draft, a safety verdict) is
+  said alone, a conversation row reads its own cells, and the reading is mail content, so
+  `Ctrl+M` mutes it. Pressed with the message list not focused or no row under the cursor, it
+  says "Nothing is selected in the message list". The heading before each cell as you arrow
+  is NVDA's own reading of a Windows list with columns, from its setting Document Formatting,
+  "Row/column headers", on by default, and nothing this program sets changes it, so it is
+  turned off in NVDA: the keyboard shortcuts page gives the steps for a configuration profile
+  that switches on while Wixen Mail is in front, so every other program keeps its headings,
+  with the names read from NVDA 2026.3's own guide on 2026-09-19. The page also says why that
+  route and not the other two: the program speaking each row itself would be heard on top of
+  NVDA's reading, so twice; an NVDA add-on that quiets the list without a profile is a second
+  piece of software with its own versions and testing, and helps NVDA users only. Known
+  limitations: nobody has heard the reading, or heard the list under such a profile; an
+  add-on remains later work if the profile proves too much to ask; and where JAWS and
+  Narrator keep the same setting is named on the page without steps, since nobody here has
+  read them.
 - **The message list selects more than one message, and every command acts on the
   selection with one sentence.** Reported on 2026-09-15 from build `0.125.1+g3e633252` under
   NVDA (#30): "Shift+arrow keys should allow the user to select multiple messages." And the

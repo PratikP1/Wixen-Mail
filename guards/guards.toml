@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 175 records have arrived since and have not been through it.
+# 177 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27097,4 +27097,63 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
     { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 14 },
+]
+
+# The row read on request saying every heading, the six self-describing
+# cells included, so Ctrl+Shift+; reads "Unread, Unread" and "Attachment,
+# Has attachment": the same word twice on every flag cell that has
+# something to say (#26). The composition ignoring the predicate is the
+# break; the cases with a self-describing cell present go red, and the
+# conversation case stays green because nothing in its row is unread,
+# flagged, answered or attached.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the row read on request says a self-describing cell alone, not its heading twice"
+file = "src/presentation/message_rows.rs"
+suite = "the_rows_columns_are_read_on_request"
+before = """            let cell = if column.heading_is_worth_saying() {
+                format!("{}, {}", column.heading(), text)
+            } else {
+                text.to_string()
+            };"""
+after = """            let cell = format!("{}, {}", column.heading(), text);"""
+red = [
+    "test_a_message_row_is_composed_from_the_cells_the_list_paints",
+    "test_a_row_reads_each_heading_then_its_text_in_the_order_the_columns_are_shown",
+    "test_a_self_describing_cell_is_said_as_its_text_alone",
+]
+tests_last_seen = [
+    { file = "src/presentation/message_rows.rs", tests = 41 },
+    { file = "tests/the_rows_columns_are_read_on_request.rs", tests = 17 },
+]
+
+# The row read on request going out through `announce`, the interface
+# channel, instead of `announce_content`: the subject and the sender of
+# somebody's message spoken in a room with the mute on (#26, T-11-33). The
+# closing brace is in the break because Space's reading ends on the same
+# line one indent deeper, and a `before` that matched both would be no
+# place at all. The channel reading on the target goes red; the item and
+# the arm readings stay green, since neither asks how the row goes out.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the row read on request goes out as content under the mute, not as interface chatter"
+file = "src/presentation/wx_app.rs"
+suite = "the_rows_columns_are_read_on_request"
+before = """    let _ = a11y.announce_content(&text);
+}"""
+after = """    let _ = a11y.announce(
+        &text,
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+}"""
+red = [
+    "test_the_reading_is_announced_once_as_content",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_rows_columns_are_read_on_request.rs", tests = 17 },
 ]

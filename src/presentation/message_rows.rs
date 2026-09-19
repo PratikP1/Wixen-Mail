@@ -67,10 +67,18 @@ pub fn cell_text(
         //
         // This was "Yes" for a while, on the reasoning that a screen reader
         // reads a report row as "heading, value" and a cell repeating its
-        // heading would be said twice. In practice the headings are not being
-        // read here, so "Yes" was a word with nothing attached to it and the
-        // unread state was never spoken at all. A cell that stands on its own
-        // is worth more than one that depends on a heading being announced.
+        // heading would be said twice. Whether the heading is read is the
+        // screen reader's own setting and not this program's: NVDA reads it
+        // before every column but the first under its default (Document
+        // Formatting, Row/column headers), and reads none when the person
+        // turns that off, which #26 asked for and the pages give the steps
+        // for. Learned on 2026-09-15 from the tester's ear; until then this
+        // comment claimed the opposite, from nobody's.
+        // A cell that stands on its own is right either way: under the
+        // default it costs "Unread, Unread", under the profile it is the one
+        // word that says the state at all. And the on-request reading,
+        // `the_row_with_its_headings`, leaves the heading off exactly these
+        // cells for the same reason.
         //
         // Still empty for the negative case, which costs no listening time.
         MessageColumn::Unread => if message.read { "" } else { "Unread" }.to_string(),
@@ -93,9 +101,10 @@ pub fn cell_text(
         MessageColumn::Thread => thread_cell(message),
         MessageColumn::Size => message.size_bytes.map(size_cell).unwrap_or_default(),
         MessageColumn::Flagged => if message.starred { "Flagged" } else { "" }.to_string(),
-        // Self-describing like the other flag cells: the column heading is not
-        // announced with the cell, so "Yes" in a row would be a word with
-        // nothing attached to it.
+        // Self-describing like the other flag cells: whether the heading is
+        // announced with the cell is the screen reader's setting, and "Yes"
+        // in a row read without it would be a word with nothing attached to
+        // it.
         MessageColumn::Answered => if message.answered { "Answered" } else { "" }.to_string(),
         MessageColumn::Draft => if message.draft { "Draft" } else { "" }.to_string(),
         // "Spam", "Phishing", "Suspicious", or nothing at all. Like the other
@@ -115,8 +124,10 @@ pub fn cell_text(
 /// ordered by, so what a row says and what it sorts by cannot come apart.
 ///
 /// The module's two rules hold here as they do above. A cell is self-describing,
-/// because the headings are not being read and "Yes" would be a word with
-/// nothing attached to it. And the negative case is the empty string, which
+/// because whether a heading is read before it is the screen reader's own
+/// setting (NVDA's Row/column headers, on by default, off under the profile
+/// #26's pages describe) and "Yes" would be a word with nothing attached to
+/// it whenever it is off. And the negative case is the empty string, which
 /// costs no listening time.
 ///
 /// Pure over data already in memory, like everything else in this module: the
@@ -289,6 +300,50 @@ fn display_address(address: &str) -> String {
         .and_then(|parsed| parsed.name)
         .filter(|name| !name.trim().is_empty());
     name.unwrap_or_else(|| trimmed.to_string())
+}
+
+/// The row read column by column with its headings, on request (#26).
+///
+/// The tester on 2026-09-15: the headers should not be spoken on every row,
+/// and a key should read the row's columns with their text when asked. The
+/// header on every row is NVDA's own reading of a report-view list and the
+/// pages say how to turn it off for this program alone; this is the reading
+/// the key gives, and it is composed from the cells the list shows, in the
+/// order it shows them, so what is heard on request is what is on screen.
+///
+/// Each cell is "heading, text" and ends a sentence, so a screen reader
+/// pauses where one cell ends and the next begins; a cell whose text already
+/// ends one, a snippet most often, is not given a second full stop, since
+/// "in.." is heard as a stutter. Three things are left out. An empty cell,
+/// because a bare heading is a word with nothing attached to it. The heading
+/// of a cell whose text already says what the column is, the six
+/// [`MessageColumn::heading_is_worth_saying`] names, because "Unread, Unread"
+/// is the same word twice. And the line itself when nothing survives, so the
+/// caller can tell an empty row from a row with something in it.
+pub fn the_row_with_its_headings(cells: &[(MessageColumn, String)]) -> String {
+    cells
+        .iter()
+        .map(|(column, text)| (column, text.trim()))
+        .filter(|(_, text)| !text.is_empty())
+        .map(|(column, text)| {
+            let cell = if column.heading_is_worth_saying() {
+                format!("{}, {}", column.heading(), text)
+            } else {
+                text.to_string()
+            };
+            ended(cell)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A cell as one sentence: a full stop added unless the text ends one itself.
+fn ended(cell: String) -> String {
+    if cell.ends_with(['.', '?', '!']) {
+        cell
+    } else {
+        format!("{cell}.")
+    }
 }
 
 /// How big the conversation this row belongs to is, when it is one.

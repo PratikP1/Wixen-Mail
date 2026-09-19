@@ -260,6 +260,9 @@ menu_ids!(
     ID_DELETE_SEARCH,
     ID_EDIT_SEARCH_CONDITIONS,
     ID_BLOCKED_SENDERS,
+    // The row under the cursor read column by column with its headings, on
+    // request (#26): the tester's chord, Ctrl, Shift and the semicolon.
+    ID_READ_ROW_COLUMNS,
 );
 
 // Sort menu IDs
@@ -4049,6 +4052,17 @@ impl WxMailApp {
                                 number.map(|at| at + 1),
                             );
                         }
+                        _ if id == ID_READ_ROW_COLUMNS => {
+                            read_the_row_with_its_headings(
+                                &msg_list,
+                                &state,
+                                &column_layout,
+                                date_settings,
+                                &a11y,
+                                &ui_tx,
+                                &runtime,
+                            );
+                        }
                         _ if id == ID_TOGGLE_STAR => {
                             // Over the selection (#30): starred when any
                             // chosen message is not, else unstarred, which
@@ -7180,6 +7194,25 @@ impl WxMailApp {
                 ID_PREV_UNREAD,
                 "Previous U&nread\tCtrl+Shift+U",
                 "Go to the previous message you have not read",
+            )
+            // The row under the cursor, column by column, each heading then
+            // its text, on request (#26). The header on every row as you
+            // arrow is the screen reader's own setting and the shortcuts
+            // page says where; this is the reading for when you want it.
+            //
+            // x, because every letter of "Read the Row's Columns" is claimed
+            // on this menu already, by an item or by one of the submenus
+            // appended below, and j, q, x and z are the four letters it has
+            // left; "Text" holds one of them. The chord is the tester's
+            // words, Ctrl, Shift and the semicolon if not already assigned,
+            // and it was not (the shortcuts page named no key ending in one).
+            // wx takes the one character after the last plus and Windows
+            // maps it to whichever key makes a semicolon on the current
+            // layout, so the chord follows the key.
+            .append_item(
+                ID_READ_ROW_COLUMNS,
+                "Read the Row's Headings and Te&xt\tCtrl+Shift+;",
+                "Read the row under the cursor column by column, each heading then its text",
             )
             .append_separator()
             .append_item(ID_MARK_READ, "Mark as R&ead", "Mark as read")
@@ -17208,6 +17241,69 @@ fn chosen_row_text(
         PimModule::Tasks => s.tasks.get(row).map(|item| item.read_short(out)),
         PimModule::Notes => s.notes.get(row).map(|item| item.read_short(out)),
     }
+}
+
+/// The row under the cursor read column by column with its headings, on
+/// request: the chord on the Action menu's item, Ctrl, Shift and the
+/// semicolon (#26).
+///
+/// The cells are the ones the list shows, in the order it shows them: the
+/// visible layout, each cell through [`virtual_rows::text_for`], which is
+/// what the paint callback answers with, so what is heard is what is on
+/// screen and the two cannot come apart. The composition is
+/// [`message_rows::the_row_with_its_headings`].
+///
+/// An accelerator fires wherever focus is, so this asks first whether the
+/// message list holds it and a row is under the cursor, and refuses
+/// otherwise rather than reading a row nobody is on. The row is mail
+/// content, the subject and the sender of somebody's message, so it goes
+/// out once through [`Accessibility::announce_content`], which the mute
+/// controls, as Space's reading does; nothing goes to the status bar.
+fn read_the_row_with_its_headings(
+    list: &ListCtrl,
+    state: &Arc<StdMutex<WxUIState>>,
+    layout: &Rc<RefCell<ColumnLayout>>,
+    dates: crate::presentation::date_display::DateSettings,
+    a11y: &Accessibility,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    let Some(row) = list
+        .has_focus()
+        .then(|| lock_state(state).selected_message_index)
+        .flatten()
+    else {
+        send_refusal(tx, rt, "Nothing is selected in the message list");
+        return;
+    };
+    let columns = layout.borrow().visible();
+    let now = chrono::Local::now();
+    let cells: Vec<(MessageColumn, String)> = {
+        let s = lock_state(state);
+        let listed = virtual_rows::Listed {
+            showing: s.showing,
+            messages: &s.messages,
+            conversations: &s.conversations,
+        };
+        columns
+            .iter()
+            .enumerate()
+            .map(|(at, column)| {
+                let text =
+                    virtual_rows::text_for(listed, &columns, row as i64, at as i32, dates, now);
+                (*column, text)
+            })
+            .collect()
+    };
+    let text = message_rows::the_row_with_its_headings(&cells);
+    if text.is_empty() {
+        // Every visible cell empty: a read message with nothing to say under
+        // a layout showing flag columns alone. Said as a refusal rather than
+        // as silence, so the key is not mistaken for a dead one.
+        send_refusal(tx, rt, "This row's columns are all empty");
+        return;
+    }
+    let _ = a11y.announce_content(&text);
 }
 
 /// Which of the four an id is, if it is one of them.

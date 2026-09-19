@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 516
+open_count: 518
 waived_count: 0
 fixed_count: 33
-total_count: 549
-last_updated: 2026-09-19T13:00:00.000Z
+total_count: 551
+last_updated: 2026-09-19T14:20:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -564,6 +564,8 @@ last_updated: 2026-09-19T13:00:00.000Z
 | 547 | 11 | unrun-verify | src/application/moves_waiting.rs |  | 11-07.2: what only the tester's ear and two real servers settle for #86's second half. A move to a folder of the other account leaving the row at once under NVDA with the cursor read on the next message and "Moved to Work in Home" shown; the message appearing in that folder of the other account at its next check; with the network off, the row going and coming back with the refusal spoken once when a server answers no; a restart with a crossing waiting finishing it at the next check of either account from the kept message, without a question; a message over 25 MB saying it goes now and its row leaving when the other account has taken it; a copy across accounts heard once. And what two real servers do: the upload's answer at a real destination, what a destination does with a message carrying an identifier it already holds, which the replay reads as an arrival only for a new number, and Gmail's treatment of an appended message; the loopback servers prove the four answers at each of the two servers and the restart from held bytes, and nothing here has met a real account | open |  | 2026-09-19T08:20:00.000Z |  |
 | 548 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-08: what only the tester's ear and account settle for #31. The sender of the message a thread row stands for heard first when the row is read in his inbox, the originator on a thread nothing in it read and the first unread message otherwise; the preview under the row heard to be that message, and Enter opening the conversation window with the cursor on it so Enter again opens it; Space reading it; M marking the whole thread; a thread with everything read reading the oldest; and the text of a conversation arriving from Gmail on landing on its row, which the readings hold to one bounded chunk under the reading gate and no server has been asked for. The cache cases hold the rule through the real listing and the readings hold the window; none of it has been heard | open |  | 2026-09-19T10:35:00.000Z |  |
 | 549 | 11 | unrun-verify | src/application/server_thread_ids.rs |  | 11-08.1: what only the tester's Gmail account settles for #88. His split threads showing as one conversation row after the next check, once the once-only pass has given the stored mail its X-GM-THRID, with the count on the row matching what Gmail's own client shows for that thread; a conversation opened with Enter holding the same messages Gmail shows; a reply that arrived without the headers that would have joined it sitting in its thread; two unrelated threads with one subject staying two rows; and the pass itself against Gmail, whether one UID FETCH of the stored numbers for the one field per kept folder is answered whole over his 17,753 messages and what it takes, which the scripted server puts at 54 bytes a message and no real server has been asked. The trace, the readings and the pass are held against the scripted servers; nothing here has met his account | open |  | 2026-09-19T13:00:00.000Z |  |
+| 550 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-09: what only the tester's ear settles for #26. The row heard whole and once on Ctrl+Shift+; and on the Action item, each heading then its text in the order the columns are shown, a conversation row reading its own cells, and the refusal heard when the list is not focused; arrowing through the list quiet under an NVDA configuration profile triggered by this application with Row/column headers set to Rows or Off, which nobody has set up; and what Narrator and JAWS need, whose settings the page names without steps since nobody here has read them. The composition, the item, the arm and the channel are held by cases and readings; none of it has been heard | open |  | 2026-09-19T14:20:00.000Z |  |
+| 551 | 11 | todo | docs/KEYBOARD_SHORTCUTS.md |  | 11-09: an NVDA add-on that quiets the message list's column headers for this program without a configuration profile, if the profile the page describes proves too much to ask of a person setting up. It is a second piece of software installed into NVDA, with its own packaging, versioning and testing, and it serves NVDA alone; nothing under nvda-tests/ is one, that directory drives NVDA rather than extending it. Later work, on the tester's word after the profile has been tried | open |  | 2026-09-19T14:20:00.000Z |  |
 
 ````json
 [
@@ -7153,6 +7155,30 @@ last_updated: 2026-09-19T13:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T13:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 550,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "11-09: what only the tester's ear settles for #26. The row heard whole and once on Ctrl+Shift+; and on the Action item, each heading then its text in the order the columns are shown, a conversation row reading its own cells, and the refusal heard when the list is not focused; arrowing through the list quiet under an NVDA configuration profile triggered by this application with Row/column headers set to Rows or Off, which nobody has set up; and what Narrator and JAWS need, whose settings the page names without steps since nobody here has read them. The composition, the item, the arm and the channel are held by cases and readings; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T14:20:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 551,
+    "kind": "todo",
+    "phase": "11",
+    "file": "docs/KEYBOARD_SHORTCUTS.md",
+    "line": null,
+    "description": "11-09: an NVDA add-on that quiets the message list's column headers for this program without a configuration profile, if the profile the page describes proves too much to ask of a person setting up. It is a second piece of software installed into NVDA, with its own packaging, versioning and testing, and it serves NVDA alone; nothing under nvda-tests/ is one, that directory drives NVDA rather than extending it. Later work, on the tester's word after the profile has been tried",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T14:20:00.000Z",
     "resolved_at": null
   }
 ]

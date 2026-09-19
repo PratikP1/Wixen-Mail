@@ -47,6 +47,14 @@ answer that without leaving the list.
 | Read the short form | `Space` | Subject, sender, and snippet in mail; the equivalent line in every other module |
 | Read the whole item | `Space` again | Adds recipients, dates, flags, labels, attachments, and any description the record holds. In mail it reads the message itself once that has been downloaded |
 | Read the whole item outright | `Shift+Space` | The full reading without counting presses |
+| Read the row's headings and text | `Ctrl+Shift+;` | In the message list only: the row under the cursor column by column, each heading then its text, in the order the columns are shown. Also on the Action menu. It is mail content, so `Ctrl+M` mutes it |
+
+`Ctrl+Shift+;` is Ctrl, Shift and the semicolon key. On a keyboard where the
+semicolon sits somewhere else, press whichever key makes a semicolon there:
+the shortcut follows the key. It reads a message row and a conversation row
+alike, and says "Nothing is selected in the message list" when the list is
+not where you are. Why the headings are otherwise spoken on every row, and
+how to turn that off for this program alone, is under NVDA below.
 
 Pressing `Space` a third time goes back to the short form. Moving to another
 row starts again at the short form, so the same key always gives the same
@@ -576,6 +584,7 @@ anything.
 |--------|----------|-------------|
 | Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail. The message the cursor is on, whatever else is selected |
 | Next Unread, Previous Unread | `Ctrl+U`, `Ctrl+Shift+U` | Mail |
+| Read the Row's Headings and Text | `Ctrl+Shift+;` | Mail, with the message list focused. The row under the cursor column by column, each heading then its text, once; muted by `Ctrl+M` like any other reading of mail. See Reading the Item Under the Cursor, above |
 | Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read" |
 | Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many |
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
@@ -1153,6 +1162,52 @@ the field accelerators for letters without making anything more reachable.
 | Read to End | `Insert+↓` | Read from cursor to end |
 | Say All | `Insert+↓` (hold) | Read entire document |
 
+#### Column headers on every row
+
+As you arrow through the message list, NVDA says the column's heading before
+each cell after the first: "Attachment, Has attachment, Subject, Quarterly
+report, Correspondent, Ada Lovelace". That is NVDA reading a Windows list
+with columns, and it comes from one of NVDA's own settings: Document
+Formatting, under Tables, "Row/column headers", which is "Rows and columns"
+unless you change it. Wixen Mail sets nothing NVDA consults for it, so the
+program cannot turn it off for you.
+
+There were three ways to make arrowing quiet, and this program takes the
+third:
+
+- The program could speak each row itself, without headings. NVDA would
+  still read the row its own way, so every row would be heard twice.
+- An NVDA add-on could quiet the list for this program alone. That is a
+  separate piece of software you would install into NVDA, with its own
+  versions and its own testing, and it would help NVDA users only. It is
+  later work if the profile below is too much to ask.
+- An NVDA configuration profile that switches on while Wixen Mail is in the
+  foreground, with "Row/column headers" set to "Rows" or "Off" inside it.
+  NVDA has had profiles since 2013, it costs no code, and every other
+  program keeps its headings. When you want the headings, `Ctrl+Shift+;`
+  reads the row with them (see Reading the Item Under the Cursor).
+
+To set the profile up, with Wixen Mail in the foreground:
+
+1. Open the NVDA menu (`NVDA+N`) and choose Configuration profiles, or press
+   `NVDA+Ctrl+P`.
+2. Press New. In the New Profile dialog, type a name such as Wixen Mail,
+   and under "Use this profile for" choose "Current application" rather
+   than "Manual activation". Press OK. NVDA now edits this profile while
+   Wixen Mail is in front, and says so in the dialog's list.
+3. Open NVDA's settings (NVDA menu, Preferences, Settings, or
+   `NVDA+Ctrl+D` straight to the Document Formatting category), find
+   "Row/column headers" under Tables, and choose "Rows" or "Off".
+4. Press OK. The change is saved into the Wixen Mail profile and nowhere
+   else, so a table in a browser or a spreadsheet still announces its
+   headings.
+
+The names above are NVDA's own, read from the user guide that ships with
+NVDA 2026.3 on 2026-09-19. If your NVDA spells a setting differently, the
+guide installed with it (Help, User Guide on the NVDA menu) is the one to
+trust. Nobody has yet heard this program under such a profile; if arrowing
+is still noisy after these steps, that is a report worth filing.
+
 ### JAWS Shortcuts
 
 | Action | Shortcut | Description |
@@ -1161,6 +1216,12 @@ the field accelerators for letters without making anything more reachable.
 | Read Current Word | `Insert+Numpad5` | Read current word |
 | Say All | `Insert+↓` | Read entire document |
 
+JAWS has a verbosity setting of its own for whether a list's column headers
+are spoken with each cell; it lives in JAWS's settings for this application,
+not in Wixen Mail, and this project has not read the steps to change it.
+`Ctrl+Shift+;` sends the row with its headings the same way whichever screen
+reader is running; nobody has yet heard it under JAWS.
+
 ### Windows Narrator Shortcuts
 
 | Action | Shortcut | Description |
@@ -1168,6 +1229,12 @@ the field accelerators for letters without making anything more reachable.
 | Read Item | `Caps Lock+Tab` | Read current item |
 | Read Window | `Caps Lock+W` | Read current window |
 | Continuous Reading | `Caps Lock+R` | Start/stop continuous reading |
+
+Narrator's verbosity level decides how much it says about a list cell,
+including its heading; it is a Narrator setting, not one of this program's,
+and this project has not read the steps to change it. `Ctrl+Shift+;` sends
+the row with its headings the same way whichever screen reader is running;
+nobody has yet heard it under Narrator.
 
 ## Tips for Keyboard Navigation
 
