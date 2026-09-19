@@ -480,25 +480,39 @@ pub fn from_markup(html: &str) -> String {
     read_markup(html, Keeping::OnlyWhatIsSpoken)
 }
 
-/// The words of a provider's markup and nothing else, for a place that has
-/// room for words alone: a snippet on a message row, a search index.
+/// The pieces of a provider's markup, read the way the message itself is.
 ///
 /// The same reader as [`from_markup`], so what it drops is dropped here too:
 /// a `<style>` or `<script>` element's content goes before anything reads
 /// it, and so does a `<title>`, which a whole message carries in its head
-/// and a note never does. Then the pieces the read found, given as their
-/// words with no marker in front, joined with a space so the last word of a
-/// heading and the first of the paragraph under it do not run together. A
-/// snippet beginning `# ` or `- ` spends its first characters on punctuation
-/// nobody wants read out, which is [`first_line`]'s reason as well.
+/// and a note never does. A link is its words without its address, a
+/// picture is its description. Then [`structure`] over what the read wrote,
+/// so a heading arrives as a heading, an item as an item, a quote as a
+/// quote, and a caller that wants to treat them differently can: the
+/// snippet on a message row leaves a quote and a picture out and takes a
+/// table's cells in order (#82).
+pub fn pieces_of_markup(html: &str) -> Vec<Piece> {
+    structure(&from_markup(html))
+}
+
+/// The words of a provider's markup and nothing else, for a place that has
+/// room for words alone: a search index.
+///
+/// [`pieces_of_markup`], given as their words with no marker in front,
+/// joined with a space so the last word of a heading and the first of the
+/// paragraph under it do not run together. A text beginning `# ` or `- `
+/// spends its first characters on punctuation nobody wants read out, which
+/// is [`first_line`]'s reason as well.
 ///
 /// The snippet on every message row came through a cruder reader of its own
 /// until 2026-09-16, one that kept everything between tags, and marketing
 /// mail opens its head with the Outlook reset stylesheet, so the row read
-/// `#outlook a { padding: 0; }` aloud (#32). One reader for the message and
-/// its snippet is what stops the two disagreeing again.
+/// `#outlook a { padding: 0; }` aloud (#32). One reader for the message, its
+/// snippet and its index row is what stops them disagreeing again; since
+/// 2026-09-19 the snippet reads the pieces rather than these words, so it
+/// can leave a quote out, and the index still takes every word.
 pub fn words_of_markup(html: &str) -> String {
-    words_of(&structure(&from_markup(html)))
+    words_of(&pieces_of_markup(html))
 }
 
 /// Every piece's words, in order, joined with a space.

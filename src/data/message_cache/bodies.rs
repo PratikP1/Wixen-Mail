@@ -26,6 +26,7 @@
 use super::MessageCache;
 use crate::application::bringing_everything_down::TextBudget;
 use crate::application::long_text;
+use crate::application::snippet;
 use crate::common::{Error, Result};
 use rusqlite::OptionalExtension;
 
@@ -297,58 +298,79 @@ impl ForStorage {
 /// and named the seam a setting would use. The tester asked.
 pub const BODY_CACHE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 
-/// How many characters of a snippet are kept.
+/// The snippet a body gives: its first relevant words, one line, bounded,
+/// by the rules in [`snippet`].
 ///
-/// The snippet is read aloud on every row while someone arrows through a
-/// mailbox, so it is a hint about the message and not a preview of it. Two
-/// hundred characters is roughly one spoken sentence at a normal rate.
-const SNIPPET_LIMIT: usize = 200;
-
-/// Reduce body text to a single bounded line.
-///
-/// Newlines and runs of whitespace collapse to single spaces: a list control
-/// renders a newline as a box, and a screen reader reading a cell pauses at
-/// each one, so a multi-line cell sounds broken even when it looks fine.
-fn snippet_from(text: &str) -> String {
-    let mut snippet = String::new();
-    for word in text.split_whitespace() {
-        if !snippet.is_empty() {
-            snippet.push(' ');
-        }
-        snippet.push_str(word);
-        if snippet.chars().count() >= SNIPPET_LIMIT {
-            break;
-        }
-    }
-    snippet.chars().take(SNIPPET_LIMIT).collect()
-}
-
-/// The snippet a body gives: its first words, one line, bounded.
-///
-/// The plain part when it has words in it, else the words of the markup
-/// through the reader the message itself goes through,
-/// [`long_text::words_of_markup`], so a message with no plain part still gets
-/// a snippet, which is a large share of newsletters and most marketing mail.
-/// Until 2026-09-16 that fallback was a crude stripper of this module's own
-/// that kept everything between tags, and marketing mail opens its head with
-/// the Outlook reset stylesheet, so the row read `#outlook a { padding: 0; }`
-/// aloud (#32). Two readers of one body disagreed; now there is one.
+/// The plain part's lines when it has words in it, else the pieces of the
+/// markup through the reader the message itself goes through,
+/// [`long_text::pieces_of_markup`], one line each, so a message with no
+/// plain part still gets a snippet, which is a large share of newsletters
+/// and most marketing mail. Until 2026-09-16 that fallback was a crude
+/// stripper of this module's own that kept everything between tags, and
+/// marketing mail opens its head with the Outlook reset stylesheet, so the
+/// row read `#outlook a { padding: 0; }` aloud (#32). Two readers of one
+/// body disagreed; now there is one. Until 2026-09-19 the words were then
+/// cut at 200 characters as written, so a message opening with a link read
+/// the whole address out (#82); now the rules choose.
 ///
 /// One function for the save and for the pass that puts stored snippets
 /// right, so the two cannot come to derive different snippets from one body.
 fn snippet_of(body: &MessageBody) -> String {
-    let source = body
+    let plain = body
         .body_plain
         .as_deref()
-        .filter(|text| !text.trim().is_empty())
-        .map(str::to_string)
-        .or_else(|| body.body_html.as_deref().map(long_text::words_of_markup));
-    source.as_deref().map(snippet_from).unwrap_or_default()
+        .filter(|text| !text.trim().is_empty());
+    match plain {
+        Some(text) => snippet::first_relevant_words(text.lines(), snippet::LIMIT),
+        None => {
+            let lines: Vec<String> = body
+                .body_html
+                .as_deref()
+                .map(long_text::pieces_of_markup)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(a_piece_as_a_line)
+                .collect();
+            snippet::first_relevant_words(lines.iter().map(String::as_str), snippet::LIMIT)
+        }
+    }
 }
 
-/// The name under which the once-only re-derivation of stored snippets is
-/// recorded as done in `work_done_once`.
-const SNIPPETS_PUT_RIGHT: &str = "snippets of HTML-only bodies re-derived through the reader";
+/// A piece of the reader's structure as one line for the rules, or nothing.
+///
+/// A quote is given with the quote mark in front so the rule for quoted
+/// lines sees it; a picture is left out, because its description is not a
+/// first relevant word of the message; a table is its cells in order,
+/// headings first, with a space between.
+fn a_piece_as_a_line(piece: &long_text::Piece) -> Option<String> {
+    use long_text::Piece;
+    match piece {
+        Piece::Heading { text, .. } | Piece::Item { text, .. } | Piece::Paragraph(text) => {
+            Some(text.clone())
+        }
+        Piece::Quote(text) => Some(format!("> {text}")),
+        Piece::Image(_) => None,
+        Piece::Table { columns, rows } => Some(
+            columns
+                .iter()
+                .chain(rows.iter().flatten())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+        ),
+    }
+}
+
+/// The name under which the once-only recomputation of every stored snippet
+/// is recorded as done in `work_done_once`, with the date in it because a
+/// later change to the rules is a later name.
+///
+/// The pass of 2026-09-16, which read HTML-only bodies alone through the
+/// reader (#32), recorded itself as `snippets of HTML-only bodies re-derived
+/// through the reader`; a database that ran it keeps that row, which is a
+/// record that it happened, and this pass asks about its own name only.
+const SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS: &str =
+    "snippets recomputed as the first relevant words, 2026-09-19";
 
 impl MessageCache {
     /// Store a message body, replacing any previous one.
@@ -785,27 +807,31 @@ impl MessageCache {
         Ok(moved)
     }
 
-    /// Re-derive the snippet of every HTML-only message, once, and reindex
-    /// each row that changes.
+    /// Recompute the snippet of every message with a stored body, once, and
+    /// reindex each row that changes.
     ///
-    /// Every HTML-only message downloaded before 2026-09-16 has a snippet
-    /// derived by the crude stripper [`snippet_of`] describes, so the
-    /// stylesheet is in the column the list reads on every row. Each such
-    /// body is read once, through the same rule the save uses, and the row is
-    /// rewritten only where the snippet differs. Each row rewritten goes back
-    /// through [`MessageCache::index_message_for_search`], the one writer of
-    /// an index row, because the index holds its own copy of the snippet and
-    /// of the body text and a search for `padding` would otherwise still find
+    /// Every message downloaded before the rules changed has a snippet in
+    /// the column the list reads on every row that was derived the old way:
+    /// the stylesheet for an HTML-only message downloaded before 2026-09-16
+    /// (#32), the first 200 characters as written, address and all, for any
+    /// message downloaded before 2026-09-19 (#82). Each stored body is read
+    /// once, through the same rule the save uses, and the row is rewritten
+    /// only where the snippet differs. Each row rewritten goes back through
+    /// [`MessageCache::index_message_for_search`], the one writer of an
+    /// index row, because the index holds its own copy of the snippet and of
+    /// the body text and a search for `padding` would otherwise still find
     /// the newsletter the list no longer shows it for.
     ///
     /// Returns how many rows were put right. Runs from
     /// [`MessageCache::new`], after the inline bodies have been moved into
-    /// their table, and is not fatal there.
+    /// their table, and is not fatal there. What it costs is measured in
+    /// `tests/a_snippet_is_the_first_relevant_words.rs` over 2,000 bodies
+    /// with every row rewritten, and quoted in the changelog.
     ///
     /// # Once, and how that is known
     ///
-    /// Reading every HTML-only body is not cheap enough to do on every open,
-    /// so a row in `work_done_once` says the pass has run, and a second call
+    /// Reading every stored body is not cheap enough to do on every open, so
+    /// a row in `work_done_once` says the pass has run, and a second call
     /// answers 0 without reading a body. The row is written only after the
     /// pass finished, so a pass that failed halfway is tried again on the
     /// next open and a row put right twice is put right the same way. This
@@ -813,7 +839,10 @@ impl MessageCache {
     /// against for the inline migration, and the argument does not carry: a
     /// marker wrong in the done direction there is text nothing will ever
     /// move, and here it is a snippet that the next save of that body
-    /// derives again anyway.
+    /// derives again anyway. The name is
+    /// [`SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS`], one of its own, so a
+    /// database that ran the pass of 2026-09-16 under the older name runs
+    /// this one too.
     ///
     /// The candidates are read into a `Vec` before anything is written, for
     /// the reason [`Self::migrate_inline_bodies`] gives: a cached statement
@@ -825,7 +854,7 @@ impl MessageCache {
             .conn
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM work_done_once WHERE name = ?1)",
-                rusqlite::params![SNIPPETS_PUT_RIGHT],
+                rusqlite::params![SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS],
                 |row| row.get(0),
             )
             .map_err(|e| {
@@ -837,23 +866,22 @@ impl MessageCache {
             return Ok(0);
         }
 
+        // Every message with a body row, plain or markup, packed or not: a
+        // body row is written only by the save, and the save always writes
+        // the snippet with it, so a row with one is a row the rules apply to.
         let candidates: Vec<(i64, Option<String>)> = {
             let mut stmt = self
                 .conn
                 .prepare_cached(
                     "SELECT m.id, m.snippet
                      FROM messages m
-                     INNER JOIN message_bodies b ON b.message_id = m.id
-                     WHERE b.body_plain_packed IS NULL
-                       AND COALESCE(length(trim(b.body_plain)), 0) = 0
-                       AND (b.body_html_packed IS NOT NULL
-                            OR COALESCE(length(b.body_html), 0) > 0)",
+                     INNER JOIN message_bodies b ON b.message_id = m.id",
                 )
-                .map_err(|e| Error::Other(format!("Failed to find the HTML-only bodies: {e}")))?;
+                .map_err(|e| Error::Other(format!("Failed to find the stored bodies: {e}")))?;
             stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-                .map_err(|e| Error::Other(format!("Failed to read the HTML-only bodies: {e}")))?
+                .map_err(|e| Error::Other(format!("Failed to read the stored bodies: {e}")))?
                 .collect::<std::result::Result<_, _>>()
-                .map_err(|e| Error::Other(format!("Failed to read an HTML-only body row: {e}")))?
+                .map_err(|e| Error::Other(format!("Failed to read a stored body row: {e}")))?
         };
 
         let mut put_right = 0usize;
@@ -878,7 +906,7 @@ impl MessageCache {
         self.conn
             .execute(
                 "INSERT OR IGNORE INTO work_done_once (name, done_at) VALUES (?1, ?2)",
-                rusqlite::params![SNIPPETS_PUT_RIGHT, now()],
+                rusqlite::params![SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS, now()],
             )
             .map_err(|e| {
                 Error::Other(format!(

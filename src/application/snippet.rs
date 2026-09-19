@@ -16,21 +16,32 @@
 //! 1. The signature after the `-- ` delimiter is left out, through the
 //!    splitter the composer already has.
 //! 2. Quoted lines, beginning `>`, are left out.
-//! 3. Addresses are dropped from every line altogether: a bare address, a
+//! 3. The characters nobody hears are dropped from every line: soft
+//!    hyphens and the joiners a hidden preheader is padded with.
+//! 4. Addresses are dropped from every line altogether: a bare address, a
 //!    `mailto:`, a link whose words are its own address.
-//! 4. A line that is only a marker is skipped: nothing left once its
+//! 5. A line that is only a marker is skipped: nothing left once its
 //!    addresses are gone, punctuation alone, a run of dashes, a bullet.
-//! 5. Recognisable opening boilerplate is skipped: "View this email in your
+//! 6. Recognisable opening boilerplate is skipped: "View this email in your
 //!    browser", "Unsubscribe", and the rest of [`OPENING_BOILERPLATE`].
-//! 6. A bare greeting, "Hi Pratik,", is skipped when a line with words
+//! 7. A line that is only this program's phrase for a picture nobody
+//!    described is skipped; a described picture's words are the sender's.
+//! 8. A bare greeting, "Hi Pratik,", is skipped when a line with words
 //!    follows it.
-//! 7. What survives is joined into one line and the first sentences are
-//!    taken up to the limit, ending at a sentence boundary where one falls
-//!    inside it and at a word boundary otherwise.
+//! 9. A line that repeats the line before it, word for word, is said once.
+//! 10. What survives is joined into one line and the first sentences are
+//!     taken up to the limit, ending at a sentence boundary where one falls
+//!     inside it and at a word boundary otherwise.
 //!
-//! Rules rather than a model, because a rule can be read, tested one at a
-//! time and corrected when the tester hears a row that says the wrong thing;
-//! adding a rule means adding its function and its test here.
+//! Rules 3 and 9 are not in the decision's list; both came from a Substack
+//! message in the tester's mail on 2026-09-19, whose hidden preheader is
+//! the title padded with invisible characters and whose heading then says
+//! the title again. Rule 7 is the decision's "a picture left out" as far as
+//! the reader allows it: the reader writes a picture as its description, so
+//! only the undescribed one can be told from a sentence. Rules rather than
+//! a model, because a rule can be read, tested one at a time and corrected
+//! when the tester hears a row that says the wrong thing; adding a rule
+//! means adding its function and its test here.
 
 /// How many characters of a snippet are kept.
 ///
@@ -95,15 +106,46 @@ fn without_the_signature(text: &str) -> String {
 fn relevant_lines<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<String> {
     let with_words: Vec<String> = lines
         .filter(|line| !is_quoted(line))
-        .map(without_addresses)
-        .filter(|line| !is_only_a_marker(line) && !is_opening_boilerplate(line))
+        .map(without_invisible_characters)
+        .map(|line| without_addresses(&line))
+        .filter(|line| {
+            !is_only_a_marker(line)
+                && !is_opening_boilerplate(line)
+                && !is_a_picture_nobody_described(line)
+        })
         .collect();
     let last = with_words.len().saturating_sub(1);
-    with_words
-        .into_iter()
-        .enumerate()
-        .filter(|(at, line)| *at == last || !is_a_bare_greeting(line))
-        .map(|(_, line)| line)
+    let mut said_once = Vec::with_capacity(with_words.len());
+    for (at, line) in with_words.into_iter().enumerate() {
+        let is_a_greeting_with_more_after = at != last && is_a_bare_greeting(&line);
+        if is_a_greeting_with_more_after || repeats_the_line_before(&line, &said_once) {
+            continue;
+        }
+        said_once.push(line);
+    }
+    said_once
+}
+
+/// Whether `line` says what the last line kept said, word for word. A
+/// newsletter's hidden preheader is its title, and the title follows it as
+/// a heading; a row that says it twice has spent half its limit saying it.
+fn repeats_the_line_before(line: &str, kept: &[String]) -> bool {
+    kept.last().is_some_and(|before| before == line)
+}
+
+/// The line with the characters nobody hears taken out: soft hyphens, the
+/// combining grapheme joiner and the zero-width joiners and spaces a
+/// newsletter platform pads its hidden preheader with. The reader keeps
+/// them on the preheader's own line, between its words and the spaces it
+/// collapses, and read aloud they are nothing or "soft hyphen" thirty times.
+fn without_invisible_characters(line: &str) -> String {
+    line.chars()
+        .filter(|c| {
+            !matches!(
+                c,
+                '\u{ad}' | '\u{34f}' | '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}'
+            )
+        })
         .collect()
 }
 
@@ -187,6 +229,20 @@ fn is_opening_boilerplate(line: &str) -> bool {
     OPENING_BOILERPLATE
         .iter()
         .any(|opener| lower.contains(opener))
+}
+
+/// A line that is only the phrase this program says for a picture the
+/// sender did not describe. The reader the message goes through writes a
+/// picture as its description, so a described picture's words reach the
+/// rules as the sender's own and stay; a picture nobody described reaches
+/// them as our phrase for the gap, which the message still says and a hint
+/// of the message should not open with.
+fn is_a_picture_nobody_described(line: &str) -> bool {
+    let the_phrase = format!(
+        "image with {}",
+        crate::application::long_text::NO_DESCRIPTION
+    );
+    line.trim().eq_ignore_ascii_case(&the_phrase)
 }
 
 /// A line that greets and says nothing else: at most five words, the first
@@ -386,6 +442,29 @@ mod tests {
         assert_eq!(
             snippet("--- Agenda ---\nItem one."),
             "--- Agenda --- Item one."
+        );
+    }
+
+    // ── A picture nobody described is left out ──────────────────────────
+
+    #[test]
+    fn test_the_phrase_for_a_picture_nobody_described_is_skipped() {
+        // What the reader writes for `<p><img src="banner.png"></p>` at the
+        // top of a newsletter, which the message says and a hint should not
+        // open with.
+        assert_eq!(
+            snippet("image with no description\nThe autumn prices are here."),
+            "The autumn prices are here."
+        );
+    }
+
+    #[test]
+    fn test_a_described_pictures_words_are_the_senders_and_stay() {
+        // The companion: the reader writes a described picture as its
+        // description, and those are the sender's words.
+        assert_eq!(
+            snippet("A chart of Tuesday's sales\nThe autumn prices are here."),
+            "A chart of Tuesday's sales The autumn prices are here."
         );
     }
 

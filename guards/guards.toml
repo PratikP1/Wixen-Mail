@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 183 records have arrived since and have not been through it.
+# 185 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -23594,12 +23594,16 @@ tests_last_seen = [
 # stylesheet is findable by `padding` whatever the body column holds.
 #
 # Measured 2026-09-16 through `--remeasure` on the branch the record was
-# written on, the whole library at the default eight threads.
+# written on, the whole library at the default eight threads. The break
+# rewritten 2026-09-19 by 11-09.2, when the snippet started reading the
+# reader's pieces as lines rather than its words: the markup as it is is
+# now one paragraph piece holding the whole of it. Measured again that day
+# through `--remeasure` on the branch, the whole library.
 [[guard]]
 name = "a snippet of an HTML-only body is its words through the reader, not the markup as it is"
 file = "src/data/message_cache/bodies.rs"
-before = """        .or_else(|| body.body_html.as_deref().map(long_text::words_of_markup));"""
-after = """        .or_else(|| body.body_html.as_deref().map(str::to_string));"""
+before = """                .map(long_text::pieces_of_markup)"""
+after = """                .map(|html| vec![long_text::Piece::Paragraph(html.to_string())])"""
 red = [
     "data::message_cache::bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet",
     "data::message_cache::bodies::tests::test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers",
@@ -23642,11 +23646,14 @@ tests_last_seen = [
 # does not read the marker.
 #
 # Measured 2026-09-16 through `--remeasure` on the branch the record was
-# written on, the whole library at the default eight threads.
+# written on, the whole library at the default eight threads. The marker's
+# name changed on 2026-09-19 with 11-09.2, which widened the pass to every
+# stored body under a name of its own; the break is the same and the record
+# was measured again that day through `--remeasure` on the branch.
 [[guard]]
 name = "the snippet pass records itself as done, not under a name nothing asks about"
 file = "src/data/message_cache/bodies.rs"
-before = """                rusqlite::params![SNIPPETS_PUT_RIGHT, now()],"""
+before = """                rusqlite::params![SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS, now()],"""
 after = """                rusqlite::params!["never", now()],"""
 red = [
     "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
@@ -27323,4 +27330,64 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility.rs", tests = 25 },
+]
+
+# The plain part taken as written, its words joined and nothing skipped,
+# which is the shape the tester met (#82): a message opening with a link
+# reads the whole address out on its row, and an opener, a rule of dashes,
+# a greeting, a quote and a signature all reach the column before the
+# message's own words. The break puts the old cut back for the plain part
+# alone. On the target the plain cases go red, and so do the pass's, since
+# a snippet recomputed the old way is the old form and nothing is put right;
+# the markup cases stay green, since they never touch the plain arm.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a snippet takes the plain part through the rules as its lines, not as written"
+file = "src/data/message_cache/bodies.rs"
+suite = "a_snippet_is_the_first_relevant_words"
+before = """        Some(text) => snippet::first_relevant_words(text.lines(), snippet::LIMIT),"""
+after = """        Some(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),"""
+red = [
+    "test_a_body_that_is_only_a_signature_gives_the_least_bad_line",
+    "test_a_database_that_ran_the_older_pass_still_gets_this_one",
+    "test_a_reply_gives_the_new_words_and_not_the_quote",
+    "test_a_saved_plain_body_gives_its_first_relevant_words",
+    "test_a_stored_snippet_in_the_old_form_is_put_right_on_the_next_open_and_once",
+    "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
+]
+
+# The pass narrowed back to HTML-only bodies, which is the pass of
+# 2026-09-16 under the new name: every message with a plain part keeps the
+# snippet an older build cut from its text, address and all, and the row
+# the tester heard stays as it was until its text is fetched again. The
+# break puts the old query's WHERE back. On the target the two put-right
+# cases and the timing case go red, since their bodies are plain; the save's
+# cases stay green.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the pass recomputes every stored snippet, not the HTML-only ones alone"
+file = "src/data/message_cache/bodies.rs"
+suite = "a_snippet_is_the_first_relevant_words"
+before = """                     INNER JOIN message_bodies b ON b.message_id = m.id","""
+after = """                     INNER JOIN message_bodies b ON b.message_id = m.id
+                     WHERE b.body_plain_packed IS NULL
+                       AND COALESCE(length(trim(b.body_plain)), 0) = 0
+                       AND (b.body_html_packed IS NOT NULL
+                            OR COALESCE(length(b.body_html), 0) > 0)","""
+red = [
+    "test_a_database_that_ran_the_older_pass_still_gets_this_one",
+    "test_a_stored_snippet_in_the_old_form_is_put_right_on_the_next_open_and_once",
+    "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
 ]

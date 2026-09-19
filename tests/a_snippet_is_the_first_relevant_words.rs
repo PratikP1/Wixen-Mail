@@ -202,13 +202,21 @@ fn test_an_html_only_body_with_the_same_words_gives_the_same_snippet() {
 
 #[test]
 fn test_a_quoted_block_and_a_picture_in_markup_are_left_out() {
+    // The reader the message goes through writes a picture as its
+    // description and an undescribed one as its own phrase for the gap, so
+    // the undescribed banner at the top is left out and a described chart's
+    // words are the sender's and stay, as they do in the reading.
     let dir = tempfile::tempdir().expect("a temporary folder");
-    let markup = "<p>Yes, Tuesday works.</p>\
+    let markup = "<p><img src=\"cid:banner\"></p>\
+        <p>Yes, Tuesday works.</p>\
         <blockquote><p>Does Tuesday work for you?</p></blockquote>\
-        <img src=\"cid:chart\" alt=\"A chart of Tuesday\">";
+        <p><img src=\"cid:chart\" alt=\"A chart of Tuesday\"></p>";
     let (cache, id) = a_cache_with_one_body(dir.path(), None, Some(markup));
 
-    assert_eq!(the_snippet_of(&cache, id), "Yes, Tuesday works.");
+    assert_eq!(
+        the_snippet_of(&cache, id),
+        "Yes, Tuesday works. A chart of Tuesday"
+    );
 }
 
 #[test]
