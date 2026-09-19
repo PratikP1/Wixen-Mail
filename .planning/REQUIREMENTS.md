@@ -3939,9 +3939,32 @@ phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
     step opening; the summary carries the table of every sentence changed, old and new.
   - [S] Whether the bar reads well on its own with NVDA+End is his ear's.
 
-- [ ] **LIST-12**: After a delete, or a move out of the folder, the cursor is on the next
+- [x] **LIST-12**: After a delete, or a move out of the folder, the cursor is on the next
   message, or on the previous one when the last was deleted, on the list control and not only
   in the state; and a re-read of the folder keeps it on the same message by its identity.
+  **Ticked 2026-09-19 by 11-06.1, merged at `0ed2c1a1`, on its `[D]` line:**
+  `presentation::landing_after_a_removal::where_to_land(removed, len_after)` answers the row
+  after the set, else the row before it, else the last row left, numbered as the rows are
+  after the removal, and nothing when nothing is left or nothing was removed;
+  `where_the_same_message_is` finds the cursor's message by its identity after a re-read;
+  `whether_to_move` answers only when that row differs from the one it was on; twelve cases
+  in the module and two records measured on the library. `wx_app::land_the_cursor_after`
+  asks the rule and puts the cursor on the control through `put_the_cursor_on`, which clears
+  and sets the row's selected and focused states so the focus event a screen reader reads the
+  row from is raised even when the control already held the row; `take_row_out_of_the_list`
+  calls it after the count, under the flat view; `keep_the_cursor_on_its_message` asks the
+  other two rules and the `MessagesLoaded` arm calls it after the count, so 10-02's no-reselect
+  holds for every load but the one in which the cursor's own message changed row. Held by
+  `tests/deleting_a_message_lands_on_the_next_one.rs` on a built virtual list: after a middle
+  row the cursor is (2, 2) with a focus event raised; after the last row with the cursor on it,
+  (2, 2) where the control on its own held (-1, -1), which is the record of the day; after a
+  re-read that moved the cursor's message to row 4, (4, 4); after one that left it there, no
+  focus event and the cursor unchanged; two readings over the source with companions; two
+  records on `wx_app.rs` measured on the target. The premise that the control holds nothing
+  after any shrink was half wrong: it holds the row when the index stays in range and nothing
+  when it does not. The `[S]` line is untouched and is ledger 541; nobody has heard the landed
+  row, and which of the two paths the tester met was not watched, since a delete cannot be
+  driven here while his copy is open.
   - Evidence: `take_row_out_of_the_list` (`wx_app.rs:19495-19520` at `08197657`) sets
     `selected_message_index` to `idx.min(len - 1)` or `None`, calls `tell_the_list_how_many`
     and `refresh`, and sets no item state on the control, reached from
@@ -3993,9 +4016,29 @@ phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
 third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted plans (11-04.1,
 11-09.2, 11-11.3, and 11-11.1 with 11-11.2).**
 
-- [ ] **LIST-14**: A delete says the one word Delete when the key goes down and nothing when
+- [x] **LIST-14**: A delete says the one word Delete when the key goes down and nothing when
   the server answers; the next row's reading is the confirmation; a failure is still spoken;
   the status line keeps the fuller words for the eye; the same for the moves.
+  **Ticked 2026-09-19 by 11-06.1, merged at `0ed2c1a1`, on its `[D]` line:**
+  `UIUpdate::Shown(String)` is written to the status bar and its record and spoken by
+  nothing, named in `quiet_on_purpose` with the reason so
+  `test_every_arm_that_shows_something_says_it_or_is_named_as_quiet` holds it; `send_shown` is
+  its sender beside `send_status`; `say_the_one_word` announces one word at Normal. The Delete
+  arm, for Delete and Delete Permanently, says "Delete" and shows "Deleting subject..."; the
+  local route's success is shown; the server's agreed answer and a move's outcome go through
+  `show_or_say_what_happened_next`, which takes the row out and shows the line when the row
+  leaves and speaks it at Normal when the row stays, since then nothing else says anything
+  happened; `NothingWasSent` and `TheServerWouldNot` are unchanged, a refusal at High. Move to
+  Folder and Copy to Folder say "Move" or "Copy" once the folder is chosen and show the fuller
+  line; a delete of a collapsed conversation row still says once how many it is deleting and
+  its messages' outcomes are shown. Held by three readings with companions in
+  `tests/deleting_a_message_lands_on_the_next_one.rs` and one in
+  `tests/progress_is_shown_and_results_are_said.rs`, extended in place for the third channel;
+  two records on `wx_app.rs` measured on the target and one rewritten onto the new agreed
+  case and measured on the library. Not changed, with the reason in 11-06.1's summary: the
+  folder delete and folder move, which ask first and whose outcome says how far a delete of
+  several folders got; and the unfinished move's sentence at startup. The `[S]` line is
+  untouched and is ledger 542; nobody has heard the one word or the silence after it.
   - Evidence: the Delete arm (`wx_app.rs:4847` at `eb5d8517`) sends `send_status("Deleting
     {}...")` and the server's answer comes back through `server_delete.rs:43-56` and the arms at
     `:20718-20740`, each spoken as a `StatusUpdated`; the folder and conversation deletes at
@@ -4312,9 +4355,9 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-09 | Phase 11 | Pending, 11-11 |
 | LIST-10 | Phase 11 | Pending, 11-11 |
 | LIST-11 | Phase 11 | Pending, 11-13 |
-| LIST-12 | Phase 11 | Pending, 11-06.1 |
+| LIST-12 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether NVDA reads the landed row once after Delete and not again after the re-read is the tester's ear, ledger 541 |
 | LIST-13 | Phase 11 | Pending, 11-09.1 |
-| LIST-14 | Phase 11 | Pending, 11-06.1 |
+| LIST-14 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether "Delete" once and the landed row are enough by ear, and the refusal heard on a failure, are the tester's, ledger 542 |
 | LIST-15 | Phase 11 | Complete, 11-04.1 at `70d84bc5`; whether Alt+A lands on the list and NVDA says the landing in both views, and whether the reader's way back through the accelerator fires, are the tester's ear, ledger 538 |
 | LIST-16 | Phase 11 | Pending, 11-09.1 |
 | LIST-17 | Phase 11 | Pending, 11-09.2 |
