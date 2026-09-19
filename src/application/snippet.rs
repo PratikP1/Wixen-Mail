@@ -39,6 +39,33 @@
 /// hundred characters is roughly one spoken sentence at a normal rate.
 pub const LIMIT: usize = 200;
 
+/// The openers marketing mail puts above its words, seen in the tester's
+/// mail, lower case; a line holding any of them is skipped.
+///
+/// A list rather than a rule about shape, because there is no shape: these
+/// are the phrases newsletter platforms write, and the list grows by
+/// evidence, one phrase per row the tester hears that says nothing. "Read in
+/// app" and "forwarded this email" are Substack's, from a message of
+/// 2026-09-19 in his mail.
+const OPENING_BOILERPLATE: &[&str] = &[
+    "view this email in your browser",
+    "view in browser",
+    "view in your browser",
+    "view online",
+    "email not displaying correctly",
+    "unsubscribe",
+    "no images?",
+    "having trouble viewing",
+    "trouble viewing this email",
+    "forwarded this email",
+    "read in app",
+];
+
+/// The words a line opens with when it is greeting somebody and saying
+/// nothing else yet, lower case. "Good" is on the list for "Good morning"
+/// and its siblings.
+const GREETINGS: &[&str] = &["hi", "hello", "hey", "dear", "greetings", "good"];
+
 /// The message's first relevant words, one line, at most `limit` characters.
 ///
 /// `lines` is the message's text as lines: the plain part's own lines, or
@@ -47,13 +74,204 @@ pub const LIMIT: usize = 200;
 /// line is given instead, so a row is never blank for a message that has
 /// text.
 pub fn first_relevant_words<'a>(lines: impl Iterator<Item = &'a str>, limit: usize) -> String {
-    let text = lines.collect::<Vec<_>>().join("\n");
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(limit)
+    let as_written: Vec<&str> = lines.collect();
+    let message = without_the_signature(&as_written.join("\n"));
+    let relevant = relevant_lines(message.lines());
+    if relevant.is_empty() {
+        return the_first_sentences(&one_line(&least_bad_line(&as_written)), limit);
+    }
+    the_first_sentences(&relevant.join(" "), limit)
+}
+
+/// The message before its signature, the delimiter made exact first so a
+/// plain part another client wrote with `--` and no space still ends there.
+fn without_the_signature(text: &str) -> String {
+    let exact = crate::application::sign_off::canonical_delimiter(text);
+    crate::application::sign_off::split(&exact).0.to_string()
+}
+
+/// The lines that survive the skipping rules, each with its addresses gone
+/// and its whitespace collapsed.
+fn relevant_lines<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let with_words: Vec<String> = lines
+        .filter(|line| !is_quoted(line))
+        .map(without_addresses)
+        .filter(|line| !is_only_a_marker(line) && !is_opening_boilerplate(line))
+        .collect();
+    let last = with_words.len().saturating_sub(1);
+    with_words
+        .into_iter()
+        .enumerate()
+        .filter(|(at, line)| *at == last || !is_a_bare_greeting(line))
+        .map(|(_, line)| line)
         .collect()
+}
+
+/// A line beginning with the quote mark, whatever indents it.
+fn is_quoted(line: &str) -> bool {
+    line.trim_start().starts_with('>')
+}
+
+/// The line's words with every address dropped and the punctuation an
+/// address leaves behind tidied: the brackets round it go with it, and a
+/// sentence end after it moves onto the word before, so "at https://x.y."
+/// reads "at." and not "at" run into the next sentence.
+fn without_addresses(line: &str) -> String {
+    let mut kept: Vec<String> = Vec::new();
+    for word in line.split_whitespace() {
+        let (core, ending) = peeled(word);
+        if !is_an_address(core) {
+            kept.push(word.to_string());
+            continue;
+        }
+        if let (Some(before), Some(end)) = (kept.last_mut(), ending)
+            && !before.ends_with(end)
+        {
+            before.push(end);
+        }
+    }
+    kept.join(" ")
+}
+
+/// A word without the brackets and quotes round it and the punctuation
+/// after it, and the sentence end among that punctuation if there was one.
+fn peeled(word: &str) -> (&str, Option<char>) {
+    let unopened = word.trim_start_matches(['(', '[', '<', '"', '\'', '\u{2018}', '\u{201c}']);
+    let core = unopened.trim_end_matches([
+        ')', ']', '>', '"', '\'', '\u{2019}', '\u{201d}', '.', ',', ';', ':', '!', '?',
+    ]);
+    let trailing = &unopened[core.len()..];
+    let ending = trailing.chars().find(|c| matches!(c, '.' | '!' | '?'));
+    (core, ending)
+}
+
+/// Whether a word is an address: a web address by its scheme or its `www.`,
+/// a `mailto:`, or a bare `name@host.tld`.
+fn is_an_address(word: &str) -> bool {
+    let lower = word.to_lowercase();
+    ["http://", "https://", "www.", "mailto:"]
+        .iter()
+        .any(|opening| lower.starts_with(opening))
+        || is_a_bare_email_address(&lower)
+}
+
+/// `name@host.tld` and nothing looser: one `@`, something before it, and a
+/// host after it with a dot inside and a label on each side of the last one.
+/// A handle, `@ada`, has nothing before the sign and is a word.
+fn is_a_bare_email_address(word: &str) -> bool {
+    let Some((name, host)) = word.split_once('@') else {
+        return false;
+    };
+    let Some((domain, tld)) = host.rsplit_once('.') else {
+        return false;
+    };
+    !name.is_empty()
+        && !domain.is_empty()
+        && !tld.is_empty()
+        && !host.contains('@')
+        && tld.chars().all(char::is_alphanumeric)
+}
+
+/// A line with nothing to say once its addresses are gone: empty, or
+/// punctuation alone, which covers a run of dashes or equals signs, a bullet
+/// by itself, and the invisible padding a newsletter's hidden preheader is
+/// stuffed with. No alphanumeric character, no word.
+fn is_only_a_marker(line: &str) -> bool {
+    !line.chars().any(char::is_alphanumeric)
+}
+
+/// A line holding one of the openers in [`OPENING_BOILERPLATE`], whatever
+/// its case.
+fn is_opening_boilerplate(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    OPENING_BOILERPLATE
+        .iter()
+        .any(|opener| lower.contains(opener))
+}
+
+/// A line that greets and says nothing else: at most five words, the first
+/// one of [`GREETINGS`], no punctuation on any word but the last, and
+/// either ending in a comma, a colon or an exclamation mark or short enough
+/// to be a greeting with a name and nothing after it. "Hi Pratik, thanks"
+/// carries its comma in the middle and is a line with words.
+fn is_a_bare_greeting(line: &str) -> bool {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let Some((first, rest)) = words.split_first() else {
+        return false;
+    };
+    let opens_with_a_greeting = GREETINGS.contains(&first.to_lowercase().as_str());
+    let inner_words_are_bare = rest
+        .iter()
+        .take(rest.len().saturating_sub(1))
+        .all(|word| word.chars().all(|c| c.is_alphanumeric() || c == '\''));
+    let last = words.last().map_or("", |word| *word);
+    let ends_like_a_greeting = last.ends_with([',', ':', '!'])
+        || (words.len() <= 3 && last.chars().all(char::is_alphanumeric));
+    opens_with_a_greeting && words.len() <= 5 && inner_words_are_bare && ends_like_a_greeting
+}
+
+/// The first sentences of `text` that fit inside `limit` characters.
+///
+/// The whole text when it fits. Otherwise the text up to the last sentence
+/// end inside the limit, a full stop, an exclamation mark or a question mark
+/// with a word before it and a space after it, so an ellipsis and a decimal
+/// end nothing; and when no sentence ends inside the limit, up to the last
+/// word boundary inside it.
+fn the_first_sentences(text: &str, limit: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= limit {
+        return text.to_string();
+    }
+    if let Some(end) = last_sentence_end_inside(&chars, limit) {
+        return chars[..=end].iter().collect();
+    }
+    let cut = match chars.get(limit) {
+        Some(next) if !next.is_whitespace() => chars[..limit]
+            .iter()
+            .rposition(|c| c.is_whitespace())
+            .filter(|space| *space > 0)
+            .unwrap_or(limit),
+        _ => limit,
+    };
+    chars[..cut]
+        .iter()
+        .collect::<String>()
+        .trim_end()
+        .to_string()
+}
+
+/// The index of the last sentence-ending mark inside the first `limit`
+/// characters, when there is one.
+fn last_sentence_end_inside(chars: &[char], limit: usize) -> Option<usize> {
+    (1..limit.min(chars.len())).rev().find(|&at| {
+        matches!(chars[at], '.' | '!' | '?')
+            && chars[at - 1].is_alphanumeric()
+            && chars.get(at + 1).is_none_or(|next| next.is_whitespace())
+    })
+}
+
+/// The line to give when every line was skipped: the first that has a word
+/// once its addresses are gone, else the first that is not empty as written,
+/// else nothing. A row that says "View this email in your browser" is a poor
+/// hint and a blank row is worse.
+fn least_bad_line(as_written: &[&str]) -> String {
+    as_written
+        .iter()
+        .map(|line| without_addresses(line))
+        .find(|line| !is_only_a_marker(line))
+        .or_else(|| {
+            as_written
+                .iter()
+                .map(|line| line.trim())
+                .find(|line| !line.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_default()
+}
+
+/// The text as one line, its whitespace collapsed to single spaces.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
