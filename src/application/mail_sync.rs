@@ -1391,6 +1391,10 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // function replays the account's waiting moves first, through
     // `application::moves_waiting::replay_the_moves_waiting_for`, and ends
     // the account's check when the server could not be reached about one.
+    // A crossing to another account (11-07.2) holds its row the same way,
+    // in a folder of the other account, and is replayed by the same paths
+    // through `replay_the_crossings_waiting_for` at a check of either
+    // account, so neither folder's read subtracts anything for it either.
     let forgotten = finding_what_was_deleted::what_the_server_no_longer_has(
         finding_what_was_deleted::the_way_this_server_offers(
             controller.what_this_server_can_do().await,
