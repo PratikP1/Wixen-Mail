@@ -962,7 +962,17 @@ mod tests {
         // Sounds off: the tone is reported as not sounded rather than
         // assumed, and the sentence still goes out, because the sentence is
         // the written half and a sound switched off does not switch it off.
+        // Switched off by hand for the same reason the first half switches
+        // them on: this half read the default as off until 2026-09-19 and
+        // went red the day the default moved, on the whole gate rather than
+        // on the commit, since nothing here had changed.
         let quiet = Accessibility::new().expect("accessibility");
+        let mut settings = quiet.feedback_settings();
+        settings.set_channel_enabled(
+            crate::presentation::accessibility::feedback::Channel::Earcon,
+            false,
+        );
+        quiet.set_feedback_settings(settings);
         let said_quietly = say(std::slice::from_ref(&item), now, dates, &quiet);
         assert!(
             !said_quietly.tone_sounded,
