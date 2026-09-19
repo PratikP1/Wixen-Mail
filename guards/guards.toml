@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 145 records have arrived since and have not been through it.
+# 147 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26299,4 +26299,50 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/landing_after_a_removal.rs", tests = 16 },
     { file = "tests/tab_from_the_tree_lands_on_the_newest_message.rs", tests = 1 },
+]
+
+# ── 11-07: the list selects a set, and every command acts on it (#30, #27) ──
+
+# The duplicate removal dropped: a message two rows name, which a conversation
+# row and a message row can both do, is written twice and counted twice, so
+# "4 messages marked read" over three. The held-once case and the batch case
+# that counts the set go red; the rest never choose a message twice.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "a message two selected rows name is chosen once, not once per row"
+file = "src/application/choosing_messages.rs"
+before = """        held.insert(message.row_id) && {"""
+after = """        let _ = held.insert(message.row_id);
+        {"""
+red = [
+    "application::choosing_messages::tests::test_a_message_named_by_two_rows_is_held_once_where_it_was_first",
+    "application::choosing_messages::tests::test_a_batch_with_a_refusal_says_how_many_went_and_how_many_did_not",
+]
+tests_last_seen = [
+    { file = "src/application/choosing_messages.rs", tests = 18 },
+]
+
+# The bound gone: nothing is ever too many, so Shift+End on a folder of
+# twelve thousand queues twelve thousand cache writes and server changes and
+# the window stops answering keys. The bound case goes red on its own.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "a command over more than the bound is refused with a sentence, not run"
+file = "src/application/choosing_messages.rs"
+before = """    if count <= MOST_ROWS_WORTH_SELECTING {
+        return None;
+    }"""
+after = """    let most = MOST_ROWS_WORTH_SELECTING.max(count);
+    if count <= most {
+        return None;
+    }"""
+red = [
+    "application::choosing_messages::tests::test_the_bound_is_select_alls_and_is_refused_only_above_it",
+]
+tests_last_seen = [
+    { file = "src/application/choosing_messages.rs", tests = 18 },
 ]

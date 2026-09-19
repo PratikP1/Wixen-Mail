@@ -71,6 +71,10 @@ pub enum Members {
 pub struct Chosen {
     pub messages: Vec<MessageRef>,
     pub conversations: Vec<String>,
+    /// How many of `messages` a conversation row contributed, so a delete of
+    /// one conversation row and nothing else can be told from one with a
+    /// message row beside it.
+    pub from_conversations: usize,
 }
 
 impl Chosen {
@@ -103,9 +107,34 @@ pub fn what_the_selection_holds(
     rows: &[usize],
     mut members_of: impl FnMut(usize) -> Option<Members>,
 ) -> Chosen {
-    let _ = rows;
-    let _ = members_of(0);
-    Chosen::default()
+    let mut chosen = Chosen::default();
+    let mut held = std::collections::HashSet::new();
+    let mut take = |chosen: &mut Chosen, message: MessageRef| -> bool {
+        held.insert(message.row_id) && {
+            chosen.messages.push(message);
+            true
+        }
+    };
+    for row in rows {
+        match members_of(*row) {
+            Some(Members::AMessage(message)) => {
+                take(&mut chosen, message);
+            }
+            Some(Members::AConversation { name, messages }) => {
+                let is_a_conversation = messages.len() > 1;
+                if is_a_conversation {
+                    chosen.conversations.push(name);
+                }
+                for message in messages {
+                    if take(&mut chosen, message) && is_a_conversation {
+                        chosen.from_conversations += 1;
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    chosen
 }
 
 /// The commands that act on the whole selection.
@@ -129,8 +158,41 @@ pub enum SetCommand {
 /// folder being read, because moving a conversation's messages out of
 /// folders somebody is not looking at is a move nobody asked for.
 pub fn reach_for(command: SetCommand, setting: DeletingAConversationRow) -> AConversationReaches {
-    let _ = (command, setting);
-    AConversationReaches::ThisFolderOnly
+    match command {
+        SetCommand::Delete => setting.counted_the_same_way(),
+        SetCommand::MarkRead | SetCommand::Star | SetCommand::Label => {
+            AConversationReaches::TheWholeAccount
+        }
+        SetCommand::Move | SetCommand::Copy => AConversationReaches::ThisFolderOnly,
+    }
+}
+
+/// The count that opens every sentence: the messages, and the conversations
+/// before them when any row was one.
+fn how_many_chosen(chosen: &Chosen) -> String {
+    let messages = how_many(chosen.messages.len(), "message");
+    if chosen.conversations.is_empty() {
+        messages
+    } else {
+        format!(
+            "{}, {messages}",
+            how_many(chosen.conversations.len(), "conversation")
+        )
+    }
+}
+
+/// A count with a thousands separator, so "5,001" is heard as one number
+/// and read as one.
+fn with_commas(count: usize) -> String {
+    let digits = count.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (from_the_end, digit) in digits.chars().rev().enumerate() {
+        if from_the_end > 0 && from_the_end % 3 == 0 {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out.chars().rev().collect()
 }
 
 /// What a command over the set did, for the one sentence that says so.
@@ -167,20 +229,47 @@ pub enum Outcome {
 /// somebody who pressed a key over a selection is listening for: whether
 /// the command took what they chose.
 pub fn what_was_done(chosen: &Chosen, outcome: &Outcome) -> String {
-    let _ = outcome;
-    format!("{} marked read", how_many(chosen.messages.len(), "message"))
+    let count = how_many_chosen(chosen);
+    match outcome {
+        Outcome::MarkedRead => format!("{count} marked read"),
+        Outcome::MarkedUnread => format!("{count} marked unread"),
+        Outcome::Starred => format!("{count} starred"),
+        Outcome::Unstarred => format!("{count} unstarred"),
+        Outcome::Labelled(name) => format!("{count} labelled {name}"),
+        Outcome::Unlabelled(name) => format!("{name} removed from {count}"),
+        Outcome::LabelsRemoved(0) => format!("There were no labels on the {count}"),
+        Outcome::LabelsRemoved(labels) => {
+            format!("{} removed from {count}", how_many(*labels, "label"))
+        }
+        Outcome::MovedTo { into, not_moved } => went_and_did_not(chosen, "moved", into, *not_moved),
+        Outcome::CopiedTo { into, not_copied } => {
+            went_and_did_not(chosen, "copied", into, *not_copied)
+        }
+    }
+}
+
+/// "3 messages moved to Archive", or "2 messages moved to Archive, 1 not
+/// moved" when some did not go: the ones that went are counted, not the
+/// ones chosen, because the sentence is about what happened.
+fn went_and_did_not(chosen: &Chosen, went: &str, into: &str, did_not: usize) -> String {
+    if did_not == 0 {
+        return format!("{} {went} to {into}", how_many_chosen(chosen));
+    }
+    let gone = chosen.messages.len().saturating_sub(did_not);
+    format!(
+        "{} {went} to {into}, {did_not} not {went}",
+        how_many(gone, "message")
+    )
 }
 
 /// The line shown while a command over the set runs: "Deleting subject..."
 /// for one message, "Deleting 3 messages..." for a set, `doing` being the
 /// word the command uses for itself.
 pub fn what_is_being_done(doing: &str, chosen: &Chosen) -> String {
-    let subject = chosen
-        .messages
-        .first()
-        .map(|message| message.subject.as_str())
-        .unwrap_or_default();
-    format!("{doing} {subject}...")
+    match chosen.the_one_message() {
+        Some(message) => format!("{doing} {}...", message.subject),
+        None => format!("{doing} {}...", how_many(chosen.messages.len(), "message")),
+    }
 }
 
 /// The question a delete asks when a conversation row is in the set, whose
@@ -191,8 +280,19 @@ pub fn what_is_being_done(doing: &str, chosen: &Chosen) -> String {
 /// asked, with its name. More than that names the counts, because a list of
 /// names is not a question somebody can answer with one key.
 pub fn deleting_asks(chosen: &Chosen) -> Option<String> {
-    let _ = chosen;
-    None
+    let messages = chosen.messages.len();
+    let only_the_conversation = chosen.from_conversations == messages;
+    match chosen.conversations.as_slice() {
+        [] => None,
+        [name] if only_the_conversation => Some(format!("Delete {messages} messages in {name}?")),
+        conversations => Some(format!(
+            "Delete {messages} messages? {} among them.",
+            match conversations.len() {
+                1 => "1 conversation is".to_string(),
+                many => format!("{many} conversations are"),
+            }
+        )),
+    }
 }
 
 /// Nothing at or below the bound; above it, one sentence saying how many are
@@ -203,24 +303,28 @@ pub fn deleting_asks(chosen: &Chosen) -> Option<String> {
 /// write and a queued server change per message, and above the bound the
 /// window stops answering keys, which takes the screen reader with it.
 pub fn too_many(count: usize) -> Option<String> {
-    let _ = (count, MOST_ROWS_WORTH_SELECTING);
-    None
+    if count <= MOST_ROWS_WORTH_SELECTING {
+        return None;
+    }
+    Some(format!(
+        "{} messages are selected. This can do {} at once at most. Select fewer.",
+        with_commas(count),
+        with_commas(MOST_ROWS_WORTH_SELECTING)
+    ))
 }
 
 /// Which way Mark as Read goes over the set: read when any message is
 /// unread, else unread, which is 11-06's rule for one message applied to
 /// the set, and what the label on the command says it will do.
 pub fn what_mark_read_does(chosen: &Chosen) -> bool {
-    let _ = chosen;
-    true
+    chosen.messages.iter().any(|message| !message.read)
 }
 
 /// Which way Star goes over the set: starred when any message is not, else
 /// unstarred; one starred message on its own is unstarred, which is the
 /// toggle it always was.
 pub fn what_star_does(chosen: &Chosen) -> bool {
-    let _ = chosen;
-    true
+    chosen.messages.iter().any(|message| !message.starred)
 }
 
 #[cfg(test)]
