@@ -3829,8 +3829,10 @@ the caveat at the top of this file binds every `[D]` line.
   - [S] The sender heard first on his thread rows, the window's opening node, and the text of
     a conversation arriving from Gmail on selection are his ear's and his account's.
 
-- [ ] **LIST-07**: Ctrl+Shift+; reads the selected row column by column with its headings on
+- [x] **LIST-07**: Ctrl+Shift+; reads the selected row column by column with its headings on
   request, and the pages say why the headers are spoken on every row and how to quiet them.
+  - Ticked 2026-09-19 by 11-09 at `bd5f6929` on its `[D]` lines, the orchestrator's
+    instruction overruling the README's "11-12 ticks"; the `[S]` line is ledger 550.
   - Evidence: NVDA's `sysListView32.py`, read 2026-09-18: the header is spoken before every
     column but the first when `documentFormatting.reportTableHeaders` is rows-and-columns or
     columns, the default, and no property an application sets changes it; `message_rows.rs:66-73`
@@ -4577,7 +4579,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544 |
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544 |
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548) |
-| LIST-07 | Phase 11 | Pending, 11-09 |
+| LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
 | LIST-08 | Phase 11 | Pending, 11-10 |
 | LIST-09 | Phase 11 | Pending, 11-11 |
 | LIST-10 | Phase 11 | Pending, 11-11 |
