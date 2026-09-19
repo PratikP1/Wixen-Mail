@@ -22,6 +22,7 @@ pub mod carddav_sync;
 pub mod categories;
 pub mod checking_on_a_schedule;
 pub mod checking_signatures;
+pub mod choosing_messages;
 pub mod closing;
 pub mod collection_sync;
 pub mod conflict_choice;

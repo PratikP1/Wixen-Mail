@@ -269,6 +269,42 @@ menu_ids!(
 
 // ── UI State ─────────────────────────────────────────────────────────────────
 
+/// A set of rows a command over a selection is taking out of the message
+/// list, one server answer at a time (#30).
+///
+/// The rows are remembered by their index at the key, which is what
+/// `landing_after_a_removal::where_to_land` wants: the set's rows as they
+/// were numbered before any left. Each row that leaves moves from `still_to_leave`
+/// to `left`, and when nothing is still to leave, or a refusal ends the wait,
+/// the cursor lands once, after the rows that left.
+#[derive(Debug, Default)]
+pub struct ASetLeaving {
+    /// Row id to the row's index at the key.
+    pub still_to_leave: std::collections::HashMap<i64, usize>,
+    /// The indices at the key of the rows that have left.
+    pub left: Vec<usize>,
+}
+
+impl ASetLeaving {
+    /// The set, from the rows and ids it holds on screen.
+    pub fn of(rows: impl IntoIterator<Item = (i64, usize)>) -> Self {
+        Self {
+            still_to_leave: rows.into_iter().collect(),
+            left: Vec::new(),
+        }
+    }
+
+    /// Note that `row_id` left: whether it was one of the set, and whether
+    /// the set is now whole.
+    pub fn one_left(&mut self, row_id: i64) -> (bool, bool) {
+        let Some(index) = self.still_to_leave.remove(&row_id) else {
+            return (false, false);
+        };
+        self.left.push(index);
+        (true, self.still_to_leave.is_empty())
+    }
+}
+
 #[derive(Debug)]
 pub struct WxUIState {
     pub folders: Vec<String>,
@@ -348,7 +384,15 @@ pub struct WxUIState {
     /// the schedule. Session-only: a start checks every enabled account, so
     /// nothing before it matters.
     pub last_checked: std::collections::HashMap<String, std::time::Instant>,
+    /// The row the cursor is on: the focused row of the message list, which
+    /// every command that acts on one message reads. Since 2026-09-19 (#30)
+    /// the list selects more than one, and the set is read from the control
+    /// at the key rather than kept here; this stays the cursor.
     pub selected_message_index: Option<usize>,
+    /// A set of messages a delete or a move over a selection is taking out
+    /// of the list, so the cursor lands once, after the last of them has
+    /// left, rather than after each (#30). Nothing between sets.
+    pub a_set_leaving: Option<ASetLeaving>,
     pub message_preview: MessageBody,
     pub connection_status: ConnectionStatus,
     /// What the person has already been told about the connection.
@@ -572,6 +616,7 @@ impl Default for WxUIState {
             mail_watches: std::collections::HashMap::new(),
             last_checked: std::collections::HashMap::new(),
             selected_message_index: None,
+            a_set_leaving: None,
             message_preview: MessageBody::default(),
             connection_status: ConnectionStatus::Disconnected,
             connection_voice: ConnectionVoice::default(),
@@ -1117,13 +1162,15 @@ impl WxMailApp {
             // rather than to what exists, and because it stays the native list,
             // UI Automation reports the true count, so a screen reader says
             // "row 12 of 207,431" and means it.
+            //
+            // Multi-selection since 2026-09-19 (#30): Shift with an arrow
+            // extends the selection the way every Windows list does, and the
+            // commands that act on messages read the selection off the
+            // control at the key. Until then the list was built `SingleSel`,
+            // so Shift+Down moved the selection instead of growing it and
+            // Select All selected one row.
             let msg_list = ListCtrl::builder(&inner)
-                .with_style(
-                    ListCtrlStyle::Report
-                        | ListCtrlStyle::SingleSel
-                        | ListCtrlStyle::HRules
-                        | ListCtrlStyle::Virtual,
-                )
+                .with_style(ListCtrlStyle::Report | ListCtrlStyle::HRules | ListCtrlStyle::Virtual)
                 .build();
             set_accessible_name(&msg_list, "Messages");
             // The message list is where most of the reading happens, so it is
@@ -3056,12 +3103,27 @@ impl WxMailApp {
             });
 
             // ── Message selection ────────────────────────────────────────
-            msg_list.on_item_selected({
+            //
+            // On the focus event, not the selection event, since 2026-09-19
+            // (#30). The cursor is the focused row, and on a list that
+            // selects more than one the two events come apart: growing the
+            // range raises a selection event per row and no focus event, so
+            // a Select All would have run this once per row, five thousand
+            // body loads for one key; and Shift+Up shrinking the range onto
+            // a row it kept raises a focus event and no selection event, so
+            // the cursor would have stayed on the row that left the range.
+            // Measured on a built list in
+            // `tests/every_command_acts_on_the_selection.rs`. wx raises the
+            // focus event before the selection event when both change on
+            // one row (`src/msw/listctrl.cpp`, LVN_ITEMCHANGED), so a plain
+            // arrow key reaches here once, as it did.
+            msg_list.on_item_focused({
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let a11y = a11y.clone();
                 let body_cache = message_cache.clone();
                 let runtime = runtime.clone();
+                let list = msg_list;
                 move |event| {
                     let app = AppHandles {
                         state: &state,
@@ -3139,9 +3201,9 @@ impl WxMailApp {
                     // fact about the message somebody would want before they
                     // decide what to do with it.
                     receipt_for_the_open_message(app);
-                    // Mark as Read says which way it will go for the row
-                    // landed on (#27): the item, the tool and its tip.
-                    refresh_mark_read_wording(&frame, toolbar_handle, &state);
+                    // Mark as Read says which way it will go for the rows
+                    // selected (#27, #30): the item, the tool and its tip.
+                    refresh_mark_read_wording(&frame, toolbar_handle, &state, &list);
                 }
             });
 
@@ -3351,14 +3413,16 @@ impl WxMailApp {
                 use crate::application::new_item::{ContainerKind, ItemKind};
 
                 // Asked at the moment the key is pressed, because the Mark
-                // entry says which way it will go for the message under the
-                // cursor (#27), and that changes as the cursor moves and as
-                // M toggles.
+                // entry says which way it will go for the rows selected
+                // (#27, #30), and that changes as the cursor moves, as the
+                // range grows and as M toggles.
                 wire_context_menu(&msg_list, {
                     let state = state.clone();
+                    let list = msg_list;
                     move || {
+                        let rows = chosen_rows(&list);
                         let any_unread =
-                            the_selected_row_has_unread(&lock_state(&state)).unwrap_or(true);
+                            the_chosen_rows_have_unread(&lock_state(&state), &rows).unwrap_or(true);
                         Some(entries_for_messages(any_unread))
                     }
                 });
@@ -3563,16 +3627,18 @@ impl WxMailApp {
                 },
             );
 
-            // M toggles the selected message between read and unread and
-            // says the one word (#27). Consumed at the key-down through
-            // `list_keys`, so the list's own type-to-search never gets the
-            // letter; the row the handler is given is the selected one, which
-            // the toggle reads from the state as the command does.
+            // M toggles the selected messages between read and unread and
+            // says the one word for one message, the count for a set (#27,
+            // #30). Consumed at the key-down through `list_keys`, so the
+            // list's own type-to-search never gets the letter; the toggle
+            // reads the selection off the control as the command does.
             crate::presentation::list_keys::wire_letter(&msg_list, 'M', {
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
+                let list = msg_list;
+                let cache = message_cache.clone();
                 move |_row| {
                     toggle_read_state(
                         AppHandles {
@@ -3584,6 +3650,8 @@ impl WxMailApp {
                         How::TheKey,
                         &frame,
                         toolbar_handle,
+                        &list,
+                        &cache,
                     );
                 }
             });
@@ -3867,70 +3935,99 @@ impl WxMailApp {
                         }
                         _ if LABEL_IDS.contains(&id) || id == ID_LABEL_NONE => {
                             let number = LABEL_IDS.iter().position(|held| *held == id);
-                            label_the_message(app, &message_cache, &a11y, number.map(|at| at + 1));
+                            label_the_message(
+                                app,
+                                &message_cache,
+                                &a11y,
+                                &msg_list,
+                                number.map(|at| at + 1),
+                            );
                         }
                         _ if id == ID_TOGGLE_STAR => {
-                            let toggled = {
-                                let mut s = lock_state(&state);
-                                match s.selected_message_index {
-                                    Some(idx) if idx < s.messages.len() => {
-                                        s.messages[idx].starred = !s.messages[idx].starred;
-                                        let m = &s.messages[idx];
-                                        Some((
-                                            m.message_id,
-                                            m.uid,
-                                            m.read,
-                                            m.starred,
-                                            m.subject.clone(),
-                                        ))
-                                    }
-                                    _ => None,
-                                }
+                            // Over the selection (#30): starred when any
+                            // chosen message is not, else unstarred, which
+                            // for one message is the toggle it always was.
+                            // A conversation row contributes every message
+                            // of it. Each row is flipped and kept here
+                            // before the next, the server is told about
+                            // each, and one sentence is said with the
+                            // count.
+                            use crate::application::choosing_messages::{
+                                Outcome, too_many, what_star_does, what_was_done,
                             };
-                            match toggled {
-                                Some((cache_id, uid, read, starred, subject)) => {
-                                    // Nothing is confirmed and nothing goes to
-                                    // the server unless it was kept here
-                                    // first. This used to log the refusal and
-                                    // then say "Flagged" and play the tone
-                                    // that means it worked.
-                                    let kept = match message_cache.as_ref() {
-                                        Some(cache) => write_flags_or_put_the_row_back(
-                                            cache,
-                                            app.state,
-                                            app.tx,
-                                            cache_id,
-                                            (read, starred),
-                                            (read, !starred),
-                                        ),
-                                        None => true,
-                                    };
-                                    if !kept {
-                                        return;
-                                    }
-                                    let confirmed = if starred { "Flagged" } else { "Unflagged" };
-                                    let _ = a11y.announce(
-                                        &format!("{confirmed}: {subject}"),
-                                        crate::presentation::accessibility::announcements::Priority::Normal,
-                                    );
-                                    let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
-                                    // And the server, so the flag is still
-                                    // there on another device.
-                                    spawn_server_change(
-                                        app,
-                                        cache_id,
-                                        uid,
-                                        subject,
-                                        ServerChange::Flag(FlagChange::Flagged(starred)),
-                                    );
-                                }
-                                None => {
-                                    let _ = a11y.signal(
-                                        FeedbackEvent::ActionRefused,
-                                        "no message selected",
-                                    );
-                                }
+                            let chosen = match chosen_messages(
+                                &state,
+                                &message_cache,
+                                &msg_list,
+                                crate::application::conversations::AConversationReaches::TheWholeAccount,
+                            ) {
+                                Ok(chosen) => chosen,
+                                Err(why) => return send_refusal(&ui_tx, &runtime, &why),
+                            };
+                            if chosen.is_empty() {
+                                let _ = a11y
+                                    .signal(FeedbackEvent::ActionRefused, "no message selected");
+                                return;
                             }
+                            if let Some(why) = too_many(chosen.messages.len()) {
+                                return send_refusal(&ui_tx, &runtime, &why);
+                            }
+                            let starred = what_star_does(&chosen);
+                            for message in &chosen.messages {
+                                {
+                                    let mut s = lock_state(&state);
+                                    if let Some(row) = s
+                                        .messages
+                                        .iter_mut()
+                                        .find(|row| row.message_id == message.row_id)
+                                    {
+                                        row.starred = starred;
+                                    }
+                                }
+                                // Nothing is confirmed and nothing goes to
+                                // the server unless it was kept here
+                                // first. This used to log the refusal and
+                                // then say "Flagged" and play the tone
+                                // that means it worked. A cache that
+                                // refused one write will refuse the rest,
+                                // so the loop stops at the first.
+                                if let Some(cache) = message_cache.as_ref()
+                                    && !write_flags_or_put_the_row_back(
+                                        cache,
+                                        app.state,
+                                        app.tx,
+                                        message.row_id,
+                                        (message.read, starred),
+                                        (message.read, message.starred),
+                                    )
+                                {
+                                    msg_list.refresh(true, None);
+                                    return;
+                                }
+                                // And the server, so the flag is still
+                                // there on another device.
+                                spawn_server_change(
+                                    app,
+                                    message.row_id,
+                                    message.uid,
+                                    message.subject.clone(),
+                                    ServerChange::Flag(FlagChange::Flagged(starred)),
+                                );
+                            }
+                            msg_list.refresh(true, None);
+                            let outcome = if starred {
+                                Outcome::Starred
+                            } else {
+                                Outcome::Unstarred
+                            };
+                            let said = what_was_done(&chosen, &outcome);
+                            let _ = a11y.announce(
+                                &said,
+                                crate::presentation::accessibility::announcements::Priority::Normal,
+                            );
+                            send_shown(&ui_tx, &runtime, &said);
+                            let confirmed = if starred { "Flagged" } else { "Unflagged" };
+                            let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
                         }
                         // Refresh on a saved search runs it again. That is what
                         // refreshing means here: results are worked out when
@@ -4281,6 +4378,7 @@ impl WxMailApp {
                                 &message_cache,
                                 &frame,
                                 &a11y,
+                                &msg_list,
                                 id == ID_COPY_TO_FOLDER,
                             );
                         }
@@ -4550,6 +4648,21 @@ impl WxMailApp {
                                     },
                                     &a11y,
                                 );
+                                // Select All on the message list changes
+                                // what Mark as Read will act on without
+                                // moving the cursor, so the words follow
+                                // here too (#27, #30); the control raises no
+                                // focus event for it.
+                                if command == crate::application::editing::EditCommand::SelectAll
+                                    && msg_list.has_focus()
+                                {
+                                    refresh_mark_read_wording(
+                                        &frame,
+                                        toolbar_handle,
+                                        &state,
+                                        &msg_list,
+                                    );
+                                }
                             }
                         }
                         _ if id == ID_VIEW_ALL_INBOXES => {
@@ -4957,93 +5070,158 @@ impl WxMailApp {
                         {
                             delete_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
-                        _ if (id == ID_DELETE || id == ID_DELETE_OUTRIGHT)
-                            && lock_state(&state).showing.showing_conversations() =>
-                        {
-                            delete_the_conversation_row(
-                                app,
-                                &frame,
-                                &a11y,
-                                &message_cache,
-                                if id == ID_DELETE_OUTRIGHT {
-                                    Deleting::Outright
-                                } else {
-                                    Deleting::ToTrash
-                                },
-                            );
-                        }
                         _ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT => {
-                            // Neither asks first. Delete is a key somebody
-                            // presses twenty times going through a morning's
-                            // mail, and a question in front of it is twenty
-                            // questions. The ordinary one is recoverable from
-                            // the trash, which is what makes not asking safe.
+                            // Neither asks first over message rows. Delete is
+                            // a key somebody presses twenty times going
+                            // through a morning's mail, and a question in
+                            // front of it is twenty questions. The ordinary
+                            // one is recoverable from the trash, which is
+                            // what makes not asking safe.
                             //
-                            // A collapsed conversation row does ask, and the
-                            // branch above is where. The difference is not
-                            // caution for its own sake: that row's contents are
-                            // not on screen, and the Thread column that would
-                            // say how many there are can be switched off (D-05,
-                            // D-06), so a row holding five is indistinguishable
-                            // from one holding one until the question names the
-                            // number.
+                            // A conversation row in the selection does ask.
+                            // The difference is not caution for its own sake:
+                            // that row's contents are not on screen, and the
+                            // Thread column that would say how many there are
+                            // can be switched off (D-05, D-06), so a row
+                            // holding five is indistinguishable from one
+                            // holding one until the question names the
+                            // number. How far the row reaches is the D-07
+                            // setting. Until 2026-09-19 (#30) that row had an
+                            // arm of its own, `delete_the_conversation_row`;
+                            // it is one command over one set now, so a
+                            // conversation row's delete and a set's delete
+                            // cannot drift apart.
                             //
-                            // The row is not removed here. Deleting cannot be
-                            // put back by sending an update, so the server is
-                            // asked first and the row leaves the list once the
-                            // server has agreed. Announcing "deleted" and then
-                            // finding the message still there on another device
-                            // is the kind of wrong nobody discovers until it
-                            // matters.
+                            // The rows are not removed here. Deleting cannot
+                            // be put back by sending an update, so the server
+                            // is asked first and each row leaves the list once
+                            // the server has agreed. Announcing "deleted" and
+                            // then finding the message still there on another
+                            // device is the kind of wrong nobody discovers
+                            // until it matters. Every message goes down the
+                            // route a single message always went down: cancel
+                            // it if it is queued, delete it here if it lives
+                            // here, ask the server otherwise.
+                            use crate::application::choosing_messages::{
+                                deleting_asks, too_many, what_is_being_done,
+                            };
                             let asked = if id == ID_DELETE_OUTRIGHT {
                                 Deleting::Outright
                             } else {
                                 Deleting::ToTrash
                             };
-                            let selected = {
-                                let s = lock_state(&state);
-                                s.selected_message_index
-                                    .and_then(|idx| s.messages.get(idx))
-                                    .map(|msg| (msg.message_id, msg.uid, msg.subject.clone()))
+                            let chosen = match chosen_messages(
+                                &state,
+                                &message_cache,
+                                &msg_list,
+                                how_far_a_conversation_delete_reaches(),
+                            ) {
+                                Ok(chosen) => chosen,
+                                Err(why) => return send_refusal(&ui_tx, &runtime, &why),
                             };
-                            if let Some((cache_id, uid, subject)) = selected {
+                            if chosen.is_empty() {
+                                return send_refusal(
+                                    &ui_tx,
+                                    &runtime,
+                                    "No message selected to delete",
+                                );
+                            }
+                            if let Some(why) = too_many(chosen.messages.len()) {
+                                return send_refusal(&ui_tx, &runtime, &why);
+                            }
+                            if let Some(question) = deleting_asks(&chosen) {
+                                // Spoken as well as shown. The dialog says
+                                // it, and this puts it on the announcement
+                                // channel at the moment it opens, which is
+                                // what a braille display reads.
+                                let _ = a11y.announce(
+                                    &question,
+                                    crate::presentation::accessibility::announcements::Priority::High,
+                                );
+                                let answer = MessageDialog::builder(
+                                    &frame,
+                                    &question,
+                                    "Delete Conversation",
+                                )
+                                .with_style(
+                                    crate::presentation::asking::yes_no_where_enter_answers_no(),
+                                )
+                                .build()
+                                .show_modal();
+                                if answer != ID_YES {
+                                    return;
+                                }
+                            }
+                            // The set's rows on screen, remembered so the
+                            // cursor lands once, after the last of them has
+                            // left, rather than after each (#30, on #76's
+                            // rule). One row is today's path; under
+                            // conversation view nothing lands, 11-06.1's
+                            // decision, so nothing is remembered there.
+                            {
+                                let mut s = lock_state(&state);
+                                s.a_set_leaving = (chosen.messages.len() > 1
+                                    && !s.showing.showing_conversations())
+                                .then(|| {
+                                    ASetLeaving::of(chosen.messages.iter().filter_map(|message| {
+                                        s.messages
+                                            .iter()
+                                            .position(|row| row.message_id == message.row_id)
+                                            .map(|row| (message.row_id, row))
+                                    }))
+                                });
+                            }
+                            // One word at the key and the fuller line for
+                            // the eye (#83). The subject was just read on
+                            // the row, and what is said next is the row
+                            // the cursor lands on, or a refusal; a spoken
+                            // "Deleting subject..." here and "Deleted:
+                            // subject" after the server were the two
+                            // sentences the tester was waiting through.
+                            // Once for the set, never once per message.
+                            say_the_one_word(&a11y, "Delete");
+                            send_shown(&ui_tx, &runtime, &what_is_being_done("Deleting", &chosen));
+                            for message in &chosen.messages {
                                 // In the outbox, delete means cancel the send.
                                 // There is no server copy to remove: the
                                 // message has not been anywhere.
-                                if cancel_if_queued(app, &message_cache, cache_id) {
-                                    return;
+                                if cancel_if_queued(app, &message_cache, message.row_id) {
+                                    continue;
                                 }
-                                // One word at the key and the fuller line for
-                                // the eye (#83). The subject was just read on
-                                // the row, and what is said next is the row
-                                // the cursor lands on, or a refusal; a spoken
-                                // "Deleting subject..." here and "Deleted:
-                                // subject" after the server were the two
-                                // sentences the tester was waiting through.
-                                say_the_one_word(&a11y, "Delete");
-                                send_shown(&ui_tx, &runtime, &format!("Deleting {subject}..."));
                                 // A message on this computer. POP mail is all
                                 // of it, and the route below needs a session
                                 // with a server this account has never had.
-                                if delete_if_local(app, &message_cache, cache_id, &subject, asked) {
-                                    return;
+                                if delete_if_local(
+                                    app,
+                                    &message_cache,
+                                    message.row_id,
+                                    &message.subject,
+                                    asked,
+                                ) {
+                                    continue;
                                 }
                                 spawn_server_change(
                                     app,
-                                    cache_id,
-                                    uid,
-                                    subject,
+                                    message.row_id,
+                                    message.uid,
+                                    message.subject.clone(),
                                     ServerChange::Deleted(asked),
                                 );
-                            } else {
-                                send_refusal(&ui_tx, &runtime, "No message selected to delete");
                             }
                         }
                         _ if id == ID_MARK_READ => {
                             // The Action menu, the context menu and the
                             // toolbar all raise this id; M on the list runs
                             // the same toggle under its own name (#27).
-                            toggle_read_state(app, &a11y, How::TheCommand, &frame, toolbar_handle);
+                            toggle_read_state(
+                                app,
+                                &a11y,
+                                How::TheCommand,
+                                &frame,
+                                toolbar_handle,
+                                &msg_list,
+                                &message_cache,
+                            );
                         }
                         _ if id == ID_SEARCH => {
                             // It used to say "Searching: report..." and search
@@ -10186,98 +10364,257 @@ enum How {
     TheKey,
 }
 
-/// Toggle the selected message between read and unread, say so, and tell
-/// the server.
+/// The folder on screen and the account it belongs to, for a read of a
+/// conversation row's messages; nothing when no folder of an account is
+/// open, which is where a saved search or All Inboxes leaves it.
+fn the_open_folder_and_its_account(s: &WxUIState) -> Option<(i64, String)> {
+    let account = match s.selected_folder.as_ref().and_then(|row| row.opens()) {
+        Some(crate::presentation::folder_tree::WhichRow::Folder { account, .. }) => account,
+        _ => return None,
+    };
+    Some((folder_on_screen(s)?, account))
+}
+
+/// What the selection holds, read from the control at the key (#30).
+///
+/// The rows the list says are selected, or the cursor row when none is,
+/// each looked up in the view: a message row is its message; a conversation
+/// row is every message of it within `reach`, read from the cache through
+/// the query the conversation row's delete always used, since a
+/// conversation's messages in other folders are not on screen. Kept
+/// nowhere: the list is virtual and the selection is the control's, so the
+/// set is read at the moment of the command and never from a model that
+/// could be stale. A sentence when the cache could not answer, for the arm
+/// to refuse with.
+fn chosen_messages(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    list: &ListCtrl,
+    reach: crate::application::conversations::AConversationReaches,
+) -> std::result::Result<crate::application::choosing_messages::Chosen, String> {
+    use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
+    let rows = {
+        let rows = chosen_rows(list);
+        if rows.is_empty() {
+            lock_state(state)
+                .selected_message_index
+                .into_iter()
+                .collect()
+        } else {
+            rows
+        }
+    };
+    let s = lock_state(state);
+    if !s.showing.showing_conversations() {
+        return Ok(what_the_selection_holds(&rows, |row| {
+            s.messages.get(row).map(|message| {
+                Members::AMessage(MessageRef {
+                    row_id: message.message_id,
+                    uid: message.uid,
+                    subject: message.subject.clone(),
+                    read: message.read,
+                    starred: message.starred,
+                })
+            })
+        }));
+    }
+    let Some(cache) = cache.as_ref() else {
+        return Err("No storage is open".to_string());
+    };
+    let Some((folder_id, account_id)) = the_open_folder_and_its_account(&s) else {
+        return Err("Open a folder first. Conversations are shown a folder at a time.".to_string());
+    };
+    let mut trouble = None;
+    let chosen = what_the_selection_holds(&rows, |row| {
+        let conversation = s.conversations.get(row)?;
+        let ids = match cache.messages_in_conversation(
+            &conversation.thread_id,
+            &account_id,
+            folder_id,
+            reach,
+        ) {
+            Ok(ids) => ids,
+            Err(e) => {
+                trouble = Some(format!("The conversation could not be read: {e}"));
+                return None;
+            }
+        };
+        let messages = ids
+            .iter()
+            .filter_map(|id| cache.get_message(*id).ok().flatten())
+            .map(|message| MessageRef {
+                row_id: message.id,
+                uid: message.uid,
+                subject: message.subject,
+                read: message.read,
+                starred: message.starred,
+            })
+            .collect();
+        Some(Members::AConversation {
+            name: conversation.subject.clone(),
+            messages,
+        })
+    });
+    match trouble {
+        Some(why) => Err(why),
+        None => Ok(chosen),
+    }
+}
+
+/// A conversation's reach for a delete, from the D-07 setting, read where
+/// the command runs so the count and the delete agree.
+fn how_far_a_conversation_delete_reaches() -> crate::application::conversations::AConversationReaches
+{
+    let setting = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| {
+            crate::application::conversations::DeletingAConversationRow::from_stored(
+                &stored.app_config().deleting_a_conversation_row,
+            )
+        })
+        .unwrap_or_default();
+    crate::application::choosing_messages::reach_for(
+        crate::application::choosing_messages::SetCommand::Delete,
+        setting,
+    )
+}
+
+/// Toggle the selected messages between read and unread, say so once, and
+/// tell the server about each.
 ///
 /// The one toggle behind the Action menu, the context menu, the toolbar and
 /// M (#27, 2026-09-18); until then the menu's arm held it and M did nothing.
-/// The row in state is flipped first, the list and the status bar are told,
-/// the word is announced, `Confirmed` is signalled so the earcon channel
-/// hears it, and the flag goes to the server, which puts the row back if it
-/// refuses. Then the command's words are refreshed, so what the item says
-/// after the toggle is what the state is.
+/// Over the selection since 2026-09-19 (#30): read when any chosen message
+/// is unread, else unread, which is what the label says it will do; a
+/// conversation row contributes every message of it, so the thread is
+/// marked from its row, which is the last sentence of #27. Each row in
+/// state is flipped and written before the next, the server is told about
+/// each through the queue one message uses, and one sentence is announced,
+/// the one word under the key for one message row and the count otherwise,
+/// with `Confirmed` signalled once so the earcon channel hears it. The
+/// server puts a row back if it refuses. Then the command's words are
+/// refreshed, so what the item says after the toggle is what the state is.
 fn toggle_read_state(
     app: AppHandles<'_>,
     a11y: &Accessibility,
     how: How,
     frame: &Frame,
     toolbar: Option<ToolBar>,
+    list: &ListCtrl,
+    cache: &Option<Arc<MessageCache>>,
 ) {
+    use crate::application::choosing_messages::{
+        Outcome, too_many, what_mark_read_does, what_was_done,
+    };
     let AppHandles { state, tx, rt } = app;
-    let toggled = {
-        let mut s = lock_state(state);
-        let selected = s.selected_message_index;
-        selected
-            .and_then(|idx| s.messages.get_mut(idx))
-            .map(|message| {
-                message.read = !message.read;
-                (
-                    message.message_id,
-                    message.uid,
-                    message.read,
-                    message.subject.clone(),
-                )
-            })
+    let chosen = match chosen_messages(
+        state,
+        cache,
+        list,
+        crate::application::conversations::AConversationReaches::TheWholeAccount,
+    ) {
+        Ok(chosen) => chosen,
+        Err(why) => return send_refusal(tx, rt, &why),
     };
-    let Some((cache_id, uid, new_read, subject)) = toggled else {
-        send_refusal(tx, rt, "No message selected");
-        return;
-    };
+    if chosen.is_empty() {
+        return send_refusal(tx, rt, "No message selected");
+    }
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+    let new_read = what_mark_read_does(&chosen);
+    for message in &chosen.messages {
+        {
+            let mut s = lock_state(state);
+            if let Some(row) = s
+                .messages
+                .iter_mut()
+                .find(|row| row.message_id == message.row_id)
+            {
+                row.read = new_read;
+            }
+        }
+        // Kept here first, and the server told only if it stuck. A write
+        // the cache refused puts the row back and says why, once, and a
+        // cache that refused one will refuse the rest, so the loop stops.
+        if let Some(cache) = cache.as_ref()
+            && !write_flags_or_put_the_row_back(
+                cache,
+                state,
+                tx,
+                message.row_id,
+                (new_read, message.starred),
+                (message.read, message.starred),
+            )
+        {
+            list.refresh(true, None);
+            return;
+        }
+        spawn_server_change(
+            app,
+            message.row_id,
+            message.uid,
+            message.subject.clone(),
+            ServerChange::Flag(FlagChange::Read(new_read)),
+        );
+    }
+    list.refresh(true, None);
     let word = crate::application::marking_read::what_the_key_says(new_read);
-    let said = match how {
-        How::TheCommand => format!("Marked as {word}: {subject}"),
-        How::TheKey => word.to_string(),
+    let outcome = if new_read {
+        Outcome::MarkedRead
+    } else {
+        Outcome::MarkedUnread
     };
-    let sent = tx.clone();
-    let stored_subject = subject.clone();
-    rt.spawn(async move {
-        let _ = sent
-            .send(UIUpdate::MessageReadToggled(cache_id, new_read))
-            .await;
-        let _ = sent
-            .send(UIUpdate::StatusUpdated(format!(
-                "Marked {word}: {stored_subject}"
-            )))
-            .await;
-    });
+    let done = what_was_done(&chosen, &outcome);
+    let said = match (how, chosen.the_one_message()) {
+        (How::TheKey, Some(_)) => word.to_string(),
+        _ => done.clone(),
+    };
     let _ = a11y.announce(
         &said,
         crate::presentation::accessibility::announcements::Priority::Normal,
     );
+    send_shown(tx, rt, &done);
     let confirmed = if new_read {
         "Marked read"
     } else {
         "Marked unread"
     };
     let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
-    spawn_server_change(
-        app,
-        cache_id,
-        uid,
-        subject,
-        ServerChange::Flag(FlagChange::Read(new_read)),
-    );
-    refresh_mark_read_wording(frame, toolbar, state);
+    refresh_mark_read_wording(frame, toolbar, state, list);
 }
 
-/// Whether the message under the cursor is unread: the row's own flag, or
-/// on a conversation row whether any of its messages is, so the command on
-/// that row says what it will do to the messages that need it. `None` when
-/// nothing is selected.
-fn the_selected_row_has_unread(s: &WxUIState) -> Option<bool> {
-    let idx = s.selected_message_index?;
-    if s.showing.showing_conversations() {
-        s.conversations.get(idx).map(|row| row.unread > 0)
+/// Whether any selected row is unread: a message row's own flag, or on a
+/// conversation row whether any of its messages is, so the command says
+/// what it will do to the messages that need it. The rows on screen and
+/// nothing read from the cache, because this is asked on every arrow key.
+/// `None` when nothing is selected.
+fn the_chosen_rows_have_unread(s: &WxUIState, rows: &[usize]) -> Option<bool> {
+    let rows = if rows.is_empty() {
+        s.selected_message_index.into_iter().collect()
     } else {
-        s.messages.get(idx).map(|message| !message.read)
+        rows.to_vec()
+    };
+    let mut seen_a_row = false;
+    for row in rows {
+        let unread = if s.showing.showing_conversations() {
+            s.conversations.get(row).map(|row| row.unread > 0)
+        } else {
+            s.messages.get(row).map(|message| !message.read)
+        };
+        match unread {
+            Some(true) => return Some(true),
+            Some(false) => seen_a_row = true,
+            None => {}
+        }
     }
+    seen_a_row.then_some(false)
 }
 
-/// Make Mark as Read say which way it will go, from the message under the
-/// cursor: the Action menu's item and its help, the toolbar's button and its
-/// tip, all from `marking_read::what_the_command_says` (#27).
+/// Make Mark as Read say which way it will go, from the rows selected: the
+/// Action menu's item and its help, the toolbar's button and its tip, all
+/// from `marking_read::what_the_command_says` (#27, #30).
 ///
-/// Called from the selection handler, from the toggle and from the arm that
+/// Called from the cursor handler, from the toggle and from the arm that
 /// lands a read flag on a row, which are the three places the state can
 /// change under the label. The context menu is not set here: it is built at
 /// the moment the menu key is pressed, from the same state. Nothing selected
@@ -10288,8 +10625,10 @@ fn refresh_mark_read_wording(
     frame: &Frame,
     toolbar: Option<ToolBar>,
     state: &Arc<StdMutex<WxUIState>>,
+    list: &ListCtrl,
 ) {
-    let any_unread = the_selected_row_has_unread(&lock_state(state)).unwrap_or(true);
+    let rows = chosen_rows(list);
+    let any_unread = the_chosen_rows_have_unread(&lock_state(state), &rows).unwrap_or(true);
     let wording = crate::application::marking_read::what_the_command_says(any_unread);
     if let Some((item, menu)) = frame
         .get_menu_bar()
@@ -10587,7 +10926,7 @@ fn attach_labels(
     }
 }
 
-/// Put a label on the message under the cursor, or take one off.
+/// Put a label on the selected messages, or take one off.
 ///
 /// `number` is which label, or `None` for "take them all off".
 ///
@@ -10596,130 +10935,158 @@ fn attach_labels(
 /// and nothing put one on anything. It is the fastest thing there is for
 /// working through an inbox by ear, because it decides one thing about a
 /// message without opening it or leaving the row.
+///
+/// Over the selection since 2026-09-19 (#30): the label goes on when any
+/// chosen message lacks it, else comes off, which for one message is the
+/// toggle it always was; a conversation row contributes every message of
+/// it. Each message is written and the server told about it before the
+/// next, and one sentence says the label and the count.
 fn label_the_message(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
+    list: &ListCtrl,
     number: Option<usize>,
 ) {
     let AppHandles { state, tx, rt } = app;
+    use crate::application::choosing_messages::{Outcome, too_many, what_was_done};
     use crate::application::tagging;
     use crate::presentation::accessibility::announcements::Priority;
 
-    let Some(cache) = cache.as_ref() else {
+    let Some(cache_handle) = cache.as_ref() else {
         return send_refusal(tx, rt, "No storage is open");
     };
-    let (message_id, uid, subject, account_id) = {
-        let s = lock_state(state);
-        let Some(index) = s.selected_message_index else {
-            // Said rather than done silently. A key that appears to do nothing
-            // is indistinguishable from one that is broken.
-            return send_refusal(tx, rt, "Choose a message first");
-        };
-        let Some(message) = s.messages.get(index) else {
-            return send_status(
-                tx,
-                rt,
-                &crate::application::pim_command::no_longer_there(
-                    crate::application::new_item::ItemKind::Mail,
-                    "",
-                ),
-            );
-        };
-        (
-            message.message_id,
-            message.uid,
-            message.subject.clone(),
-            s.active_account_id.clone(),
-        )
+    let chosen = match chosen_messages(
+        state,
+        cache,
+        list,
+        crate::application::conversations::AConversationReaches::TheWholeAccount,
+    ) {
+        Ok(chosen) => chosen,
+        Err(why) => return send_refusal(tx, rt, &why),
     };
-    let Some(account_id) = account_id else {
+    if chosen.is_empty() {
+        // Said rather than done silently. A key that appears to do nothing
+        // is indistinguishable from one that is broken.
+        return send_refusal(tx, rt, "Choose a message first");
+    }
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+    let Some(account_id) = lock_state(state).active_account_id.clone() else {
         return send_refusal(tx, rt, "No account is open");
     };
 
-    let labels = match labels_for(cache, &account_id) {
+    let labels = match labels_for(cache_handle, &account_id) {
         Ok(labels) => labels,
         // Not swallowed: no labels and labels that could not be read look the
         // same from the outside and are different problems.
         Err(e) => return send_status(tx, rt, &format!("The labels could not be read: {e}")),
     };
-    let on_it: Vec<String> = cache
-        .get_tags_for_message(message_id)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|tag| tag.name)
+    let on_each: Vec<Vec<String>> = chosen
+        .messages
+        .iter()
+        .map(|message| {
+            cache_handle
+                .get_tags_for_message(message.row_id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|tag| tag.name)
+                .collect()
+        })
         .collect();
 
-    let said = match number {
+    let outcome = match number {
         None => {
             let mut removed = 0;
-            for tag in labels.iter().filter(|tag| on_it.contains(&tag.name)) {
-                if cache.remove_tag_from_message(message_id, &tag.id).is_err() {
-                    continue;
-                }
-                removed += 1;
-                // Each one to the server as well. Clearing locally and not on
-                // the server would put every label back on the next sync,
-                // which reads as a key that did not work.
-                if let Some(keyword) = tag.keyword.clone() {
-                    spawn_server_change(
-                        app,
-                        message_id,
-                        uid,
-                        subject.clone(),
-                        ServerChange::Flag(FlagChange::Labelled {
-                            keyword,
-                            on: false,
-                            name: tag.name.clone(),
-                        }),
-                    );
+            for (message, on_it) in chosen.messages.iter().zip(&on_each) {
+                for tag in labels.iter().filter(|tag| on_it.contains(&tag.name)) {
+                    if cache_handle
+                        .remove_tag_from_message(message.row_id, &tag.id)
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    removed += 1;
+                    // Each one to the server as well. Clearing locally and
+                    // not on the server would put every label back on the
+                    // next sync, which reads as a key that did not work.
+                    if let Some(keyword) = tag.keyword.clone() {
+                        spawn_server_change(
+                            app,
+                            message.row_id,
+                            message.uid,
+                            message.subject.clone(),
+                            ServerChange::Flag(FlagChange::Labelled {
+                                keyword,
+                                on: false,
+                                name: tag.name.clone(),
+                            }),
+                        );
+                    }
                 }
             }
-            tagging::all_removed(removed)
+            Outcome::LabelsRemoved(removed)
         }
         Some(number) => {
             let Some(label) = tagging::at_number(&labels, number) else {
                 return send_status(tx, rt, &tagging::nothing_there(number));
             };
-            let turning_on = tagging::turns_on(&on_it, &label.name);
-            let written = if turning_on {
-                cache.add_tag_to_message(message_id, &label.id)
+            // On when any chosen message lacks it, which for one message is
+            // the toggle it always was.
+            let turning_on = on_each
+                .iter()
+                .any(|on_it| tagging::turns_on(on_it, &label.name));
+            for (message, on_it) in chosen.messages.iter().zip(&on_each) {
+                if tagging::turns_on(on_it, &label.name) != turning_on {
+                    continue;
+                }
+                let written = if turning_on {
+                    cache_handle.add_tag_to_message(message.row_id, &label.id)
+                } else {
+                    cache_handle.remove_tag_from_message(message.row_id, &label.id)
+                };
+                if let Err(e) = written {
+                    return send_status(tx, rt, &format!("The label did not stick: {e}"));
+                }
+                // And the server, so the label is there on another device
+                // and in whatever client somebody opens next. A label with
+                // no keyword has nothing that could be sent and stays here,
+                // which the settings screen says rather than leaving it to
+                // be noticed.
+                match label.keyword.clone() {
+                    Some(keyword) => spawn_server_change(
+                        app,
+                        message.row_id,
+                        message.uid,
+                        message.subject.clone(),
+                        ServerChange::Flag(FlagChange::Labelled {
+                            keyword,
+                            on: turning_on,
+                            name: label.name.clone(),
+                        }),
+                    ),
+                    None => tracing::info!(
+                        "The label {} has no keyword, so it stays on this computer",
+                        label.name
+                    ),
+                }
+            }
+            if turning_on {
+                Outcome::Labelled(label.name.clone())
             } else {
-                cache.remove_tag_from_message(message_id, &label.id)
-            };
-            if let Err(e) = written {
-                return send_status(tx, rt, &format!("The label did not stick: {e}"));
+                Outcome::Unlabelled(label.name.clone())
             }
-            // And the server, so the label is there on another device and in
-            // whatever client somebody opens next. A label with no keyword has
-            // nothing that could be sent and stays here, which the settings
-            // screen says rather than leaving it to be noticed.
-            match label.keyword.clone() {
-                Some(keyword) => spawn_server_change(
-                    app,
-                    message_id,
-                    uid,
-                    subject,
-                    ServerChange::Flag(FlagChange::Labelled {
-                        keyword,
-                        on: turning_on,
-                        name: label.name.clone(),
-                    }),
-                ),
-                None => tracing::info!(
-                    "The label {} has no keyword, so it stays on this computer",
-                    label.name
-                ),
-            }
-            tagging::spoken(&label.name, turning_on)
         }
     };
 
     // Spoken rather than left in the status line. A label is not visible from
     // the row it is on, so somebody who pressed the wrong number has no other
-    // way to find out what they just did.
+    // way to find out what they just did. Once for the set, and written for
+    // the eye.
+    let said = what_was_done(&chosen, &outcome);
     let _ = a11y.announce(&said, Priority::Normal);
-    send_status(tx, rt, &said);
+    send_shown(tx, rt, &said);
 }
 
 /// This account's labels, making the starting five if it has none yet.
@@ -14218,132 +14585,6 @@ fn load_folder_conversations(
     }
 }
 
-/// Delete every message a collapsed conversation row reaches, D-07.
-///
-/// Three things make this D-07 rather than a loop over a delete.
-///
-/// The count is named before anything happens, and it is the length of the very
-/// list this walks, so the question and the deletion cannot be two answers.
-/// `MessageCache::messages_in_conversation` reads it under the reach the
-/// setting names, and the row's own count comes from the same reach.
-///
-/// How far it reaches is the fifth of this phase's settings, defaulting to this
-/// folder's messages. A collapsed row is a row whose contents nobody can see,
-/// so the narrower reach is the one that surprises somebody least.
-///
-/// And every message goes down the route a single message already goes down:
-/// cancel it if it is queued, delete it here if it lives here, ask the server
-/// otherwise. `local_folders::deleting` is what decides what deleting means and
-/// there is no second answer to that here. Three commands now destroy mail and
-/// all three ask the same function.
-fn delete_the_conversation_row(
-    app: AppHandles<'_>,
-    frame: &Frame,
-    a11y: &Arc<Accessibility>,
-    cache: &Option<Arc<MessageCache>>,
-    asked: Deleting,
-) {
-    let AppHandles { state, tx, rt } = app;
-    let Some(cache_handle) = cache.as_ref() else {
-        return;
-    };
-    let chosen = {
-        let s = lock_state(state);
-        s.selected_message_index
-            .and_then(|index| s.conversations.get(index))
-            .map(|conversation| (conversation.thread_id.clone(), conversation.subject.clone()))
-    };
-    let Some((thread_id, name)) = chosen else {
-        send_refusal(tx, rt, "No conversation selected to delete");
-        return;
-    };
-    let (folder_id, account_id) = {
-        let s = lock_state(state);
-        let account = match s.selected_folder.as_ref().and_then(|row| row.opens()) {
-            Some(crate::presentation::folder_tree::WhichRow::Folder { account, .. }) => {
-                Some(account)
-            }
-            _ => None,
-        };
-        (folder_on_screen(&s), account)
-    };
-    let (Some(folder_id), Some(account_id)) = (folder_id, account_id) else {
-        send_refusal(tx, rt, "No conversation selected to delete");
-        return;
-    };
-
-    let reach = crate::data::config::ConfigManager::load_stored()
-        .map(|stored| {
-            crate::application::conversations::DeletingAConversationRow::from_stored(
-                &stored.app_config().deleting_a_conversation_row,
-            )
-        })
-        .unwrap_or_default();
-    let reaching = match cache_handle.messages_in_conversation(
-        &thread_id,
-        &account_id,
-        folder_id,
-        reach.counted_the_same_way(),
-    ) {
-        Ok(reaching) => reaching,
-        Err(e) => {
-            send_refusal(tx, rt, &format!("The conversation could not be read: {e}"));
-            return;
-        }
-    };
-    if reaching.is_empty() {
-        send_refusal(
-            tx,
-            rt,
-            "There is nothing left in this conversation to delete",
-        );
-        return;
-    }
-
-    let question = view_state::deleting_a_conversation_asks(&name, reaching.len());
-    // Spoken as well as shown. The dialog says it, and this puts it on the
-    // announcement channel at the moment it opens, which is what a braille
-    // display reads.
-    let _ = a11y.announce(
-        &question,
-        crate::presentation::accessibility::announcements::Priority::High,
-    );
-    let answer = MessageDialog::builder(frame, &question, "Delete Conversation")
-        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-        .build()
-        .show_modal();
-    if answer != ID_YES {
-        return;
-    }
-
-    for message_id in &reaching {
-        let Ok(Some(message)) = cache_handle.get_message(*message_id) else {
-            continue;
-        };
-        if cancel_if_queued(app, cache, *message_id) {
-            continue;
-        }
-        if delete_if_local(app, cache, *message_id, &message.subject, asked) {
-            continue;
-        }
-        spawn_server_change(
-            app,
-            *message_id,
-            message.uid,
-            message.subject.clone(),
-            ServerChange::Deleted(asked),
-        );
-    }
-    send_status(
-        tx,
-        rt,
-        &format!(
-            "Deleting {} in {name}...",
-            crate::service::caldav::how_many(reaching.len(), "message")
-        ),
-    );
-}
-
 /// Switch the message list between messages and conversations, D-01.
 ///
 /// The list is not replaced and the paint callback is not registered again.
@@ -14382,12 +14623,20 @@ fn switch_the_view(
         // Held before anything else changes, so what is restored on the way
         // back is what was really selected and not what the other view makes of
         // it. Nothing selected is held as nothing, and survives as nothing.
+        // Every selected row since 2026-09-19 (#30), read off the control,
+        // which is the set D-11 was written for; the cursor row when none is.
         if !s.showing.showing_conversations() {
-            let chosen: Vec<i64> = s
-                .selected_message_index
-                .and_then(|index| s.messages.get(index))
-                .map(|message| vec![message.message_id])
-                .unwrap_or_default();
+            let rows = chosen_rows(msg_list);
+            let rows = if rows.is_empty() {
+                s.selected_message_index.into_iter().collect()
+            } else {
+                rows
+            };
+            let chosen: Vec<i64> = rows
+                .iter()
+                .filter_map(|row| s.messages.get(*row))
+                .map(|message| message.message_id)
+                .collect();
             s.selection_before_the_switch = view_state::KeptSelection::of(chosen);
         }
 
@@ -17988,6 +18237,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let msg = format!("Error: {}", error);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce(&msg, Priority::High);
+            a_refusal_ends_the_wait_for_a_set(state, msg_list);
         }
         UIUpdate::StatusUpdated(status) => {
             {
@@ -18235,6 +18485,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // is the answer to a key somebody just pressed and the one thing
             // they cannot be left to miss.
             let _ = a11y.announce_topic(why, Priority::High, "refusal");
+            a_refusal_ends_the_wait_for_a_set(state, msg_list);
         }
         UIUpdate::FolderWasRenumbered(said) => {
             // Its own topic rather than "status", and the precedent is the
@@ -18767,7 +19018,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // The flag may have landed on the message under the cursor, from
             // the timer, from a refusal putting it back, or from the toggle
             // itself, and the command's words follow the flag (#27).
-            refresh_mark_read_wording(frame, toolbar, state);
+            refresh_mark_read_wording(frame, toolbar, state, msg_list);
         }
         UIUpdate::MailboxWatchRequested(account_id) => {
             spawn_mail_watch(AppHandles { state, tx, rt }, account_id);
@@ -19320,20 +19571,30 @@ fn flush_outbox(app: AppHandles<'_>) {
     });
 }
 
-/// Ask where the chosen message should go, and put it there.
+/// Ask where the chosen messages should go, and put them there.
 ///
 /// The window is opened on this thread, because a dialog belongs to the thread
 /// that owns the window; the server work happens on another, because a round
 /// trip on the UI thread is a frozen window and a screen reader with nothing to
 /// read.
+///
+/// Over the selection since 2026-09-19 (#30): the folder is asked once, for
+/// the account the first chosen message is in, and every chosen message goes
+/// there, each down the route one message always went down, with one
+/// sentence at the end. A conversation row contributes the messages in the
+/// folder being read and no others, because a move of a conversation's
+/// messages out of folders somebody is not looking at is a move nobody
+/// asked for.
 fn move_or_copy_message(
     app: AppHandles<'_>,
     cache: &Option<Arc<crate::data::message_cache::MessageCache>>,
     frame: &Frame,
     a11y: &Accessibility,
+    list: &ListCtrl,
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
+    use crate::application::choosing_messages::{too_many, what_is_being_done};
     use crate::application::destinations::{
         Filing, FolderInAnAccount, Moving, anywhere, where_this_message_can_go,
     };
@@ -19341,15 +19602,22 @@ fn move_or_copy_message(
     let Some(cache) = cache.clone() else {
         return send_refusal(tx, rt, "No message store is available");
     };
-    let chosen = {
-        let s = lock_state(state);
-        s.selected_message_index
-            .and_then(|at| s.messages.get(at))
-            .map(|message| (message.message_id, message.uid, message.subject.clone()))
+    let chosen = match chosen_messages(
+        state,
+        &Some(cache.clone()),
+        list,
+        crate::application::conversations::AConversationReaches::ThisFolderOnly,
+    ) {
+        Ok(chosen) => chosen,
+        Err(why) => return send_refusal(tx, rt, &why),
     };
-    let Some((row_id, uid, subject)) = chosen else {
+    let Some(first) = chosen.messages.first() else {
         return send_refusal(tx, rt, "Choose a message first");
     };
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+    let row_id = first.row_id;
 
     // Whose folders this is about, asked once and used by both halves. The
     // folders offered used to come from the account on screen while the command
@@ -19465,17 +19733,64 @@ fn move_or_copy_message(
         return send_status(tx, rt, "The message is not in a folder we know about");
     };
 
+    // Every chosen message with the folder it is in. The first message's
+    // folder was read above so it could be kept off the list of
+    // destinations; the rest are read the same way, since in All Inboxes
+    // the rows are in different folders of different accounts.
+    let moving: Vec<AMessageMoving> = chosen
+        .messages
+        .iter()
+        .map(|message| AMessageMoving {
+            row_id: message.row_id,
+            uid: message.uid,
+            subject: message.subject.clone(),
+            from: if message.row_id == row_id {
+                from.clone()
+            } else {
+                cache
+                    .folder_path_for_message(message.row_id)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| from.clone())
+            },
+        })
+        .collect();
+    // The set's rows on screen, remembered so the cursor lands once, after
+    // the last of them has left (#30, on #76's rule). A copy takes no row
+    // out, and under conversation view nothing lands.
+    if !copying {
+        let mut s = lock_state(state);
+        s.a_set_leaving = (moving.len() > 1 && !s.showing.showing_conversations()).then(|| {
+            ASetLeaving::of(moving.iter().filter_map(|message| {
+                s.messages
+                    .iter()
+                    .position(|row| row.message_id == message.row_id)
+                    .map(|row| (message.row_id, row))
+            }))
+        });
+    }
+
     // One word at the key and the fuller line for the eye (#83), the shape
     // a delete has: a move whose row leaves is confirmed by the row the
     // cursor lands on, and a copy, whose row stays, by its spoken outcome.
+    // Once for the set.
     let (word, doing) = if copying {
         ("Copy", "Copying")
     } else {
         ("Move", "Moving")
     };
     say_the_one_word(a11y, word);
-    send_shown(tx, rt, &format!("{doing} {subject}..."));
-    spawn_folder_move(app, row_id, uid, subject, from, into, copying);
+    send_shown(tx, rt, &what_is_being_done(doing, &chosen));
+    spawn_folder_move(app, moving, chosen, into, copying);
+}
+
+/// One message a move or a copy is taking, as the worker needs it.
+struct AMessageMoving {
+    row_id: i64,
+    uid: u32,
+    subject: String,
+    /// The folder it is in now.
+    from: String,
 }
 
 /// Do the move or copy on the server, and only then change the list.
@@ -19488,61 +19803,80 @@ fn move_or_copy_message(
 /// unique inside one account and not across them. Which account it names is what
 /// decides whether this is one `COPY` down the connection that is already open
 /// or a fetch at one server and an append at another.
+///
+/// Over a set since 2026-09-19 (#30): one worker takes the messages one
+/// after another down the route one message always took, asking for each
+/// message's held session as it comes, which costs nothing the second
+/// time. For a set every message's outcome is written for the eye and a
+/// message that got nowhere is counted and logged with its reason, and one
+/// sentence is spoken at the end saying how many went and how many did
+/// not; a refusal that took every message is spoken as a refusal. One
+/// message keeps its own outcome, shown when its row left and spoken when
+/// it stayed (#83).
 fn spawn_folder_move(
     app: AppHandles<'_>,
-    message_row_id: i64,
-    uid: u32,
-    subject: String,
-    from: String,
+    moving: Vec<AMessageMoving>,
+    chosen: crate::application::choosing_messages::Chosen,
     into: crate::application::destinations::Destination,
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
-    // The account this row is in, not the one that happens to be open. In All
-    // Inboxes those differ routinely, and this used to take the open account
-    // and then fall back to whichever came first, so the move went to the
-    // wrong server against the other account's folder path and took whatever
-    // message there happened to share the UID.
-    let account = {
+    // The account each row is in, not the one that happens to be open. In
+    // All Inboxes those differ routinely, and this used to take the open
+    // account and then fall back to whichever came first, so the move went
+    // to the wrong server against the other account's folder path and took
+    // whatever message there happened to share the UID.
+    //
+    // The account the chosen destination belongs to is read off the row
+    // that was chosen rather than inferred here. Taken beside the source
+    // accounts so all come from one locked look at the state.
+    let (accounts, destination_account) = {
         let s = lock_state(state);
-        owner_of(
-            &s.messages,
-            &s.accounts,
-            message_row_id,
-            s.active_account_id.as_deref(),
-        )
-    };
-    // The account the chosen destination belongs to, read off the row that was
-    // chosen rather than inferred here. Taken beside the source account so both
-    // come from one locked look at the state.
-    let destination_account = {
-        let s = lock_state(state);
-        s.accounts.iter().find(|a| a.id == into.account_id).cloned()
+        let accounts: Vec<Option<Account>> = moving
+            .iter()
+            .map(|message| {
+                owner_of(
+                    &s.messages,
+                    &s.accounts,
+                    message.row_id,
+                    s.active_account_id.as_deref(),
+                )
+            })
+            .collect();
+        let destination_account = s.accounts.iter().find(|a| a.id == into.account_id).cloned();
+        (accounts, destination_account)
     };
 
     rt.spawn_blocking(move || {
+        use crate::application::choosing_messages::{Outcome, what_was_done};
+        use crate::application::server_delete::{ThenWhat, WhatToDoNext};
         let say = |update: UIUpdate| {
             handle.block_on(async {
                 let _ = tx.send(update).await;
             });
         };
-        let fail = |reason: String| {
-            say(UIUpdate::ErrorOccurred(format!(
-                "{subject} was not {}: {reason}",
-                if copying { "copied" } else { "moved" }
-            )));
-        };
-
-        let Some(account) = account else {
-            return fail("no account is set up".to_string());
-        };
-        let controller =
-            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
-                Ok(session) => session,
-                Err(why) => return fail(why.to_string()),
-            };
+        let a_set = moving.len() > 1;
+        let (mut went, mut did_not) = (0_usize, 0_usize);
+        let mut first_reason: Option<String> = None;
+        for (message, account) in moving.into_iter().zip(accounts) {
+            let AMessageMoving {
+                row_id: message_row_id,
+                uid,
+                subject,
+                from,
+            } = message;
+            let into = into.clone();
+            let destination_account = destination_account.clone();
+            let the_subject = subject.clone();
+            let one_move = || -> std::result::Result<(WhatToDoNext, bool), String> {
+                let Some(account) = account else {
+                    return Err("no account is set up".to_string());
+                };
+                let controller =
+                    handle.block_on(crate::application::mail_session::the_session_at(&account))
+                        .map_err(|why| why.to_string())?;
 
         // What happens to the row and what is said are one decision, made in
         // one place, because they have to agree. A move whose copy landed and
@@ -19565,22 +19899,24 @@ fn spawn_folder_move(
             &into.account_id,
         );
 
-        let outcome = match (crossing, copying) {
+        // Each branch answers the outcome and whether the message went,
+        // which the one sentence over a set counts; for a copy the row
+        // stays either way, so the branch says which it was.
+        let outcome: std::result::Result<(WhatToDoNext, bool), crate::common::Error> = match (crossing, copying) {
             (crate::application::mail_across_accounts::Crossing::AnotherAccount, true) => {
                 let Some(destination_account) = destination_account else {
-                    return fail(
+                    return Err(
                         "the account that folder is on is not set up on this computer".to_string(),
                     );
                 };
                 // The destination's own held session, so the append carries
                 // that account's permission. An account somebody marked
                 // read-only refuses it there rather than here.
-                let taking = match handle.block_on(
-                    crate::application::mail_session::the_session_at(&destination_account),
-                ) {
-                    Ok(session) => session,
-                    Err(why) => return fail(why.to_string()),
-                };
+                let taking = handle
+                    .block_on(crate::application::mail_session::the_session_at(
+                        &destination_account,
+                    ))
+                    .map_err(|why| why.to_string())?;
                 // Named in what is said afterwards, because two accounts can
                 // both have an Archive and a sentence naming the folder alone
                 // would not say where the message went. The wording is decided
@@ -19595,24 +19931,30 @@ fn spawn_folder_move(
                     taking.as_ref(),
                     &into.id,
                 )) {
-                    Ok(()) => Ok(crate::application::server_delete::after_a_copy(
-                        crossed, &into.id, &subject,
+                    Ok(()) => Ok((
+                        crate::application::server_delete::after_a_copy(
+                            crossed, &into.id, &subject,
+                        ),
+                        true,
                     )),
                     // Not a bare failure. The message is still exactly where it
                     // was and saying so is the answer to the question somebody
                     // asks next, so the sentence comes from the same place the
                     // successful one does.
-                    Err(why) => Ok(crate::application::server_delete::nothing_was_copied(
-                        crossed,
-                        &from,
-                        &subject,
-                        &why.to_string(),
+                    Err(why) => Ok((
+                        crate::application::server_delete::nothing_was_copied(
+                            crossed,
+                            &from,
+                            &subject,
+                            &why.to_string(),
+                        ),
+                        false,
                     )),
                 }
             }
             (crate::application::mail_across_accounts::Crossing::AnotherAccount, false) => {
                 let Some(destination_account) = destination_account else {
-                    return fail(
+                    return Err(
                         "the account that folder is on is not set up on this computer".to_string(),
                     );
                 };
@@ -19620,12 +19962,11 @@ fn spawn_folder_move(
                 // so the append carries that account's permission and the
                 // removal carries the source account's. They are two different
                 // answers and a move needs both.
-                let taking = match handle.block_on(
-                    crate::application::mail_session::the_session_at(&destination_account),
-                ) {
-                    Ok(session) => session,
-                    Err(why) => return fail(why.to_string()),
-                };
+                let taking = handle
+                    .block_on(crate::application::mail_session::the_session_at(
+                        &destination_account,
+                    ))
+                    .map_err(|why| why.to_string())?;
                 // A connection of this thread's own, the way every other
                 // worker here opens one: a `MessageCache` holds a SQLite
                 // connection, which is not shareable across threads, so the
@@ -19662,15 +20003,17 @@ fn spawn_folder_move(
                     // Every ending, including the ones where something went
                     // wrong after the message landed, is worded and decided
                     // about in `server_delete` beside the other four.
-                    Ok(across) => Ok(
-                        crate::application::server_delete::after_a_move_across_accounts(
+                    Ok(across) => {
+                        let next = crate::application::server_delete::after_a_move_across_accounts(
                             &across,
                             &into.id,
                             &destination_account.name,
                             &from,
                             &subject,
-                        ),
-                    ),
+                        );
+                        let left = next.then == ThenWhat::MarkItDeletedHere;
+                        Ok((next, left))
+                    }
                     // Nothing reached either server, so the message is exactly
                     // where it was. That is what `move_it_across` promises about
                     // its failures and it is the only thing this arm means.
@@ -19680,22 +20023,80 @@ fn spawn_folder_move(
             (crate::application::mail_across_accounts::Crossing::TheSameAccount, true) => handle
                 .block_on(controller.copy_message(&from, uid, &into.id))
                 .map(|()| {
-                    crate::application::server_delete::after_a_copy(
-                        crate::application::server_delete::Copied::WithinTheAccount,
-                        &into.id,
-                        &subject,
+                    (
+                        crate::application::server_delete::after_a_copy(
+                            crate::application::server_delete::Copied::WithinTheAccount,
+                            &into.id,
+                            &subject,
+                        ),
+                        true,
                     )
                 }),
             (crate::application::mail_across_accounts::Crossing::TheSameAccount, false) => handle
                 .block_on(controller.move_message(&from, uid, &into.id))
                 .map(|moved| {
-                    crate::application::server_delete::after_a_move(&moved, &into.id, &subject)
+                    let next =
+                        crate::application::server_delete::after_a_move(&moved, &into.id, &subject);
+                    let left = next.then == ThenWhat::MarkItDeletedHere;
+                    (next, left)
                 }),
         };
+        outcome.map_err(|e| e.to_string())
+            };
 
-        match outcome {
-            Ok(next) => show_or_say_what_happened_next(&say, message_row_id, next),
-            Err(e) => fail(e.to_string()),
+            match one_move() {
+                Ok((of_this_one, it_went)) if a_set => {
+                    if it_went {
+                        went += 1;
+                    } else {
+                        did_not += 1;
+                    }
+                    // For the eye, every message; the ear has the one
+                    // sentence at the end, and a row that left is heard as
+                    // the row the cursor lands on.
+                    if of_this_one.then == ThenWhat::MarkItDeletedHere {
+                        say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                    }
+                    say(UIUpdate::Shown(of_this_one.said));
+                }
+                Ok((next, _)) => show_or_say_what_happened_next(&say, message_row_id, next),
+                Err(reason) => {
+                    did_not += 1;
+                    let line = format!(
+                        "{the_subject} was not {}: {reason}",
+                        if copying { "copied" } else { "moved" }
+                    );
+                    if a_set {
+                        // Counted in the sentence at the end and kept in
+                        // the log with its reason, rather than a refusal
+                        // spoken per message over a set of hundreds.
+                        tracing::warn!("{line}");
+                        first_reason.get_or_insert(reason);
+                    } else {
+                        say(UIUpdate::ErrorOccurred(line));
+                    }
+                }
+            }
+        }
+        if !a_set {
+            return;
+        }
+        let outcome = if copying {
+            Outcome::CopiedTo {
+                into: into.id.clone(),
+                not_copied: did_not,
+            }
+        } else {
+            Outcome::MovedTo {
+                into: into.id.clone(),
+                not_moved: did_not,
+            }
+        };
+        let summed = what_was_done(&chosen, &outcome);
+        match first_reason {
+            // Nothing went: a refusal, spoken as one, with the first reason.
+            Some(reason) if went == 0 => say(UIUpdate::ErrorOccurred(format!("{summed}: {reason}"))),
+            _ => say(UIUpdate::StatusUpdated(summed)),
         }
     });
 }
@@ -19943,6 +20344,12 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
 /// the last was deleted, is what the screen reader reads next. Until then the
 /// index was written here and the control was left with whatever the count
 /// change left it, which after the last row is no row at all.
+///
+/// A row of a set a command over the selection is taking out (#30) lands
+/// nothing on its own: the set's rows are remembered in `a_set_leaving` at
+/// the key, and the cursor lands once, after the last of them, on the row
+/// after the set as the rule numbers it, so a delete over five is heard as
+/// "Delete" and the row after the five rather than five landings.
 fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl, cache_id: i64) {
     let removed = {
         let mut s = lock_state(state);
@@ -19950,9 +20357,22 @@ fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtr
             return;
         };
         s.messages.remove(idx);
-        (idx, s.messages.len(), s.showing.showing_conversations())
+        let len_after = s.messages.len();
+        let of_a_set = match s.a_set_leaving.as_mut() {
+            Some(set) => match set.one_left(cache_id) {
+                (true, true) => {
+                    let rows = std::mem::take(&mut set.left);
+                    s.a_set_leaving = None;
+                    Some(Some(rows))
+                }
+                (true, false) => Some(None),
+                (false, _) => None,
+            },
+            None => None,
+        };
+        (idx, len_after, s.showing.showing_conversations(), of_a_set)
     };
-    let (idx, len_after, showing_conversations) = removed;
+    let (idx, len_after, showing_conversations, of_a_set) = removed;
     tell_the_list_how_many(state, msg_list);
     msg_list.refresh(true, None);
     // Under conversation view the rows on screen are conversations and the
@@ -19962,7 +20382,39 @@ fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtr
     if showing_conversations {
         return;
     }
-    let landed = land_the_cursor_after(msg_list, &[idx], len_after);
+    let removed: Vec<usize> = match of_a_set {
+        // Not of a set: one row, landed after as it always was.
+        None => vec![idx],
+        // Of a set with rows still to leave: nothing lands yet.
+        Some(None) => return,
+        // The last of the set: the set's rows, numbered as they were.
+        Some(Some(mut rows)) => {
+            rows.sort_unstable();
+            rows
+        }
+    };
+    let landed = land_the_cursor_after(msg_list, &removed, len_after);
+    lock_state(state).selected_message_index = landed;
+}
+
+/// A refusal has arrived while a set was leaving the list (#30): the rows
+/// that left are landed after now, and the wait ends, so a server that
+/// refused one message of five does not leave the cursor waiting for a row
+/// that will never go.
+fn a_refusal_ends_the_wait_for_a_set(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl) {
+    let left = {
+        let mut s = lock_state(state);
+        let Some(mut set) = s.a_set_leaving.take() else {
+            return;
+        };
+        if set.left.is_empty() || s.showing.showing_conversations() {
+            return;
+        }
+        set.left.sort_unstable();
+        (set.left, s.messages.len())
+    };
+    let (rows, len_after) = left;
+    let landed = land_the_cursor_after(msg_list, &rows, len_after);
     lock_state(state).selected_message_index = landed;
 }
 
@@ -19996,6 +20448,25 @@ pub fn land_the_cursor_after(
     let row = landing_after_a_removal::where_to_land(removed, len_after)?;
     put_the_cursor_on(list, row);
     Some(row)
+}
+
+/// The rows the message list says are selected, in order (#30).
+///
+/// Read from the control at the moment it is asked and kept nowhere,
+/// because the list is virtual and the selection is the control's. Public
+/// so `tests/every_command_acts_on_the_selection.rs` can walk a list it
+/// built.
+pub fn chosen_rows(list: &ListCtrl) -> Vec<usize> {
+    let mut rows = Vec::new();
+    let mut row = -1_i64;
+    loop {
+        let next = list.get_next_item(row, ListNextItemFlag::All, ListItemState::Selected);
+        let Ok(index) = usize::try_from(next) else {
+            return rows;
+        };
+        rows.push(index);
+        row = i64::from(next);
+    }
 }
 
 /// Keep the cursor on the same message once the rows were replaced (#76).
@@ -30532,8 +31003,8 @@ mod moving_between_accounts_does_not_rebuild_the_tree {
             .expect("the folder tree's selection handler")
             .1;
         let end = after
-            .find("msg_list.on_item_selected({")
-            .expect("the message list's selection handler, which follows it");
+            .find("msg_list.on_item_focused({")
+            .expect("the message list's cursor handler, which follows it");
         &after[..end]
     }
 
@@ -30596,7 +31067,7 @@ mod moving_between_accounts_does_not_rebuild_the_tree {
         // Proving the measurement before believing the absence.
         let made_up = "folder_tree.on_selection_changed({\n    \
                        read_the_tree_back(&cache, &state, &tx);\n\
-                       msg_list.on_item_selected({";
+                       msg_list.on_item_focused({";
         assert!(the_selection_handler(made_up).contains("read_the_tree_back("));
         assert!(!the_selection_handler(made_up).contains("folder_tree_updates("));
     }

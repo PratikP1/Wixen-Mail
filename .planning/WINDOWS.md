@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 510
+open_count: 512
 waived_count: 0
 fixed_count: 33
-total_count: 543
-last_updated: 2026-09-19T01:20:00.000Z
+total_count: 545
+last_updated: 2026-09-19T03:44:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -558,6 +558,8 @@ last_updated: 2026-09-19T01:20:00.000Z
 | 541 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-06.1: what only the tester's ear settles for #76. After Delete on a middle row, NVDA reading the next message's row once and not twice when the watch's re-read follows; after Delete on the last row, the previous row read once; the same after Move to Trash and after a move out of the folder; and the preview showing the landed message. A built list holds the four cases and the focus event the landing raises; which of the two paths the tester met was not watched, because a delete cannot be driven here while the tester's copy is open, and the built list showed the last-row case leaving the control holding nothing | open |  | 2026-09-18T23:59:00.000Z |  |
 | 542 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-06.1: what only the tester's ear settles for #83. "Delete" heard once at the key and nothing after it when the delete went through, the landed row's reading being enough on its own; the refusal heard with its reason when a delete fails, for instance with the network off; Move to Trash and Move to Folder the same, and Copy to Folder's "Copied to" still heard because its row stays; and the status bar's fuller line, "Deleting" then "Moved to Trash", read on request with NVDA+End and not otherwise. The readings hold the arm to the one word, the outcome to the shown channel when the row left and the spoken one when it stayed, and the shown channel to speaking nothing; none of it has been heard | open |  | 2026-09-19T00:16:00.000Z |  |
 | 543 | 11 | unrun-verify | src/presentation/list_arrival.rs |  | 11-06.2: what only the tester's ear settles for #87. Tab from the folder tree into the message list, with a folder just opened, NVDA reading the newest message's row once and not twice; F6 into the list the same; back to the tree and Tab again landing on the row that was left, with nothing moved; and an empty folder's list saying "No messages" once. A built tree and list hold the four steps and recorded the focus events the arrival raised, the list itself then the row twice where before it raised only the list itself; whether NVDA reads the row once from that sequence is his ear | open |  | 2026-09-19T01:20:00.000Z |  |
+| 544 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-07: what only the tester's ear settles for #30 and the thread clause of #27. Shift+Down growing the selection with NVDA saying "selected" for each row added and reading the row; Shift+Up shrinking it with "not selected" for the row that leaves; the count after Ctrl+A on its own; one sentence after Delete over several, "Delete" once and the row after the set read once when they have gone; "3 messages marked read" once after Mark as Read over three and nothing per message; M on a conversation row marking the whole thread and saying "1 conversation, 5 messages marked read"; and the refusal above 5,000 heard once with the count. The built list holds the events the control raises and the source readings hold the seven arms to the set; none of it has been heard | open |  | 2026-09-19T03:44:00.000Z |  |
+| 545 | 11 | deviation | tests/house_style.rs |  | 11-07: test_every_guard_record_still_names_one_place_in_the_tree exempts a whole file when any record's after is in the tree and its before is not, taken as the file being mid-measurement, so one record whose after matched the rewritten cursor handler by coincidence hid five other records of wx_app.rs whose before had left the tree, and the check passed green over six unmeasurable records; found by an independent one-place count run by hand on 2026-09-19 and the six rewritten and measured. The exemption should be per record, and a pass through it should say so | open |  | 2026-09-19T03:44:00.000Z |  |
 
 ````json
 [
@@ -7075,6 +7077,30 @@ last_updated: 2026-09-19T01:20:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T01:20:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 544,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "11-07: what only the tester's ear settles for #30 and the thread clause of #27. Shift+Down growing the selection with NVDA saying \"selected\" for each row added and reading the row; Shift+Up shrinking it with \"not selected\" for the row that leaves; the count after Ctrl+A on its own; one sentence after Delete over several, \"Delete\" once and the row after the set read once when they have gone; \"3 messages marked read\" once after Mark as Read over three and nothing per message; M on a conversation row marking the whole thread and saying \"1 conversation, 5 messages marked read\"; and the refusal above 5,000 heard once with the count. The built list holds the events the control raises and the source readings hold the seven arms to the set; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T03:44:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 545,
+    "kind": "deviation",
+    "phase": "11",
+    "file": "tests/house_style.rs",
+    "line": null,
+    "description": "11-07: test_every_guard_record_still_names_one_place_in_the_tree exempts a whole file when any record's after is in the tree and its before is not, taken as the file being mid-measurement, so one record whose after matched the rewritten cursor handler by coincidence hid five other records of wx_app.rs whose before had left the tree, and the check passed green over six unmeasurable records; found by an independent one-place count run by hand on 2026-09-19 and the six rewritten and measured. The exemption should be per record, and a pass through it should say so",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T03:44:00.000Z",
     "resolved_at": null
   }
 ]
