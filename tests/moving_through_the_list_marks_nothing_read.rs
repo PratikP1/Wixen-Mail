@@ -89,10 +89,12 @@ fn after<'a>(text: &'a str, from: &str) -> Result<&'a str, String> {
     Ok(&text[start..])
 }
 
-/// Where the selection handler starts and where the next handler on the
-/// list starts, which is where it ends.
+/// Where the cursor handler starts and where the next handler on the list
+/// starts, which is where it ends. On the focus event since 2026-09-19
+/// (#30), because a list that selects more than one raises the selection
+/// event once per row; the handler's body is what it was.
 const THE_SELECTION_HANDLER: (&str, &str) =
-    ("msg_list.on_item_selected({", "msg_list.on_column_click({");
+    ("msg_list.on_item_focused({", "msg_list.on_column_click({");
 
 /// Where the mail list's read-aloud wiring starts, and the first line after
 /// its closing. The start is the module name the mail call passes on a line

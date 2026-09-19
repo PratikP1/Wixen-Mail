@@ -277,14 +277,17 @@ pub fn what_is_being_done(doing: &str, chosen: &Chosen) -> String {
 /// rows asks nothing, as it never did.
 ///
 /// One conversation and nothing else asks the question the row always
-/// asked, with its name. More than that names the counts, because a list of
-/// names is not a question somebody can answer with one key.
+/// asked, D-07's, with its name, through the one place that words it. More
+/// than that names the counts, because a list of names is not a question
+/// somebody can answer with one key.
 pub fn deleting_asks(chosen: &Chosen) -> Option<String> {
     let messages = chosen.messages.len();
     let only_the_conversation = chosen.from_conversations == messages;
     match chosen.conversations.as_slice() {
         [] => None,
-        [name] if only_the_conversation => Some(format!("Delete {messages} messages in {name}?")),
+        [name] if only_the_conversation => {
+            Some(crate::presentation::view_state::deleting_a_conversation_asks(name, messages))
+        }
         conversations => Some(format!(
             "Delete {messages} messages? {} among them.",
             match conversations.len() {

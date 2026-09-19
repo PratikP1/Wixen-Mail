@@ -162,34 +162,14 @@ pub fn turns_on(already_on: &[String], name: &str) -> bool {
     !already_on.iter().any(|held| held == name)
 }
 
-/// What to say when a label goes on or comes off.
-///
-/// Names the label and which way it went. "Tagged" alone leaves somebody who
-/// pressed the wrong number with no idea what they just did, and a label is not
-/// visible from the row it is on.
-pub fn spoken(name: &str, now_on: bool) -> String {
-    if now_on {
-        format!("{name} added")
-    } else {
-        format!("{name} removed")
-    }
-}
-
 /// What to say when there is no label on that number.
+///
+/// What is said when a label goes on or comes off, or every label comes
+/// off, is `choosing_messages::what_was_done` since 2026-09-19 (#30), which
+/// names the label and counts the messages; the two sentences that lived
+/// here for one message went with the arm that said them.
 pub fn nothing_there(number: usize) -> String {
     format!("There is no label {number}")
-}
-
-/// What to say when every label comes off at once.
-///
-/// Counted, because "labels cleared" on a message that had none is a keystroke
-/// that appears to have done something and did not.
-pub fn all_removed(how_many: usize) -> String {
-    match how_many {
-        0 => "There were no labels on it".to_string(),
-        1 => "1 label removed".to_string(),
-        many => format!("{many} labels removed"),
-    }
 }
 
 /// A message's labels, as a list column and as something to read out.
@@ -286,22 +266,6 @@ mod tests {
 
         assert!(!turns_on(&on, "Work"));
         assert!(turns_on(&on, "Personal"));
-    }
-
-    #[test]
-    fn test_what_is_said_names_the_label_and_which_way_it_went() {
-        // A label is not visible from the row it is on, and somebody who
-        // pressed the wrong number has no other way to find out.
-        assert_eq!(spoken("Work", true), "Work added");
-        assert_eq!(spoken("Work", false), "Work removed");
-    }
-
-    #[test]
-    fn test_clearing_a_message_with_no_labels_says_so() {
-        // Otherwise the keystroke appears to have done something.
-        assert_eq!(all_removed(0), "There were no labels on it");
-        assert_eq!(all_removed(1), "1 label removed");
-        assert_eq!(all_removed(3), "3 labels removed");
     }
 
     #[test]
