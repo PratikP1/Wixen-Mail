@@ -572,7 +572,11 @@ rather than restated per task:
   second case. Until 11-06.3 merges the rule stands, and one more with it:
   never `git commit --only <paths>` while another process may commit in
   the same checkout, since a partial commit takes no `index.lock` and the
-  two commits share `COMMIT_EDITMSG`.
+  two commits share `COMMIT_EDITMSG`. 11-06.3 merged on 2026-09-19: the
+  harness clears the five variables, the two cases hold it, and the
+  linked-worktree half of this rule is history; the `--only` half stands.
+  The rule as it now reads is in `CLAUDE.md`, under the shell-suite
+  section.
 - A test added to a file a record names is a remedy; a test removed is the
   same remedy. Rewrite in place where the count matters.
 
