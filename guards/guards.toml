@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 191 records have arrived since and have not been through it.
+# 194 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27543,4 +27543,74 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
+]
+
+# ── 11-10.1: an address written out is a link (#89) ─────────────────────────
+
+# The closing bracket at the end of an address is treated as part of it
+# whether or not the address opened it, which is the truncation the
+# composer's link rule was written against, turned round: "(see
+# https://x.org/s/1)" makes a link to "https://x.org/s/1)", a page that
+# does not exist, with nothing said. The break makes the bracket arm answer
+# that a closing bracket is always the address's own. The two bracket cases
+# go red; the case with a balanced pair stays green, since it was never cut.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an address keeps the bracket it opened and not the one that closes the sentence round it"
+file = "src/application/links_in_text.rs"
+before = """            ')' => closes_more_than_it_opens(candidate, '(', ')'),"""
+after = """            ')' => false,"""
+red = [
+    "application::links_in_text::tests::test_a_balanced_bracket_is_kept_and_the_one_closing_the_sentence_is_not",
+    "application::links_in_text::tests::test_a_bracket_closing_a_pair_the_address_did_not_open_is_left_outside_it",
+]
+tests_last_seen = [
+    { file = "src/application/links_in_text.rs", tests = 29 },
+]
+
+# The shape rule loosened to any word with a dot in it, so a version
+# number, a decimal and a bare host are addresses by shape. The message is
+# held by a second rule the break does not touch: a word with no scheme is
+# given mailto: and the sanitiser refuses a mailto: with nobody in it, so
+# "a.b" stays text there and the recogniser's own non-address cases stay
+# green. The snippet has no second rule, since a hint drops what looks like
+# an address without asking whether it opens, and its cases with a dotted
+# word in them go red. The record measures the shape rule where it is bare.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a word with a dot in it is a word and not an address, by the one shape rule"
+file = "src/application/links_in_text.rs"
+before = """        || is_a_bare_email_address(&lower)"""
+after = """        || lower.contains('.')"""
+red = [
+    "application::links_in_text::tests::test_the_shape_rule_names_the_five_shapes_and_nothing_looser",
+    "application::snippet::tests::test_a_word_with_a_dot_or_an_at_sign_in_it_is_not_an_address",
+]
+tests_last_seen = [
+    { file = "src/application/links_in_text.rs", tests = 29 },
+    { file = "src/application/snippet.rs", tests = 39 },
+]
+
+# The gate skipped: an address by shape becomes a link whatever the
+# sanitiser says of it, so "https://apple.example@evil.example" is a link
+# the program made to a page that reads as one site and goes to another,
+# which is the one rewriting T-11-99 forbids. The break hands the address
+# on without asking. The case that names three refused addresses goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an address the sanitiser refuses stays text rather than becoming a link the program made"
+file = "src/application/links_in_text.rs"
+before = """    let href = HtmlRenderer::safe_external_url(&as_followed(shown))?;"""
+after = """    let href = as_followed(shown);"""
+red = [
+    "application::links_in_text::tests::test_an_address_the_sanitiser_refuses_stays_text",
+]
+tests_last_seen = [
+    { file = "src/application/links_in_text.rs", tests = 29 },
 ]

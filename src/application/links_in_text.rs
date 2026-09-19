@@ -26,6 +26,8 @@
 //! `www.`, `mailto:`, or a bare `name@host.tld`. A bare host with no scheme,
 //! a version number, a decimal and a handle are words.
 
+use crate::presentation::HtmlRenderer;
+
 /// A run of text, or an address found in it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Piece<'a> {
@@ -46,10 +48,113 @@ pub enum Piece<'a> {
 /// concatenated are the text again; a caller that escapes the text pieces and
 /// wraps the addresses loses nothing the person wrote.
 pub fn addresses_in(text: &str) -> Vec<Piece<'_>> {
-    if text.is_empty() {
-        return Vec::new();
+    let mut pieces = Vec::new();
+    let mut text_from = 0;
+    for (word_at, word) in text
+        .split_whitespace()
+        .map(|word| (offset_of(word, text), word))
+    {
+        let Some((shown, href)) = the_address_in(word) else {
+            continue;
+        };
+        let at = word_at + offset_of(shown, word);
+        if at > text_from {
+            pieces.push(Piece::Text(&text[text_from..at]));
+        }
+        pieces.push(Piece::Address { shown, href });
+        text_from = at + shown.len();
     }
-    vec![Piece::Text(text)]
+    if text_from < text.len() {
+        pieces.push(Piece::Text(&text[text_from..]));
+    }
+    pieces
+}
+
+/// Where a slice of the text begins, counted in bytes from its start.
+///
+/// The words come out of `split_whitespace` as slices of the one text, so
+/// the distance between the two starts is the position; no character is
+/// counted twice and none is searched for.
+fn offset_of(part: &str, of: &str) -> usize {
+    part.as_ptr() as usize - of.as_ptr() as usize
+}
+
+/// The address in a word, as shown and as followed, or nothing.
+///
+/// The brackets and quotes that open the word are not part of it, and
+/// neither is the punctuation that closes it. What is left is asked whether
+/// it is an address by shape, and then whether the sanitiser will let it be
+/// followed: an address the gate refuses is text, and stays that way
+/// rather than becoming a link to nowhere.
+fn the_address_in(word: &str) -> Option<(&str, String)> {
+    let opened = word.trim_start_matches(['(', '[', '{', '<', '"', '\'', '\u{2018}', '\u{201c}']);
+    let shown = without_what_closes_it(opened);
+    if !is_an_address(shown) {
+        return None;
+    }
+    let href = HtmlRenderer::safe_external_url(&as_followed(shown))?;
+    Some((shown, href))
+}
+
+/// The address with the punctuation after it taken off.
+///
+/// A full stop, a comma, a quote and their kind are never part of an
+/// address at its end. A closing bracket is, when the address opened it:
+/// Wikipedia puts brackets in article titles, so the bracket that ends the
+/// address is the one that balances, as the composer's link rule has it, and
+/// one that closes a pair the address did not open belongs to the sentence.
+fn without_what_closes_it(mut candidate: &str) -> &str {
+    while let Some(last) = candidate.chars().next_back() {
+        let closes_it = match last {
+            '.' | ',' | ';' | ':' | '!' | '?' | '"' | '\'' | '\u{2019}' | '\u{201d}' | '>' => true,
+            ')' => closes_more_than_it_opens(candidate, '(', ')'),
+            ']' => closes_more_than_it_opens(candidate, '[', ']'),
+            '}' => closes_more_than_it_opens(candidate, '{', '}'),
+            _ => false,
+        };
+        if !closes_it {
+            break;
+        }
+        candidate = &candidate[..candidate.len() - last.len_utf8()];
+    }
+    candidate
+}
+
+fn closes_more_than_it_opens(candidate: &str, opening: char, closing: char) -> bool {
+    let opens = candidate.chars().filter(|c| *c == opening).count();
+    let closes = candidate.chars().filter(|c| *c == closing).count();
+    closes > opens
+}
+
+/// The address a browser can be handed: as written for a scheme it knows,
+/// `https://` in front of a `www.`, `mailto:` in front of a bare mail
+/// address. Nothing else is rewritten (T-11-99).
+fn as_followed(shown: &str) -> String {
+    let lower = shown.to_lowercase();
+    if lower.starts_with("www.") {
+        format!("https://{shown}")
+    } else if lower.contains("://") || lower.starts_with("mailto:") {
+        shown.to_string()
+    } else {
+        format!("mailto:{shown}")
+    }
+}
+
+/// What a person needs to hear about where an address goes.
+///
+/// For a web address, its host with the `www.` and any port left off; for a
+/// mail address, the address itself, up to the `?` that starts a subject.
+fn the_host_of(href: &str) -> &str {
+    if let Some(to) = href.strip_prefix("mailto:") {
+        return to.split('?').next().unwrap_or(to);
+    }
+    let after_the_scheme = href.split_once("://").map_or(href, |(_, rest)| rest);
+    let authority = after_the_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(after_the_scheme);
+    let host = authority.split(':').next().unwrap_or(authority);
+    host.strip_prefix("www.").unwrap_or(host)
 }
 
 /// The text as markup: the words escaped, each address an anchor.
@@ -83,7 +188,7 @@ pub fn spoken(text: &str) -> String {
         .iter()
         .map(|piece| match piece {
             Piece::Text(words) => (*words).to_string(),
-            Piece::Address { shown, .. } => (*shown).to_string(),
+            Piece::Address { href, .. } => format!("link to {}", the_host_of(href)),
         })
         .collect()
 }

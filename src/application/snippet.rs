@@ -158,11 +158,18 @@ fn is_quoted(line: &str) -> bool {
 /// address leaves behind tidied: the brackets round it go with it, and a
 /// sentence end after it moves onto the word before, so "at https://x.y."
 /// reads "at." and not "at" run into the next sentence.
+///
+/// What an address looks like is
+/// [`crate::application::links_in_text::is_an_address`], the one
+/// shape rule, so the row drops exactly what the message makes a link of
+/// (#89). The two part on what the sanitiser refuses: the message leaves a
+/// refused address as text, and this drops it, since a hint has no use for
+/// an address either way.
 fn without_addresses(line: &str) -> String {
     let mut kept: Vec<String> = Vec::new();
     for word in line.split_whitespace() {
         let (core, ending) = peeled(word);
-        if !is_an_address(core) {
+        if !crate::application::links_in_text::is_an_address(core) {
             kept.push(word.to_string());
             continue;
         }
@@ -185,33 +192,6 @@ fn peeled(word: &str) -> (&str, Option<char>) {
     let trailing = &unopened[core.len()..];
     let ending = trailing.chars().find(|c| matches!(c, '.' | '!' | '?'));
     (core, ending)
-}
-
-/// Whether a word is an address: a web address by its scheme or its `www.`,
-/// a `mailto:`, or a bare `name@host.tld`.
-fn is_an_address(word: &str) -> bool {
-    let lower = word.to_lowercase();
-    ["http://", "https://", "www.", "mailto:"]
-        .iter()
-        .any(|opening| lower.starts_with(opening))
-        || is_a_bare_email_address(&lower)
-}
-
-/// `name@host.tld` and nothing looser: one `@`, something before it, and a
-/// host after it with a dot inside and a label on each side of the last one.
-/// A handle, `@ada`, has nothing before the sign and is a word.
-fn is_a_bare_email_address(word: &str) -> bool {
-    let Some((name, host)) = word.split_once('@') else {
-        return false;
-    };
-    let Some((domain, tld)) = host.rsplit_once('.') else {
-        return false;
-    };
-    !name.is_empty()
-        && !domain.is_empty()
-        && !tld.is_empty()
-        && !host.contains('@')
-        && tld.chars().all(char::is_alphanumeric)
 }
 
 /// A line with nothing to say once its addresses are gone: empty, or
