@@ -2144,6 +2144,108 @@ mod tests {
         assert_eq!(links[0].url, "mailto:test@example.com");
     }
 
+    // ── The schemes a sender writes, read through the cleaner ───────────
+    //
+    // A corpus, one case per shape (#89). A link the reader keeps has its
+    // href and its words in the page; a link it will not open keeps its
+    // words and says so beside them, on the row of the link, rather than
+    // losing its address in silence.
+
+    /// A sender's anchor, read the way a message is shown.
+    fn a_senders_link_shown(href: &str) -> String {
+        HtmlRenderer::with_fetching(Fetching::Blocked)
+            .sanitize_and_count_held_back(&format!("<p>Call <a href=\"{href}\">us</a> today</p>"))
+            .0
+    }
+
+    #[test]
+    fn test_a_mailto_link_a_sender_writes_is_kept() {
+        let shown = a_senders_link_shown("mailto:ada@example.org");
+        assert!(shown.contains("href=\"mailto:ada@example.org\""), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_telephone_link_a_sender_writes_is_kept() {
+        // Opening it hands the number to Windows, which opens the dialler or
+        // asks, and runs nothing.
+        let shown = a_senders_link_shown("tel:+441234567");
+        assert!(shown.contains("href=\"tel:+441234567\""), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_web_link_with_a_port_is_kept() {
+        let shown = a_senders_link_shown("https://example.org:8443/path");
+        assert!(
+            shown.contains("href=\"https://example.org:8443/path\""),
+            "{shown}"
+        );
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_web_link_with_a_space_in_it_is_kept_as_the_cleaner_leaves_it() {
+        // Measured rather than assumed: the cleaner checks the scheme and
+        // writes the value back as it was, space included, and the gate
+        // refuses only a control character, which a space is not.
+        let shown = a_senders_link_shown("https://example.org/a b");
+        assert!(
+            shown.contains("href=\"https://example.org/a b\""),
+            "{shown}"
+        );
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_link_to_a_place_in_the_same_page_is_kept() {
+        // Not this program's to open: the page moves to it on its own.
+        let shown = a_senders_link_shown("#section");
+        assert!(shown.contains("href=\"#section\""), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_link_with_a_scheme_this_will_not_open_keeps_its_words_and_says_so() {
+        // The cleaner admits sms: on its own, and this program will not hand
+        // it to Windows, so the page said nothing and Enter did nothing.
+        let shown = a_senders_link_shown("sms:+441234567");
+        assert!(!shown.contains("sms:"), "the address is gone: {shown}");
+        assert!(
+            shown.contains("<p>Call us (link not opened here: sms) today</p>"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn test_a_link_refused_for_its_address_rather_than_its_scheme_says_the_address() {
+        // https is a scheme this opens; a name before the host is not an
+        // address it will follow, since it reads as one site and goes to
+        // another.
+        let shown = a_senders_link_shown("https://apple.example@evil.example");
+        assert!(
+            !shown.contains("evil.example"),
+            "the address is gone: {shown}"
+        );
+        assert!(
+            shown.contains("<p>Call us (link not opened here: the address) today</p>"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn test_a_script_link_loses_its_address_before_this_program_sees_it() {
+        // The cleaner refuses javascript: and drops the href on its own, so
+        // there is nothing left to say which scheme it was; the words stay,
+        // with no note. Admitting the scheme so as to write the note would
+        // make the note's pass the only thing between the script and the
+        // page, which is not a trade to make for a sentence.
+        let shown = a_senders_link_shown("javascript:alert(1)");
+        assert!(!shown.contains("javascript:"), "{shown}");
+        assert!(shown.contains("us"), "{shown}");
+        assert!(!shown.contains("not opened here"), "{shown}");
+    }
+
     // ── Hostile input ───────────────────────────────────────────────────
     //
     // Message bodies arrive from strangers. Everything below is an assertion
@@ -2515,6 +2617,19 @@ mod tests {
     }
 
     #[test]
+    fn test_safe_external_url_allows_a_telephone_number_and_refuses_an_empty_one() {
+        // A "call us" link. Windows opens the dialler or asks which program
+        // takes it, and runs nothing; a tel: with no number is nothing to
+        // hand over.
+        assert_eq!(
+            HtmlRenderer::safe_external_url("tel:+441234567"),
+            Some("tel:+441234567".to_string())
+        );
+        assert!(HtmlRenderer::safe_external_url("TEL:0123").is_some());
+        assert!(HtmlRenderer::safe_external_url("tel:").is_none());
+    }
+
+    #[test]
     fn test_fuzz_no_fuzzed_body_yields_an_openable_dangerous_url() {
         for seed in 0..4000u64 {
             let body = fuzz_body(seed);
@@ -2524,7 +2639,8 @@ mod tests {
                     assert!(
                         lower.starts_with("http://")
                             || lower.starts_with("https://")
-                            || lower.starts_with("mailto:"),
+                            || lower.starts_with("mailto:")
+                            || lower.starts_with("tel:"),
                         "seed {} produced openable {:?}",
                         seed,
                         openable
