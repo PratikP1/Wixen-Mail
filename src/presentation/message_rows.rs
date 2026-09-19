@@ -923,6 +923,14 @@ mod tests {
             any_answered: true,
             any_draft: true,
             worst_safety: crate::service::safety::Safety::Phishing,
+            // The second sender, so a cell that merely listed the senders in
+            // stored order would read the same as one that said the row
+            // message's sender first, and the test below could not tell.
+            stands_for: crate::application::conversations::RowMessage {
+                id: 2,
+                uid: 2,
+                from: "Bob <bob@example.com>".to_string(),
+            },
         }
     }
 
@@ -1100,11 +1108,13 @@ mod tests {
     fn test_correspondent_lists_the_distinct_senders_by_name() {
         // D-02's fifth family. Names rather than addresses, the same way one
         // message's Correspondent cell already reads, because "Ada Lovelace" is
-        // quicker to hear than "ada dot lovelace at example dot com".
+        // quicker to hear than "ada dot lovelace at example dot com". The
+        // sender of the message the row stands for comes first (#31), and
+        // nobody is said twice: the fixture's row message is Bob's.
         let conversation = conversation();
         assert_eq!(
             conversation_cell(&conversation, MessageColumn::Correspondent),
-            "Ada Lovelace, Bob"
+            "Bob, Ada Lovelace"
         );
         assert_eq!(
             conversation_cell(&conversation, MessageColumn::To),

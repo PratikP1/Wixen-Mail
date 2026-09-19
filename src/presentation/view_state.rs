@@ -466,6 +466,11 @@ mod tests {
             any_answered: false,
             any_draft: false,
             worst_safety: crate::service::safety::Safety::Ordinary,
+            stands_for: crate::application::conversations::RowMessage {
+                id: 1,
+                uid: 1,
+                from: String::new(),
+            },
         }
     }
 
