@@ -33,12 +33,22 @@
 //! companion is the move before it, which raised the event, so a count of
 //! nought is a count that can see one.
 //!
+//! **What a delete says** (#83). The tester the same day: a delete said
+//! "Deleting <subject>..." on the key and "Deleted: <subject>" after the
+//! server's round trip, two spoken sentences, and the wait for the second
+//! was a delay in the hand's rhythm. Pratik's decision: say "Delete" and
+//! nothing more, and something only when the delete did not go through.
+//! The readings below hold the Delete arm to the one word at the key with
+//! the fuller line written for the eye, the outcome to being shown when the
+//! row left and spoken when it stayed, and the shown channel to speaking
+//! nothing.
+//!
 //! One window session for the whole file, on the shape
 //! `tests/a_kept_folder_reads_as_a_checked_check_box.rs` set and for the
 //! reason `tests/theme_reach.rs` gives, every reading sharing it through a
 //! `OnceLock`. The readings over the main window's source, which hold the
-//! two arms to calling the helpers, are functions over `what_ships` with
-//! companions, and need no window.
+//! two arms to calling the helpers and the delete to its words, are
+//! functions over `what_ships` with companions, and need no window.
 //!
 //! The Windows calls are declared by hand from the headers, as every reading
 //! in `tests/` does, so the `windows` crate is not compiled in for a test.
@@ -717,4 +727,280 @@ fn test_the_reading_complains_when_a_load_re_selects_without_asking() {
         why.contains("never asks where the cursor's message is"),
         "{why}"
     );
+}
+
+// ── The main window's source: a delete says one word, and the outcome is shown ──
+//
+// #83, the tester on 2026-09-18: a delete said "Deleting <subject>..." on
+// the key and "Deleted: <subject>" after the server's round trip, two
+// spoken sentences with the subject in each, and the wait for the second
+// was a delay in the hand's rhythm. Pratik's decision: say "Delete" and
+// nothing more; say something only when the delete did not go through.
+// The row the cursor lands on is the confirmation, and the fuller line is
+// still written to the status bar for the eye through `UIUpdate::Shown`,
+// which is shown and never spoken.
+
+/// The Delete arm of the command dispatch, up to the next arm.
+const THE_DELETE_ARM: &str = "_ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT => {";
+/// The server's agreed answer to a delete, up to the return that ends it.
+const THE_AGREED_CASE: (&str, &str) = ("Deleted::TheServerDidThis(deletion) => {", "return;");
+/// The one function that says or shows what the list does next.
+const THE_OUTCOME: &str = "fn show_or_say_what_happened_next(";
+/// The one word said at the key.
+const THE_ONE_WORD: &str = "fn say_the_one_word(";
+/// The arm that shows a line and speaks nothing.
+const THE_SHOWN_ARM: &str = "        UIUpdate::Shown(shown) => {";
+
+/// The body of one `_ if id == ...` arm of the command dispatch, up to the
+/// next arm of the same shape.
+fn the_id_arm<'a>(source: &'a str, heading: &str) -> Result<&'a str, String> {
+    let start = source.find(heading).ok_or(format!(
+        "{heading:?} is no longer here, so this reads nothing"
+    ))? + heading.len();
+    let rest = &source[start..];
+    let end = rest.find("_ if id ==").unwrap_or(rest.len());
+    Ok(&rest[..end])
+}
+
+/// The text after the first `from` up to the next `to`, or a complaint
+/// naming which anchor is gone.
+fn between<'a>(text: &'a str, from: &str, to: &str) -> Result<&'a str, String> {
+    let start = text
+        .find(from)
+        .ok_or(format!("{from:?} is no longer here, so this reads nothing"))?
+        + from.len();
+    let rest = &text[start..];
+    let end = rest
+        .find(to)
+        .ok_or(format!("{to:?} is no longer here, so this reads nothing"))?;
+    Ok(&rest[..end])
+}
+
+/// A delete says the one word at the key, at Normal, and puts the fuller
+/// line on the status bar for the eye: the arm calls the one-word helper
+/// with "Delete" and no subject, sends the "Deleting" line as shown, and
+/// sends no "Deleting" line on the spoken channel.
+fn a_delete_says_the_one_word_at_the_key(app: &str) -> Result<(), String> {
+    let arm = the_id_arm(app, THE_DELETE_ARM)?;
+    if !arm.contains("say_the_one_word(&a11y, \"Delete\")") {
+        return Err(
+            "the Delete arm does not say the one word Delete at the key, so what is said on \
+             the key is a sentence with the subject in it, or nothing"
+                .to_string(),
+        );
+    }
+    if arm.contains("send_status(") && arm.contains("\"Deleting ") {
+        return Err(
+            "the Delete arm still sends a Deleting line on the spoken channel, so a delete \
+             is two spoken sentences again"
+                .to_string(),
+        );
+    }
+    if !arm.contains("send_shown(") {
+        return Err(
+            "the Delete arm no longer writes the Deleting line for the eye, so the status \
+             bar says nothing while the server is asked"
+                .to_string(),
+        );
+    }
+    let word = body_of(app, THE_ONE_WORD)?;
+    if !word.contains("a11y.announce(") || !word.contains("Priority::Normal") {
+        return Err(
+            "say_the_one_word does not announce at Normal, so the word is either not said \
+             or said above the answers to other keys"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// The outcome of a delete or a move is shown when the row left and spoken
+/// when it stayed: the server's agreed case hands the answer to the one
+/// outcome function, and that function sends the row out with the line as
+/// shown, or the line as spoken when the row stays.
+fn the_outcome_is_shown_when_the_row_left_and_spoken_when_it_stayed(
+    app: &str,
+) -> Result<(), String> {
+    let agreed = between(app, THE_AGREED_CASE.0, THE_AGREED_CASE.1)?;
+    if !agreed.contains("show_or_say_what_happened_next(") {
+        return Err(
+            "the server's agreed answer to a delete does not go through \
+             show_or_say_what_happened_next, so what is said afterwards is decided in the arm"
+                .to_string(),
+        );
+    }
+    if agreed.contains("UIUpdate::StatusUpdated(") {
+        return Err(
+            "the server's agreed answer to a delete still sends the outcome as StatusUpdated, \
+             which is spoken, so a delete that went through is announced after the row left"
+                .to_string(),
+        );
+    }
+    let outcome = body_of(app, THE_OUTCOME)?;
+    let left = between(
+        &outcome,
+        "ThenWhat::MarkItDeletedHere =>",
+        "ThenWhat::LeaveTheRow =>",
+    )?;
+    if left.contains("UIUpdate::StatusUpdated(") {
+        return Err(
+            "when the row leaves, the outcome function sends the line as StatusUpdated, so \
+             the success is spoken after all"
+                .to_string(),
+        );
+    }
+    if !left.contains("UIUpdate::MessageDeletedFromCache(") || !left.contains("UIUpdate::Shown(") {
+        return Err(
+            "when the row leaves, the outcome function does not take the row out and show the \
+             line, so either the row stays or the line for the eye is lost"
+                .to_string(),
+        );
+    }
+    let stayed = &outcome[outcome
+        .find("ThenWhat::LeaveTheRow =>")
+        .ok_or("the outcome function has no arm for a row that stays")?..];
+    if !stayed.contains("UIUpdate::StatusUpdated(") {
+        return Err(
+            "when the row stays, the outcome function does not speak the line, and nothing \
+             else tells somebody the message is still where it was"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// The shown arm writes the status bar and the record of it and speaks
+/// nothing, and is registered as quiet on purpose with its reason.
+fn a_shown_line_is_written_and_never_spoken(app: &str, whole: &str) -> Result<(), String> {
+    let arm = between(app, THE_SHOWN_ARM, "\n        UIUpdate::")?;
+    if !arm.contains("set_status_text(") || !arm.contains("status_message") {
+        return Err(
+            "the Shown arm does not write the status bar and the record of it, so the line \
+             for the eye is written to nobody"
+                .to_string(),
+        );
+    }
+    if arm.contains("a11y.announce") || arm.contains("a11y.signal") {
+        return Err(
+            "the Shown arm announces or signals, so a line sent as shown is spoken after all"
+                .to_string(),
+        );
+    }
+    let quiet = body_of(whole, "fn quiet_on_purpose(")?;
+    if !quiet.contains("\"Shown\"") {
+        return Err(
+            "the Shown arm is not named in quiet_on_purpose, so the check that every arm \
+             which shows something says it has no reason for this one"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_a_delete_says_the_one_word_delete_at_the_key_and_writes_the_fuller_line() {
+    a_delete_says_the_one_word_at_the_key(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_outcome_of_a_delete_is_shown_when_the_row_left_and_spoken_when_it_stayed() {
+    the_outcome_is_shown_when_the_row_left_and_spoken_when_it_stayed(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_shown_line_is_written_for_the_eye_and_never_spoken() {
+    let whole = std::fs::read_to_string(THE_MAIN_WINDOW)
+        .unwrap_or_else(|why| panic!("{THE_MAIN_WINDOW}: {why}"))
+        .replace("\r\n", "\n");
+    a_shown_line_is_written_and_never_spoken(&the_main_window(), &whole)
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// The sites as they should be, in a snippet, for the three readings above.
+fn a_window_that_says_one_word() -> String {
+    format!(
+        "{THE_DELETE_ARM}\n    say_the_one_word(&a11y, \"Delete\");\n    \
+         send_shown(&ui_tx, &runtime, &format!(\"Deleting {{subject}}...\"));\n\
+         _ if id == ID_MARK_READ => {{\n\
+         {THE_ONE_WORD}a11y: &Accessibility, word: &str) {{\n    \
+         let _ = a11y.announce(word, Priority::Normal);\n}}\n\
+         {} \n    show_or_say_what_happened_next(&say, message_row_id, next);\n    {}\n\
+         {THE_OUTCOME}say: &impl Fn(UIUpdate), row_id: i64, next: WhatToDoNext) {{\n    \
+         match next.then {{\n        ThenWhat::MarkItDeletedHere => {{\n            \
+         say(UIUpdate::MessageDeletedFromCache(row_id));\n            \
+         say(UIUpdate::Shown(next.said));\n        }}\n        \
+         ThenWhat::LeaveTheRow => say(UIUpdate::StatusUpdated(next.said)),\n    }}\n}}\n\
+         fn handle_update() {{\n{THE_SHOWN_ARM}\n            \
+         lock_state(state).status_message = shown.clone();\n            \
+         frame.set_status_text(shown, 0);\n        }}\n        UIUpdate::Progress(said) => {{\n}}\n",
+        THE_AGREED_CASE.0, THE_AGREED_CASE.1,
+    )
+}
+
+/// The test module's register, as the whole file would carry it.
+fn a_register_naming_shown() -> String {
+    "fn quiet_on_purpose() -> &'static [(&'static str, &'static str)] {\n    &[(\"Shown\", \
+     \"a line the eye may want and the ear has already had\")]\n}\n"
+        .to_string()
+}
+
+#[test]
+fn test_the_one_word_readings_pass_a_window_shaped_as_it_should_be() {
+    let app = a_window_that_says_one_word();
+    a_delete_says_the_one_word_at_the_key(&app).unwrap_or_else(|why| panic!("{why}"));
+    the_outcome_is_shown_when_the_row_left_and_spoken_when_it_stayed(&app)
+        .unwrap_or_else(|why| panic!("{why}"));
+    a_shown_line_is_written_and_never_spoken(&app, &a_register_naming_shown())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_reading_complains_when_the_subject_is_back_in_the_spoken_word() {
+    let app = a_window_that_says_one_word().replacen(
+        "say_the_one_word(&a11y, \"Delete\");",
+        "send_status(&ui_tx, &runtime, &format!(\"Deleting {subject}...\"));",
+        1,
+    );
+    let why = a_delete_says_the_one_word_at_the_key(&app)
+        .expect_err("a delete saying the subject at the key was passed over");
+    assert!(why.contains("does not say the one word"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_the_success_is_spoken_again() {
+    let app = a_window_that_says_one_word().replacen(
+        "say(UIUpdate::Shown(next.said));",
+        "say(UIUpdate::StatusUpdated(next.said));",
+        1,
+    );
+    let why = the_outcome_is_shown_when_the_row_left_and_spoken_when_it_stayed(&app)
+        .expect_err("a success sent as StatusUpdated was passed over");
+    assert!(why.contains("spoken after all"), "{why}");
+
+    let app = a_window_that_says_one_word().replacen(
+        "ThenWhat::LeaveTheRow => say(UIUpdate::StatusUpdated(next.said)),",
+        "ThenWhat::LeaveTheRow => say(UIUpdate::Shown(next.said)),",
+        1,
+    );
+    let why = the_outcome_is_shown_when_the_row_left_and_spoken_when_it_stayed(&app)
+        .expect_err("a refusal-shaped outcome shown and not spoken was passed over");
+    assert!(why.contains("does not speak the line"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_the_shown_arm_speaks_or_is_unregistered() {
+    let app = a_window_that_says_one_word().replacen(
+        "            frame.set_status_text(shown, 0);\n",
+        "            frame.set_status_text(shown, 0);\n            let _ = a11y.announce(shown, Priority::Normal);\n",
+        1,
+    );
+    let why = a_shown_line_is_written_and_never_spoken(&app, &a_register_naming_shown())
+        .expect_err("a Shown arm that announces was passed over");
+    assert!(why.contains("spoken after all"), "{why}");
+
+    let register = a_register_naming_shown().replacen("\"Shown\"", "\"OutboxQueueCount\"", 1);
+    let why = a_shown_line_is_written_and_never_spoken(&a_window_that_says_one_word(), &register)
+        .expect_err("a Shown arm nobody registered was passed over");
+    assert!(why.contains("not named in quiet_on_purpose"), "{why}");
 }

@@ -13,6 +13,12 @@
 //! errors was asked for; and what stays on `StatusUpdated`, the answers to a
 //! key, is spoken at Normal.
 //!
+//! A third kind since 2026-09-18 (#83, 11-06.1): `UIUpdate::Shown`, a line
+//! the eye may want and the ear has already had, written to the status bar
+//! and spoken by nothing. The success of a delete rides it, because the row
+//! the cursor lands on is what is heard. Its reading is beside the other
+//! two: the arm shows and never speaks, and `send_shown` is what sends it.
+//!
 //! Read from the source rather than run, because reaching the update
 //! handler needs a window, a frame and a running event loop, and the
 //! question is which channel each line was put on, which is a property of
@@ -193,6 +199,34 @@ fn an_answer_on_the_status_channel_is_said_at_normal(app: &str) -> Result<(), St
     Ok(())
 }
 
+/// A line sent as shown is written to the status bar and its record, and
+/// spoken by nothing; and `send_shown` is the sender that puts a line there.
+fn a_shown_line_is_written_and_never_spoken(app: &str) -> Result<(), String> {
+    let arm = the_arm_for(&the_update_handler(app)?, "Shown(")?;
+    if !arm.contains("set_status_text(") || !arm.contains("status_message") {
+        return Err(
+            "the Shown arm no longer writes the line to the status bar and its record, so a \
+             line for the eye reaches nobody"
+                .to_string(),
+        );
+    }
+    if arm.contains("a11y.announce") || arm.contains("a11y.signal") {
+        return Err(
+            "the Shown arm announces or signals, so a line meant for the eye alone is spoken \
+             over the row the cursor landed on"
+                .to_string(),
+        );
+    }
+    let sender = body_of(&what_ships(app), "fn send_shown(")?;
+    if !sender.contains("UIUpdate::Shown(") {
+        return Err(
+            "send_shown does not send UIUpdate::Shown, so nothing rides the shown channel"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 /// The mail check's five lines on the way go out as steps, and what arrived
 /// goes out once, after the loop.
 fn the_checks_lines_are_steps_and_its_arrivals_one_result(app: &str) -> Result<(), String> {
@@ -351,6 +385,12 @@ fn test_settings_saved_and_the_other_answers_are_said_at_normal() {
 }
 
 #[test]
+fn test_a_line_sent_as_shown_is_written_and_never_spoken() {
+    a_shown_line_is_written_and_never_spoken(&the_window_itself())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
 fn test_the_mail_checks_lines_are_steps_and_what_arrived_goes_out_once_after_the_loop() {
     the_checks_lines_are_steps_and_its_arrivals_one_result(&the_window_itself())
         .unwrap_or_else(|why| panic!("{why}"));
@@ -413,6 +453,18 @@ fn test_the_reading_complains_when_an_answer_is_said_at_low() {
     let why = an_answer_on_the_status_channel_is_said_at_normal(&planted)
         .expect_err("an answer announced at Low was passed over");
     assert!(why.contains("below Normal"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_a_shown_line_is_spoken() {
+    let planted = with(
+        &the_window_itself(),
+        "        UIUpdate::Shown(shown) => {\n",
+        "        UIUpdate::Shown(shown) => {\n            let _ = a11y.announce(shown, Priority::Normal);\n",
+    );
+    let why = a_shown_line_is_written_and_never_spoken(&planted)
+        .expect_err("a shown line that is spoken was passed over");
+    assert!(why.contains("announces or signals"), "{why}");
 }
 
 #[test]
