@@ -103,6 +103,9 @@ pub mod sent_copy;
 pub mod server_delete;
 pub mod server_thread_ids;
 pub mod sign_off;
+/// What a message row's snippet says: the first relevant words, by written rules, so a
+/// row read aloud on every arrow press is a hint about the message and not its first address.
+pub mod snippet;
 pub mod spell_session;
 pub mod summing_up;
 pub mod sync_marker;
