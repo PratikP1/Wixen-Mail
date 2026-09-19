@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 170 records have arrived since and have not been through it.
+# 174 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26977,4 +26977,94 @@ after = """        let _ = (word_a, word_b);"""
 red = ["application::threading::tests::test_two_messages_the_store_filed_apart_are_not_joined_by_their_headers"]
 tests_last_seen = [
     { file = "src/application/threading.rs", tests = 29 },
+]
+
+# The in-memory pass handed no conversation again, which is the tree as it
+# was until 2026-09-19: a group named after its least Message-ID, which the
+# conversation window's lookup by the stored name finds only when the root
+# happens to sort first, and on Gmail's names never. The page reading on the
+# target goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the page is threaded over the store's word, not over nothing"
+file = "src/presentation/wx_app.rs"
+suite = "a_conversation_is_gmails_own_and_a_late_parent_joins_it"
+before = """            conversation: row.thread_id.clone(),"""
+after = """            conversation: None,"""
+red = ["test_the_page_is_threaded_over_the_stores_word"]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 12 },
+]
+
+# The once-only pass dropped from the check, so the tester's 17,753 stored
+# messages keep their header roots and the fix shows only on new mail. The
+# check reading on the target goes red; its companion holds the two wrong
+# moments as well.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the stored mail gets its word in the check, not never"
+file = "src/presentation/wx_app.rs"
+suite = "a_conversation_is_gmails_own_and_a_late_parent_joins_it"
+before = """            if let Err(why) = handle.block_on(
+                crate::application::server_thread_ids::fetch_the_server_thread_ids_once(
+                    controller.as_ref(),
+                    &cache,
+                    &account.id,
+                ),
+            ) {
+                tracing::warn!(
+                    "The stored mail of {} could not be given its conversation ids this check: {why}",
+                    account.display_name()
+                );
+            }
+"""
+after = """"""
+red = ["test_the_stored_mail_gets_its_word_in_the_check_after_the_replay_and_before_the_listing"]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 12 },
+]
+
+# The word written on the row and the merge skipped, so a reply that got its
+# word leaves the parent its chain had joined it to under the header root,
+# and the two show as two rows: the split the tester saw, one row at a time.
+# The reply case goes red; the two-words case stays green, because without
+# the merge each row simply keeps its own word, which is also the right end.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a row given the server's word brings what its chain connects under it, not just itself"
+file = "src/data/message_cache/server_thread_ids.rs"
+before = """        self.merge_what_this_row_connects(row, folder_id, &message_id, refs_header.as_deref(), word)"""
+after = """        let _ = (folder_id, message_id, refs_header);
+        Ok(0)"""
+red = ["data::message_cache::server_thread_ids::tests::test_naming_a_reply_brings_its_header_named_conversation_under_the_word"]
+tests_last_seen = [
+    { file = "src/data/message_cache/server_thread_ids.rs", tests = 5 },
+]
+
+# The pass recorded as done before the server has answered, so a refusal
+# on a bad day leaves the account marked done forever and the stored mail
+# never gets its word (T-11-97, the other way round). The refusal case goes
+# red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the pass is recorded as done when every folder answered, not before it asked"
+file = "src/application/server_thread_ids.rs"
+before = """    let started = Instant::now();
+    let mut rows_named = 0usize;"""
+after = """    cache.record_this_as_done(&marker)?;
+    let started = Instant::now();
+    let mut rows_named = 0usize;"""
+red = ["application::server_thread_ids::tests::test_a_refusal_records_nothing_and_the_next_check_asks_for_what_is_still_missing"]
+tests_last_seen = [
+    { file = "src/application/server_thread_ids.rs", tests = 7 },
 ]

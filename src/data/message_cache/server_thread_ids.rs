@@ -119,9 +119,24 @@ impl MessageCache {
     /// rejoined under it through the one merge, as an arrival is. Returns how
     /// many other messages moved.
     pub fn name_the_conversation_after_the_server(&self, row: i64, word: &str) -> Result<usize> {
-        // Stubbed at the red: the word is not yet written.
-        let _ = (row, word);
-        Ok(0)
+        let (folder_id, message_id, refs_header): (i64, String, Option<String>) = self
+            .conn
+            .query_row(
+                "SELECT folder_id, message_id, refs_header FROM messages WHERE id = ?1",
+                params![row],
+                |found| Ok((found.get(0)?, found.get(1)?, found.get(2)?)),
+            )
+            .map_err(|e| Error::Other(format!("Failed to read the message to name: {e}")))?;
+        // The row's own name first, and the merge after, so the merge finds
+        // the row already under the word and moves the rest of its old
+        // conversation to it rather than the other way round.
+        self.conn
+            .execute(
+                "UPDATE messages SET server_thread_id = ?1, thread_id = ?1 WHERE id = ?2",
+                params![word, row],
+            )
+            .map_err(|e| Error::Other(format!("Failed to name the conversation: {e}")))?;
+        self.merge_what_this_row_connects(row, folder_id, &message_id, refs_header.as_deref(), word)
     }
 }
 

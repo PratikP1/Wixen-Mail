@@ -2104,9 +2104,11 @@ fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<
 /// The uid and the server's conversation id out of one FETCH, when it
 /// carries both.
 fn thread_id_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, u64)> {
-    // Stubbed at the red: the answer is not yet read.
-    let _ = attributes;
-    None
+    let word = attributes.iter().find_map(|attribute| match attribute {
+        AttributeValue::GmailThrId(id) => Some(*id),
+        _ => None,
+    })?;
+    Some((uid_of(attributes)?, word))
 }
 
 /// A flag as IMAP spells it.
