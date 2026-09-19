@@ -18,6 +18,7 @@ pub mod held_conflicts;
 pub mod how_it_arrived;
 mod messages;
 pub mod moves_in_flight;
+pub mod moves_waiting;
 pub use address_books::AddressBookContainer;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::{CardsRead, MovedBetweenGroups};

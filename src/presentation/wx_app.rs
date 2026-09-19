@@ -15054,6 +15054,56 @@ pub(crate) fn send_refusal(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, why: &str) 
     });
 }
 
+/// Replay the moves and deletes made here and not yet at the server, on a
+/// session that is already open, before any folder of the account is read.
+///
+/// **Nothing calls this because the network came back.** The same rule as
+/// the flag changes below, for the same reason: a move reaching the server is
+/// a write at somebody else's service, and this runs because a person's own
+/// action put this program in front of it (#86, 2026-09-19).
+///
+/// Before the listing rather than after, because a folder the server still
+/// has the message in, listed before the server has heard of the move, names
+/// a message this computer no longer holds there, and a listing brings back
+/// what it names. Answers whether the check may go on: a server that could not
+/// be reached about a waiting move is one whose folders must not be read yet,
+/// so the account's check ends with the reason the check already says for a
+/// server it could not reach. A refusal is undone here and said, through the
+/// update the window handles; a move the server carried out, or had already,
+/// stops waiting with its row where the server holds it.
+fn replay_the_moves_that_were_waiting(
+    cache: &crate::data::message_cache::MessageCache,
+    controller: &crate::application::mail_controller::MailController,
+    account_id: &str,
+    handle: &tokio::runtime::Handle,
+    say: &dyn Fn(UIUpdate),
+) -> std::result::Result<(), String> {
+    use crate::application::moves_waiting::{Replayed, replay_the_moves_waiting_for};
+    let replayed =
+        match handle.block_on(replay_the_moves_waiting_for(controller, cache, account_id)) {
+            Ok(replayed) => replayed,
+            Err(why) => return Err(format!("The moves waiting to go could not be read: {why}")),
+        };
+    let _ = say;
+    for (waiting, answer) in replayed {
+        match answer {
+            Replayed::Done | Replayed::AlreadyDone | Replayed::Refused(_) => {}
+            Replayed::NotReached => {
+                tracing::info!(
+                    "A move of message {} is still waiting: the server could not be reached",
+                    waiting.message_row_id
+                );
+                return Err(
+                    "The mail server could not be reached, so a move made here is still \
+                     waiting and this account was not read"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Offer the flag changes that have been waiting, on a session that is already
 /// open.
 ///
@@ -22908,6 +22958,17 @@ fn start_the_download(app: AppHandles<'_>) {
                     break;
                 }
             };
+            // The download lists folders too, so a move made here and not yet
+            // at the server is replayed here as well before the first listing
+            // (#86); a server that could not be reached about one is a server
+            // that stopped.
+            if let Err(why) =
+                replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
+            {
+                tracing::warn!("The download stopped at {}: {why}", account.name);
+                ended = WhyTheRunEnded::AServerStopped;
+                break;
+            }
             let folders = match handle.block_on(controller.fetch_folders()) {
                 Ok(folders) => folders,
                 Err(e) => {
@@ -23468,6 +23529,18 @@ fn spawn_mail_sync(
             say(UIUpdate::ConnectionStatusChanged(
                 ConnectionStatus::Connected,
             ));
+
+            // The moves and deletes made here first, before any folder of
+            // this account is listed (#86): a listing taken first would
+            // bring back a message the server still has where it was.
+            // A server that could not be reached about one ends this
+            // account's check.
+            if let Err(why) =
+                replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
+            {
+                fail(why);
+                continue;
+            }
 
             // The changes that were waiting, on the session this check has just
             // opened. Here rather than anywhere that watches the network, because
