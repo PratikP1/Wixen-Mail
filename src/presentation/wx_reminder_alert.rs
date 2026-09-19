@@ -922,10 +922,12 @@ mod tests {
         // anybody heard either. Under `WIXEN_NO_AUDIO` the tone goes to a
         // mixer nothing listens to and is still reported as sounded.
         //
-        // Sounds are off by default, so the first half switches them on. The
-        // fixture as first written assumed the default was on and was red
-        // against working code for that reason; the second half is what that
-        // taught, that the sentence goes out whatever the sound setting says.
+        // The first half switches the sounds on by hand rather than relying
+        // on the default, which has been on since 2026-09-18 (#77) and was
+        // off before: the fixture as first written assumed it was on and was
+        // red against working code for that reason. The second half is what
+        // that taught, that the sentence goes out whatever the sound setting
+        // says.
         let a11y = Accessibility::new().expect("accessibility");
         let mut settings = a11y.feedback_settings();
         settings.set_channel_enabled(

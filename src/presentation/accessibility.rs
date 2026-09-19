@@ -632,12 +632,20 @@ mod tests {
         //
         // The shortest tone in the set, because on Windows the middle call
         // here really does sound.
+        //
+        // The sounds are switched off by hand first rather than relied on
+        // being off: they have been on by default since 2026-09-18 (#77),
+        // and this test is about the answer with them off, whatever the
+        // default is.
         let a11y = Accessibility::new().expect("accessibility");
+        let mut settings = a11y.feedback_settings();
+        settings.set_channel_enabled(feedback::Channel::Earcon, false);
+        a11y.set_feedback_settings(settings);
         assert!(
             !a11y
                 .earcon(feedback::Event::MisspelledWord)
                 .expect("earcon"),
-            "sounds are off by default, so nothing should have played"
+            "with the sounds off nothing should have played"
         );
 
         let mut settings = a11y.feedback_settings();
@@ -834,16 +842,20 @@ mod tests {
         // ignoring the mutex and handing back `Default::default()` on every
         // call. This one changes the setting first, so default and stored
         // disagree, and only reads the getter after that.
+        //
+        // Speech is the channel switched, because it is on in the default
+        // and this test needs a value that differs from it. The sounds used
+        // to be that channel until they went on by default too (#77).
         let a11y = Accessibility::new().expect("accessibility");
         let mut changed = a11y.feedback_settings();
-        changed.set_channel_enabled(feedback::Channel::Earcon, true);
+        changed.set_channel_enabled(feedback::Channel::Speech, false);
         a11y.set_feedback_settings(changed.clone());
 
         assert_eq!(a11y.feedback_settings(), changed);
         assert_ne!(
             a11y.feedback_settings(),
             feedback::FeedbackSettings::default(),
-            "earcons are off by default, so a settings value with them on must not read back as the default"
+            "speech is on by default, so a settings value with it off must not read back as the default"
         );
     }
 

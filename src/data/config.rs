@@ -450,7 +450,9 @@ pub struct AppConfig {
     /// Which channels each event reaches: speech, braille, earcon, visual.
     ///
     /// Stored as the compact form `FeedbackSettings::to_stored` writes. Empty
-    /// means the defaults: words on, sounds off. This is the setting that lets
+    /// means the defaults: words and sounds on for every event, and for the
+    /// attachment event the sound and the status bar with no words, since the
+    /// row's own column already says it (#77). This is the setting that lets
     /// a deaf-blind user drop speech and keep braille, or someone in an open
     /// office swap a sentence of speech for a short tone.
     #[serde(default)]
@@ -1700,6 +1702,7 @@ mod permission_tests {
             "calendar_view",
             "message_text_kept",
             "announce_while_fetching",
+            "feedback_channels",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1709,6 +1712,28 @@ mod permission_tests {
 
         let parsed: AppConfig =
             serde_json::from_value(older).expect("an older settings file still opens");
+
+        // A file with no channels stored reads as the default of the day,
+        // which since 2026-09-18 has the sounds on for every event and no
+        // words for the attachment event (#77). The window reads an empty
+        // string as nothing stored and leaves the type's default in place,
+        // so both routes have to agree.
+        {
+            use crate::presentation::accessibility::feedback::{Channel, Event, FeedbackSettings};
+            assert_eq!(parsed.feedback_channels, "");
+            let channels = FeedbackSettings::from_stored(&parsed.feedback_channels);
+            assert_eq!(channels, FeedbackSettings::default());
+            assert!(
+                channels.is_channel_enabled(Channel::Earcon),
+                "an upgrade would hear no sound until it found the Feedback tab"
+            );
+            assert!(
+                !channels
+                    .channels_for(Event::HasAttachment)
+                    .contains(&Channel::Speech),
+                "an upgrade would go on hearing Has attachment over the row's own column"
+            );
+        }
 
         assert_eq!(
             crate::application::folder_settings::UnreadOnAParent::from_stored(
@@ -1793,6 +1818,23 @@ mod permission_tests {
         assert!(
             parsed.working_day_starts < parsed.working_day_ends,
             "the working day ends before it starts"
+        );
+
+        // And a file that turned the sounds off before the default moved
+        // keeps them off: a default that moves must not move a profile that
+        // chose otherwise (T-11-51).
+        let mut chose_silence =
+            serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        chose_silence["feedback_channels"] = serde_json::Value::String("off=earcon".to_string());
+        let parsed: AppConfig =
+            serde_json::from_value(chose_silence).expect("a settings file that chose silence");
+        let channels = crate::presentation::accessibility::feedback::FeedbackSettings::from_stored(
+            &parsed.feedback_channels,
+        );
+        assert!(
+            !channels
+                .is_channel_enabled(crate::presentation::accessibility::feedback::Channel::Earcon),
+            "a profile that turned the sounds off would hear them again after upgrading"
         );
     }
 

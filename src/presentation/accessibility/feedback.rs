@@ -180,6 +180,11 @@ impl Event {
         Event::ALL.into_iter().find(|e| e.key() == key)
     }
 
+    /// Whether the event's words are already in the row the cursor is on.
+    pub fn text_is_already_on_the_row(&self) -> bool {
+        false
+    }
+
     /// The written equivalent, used for speech, braille, and the status line.
     ///
     /// Every event has one whether or not the user has speech switched on,
@@ -1216,9 +1221,10 @@ mod tests {
         // launch and never work out why it comes back.
         let restored = FeedbackSettings::from_stored("off=speech");
         assert!(!restored.is_channel_enabled(Channel::Speech));
-        // Earcons are off in the default and on in what was stored, so this is
-        // the assertion that says the stored value was kept rather than
-        // quietly replaced by the default.
+        // Speech is on in the default and off in what was stored, so the
+        // first assertion is the one that says the stored value was kept
+        // rather than quietly replaced by the default; the second says the
+        // rest of the channels came through untouched.
         assert!(restored.is_channel_enabled(Channel::Earcon));
     }
 
@@ -1335,13 +1341,17 @@ mod tests {
     }
 
     #[test]
-    fn test_earcons_are_off_until_someone_turns_them_on() {
-        // An application that starts making noises nobody asked for is one
-        // people mute permanently before learning what the sounds mean.
+    fn test_the_tones_are_on_until_someone_turns_them_off() {
+        // Pratik's decision of 2026-09-18 on #77. Until then the sounds were
+        // off for a fresh profile, because an application that starts making
+        // noises nobody asked for is one people mute permanently before
+        // learning what the sounds mean; the tester's own profile had turned
+        // them on, and the decision made that the default. One box on the
+        // Feedback tab still turns them all off.
         let settings = FeedbackSettings::default();
-        assert!(!settings.is_channel_enabled(Channel::Earcon));
+        assert!(settings.is_channel_enabled(Channel::Earcon));
         assert!(
-            !settings
+            settings
                 .channels_for(Event::NewMail)
                 .contains(&Channel::Earcon)
         );
