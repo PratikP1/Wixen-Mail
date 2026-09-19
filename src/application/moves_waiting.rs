@@ -2814,6 +2814,11 @@ mod tests {
                 .collect())
         }
 
+        async fn thread_ids_of(&self, _folder: &str, _uids: &[u32]) -> Result<Vec<(u32, u64)>> {
+            // This server names no conversation, and nothing here asks.
+            Ok(Vec::new())
+        }
+
         async fn move_message(
             &self,
             _from: &str,

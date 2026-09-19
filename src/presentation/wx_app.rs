@@ -24488,6 +24488,26 @@ fn spawn_mail_sync(
                 &say,
             );
 
+            // Mail stored before the server's conversation id was asked for
+            // gets it once, here, after the moves and before any folder is
+            // listed (#88): one field over the stored numbers of each kept
+            // folder, recorded per account when every folder answered. A pass
+            // that could not finish is logged and tried again at the next
+            // check; it does not end this one, since nothing listed depends
+            // on it.
+            if let Err(why) = handle.block_on(
+                crate::application::server_thread_ids::fetch_the_server_thread_ids_once(
+                    controller.as_ref(),
+                    &cache,
+                    &account.id,
+                ),
+            ) {
+                tracing::warn!(
+                    "The stored mail of {} could not be given its conversation ids this check: {why}",
+                    account.display_name()
+                );
+            }
+
             let folders = match handle.block_on(controller.fetch_folders()) {
                 Ok(folders) => folders,
                 Err(e) => {

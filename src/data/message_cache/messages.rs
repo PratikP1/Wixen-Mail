@@ -1164,13 +1164,36 @@ impl MessageCache {
         incoming: &IncomingMessage,
         conversation: &str,
     ) -> Result<usize> {
-        let asking = crate::application::thread_identity::identifiers_worth_asking_about(
+        self.merge_what_this_row_connects(
+            row,
+            incoming.folder_id,
             &incoming.message_id,
             incoming.refs_header.as_deref(),
+            conversation,
+        )
+    }
+
+    /// The same, from the row's own facts rather than an arrival's.
+    ///
+    /// Split out on 2026-09-19 (#88) so the once-only pass that gives a
+    /// stored row the server's word can rejoin what that row's chain
+    /// connects under the new name through the one merge, rather than
+    /// through a second one written beside it.
+    pub(super) fn merge_what_this_row_connects(
+        &self,
+        row: i64,
+        folder_id: i64,
+        message_id: &str,
+        refs_header: Option<&str>,
+        conversation: &str,
+    ) -> Result<usize> {
+        let asking = crate::application::thread_identity::identifiers_worth_asking_about(
+            message_id,
+            refs_header,
         );
         // No account means no such folder, in which case the insert above
         // already failed on the foreign key. Nothing to merge either way.
-        let Some(account_id) = self.account_of_folder(incoming.folder_id)? else {
+        let Some(account_id) = self.account_of_folder(folder_id)? else {
             return Ok(0);
         };
         self.record_what_this_message_names(row, &asking)?;

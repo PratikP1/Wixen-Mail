@@ -1278,6 +1278,34 @@ impl ImapSession {
         Ok(flags)
     }
 
+    /// The server's own conversation id for each of the messages named, on
+    /// a server that names conversations: `X-GM-THRID`, one number per uid.
+    ///
+    /// The one field and nothing else, so a mailbox stored before the field
+    /// was asked for gets its conversations at the cost of a number a
+    /// message rather than a second download. In batches, for the reason
+    /// [`Self::fetch_flags`] is. A server without the extension refuses the
+    /// whole fetch, and the caller is the one that knows whether to ask.
+    pub async fn thread_ids_of(&mut self, uids: &[u32]) -> Result<Vec<(u32, u64)>> {
+        self.require_selected()?;
+
+        let mut named = Vec::with_capacity(uids.len());
+        for set in sequence_set::chunks(uids, sequence_set::MAX_SET_LENGTH) {
+            let fetched = self
+                .read_command(
+                    format!("UID FETCH {set} (UID X-GM-THRID)"),
+                    "reading which conversation each message is in",
+                    |response| match response {
+                        Response::Fetch(_, attributes) => thread_id_from_attributes(attributes),
+                        _ => None,
+                    },
+                )
+                .await?;
+            named.extend(fetched);
+        }
+        Ok(named)
+    }
+
     /// Whether this session may change anything on the server.
     pub const fn may_change(&self) -> bool {
         self.may_change
@@ -2071,6 +2099,14 @@ fn header_query(gmail: bool) -> String {
 /// The UID and flags out of one FETCH, when it carries a UID.
 fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((uid_of(attributes)?, flag_names(attributes)))
+}
+
+/// The uid and the server's conversation id out of one FETCH, when it
+/// carries both.
+fn thread_id_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, u64)> {
+    // Stubbed at the red: the answer is not yet read.
+    let _ = attributes;
+    None
 }
 
 /// A flag as IMAP spells it.

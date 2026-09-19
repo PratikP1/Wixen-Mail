@@ -35,6 +35,7 @@ pub mod saved_searches;
 #[cfg(test)]
 mod schema_template;
 mod searching;
+pub mod server_thread_ids;
 pub mod shared_folders;
 mod signatures;
 pub mod signed_original;
