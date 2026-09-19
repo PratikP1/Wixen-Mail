@@ -518,6 +518,9 @@ const THE_ACTIVATION: &str = "tree.on_item_activated(";
 const ENDS_WITH_THE_ACT: &str = "end_modal(ID_OK)";
 const ASKS_WHICH_ROW: &str = "what_a_selection_means(";
 const THE_BUILDER: &str = "pub fn build_destination_dialog(";
+/// The name after the handler that ends the stretch read: the focus put on
+/// the tree, which the builder does last of all before painting.
+const THE_FOCUS_PUT_ON_THE_TREE: &str = "tree.set_focus();";
 
 /// Enter on a folder ends the dialog with the act: the activation is bound,
 /// it asks which row was activated, and it ends the dialog with `ID_OK`
@@ -525,7 +528,7 @@ const THE_BUILDER: &str = "pub fn build_destination_dialog(";
 /// Enter on Cancel stays Cancel.
 fn enter_on_a_folder_is_the_act(dialog: &str) -> Result<(), String> {
     let builder = body_of(dialog, THE_BUILDER)?;
-    let handler = between(&builder, THE_ACTIVATION, "\n    });")?;
+    let handler = between(&builder, THE_ACTIVATION, THE_FOCUS_PUT_ON_THE_TREE)?;
     for needed in [ASKS_WHICH_ROW, ENDS_WITH_THE_ACT] {
         if !handler.contains(needed) {
             return Err(format!(
@@ -554,7 +557,8 @@ fn a_builder_as_it_should_be() -> String {
     format!(
         "{THE_BUILDER}) {{\n    tree.on_item_activated(move |_event| {{\n        \
          if what_a_selection_means(&destinations, where_the_selection_sits(&tree)).is_some() {{\n            \
-         dialog.end_modal(ID_OK);\n        }}\n    }});\n    (dialog, tree, destinations)\n}}\n"
+         dialog.end_modal(ID_OK);\n        }}\n    }});\n    tree.set_focus();\n    \
+         (dialog, tree, destinations)\n}}\n"
     )
 }
 

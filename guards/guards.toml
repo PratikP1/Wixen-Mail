@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 155 records have arrived since and have not been through it.
+# 156 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26551,7 +26551,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 11 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
 ]
 
 # The undo dropped from the arm a refusal arrives on: the server said no,
@@ -26577,7 +26577,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 11 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
 ]
 
 # A check wired into the arm that runs when the network comes back, which
@@ -26608,5 +26608,33 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 11 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+]
+
+# The activation binding dropped from the Move dialog's tree, which is the
+# dialog as the tester met it on 2026-09-18: Enter on the chosen folder does
+# nothing, since no button is the default and nothing listens to the tree.
+# The dialog reading goes red on the target (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "enter on a folder in the move dialog is the move, not nothing"
+file = "src/presentation/wx_destination.rs"
+suite = "a_move_completes_here_first"
+before = """        let destinations = destinations.clone();
+        tree.on_item_activated(move |_event| {
+            if what_a_selection_means(&destinations, tree_walk::where_the_selection_sits(&tree))
+                .is_some()
+            {
+                dialog.end_modal(ID_OK);
+            }
+        });"""
+after = """        let _ = destinations.clone();"""
+red = [
+    "test_enter_on_a_folder_in_the_dialog_is_the_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_destination.rs", tests = 6 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
 ]
