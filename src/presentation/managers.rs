@@ -295,6 +295,7 @@ pub fn manage_filters(
             action_type: r.action_type.clone(),
             action_value: r.action_value.clone().unwrap_or_default(),
             enabled: r.enabled,
+            plays_a_sound: r.plays_a_sound,
         })
         .collect();
 
@@ -339,6 +340,7 @@ fn save_what_the_filter_manager_returned(
             action_type: row.action_type.clone(),
             action_value: Some(row.action_value.clone()).filter(|v| !v.is_empty()),
             enabled: row.enabled,
+            plays_a_sound: row.plays_a_sound,
             created_at: now_stamp(),
         };
         // On the count, not on an error, for the same reason as the labels and
@@ -9485,6 +9487,7 @@ mod saving_the_other_managers {
             action_type: "move".to_string(),
             action_value: Some("Archive".to_string()),
             enabled: true,
+            plays_a_sound: false,
             created_at: "2020-01-01T00:00:00Z".to_string(),
         }
     }
@@ -9504,6 +9507,7 @@ mod saving_the_other_managers {
                 action_type: r.action_type.clone(),
                 action_value: r.action_value.clone().unwrap_or_default(),
                 enabled: r.enabled,
+                plays_a_sound: r.plays_a_sound,
             })
             .collect()
     }
@@ -9553,6 +9557,7 @@ mod saving_the_other_managers {
             action_type: "flag".to_string(),
             action_value: String::new(),
             enabled: true,
+            plays_a_sound: false,
         });
 
         let failures = save_what_the_filter_manager_returned(&cache, ACCOUNT, &stored, returned);

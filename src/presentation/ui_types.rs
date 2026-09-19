@@ -129,6 +129,13 @@ pub struct MessageItem {
     /// for nothing at all, and a label that is only a colour is a label they
     /// cannot know is there.
     pub labels: Vec<String>,
+    /// The phrase a rule said to say before this row's first cell (#62).
+    ///
+    /// Carried from the listing's row, never asked per message. The list
+    /// prefixes it to the first visible cell, so it is the first thing a
+    /// screen reader says for the row whatever columns are shown, and the
+    /// Says first column shows it. `None` is a message no rule spoke for.
+    pub says_first: Option<String>,
 }
 
 impl MessageItem {
@@ -193,6 +200,7 @@ impl MessageItem {
             // one query and its labels are in another table; asking here would
             // be a second query per row of a five hundred row page.
             labels: Vec::new(),
+            says_first: row.says_first.clone(),
         }
     }
 }
@@ -782,8 +790,15 @@ pub enum UIUpdate {
     /// one place the new-mail sound is signalled from: the sound means mail
     /// arrived, not that the watch woke. Spoken at Normal on its own topic
     /// unless nothing but errors was asked for.
+    ///
+    /// `matches_with_a_sound` is how many times a rule that plays a sound
+    /// matched a message across the check (#62), summed over its folders,
+    /// so the arm can signal the Rule matched event once with the count as
+    /// its detail: once per check, never per message and never per folder,
+    /// which is what keeps a folder of matches from flooding.
     WhatArrived {
         what: String,
+        matches_with_a_sound: usize,
     },
     /// A tasks or notes sync finished, in the words the status line uses.
     ///
@@ -1828,6 +1843,7 @@ mod tests {
             safety_reasons: Vec::new(),
             receipt_to: None,
             list_unsubscribe: None,
+            says_first: None,
         };
 
         let item = MessageItem::from_row(&row);
@@ -3398,6 +3414,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 

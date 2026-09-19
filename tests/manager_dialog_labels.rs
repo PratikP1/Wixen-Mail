@@ -67,6 +67,7 @@ fn stored(field: &str, match_type: &str, pattern: &str) -> FilterRule {
         action_type: "mark_as_read".to_string(),
         action_value: String::new(),
         enabled: true,
+        plays_a_sound: false,
     }
 }
 

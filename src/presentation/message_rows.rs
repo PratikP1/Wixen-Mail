@@ -113,6 +113,13 @@ pub fn cell_text(
         MessageColumn::Safety => message.safety.label().to_string(),
         MessageColumn::To => display_address(&message.to),
         MessageColumn::Cc => display_address(&message.cc),
+        // The phrase as the rule wrote it, or nothing (#62). The row's first
+        // cell already has it in front, through `virtual_rows::text_for`;
+        // this column is for the eye, and for a layout that puts it first.
+        MessageColumn::SaysFirst => message.says_first.clone().unwrap_or_default(),
+        // The names the window attached from the one per-folder read, in
+        // the order it gave them; empty costs no listening time.
+        MessageColumn::Labels => message.labels.join(", "),
     }
 }
 
@@ -202,6 +209,12 @@ pub fn conversation_cell_text(
         MessageColumn::Safety => conversation.worst_safety.label().to_string(),
         MessageColumn::To => everyone_in(&conversation.to),
         MessageColumn::Cc => everyone_in(&conversation.cc),
+        // The row message's phrase, chosen by the same ordering as its
+        // sender and its snippet (#62).
+        MessageColumn::SaysFirst => conversation.says_first.clone().unwrap_or_default(),
+        // Every label on any message in it, once each, a line apiece from
+        // the query and said as a list.
+        MessageColumn::Labels => each_of(&conversation.labels).collect::<Vec<_>>().join(", "),
     }
 }
 
@@ -652,6 +665,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 
@@ -1014,6 +1028,8 @@ mod tests {
                 uid: 2,
                 from: "Bob <bob@example.com>".to_string(),
             },
+            says_first: Some("Urgent".to_string()),
+            labels: "Work\nMoney".to_string(),
         }
     }
 

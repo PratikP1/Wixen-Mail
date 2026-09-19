@@ -151,6 +151,8 @@ pub fn a_rule_that_blocks(
         action_type: "move_to_folder".to_string(),
         action_value: Some(into_folder.to_string()),
         enabled: true,
+        // A block files quietly; the sound is for rules somebody wrote.
+        plays_a_sound: false,
         created_at: made_at.to_string(),
     }
 }
@@ -1581,6 +1583,7 @@ mod tests {
             action_type: "move_to_folder".into(),
             action_value: Some("Reading".into()),
             enabled: true,
+            plays_a_sound: false,
             created_at: "t".into(),
         };
         let rules = [
@@ -1907,6 +1910,7 @@ mod tests {
             action_type: "move_to_folder".into(),
             action_value: Some("Reading".into()),
             enabled: true,
+            plays_a_sound: false,
             created_at: "t".into(),
         };
         let block = just_this_sender("news@example.com").expect("an address");

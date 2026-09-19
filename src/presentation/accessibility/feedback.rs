@@ -154,6 +154,16 @@ events!(
     /// rather than alarming, and its own tone means somebody does not have
     /// to listen to a whole sentence to know a search came back empty.
     NothingFound,
+    /// A rule you gave a sound matched (#62).
+    ///
+    /// One event for every rule rather than a sound per rule: a file per
+    /// rule would be a second sound format beside the scheme's, and the
+    /// rule's own box says whether this event plays for it. Signalled once
+    /// per check from the arm that says what arrived, with the count of
+    /// matches as the detail, however many messages matched and however
+    /// many folders held them, so a folder of matches does not flood. Its
+    /// row on the Feedback tab decides its channels, every one by default.
+    RuleMatched,
 );
 
 impl Event {
@@ -176,6 +186,7 @@ impl Event {
             Event::AccountNeedsAttention => "account_needs_attention",
             Event::Confirmed => "confirmed",
             Event::NothingFound => "nothing_found",
+            Event::RuleMatched => "rule_matched",
         }
     }
 
@@ -229,6 +240,7 @@ impl Event {
             Event::AccountNeedsAttention => "Sign-in needs attention",
             Event::Confirmed => "Confirmed",
             Event::NothingFound => "Nothing found",
+            Event::RuleMatched => "Rule matched",
         }
     }
 
@@ -275,7 +287,8 @@ impl Event {
             | Event::MessageSent
             | Event::SyncComplete
             | Event::Confirmed
-            | Event::NothingFound => Priority::Normal,
+            | Event::NothingFound
+            | Event::RuleMatched => Priority::Normal,
             Event::ThreadLanded
             | Event::EdgeOfList
             | Event::MisspelledWord
@@ -341,6 +354,15 @@ impl Event {
             // from a failure, and this sits below SyncComplete's neutral
             // tone rather than beside the failure family under it.
             Event::NothingFound => Tone::new(300, 130),
+            // In the arrival family with NewMail, because a match is mail
+            // that arrived and was recognised, and well above it, so the
+            // two heard together after one check read as a pair and not as
+            // one sound twice. Placed in the widest gap left near the top:
+            // 129 Hz over HasAttachment's tick and twice its length, 145 Hz
+            // under the reminder and less than half its length, so it is
+            // neither a navigation tick nor an alarm. A proposed number,
+            // like the rest, until a listening pass moves it.
+            Event::RuleMatched => Tone::new(1175, 80),
         }
     }
 }

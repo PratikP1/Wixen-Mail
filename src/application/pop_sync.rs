@@ -754,6 +754,7 @@ Subject: Weekly roundup",
             action_type: "mark_as_read".into(),
             action_value: None,
             enabled: true,
+            plays_a_sound: false,
             created_at: String::new(),
         }]);
         let filtering = crate::application::mail_sync::Filtering {
@@ -824,6 +825,7 @@ Subject: Weekly roundup",
             action_type: action.into(),
             action_value: value.map(str::to_string),
             enabled: true,
+            plays_a_sound: false,
             created_at: String::new(),
         }
     }

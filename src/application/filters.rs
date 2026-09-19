@@ -16,7 +16,25 @@ pub enum FilterAction {
     Star,
     Unstar,
     Delete,
+    /// Say this phrase before the row's first cell (#62).
+    ///
+    /// A rule that changes how a row is announced rather than where it is
+    /// filed: the phrase is kept on the message, spoken at the start of its
+    /// row whatever columns are shown, and shown in the Says first column.
+    /// Stored as `say_first` with the phrase as the action's value, refused
+    /// empty or longer than [`SAY_FIRST_LIMIT`] characters at the reader,
+    /// because a phrase said before every matching row is said hundreds of
+    /// times in a folder of matches.
+    SayFirst(String),
 }
+
+/// The most characters a phrase said first may hold.
+///
+/// A bound rather than a guideline, read where a stored rule is turned into
+/// a live one and where the editor refuses to save. Forty is room for a few
+/// words, "Urgent" or "From the school", and not for a sentence: the phrase
+/// is heard before every row it applies to, and a row is a hint.
+pub const SAY_FIRST_LIMIT: usize = 40;
 
 /// Message filter rule
 #[derive(Debug, Clone)]
@@ -40,6 +58,13 @@ pub struct FilterRule {
     pub case_sensitive: bool,
     pub action: FilterAction,
     pub enabled: bool,
+    /// Whether a match plays the sound scheme's Rule matched event (#62).
+    ///
+    /// A fact about the rule and not an action: any action can carry it. The
+    /// sound is one event for every rule, played once per check however many
+    /// messages matched, so a folder of matches cannot flood; which channels
+    /// it reaches is the event's row on the Feedback tab.
+    pub plays_a_sound: bool,
 }
 
 /// Every field a rule may name, so a caller can ask before it runs.
@@ -296,11 +321,24 @@ impl FilterEngine {
 
     /// Evaluate all enabled rules against a message and return matched actions
     pub fn evaluate_message(&self, message: &CachedMessage) -> Vec<FilterAction> {
-        self.rules
-            .iter()
-            .filter(|rule| rule.enabled && Self::matches(rule, message))
+        self.rules_matching(message)
             .map(|rule| rule.action.clone())
             .collect()
+    }
+
+    /// Every enabled rule that matches the message, in the order they are
+    /// held, which is the order the actions above arrive in.
+    ///
+    /// The rules themselves rather than their actions, for what a rule
+    /// carries beside its action: the check counts the matches of the rules
+    /// that play a sound (#62).
+    pub fn rules_matching<'a>(
+        &'a self,
+        message: &'a CachedMessage,
+    ) -> impl Iterator<Item = &'a FilterRule> + 'a {
+        self.rules
+            .iter()
+            .filter(move |rule| rule.enabled && Self::matches(rule, message))
     }
 
     /// Convert persisted rules into runtime rules for execution
@@ -422,6 +460,9 @@ impl FilterEngine {
             "star" => FilterAction::Star,
             "unstar" => FilterAction::Unstar,
             "delete" => FilterAction::Delete,
+            "say_first" => {
+                FilterAction::SayFirst(Self::validated_phrase(rule.action_value.as_ref())?)
+            }
             _ => return None,
         };
 
@@ -434,6 +475,7 @@ impl FilterEngine {
             case_sensitive: rule.case_sensitive,
             action,
             enabled: rule.enabled,
+            plays_a_sound: rule.plays_a_sound,
         })
     }
 
@@ -444,6 +486,18 @@ impl FilterEngine {
         } else {
             Some(value.to_string())
         }
+    }
+
+    /// A phrase to say first, trimmed like any other value and refused over
+    /// [`SAY_FIRST_LIMIT`] characters as well as empty.
+    ///
+    /// Its own bound rather than [`Self::validated_action_value`]'s none,
+    /// because a folder name or a label is read once and a phrase is heard
+    /// before every row it applies to. Characters rather than bytes, since
+    /// the bound is about what is heard.
+    pub fn validated_phrase(value: Option<&String>) -> Option<String> {
+        Self::validated_action_value(value)
+            .filter(|phrase| phrase.chars().count() <= SAY_FIRST_LIMIT)
     }
 }
 
@@ -469,6 +523,10 @@ pub struct Outcome {
     pub tags: Vec<String>,
     /// Whether it goes to the trash.
     pub delete: bool,
+    /// What to say before the row's first cell, if any rule said so; the
+    /// last rule's phrase wins, as the last rule wins the other questions
+    /// with one answer.
+    pub say_first: Option<String>,
 }
 
 impl Outcome {
@@ -516,6 +574,7 @@ pub fn settle(actions: &[FilterAction]) -> Outcome {
                     outcome.tags.push(tag.clone());
                 }
             }
+            FilterAction::SayFirst(phrase) => outcome.say_first = Some(phrase.clone()),
         }
     }
     outcome
@@ -535,6 +594,7 @@ mod tests {
             case_sensitive: false,
             action: FilterAction::MarkAsRead,
             enabled: true,
+            plays_a_sound: false,
         }
     }
 
@@ -637,6 +697,7 @@ mod tests {
                 case_sensitive: false,
                 action: FilterAction::MarkAsRead,
                 enabled: true,
+                plays_a_sound: false,
             })
             .unwrap();
 
@@ -676,6 +737,7 @@ mod tests {
                 case_sensitive: true,
                 action: FilterAction::Star,
                 enabled: true,
+                plays_a_sound: false,
             })
             .unwrap();
 
@@ -714,6 +776,7 @@ mod tests {
             case_sensitive,
             action: FilterAction::Star,
             enabled: true,
+            plays_a_sound: false,
         }
     }
 
@@ -815,6 +878,7 @@ mod tests {
             action_type: action_type.into(),
             action_value: value.map(str::to_string),
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-08-01T00:00:00Z".into(),
         };
 
@@ -865,6 +929,7 @@ mod tests {
             action_type: action_type.into(),
             action_value: value.map(str::to_string),
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-08-01T00:00:00Z".into(),
         };
 
@@ -1082,6 +1147,74 @@ mod tests {
     }
 
     #[test]
+    fn test_the_last_phrase_said_first_wins_and_touches_no_server() {
+        // #62. One answer, like read and starred: the later rule's phrase
+        // is the one the row says. A phrase alone is still something done
+        // to the message, so the rule counts as having run, and it reaches
+        // no server.
+        let settled = settle(&[
+            FilterAction::SayFirst("Urgent".into()),
+            FilterAction::MarkAsRead,
+            FilterAction::SayFirst("From the school".into()),
+        ]);
+
+        assert_eq!(settled.say_first.as_deref(), Some("From the school"));
+        assert_eq!(settled.read, Some(true));
+        assert!(!settle(&[FilterAction::SayFirst("Urgent".into())]).is_nothing());
+        assert!(!settle(&[FilterAction::SayFirst("Urgent".into())]).touches_the_server());
+    }
+
+    #[test]
+    fn test_a_delete_drops_the_phrase_with_everything_else() {
+        let settled = settle(&[
+            FilterAction::SayFirst("Urgent".into()),
+            FilterAction::Delete,
+        ]);
+
+        assert!(settled.delete);
+        assert_eq!(settled.say_first, None);
+    }
+
+    #[test]
+    fn test_a_stored_say_first_rule_is_read_with_its_phrase_trimmed_and_bounded() {
+        // The stored name is `say_first` and the phrase is the action's
+        // value, trimmed like a folder or a label, and refused over the
+        // bound: a phrase heard before every matching row is heard hundreds
+        // of times in a folder of matches.
+        use crate::data::message_cache::MessageFilterRule;
+
+        let stored = |value: Option<&str>| MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "A rule".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "roof".into(),
+            case_sensitive: false,
+            action_type: "say_first".into(),
+            action_value: value.map(str::to_string),
+            enabled: true,
+            plays_a_sound: true,
+            created_at: "2026-09-19T00:00:00Z".into(),
+        };
+        let read = |value: Option<&str>| FilterEngine::from_persisted_rule(&stored(value));
+
+        let rule = read(Some("  Urgent  ")).expect("a phrase is kept");
+        assert!(matches!(&rule.action, FilterAction::SayFirst(phrase) if phrase == "Urgent"));
+        assert!(rule.plays_a_sound, "the sound flag rides the rule");
+        assert!(read(Some("")).is_none(), "an empty phrase is refused");
+        assert!(read(None).is_none(), "no phrase is refused");
+        assert!(
+            read(Some(&"x".repeat(SAY_FIRST_LIMIT + 1))).is_none(),
+            "one character over the bound is refused"
+        );
+        assert!(
+            read(Some(&"x".repeat(SAY_FIRST_LIMIT))).is_some(),
+            "the bound itself is kept"
+        );
+    }
+
+    #[test]
     fn test_anchored_regex_sees_the_whole_field() {
         assert!(FilterEngine::matches(
             &rule("regex", "^Invoice #\\d+$", true),
@@ -1110,6 +1243,7 @@ mod the_fields_a_rule_may_name {
             case_sensitive: false,
             action: FilterAction::MarkAsRead,
             enabled: true,
+            plays_a_sound: false,
         }
     }
 
@@ -1526,6 +1660,7 @@ mod the_fields_a_rule_may_name {
             action_type: "mark_as_read".into(),
             action_value: None,
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-09-05T00:00:00Z".into(),
         }]);
 

@@ -50,14 +50,17 @@ use wixen_mail::presentation::view_state::Showing;
 use wixen_mail::presentation::virtual_rows::{self, Listed};
 
 /// The six cells whose text already says what the column is, so a heading
-/// in front of them would be the same word twice.
-const SELF_DESCRIBING: [MessageColumn; 6] = [
+/// in front of them would be the same word twice; and, since 2026-09-19,
+/// the phrase a rule says first (#62), whose point is to be heard before
+/// anything and whose heading would be heard before it.
+const SELF_DESCRIBING: [MessageColumn; 7] = [
     MessageColumn::Unread,
     MessageColumn::Attachment,
     MessageColumn::Flagged,
     MessageColumn::Answered,
     MessageColumn::Draft,
     MessageColumn::Safety,
+    MessageColumn::SaysFirst,
 ];
 
 fn cells(given: &[(MessageColumn, &str)]) -> Vec<(MessageColumn, String)> {
@@ -245,6 +248,8 @@ fn test_a_conversation_row_is_composed_from_its_own_cells() {
             uid: 2,
             from: "Bob <bob@example.com>".to_string(),
         },
+        says_first: None,
+        labels: String::new(),
     };
     let cells = the_cells_the_list_shows(
         Listed {
@@ -272,7 +277,8 @@ fn test_a_conversation_row_is_composed_from_its_own_cells() {
 #[test]
 fn test_which_headings_are_worth_saying_is_decided_for_every_column() {
     // Walked over ALL so that a column added later is sorted on purpose:
-    // the new arm is either in the six or it is not, and this says which.
+    // the new arm is either in the list above or it is not, and this says
+    // which. 11-10 sorted its two here: Says first in, Labels out.
     for column in MessageColumn::ALL {
         assert_eq!(
             column.heading_is_worth_saying(),

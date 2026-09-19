@@ -10,9 +10,9 @@
 //! the answer to the key just pressed.
 
 use crate::application::filters::{
-    A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, a_way_of_matching_compares_against_nothing,
-    the_field_those_words_name, the_way_of_matching_those_words_name, the_words_for_a_field,
-    the_words_for_a_way_of_matching,
+    A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, SAY_FIRST_LIMIT,
+    a_way_of_matching_compares_against_nothing, the_field_those_words_name,
+    the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
 use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
@@ -2508,6 +2508,8 @@ pub struct FilterRule {
     pub action_type: String,
     pub action_value: String,
     pub enabled: bool,
+    /// Whether a match plays the Rule matched sound (#62); the editor's box.
+    pub plays_a_sound: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2570,6 +2572,9 @@ pub fn show_filter_manager_dialog(
 /// afterwards. A folder the account does not have is passed over with a word
 /// in the log rather than failing the whole sync, so a rule naming a folder
 /// somebody has since renamed does not stop their mail arriving.
+///
+/// Say this first (#62) carries the phrase as its value: a few words kept
+/// on every message the rule matches and heard at the start of its row.
 const RULE_ACTIONS: &[(&str, &str)] = &[
     ("mark_as_read", "Mark as read"),
     ("mark_as_unread", "Mark as unread"),
@@ -2577,11 +2582,16 @@ const RULE_ACTIONS: &[(&str, &str)] = &[
     ("delete", "Delete it"),
     ("move_to_folder", "Move to a folder"),
     ("add_tag", "Add a label"),
+    ("say_first", SAY_THIS_FIRST),
 ];
+
+/// The words for the action that says a phrase first, read by the value
+/// box's label and the refusal below as well as by the list.
+const SAY_THIS_FIRST: &str = "Say this first";
 
 /// The words for a stored action, or the stored name when it is not one of
 /// these, so a rule written by a later version is shown rather than blanked.
-fn shown_action(stored: &str) -> &str {
+pub fn shown_action(stored: &str) -> &str {
     RULE_ACTIONS
         .iter()
         .find(|(name, _)| *name == stored)
@@ -2589,11 +2599,53 @@ fn shown_action(stored: &str) -> &str {
 }
 
 /// The stored name for what a person picked.
-fn stored_action(shown: &str) -> String {
+pub fn stored_action(shown: &str) -> String {
     RULE_ACTIONS
         .iter()
         .find(|(_, offered)| *offered == shown)
         .map_or_else(|| shown.to_string(), |(name, _)| (*name).to_string())
+}
+
+/// The label on the value box, given the words showing in the Action list.
+///
+/// One box serves every action that carries a value, and "Action Value"
+/// beside a phrase somebody is about to hear at the start of every matching
+/// row says nothing about what to type (#62). Asked of the words rather than
+/// of a stored name, for the reason [`the_pattern_box_asks_for_something`]
+/// gives. The accessible name follows the label, through
+/// [`crate::presentation::accessibility::names::name_from_label`]. H for
+/// its letter: F is the field's and P the pattern's, and two controls on
+/// one letter is a key that lands on whichever comes first.
+pub fn the_value_label_for(action_words: &str) -> &'static str {
+    if action_words == SAY_THIS_FIRST {
+        "P&hrase to say first:"
+    } else {
+        "Action &Value:"
+    }
+}
+
+/// What stops a rule being saved, given the words showing in the Action
+/// list and what is in the value box, or nothing when it may be saved.
+///
+/// Say this first needs its phrase, and one no longer than
+/// [`SAY_FIRST_LIMIT`] characters, because the reader of a stored rule
+/// refuses both and a rule that saved and then never ran is the failure
+/// nobody reports. Said here, where the person can still type.
+pub fn what_stops_the_rule_being_saved(action_words: &str, value: &str) -> Option<String> {
+    if action_words != SAY_THIS_FIRST {
+        return None;
+    }
+    let phrase = value.trim();
+    if phrase.is_empty() {
+        return Some("A phrase to say first is needed before this can be saved.".to_string());
+    }
+    let length = phrase.chars().count();
+    (length > SAY_FIRST_LIMIT).then(|| {
+        format!(
+            "The phrase to say first is {length} characters, and it can be at most \
+             {SAY_FIRST_LIMIT}: it is heard before every message this rule matches."
+        )
+    })
 }
 
 /// Whether the Pattern box has anything to ask for, given the words showing in
@@ -3211,10 +3263,14 @@ fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
             1,
             &format!("{} {} '{}'", r.field, r.match_type, r.pattern),
         );
+        // The words, not the stored name: "Say this first (Urgent)" and not
+        // "say_first (Urgent)", which is what this column read until
+        // 2026-09-19 for every action, a machine name in a list somebody
+        // hears. The same words the editor's list offers.
         let action = if r.action_value.is_empty() {
-            r.action_type.clone()
+            shown_action(&r.action_type).to_string()
         } else {
-            format!("{} ({})", r.action_type, r.action_value)
+            format!("{} ({})", shown_action(&r.action_type), r.action_value)
         };
         list.set_item_text_by_column(idx, 2, &action);
         list.set_item_text_by_column(idx, 3, if r.enabled { "Active" } else { "Disabled" });
@@ -3232,8 +3288,17 @@ pub struct FilterEditWidgets {
     pub pattern_f: TextCtrl,
     pub cs_check: CheckBox,
     pub action_choice: Choice,
+    /// The label beside the value box, held so it can follow the action:
+    /// "Phrase to say first:" under Say this first (#62).
+    pub value_label: StaticText,
     pub action_value_f: TextCtrl,
     pub en_check: CheckBox,
+    /// Whether a match plays the sound scheme's
+    /// [`crate::presentation::accessibility::feedback::Event::RuleMatched`]
+    /// (#62). Offered for any action. Which channels the event reaches, the
+    /// sound among them, is the event's own row on the Feedback tab of
+    /// Settings; this box says whether the event fires for this rule at all.
+    pub sound_check: CheckBox,
 }
 
 /// Build the Add/Edit Filter Rule dialog without showing it.
@@ -3264,7 +3329,8 @@ pub fn build_filter_edit_dialog(
     fields.add_growable_col(1, 1);
 
     // Accelerators: N(Name), F(Field), T(Type), P(Pattern), C(Case),
-    //   A(Action), V(Value), E(Enabled), all first letters
+    //   A(Action), V(Value), E(Enabled), all first letters; and S for the
+    //   sound box, since P is the pattern's.
     let name_f = add_field(&dlg, &fields, "Rule &Name:");
 
     let field_label = StaticText::builder(&dlg)
@@ -3322,10 +3388,26 @@ pub fn build_filter_edit_dialog(
     );
     fields.add(&action_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
-    let action_value_f = add_field(&dlg, &fields, "Action &Value:");
+    // Built by hand rather than through `add_field`, because the label has
+    // to be held: it follows the action, and the box's accessible name
+    // follows the label.
+    let value_label = StaticText::builder(&dlg)
+        .with_label(the_value_label_for(""))
+        .build();
+    let action_value_f = TextCtrl::builder(&dlg).build();
+    set_accessible_name(&action_value_f, &name_from_label(the_value_label_for("")));
+    fields.add(
+        &value_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&action_value_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let en_check = add_checkbox(&dlg, &fields, "&Enabled");
     en_check.set_value(true);
+
+    let sound_check = add_checkbox(&dlg, &fields, "Play a &sound when this rule matches");
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -3361,7 +3443,22 @@ pub fn build_filter_edit_dialog(
         select_choice_by_string(&action_choice, shown_action(&r.action_type));
         action_value_f.set_value(&r.action_value);
         en_check.set_value(r.enabled);
+        sound_check.set_value(r.plays_a_sound);
     }
+
+    // The value box's label follows the action, and the box's accessible
+    // name follows the label: under Say this first the box asks for the
+    // phrase (#62), under everything else for the value as before. Set once
+    // for what is showing now and again whenever the list changes.
+    let name_the_value_box = move |action_words: &str| {
+        let label = the_value_label_for(action_words);
+        value_label.set_label(label);
+        set_accessible_name(&action_value_f, &name_from_label(label));
+    };
+    name_the_value_box(&get_choice_string(&action_choice).unwrap_or_default());
+    action_choice.on_selection_changed(move |event| {
+        name_the_value_box(&event.get_string().unwrap_or_default());
+    });
 
     // The Pattern box only asks when there is something to compare against.
     //
@@ -3396,6 +3493,16 @@ pub fn build_filter_edit_dialog(
                 name_f.set_focus();
                 return;
             }
+            // Say this first needs its phrase, and one within the bound,
+            // said here where the person can still type it (#62).
+            if let Some(said) = what_stops_the_rule_being_saved(
+                &get_choice_string(&action_choice).unwrap_or_default(),
+                &action_value_f.get_value(),
+            ) {
+                a_sub_dialog_needs(&d, "Not saved", &said);
+                action_value_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -3406,7 +3513,7 @@ pub fn build_filter_edit_dialog(
         }
     });
 
-    // Painted last. The three Choice controls and the two CheckBox controls
+    // Painted last. The three Choice controls and the three CheckBox controls
     // are left to Windows, matching every other Choice and CheckBox this
     // round paints around. `None` means high contrast is on, or the system
     // is set up in a way this application should not paint over, so nothing
@@ -3426,8 +3533,10 @@ pub fn build_filter_edit_dialog(
         pattern_f,
         cs_check,
         action_choice,
+        value_label,
         action_value_f,
         en_check,
+        sound_check,
     }
 }
 
@@ -3455,8 +3564,10 @@ fn show_filter_edit(
         pattern_f,
         cs_check,
         action_choice,
+        value_label: _,
         action_value_f,
         en_check,
+        sound_check,
     } = build_filter_edit_dialog(parent, existing, palette);
 
     // Read first, then destroy: the fields belong to the dialog.
@@ -3486,6 +3597,7 @@ fn show_filter_edit(
             action_type: stored_action(&get_choice_string(&action_choice).unwrap_or_default()),
             action_value: action_value_f.get_value(),
             enabled: en_check.get_value(),
+            plays_a_sound: sound_check.get_value(),
         })
     } else {
         None

@@ -82,6 +82,31 @@ macro_rules! the_message_the_row_stands_for {
 /// kind of fixed string, interpolated into the same query.
 pub(crate) const EVERYONE_WHO_SENT: &str = "GROUP_CONCAT(DISTINCT char(10) || m.from_addr)";
 
+/// The names of a message's labels, in one string, by name (#62).
+///
+/// One per line for the reason [`EVERYONE_WHO_SENT`] gives: a label may
+/// hold a comma. The listing does not select this; the Labels cell of a
+/// message row reads the names the window attaches from the one per-folder
+/// read 10-02 makes, and this is what sorting by the column orders on. Both
+/// read the same two tables by the same join, and a message with no label
+/// is null, which sorts before every name.
+const THE_LABELS_ON_A_MESSAGE: &str = "(SELECT GROUP_CONCAT(name, char(10)) FROM \
+     (SELECT t.name AS name FROM message_tags mt INNER JOIN tags t ON t.id = mt.tag_id \
+      WHERE mt.message_id = m.id ORDER BY t.name COLLATE NOCASE))";
+
+/// The names of every label on any message of a conversation, once each,
+/// one per line, by name (#62).
+///
+/// Over the rows of `here` in the conversation's group, so the reach the
+/// row is counted with is the reach its labels are gathered from. Selected
+/// into `ConversationItem::labels` and ordered by, the one expression for
+/// both as the file's rule says.
+const THE_LABELS_ON_A_CONVERSATION: &str = "(SELECT GROUP_CONCAT(name, char(10)) FROM \
+     (SELECT DISTINCT t.name AS name FROM here r \
+      INNER JOIN message_tags mt ON mt.message_id = r.id \
+      INNER JOIN tags t ON t.id = mt.tag_id \
+      WHERE r.thread_id = m.thread_id ORDER BY t.name COLLATE NOCASE))";
+
 /// A column the message list can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MessageColumn {
@@ -112,11 +137,25 @@ pub enum MessageColumn {
     Safety,
     To,
     Cc,
+    /// The phrase a rule said to say before the row's first cell (#62).
+    ///
+    /// Off by default and for sighted readers: the phrase is heard at the
+    /// start of the row whatever columns are shown, since
+    /// [`crate::presentation::virtual_rows::text_for`] prefixes it to the
+    /// first visible cell, and this column shows it as well. When it is
+    /// itself the first column the phrase is not said twice.
+    SaysFirst,
+    /// The labels on the message, by name (#62).
+    ///
+    /// Off by default. A label a rule put on a message was shown as a
+    /// colour and heard as nothing until this column existed; on, it is
+    /// another cell on every row, which is the trade every column makes.
+    Labels,
 }
 
 impl MessageColumn {
     /// Every column, in the order the column dialog lists them.
-    pub const ALL: [MessageColumn; 15] = [
+    pub const ALL: [MessageColumn; 17] = [
         MessageColumn::Unread,
         MessageColumn::Attachment,
         MessageColumn::Subject,
@@ -132,6 +171,8 @@ impl MessageColumn {
         MessageColumn::Safety,
         MessageColumn::To,
         MessageColumn::Cc,
+        MessageColumn::SaysFirst,
+        MessageColumn::Labels,
     ];
 
     /// The column heading, and what a screen reader reads for the column.
@@ -155,6 +196,8 @@ impl MessageColumn {
             MessageColumn::Safety => "Safety",
             MessageColumn::To => "To",
             MessageColumn::Cc => "Cc",
+            MessageColumn::SaysFirst => "Says first",
+            MessageColumn::Labels => "Labels",
         }
     }
 
@@ -170,6 +213,11 @@ impl MessageColumn {
     /// column added later lands in the second arm and is heard with its
     /// heading, which is the safe side; the target that reads a row on
     /// request walks [`Self::ALL`] so the choice is made on purpose.
+    ///
+    /// Says first joined the six on 2026-09-19 (#62): its cell is a phrase
+    /// whose whole point is to be heard first, and "Says first, Urgent"
+    /// puts the column's name in front of it. Labels stays in the second
+    /// arm, because "Work" alone does not say which cell the word is.
     pub fn heading_is_worth_saying(self) -> bool {
         !matches!(
             self,
@@ -179,6 +227,7 @@ impl MessageColumn {
                 | MessageColumn::Answered
                 | MessageColumn::Draft
                 | MessageColumn::Safety
+                | MessageColumn::SaysFirst
         )
     }
 
@@ -200,6 +249,8 @@ impl MessageColumn {
             MessageColumn::Safety => "safety",
             MessageColumn::To => "to",
             MessageColumn::Cc => "cc",
+            MessageColumn::SaysFirst => "says_first",
+            MessageColumn::Labels => "labels",
         }
     }
 
@@ -233,6 +284,8 @@ impl MessageColumn {
             MessageColumn::Safety => how_bad_the_safety_word_is!(),
             MessageColumn::To => "m.to_addr COLLATE NOCASE",
             MessageColumn::Cc => "m.cc COLLATE NOCASE",
+            MessageColumn::SaysFirst => "m.says_first COLLATE NOCASE",
+            MessageColumn::Labels => THE_LABELS_ON_A_MESSAGE,
         }
     }
 
@@ -318,6 +371,12 @@ impl MessageColumn {
             MessageColumn::Safety => concat!("MAX(", how_bad_the_safety_word_is!(), ")"),
             MessageColumn::To => "GROUP_CONCAT(DISTINCT char(10) || m.to_addr)",
             MessageColumn::Cc => "GROUP_CONCAT(DISTINCT char(10) || m.cc)",
+            // The row message's phrase (#62), by the same ordering as its
+            // sender and its snippet, so the phrase heard first on a
+            // conversation row belongs to the message the row previews.
+            MessageColumn::SaysFirst => the_message_the_row_stands_for!("says_first"),
+            // Every label on any message in the conversation, once each.
+            MessageColumn::Labels => THE_LABELS_ON_A_CONVERSATION,
         }
     }
 

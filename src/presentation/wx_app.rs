@@ -13480,6 +13480,7 @@ fn conversation_parts(
                 list_unsubscribe: None,
                 account_id: String::new(),
                 labels: Vec::new(),
+                says_first: None,
             };
             // Asked per message, here, where both conversation surfaces build
             // their parts: each message's armour is offered to the key and its
@@ -16691,6 +16692,7 @@ fn open_for_scanning(
                     list_unsubscribe: None,
                     account_id: String::new(),
                     labels: Vec::new(),
+                    says_first: None,
                 },
                 &MessageBody::Html(
                     "<h1>A heading</h1><p>Some text, and \
@@ -18649,7 +18651,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let _ = a11y.announce_topic(said, Priority::Low, "progress");
             }
         }
-        UIUpdate::WhatArrived { what } => {
+        UIUpdate::WhatArrived {
+            what,
+            matches_with_a_sound,
+        } => {
             {
                 let mut s = lock_state(state);
                 s.status_message = what.clone();
@@ -18662,6 +18667,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // wakes, so the sound means mail arrived. No detail: the counts
             // are the sentence below, and the event's own word is enough.
             let _ = a11y.signal(FeedbackEvent::NewMail, "");
+            // A rule somebody gave a sound matched (#62): once per check,
+            // here beside the new-mail event and after it, with the count
+            // as the detail, however many messages matched and however
+            // many folders held them. Never per message and never per
+            // folder, which is what keeps a folder of matches from
+            // flooding; the check sends this update once, after its loop,
+            // and `tests/a_rule_can_change_how_a_row_is_announced.rs`
+            // holds both halves of that bound. The count and never a
+            // subject or a phrase, so the log's line and the words say a
+            // number.
+            if *matches_with_a_sound > 0 {
+                let matched = crate::service::caldav::how_many(*matches_with_a_sound, "message");
+                tracing::debug!("{matched} matched a rule with a sound this check");
+                let _ = a11y.signal(FeedbackEvent::RuleMatched, &matched);
+            }
             // Once per check, with the counts, at Normal on its own topic so
             // a step arriving behind it cannot replace it; silent only under
             // Errors only.
@@ -21883,7 +21903,10 @@ fn check_pop_mail(
             // the sentence follow the level and the row; a step otherwise.
             let what = crate::application::pop_sync::what_the_pop_check_did(&result);
             if result.fetched > 0 {
-                say(UIUpdate::WhatArrived { what });
+                say(UIUpdate::WhatArrived {
+                    what,
+                    matches_with_a_sound: result.filtered.matches_with_a_sound,
+                });
             } else {
                 say(UIUpdate::Progress(what));
             }
@@ -24190,8 +24213,11 @@ fn start_the_download(app: AppHandles<'_>) {
                             // Once per account, and only when it had anything
                             // to do: the one sentence a run says under Say
                             // what arrived.
+                            // No rules run over a download of everything,
+                            // so nothing here can have sounded.
                             say(UIUpdate::WhatArrived {
                                 what: crate::application::bringing_everything_down::what_a_whole_account_came_to(folders_done, with_text),
+                                matches_with_a_sound: 0,
                             });
                         }
                         break;
@@ -24695,6 +24721,9 @@ fn spawn_mail_sync(
             // Each folder with what it received, for the one result line at the
             // end; the folders with nothing are dropped where the words are made.
             let mut arrived: Vec<(String, usize)> = Vec::new();
+            // How many times a rule with a sound matched, summed over the
+            // folders, for the one signal at the end (#62).
+            let mut matches_with_a_sound = 0usize;
             let mut problems: Vec<String> = Vec::new();
 
             // The account's rules, read once for the whole sync rather than once
@@ -24738,6 +24767,7 @@ fn spawn_mail_sync(
                     Ok(result) => {
                         fetched += result.fetched;
                         arrived.push((folder.name.clone(), result.fetched));
+                        matches_with_a_sound += result.filtered.matches_with_a_sound;
                         // The words are worked out where they can be tested. Built
                         // here, they were inside this closure with its own cache on
                         // a background thread, which nothing could reach.
@@ -24800,7 +24830,10 @@ fn spawn_mail_sync(
             // Once, after the loop, and only when something arrived: the arm
             // this reaches is where the new-mail sound is signalled from.
             if let Some(what) = crate::application::mail_sync::what_arrived(&arrived) {
-                say(UIUpdate::WhatArrived { what });
+                say(UIUpdate::WhatArrived {
+                    what,
+                    matches_with_a_sound,
+                });
             }
             say(UIUpdate::ConnectionStatusChanged(
                 ConnectionStatus::Disconnected,
@@ -26380,6 +26413,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 
@@ -27363,6 +27397,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 
@@ -27490,6 +27525,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         };
         let messages = vec![read(true), read(false), read(true), read(false)];
 
@@ -27542,6 +27578,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         };
         m.read = false;
         let messages = vec![m];

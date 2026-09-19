@@ -348,8 +348,9 @@ impl MessageCache {
                     safety_reasons: Vec::new(),
                     receipt_to: None,
                     // A queued message is one this person wrote, so there is
-                    // no list to leave.
+                    // no list to leave, and no rule has run over it.
                     list_unsubscribe: None,
+                    says_first: None,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query the outbox: {}", e)))?

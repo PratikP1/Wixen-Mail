@@ -125,6 +125,7 @@ impl Question {
             case_sensitive: self.case_sensitive,
             action: FilterAction::MarkAsRead,
             enabled: true,
+            plays_a_sound: false,
         }
     }
 }
@@ -1744,6 +1745,7 @@ mod tests {
                 case_sensitive: false,
                 action: crate::application::filters::FilterAction::MarkAsRead,
                 enabled: true,
+                plays_a_sound: false,
             };
 
             assert_eq!(

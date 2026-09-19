@@ -224,6 +224,7 @@ pub fn filter() -> FilterRule {
         action_type: "add_tag".to_string(),
         action_value: "scanned".to_string(),
         enabled: true,
+        plays_a_sound: false,
     }
 }
 

@@ -471,6 +471,8 @@ mod tests {
                 uid: 1,
                 from: String::new(),
             },
+            says_first: None,
+            labels: String::new(),
         }
     }
 

@@ -361,7 +361,8 @@ pub(super) fn label_listing_query(order: &str, limit: Option<usize>) -> String {
                 m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id,
+                m.says_first
          FROM messages m
          INNER JOIN message_tags mt ON m.id = mt.message_id
          INNER JOIN folders f ON m.folder_id = f.id
