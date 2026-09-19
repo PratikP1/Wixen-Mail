@@ -580,7 +580,11 @@ impl HtmlRenderer {
                     Showing::ItIsCarried | Showing::ItWillBeFetched => {
                         self.say_where_a_decorative_picture_is(tag)
                     }
-                    Showing::HeldBack => {
+                    // The two answers only the tag rule gives, which this
+                    // does not ask yet; the arms arrive with 11-11's task 2.
+                    Showing::HeldBack
+                    | Showing::HeldBackAsABeacon
+                    | Showing::HeldBackAsDecorative => {
                         held_back += 1;
                         let described = one_attribute(tag, "alt").unwrap_or_default();
                         format!(
@@ -663,6 +667,13 @@ impl HtmlRenderer {
         if self.whose == WhoseMessage::BeingWrittenHere {
             return String::new();
         }
+        // The two counts, with the beacons at nought until the shown arm
+        // counts them (11-11's task 2); the name is kept so the guard record
+        // on the line below still names its place.
+        let held_back = crate::application::pictures::HeldBack {
+            by_the_switch: held_back,
+            as_beacons: 0,
+        };
         let said = crate::application::pictures::what_was_held_back(held_back);
         if said.is_empty() {
             return String::new();

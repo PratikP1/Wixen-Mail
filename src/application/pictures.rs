@@ -546,6 +546,13 @@ pub enum Showing {
     ItWillBeFetched,
     /// Do not show it, and say so where it would have been.
     HeldBack,
+    /// Do not fetch it, because by its declared size it is a tracking pixel
+    /// and not a picture; counted, and said once at the top of the message.
+    HeldBackAsABeacon,
+    /// Do not fetch it, because the sender marked it decorative: there is
+    /// nothing to see, by the sender's own word, so there is nothing to
+    /// report the opening for.
+    HeldBackAsDecorative,
 }
 
 /// What to do with the address a picture points at.
@@ -568,6 +575,49 @@ pub fn what_to_do_about(address: &str, fetching: Fetching) -> Showing {
         // `data:` picture can be an SVG, and an SVG can carry a script.
         (false, _) => Showing::HeldBack,
     }
+}
+
+/// Whether a picture's declared size says it is a tracking pixel.
+///
+/// A stub answering no for everything, so every case that expects a beacon
+/// is red until the rule is written.
+pub fn looks_like_a_beacon(_tag: &str) -> bool {
+    false
+}
+
+/// Whether a picture carries the decorative mark: an `alt` that is present
+/// and empty.
+///
+/// A stub answering no for everything.
+pub fn is_marked_decorative(_tag: &str) -> bool {
+    false
+}
+
+/// What to do about one whole picture tag, as the cleaner wrote it.
+///
+/// A stub that reads the address and nothing else, so the two new answers
+/// are never given.
+pub fn what_to_do_about_a_tag(tag: &str, fetching: Fetching) -> Showing {
+    let address = attribute_of(tag, "src").unwrap_or_default();
+    what_to_do_about(&address, fetching)
+}
+
+/// A linked picture with no description takes the link's words as one.
+///
+/// A stub that changes nothing.
+pub fn the_links_text_as_a_description(cleaned: &str) -> String {
+    cleaned.to_string()
+}
+
+/// Every picture with no description at all gains the one this reader
+/// chose.
+///
+/// A stub that changes nothing.
+pub fn describe_the_undescribed(
+    cleaned: &str,
+    _as: crate::application::describing_pictures::UndescribedPicture,
+) -> String {
+    cleaned.to_string()
 }
 
 /// What to say where a held-back picture would have been.
@@ -615,10 +665,29 @@ pub enum WhoseMessage {
 /// count matters more than it looks: one held-back picture in a message from a
 /// person is usually their signature, and thirty is a mailing.
 ///
+/// How many of a message's pictures were not fetched, and why.
+///
+/// Two counts rather than one, because the two sentences they make are
+/// about different things: a picture held back by the switch is one the
+/// reader can have by turning the switch off, and one held back as a beacon
+/// is one nobody should want. A picture the sender marked decorative and
+/// this did not fetch is counted by neither: by the sender's own word there
+/// was nothing to see, and a mailing can carry thirty of them (guardrail 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HeldBack {
+    /// Not fetched because the switch on the Reading tab says to fetch none.
+    pub by_the_switch: usize,
+    /// Not fetched because the declared size says tracking pixel.
+    pub as_beacons: usize,
+}
+
 /// Whether a reader is the right person to say this to is [`WhoseMessage`],
 /// and it is asked before this is.
-pub fn what_was_held_back(held_back: usize) -> String {
-    match held_back {
+///
+/// A stub that ignores the beacons, so the sentence about them is never
+/// made.
+pub fn what_was_held_back(held: HeldBack) -> String {
+    match held.by_the_switch {
         0 => String::new(),
         1 => "1 picture was not shown, because fetching it would have told the \
               sender you opened this. Settings, Reading has the switch."

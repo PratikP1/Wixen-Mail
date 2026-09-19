@@ -1698,6 +1698,7 @@ mod permission_tests {
             "default_reminder_minutes",
             "unread_on_a_parent",
             "announce_decorative_pictures",
+            "hold_back_remote_pictures",
             "undo_send_hold_seconds",
             "calendar_view",
             "message_text_kept",
@@ -1761,6 +1762,24 @@ mod permission_tests {
             parsed.announce_decorative_pictures,
             "an absent key answered no, so every existing installation would \
              silently take every sender's word that a picture said nothing"
+        );
+        // The one setting here whose absent answer was flipped after it
+        // shipped. Until 2026-09-19 an absent key held every remote picture
+        // back; by the tester's decision in #28 the pictures show and the
+        // beacon rule in `application::pictures` holds the tracking pixels
+        // back. A file that carries the key keeps its answer either way; the
+        // tester's own carries `false` already.
+        assert!(
+            !parsed.hold_back_remote_pictures,
+            "an absent key answered yes, so a fresh profile would hold every \
+             picture back, which is the default #28 was filed about"
+        );
+        assert_eq!(
+            AppConfig::default().hold_back_remote_pictures,
+            parsed.hold_back_remote_pictures,
+            "the struct's default and the field's absent answer disagree, so a \
+             settings screen built over the defaults would show one answer and \
+             an older file would read the other"
         );
         assert_eq!(
             parsed.message_text_kept, "all",
