@@ -227,7 +227,18 @@ impl Accessibility {
             return Ok(false);
         }
         let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
-        Ok(self.earcons.play(event, &scheme))
+        let played = self.earcons.play(event, &scheme);
+        if let Some(complaint) = self.earcons.take_complaint() {
+            self.show(complaint);
+        }
+        Ok(played)
+    }
+
+    /// Put a sentence where the status line picks it up.
+    fn show(&self, sentence: String) {
+        if let Ok(mut visual) = self.visual.lock() {
+            *visual = Some(sentence);
+        }
     }
 
     /// Signal an event on whichever channels the user has chosen.
@@ -251,9 +262,19 @@ impl Accessibility {
 
         let text = event.text_with(detail);
 
+        let mut shown = channels
+            .contains(&feedback::Channel::Visual)
+            .then(|| text.clone());
         if channels.contains(&feedback::Channel::Earcon) {
             let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
             self.earcons.play(event, &scheme);
+            // The player's one sentence for an outage goes to the status bar
+            // in place of the event's words, whatever channels the event
+            // reaches (#81): the silence is explained where it is noticed,
+            // and the event's words still go out below.
+            if let Some(complaint) = self.earcons.take_complaint() {
+                shown = Some(complaint);
+            }
         }
         // Speech and braille both ride the one screen reader notification, so
         // announcing once serves either. Announcing twice would double the
@@ -263,10 +284,8 @@ impl Accessibility {
         {
             self.announce_topic(&text, event.priority(), event.key())?;
         }
-        if channels.contains(&feedback::Channel::Visual)
-            && let Ok(mut visual) = self.visual.lock()
-        {
-            *visual = Some(text);
+        if let Some(shown) = shown {
+            self.show(shown);
         }
         Ok(())
     }
@@ -798,7 +817,7 @@ mod tests {
         // go to the screen reader: the event happened, and only the sound
         // did not.
         let a11y = Accessibility {
-            earcons: feedback::EarconPlayer::that_cannot_open_a_device(),
+            earcons: feedback::EarconPlayer::whose_device_has_gone_for_good(),
             ..Accessibility::new().expect("accessibility")
         };
 

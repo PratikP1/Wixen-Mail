@@ -969,6 +969,55 @@ fn the_whole_reason(err: &dyn std::error::Error) -> String {
 /// again when the device has gone.
 type Opener = Box<dyn Fn() -> Result<Output, String> + Send + Sync>;
 
+/// One outage of the sounds, told once.
+///
+/// One small value with its state rather than two booleans on the player,
+/// so that "was this outage told" and "is there a sentence waiting for the
+/// status bar" cannot disagree.
+#[derive(Default)]
+struct Outage {
+    /// Whether the log has been told about this outage. One line per outage,
+    /// not one per sound: a syncing mailbox raises the same event forty times
+    /// a second, and forty lines saying the device is still gone is a log
+    /// nobody reads.
+    told: bool,
+    /// The sentence for the status bar, until it is taken.
+    complaint: Option<String>,
+}
+
+impl Outage {
+    /// The outage as told once, in the log and for the eye.
+    fn told(why: &str) -> Self {
+        tracing::warn!(
+            "The sounds have stopped: no audio output device could be opened ({why}); it is \
+             asked for again before a sound once every {} seconds until one can be",
+            REOPEN_AFTER.as_secs()
+        );
+        Self {
+            told: true,
+            complaint: Some(format!(
+                "The sounds have stopped: no audio output device could be opened ({why}). They \
+                 come back when one can be."
+            )),
+        }
+    }
+
+    /// A machine that had no device at start: said in the log, at the level
+    /// a fact about the machine deserves, and not on the status bar, since
+    /// nothing has stopped. The device is still asked for again after each
+    /// gap, and the sounds start when one can be opened.
+    fn from_the_start(why: &str) -> Self {
+        tracing::info!(
+            "No audio output device could be opened at start ({why}); the sounds wait until \
+             one can be"
+        );
+        Self {
+            told: true,
+            complaint: None,
+        }
+    }
+}
+
 /// What the player holds behind its lock.
 #[derive(Default)]
 struct Inner {
@@ -976,9 +1025,13 @@ struct Inner {
     /// Where a sound goes. `None` when there is nothing to play through, and
     /// that is what makes `play` answer false rather than pretend.
     output: Option<Output>,
-    /// When the device was last asked for and refused, so a device that stays
-    /// gone is asked for again after a gap rather than on every sound.
+    /// When the output was last opened, so a sound after a gap since the
+    /// later of this and the last sound opens the device again.
+    opened_at: Option<std::time::Instant>,
+    /// When the device was last asked for, so a device that stays gone is
+    /// asked for again after a gap rather than on every sound.
     last_attempt: Option<std::time::Instant>,
+    outage: Outage,
 }
 
 /// Plays earcons, one at a time and never faster than the ear can separate.
@@ -1097,12 +1150,22 @@ impl EarconPlayer {
     /// a missing sound is a smaller problem than an application that will
     /// not start over one.
     fn with_opener(open: Opener) -> Self {
-        let output = (open)().ok();
-        Self {
-            inner: std::sync::Mutex::new(Inner {
-                output,
+        let now = std::time::Instant::now();
+        let inner = match (open)() {
+            Ok(output) => Inner {
+                output: Some(output),
+                opened_at: Some(now),
+                last_attempt: Some(now),
                 ..Inner::default()
-            }),
+            },
+            Err(why) => Inner {
+                last_attempt: Some(now),
+                outage: Outage::from_the_start(&why),
+                ..Inner::default()
+            },
+        };
+        Self {
+            inner: std::sync::Mutex::new(inner),
             open,
         }
     }
@@ -1139,39 +1202,87 @@ impl EarconPlayer {
         Self::into_the_air()
     }
 
-    /// A player on a machine where no output device can be opened, for the
-    /// case in `accessibility.rs` that hands its complaint to the eye.
+    /// A player whose device opened at start, has since gone, and cannot be
+    /// opened again, for the case in `accessibility.rs` that hands its
+    /// complaint to the eye.
     #[cfg(test)]
-    pub(crate) fn that_cannot_open_a_device() -> Self {
-        Self::with_opener(Box::new(|| {
-            Err("Could not find any output device".to_string())
-        }))
+    pub(crate) fn whose_device_has_gone_for_good() -> Self {
+        let opened_once = std::sync::atomic::AtomicBool::new(false);
+        let player = Self::with_opener(Box::new(move || {
+            if opened_once.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                Err("Could not find any output device".to_string())
+            } else {
+                Ok(Output::detached().0)
+            }
+        }));
+        if let Ok(inner) = player.inner.lock()
+            && let Some(output) = &inner.output
+        {
+            output
+                .ended
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        player
     }
 
     /// The sentence for the status bar when the sounds have stopped and no
     /// device could be opened again, once per outage: taken, then `None`.
     pub fn take_complaint(&self) -> Option<String> {
-        None
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|mut inner| inner.outage.complaint.take())
     }
 
-    /// The mixer to play into, opening the default device when there is
-    /// none and a gap has passed since it was last refused.
+    /// The mixer to play into, opening the default output device again
+    /// first when the one held has gone, when a gap has passed since it was
+    /// last used, or when there is none and a gap has passed since it was
+    /// last asked for (#81).
     fn somewhere_to_play(
         &self,
         inner: &mut Inner,
         now: std::time::Instant,
     ) -> Option<rodio::mixer::Mixer> {
-        if inner.output.is_none() {
-            let asked_too_recently = inner
-                .last_attempt
-                .is_some_and(|last| now.duration_since(last) < REOPEN_AFTER);
-            if asked_too_recently {
-                return None;
+        let a_gap_since = |then: Option<std::time::Instant>| {
+            then.is_some_and(|then| now.duration_since(then) > REOPEN_AFTER)
+        };
+        let must_open = match &inner.output {
+            Some(output) => {
+                let last_used = inner.last_played.max(inner.opened_at);
+                output.has_ended() || a_gap_since(last_used)
             }
-            inner.last_attempt = Some(now);
-            inner.output = (self.open)().ok();
+            None => a_gap_since(inner.last_attempt) || inner.last_attempt.is_none(),
+        };
+        if must_open {
+            self.open_the_device_again(inner, now);
         }
         inner.output.as_ref().map(|output| output.mixer.clone())
+    }
+
+    /// Ask the opener once, and tell the outage or the resume once.
+    ///
+    /// The output being replaced is dropped here, which stops anything
+    /// still playing through it; rodio's own line on that drop is off, set
+    /// where the device was opened, since this is the program's choice and
+    /// the log says what matters about it below.
+    fn open_the_device_again(&self, inner: &mut Inner, now: std::time::Instant) {
+        inner.last_attempt = Some(now);
+        match (self.open)() {
+            Ok(output) => {
+                inner.output = Some(output);
+                inner.opened_at = Some(now);
+                if inner.outage.told {
+                    tracing::info!("The sounds are back: an audio output device was opened again");
+                    inner.outage = Outage::default();
+                }
+            }
+            Err(why) => {
+                inner.output = None;
+                if !inner.outage.told {
+                    inner.outage = Outage::told(&why);
+                }
+            }
+        }
     }
 
     /// Play an event's sound, under `scheme`, if enough time has passed

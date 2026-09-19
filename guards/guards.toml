@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 180 records have arrived since and have not been through it.
+# 183 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -10750,7 +10750,7 @@ after = """            description: Some("Primary application window".to_string(
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 24 },
+    { file = "src/presentation/accessibility.rs", tests = 25 },
 ]
 
 [[guard]]
@@ -10763,7 +10763,7 @@ after = """            description: Some("Folder navigation".to_string()),
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 24 },
+    { file = "src/presentation/accessibility.rs", tests = 25 },
 ]
 
 [[guard]]
@@ -10774,7 +10774,7 @@ before = """                state: automation::AutomationState {
 after = """                state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 24 },
+    { file = "src/presentation/accessibility.rs", tests = 25 },
 ]
 
 [[guard]]
@@ -10790,7 +10790,7 @@ after = """        let _ = (node_id, state);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 24 },
+    { file = "src/presentation/accessibility.rs", tests = 25 },
 ]
 
 [[guard]]
@@ -10800,7 +10800,7 @@ before = """        self.feedback.lock().map(|s| s.clone()).unwrap_or_default()"
 after = """        Default::default()"""
 red = ["presentation::accessibility::tests::test_feedback_settings_reports_what_was_just_stored_rather_than_the_default"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 24 },
+    { file = "src/presentation/accessibility.rs", tests = 25 },
 ]
 
 [[guard]]
@@ -10816,7 +10816,7 @@ after = """        let _ = (region_id, text);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_live_region_update_notifies_the_tree_and_announces_the_text"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 24 },
+    { file = "src/presentation/accessibility.rs", tests = 25 },
 ]
 
 [[guard]]
@@ -10840,7 +10840,7 @@ red = [
     "presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 24 },
+    { file = "src/presentation/accessibility.rs", tests = 25 },
     { file = "src/presentation/accessibility/automation.rs", tests = 2 },
 ]
 
@@ -10851,7 +10851,7 @@ before = """        f.write_str(self.key())"""
 after = """        Ok(Default::default())"""
 red = ["presentation::accessibility::feedback::tests::test_a_channel_displays_as_its_stored_key"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
 ]
 
 # The plausible wrong implementation, and the one a reader reaches for: an
@@ -10878,7 +10878,7 @@ red = [
     "presentation::accessibility::feedback::tests::test_putting_an_event_with_no_override_back_to_the_default_changes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
 ]
 
 # The defect the whole of criterion 1 is about, written as the wrong
@@ -10904,7 +10904,7 @@ red = [
     "presentation::accessibility::feedback::tests::test_every_channel_is_named_by_exactly_one_switch",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
 ]
 
 # Moving the event picker has two halves and the first is the one that gets
@@ -27188,7 +27188,7 @@ red = [
     "test_the_profile_that_filed_the_issue_hears_the_attachment_event_the_same_way",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
     { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 15 },
 ]
 
@@ -27216,7 +27216,7 @@ red = [
     "test_the_fallback_never_speaks_for_an_event_whose_text_is_on_the_row",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
     { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 15 },
 ]
 
@@ -27251,4 +27251,76 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 15 },
+]
+
+# The player not asking whether its device has gone before a sound, which
+# is the shape the tester met (#81): the stream's error callback sets the
+# flag and nothing reads it, so every later sound plays into the ended
+# stream and `play` answers true. The break drops the flag from the
+# decision and leaves the gap. The cases that lose the device inside a gap
+# go red, in this file and in `accessibility.rs`, since the reopen never
+# happens and the outage is never told; the cases that wait out the gap
+# stay green, since the gap still opens the device again.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a sound after the device has gone opens the default device again first"
+file = "src/presentation/accessibility/feedback.rs"
+before = """                output.has_ended() || a_gap_since(last_used)"""
+after = """                a_gap_since(last_used)"""
+red = [
+    "presentation::accessibility::feedback::tests::test_a_device_that_stays_gone_is_asked_for_again_after_a_gap_not_on_every_sound",
+    "presentation::accessibility::feedback::tests::test_a_player_whose_device_went_opens_the_default_device_again_before_the_next_sound",
+    "presentation::accessibility::feedback::tests::test_an_outage_is_told_once_and_the_sounds_come_back_when_a_device_does",
+    "presentation::accessibility::tests::test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
+]
+
+# The outage told on every refused open rather than once: a device that
+# stays gone under a syncing mailbox is forty lines a second in the log and
+# a sentence for the eye on every sound (#81, T-11-59). The break tells the
+# outage whenever there is no output, which in that arm is always. The
+# case counting the log lines across three sounds goes red; the case in
+# `accessibility.rs` takes one sentence and stays green, since a sentence
+# told again is still a sentence.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an outage of the sounds is told once, not on every sound"
+file = "src/presentation/accessibility/feedback.rs"
+before = """                if !inner.outage.told {
+                    inner.outage = Outage::told(&why);
+                }"""
+after = """                inner.outage = Outage::told(&why);"""
+red = [
+    "presentation::accessibility::feedback::tests::test_an_outage_is_told_once_and_the_sounds_come_back_when_a_device_does",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
+]
+
+# `signal` playing the tone and never asking the player for its complaint,
+# so the sounds stop and the status bar goes on showing the event's own
+# words as if they had played (#81). The break drops the call. The case
+# that loses the device for good and reads the status bar goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "signal puts the player's complaint where the eye reads it"
+file = "src/presentation/accessibility.rs"
+before = """            if let Some(complaint) = self.earcons.take_complaint() {
+                shown = Some(complaint);
+            }"""
+after = """            let _ = &mut shown;"""
+red = [
+    "presentation::accessibility::tests::test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility.rs", tests = 25 },
 ]
