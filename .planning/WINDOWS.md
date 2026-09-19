@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 518
+open_count: 519
 waived_count: 0
 fixed_count: 33
-total_count: 551
-last_updated: 2026-09-19T14:20:00.000Z
+total_count: 552
+last_updated: 2026-09-19T15:20:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -566,6 +566,7 @@ last_updated: 2026-09-19T14:20:00.000Z
 | 549 | 11 | unrun-verify | src/application/server_thread_ids.rs |  | 11-08.1: what only the tester's Gmail account settles for #88. His split threads showing as one conversation row after the next check, once the once-only pass has given the stored mail its X-GM-THRID, with the count on the row matching what Gmail's own client shows for that thread; a conversation opened with Enter holding the same messages Gmail shows; a reply that arrived without the headers that would have joined it sitting in its thread; two unrelated threads with one subject staying two rows; and the pass itself against Gmail, whether one UID FETCH of the stored numbers for the one field per kept folder is answered whole over his 17,753 messages and what it takes, which the scripted server puts at 54 bytes a message and no real server has been asked. The trace, the readings and the pass are held against the scripted servers; nothing here has met his account | open |  | 2026-09-19T13:00:00.000Z |  |
 | 550 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-09: what only the tester's ear settles for #26. The row heard whole and once on Ctrl+Shift+; and on the Action item, each heading then its text in the order the columns are shown, a conversation row reading its own cells, and the refusal heard when the list is not focused; arrowing through the list quiet under an NVDA configuration profile triggered by this application with Row/column headers set to Rows or Off, which nobody has set up; and what Narrator and JAWS need, whose settings the page names without steps since nobody here has read them. The composition, the item, the arm and the channel are held by cases and readings; none of it has been heard | open |  | 2026-09-19T14:20:00.000Z |  |
 | 551 | 11 | todo | docs/KEYBOARD_SHORTCUTS.md |  | 11-09: an NVDA add-on that quiets the message list's column headers for this program without a configuration profile, if the profile the page describes proves too much to ask of a person setting up. It is a second piece of software installed into NVDA, with its own packaging, versioning and testing, and it serves NVDA alone; nothing under nvda-tests/ is one, that directory drives NVDA rather than extending it. Later work, on the tester's word after the profile has been tried | open |  | 2026-09-19T14:20:00.000Z |  |
+| 552 | 11 | unrun-verify | src/presentation/accessibility/feedback.rs |  | 11-09.1: what only the tester's ear settles for #77. Landing on a message with an attachment heard as the row once, the Attachment column's "Has attachment" in NVDA's reading of the row, with the attachment tone beside it and nothing spoken for the event; and with "Show events in the status bar" off, the tone alone. A fresh profile hearing every event's tone from the start. The default channels, the fallback that never speaks for the event, the tester's stored profile reaching the same default, a profile that chose silence keeping it, the Feedback tab's boxes for the event and the cursor handler adding nothing spoken are held by cases and readings; none of it has been heard | open |  | 2026-09-19T15:20:00.000Z |  |
 
 ````json
 [
@@ -7179,6 +7180,18 @@ last_updated: 2026-09-19T14:20:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T14:20:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 552,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/accessibility/feedback.rs",
+    "line": null,
+    "description": "11-09.1: what only the tester's ear settles for #77. Landing on a message with an attachment heard as the row once, the Attachment column's \"Has attachment\" in NVDA's reading of the row, with the attachment tone beside it and nothing spoken for the event; and with \"Show events in the status bar\" off, the tone alone. A fresh profile hearing every event's tone from the start. The default channels, the fallback that never speaks for the event, the tester's stored profile reaching the same default, a profile that chose silence keeping it, the Feedback tab's boxes for the event and the cursor handler adding nothing spoken are held by cases and readings; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T15:20:00.000Z",
     "resolved_at": null
   }
 ]

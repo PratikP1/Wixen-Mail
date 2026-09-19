@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 179 records have arrived since and have not been through it.
+# 180 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27189,7 +27189,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
-    { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 11 },
+    { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 15 },
 ]
 
 # The never-sound-alone rule adding braille, and so speech, to a sound-only
@@ -27217,5 +27217,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
-    { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 11 },
+    { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 15 },
+]
+
+# The cursor handler speaking "Has attachment" of its own beside the
+# signalled event, which is the duplicate #77 was filed about arriving by a
+# route the Feedback tab cannot switch off: the row's own column, the
+# event's channels and a third voice hard-wired in the window. The break
+# adds the line beside the signal. The reading that holds the handler to
+# naming the word in no string goes red; the reading that the handler
+# signals what the landing decides stays green, since the signal is still
+# there.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the cursor handler speaks nothing of its own about attachments"
+file = "src/presentation/wx_app.rs"
+suite = "landing_on_an_attachment_says_it_once"
+before = """                    for landing_event in landing_events {
+                        let _ = a11y.signal(landing_event, "");
+                    }"""
+after = """                    for landing_event in landing_events {
+                        let _ = a11y.signal(landing_event, "");
+                        let _ = a11y.announce(
+                            "Has attachment",
+                            crate::presentation::accessibility::announcements::Priority::Low,
+                        );
+                    }"""
+red = [
+    "test_the_cursor_handler_speaks_nothing_of_its_own_about_attachments",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/landing_on_an_attachment_says_it_once.rs", tests = 15 },
 ]

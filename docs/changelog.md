@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The sounds are on from the start, and landing on a message with an attachment says the
+  word once.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef` under NVDA
+  (#77): landing on a message with an attachment said "attachment" more than once, from the
+  Attachment column NVDA reads in the row, from the spoken "Has attachment" event, and from
+  the sound when it was on. Pratik's decision the same day: the sound on by default for this
+  event, the spoken announcement off by default, the column kept, since it carries the fact
+  in the row; and the sounds on by default for every event, which his own settings already
+  had. Since 2026-09-19 a new installation plays every event's sound, where until then the
+  sounds were off until somebody turned them on; the one box on the Feedback tab still turns
+  them all off, and an installation that had turned them off keeps them off. Landing on a
+  message with an attachment plays the attachment sound and shows "Has attachment" on the
+  status bar, and the words are neither spoken nor sent to a braille display, because both
+  ride the one screen reader notification and either would be the row's own word a second
+  time; the guide says how to have it spoken again, under Settings, Feedback, One event at a
+  time. The Feedback tab shows this event's boxes as the sound and the status bar with the
+  line beneath saying it is the default, where until 2026-09-19 an event nobody had answered
+  for showed every box ticked whatever its default was. Known limitations: nobody has heard
+  the row with the sound; whether it is heard once, and the sound alone when the status bar
+  is off, is the tester's ear.
 - **A move, a delete or a copy within one account completes on this computer first, and
   Enter on a folder in the Move dialog is the move.** The tester on 2026-09-18, on build
   `1.0.0-alpha.1` at `7573a812` under NVDA against Gmail (#86): a move takes a noticeable time

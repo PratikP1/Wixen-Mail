@@ -45,7 +45,9 @@
 //! status bar is off: the tester's ear. The window is not started.
 
 use std::collections::BTreeSet;
+use std::fs;
 
+use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::presentation::accessibility::feedback::{Channel, Event, FeedbackSettings};
 
 fn set(channels: &[Channel]) -> BTreeSet<Channel> {
@@ -271,4 +273,237 @@ fn test_the_fallback_still_adds_braille_first_for_an_event_whose_text_is_not_on_
         settings.channels_for(Event::NewMail),
         set(&[Channel::Earcon, Channel::Speech])
     );
+}
+
+// ── The window, read as text ───────────────────────────────────────────────
+
+const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
+
+fn the_main_window() -> String {
+    let whole = fs::read_to_string(THE_MAIN_WINDOW)
+        .unwrap_or_else(|why| panic!("{THE_MAIN_WINDOW}: {why}"))
+        .replace("\r\n", "\n");
+    what_ships(&whole)
+}
+
+/// One function's text, from its signature to the closing brace at column
+/// nought, or a complaint when the signature is gone.
+fn body_of(source: &str, signature: &str) -> Result<String, String> {
+    let at = source.find(signature).ok_or(format!(
+        "{signature} is no longer in this file, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let ends = rest.find("\n}\n").map_or(rest.len(), |end| end + 2);
+    Ok(rest[..ends].to_string())
+}
+
+/// The message list's cursor handler, cut between two anchors: where it is
+/// wired and the handler wired after it.
+fn the_cursor_handler(source: &str) -> Result<&str, String> {
+    let after = source
+        .split_once(THE_CURSOR_HANDLER)
+        .ok_or(format!(
+            "{THE_CURSOR_HANDLER} is no longer in this file, so this reads nothing"
+        ))?
+        .1;
+    let end = after.find(THE_HANDLER_AFTER_IT).ok_or(format!(
+        "{THE_HANDLER_AFTER_IT} no longer follows the cursor handler, so this cannot tell \
+         where the handler ends"
+    ))?;
+    Ok(&after[..end])
+}
+
+/// Every string literal in `text`, read line by line with the comment at
+/// the end of a line cut off first.
+///
+/// A reader of source text, with the blind spot said: a `//` inside a
+/// literal ends the line early, and a literal spanning lines is read as
+/// two. Neither shape is in the handler this reads, and the companions
+/// below prove a planted literal is seen.
+fn string_literals_in(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|line| line.split("//").next().unwrap_or_default())
+        .flat_map(|code| {
+            code.split('"')
+                .enumerate()
+                .filter(|(at, _)| at % 2 == 1)
+                .map(|(_, literal)| literal.to_string())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+// ── The anchors ────────────────────────────────────────────────────────────
+
+const THE_CURSOR_HANDLER: &str = "msg_list.on_item_focused({";
+const THE_HANDLER_AFTER_IT: &str = "msg_list.on_column_click({";
+const THE_LANDING_LOOP: &str = "for landing_event in landing_events {";
+const SIGNALS_THE_EVENT: &str = "a11y.signal(landing_event";
+const THE_MESSAGE_LANDING: &str = "fn feedback_events_for_landing(";
+const THE_CONVERSATION_LANDING: &str = "fn feedback_events_for_landing_on_a_conversation(";
+const THE_EVENT: &str = "FeedbackEvent::HasAttachment";
+const THE_WORD: &str = "attachment";
+
+// ── The readings ───────────────────────────────────────────────────────────
+
+/// Landing on a message or a conversation with an attachment is decided by
+/// the two pure functions and signalled, once per event, by the cursor
+/// handler; the channels are the settings' and never the handler's.
+fn the_cursor_handler_signals_what_the_landing_decides(app: &str) -> Result<(), String> {
+    for landing in [THE_MESSAGE_LANDING, THE_CONVERSATION_LANDING] {
+        if !body_of(app, landing)?.contains(THE_EVENT) {
+            return Err(format!(
+                "{landing} never answers {THE_EVENT}, so landing on an attachment signals \
+                 nothing and the tone is never played"
+            ));
+        }
+    }
+    let handler = the_cursor_handler(app)?;
+    let after_the_loop = handler.split_once(THE_LANDING_LOOP).ok_or(format!(
+        "the cursor handler no longer holds {THE_LANDING_LOOP:?}, so what the landing \
+         decides is never signalled"
+    ))?;
+    if !after_the_loop
+        .1
+        .trim_start()
+        .starts_with(&format!("let _ = {SIGNALS_THE_EVENT}"))
+    {
+        return Err(format!(
+            "the landing loop does not begin by signalling the event through \
+             {SIGNALS_THE_EVENT}, so the channels an event reaches are not the settings'"
+        ));
+    }
+    Ok(())
+}
+
+/// The cursor handler adds nothing spoken about attachments: no string it
+/// holds names the word. The row's own Attachment column and the signalled
+/// event are the only two ways the fact goes out, and the event's channels
+/// are the settings' (#77).
+fn the_cursor_handler_speaks_nothing_of_its_own_about_attachments(app: &str) -> Result<(), String> {
+    let handler = the_cursor_handler(app)?;
+    if let Some(literal) = string_literals_in(handler)
+        .into_iter()
+        .find(|literal| literal.to_lowercase().contains(THE_WORD))
+    {
+        return Err(format!(
+            "the cursor handler holds the words {literal:?}, so landing on a message with an \
+             attachment says the word a second time beside the row's own column and the \
+             signalled event, whatever the Feedback tab says"
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_cursor_handler_signals_what_the_landing_decides() {
+    the_cursor_handler_signals_what_the_landing_decides(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_cursor_handler_speaks_nothing_of_its_own_about_attachments() {
+    the_cursor_handler_speaks_nothing_of_its_own_about_attachments(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+// ── The companions ─────────────────────────────────────────────────────────
+
+/// A window shaped as it should be, so a reading that stopped finding its
+/// anchor cannot pass by finding nothing.
+fn a_window_as_it_should_be() -> String {
+    let mut snippet = String::new();
+    snippet.push_str("            ");
+    snippet.push_str(THE_CURSOR_HANDLER);
+    snippet.push_str(
+        "\n                let a11y = a11y.clone();\n                move |event| {\n                    \
+         let idx = event.get_item_index() as usize;\n                    \
+         let landing_events = feedback_events_for_landing(&row);\n                    ",
+    );
+    snippet.push_str(THE_LANDING_LOOP);
+    snippet.push_str("\n                        let _ = ");
+    snippet.push_str(SIGNALS_THE_EVENT);
+    snippet.push_str(
+        ", \"\");\n                    }\n                    // Landing on a row with an attachment\n                    \
+         let _ = a11y.announce_topic(PRESS_ENTER_TO_RUN, Priority::Low, \"saved search\");\n                }\n            });\n\n            ",
+    );
+    snippet.push_str(THE_HANDLER_AFTER_IT);
+    snippet.push_str("\n                move |_| {}\n            });\n");
+    snippet.push_str(THE_MESSAGE_LANDING);
+    snippet.push_str(
+        "message: &MessageItem) -> Vec<FeedbackEvent> {\n    let mut events = Vec::new();\n    \
+         if message.has_attachments {\n        events.push(FeedbackEvent::HasAttachment);\n    }\n    events\n}\n",
+    );
+    snippet.push_str(THE_CONVERSATION_LANDING);
+    snippet.push_str(
+        "conversation: &ConversationItem) -> Vec<FeedbackEvent> {\n    let mut events = Vec::new();\n    \
+         if conversation.any_attachment {\n        events.push(FeedbackEvent::HasAttachment);\n    }\n    events\n}\n",
+    );
+    snippet
+}
+
+fn every_window_reading_over(app: &str) -> Result<(), String> {
+    the_cursor_handler_signals_what_the_landing_decides(app)?;
+    the_cursor_handler_speaks_nothing_of_its_own_about_attachments(app)
+}
+
+#[test]
+fn test_the_window_readings_pass_a_window_shaped_as_it_should_be() {
+    every_window_reading_over(&a_window_as_it_should_be()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_window_readings_complain_when_the_handler_speaks_or_stops_signalling() {
+    let app = a_window_as_it_should_be();
+
+    let speaks = app.replacen(
+        "let _ = a11y.announce_topic(PRESS_ENTER_TO_RUN, Priority::Low, \"saved search\");",
+        "let _ = a11y.announce(\"Has attachment\", Priority::Low);",
+        1,
+    );
+    let why = the_cursor_handler_speaks_nothing_of_its_own_about_attachments(&speaks)
+        .expect_err("the handler speaks");
+    assert!(why.contains("holds the words \"Has attachment\""), "{why}");
+
+    // A comment naming the word is not a string, and a string outside the
+    // handler is not the handler's.
+    let comments_and_elsewhere = format!(
+        "{}\nfn elsewhere() {{ let _ = \"Attachments, 3\"; }}\n",
+        app.replacen(
+            "// Landing on a row with an attachment",
+            "// Landing on a row with an attachment says \"Has attachment\" nowhere here",
+            1
+        )
+    );
+    every_window_reading_over(&comments_and_elsewhere).unwrap_or_else(|why| panic!("{why}"));
+
+    let never_signals = app.replacen(
+        "let _ = a11y.signal(landing_event, \"\");",
+        "let _ = landing_event;",
+        1,
+    );
+    let why = the_cursor_handler_signals_what_the_landing_decides(&never_signals)
+        .expect_err("never signals");
+    assert!(why.contains("does not begin by signalling"), "{why}");
+
+    let no_loop = app.replacen(THE_LANDING_LOOP, "for other in others {", 1);
+    let why = the_cursor_handler_signals_what_the_landing_decides(&no_loop).expect_err("no loop");
+    assert!(why.contains("no longer holds"), "{why}");
+
+    let no_event = app.replacen(
+        "if conversation.any_attachment {\n        events.push(FeedbackEvent::HasAttachment);\n    }\n",
+        "",
+        1,
+    );
+    let why = the_cursor_handler_signals_what_the_landing_decides(&no_event)
+        .expect_err("no event for a conversation");
+    assert!(
+        why.contains("never answers FeedbackEvent::HasAttachment"),
+        "{why}"
+    );
+
+    let no_handler = app.replacen(THE_CURSOR_HANDLER, "msg_list.on_item_selected({", 1);
+    let why = the_cursor_handler_speaks_nothing_of_its_own_about_attachments(&no_handler)
+        .expect_err("no handler");
+    assert!(why.contains("is no longer in this file"), "{why}");
 }
