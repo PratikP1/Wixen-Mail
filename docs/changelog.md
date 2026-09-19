@@ -8,6 +8,36 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **A message row's snippet is the message's first relevant words, not its first 200
+  characters.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef` under NVDA
+  (#82): a snippet holding a link read the whole address out, character by character, on a
+  row that exists to give a hint of the message. Pratik's decision the same day went past the
+  address: the snippet is chosen by reading the text, with written rules, each tested on its
+  own. Since 2026-09-19 an address is left out altogether, whether it is written bare, as a
+  `mailto:`, or as a link whose words are its own address, and the full stop after one stays on
+  the word before it. A line that is only an address or a marker, such as a row of dashes, is
+  skipped. The lines marketing mail puts above its words are skipped when they are
+  recognisable: "View this email in your browser", "Unsubscribe", and a short list of others
+  seen in the tester's mail. A greeting on a line of its own is skipped when the message goes on
+  after it. Quoted lines and the signature after its `-- ` line are left out. A line that
+  repeats the line before it, which is how a newsletter's hidden preview line meets its title,
+  is said once, and the invisible characters such a line is padded with are dropped. What is
+  left is the first sentence or two, up to 200 characters, ended at a sentence boundary where
+  one falls inside that, at a word boundary otherwise. A message whose text is nothing but
+  what the rules skip gives its least bad line rather than nothing. The same rules choose the
+  snippet of a message with no plain-text part, over the pieces the reader finds in its
+  markup. Every stored snippet is recomputed once, on the first start after this build: each
+  message with its text here is read once, its snippet rewritten where it differs, and its row
+  in the search index rebuilt; the log says how many and how long it took. Measured on
+  2026-09-19 over 2,000 short plain bodies with every row rewritten and reindexed, the pass
+  took 752 ms on its own and 740 ms as the start that carried it, by
+  `cargo test --test a_snippet_is_the_first_relevant_words -- --nocapture`; the tester's
+  17,753 messages are about nine times that, a matter of seconds, and the pass records itself
+  as done only when it finished, so a start stopped partway finishes it next time. Known
+  limitations: the list of marketing openers is the ones seen so far and grows by evidence; a
+  reply's "On Thursday, Ada wrote:" line is not a rule yet and stays in the snippet; a picture
+  the sender described arrives as its description, which the rules cannot tell from a
+  sentence, so only an undescribed picture is left out; and nobody has heard the rows yet.
 - **The sounds are on from the start, and landing on a message with an attachment says the
   word once.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef` under NVDA
   (#77): landing on a message with an attachment said "attachment" more than once, from the

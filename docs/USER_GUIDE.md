@@ -197,6 +197,24 @@ column in the message list, and reads as a word: "unread", "starred", "has
 attachment". `Space` on a message reads its full status along with the rest
 of the item, once for a short summary and again for everything.
 
+### The Snippet column
+
+The Snippet column holds a few words from the message's text, so a row gives
+you a hint of what the message is about before you open it. Since 2026-09-19
+those words are chosen by reading the text, not by cutting it at a fixed
+length. A web address or an email address is left out rather than spelled to
+you letter by letter. The lines marketing mail puts above its words, such as
+"View this email in your browser", are skipped when they are recognisable. A
+greeting on a line of its own, such as "Hi Pratik,", is skipped when the
+message goes on after it. In a reply, the quoted lines are left out, and so is
+the sender's signature after its `-- ` line. What is left is the first
+sentence or two of the message itself, ended at a full stop where one falls
+inside the room the column has. A message that holds nothing but the lines
+these rules skip still shows its least bad line, so a row is never blank for a
+message that has text. The whole message, addresses and all, is in the message
+itself. Until 2026-09-19 the column held the first 200 characters as written,
+so a message that opened with a link read the whole link out.
+
 ### When a message counts as read
 
 Moving through the list never marks anything. You can arrow through a folder,
