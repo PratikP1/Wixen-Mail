@@ -2583,7 +2583,7 @@ const RULE_ACTIONS: &[(&str, &str)] = &[
 
 /// The words for a stored action, or the stored name when it is not one of
 /// these, so a rule written by a later version is shown rather than blanked.
-fn shown_action(stored: &str) -> &str {
+pub fn shown_action(stored: &str) -> &str {
     RULE_ACTIONS
         .iter()
         .find(|(name, _)| *name == stored)
@@ -2591,11 +2591,34 @@ fn shown_action(stored: &str) -> &str {
 }
 
 /// The stored name for what a person picked.
-fn stored_action(shown: &str) -> String {
+pub fn stored_action(shown: &str) -> String {
     RULE_ACTIONS
         .iter()
         .find(|(_, offered)| *offered == shown)
         .map_or_else(|| shown.to_string(), |(name, _)| (*name).to_string())
+}
+
+/// The label on the value box, given the words showing in the Action list.
+///
+/// One box serves every action that carries a value, and "Action Value"
+/// beside a phrase somebody is about to hear at the start of every matching
+/// row says nothing about what to type (#62). Asked of the words rather than
+/// of a stored name, for the reason [`the_pattern_box_asks_for_something`]
+/// gives. The accessible name follows the label, through
+/// [`crate::presentation::accessibility::names::name_from_label`].
+pub fn the_value_label_for(_action_words: &str) -> &'static str {
+    "Action &Value:"
+}
+
+/// What stops a rule being saved, given the words showing in the Action
+/// list and what is in the value box, or nothing when it may be saved.
+///
+/// Say this first needs its phrase, and one no longer than
+/// [`SAY_FIRST_LIMIT`] characters, because the reader of a stored rule
+/// refuses both and a rule that saved and then never ran is the failure
+/// nobody reports. Said here, where the person can still type.
+pub fn what_stops_the_rule_being_saved(_action_words: &str, _value: &str) -> Option<String> {
+    None
 }
 
 /// Whether the Pattern box has anything to ask for, given the words showing in
@@ -3234,8 +3257,17 @@ pub struct FilterEditWidgets {
     pub pattern_f: TextCtrl,
     pub cs_check: CheckBox,
     pub action_choice: Choice,
+    /// The label beside the value box, held so it can follow the action:
+    /// "Phrase to say first:" under Say this first (#62).
+    pub value_label: StaticText,
     pub action_value_f: TextCtrl,
     pub en_check: CheckBox,
+    /// Whether a match plays the sound scheme's
+    /// [`crate::presentation::accessibility::feedback::Event::RuleMatched`]
+    /// (#62). Offered for any action. Which channels the event reaches, the
+    /// sound among them, is the event's own row on the Feedback tab of
+    /// Settings; this box says whether the event fires for this rule at all.
+    pub sound_check: CheckBox,
 }
 
 /// Build the Add/Edit Filter Rule dialog without showing it.
@@ -3266,7 +3298,8 @@ pub fn build_filter_edit_dialog(
     fields.add_growable_col(1, 1);
 
     // Accelerators: N(Name), F(Field), T(Type), P(Pattern), C(Case),
-    //   A(Action), V(Value), E(Enabled), all first letters
+    //   A(Action), V(Value), E(Enabled), all first letters; and S for the
+    //   sound box, since P is the pattern's.
     let name_f = add_field(&dlg, &fields, "Rule &Name:");
 
     let field_label = StaticText::builder(&dlg)
@@ -3324,10 +3357,26 @@ pub fn build_filter_edit_dialog(
     );
     fields.add(&action_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
-    let action_value_f = add_field(&dlg, &fields, "Action &Value:");
+    // Built by hand rather than through `add_field`, because the label has
+    // to be held: it follows the action, and the box's accessible name
+    // follows the label.
+    let value_label = StaticText::builder(&dlg)
+        .with_label(the_value_label_for(""))
+        .build();
+    let action_value_f = TextCtrl::builder(&dlg).build();
+    set_accessible_name(&action_value_f, &name_from_label(the_value_label_for("")));
+    fields.add(
+        &value_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&action_value_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let en_check = add_checkbox(&dlg, &fields, "&Enabled");
     en_check.set_value(true);
+
+    let sound_check = add_checkbox(&dlg, &fields, "Play a &sound when this rule matches");
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -3428,8 +3477,10 @@ pub fn build_filter_edit_dialog(
         pattern_f,
         cs_check,
         action_choice,
+        value_label,
         action_value_f,
         en_check,
+        sound_check,
     }
 }
 
@@ -3457,8 +3508,10 @@ fn show_filter_edit(
         pattern_f,
         cs_check,
         action_choice,
+        value_label: _,
         action_value_f,
         en_check,
+        sound_check,
     } = build_filter_edit_dialog(parent, existing, palette);
 
     // Read first, then destroy: the fields belong to the dialog.
@@ -3488,7 +3541,7 @@ fn show_filter_edit(
             action_type: stored_action(&get_choice_string(&action_choice).unwrap_or_default()),
             action_value: action_value_f.get_value(),
             enabled: en_check.get_value(),
-            plays_a_sound: existing.is_some_and(|r| r.plays_a_sound),
+            plays_a_sound: sound_check.get_value(),
         })
     } else {
         None

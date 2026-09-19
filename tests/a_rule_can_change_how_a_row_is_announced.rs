@@ -54,7 +54,12 @@ use wixen_mail::presentation::message_rows::{cell_text, conversation_cell_text};
 use wixen_mail::presentation::ui_types::MessageItem;
 use wixen_mail::presentation::view_state::Showing;
 use wixen_mail::presentation::virtual_rows::{self, Listed};
+use wixen_mail::presentation::wx_managers::{
+    self, FilterRule, build_filter_edit_dialog, the_value_label_for,
+    what_stops_the_rule_being_saved,
+};
 use wixen_mail::service::safety::Verdict;
+use wxdragon::prelude::*;
 
 // ── The fixture ─────────────────────────────────────────────────────────────
 
@@ -854,4 +859,222 @@ fn test_the_sound_reading_complains_when_the_signal_is_per_folder_or_unguarded_o
          a11y.signal(FeedbackEvent::NewMail, \"\");\n        }",
     );
     assert!(the_sound_plays_once_per_check(&before_the_mail).is_err());
+}
+
+// ── The editor ──────────────────────────────────────────────────────────────
+
+/// The seven actions the editor offers, in the words somebody hears, in
+/// the order the list gives them: the six that were there and Say this
+/// first last.
+const THE_ACTIONS_OFFERED: [&str; 7] = [
+    "Mark as read",
+    "Mark as unread",
+    "Flag it",
+    "Delete it",
+    "Move to a folder",
+    "Add a label",
+    "Say this first",
+];
+
+#[test]
+fn test_the_value_box_is_called_the_phrase_under_say_this_first_and_the_value_otherwise() {
+    assert_eq!(
+        the_value_label_for("Say this first"),
+        "Phrase to say &first:"
+    );
+    for other in THE_ACTIONS_OFFERED
+        .iter()
+        .filter(|words| **words != "Say this first")
+    {
+        assert_eq!(the_value_label_for(other), "Action &Value:", "{other}");
+    }
+    assert_eq!(
+        the_value_label_for(""),
+        "Action &Value:",
+        "nothing chosen yet"
+    );
+}
+
+#[test]
+fn test_say_this_first_cannot_be_saved_without_a_phrase_or_with_one_over_the_bound() {
+    assert!(what_stops_the_rule_being_saved("Say this first", "").is_some());
+    assert!(what_stops_the_rule_being_saved("Say this first", "   ").is_some());
+    assert!(
+        what_stops_the_rule_being_saved("Say this first", &"x".repeat(SAY_FIRST_LIMIT + 1))
+            .is_some()
+    );
+    assert_eq!(
+        what_stops_the_rule_being_saved("Say this first", &"x".repeat(SAY_FIRST_LIMIT)),
+        None
+    );
+    assert_eq!(
+        what_stops_the_rule_being_saved("Say this first", "Urgent"),
+        None
+    );
+    // The other actions keep their value optional, as they were.
+    assert_eq!(what_stops_the_rule_being_saved("Mark as read", ""), None);
+    assert_eq!(
+        what_stops_the_rule_being_saved("Move to a folder", ""),
+        None
+    );
+}
+
+/// A stored rule the editor can be opened on.
+fn a_stored_editor_rule(action_type: &str, value: &str, plays_a_sound: bool) -> FilterRule {
+    FilterRule {
+        id: "stored".to_string(),
+        name: "The roof".to_string(),
+        field: "subject".to_string(),
+        match_type: "contains".to_string(),
+        pattern: "roof".to_string(),
+        case_sensitive: false,
+        action_type: action_type.to_string(),
+        action_value: value.to_string(),
+        enabled: true,
+        plays_a_sound,
+    }
+}
+
+/// Every string a `Choice` is offering, in order.
+fn offered(choice: &Choice) -> Vec<String> {
+    (0..choice.get_count())
+        .filter_map(|i| choice.get_string(i))
+        .collect()
+}
+
+/// One check that failed: what it was about, and what was wrong with it.
+type Wrong = Vec<(String, String)>;
+
+/// The editor, built and read back: the seven actions in order, the sound
+/// box carrying its label on the control, a rule with the sound opening
+/// with the box ticked and one without opening with it clear, a Say this
+/// first rule opening with its phrase in a box called the phrase, and any
+/// other rule opening with the box called the value.
+///
+/// One `wxdragon::main` per process, as `tests/manager_dialog_labels.rs`
+/// says, so every reading that needs a window shares this one.
+fn what_is_wrong_with_the_editor(wrong: &mut Wrong) {
+    let frame = Frame::builder().build();
+    let parent = Dialog::builder(&frame, "Filter Manager").build();
+
+    let fresh = build_filter_edit_dialog(&parent, None, None);
+    let actions = offered(&fresh.action_choice);
+    if actions != THE_ACTIONS_OFFERED {
+        wrong.push((
+            "the Action list".to_string(),
+            format!("offers {actions:?}, not the seven in order"),
+        ));
+    }
+    let label = fresh.sound_check.get_label().unwrap_or_default();
+    if label != "Play a &sound when this rule matches" {
+        wrong.push((
+            "the sound box".to_string(),
+            format!("carries the label {label:?} on the control, so UI Automation names it that"),
+        ));
+    }
+    if fresh.sound_check.get_value() {
+        wrong.push((
+            "the sound box on a new rule".to_string(),
+            "opens ticked, so a sound is on unless somebody turns it off".to_string(),
+        ));
+    }
+    if fresh.action_value_f.get_accessible().is_none() {
+        wrong.push((
+            "the value box".to_string(),
+            "carries no accessible object, so NVDA reads an unnamed edit".to_string(),
+        ));
+    }
+    fresh.dialog.destroy();
+
+    let sounding = build_filter_edit_dialog(
+        &parent,
+        Some(&a_stored_editor_rule("mark_as_read", "", true)),
+        None,
+    );
+    if !sounding.sound_check.get_value() {
+        wrong.push((
+            "a stored rule with the sound".to_string(),
+            "opens with the box clear, so pressing OK turns its sound off".to_string(),
+        ));
+    }
+    let label = sounding.value_label.get_label();
+    if label != "Action &Value:" {
+        wrong.push((
+            "the value box's label under Mark as read".to_string(),
+            format!("reads {label:?}"),
+        ));
+    }
+    sounding.dialog.destroy();
+
+    let saying = build_filter_edit_dialog(
+        &parent,
+        Some(&a_stored_editor_rule("say_first", "Urgent", false)),
+        None,
+    );
+    let chosen = saying.action_choice.get_string_selection();
+    if chosen.as_deref() != Some("Say this first") {
+        wrong.push((
+            "a stored Say this first rule".to_string(),
+            format!("opens with {chosen:?} selected, so OK would rewrite its action"),
+        ));
+    }
+    let phrase = saying.action_value_f.get_value();
+    if phrase != "Urgent" {
+        wrong.push((
+            "a stored Say this first rule's phrase".to_string(),
+            format!("opens as {phrase:?}"),
+        ));
+    }
+    let label = saying.value_label.get_label();
+    if label != "Phrase to say &first:" {
+        wrong.push((
+            "the value box's label under Say this first".to_string(),
+            format!("reads {label:?}, which says nothing about what to type"),
+        ));
+    }
+    if saying.sound_check.get_value() {
+        wrong.push((
+            "a stored rule without the sound".to_string(),
+            "opens with the box ticked".to_string(),
+        ));
+    }
+    saying.dialog.destroy();
+}
+
+#[test]
+fn test_the_editor_offers_the_action_and_the_sound_and_reads_a_stored_rule_back() {
+    let wrong: std::sync::Arc<std::sync::Mutex<Wrong>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let result = {
+        let wrong = wrong.clone();
+        wxdragon::main(move |app| {
+            {
+                let mut wrong = wrong.lock().unwrap();
+                what_is_wrong_with_the_editor(&mut wrong);
+            }
+            wxdragon::call_after(Box::new(move || {
+                app.exit_main_loop();
+            }));
+        })
+    };
+    assert!(result.is_ok(), "wxdragon::main returned {result:?}");
+    let wrong = wrong.lock().unwrap();
+    assert!(
+        wrong.is_empty(),
+        "{} thing(s) wrong in the rule editor:\n{}",
+        wrong.len(),
+        wrong
+            .iter()
+            .map(|(what, why)| format!("  {what}: {why}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+#[test]
+fn test_the_stored_action_and_its_words_round_trip_for_say_this_first() {
+    // The list offers words and a rule stores names; the pair for the new
+    // action is in RULE_ACTIONS beside the six, so both directions hold.
+    assert_eq!(wx_managers::shown_action("say_first"), "Say this first");
+    assert_eq!(wx_managers::stored_action("Say this first"), "say_first");
 }
