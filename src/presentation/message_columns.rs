@@ -160,8 +160,26 @@ impl MessageColumn {
 
     /// Whether the heading is worth saying in front of the cell's text when
     /// a row is read on request (#26).
+    ///
+    /// Six cells say what their column is in their own text: "Unread", "Has
+    /// attachment", "Flagged", "Answered", "Draft" and a safety verdict such
+    /// as "Phishing", each empty when there is nothing to say. Read as
+    /// "Unread, Unread" the heading is the same word twice, so
+    /// [`crate::presentation::message_rows::the_row_with_its_headings`]
+    /// says those six alone and every other cell as "heading, text". A
+    /// column added later lands in the second arm and is heard with its
+    /// heading, which is the safe side; the target that reads a row on
+    /// request walks [`Self::ALL`] so the choice is made on purpose.
     pub fn heading_is_worth_saying(self) -> bool {
-        true
+        !matches!(
+            self,
+            MessageColumn::Unread
+                | MessageColumn::Attachment
+                | MessageColumn::Flagged
+                | MessageColumn::Answered
+                | MessageColumn::Draft
+                | MessageColumn::Safety
+        )
     }
 
     /// The identifier used when the layout is stored.

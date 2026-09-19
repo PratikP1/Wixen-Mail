@@ -111,6 +111,21 @@ fn test_an_empty_cell_is_left_out_altogether() {
 }
 
 #[test]
+fn test_a_cell_that_already_ends_a_sentence_is_not_given_a_second_full_stop() {
+    // A snippet is a message's first line and often ends one; "in.." is
+    // heard as a stutter. Found by the message-row composition on the day
+    // the rule was written.
+    let row = cells(&[
+        (MessageColumn::Subject, "Any questions?"),
+        (MessageColumn::Snippet, "The numbers are in."),
+    ]);
+    assert_eq!(
+        the_row_with_its_headings(&row),
+        "Subject, Any questions? Snippet, The numbers are in."
+    );
+}
+
+#[test]
 fn test_no_cells_read_as_nothing() {
     assert_eq!(the_row_with_its_headings(&[]), "");
     let all_empty = cells(&[(MessageColumn::Subject, ""), (MessageColumn::Snippet, "")]);
