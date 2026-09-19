@@ -4254,12 +4254,36 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
     focus path, the focused item read back for four steps (11-06.2).
   - [S] That the newest message is read once on arrival, and not twice, is his ear's.
 
-- [ ] **LIST-21**: A move or a delete within an account completes on this computer first and
+- [x] **LIST-21**: A move or a delete within an account completes on this computer first and
   the server is brought into line afterwards: the row leaves at once, the cursor lands by
   the removal rule, the success is shown and not spoken, the change is recorded as made here
   and not yet at the server, told to the server in the background and at the next check
   before any folder of the account is read, replayed after a restart, undone here and said
   when the server refuses; Enter on a folder in the Move dialog is the Move.
+  **Ticked 2026-09-19 by 11-07.1, merged at `fa20d04a`, on its `[D]` line:** the
+  `moves_waiting` table on open, one row per message keeping the folder and number the
+  server still has it under, kept, listed in the order asked, stopped, read back through a
+  second connection, eleven cases; `application::moves_waiting` with `what_happens_here`
+  (the row into the folder under a reserved number and the marker, or marked deleted, or a
+  copy made with its text, and the row kept waiting), `undo_here` (one write putting the row
+  where the server holds it, or dropping a copy), `what_a_replay_answered` over
+  `why_the_push_failed` (done, already done when the destination holds the identifier,
+  refused with the server's words, not reached) and the sentences worded by `server_delete`,
+  twenty-seven cases, the replay held against the loopback servers for a move, a delete to
+  the trash, a delete outright and a copy answering all four ways, two moves in the order
+  asked, and the real folder read over a moved row leaving it alone; the check and the
+  download replaying before their first listing and ending the account's check when the
+  server was not reached; `complete_here_then_tell_the_server` in the window taking the row
+  out, showing the line and pushing once on the account's session, the move arm and the
+  delete arm both through it with the gate met at the key, `MovePutBack` undoing and speaking
+  at High; Enter on a folder ending the dialog with `ID_OK` through the tree's activation,
+  measured first on a built tree where Enter on a folder with children raised the activation
+  and expanded nothing; fifteen readings and companions in
+  `tests/a_move_completes_here_first.rs`; six records measured. The rows a folder's sync
+  must not forget need no subtraction: the marker the cache's own move sets keeps them out
+  of the comparison and the forgetting, a case holds it on the real sync, and the summary says
+  so. The cross-account half is 11-07.2's, as this line already says. The `[S]` lines are
+  untouched and are ledger 546.
   - Evidence: `spawn_folder_move` (`wx_app.rs:19364` at `4d9f14bf`, "the row goes once the
     server has agreed and not before") on `the_session_at(&account)`, the row leaving at
     `:19886` and the sentence after; the delete's reason at `:4950-4956`; the shape for a
@@ -4453,7 +4477,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-18 | Phase 11 | Pending, 11-11.3 |
 | LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
-| LIST-21 | Phase 11 | Pending, 11-07.1 |
+| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Pending, 11-07.2 |
 
 **Coverage:**
