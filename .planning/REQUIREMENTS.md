@@ -4461,7 +4461,7 @@ and before 11-11, so 11-11.1's activation covers a made link).**
   - [S] Whether his split threads become one after the next check, and whether a
     conversation here matches Gmail's, are his account's (ledger 549).
 
-- [ ] **LIST-24**: An address written out in a plain-text message, in the quoted part of a
+- [x] **LIST-24**: An address written out in a plain-text message, in the quoted part of a
   reply, in a note shown as a page and in an event or task description read aloud is a
   link, made by one recogniser that passes every link through the sanitiser's address rule;
   what is not an address is left alone; a description read aloud says a link to its host;
@@ -4491,7 +4491,18 @@ and before 11-11, so 11-11.1's activation covers a made link).**
     `tel:`, a port, a space, a fragment, `sms:`, `javascript:`) with a case per shape and a
     refused link's words followed by "(link not opened here: {scheme})"; a target holding the
     FanFiction shape, a reply's quoted text, a description spoken, a note as a page, the
-    snippet still bare; five guard records (11-10.1).
+    snippet still bare; five guard records (11-10.1). Amended 2026-09-19 by 11-10.1 as
+    landed: the snippet asks the module's shape rule rather than keeping a copy; the
+    cleaner already admitted `tel:` and `sms:` and dropped `javascript:` on its own, so
+    `tel:` joins `SAFE_URL_SCHEMES` and the note is a pass over the cleaned markup on the
+    reading path only, asking the gate of every href the cleaner kept, "the address" as the
+    reason when the scheme is one this opens; a `javascript:` link keeps its words with no
+    note since the cleaner drops it first; `as_markup` links text events outside a code
+    block, a link and a picture, a code span being a code event and never text; `spoken`
+    says the host in the passage returned as written and in every piece; six records, three
+    on the module, one each on the renderer's plain arm, the note's code block and `tel:`,
+    with the moved held-back-count record rewritten and a profile-reading record measured
+    under a fresh profile (11-10.1, tasks 1 and 2; tests/an_address_written_out_is_a_link.rs).
   - [S] The chapter address in NVDA's link list on the tester's message is his ear's.
 
 **Added 2026-09-19, in the afternoon: one more, from an issue filed that afternoon, as an
@@ -4661,7 +4672,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
-| LIST-24 | Phase 11 | Pending, 11-10.1 |
+| LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
 | LIST-25 | Phase 11 | Pending, 11-11.0 |
 
 **Coverage:**
