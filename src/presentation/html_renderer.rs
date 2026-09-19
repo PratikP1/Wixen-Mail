@@ -513,12 +513,29 @@ impl HtmlRenderer {
     /// so here. [`Self::sanitize_html`] does not, because it also cleans a
     /// message on its way out, and the note is for the person reading, not
     /// for the person being written to.
-    pub fn sanitize_and_count_held_back(&self, html: &str) -> (String, usize) {
+    pub fn sanitize_and_count_held_back(
+        &self,
+        html: &str,
+    ) -> (String, crate::application::pictures::HeldBack) {
         if self.plain_text_only {
-            return (self.sanitize_html(html), 0);
+            return (
+                self.sanitize_html(html),
+                crate::application::pictures::HeldBack::default(),
+            );
         }
         let cleaned = say_which_links_are_not_opened_here(&cleaner().clean(html).to_string());
         self.hold_back_what_would_be_fetched(&cleaned)
+    }
+
+    /// The same renderer, told what a picture nobody described is read as.
+    ///
+    /// A stub that changes nothing, so every case that expects the word is
+    /// red until the renderer holds the answer.
+    pub fn describing_undescribed_pictures_as(
+        self,
+        _read_as: crate::application::describing_pictures::UndescribedPicture,
+    ) -> Self {
+        self
     }
 
     /// Convert HTML to accessible plain text
@@ -566,8 +583,13 @@ impl HtmlRenderer {
     /// Returns the markup and how many were held back, because the count is
     /// what the sentence above the message reports and counting twice would be
     /// two answers to one question.
-    fn hold_back_what_would_be_fetched(&self, cleaned: &str) -> (String, usize) {
-        use crate::application::pictures::{Showing, what_stands_in_for_it, what_to_do_about};
+    fn hold_back_what_would_be_fetched(
+        &self,
+        cleaned: &str,
+    ) -> (String, crate::application::pictures::HeldBack) {
+        use crate::application::pictures::{
+            HeldBack, Showing, what_stands_in_for_it, what_to_do_about,
+        };
 
         let mut held_back = 0;
         let out = img_tag_whole_re()
@@ -595,7 +617,13 @@ impl HtmlRenderer {
                 }
             })
             .into_owned();
-        (out, held_back)
+        (
+            out,
+            HeldBack {
+                by_the_switch: held_back,
+                as_beacons: 0,
+            },
+        )
     }
 
     /// Put words on a picture the sender marked decorative, if this reader
@@ -662,18 +690,14 @@ impl HtmlRenderer {
     /// Its own paragraph rather than a heading. A heading here would land
     /// between the message's heading and its body and give a screen reader
     /// user navigating by `H` a stop that is not a message.
-    fn what_a_reader_is_told_was_held_back(&self, held_back: usize) -> String {
+    fn what_a_reader_is_told_was_held_back(
+        &self,
+        held_back: crate::application::pictures::HeldBack,
+    ) -> String {
         use crate::application::pictures::WhoseMessage;
         if self.whose == WhoseMessage::BeingWrittenHere {
             return String::new();
         }
-        // The two counts, with the beacons at nought until the shown arm
-        // counts them (11-11's task 2); the name is kept so the guard record
-        // on the line below still names its place.
-        let held_back = crate::application::pictures::HeldBack {
-            by_the_switch: held_back,
-            as_beacons: 0,
-        };
         let said = crate::application::pictures::what_was_held_back(held_back);
         if said.is_empty() {
             return String::new();
@@ -1034,7 +1058,11 @@ mod tests {
         let (shown, held_back) =
             HtmlRenderer::with_fetching(Fetching::Blocked).sanitize_and_count_held_back(&stored);
 
-        assert_eq!(held_back, 0, "a carried picture was held back: {shown}");
+        assert_eq!(
+            held_back,
+            crate::application::pictures::HeldBack::default(),
+            "a carried picture was held back: {shown}"
+        );
         assert!(shown.contains("data:image/png;base64,"), "{shown}");
         assert!(shown.contains("Company logo"), "{shown}");
     }
@@ -1077,14 +1105,34 @@ mod tests {
     #[test]
     fn test_a_tracking_pixel_is_not_fetched() {
         // One invisible pixel is the whole of how mail tracking works. This is
-        // the test that says the default protects against it.
-        use crate::application::pictures::Fetching;
-        let (shown, held_back) = HtmlRenderer::with_fetching(Fetching::Blocked)
-            .sanitize_and_count_held_back(
-                r#"<p>Hello</p><img src="https://tracker.example/pixel.gif" width="1" height="1">"#,
-            );
+        // the test that says the default protects against it, and what the
+        // default is changed on 2026-09-19 (#28): until then every remote
+        // picture was held back by the switch, and this test passed
+        // `Fetching::Blocked` by hand; since then the switch is off by default
+        // and what protects a reader is the beacon rule in
+        // `application::pictures`, which reads the size the sender declared.
+        // So the renderer is built from the default the settings ship with,
+        // and the pixel is held back as a beacon, counted as one, and not as
+        // the switch's. The switch is the second line of defence: on, it
+        // holds this back too, with the tracker the size of a photograph that
+        // the beacon rule cannot tell from one.
+        use crate::application::pictures::{Fetching, HeldBack};
+        let shipped = Fetching::from_setting(
+            crate::data::config::AppConfig::default().hold_back_remote_pictures,
+        );
+        assert_eq!(shipped, Fetching::Allowed, "the default is not to fetch");
+        let (shown, held_back) = HtmlRenderer::with_fetching(shipped).sanitize_and_count_held_back(
+            r#"<p>Hello</p><img src="https://tracker.example/pixel.gif" width="1" height="1">"#,
+        );
 
-        assert_eq!(held_back, 1, "nothing was held back: {shown}");
+        assert_eq!(
+            held_back,
+            HeldBack {
+                by_the_switch: 0,
+                as_beacons: 1
+            },
+            "the pixel was not held back as a beacon: {shown}"
+        );
         assert!(
             !shown.contains("tracker.example"),
             "the address survived, so the browser will still fetch it: {shown}"
@@ -1112,7 +1160,7 @@ mod tests {
                 r#"<img src="https://cdn.example/x.jpg" alt="Our spring range">"#,
             );
 
-        assert_eq!(held_back, 0);
+        assert_eq!(held_back, crate::application::pictures::HeldBack::default());
         assert!(shown.contains("cdn.example"), "{shown}");
     }
 
@@ -1740,7 +1788,7 @@ mod tests {
                     r#"<img src="https://cdn.example/pixel.gif" alt="">"#,
                 );
 
-        assert_eq!(held_back, 1);
+        assert_eq!(held_back.by_the_switch, 1);
         assert!(shown.contains(&what_stands_in_for_it("")), "{shown}");
         assert!(
             !shown.contains(WHAT_A_DECORATIVE_PICTURE_SAYS),

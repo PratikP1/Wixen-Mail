@@ -6,6 +6,9 @@
 
 use crate::application::autosave::AutosaveInterval;
 use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
+use crate::application::describing_pictures::{
+    UNDESCRIBED_PICTURES_LABEL, UndescribedPicture, WHAT_THE_CHOICE_LEAVES_ALONE,
+};
 use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::reading_habits::{
     CopyLines, MarkRead, WHAT_MARK_READ_COUNTS_FROM, WorkingDay,
@@ -1460,6 +1463,9 @@ pub struct ReadingTabControls {
     deleting_a_conversation_row: Choice,
     hold_back_remote_pictures: CheckBox,
     announce_decorative_pictures: CheckBox,
+    /// Public because a test builds this dialog and reads the choice back
+    /// through `read_settings` the way OK does (#28).
+    pub undescribed_pictures_read_as: Choice,
     read_receipts: Choice,
     read_messages_as: Choice,
     date_style: Choice,
@@ -1882,6 +1888,35 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     );
     read_sec.add(&announce_decorative_pictures, 0, SizerFlag::All, 4);
 
+    // What a picture nobody described is read as (#28). Under the two
+    // picture boxes, because it is the third thing a picture does when a
+    // message is read here. A stub for now: built from the three labels with
+    // the first selected whatever was stored, and read back by nothing.
+    let undescribed_labels: Vec<&str> = UndescribedPicture::ALL
+        .iter()
+        .map(|choice| choice.label())
+        .collect();
+    let undescribed_pictures_read_as = labelled_choice(
+        panel,
+        &read_sec,
+        UNDESCRIBED_PICTURES_LABEL,
+        UNDESCRIBED_PICTURES_LABEL
+            .replace('&', "")
+            .trim_end_matches(':'),
+        &undescribed_labels,
+        0,
+    );
+    let undescribed_leaves_alone = StaticText::builder(panel)
+        .with_label(WHAT_THE_CHOICE_LEAVES_ALONE)
+        .build();
+    set_accessible_name(&undescribed_leaves_alone, WHAT_THE_CHOICE_LEAVES_ALONE);
+    read_sec.add(
+        &undescribed_leaves_alone,
+        0,
+        SizerFlag::Expand | SizerFlag::All,
+        4,
+    );
+
     let images_note = StaticText::builder(panel)
         .with_label(REMOTE_IMAGES_ARE_FETCHED)
         .build();
@@ -1992,6 +2027,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
         announce_decorative_pictures,
+        undescribed_pictures_read_as,
     }
 }
 

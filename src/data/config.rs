@@ -133,6 +133,22 @@ pub struct AppConfig {
     /// is recorded in `.planning/WINDOWS.md`.
     #[serde(default = "default_true")]
     pub announce_decorative_pictures: bool,
+    /// What a picture nobody described is read as: "nothing", "image" or
+    /// "photo".
+    ///
+    /// Offered on the Reading tab under the two picture boxes, read by the
+    /// reading path of `presentation::html_renderer` and by a note read
+    /// aloud through `application::long_text`, as
+    /// `describing_pictures::UndescribedPicture`. The default is nothing, so
+    /// an undescribed picture is passed over the way a decorative one is,
+    /// by the tester's decision in #28; an absent key answers the same, and
+    /// so does a garbled value, because either of the two words written for
+    /// a file nobody chose would be a description this program invented.
+    ///
+    /// A description the sender wrote is never touched by this, and nothing
+    /// written under it reaches a message on its way out.
+    #[serde(default = "default_undescribed_pictures_read_as")]
+    pub undescribed_pictures_read_as: String,
     /// The typeface the item lists are drawn in.
     ///
     /// Empty means whatever Windows uses, which is the default and is stored
@@ -590,6 +606,10 @@ fn default_announce_while_fetching() -> String {
     crate::application::what_is_said_while_fetching::HowMuchToSay::default().as_stored()
 }
 
+fn default_undescribed_pictures_read_as() -> String {
+    crate::application::describing_pictures::UndescribedPicture::default().as_stored()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -740,6 +760,7 @@ impl Default for AppConfig {
             mark_read_reaches_subfolders: default_true(),
             hold_back_remote_pictures: false,
             announce_decorative_pictures: default_true(),
+            undescribed_pictures_read_as: default_undescribed_pictures_read_as(),
             font_family: String::new(),
             check_default_programs_at_startup: false,
             keep_running_in_the_tray: false,
@@ -1711,6 +1732,7 @@ mod permission_tests {
             "unread_on_a_parent",
             "announce_decorative_pictures",
             "hold_back_remote_pictures",
+            "undescribed_pictures_read_as",
             "undo_send_hold_seconds",
             "calendar_view",
             "message_text_kept",
@@ -1792,6 +1814,18 @@ mod permission_tests {
             "the struct's default and the field's absent answer disagree, so a \
              settings screen built over the defaults would show one answer and \
              an older file would read the other"
+        );
+        assert_eq!(
+            parsed.undescribed_pictures_read_as, "nothing",
+            "an absent key answering a word would write that word on every \
+             undescribed picture for everybody upgrading, which is a description \
+             this program invented"
+        );
+        assert_eq!(
+            crate::application::describing_pictures::UndescribedPicture::from_stored(
+                &parsed.undescribed_pictures_read_as
+            ),
+            crate::application::describing_pictures::UndescribedPicture::Nothing
         );
         assert_eq!(
             parsed.message_text_kept, "all",

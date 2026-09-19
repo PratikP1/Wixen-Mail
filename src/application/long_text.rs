@@ -337,6 +337,17 @@ pub fn spoken(written: &str) -> String {
         .join("\n")
 }
 
+/// The same, told outright what a picture nobody described is read as.
+///
+/// A stub that ignores the answer, so the three cases are red until the
+/// reader takes it.
+pub fn spoken_with_pictures_read_as(
+    written: &str,
+    _read_as: crate::application::describing_pictures::UndescribedPicture,
+) -> String {
+    spoken(written)
+}
+
 /// The words with each address written out in them said as a link to its
 /// host: the one rule, in [`crate::application::links_in_text::spoken`].
 fn with_addresses_said(text: &str) -> String {
@@ -1264,22 +1275,45 @@ After",
     }
 
     #[test]
-    fn test_an_image_with_no_words_of_its_own_is_still_reported() {
-        // The sender left no alt text. Dropping it silently means somebody is
-        // never told a picture was there, which is the gap guardrail 9 is
-        // about: an upstream failure absorbed rather than shown.
-        let said = spoken(
-            "Before
+    fn test_an_image_with_no_words_of_its_own_is_read_as_the_setting_says() {
+        // The sender left no alt text. Until 2026-09-19 this said "image with
+        // no description" whatever anybody chose; since #28 it follows the
+        // same choice a message's pictures follow, on the Reading tab: passed
+        // over under the default, so a note is not made longer to listen to
+        // by a picture nobody described, or one word saying a picture is
+        // there. Guardrail 9 is kept the other way round from before: the
+        // gap is said as the reader chose to hear it, and never filled with
+        // a word the reader did not choose.
+        use crate::application::describing_pictures::UndescribedPicture;
+        let note = "Before
 
 ![](chart.png)
 
-After",
+After";
+
+        let passed_over = spoken_with_pictures_read_as(note, UndescribedPicture::Nothing);
+        assert_eq!(
+            passed_over, "Before\nAfter",
+            "under nothing the picture was said, or the words round it moved: {passed_over}"
+        );
+        assert_eq!(
+            spoken_with_pictures_read_as(note, UndescribedPicture::Image),
+            "Before\nimage\nAfter"
+        );
+        assert_eq!(
+            spoken_with_pictures_read_as(note, UndescribedPicture::Photo),
+            "Before\nphoto\nAfter"
         );
 
-        assert!(
-            said.contains("image with no description"),
-            "an image with no alt text vanished: {said}"
-        );
+        // A picture the sender described is untouched by the choice.
+        let described = "Before\n\n![Sales by quarter](chart.png)\n\nAfter";
+        for read_as in UndescribedPicture::ALL {
+            assert_eq!(
+                spoken_with_pictures_read_as(described, read_as),
+                "Before\nimage, Sales by quarter\nAfter",
+                "under {read_as:?} a described picture changed"
+            );
+        }
     }
 
     #[test]
