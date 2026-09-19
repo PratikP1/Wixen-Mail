@@ -1030,8 +1030,14 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
         let Ok(Some(message)) = cache.get_message(*id) else {
             continue;
         };
-        let outcome =
-            crate::application::filters::settle(&filtering.rules.evaluate_message(&message));
+        let matched: Vec<_> = filtering.rules.rules_matching(&message).collect();
+        // Counted before the outcome is settled, because a match is a match
+        // whatever the rules then do with the message: a rule that plays a
+        // sound and only marks a message read still sounded (#62). One per
+        // message per such rule; the window plays the sound once per check.
+        done.matches_with_a_sound += matched.iter().filter(|rule| rule.plays_a_sound).count();
+        let actions: Vec<_> = matched.iter().map(|rule| rule.action.clone()).collect();
+        let outcome = crate::application::filters::settle(&actions);
         if outcome.is_nothing() {
             continue;
         }
@@ -1090,6 +1096,13 @@ fn carry_out(
     }
     for tag in &outcome.tags {
         cache.add_tag_to_message(id, tag)?;
+    }
+    // Kept on the message, where every listing reads it (#62). The rules
+    // run once, when the mail arrives, so the phrase stays whatever the
+    // rules would say about the message later; a message that arrived
+    // before the rule was written has no phrase.
+    if let Some(phrase) = &outcome.say_first {
+        cache.set_says_first(id, Some(phrase))?;
     }
     Ok(match outcome.move_to.is_some() {
         true => Carried::ExceptTheMove,

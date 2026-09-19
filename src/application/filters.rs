@@ -321,11 +321,24 @@ impl FilterEngine {
 
     /// Evaluate all enabled rules against a message and return matched actions
     pub fn evaluate_message(&self, message: &CachedMessage) -> Vec<FilterAction> {
-        self.rules
-            .iter()
-            .filter(|rule| rule.enabled && Self::matches(rule, message))
+        self.rules_matching(message)
             .map(|rule| rule.action.clone())
             .collect()
+    }
+
+    /// Every enabled rule that matches the message, in the order they are
+    /// held, which is the order the actions above arrive in.
+    ///
+    /// The rules themselves rather than their actions, for what a rule
+    /// carries beside its action: the check counts the matches of the rules
+    /// that play a sound (#62).
+    pub fn rules_matching<'a>(
+        &'a self,
+        message: &'a CachedMessage,
+    ) -> impl Iterator<Item = &'a FilterRule> + 'a {
+        self.rules
+            .iter()
+            .filter(move |rule| rule.enabled && Self::matches(rule, message))
     }
 
     /// Convert persisted rules into runtime rules for execution
@@ -447,6 +460,9 @@ impl FilterEngine {
             "star" => FilterAction::Star,
             "unstar" => FilterAction::Unstar,
             "delete" => FilterAction::Delete,
+            "say_first" => {
+                FilterAction::SayFirst(Self::validated_phrase(rule.action_value.as_ref())?)
+            }
             _ => return None,
         };
 
@@ -470,6 +486,18 @@ impl FilterEngine {
         } else {
             Some(value.to_string())
         }
+    }
+
+    /// A phrase to say first, trimmed like any other value and refused over
+    /// [`SAY_FIRST_LIMIT`] characters as well as empty.
+    ///
+    /// Its own bound rather than [`Self::validated_action_value`]'s none,
+    /// because a folder name or a label is read once and a phrase is heard
+    /// before every row it applies to. Characters rather than bytes, since
+    /// the bound is about what is heard.
+    pub fn validated_phrase(value: Option<&String>) -> Option<String> {
+        Self::validated_action_value(value)
+            .filter(|phrase| phrase.chars().count() <= SAY_FIRST_LIMIT)
     }
 }
 
@@ -546,7 +574,7 @@ pub fn settle(actions: &[FilterAction]) -> Outcome {
                     outcome.tags.push(tag.clone());
                 }
             }
-            FilterAction::SayFirst(_) => {}
+            FilterAction::SayFirst(phrase) => outcome.say_first = Some(phrase.clone()),
         }
     }
     outcome
