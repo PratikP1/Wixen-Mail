@@ -14,7 +14,10 @@
 //! 1. **Nothing is signalled by sound alone** unless the user has switched the
 //!    text channels off themselves. A sound with no written equivalent is
 //!    invisible to a deaf-blind user and meaningless to anyone who has not
-//!    learned it yet.
+//!    learned it yet. The one event whose words are already in the row the
+//!    cursor is on ([`Event::text_is_already_on_the_row`]) has its written
+//!    equivalent there, so for it the rule adds the status bar and never
+//!    speech.
 //! 2. **Sibling events sound different.** An earcon that cannot be told apart
 //!    from the one before it carries no information, so each event maps to its
 //!    own tone rather than to a generic "something happened".
@@ -181,8 +184,26 @@ impl Event {
     }
 
     /// Whether the event's words are already in the row the cursor is on.
+    ///
+    /// The cursor landing on a message with an attachment is such an event:
+    /// the list's Attachment column reads "Has attachment" in the row, which
+    /// a screen reader says as it says the row, so this event's own words
+    /// spoken beside it are the same word a second time (#77, the tester on
+    /// 2026-09-18). Two things read this mark. [`FeedbackSettings::the_default_for`]
+    /// leaves the words out of such an event's default, so it reaches the
+    /// tone and the status bar; and the never-sound-alone rule in
+    /// [`FeedbackSettings::channels_for`] falls back to the status bar alone
+    /// for it, never to speech and never to braille, since both ride the one
+    /// screen reader notification and either would put the word back over
+    /// the row.
+    ///
+    /// Not the conversation event. A conversation row's cells say how many
+    /// messages it holds, not the word "Conversation", so the event's words
+    /// add something there. Decided for every event by
+    /// `tests/landing_on_an_attachment_says_it_once.rs`, so a later event
+    /// whose words are on the row is added here on purpose.
     pub fn text_is_already_on_the_row(&self) -> bool {
-        false
+        matches!(self, Event::HasAttachment)
     }
 
     /// The written equivalent, used for speech, braille, and the status line.
@@ -506,14 +527,28 @@ pub struct FeedbackSettings {
 }
 
 impl Default for FeedbackSettings {
-    /// Speech, braille, and the status line on; earcons off.
+    /// Every channel on, and no event answered for by hand.
     ///
-    /// Off by default because an application that starts making noises nobody
-    /// asked for is one people switch the sounds off in, permanently, before
-    /// they ever find out which sound meant what.
+    /// The earcons were off here until 2026-09-18, for phase 6's reason: an
+    /// application that starts making noises nobody asked for is one people
+    /// switch the sounds off in, permanently, before they ever find out
+    /// which sound meant what. Pratik's decision on #77 that day turned them
+    /// on for every event, because the tester who filed it had turned them
+    /// on himself and the one thing the sounds were then doing wrong was
+    /// being a third voice for a fact the row already carried. The Feedback
+    /// tab's one box still turns them all off, and a profile that did so
+    /// before the default moved keeps them off, since `from_stored` keeps a
+    /// stored off group.
+    ///
+    /// The one event whose default is not every channel is written in
+    /// [`FeedbackSettings::the_default_for`], not here: it is the event's own
+    /// default, read wherever no answer was given for it, and not an answer
+    /// a fresh profile is born holding. A profile stored as `off=` with no
+    /// per-event group, which is the tester's own, reaches it the same way a
+    /// fresh one does.
     fn default() -> Self {
         Self {
-            disabled: [Channel::Earcon].into_iter().collect(),
+            disabled: BTreeSet::new(),
             per_event: Vec::new(),
         }
     }
@@ -579,6 +614,30 @@ impl FeedbackSettings {
         self.per_event.retain(|(e, _)| *e != event);
     }
 
+    /// What an event reaches when nobody has answered for it.
+    ///
+    /// Every channel, but for an event whose words are already in the row
+    /// the cursor is on: that one reaches the tone and the status bar and no
+    /// words, so the word is heard once, from the row (#77). Pratik's words
+    /// for it were the earcon plus the status bar and braille, no speech,
+    /// and braille is not in the set because this program has no braille
+    /// route apart from speech: a set holding [`Channel::Braille`] calls the
+    /// one screen reader notification, which is spoken. Braille added here
+    /// is the word spoken over the row again, which is what the issue exists
+    /// to stop; if the words are wanted on the display at that cost, this is
+    /// the set to add them to.
+    ///
+    /// Public because the Feedback tab paints an event nobody has answered
+    /// for from it, so the boxes show the default that is really in force
+    /// rather than four ticks for an event that reaches two channels.
+    pub fn the_default_for(event: Event) -> BTreeSet<Channel> {
+        if event.text_is_already_on_the_row() {
+            [Channel::Earcon, Channel::Visual].into_iter().collect()
+        } else {
+            Channel::ALL.into_iter().collect()
+        }
+    }
+
     /// The channels an event actually reaches.
     ///
     /// The never-sound-alone rule lives here rather than at the call sites, so
@@ -586,7 +645,7 @@ impl FeedbackSettings {
     pub fn channels_for(&self, event: Event) -> BTreeSet<Channel> {
         let chosen: BTreeSet<Channel> = match self.per_event.iter().find(|(e, _)| *e == event) {
             Some((_, channels)) => channels.clone(),
-            None => Channel::ALL.into_iter().collect(),
+            None => Self::the_default_for(event),
         };
         let mut active: BTreeSet<Channel> = chosen
             .into_iter()
@@ -596,10 +655,23 @@ impl FeedbackSettings {
         // Sound with nothing written alongside it. If any text channel is
         // available at all, add the quietest one rather than let the event go
         // out as a noise with no meaning.
+        //
+        // For an event whose words are already in the row, the only written
+        // channel that adds nothing spoken is the status bar. Speech and
+        // braille both ride the one screen reader notification, so either
+        // would say the word a second time over the row's own reading; with
+        // the status bar off too, the sound goes out alone, and the row's
+        // words are what stand beside it.
         let sound_only = !active.is_empty() && !active.iter().any(Channel::carries_text);
+        let quietest_first: &[Channel] = if event.text_is_already_on_the_row() {
+            &[Channel::Visual]
+        } else {
+            &[Channel::Braille, Channel::Visual, Channel::Speech]
+        };
         if sound_only
-            && let Some(fallback) = [Channel::Braille, Channel::Visual, Channel::Speech]
-                .into_iter()
+            && let Some(fallback) = quietest_first
+                .iter()
+                .copied()
                 .find(|c| self.is_channel_enabled(*c))
         {
             active.insert(fallback);
