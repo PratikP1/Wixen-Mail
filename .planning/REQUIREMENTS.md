@@ -4194,10 +4194,27 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
 as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-07 and before
 11-08); #85, the gate's own hazard, is FOUND-19 above.**
 
-- [ ] **LIST-20**: When the message list takes focus by Tab, F6 or a click and no row is
+- [x] **LIST-20**: When the message list takes focus by Tab, F6 or a click and no row is
   focused, the cursor lands on the remembered row for the folder or on the first row under
   the sort, selected and focused with the viewport following; nothing moves while focus is
   elsewhere; an empty list says No messages.
+  **Ticked 2026-09-19 by 11-06.2, merged at `116968fb`, on its `[D]` line:**
+  `presentation::landing_after_a_removal::where_to_land_on_arrival(remembered, len)` answers
+  nothing for an empty list, the remembered row when it is inside the rows, else the first,
+  four cases in the module and one record measured on the target;
+  `presentation::list_arrival::wire` binds the list's `SET_FOCUS`, skipped so the control's
+  own handling runs after it, and lands only when the control holds no focused item, one
+  record measured on the target; the mail list is wired once in `wx_app.rs` with `choose`
+  over the state's `selected_message_index` and `view_state::how_many_rows`, and `on_empty`
+  saying "No messages" at Normal and sending it as `Shown`, so it is said once. Held by
+  `tests/tab_from_the_tree_lands_on_the_newest_message.rs` on a built tree and list, focus
+  moved from the tree by `set_focus` four times: with nothing remembered and no row, (0, 0),
+  `choose` asked once, the focus events the list itself then row 0; with row 2 remembered,
+  (2, 2); with the cursor already on row 1, (1, 1) unchanged and `choose` not asked; a list
+  with no rows, (-1, -1) and `on_empty` once. "The remembered row for the folder" is the
+  state's index when it is inside this folder's rows, which survives a folder change, since
+  nothing but a saved search clears it and the viewport rule reads it the same way; the
+  summary says so. The `[S]` line below is untouched and is ledger 543.
   - Evidence: `MessagesLoaded` (`wx_app.rs:17745-17758` at `4d9f14bf`) moves only the
     viewport, by a stated rule against moving a screen reader's cursor while focus is in the
     tree; F6 reaches the list through `Pane::List => msg_list.set_focus()` (`:1454`, `:4407`);
@@ -4363,7 +4380,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-17 | Phase 11 | Pending, 11-09.2 |
 | LIST-18 | Phase 11 | Pending, 11-11.3 |
 | LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
-| LIST-20 | Phase 11 | Pending, 11-06.2 |
+| LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Pending, 11-07.1 |
 
 **Coverage:**
