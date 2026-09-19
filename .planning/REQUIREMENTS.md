@@ -4144,7 +4144,7 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
   - [S] Whether what silenced them after hours was the device going or something else is
     his machine's; if they stop again the log at `debug` holds the moment.
 
-- [ ] **LIST-17**: A message row's snippet is the message's first relevant words, chosen by
+- [x] **LIST-17**: A message row's snippet is the message's first relevant words, chosen by
   reading the text and not by cutting it at 200 characters: addresses dropped altogether,
   lines that are only an address or a marker skipped, recognisable opening boilerplate
   skipped, a bare greeting skipped when something follows it, quoted lines and the signature
@@ -4163,11 +4163,18 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     rather than nothing."
   - [D] `application::snippet` holds the rules as functions with a test each and
     `first_relevant_words` over lines; `snippet_of` uses it for the plain part's lines and
-    for the markup's pieces through `long_text::pieces_of_markup`; the pass is widened to
-    every stored body under a new once-only name with the old name kept; a target reads a
-    saved body's snippet back and runs the pass over an older stored snippet; the pass's
-    milliseconds over 2,000 bodies quoted (11-09.2).
-  - [S] That the rows now say the message is his ear's.
+    for the markup's pieces through `long_text::pieces_of_markup`, added beside
+    `words_of_markup`, which the search index still calls; the pass is widened to every
+    stored body under `SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS`, the older marker's row left
+    where a database has it and named in the doc rather than kept as a constant nothing
+    reads; a target reads a saved body's snippet back through the listing the window runs and
+    runs the pass over an older stored snippet; the pass's milliseconds over 2,000 bodies
+    quoted, 752 ms on 2026-09-19 with every row rewritten. Amended 2026-09-19 by 11-09.2:
+    two rules beyond the decision's list, the invisible padding of a hidden preheader
+    dropped and a line repeating the line before it said once, both from a Substack message
+    in the tester's mail; and a picture left out only when undescribed, since the reader
+    writes a described one as its words (11-09.2, tasks 1 and 2).
+  - [S] That the rows now say the message is his ear's (ledger 554).
 
 - [ ] **LIST-18**: A Markdown block marker typed with its space at the start of any line of
   the message body becomes its structure, on the first line, after a line break in a body
@@ -4592,7 +4599,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-14 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether "Delete" once and the landed row are enough by ear, and the refusal heard on a failure, are the tester's, ledger 542 |
 | LIST-15 | Phase 11 | Complete, 11-04.1 at `70d84bc5`; whether Alt+A lands on the list and NVDA says the landing in both views, and whether the reader's way back through the accelerator fires, are the tester's ear, ledger 538 |
 | LIST-16 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; the sounds heard again after a real device change, and what silenced them after hours, are the tester's machine's (ledger 553) |
-| LIST-17 | Phase 11 | Pending, 11-09.2 |
+| LIST-17 | Phase 11 | Complete, 11-09.2 at `4d9a41d2`; whether the rows now say the message is the tester's ear (ledger 554) |
 | LIST-18 | Phase 11 | Pending, 11-11.3 |
 | LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
