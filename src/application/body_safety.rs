@@ -401,6 +401,7 @@ mod tests {
                     reasons: vec![reason.to_string()],
                 },
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,

@@ -35,9 +35,19 @@
 //!
 //! [`crate::application::threading::thread_messages`] still runs, in memory,
 //! over one folder's loaded page, and still builds the parent links and depths
-//! the conversation view reads. It is untouched. What it must not be used for
-//! is a value that gets written down or compared across folders. The stored
-//! `thread_id` comes from here and only from here.
+//! the conversation view reads. What it must not be used for is a value that
+//! gets written down or compared across folders. The stored `thread_id` comes
+//! from here and only from here, and since 2026-09-19 the in-memory pass is
+//! handed it as each row's `conversation`, so the two group and name a
+//! conversation the same way and the window that looks a row's members up by
+//! the stored name finds them (#88).
+//!
+//! # The server's word
+//!
+//! On Gmail the server names the conversation itself, `X-GM-THRID`, and
+//! [`the_conversation_of`] puts that word in front of the chain's root: the
+//! conversation here is the one Gmail shows, a chain can only ever join what
+//! Gmail already joins, and [`rejoin`] never rewrites a name the server gave.
 
 /// The conversation this message belongs to.
 ///
@@ -66,6 +76,49 @@ pub fn conversation_root(message_id: &str, refs_header: Option<&str>) -> String 
         None => bare(message_id).to_string(),
     }
 }
+
+/// The conversation this message belongs to, with the server's word in front.
+///
+/// `server` is the conversation identifier the server itself gave the
+/// message, Gmail's `X-GM-THRID` as [`the_servers_name`] spells it, and when
+/// it is there it is the answer: a conversation here should be the one the
+/// provider shows the same person in its own interface, and a `References`
+/// chain can only ever join what the provider already joins. Without one,
+/// the answer is [`conversation_root`]'s, from the message alone. On every
+/// server without the extension nothing changes (#88).
+///
+/// A message whose word differs from its siblings' is its own conversation,
+/// whatever the headers say. That is what "the server's word wins" means,
+/// and it is the reading a person gets from Gmail's own client.
+pub fn the_conversation_of(
+    server: Option<&str>,
+    message_id: &str,
+    refs_header: Option<&str>,
+) -> String {
+    match server.map(str::trim).filter(|word| !word.is_empty()) {
+        Some(word) => word.to_string(),
+        None => conversation_root(message_id, refs_header),
+    }
+}
+
+/// What a server's conversation identifier is stored as.
+///
+/// `gm:` and the number, so a stored `thread_id` says where it came from and
+/// [`is_the_servers`] can tell it from a root a `References` chain named. A
+/// `Message-ID` is a local part and a host with an `@` between them; none
+/// begins this way in practice, and a stored name that did would be read as
+/// the server's, which is the one risk of spelling it in the same column.
+pub fn the_servers_name(id: u64) -> String {
+    format!("{THE_SERVERS_MARK}{id}")
+}
+
+/// Whether a stored conversation name is one a server gave.
+pub fn is_the_servers(conversation: &str) -> bool {
+    conversation.starts_with(THE_SERVERS_MARK) && conversation.len() > THE_SERVERS_MARK.len()
+}
+
+/// The spelling [`the_servers_name`] writes and [`is_the_servers`] reads.
+const THE_SERVERS_MARK: &str = "gm:";
 
 /// One identifier with any angle brackets taken off.
 ///
@@ -225,6 +278,18 @@ pub struct Rerooting {
 /// that reveals nothing, which is what the rejected batch rule did every time a
 /// smaller identifier turned up. It cannot forbid the rename that *is* the
 /// merge.
+///
+/// # The server's word, #88
+///
+/// A conversation named by the server, as [`is_the_servers`] reads it, is
+/// never rewritten: not onto a header root, however the two strings sort,
+/// and not onto another of the server's, because two conversations Gmail
+/// keeps apart are two whatever a stranger's `References` line says. So
+/// the winner is the arriving conversation when it is the server's, else the
+/// first of the server's among those found, in the store's own order, else
+/// the earliest string as before; and the conversations rewritten onto it
+/// are the header-named ones alone. On a server without the extension no
+/// name is the server's and the rule above is the whole of it.
 pub fn rejoin(
     the_arriving_conversation: &str,
     conversations_found: &[String],
@@ -247,20 +312,24 @@ pub fn rejoin(
         }
     }
 
-    let winning_root = merging
-        .iter()
-        .copied()
-        .min()
-        // `merging` always holds the arriving conversation, which the guard
-        // above has already shown is not empty, so this never answers. Written
-        // out because nothing in this crate unwraps outside a test.
-        .unwrap_or(the_arriving_conversation);
+    let the_servers_first = merging.iter().copied().find(|name| is_the_servers(name));
+    let winning_root = the_servers_first.unwrap_or_else(|| {
+        merging
+            .iter()
+            .copied()
+            .min()
+            // `merging` always holds the arriving conversation, which the guard
+            // above has already shown is not empty, so this never answers.
+            // Written out because nothing in this crate unwraps outside a test.
+            .unwrap_or(the_arriving_conversation)
+    });
 
     // Order kept from the list above, so the conversations move in the order
-    // they were named and a guard over this cannot pass or fail by luck.
+    // they were named and a guard over this cannot pass or fail by luck. A
+    // name the server gave stays where it is.
     let roots_to_rewrite: Vec<String> = merging
         .iter()
-        .filter(|root| **root != winning_root)
+        .filter(|root| **root != winning_root && !is_the_servers(root))
         .map(|root| (*root).to_string())
         .collect();
 
@@ -274,7 +343,10 @@ pub fn rejoin(
 
 #[cfg(test)]
 mod tests {
-    use super::{Rerooting, conversation_root, identifiers_worth_asking_about, rejoin};
+    use super::{
+        Rerooting, conversation_root, identifiers_worth_asking_about, is_the_servers, rejoin,
+        the_conversation_of, the_servers_name,
+    };
 
     #[test]
     fn a_message_with_no_chain_is_its_own_conversation() {
@@ -778,5 +850,117 @@ mod tests {
             ],
             "an arrival naming the conversation it is already in renamed it"
         );
+    }
+
+    // ── The server's word, #88 ───────────────────────────────────────────
+
+    #[test]
+    fn the_servers_word_names_the_conversation_over_the_chain() {
+        // The chain says a@x; Gmail says otherwise. The conversation here is
+        // the one Gmail shows, because a chain can only join what Gmail
+        // already joins and the tester's threads were split for its absence.
+        assert_eq!(
+            the_conversation_of(Some("gm:5"), "c@x", Some("a@x b@x")),
+            "gm:5"
+        );
+        assert_eq!(the_conversation_of(Some("gm:5"), "c@x", None), "gm:5");
+        // Without the word, the chain's rule, unchanged.
+        assert_eq!(the_conversation_of(None, "c@x", Some("a@x b@x")), "a@x");
+        assert_eq!(the_conversation_of(None, "c@x", None), "c@x");
+    }
+
+    #[test]
+    fn the_servers_word_is_spelled_so_a_stored_name_says_where_it_came_from() {
+        assert_eq!(
+            the_servers_name(1_278_455_344_230_334_865),
+            "gm:1278455344230334865"
+        );
+        assert!(is_the_servers(&the_servers_name(5)));
+        assert!(
+            !is_the_servers("a@x"),
+            "a chain's root read as the server's"
+        );
+        assert!(!is_the_servers(""), "nothing read as the server's");
+        assert!(
+            !is_the_servers("gm:"),
+            "the mark alone names no conversation"
+        );
+    }
+
+    #[test]
+    fn an_empty_word_from_the_server_leaves_the_chain_to_answer() {
+        // Present and empty is not a word. The chain answers as it would have.
+        assert_eq!(the_conversation_of(Some(""), "c@x", Some("a@x")), "a@x");
+        assert_eq!(the_conversation_of(Some("  "), "c@x", None), "c@x");
+    }
+
+    #[test]
+    fn the_servers_word_wins_the_merge_over_the_earliest_string() {
+        // `a@x` sorts before `gm:9`, so the earliest rule alone would settle
+        // the conversation under the header root and rename what Gmail
+        // named. The server's word wins, and the header-named conversation
+        // moves under it.
+        assert_eq!(
+            rejoin("gm:9", &["a@x".to_string()]),
+            Some(Rerooting {
+                winning_root: "gm:9".to_string(),
+                roots_to_rewrite: vec!["a@x".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn a_conversation_the_server_named_is_not_rewritten_onto_a_header_root() {
+        // T-11-98. A draft filed here carries a chain and no word from the
+        // server; its chain reaches a conversation Gmail named. The draft
+        // joins that conversation; the conversation is not renamed after
+        // the draft's root, however the two strings sort.
+        assert_eq!(
+            rejoin("a@x", &["gm:9".to_string()]),
+            Some(Rerooting {
+                winning_root: "gm:9".to_string(),
+                roots_to_rewrite: vec!["a@x".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn two_conversations_the_server_named_apart_stay_apart() {
+        // Case (e): the chain joins three conversations, two of which Gmail
+        // named apart. The arriving message's own word wins, the header-named
+        // one moves under it, and the other of Gmail's is left as Gmail had
+        // it, because the server's word is not something a stranger's
+        // `References` line can overrule.
+        assert_eq!(
+            rejoin("gm:1", &["gm:2".to_string(), "b@x".to_string()]),
+            Some(Rerooting {
+                winning_root: "gm:1".to_string(),
+                roots_to_rewrite: vec!["b@x".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn a_header_root_between_two_of_the_servers_conversations_joins_the_first_found() {
+        // A message with no word of its own whose chain reaches two of
+        // Gmail's conversations cannot join both. It joins the first the
+        // store found, in the store's own order, and neither of Gmail's is
+        // renamed or joined to the other.
+        assert_eq!(
+            rejoin("z@x", &["gm:2".to_string(), "gm:1".to_string()]),
+            Some(Rerooting {
+                winning_root: "gm:2".to_string(),
+                roots_to_rewrite: vec!["z@x".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn nothing_is_renamed_when_the_servers_word_is_the_conversation_it_is_in() {
+        // D-39 holds for the server's word as it does for a root: a Gmail
+        // message arriving into the conversation Gmail already filed its
+        // siblings under reveals nothing.
+        assert_eq!(rejoin("gm:1", &["gm:1".to_string()]), None);
+        assert_eq!(rejoin("gm:1", &[]), None);
     }
 }

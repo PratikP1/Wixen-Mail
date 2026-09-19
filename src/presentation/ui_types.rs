@@ -1810,6 +1810,7 @@ mod tests {
             account_id: "acc-1".into(),
             message_id: "c@x".into(),
             refs_header: Some("a@x b@x".into()),
+            thread_id: Some("a@x".into()),
             subject: "Notes".into(),
             from_addr: "ada@example.com".into(),
             to_addr: "me@example.com".into(),

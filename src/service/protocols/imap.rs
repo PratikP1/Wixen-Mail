@@ -109,15 +109,22 @@ const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPL
 /// that does not have it, the whole fetch is refused, and that would be every
 /// message in every folder rather than a missing field.
 ///
-/// `X-GM-THRID`, Gmail's own conversation identifier, is deliberately not asked
-/// for. It was unreachable while the library's own reader was in the way; now
-/// that the answer is read here it could be had, and asking for it is still a
-/// separate decision with a cost on every message in every folder. Threading
-/// falls back to the References and In-Reply-To headers, which is what it does
-/// on every other server. Worth revisiting on its own:
-/// `application::threading` already prefers a server thread id over anything it
-/// computes.
-const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-LABELS";
+/// `X-GM-THRID`, Gmail's own conversation identifier, is asked for since
+/// 2026-09-19 (#88). Until then it was deliberately left out: it was
+/// unreachable while the library's own reader was in the way, and once the
+/// attributes were read here the comment saying so stayed, with a note that
+/// asking was a separate decision. The decision came from the tester, whose
+/// threads showed as several rows with one subject, because threading ran on
+/// the `References` and `In-Reply-To` headers alone and a reply a sender's
+/// program sent without them joined nothing, while Gmail's own client showed
+/// one thread. What it costs is one attribute per message in a FETCH already
+/// made: `X-GM-THRID` and a number of up to twenty digits, measured on the
+/// scripted server by
+/// `application::server_thread_ids::tests::test_what_the_field_costs_per_message_on_the_wire`,
+/// which prints both lengths. The number reaches the store as the
+/// conversation's name through
+/// [`crate::application::thread_identity::the_servers_name`].
+const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-THRID X-GM-LABELS";
 
 /// What this client calls itself when a server asks, as RFC 2971 pairs.
 ///
@@ -424,6 +431,15 @@ pub struct ImapMessage {
     /// way to tell "the same message again" from "another message", which is
     /// the difference between a folder listing and a folder listing twice.
     pub gmail_message_id: Option<u64>,
+    /// Gmail's own conversation identifier, `X-GM-THRID`, where the server
+    /// has one.
+    ///
+    /// The conversation Gmail's own interface shows this message in. Handed
+    /// to the store as the conversation's name, where it wins over whatever
+    /// the `References` chain says (#88): a chain can only ever join what
+    /// Gmail already joins, and a reply a sender's program sent without one
+    /// is joined by nothing else.
+    pub gmail_thread_id: Option<u64>,
     /// The labels Gmail has on this message, its own names for its folders.
     ///
     /// Kept because they say where else the same message appears, which is
@@ -1262,6 +1278,34 @@ impl ImapSession {
         Ok(flags)
     }
 
+    /// The server's own conversation id for each of the messages named, on
+    /// a server that names conversations: `X-GM-THRID`, one number per uid.
+    ///
+    /// The one field and nothing else, so a mailbox stored before the field
+    /// was asked for gets its conversations at the cost of a number a
+    /// message rather than a second download. In batches, for the reason
+    /// [`Self::fetch_flags`] is. A server without the extension refuses the
+    /// whole fetch, and the caller is the one that knows whether to ask.
+    pub async fn thread_ids_of(&mut self, uids: &[u32]) -> Result<Vec<(u32, u64)>> {
+        self.require_selected()?;
+
+        let mut named = Vec::with_capacity(uids.len());
+        for set in sequence_set::chunks(uids, sequence_set::MAX_SET_LENGTH) {
+            let fetched = self
+                .read_command(
+                    format!("UID FETCH {set} (UID X-GM-THRID)"),
+                    "reading which conversation each message is in",
+                    |response| match response {
+                        Response::Fetch(_, attributes) => thread_id_from_attributes(attributes),
+                        _ => None,
+                    },
+                )
+                .await?;
+            named.extend(fetched);
+        }
+        Ok(named)
+    }
+
     /// Whether this session may change anything on the server.
     pub const fn may_change(&self) -> bool {
         self.may_change
@@ -1924,6 +1968,10 @@ fn message_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<ImapMess
             AttributeValue::GmailMsgId(id) => Some(*id),
             _ => None,
         }),
+        gmail_thread_id: attributes.iter().find_map(|attribute| match attribute {
+            AttributeValue::GmailThrId(id) => Some(*id),
+            _ => None,
+        }),
         receipt_to: parsed.receipt_to,
         list_unsubscribe: parsed.list_unsubscribe,
         labels: attributes
@@ -2051,6 +2099,16 @@ fn header_query(gmail: bool) -> String {
 /// The UID and flags out of one FETCH, when it carries a UID.
 fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((uid_of(attributes)?, flag_names(attributes)))
+}
+
+/// The uid and the server's conversation id out of one FETCH, when it
+/// carries both.
+fn thread_id_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, u64)> {
+    let word = attributes.iter().find_map(|attribute| match attribute {
+        AttributeValue::GmailThrId(id) => Some(*id),
+        _ => None,
+    })?;
+    Some((uid_of(attributes)?, word))
 }
 
 /// A flag as IMAP spells it.
@@ -2494,12 +2552,24 @@ mod tests {
     }
 
     #[test]
-    fn test_the_thread_id_is_not_asked_for() {
-        // Deliberate. `async-imap` parses X-GM-THRID and offers no way to read
-        // it back, so asking would cost bandwidth on every message in every
-        // folder and give nothing. If this starts failing, the library grew
-        // the accessor and threading on Gmail can improve.
-        assert!(!header_query(true).contains("X-GM-THRID"));
+    fn test_the_thread_id_is_asked_for_where_the_server_has_it() {
+        // Until 2026-09-19 this test pinned the opposite: the field was
+        // deliberately left out because the library's own reader hid the
+        // answer. The attributes are read here now and `imap-proto` parses
+        // the field, so the reason is gone and the tester's threads were
+        // still splitting for its absence (#88). Asked for on Gmail alone,
+        // because a server that does not know the word refuses the whole
+        // FETCH, which would be an empty folder everywhere else.
+        assert!(
+            header_query(true).contains("X-GM-THRID"),
+            "{}",
+            header_query(true)
+        );
+        assert!(
+            !header_query(false).contains("X-GM-THRID"),
+            "{}",
+            header_query(false)
+        );
     }
 
     #[test]
@@ -2699,14 +2769,18 @@ mod tests {
     // ── Reading one FETCH response, pure ─────────────────────────────────
 
     #[test]
-    fn test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them() {
+    fn test_gmails_own_fields_reach_the_message_when_the_server_sent_them() {
         // Found by mutation testing: deleting either match arm here left
         // every existing test passing. The only test that touches Gmail's
         // own fields checks the request going out (that the query asks for
-        // X-GM-MSGID and X-GM-LABELS); nothing checked what came back.
+        // X-GM-MSGID and X-GM-LABELS); nothing checked what came back. The
+        // conversation id joined the reply on 2026-09-19 (#88), and the same
+        // reading holds it: a message the server sent with all three carries
+        // all three.
         let attributes = vec![
             AttributeValue::Uid(4),
             AttributeValue::GmailMsgId(99_887_766),
+            AttributeValue::GmailThrId(1_278_455_344_230_334_865),
             AttributeValue::GmailLabels(vec![
                 std::borrow::Cow::Borrowed("\\Important"),
                 std::borrow::Cow::Borrowed("Work"),
@@ -2716,6 +2790,7 @@ mod tests {
         let message = message_from_attributes(&attributes).expect("a UID makes this a message");
 
         assert_eq!(message.gmail_message_id, Some(99_887_766));
+        assert_eq!(message.gmail_thread_id, Some(1_278_455_344_230_334_865));
         assert_eq!(
             message.labels,
             vec!["\\Important".to_string(), "Work".to_string()]

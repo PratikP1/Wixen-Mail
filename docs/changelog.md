@@ -202,6 +202,34 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **On Gmail a conversation is the conversation Gmail shows, and on every server a reply that
+  arrived before its parent joins it when the parent lands.** The tester on 2026-09-19 on
+  Gmail (#88): messages of one thread show as several rows with the same subject. Two causes.
+  Conversations were built from the `References` and `In-Reply-To` headers alone, subject
+  matching refused on purpose, and Gmail's own conversation id, `X-GM-THRID`, was deliberately
+  not asked for, so a reply a sender's program sent without those headers, or with a chain the
+  headers here could not connect, stood alone however Gmail's own client showed it. And a
+  folder is downloaded newest first, so a reply was stored before its parent existed. Since
+  2026-09-19, on a server that has Gmail's extension, the conversation id is asked for with
+  each message's other details and names the conversation here, over whatever the headers
+  say: a thread is the thread Gmail shows, and a message Gmail files in a different
+  conversation from its siblings is its own. Mail already stored on a Gmail account gets its
+  id once, at the next check of the account, before any folder is listed, by asking for the
+  one field over the numbers of each kept folder: about 54 bytes a message on the scripted
+  server, under a megabyte for a mailbox of 17,753. On every other server nothing changes for
+  what is asked. The late-parent cases were traced against a scripted server in the
+  download's order and the store already joined them: a reply stored before its parent, a
+  reply naming only its parent when the parent's chain is longer, a sibling with a fuller
+  chain; what was wrong there was the in-memory grouping of a loaded page, which named a
+  conversation after its least message identifier while the conversation row carried the
+  stored name, so the conversation window opened from a row found the row's messages only
+  when the two happened to agree, and on Gmail's names never would have. The loaded page is
+  now grouped and named as the store groups and names it. Subject matching stays off. Known
+  limitations: nobody has yet seen the tester's split threads become one; a message with no
+  headers joining it to anything stands alone on every server but Gmail; and a message filed
+  here, a draft or a sent copy, joins a Gmail conversation through its headers alone, because
+  no server named its conversation.
+
 - **A conversation row stands for the message that matters, and the preview shows it.** The
   tester on 2026-09-16 under NVDA (#31): "Focusing on a thread in the mail list should use
   the originator of the thread as the first reported correspondent and the associated message

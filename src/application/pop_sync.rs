@@ -525,6 +525,8 @@ fn to_incoming(
                 crate::service::safety::Verdict::ordinary()
             }),
         gmail_message_id: None,
+        // POP names no conversation.
+        server_thread_id: None,
         labels: None,
         receipt_to: parsed.receipt_to.clone(),
         list_unsubscribe: parsed.list_unsubscribe.clone(),

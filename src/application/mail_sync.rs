@@ -628,6 +628,11 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
             .clone()
             .and(crate::service::safety::from_folder(in_junk_folder)),
         gmail_message_id: message.gmail_message_id,
+        // The server's own conversation, spelled so the stored name says it
+        // came from the server; the store names the conversation by it (#88).
+        server_thread_id: message
+            .gmail_thread_id
+            .map(crate::application::thread_identity::the_servers_name),
         // Space separated, which is how IMAP writes a flag list and what the
         // labels already are on the wire. A label with a space in it was
         // quoted there and is not quoted here, so this is for showing and for
@@ -892,6 +897,18 @@ pub(crate) trait Mailbox {
     /// The headers of the named messages.
     async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>>;
 
+    /// The server's own conversation id for each of the named messages, on
+    /// a server that names conversations: Gmail's `X-GM-THRID`, one number
+    /// per uid, and nothing for a uid the server no longer holds.
+    ///
+    /// On the trait because the once-only pass in
+    /// [`crate::application::server_thread_ids`] asks it over every kept
+    /// folder for the messages stored before the field was asked for, and
+    /// that pass is held against a scripted server here. Asked only where
+    /// [`Mailbox::what_this_server_can_do`] says the extension is there,
+    /// since a server that does not know the word refuses the whole fetch.
+    async fn thread_ids_of(&self, folder: &str, uids: &[u32]) -> Result<Vec<(u32, u64)>>;
+
     /// Move one message to another folder at the server.
     ///
     /// On the trait because a rule that files mail has to reach the server:
@@ -967,6 +984,10 @@ impl Mailbox for MailController {
 
     async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
         MailController::fetch_headers(self, folder, uids).await
+    }
+
+    async fn thread_ids_of(&self, folder: &str, uids: &[u32]) -> Result<Vec<(u32, u64)>> {
+        MailController::thread_ids_of(self, folder, uids).await
     }
 
     async fn fetch_flags(
@@ -2180,8 +2201,13 @@ async fn fetch_and_store_one<M: Mailbox>(
     Ok(())
 }
 
+// Reachable inside the crate since 2026-09-19 (11-08.1), so the once-only
+// pass in `application::server_thread_ids` can be held against the same
+// scripted server the folder sync is held against, in a module of its own:
+// this file is named by thirteen guard records, and a case added here is
+// thirteen builds and library runs at the next commit.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::common::temp_home::TempHome;
     use crate::common::types::EmailAddress;
@@ -2260,6 +2286,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -2325,6 +2352,7 @@ mod tests {
             has_attachments: false,
             safety: crate::service::safety::Verdict::ordinary(),
             gmail_message_id: None,
+            server_thread_id: None,
             labels: None,
             receipt_to: None,
             list_unsubscribe: None,
@@ -2442,6 +2470,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -2527,6 +2556,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -2584,7 +2614,7 @@ mod tests {
     /// name: what to fetch, what to forget, whose flags to ask about and what
     /// to do with what comes back are all decisions, and none of them had ever
     /// been run in a test because running them meant having a server.
-    struct Scripted {
+    pub(crate) struct Scripted {
         on_server: Vec<u32>,
         headers: Vec<ImapMessage>,
         flags: Vec<(u32, Vec<String>)>,
@@ -2614,6 +2644,10 @@ mod tests {
         /// a server offering nothing beyond IMAP4rev1, which is what most of
         /// these tests are about.
         abilities: Abilities,
+        /// A server that refuses to say which conversation a message is in,
+        /// while answering everything else: what a provider having a bad
+        /// day looks like to the once-only pass.
+        refuse_thread_ids: bool,
         /// How this server answers a request for a whole message, by uid.
         ///
         /// A uid with no entry is answered with an ordinary message, so a test
@@ -2625,7 +2659,7 @@ mod tests {
         /// One log rather than two, because "the count is said before the
         /// first fetch" is a claim about the order of two different kinds of
         /// event, and two lists cannot be interleaved after the fact.
-        happened: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        pub(crate) happened: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
         /// A server that answers the first fetches and then refuses every
         /// one from this fetch on, counting from one. What a provider that
         /// has had enough of a run looks like from in here, as against
@@ -2659,10 +2693,47 @@ mod tests {
                 asked_for: std::cell::RefCell::new(Vec::new()),
                 refuse_list_uids: false,
                 abilities: Abilities::default(),
+                refuse_thread_ids: false,
                 answers_a_move_with: crate::service::protocols::imap::Moved::Moved,
                 bodies: std::collections::HashMap::new(),
                 happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
                 refuses_from_the_nth_fetch: None,
+            }
+        }
+    }
+
+    impl Scripted {
+        /// A Gmail server holding these messages and knowing which
+        /// conversation each is in, for the once-only pass's cases.
+        pub(crate) fn a_gmail_knowing_the_conversations(words: &[(u32, u64)]) -> Self {
+            Self {
+                on_server: words.iter().map(|(uid, _)| *uid).collect(),
+                headers: words
+                    .iter()
+                    .map(|(uid, word)| ImapMessage {
+                        uid: *uid,
+                        gmail_thread_id: Some(*word),
+                        ..Default::default()
+                    })
+                    .collect(),
+                abilities: Abilities::from_capabilities(["IMAP4rev1", "X-GM-EXT-1"]),
+                ..Default::default()
+            }
+        }
+
+        /// The same server, advertising these words at sign-in instead.
+        pub(crate) fn advertising(self, words: &[&str]) -> Self {
+            Self {
+                abilities: Abilities::from_capabilities(words.iter().copied()),
+                ..self
+            }
+        }
+
+        /// The same server, refusing to say which conversation anything is in.
+        pub(crate) fn refusing_the_conversations(self) -> Self {
+            Self {
+                refuse_thread_ids: true,
+                ..self
             }
         }
     }
@@ -2744,6 +2815,25 @@ mod tests {
                 .iter()
                 .filter(|m| uids.contains(&m.uid))
                 .cloned()
+                .collect())
+        }
+
+        async fn thread_ids_of(&self, folder: &str, uids: &[u32]) -> Result<Vec<(u32, u64)>> {
+            // Written down with the folder, so a test can check the pass
+            // asked each kept folder for its own rows and nothing else's.
+            self.happened
+                .borrow_mut()
+                .push(format!("asked {folder} for the conversation of {uids:?}"));
+            if self.refuse_thread_ids {
+                return Err(crate::common::Error::Protocol(
+                    "The mail server refused while reading the conversations.".to_string(),
+                ));
+            }
+            Ok(self
+                .headers
+                .iter()
+                .filter(|m| uids.contains(&m.uid))
+                .filter_map(|m| Some((m.uid, m.gmail_thread_id?)))
                 .collect())
         }
 
@@ -2840,6 +2930,7 @@ mod tests {
                     has_attachments: false,
                     safety: crate::service::safety::Verdict::ordinary(),
                     gmail_message_id: None,
+                    server_thread_id: None,
                     labels: None,
                     receipt_to: None,
                     list_unsubscribe: None,
@@ -3560,6 +3651,7 @@ mod tests {
                     has_attachments: false,
                     safety: crate::service::safety::Verdict::ordinary(),
                     gmail_message_id: None,
+                    server_thread_id: None,
                     labels: None,
                     receipt_to: None,
                     list_unsubscribe: None,
@@ -4481,6 +4573,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,

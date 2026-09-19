@@ -200,7 +200,10 @@ computer yet, five hundred headers at a time, and then for the text of each of t
 fifty at a time, unless the Message Text box on the Permissions tab is off or the size you
 chose there has been reached. It asks over the same TLS connection the check uses, signed in
 as you, and it changes nothing on the server: a message whose text is fetched this way is not
-marked read by it, because fetching the text is not opening the message.
+marked read by it, because fetching the text is not opening the message. On Gmail, since
+2026-09-19, the conversation each message belongs to is asked for with its other details, and
+once, at the first check after that build, for the mail already here: that is Gmail's own
+grouping being read, a number a message, not a new thing told to Gmail.
 
 **What that tells the provider, and what it does not.** A client that downloads the whole
 mailbox tells the provider that, and nothing more. It learns that a program signed in as you

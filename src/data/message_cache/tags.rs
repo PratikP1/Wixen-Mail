@@ -361,7 +361,7 @@ pub(super) fn label_listing_query(order: &str, limit: Option<usize>) -> String {
                 m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id
          FROM messages m
          INNER JOIN message_tags mt ON m.id = mt.message_id
          INNER JOIN folders f ON m.folder_id = f.id
@@ -416,6 +416,7 @@ mod keyword_tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,

@@ -622,7 +622,7 @@ pub(super) fn results_query(numbered: &str, order: &str) -> String {
                 m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE m.id IN ({numbered})

@@ -13531,7 +13531,9 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
                 .split_whitespace()
                 .map(|r| r.to_string())
                 .collect(),
-            server_thread_id: None,
+            // The store's word, so the page is grouped and named as the
+            // conversation rows are and the tree finds a row's members (#88).
+            conversation: row.thread_id.clone(),
         })
         .collect();
 
@@ -16341,6 +16343,7 @@ fn replace_local_draft(
         has_attachments: false,
         safety: crate::service::safety::Verdict::ordinary(),
         gmail_message_id: None,
+        server_thread_id: None,
         labels: None,
         receipt_to: None,
         // A draft is written here, so there is no list behind it.
@@ -24485,6 +24488,26 @@ fn spawn_mail_sync(
                 &say,
             );
 
+            // Mail stored before the server's conversation id was asked for
+            // gets it once, here, after the moves and before any folder is
+            // listed (#88): one field over the stored numbers of each kept
+            // folder, recorded per account when every folder answered. A pass
+            // that could not finish is logged and tried again at the next
+            // check; it does not end this one, since nothing listed depends
+            // on it.
+            if let Err(why) = handle.block_on(
+                crate::application::server_thread_ids::fetch_the_server_thread_ids_once(
+                    controller.as_ref(),
+                    &cache,
+                    &account.id,
+                ),
+            ) {
+                tracing::warn!(
+                    "The stored mail of {} could not be given its conversation ids this check: {why}",
+                    account.display_name()
+                );
+            }
+
             let folders = match handle.block_on(controller.fetch_folders()) {
                 Ok(folders) => folders,
                 Err(e) => {
@@ -28048,6 +28071,7 @@ mod tests {
                 has_attachments: false,
                 safety: crate::service::safety::Verdict::ordinary(),
                 gmail_message_id: None,
+                server_thread_id: None,
                 labels: None,
                 receipt_to: None,
                 list_unsubscribe: None,
@@ -30460,6 +30484,7 @@ mod showing_the_mail_with_a_label {
             has_attachments: false,
             safety: crate::service::safety::Verdict::ordinary(),
             gmail_message_id: None,
+            server_thread_id: None,
             labels: None,
             receipt_to: None,
             list_unsubscribe: None,

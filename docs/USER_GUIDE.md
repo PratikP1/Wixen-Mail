@@ -444,6 +444,18 @@ Related messages are grouped into a conversation using the `References` and
 `In-Reply-To` headers rather than subject matching, so "Re: lunch" from two
 strangers years apart is not folded into one conversation by mistake.
 
+**What a conversation is, on Gmail and elsewhere.** On a Gmail account, since
+2026-09-19, a conversation here is the conversation Gmail shows: Gmail names
+each message's conversation itself, that name is asked for with the message's
+other details, and it decides which messages belong together, whatever the
+headers say. A reply that arrived without the headers that would have joined
+it still joins, because Gmail joined it. Mail you already had before that day
+gets its name once, at the next check of the account, without downloading
+anything again. On every other server a conversation is built from the headers
+a reply carries, so a reply a sender's program sent without them stands alone
+as a conversation of one. On every server a reply that arrived before its
+parent joins the parent when the parent lands.
+
 **Thread View**, `Ctrl+T` on the View menu, collapses the message list to one
 row per conversation. Each row says what the conversation is about, how many
 messages it holds and how many you have not read, and every other column

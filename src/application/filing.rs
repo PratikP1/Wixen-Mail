@@ -79,6 +79,10 @@ pub fn a_row_filed_here(
         has_attachments: !parsed.attachments.is_empty(),
         safety: crate::service::safety::Verdict::ordinary(),
         gmail_message_id: None,
+        // Filed here, so no server has named its conversation; the chain
+        // does, and a merge joins it to the server's when the chain reaches
+        // one.
+        server_thread_id: None,
         labels: None,
         // Deliberately dropped, for both callers and for the same reason. On a
         // message somebody sent, that header is them asking their recipient

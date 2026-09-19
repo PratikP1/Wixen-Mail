@@ -169,6 +169,7 @@ fn as_incoming(
         has_attachments: false,
         safety: Verdict::ordinary(),
         gmail_message_id: None,
+        server_thread_id: None,
         labels: None,
         receipt_to: None,
         list_unsubscribe: None,

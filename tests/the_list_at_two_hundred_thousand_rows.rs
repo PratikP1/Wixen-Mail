@@ -153,6 +153,7 @@ fn as_incoming(folder_id: i64, item: &MessageItem) -> IncomingMessage {
         has_attachments: item.has_attachments,
         safety: Verdict::ordinary(),
         gmail_message_id: None,
+        server_thread_id: None,
         labels: None,
         receipt_to: None,
         list_unsubscribe: None,
@@ -475,7 +476,8 @@ fn a_label_on_one_row_in(cache: &MessageCache, folder_id: i64) -> Result<usize, 
 }
 
 /// What the window's `apply_threading` builds for each row before it asks
-/// `thread_messages`: the id, the `Message-ID` and the `References`.
+/// `thread_messages`: the id, the `Message-ID`, the `References` and the
+/// conversation the store filed the row under.
 fn as_thread_input(row: &MessageListRow) -> ThreadInput {
     ThreadInput {
         id: row.id,
@@ -487,7 +489,7 @@ fn as_thread_input(row: &MessageListRow) -> ThreadInput {
             .split_whitespace()
             .map(|r| r.to_string())
             .collect(),
-        server_thread_id: None,
+        conversation: row.thread_id.clone(),
     }
 }
 

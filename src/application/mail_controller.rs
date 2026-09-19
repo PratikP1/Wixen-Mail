@@ -547,6 +547,22 @@ impl MailController {
         })
     }
 
+    /// The server's own conversation id for each of the UIDs given, on a
+    /// server that names conversations (Gmail's `X-GM-THRID`, #88).
+    ///
+    /// One field and no headers, so the once-only pass over mail already
+    /// stored costs a number per message rather than a re-download. Ask it
+    /// only where [`Self::what_this_server_can_do`] says the extension is
+    /// there; elsewhere the server refuses the whole fetch.
+    pub async fn thread_ids_of(&self, folder: &str, uids: &[u32]) -> Result<Vec<(u32, u64)>> {
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.thread_ids_of(uids).await
+        })
+    }
+
     /// Fetch one message exactly as it arrived.
     ///
     /// Raw bytes, for `service::mime` to decode. Handing back a `String` here

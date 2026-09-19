@@ -104,6 +104,7 @@ fn as_incoming(folder_id: i64, item: &MessageItem) -> IncomingMessage {
         has_attachments: item.has_attachments,
         safety: Verdict::ordinary(),
         gmail_message_id: None,
+        server_thread_id: None,
         labels: None,
         receipt_to: None,
         list_unsubscribe: None,
