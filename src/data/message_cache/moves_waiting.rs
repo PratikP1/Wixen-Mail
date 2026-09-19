@@ -116,6 +116,14 @@ impl WhatAWaitingMoveDoes {
             ("delete_to_trash", Some(trash_path), _) => Some(Self::DeleteToTrash { trash_path }),
             ("delete_outright", _, _) => Some(Self::DeleteOutright),
             ("copy", Some(into_folder_path), _) => Some(Self::Copy { into_folder_path }),
+            ("move_across", Some(into_folder_path), Some(to_account)) => Some(Self::MoveAcross {
+                into_folder_path,
+                to_account,
+            }),
+            ("copy_across", Some(into_folder_path), Some(to_account)) => Some(Self::CopyAcross {
+                into_folder_path,
+                to_account,
+            }),
             _ => None,
         }
     }
@@ -157,7 +165,9 @@ impl AWaitingMove {
     /// The account the destination folder is in: the other account for a
     /// crossing, this row's own otherwise.
     pub fn the_account_it_is_going_to(&self) -> &str {
-        self.account_id.as_str()
+        self.what
+            .crosses_to()
+            .map_or(self.account_id.as_str(), |other| other.id.as_str())
     }
 }
 

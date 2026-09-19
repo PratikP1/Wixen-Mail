@@ -322,7 +322,9 @@ impl MessageCache {
         .to_rfc3339();
         self.conn
             .execute(
-                "DELETE FROM move_in_flight WHERE started_at < ?1",
+                "DELETE FROM move_in_flight
+                 WHERE started_at < ?1
+                   AND message_id NOT IN (SELECT message_row_id FROM moves_waiting)",
                 rusqlite::params![too_old],
             )
             .map_err(|e| Error::Other(format!("Failed to give up on an unfinished move: {}", e)))?;
@@ -377,12 +379,16 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT i.message_id, m.subject, m.message_id, f.account_id, f.path, m.uid,
+                "SELECT i.message_id, m.subject, m.message_id,
+                        COALESCE(w.account_id, f.account_id),
+                        COALESCE(w.from_folder_path, f.path),
+                        COALESCE(w.uid, m.uid),
                         i.to_account_id, i.to_folder, i.flags, i.arrived,
                         i.was_there_before, i.original, i.started_at
                  FROM move_in_flight i
                  INNER JOIN messages m ON m.id = i.message_id
                  INNER JOIN folders f ON f.id = m.folder_id
+                 LEFT JOIN moves_waiting w ON w.message_row_id = i.message_id
                  WHERE ?1 IS NULL OR i.message_id = ?1
                  ORDER BY i.started_at ASC, i.message_id ASC",
             )

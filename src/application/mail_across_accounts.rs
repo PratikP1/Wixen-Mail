@@ -794,9 +794,15 @@ pub fn why_it_cannot_be_finished_from_here(
     unfinished: &AMoveLeftUnfinished,
     the_account_it_was_going_to: &str,
 ) -> Option<String> {
+    let why = why_the_question_cannot_be_put(
+        the_identifier_to_ask_about(Some(&unfinished.identifier)),
+        unfinished.was_there_before.as_deref(),
+    )?;
+    let where_it_was_going = format!("{} in {the_account_it_was_going_to}", unfinished.to_folder);
     Some(format!(
-        "{} in {the_account_it_was_going_to}",
-        unfinished.to_folder
+        "{why}, so it cannot be finished from here and nothing was lost. Look in \
+         {where_it_was_going} to see whether a copy arrived there, and move it again \
+         if it did not"
     ))
 }
 

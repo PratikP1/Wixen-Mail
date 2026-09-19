@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 156 records have arrived since and have not been through it.
+# 159 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26502,7 +26502,7 @@ red = [
     "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 27 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -26639,4 +26639,75 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_destination.rs", tests = 6 },
     { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+]
+
+# The bytes not kept before the append goes out, as the first step of a
+# crossing would be with the store filtered away: the message is fetched
+# and appended and nothing here says a crossing is owed, so a restart
+# between the fetch and the ending has nothing to resume from and fetches
+# again, or finds a source that has stopped answering (#86, 11-07.2). The
+# case that reads the store from inside the append goes red, and the
+# queue's cases that read what the store holds after a hang-up or through
+# the ceiling.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "the bytes of a crossing are kept before the append, not never"
+file = "src/application/mail_across_accounts.rs"
+before = """    let held = recording.cache.and_then(|cache| {"""
+after = """    let held = recording.cache.filter(|_| false).and_then(|cache| {"""
+red = [
+    "application::mail_across_accounts::tests::test_the_message_is_already_on_the_disk_when_the_append_goes_out",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
+    "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+]
+
+# An append nobody could settle read as a refusal: the destination hung up
+# and could not be asked, so the message may be in one place or in two, and
+# a refusal is undone, which puts the row back here as if the message were
+# nowhere else. The one line the crossing's replay must not get wrong
+# (T-11-92); the value case and the hang-up case go red (#86, 11-07.2).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "an append nobody could settle is not reached, not a refusal to undo"
+file = "src/application/moves_waiting.rs"
+before = """        MovedAcross::ItIsNotKnownWhereItIs(_) => Replayed::NotReached,"""
+after = """        MovedAcross::ItIsNotKnownWhereItIs(why) => Replayed::Refused(why.clone()),"""
+red = [
+    "application::moves_waiting::tests::test_an_append_nobody_could_settle_is_not_reached_and_never_a_refusal",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+]
+
+# The ceiling on a message kept while it moves taken away: a message of any
+# size is written to the store, which is the store's own ceiling test, the
+# crossing's case over a one-byte ceiling and the queue's reading of the
+# store's answer, all red (#86, 11-07.2; the number is the privacy page's
+# one number for three stores and is not moved).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "a message over the ceiling is not held while it moves"
+file = "src/data/message_cache/moves_in_flight.rs"
+before = """        if i64::try_from(moving.raw.len()).is_ok_and(|size| size > self.largest_move_kept) {"""
+after = """        if i64::try_from(moving.raw.len()).is_ok_and(|size| size > i64::MAX) {"""
+red = [
+    "data::message_cache::moves_in_flight::tests::test_a_message_too_large_to_keep_leaves_nothing_to_resume_from",
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_keep_still_moves",
+    "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+    { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
