@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 197 records have arrived since and have not been through it.
+# 200 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27692,4 +27692,83 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 92 },
+]
+
+# ── Pictures shown by default, except the ones that look like trackers ──────
+#
+# 11-11, #28. Since 2026-09-19 a picture a message points at is fetched by
+# default, and what stands between a reader and a tracking pixel is one
+# rule over the size the sender declared. The break makes the rule answer
+# no for everything: the closure compares against a size no declaration
+# reaches, so a one-by-one pixel is fetched and reports the opening. On the
+# target the beacon cases go red; the cases for a picture with no size, for
+# the switch and for the descriptions stay green, since none of them asks
+# the size rule to say yes.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a picture a pixel or less on a side is a beacon and is not fetched"
+file = "src/application/pictures.rs"
+suite = "pictures_show_by_default_except_beacons"
+before = """        .any(|pixels| pixels <= MOST_A_BEACON_MAY_MEASURE)"""
+after = """        .any(|pixels| pixels == u32::MAX)"""
+red = [
+    "test_a_nothing_by_nothing_picture_and_a_one_pixel_strip_are_beacons_too",
+    "test_a_one_by_one_picture_is_a_beacon_by_its_declared_size",
+]
+tests_last_seen = [
+    { file = "src/application/pictures.rs", tests = 44 },
+    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 15 },
+]
+
+# A description this program invented. The undescribed rule stops asking
+# the choice and writes "image" on every picture the sender did not
+# describe, which is what the default of nothing exists to refuse: a reader
+# who chose to pass over such pictures hears "image" forty times over a
+# mailing, and the word is this program's and not the sender's (guardrail
+# 9). On the target the case that walks the three answers goes red on
+# nothing and on photo; the case that counts the words under image stays
+# green, since image is the word the break writes.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "an undescribed picture is called what the choice says and not a word this program picked"
+file = "src/application/pictures.rs"
+suite = "pictures_show_by_default_except_beacons"
+before = """                None => with_a_description(picture, read_as.description()),"""
+after = """                None => with_a_description(picture, "image"),"""
+red = [
+    "test_an_undescribed_picture_is_described_as_the_setting_says",
+]
+tests_last_seen = [
+    { file = "src/application/pictures.rs", tests = 44 },
+    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 15 },
+]
+
+# The default moved to a word. The tester's decision in #28 is "" unless
+# somebody chooses image or photo, and a fresh profile, an older settings
+# file and a garbled value all read as the default, so a default of image
+# writes the word on every undescribed picture for everybody who chose
+# nothing. The module's own case for the default goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an undescribed picture is passed over unless somebody chose a word"
+file = "src/application/describing_pictures.rs"
+before = """    #[default]
+    Nothing,
+    /// The word "image".
+    Image,"""
+after = """    Nothing,
+    /// The word "image".
+    #[default]
+    Image,"""
+red = [
+    "application::describing_pictures::tests::test_the_default_is_nothing_so_an_undescribed_picture_is_passed_over",
+]
+tests_last_seen = [
+    { file = "src/application/describing_pictures.rs", tests = 8 },
 ]

@@ -77,18 +77,30 @@ pub struct AppConfig {
     /// was not there.
     #[serde(default = "default_true")]
     pub add_signature_automatically: bool,
-    /// Leave a picture a message only points at unfetched.
+    /// Leave every picture a message only points at unfetched.
     ///
-    /// On unless somebody turns it off, and this is the one setting in this
-    /// file that starts on and takes something away. Fetching such a picture
+    /// Off by default since 2026-09-19, by the tester's decision in #28: the
+    /// pictures a message points at are shown, and what is held back is
+    /// decided per picture by `application::pictures`, which does not fetch
+    /// one whose declared size is a pixel or less (a tracking pixel) or one
+    /// the sender marked decorative. Until then this was on by default, the
+    /// one setting in this file that started on and took something away, and
+    /// the tester's first day of testing found no picture shown in any
+    /// message.
+    ///
+    /// What the switch still does: on, nothing a message points at is
+    /// fetched, a photograph no more than a pixel. Fetching such a picture
     /// tells the server it came from that this message was opened, by this
     /// computer, at this moment, which is the whole of how mail tracking
-    /// works: a single invisible pixel, in nearly every marketing message and
-    /// a good deal worse.
+    /// works; under the default a tracker the size of a picture is fetched,
+    /// and this switch is the way to fetch none.
     ///
-    /// A picture the message carries is not affected. It is already here and
-    /// showing it tells nobody anything.
-    #[serde(default = "default_true")]
+    /// A picture the message carries is not affected either way. It is
+    /// already here and showing it tells nobody anything.
+    ///
+    /// A settings file that carries the key keeps its answer; the absent
+    /// key answers the default of the day, which the older-file test holds.
+    #[serde(default)]
     pub hold_back_remote_pictures: bool,
     /// Say where a picture the sender marked decorative is.
     ///
@@ -726,7 +738,7 @@ impl Default for AppConfig {
             deleting_a_conversation_row: default_deleting_a_conversation_row(),
             empty_reaches_subfolders: default_true(),
             mark_read_reaches_subfolders: default_true(),
-            hold_back_remote_pictures: default_true(),
+            hold_back_remote_pictures: false,
             announce_decorative_pictures: default_true(),
             font_family: String::new(),
             check_default_programs_at_startup: false,

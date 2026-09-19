@@ -15,8 +15,16 @@
 //! Every marketing message carries one, and so does a good deal of worse than
 //! marketing.
 //!
-//! So the two get opposite defaults: carried pictures are shown, pointed-at
-//! ones are not until somebody asks.
+//! So the two got opposite defaults: carried pictures were shown, pointed-at
+//! ones were not until somebody asked. Since 2026-09-19 (#28, the tester's
+//! decision) a pointed-at picture is fetched by default too, and what is held
+//! back is decided per picture by what the sender declared: a picture whose
+//! declared size is a pixel or less [`looks_like_a_beacon`] and is not
+//! fetched, and one the sender marked decorative is not fetched either,
+//! because by the sender's own word there is nothing to see. The switch that
+//! holds every pointed-at picture back is still on the Reading tab, off by
+//! default. A tracker the size of a picture is fetched under that default,
+//! and `docs/privacy.md` says so.
 //!
 //! # What was happening before this
 //!
@@ -24,6 +32,9 @@
 //! not a scheme it recognises, so the safe pictures did not appear at all. And
 //! it kept the remote ones, which the browser then fetched, so every tracking
 //! pixel in every message did its job. Nobody had chosen either of those.
+//! Then, from 2026-08 until 2026-09-19, every pointed-at picture was held back
+//! until the switch was turned off, and #28 was filed: none of the pictures in
+//! any message were shown.
 
 /// Whether pictures that have to be fetched may be fetched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,9 +48,11 @@ pub enum Fetching {
 impl Fetching {
     /// What the setting means, read the way the setting is worded.
     ///
-    /// The setting asks whether to block, and blocking is what is on by
-    /// default, so the ordinary answer is the safe one and somebody who does
-    /// nothing is not tracked.
+    /// The setting asks whether to block. Blocking was what was on by
+    /// default until 2026-09-19; since #28 the switch is off by default and
+    /// the beacon rule is what stands between a reader and a tracking pixel.
+    /// The wording of the setting did not change, so a stored answer keeps
+    /// its meaning.
     pub fn from_setting(blocked: bool) -> Self {
         if blocked {
             Fetching::Blocked
@@ -577,47 +590,189 @@ pub fn what_to_do_about(address: &str, fetching: Fetching) -> Showing {
     }
 }
 
+/// The most a tracking pixel measures on either side, in the pixels the
+/// sender declared.
+///
+/// A pixel or less. A tracker that large is invisible, and a picture that
+/// small is not one: nothing a person is meant to see fits in a pixel.
+pub const MOST_A_BEACON_MAY_MEASURE: u32 = 1;
+
 /// Whether a picture's declared size says it is a tracking pixel.
 ///
-/// A stub answering no for everything, so every case that expects a beacon
-/// is red until the rule is written.
-pub fn looks_like_a_beacon(_tag: &str) -> bool {
-    false
+/// The second size rule in this module, and not the same rule as the first.
+/// [`could_be_furniture`] reads the decoded pixels of a picture this program
+/// carries, on the sending side, and asks whether its shorter side is within
+/// [`MOST_FURNITURE_MAY_MEASURE`], so that the decorative question is put
+/// over a spacer and not over a photograph. This reads the `width` and
+/// `height` attributes of a picture a stranger points at, on the reading
+/// side, before anything is fetched, because fetching it to measure it would
+/// be the report the rule exists to prevent: one invisible pixel, with a
+/// different address for every recipient, is how a mailing learns who opened
+/// it. The bound is a pixel or less on either side, [`MOST_A_BEACON_MAY_MEASURE`],
+/// and a picture with no declared size is not a beacon by this rule and is
+/// fetched. A tracker shaped like a picture is fetched too, and the privacy
+/// page says so; a list of known hosts was considered and declined, because
+/// it goes stale the day it is written.
+///
+/// The cleaner keeps `width` and `height` on a picture and drops `style`, so
+/// a size is the one fact about a picture's placement that survives to be
+/// read. A number is digits, with or without `px` after them; `100%`, `auto`
+/// and anything else a stylesheet might say is not a size this reads, and
+/// the picture is fetched.
+pub fn looks_like_a_beacon(tag: &str) -> bool {
+    ["width", "height"]
+        .iter()
+        .filter_map(|side| attribute_of(tag, side))
+        .filter_map(|declared| declared_pixels(&declared))
+        .any(|pixels| pixels <= MOST_A_BEACON_MAY_MEASURE)
+}
+
+/// A declared size as a number of pixels, or nothing when it is not one.
+fn declared_pixels(declared: &str) -> Option<u32> {
+    let digits = declared.trim().trim_end_matches("px").trim();
+    (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
+        .then(|| digits.parse().ok())
+        .flatten()
 }
 
 /// Whether a picture carries the decorative mark: an `alt` that is present
 /// and empty.
 ///
-/// A stub answering no for everything.
-pub fn is_marked_decorative(_tag: &str) -> bool {
-    false
+/// Present and empty, told apart from absent. [`attribute_of`] answers `None`
+/// for an attribute that is not there and `Some("")` for one that is there
+/// and empty, which is the whole distinction: a sender who said nothing is
+/// not a sender who said there was nothing to say.
+pub fn is_marked_decorative(tag: &str) -> bool {
+    attribute_of(tag, "alt").as_deref() == Some("")
 }
 
 /// What to do about one whole picture tag, as the cleaner wrote it.
 ///
-/// A stub that reads the address and nothing else, so the two new answers
-/// are never given.
+/// The address decides most of it, through [`what_to_do_about`]: a carried
+/// picture is shown and, under the switch, a pointed-at one is held back.
+/// The tag's other facts decide the rest, and only for a picture that would
+/// be fetched: one that [`looks_like_a_beacon`] is held back as one, and one
+/// the sender [`is_marked_decorative`] is not fetched, because by the
+/// sender's own word there is nothing to see and so nothing to report the
+/// opening for. The beacon rule is asked first, since a pixel with an empty
+/// `alt` is a tracker dressed as furniture and is counted as the tracker.
 pub fn what_to_do_about_a_tag(tag: &str, fetching: Fetching) -> Showing {
     let address = attribute_of(tag, "src").unwrap_or_default();
-    what_to_do_about(&address, fetching)
+    match what_to_do_about(&address, fetching) {
+        Showing::ItWillBeFetched if looks_like_a_beacon(tag) => Showing::HeldBackAsABeacon,
+        Showing::ItWillBeFetched if is_marked_decorative(tag) => Showing::HeldBackAsDecorative,
+        decided => decided,
+    }
+}
+
+/// A whole anchor as the cleaner writes it: its opening tag and what it holds.
+///
+/// Only ever run over cleaned markup, where an anchor cannot hold another
+/// and every value is in double quotes, which is why this can be a pattern
+/// rather than a parser.
+fn a_whole_anchor_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"(?is)<a\b[^>]*>(.*?)</a>").expect("valid whole anchor regex")
+    })
+}
+
+/// Any tag at all, for taking the tags out of a link's words.
+fn any_tag_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"<[^>]*>").expect("valid any tag regex"))
 }
 
 /// A linked picture with no description takes the link's words as one.
 ///
-/// A stub that changes nothing.
+/// The tester's rule in #28: "Photo links should have the link text as the
+/// default alt for the photo unless there's an associated alt." For every
+/// anchor holding exactly one picture with no `alt` at all and some words of
+/// its own, the picture gains those words as its description; the words stay
+/// on the link too. An anchor whose only content is the picture has no words
+/// to give, and the picture is left for [`describe_the_undescribed`]. An
+/// anchor holding two pictures gives neither, since nothing says which one
+/// the words describe. A picture with an `alt`, empty or not, is the sender's
+/// answer and is untouched.
+///
+/// The words are taken out of the markup they sit in (tags stripped,
+/// entities decoded, whitespace collapsed) and escaped again as an attribute
+/// value, so a link whose words carry a quote or a tag cannot write outside
+/// the attribute.
 pub fn the_links_text_as_a_description(cleaned: &str) -> String {
-    cleaned.to_string()
+    a_whole_anchor_re()
+        .replace_all(cleaned, |caught: &regex::Captures<'_>| {
+            let (whole, inside) = (&caught[0], &caught[1]);
+            let pictures: Vec<&str> = an_image_tag_re()
+                .find_iter(inside)
+                .map(|found| found.as_str())
+                .collect();
+            let [picture] = pictures[..] else {
+                return whole.to_string();
+            };
+            if attribute_of(picture, "alt").is_some() {
+                return whole.to_string();
+            }
+            let words = the_words_of(inside);
+            if words.is_empty() {
+                return whole.to_string();
+            }
+            whole.replacen(picture, &with_a_description(picture, &words), 1)
+        })
+        .into_owned()
+}
+
+/// The words in a piece of cleaned markup: tags gone, entities decoded,
+/// runs of whitespace made one space.
+fn the_words_of(markup: &str) -> String {
+    let without_tags = any_tag_re().replace_all(markup, " ");
+    html_escape::decode_html_entities(&without_tags)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// One picture tag with a description written on it, escaped as an
+/// attribute value. The tag comes from the cleaner, which writes `<img ...>`
+/// with no slash; a slash before the `>` is kept where it is all the same.
+fn with_a_description(picture: &str, description: &str) -> String {
+    let described = html_escape::encode_double_quoted_attribute(description);
+    let attributes = picture
+        .strip_suffix('>')
+        .unwrap_or(picture)
+        .trim_end_matches('/')
+        .trim_end();
+    let closing = if picture.ends_with("/>") { "/>" } else { ">" };
+    format!(r#"{attributes} alt="{described}"{closing}"#)
 }
 
 /// Every picture with no description at all gains the one this reader
 /// chose.
 ///
-/// A stub that changes nothing.
+/// The tester's rule in #28: "Photos without descriptions should
+/// automatically be given "" as the alt by default unless the user
+/// specifically chooses either 'image' or 'photo' in settings." A picture
+/// with no `alt` attribute gains one holding what the choice says, which for
+/// the default is nothing, so a screen reader passes over it the way it
+/// passes over a decorative one. A picture with an `alt`, empty or not, is
+/// the sender's answer, and it is untouched whatever the choice.
+///
+/// Run last on the reading path, after the link's words and after the
+/// decorative rewrite, so that an empty `alt` written here is never mistaken
+/// for the sender's mark by the rule that says where a decorative picture is.
 pub fn describe_the_undescribed(
     cleaned: &str,
-    _as: crate::application::describing_pictures::UndescribedPicture,
+    read_as: crate::application::describing_pictures::UndescribedPicture,
 ) -> String {
-    cleaned.to_string()
+    an_image_tag_re()
+        .replace_all(cleaned, |caught: &regex::Captures<'_>| {
+            let picture = &caught[0];
+            match attribute_of(picture, "alt") {
+                Some(_) => picture.to_string(),
+                None => with_a_description(picture, read_as.description()),
+            }
+        })
+        .into_owned()
 }
 
 /// What to say where a held-back picture would have been.
@@ -659,12 +814,6 @@ pub enum WhoseMessage {
     BeingWrittenHere,
 }
 
-/// What to say about a whole message once its pictures have been counted.
-///
-/// Empty when nothing was held back, so an ordinary message says nothing. The
-/// count matters more than it looks: one held-back picture in a message from a
-/// person is usually their signature, and thirty is a mailing.
-///
 /// How many of a message's pictures were not fetched, and why.
 ///
 /// Two counts rather than one, because the two sentences they make are
@@ -681,13 +830,21 @@ pub struct HeldBack {
     pub as_beacons: usize,
 }
 
+/// What to say about a whole message once its pictures have been counted.
+///
+/// Empty when nothing was held back, so an ordinary message says nothing. The
+/// count matters more than it looks: one held-back picture in a message from a
+/// person is usually their signature, and thirty is a mailing.
+///
+/// The switch's sentence first, because it names the switch, and the beacons
+/// after it. Under the switch a beacon is the switch's too, so a message
+/// ordinarily makes one sentence or the other: the second alone is what a
+/// fresh profile reads over a mailing, since 2026-09-19 (#28).
+///
 /// Whether a reader is the right person to say this to is [`WhoseMessage`],
 /// and it is asked before this is.
-///
-/// A stub that ignores the beacons, so the sentence about them is never
-/// made.
 pub fn what_was_held_back(held: HeldBack) -> String {
-    match held.by_the_switch {
+    let by_the_switch = match held.by_the_switch {
         0 => String::new(),
         1 => "1 picture was not shown, because fetching it would have told the \
               sender you opened this. Settings, Reading has the switch."
@@ -696,7 +853,17 @@ pub fn what_was_held_back(held: HeldBack) -> String {
             "{many} pictures were not shown, because fetching them would have told \
              the senders you opened this. Settings, Reading has the switch."
         ),
-    }
+    };
+    let as_beacons = match held.as_beacons {
+        0 => String::new(),
+        1 => "1 picture that looked like a tracking pixel was not fetched.".to_string(),
+        many => format!("{many} pictures that looked like tracking pixels were not fetched."),
+    };
+    [by_the_switch, as_beacons]
+        .into_iter()
+        .filter(|sentence| !sentence.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]

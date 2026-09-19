@@ -51,30 +51,51 @@ impl UndescribedPicture {
         UndescribedPicture::Photo,
     ];
 
-    /// What the choice is called: what will happen, in plain words.
+    /// What the choice is called: what will happen, in plain words. The
+    /// first says what "nothing" means to somebody listening, because an
+    /// empty description is a mechanism and being passed over is what is
+    /// heard.
     pub fn label(self) -> &'static str {
         match self {
-            UndescribedPicture::Nothing => "",
-            UndescribedPicture::Image => "",
-            UndescribedPicture::Photo => "",
+            UndescribedPicture::Nothing => "Nothing, so it is passed over",
+            UndescribedPicture::Image => "The word image",
+            UndescribedPicture::Photo => "The word photo",
         }
     }
 
     /// How it is written in the settings file: a word a person could read
-    /// there.
+    /// there, and for the two words the word itself.
     pub fn as_stored(self) -> String {
-        "".to_string()
+        match self {
+            UndescribedPicture::Nothing => "nothing",
+            UndescribedPicture::Image => "image",
+            UndescribedPicture::Photo => "photo",
+        }
+        .to_string()
     }
 
-    /// Read the stored setting. Anything unreadable is nothing, the default.
-    pub fn from_stored(_value: &str) -> Self {
-        UndescribedPicture::Image
+    /// Read the stored setting.
+    ///
+    /// Anything unreadable is nothing, the default, because the other two
+    /// answers each write a word on every undescribed picture, and a word
+    /// written because the file was garbled is a description this program
+    /// invented (guardrail 9).
+    pub fn from_stored(value: &str) -> Self {
+        match value.trim() {
+            "image" => UndescribedPicture::Image,
+            "photo" => UndescribedPicture::Photo,
+            _ => UndescribedPicture::Nothing,
+        }
     }
 
     /// The description written on a picture that has none: empty, or the
     /// one word chosen.
     pub fn description(self) -> &'static str {
-        "?"
+        match self {
+            UndescribedPicture::Nothing => "",
+            UndescribedPicture::Image => "image",
+            UndescribedPicture::Photo => "photo",
+        }
     }
 }
 
@@ -82,8 +103,12 @@ impl UndescribedPicture {
 ///
 /// A garbled stored value reads as the default, so the entry it selects is
 /// the default's, and saving that back writes the default.
-pub fn offered_index(_stored: &str) -> usize {
-    2
+pub fn offered_index(stored: &str) -> usize {
+    let wanted = UndescribedPicture::from_stored(stored);
+    UndescribedPicture::ALL
+        .iter()
+        .position(|choice| *choice == wanted)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
