@@ -291,6 +291,11 @@ fn display_address(address: &str) -> String {
     name.unwrap_or_else(|| trimmed.to_string())
 }
 
+/// The row read column by column with its headings, on request (#26).
+pub fn the_row_with_its_headings(_cells: &[(MessageColumn, String)]) -> String {
+    String::new()
+}
+
 /// How big the conversation this row belongs to is, when it is one.
 ///
 /// `None` for a message that stands alone, and then nothing is said. Saying

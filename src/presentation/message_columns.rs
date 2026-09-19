@@ -158,6 +158,12 @@ impl MessageColumn {
         }
     }
 
+    /// Whether the heading is worth saying in front of the cell's text when
+    /// a row is read on request (#26).
+    pub fn heading_is_worth_saying(self) -> bool {
+        true
+    }
+
     /// The identifier used when the layout is stored.
     pub fn key(&self) -> &'static str {
         match self {
