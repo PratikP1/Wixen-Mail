@@ -41,6 +41,31 @@
 # failing suite abort the gate, which was the other half of the same hole.
 set -uo pipefail
 
+# The git environment a hook hands its children is not a suite's to keep.
+#
+# The commit hook runs `check.sh`, which runs every suite here as a child, and
+# git hands a hook the environment of the commit in progress: `GIT_DIR`, which
+# is the absolute path under `.git/worktrees/<name>` in a linked worktree;
+# `GIT_INDEX_FILE`, which is the absolute path of a temporary index when a
+# partial commit builds one; `GIT_WORK_TREE`, `GIT_PREFIX` and `GIT_COMMON_DIR`
+# where set. `git -C <dir>` changes the directory and not the repository once
+# one of those is absolute, so a suite that builds a repository of its own with
+# `git -C` acts on the real one instead. Twice on 2026-09-18: a commit made
+# through the hook from the linked worktree `wixen-mail-sweep` let
+# `which-checks.test.sh`'s fixture mark this repository bare, replace its hooks
+# path, write a suite identity into `.git/config` and put a stray commit on
+# `main`, all undone by hand; and a partial commit from the primary worktree
+# handed the same fixture a temporary index, which it wrote to, and the subject
+# read it and answered `all`. In the main checkout the relative `.git` had kept
+# the fixture isolated by luck. That was #85 and windows ledger 536.
+#
+# Cleared here, in the one file every suite sources first, rather than in the
+# suite that ran git that day: the next suite to run git would otherwise inherit
+# the same hazard. The gate's own decision in `check.sh` is made before the
+# suites run, in the hook's process with its environment intact, and nothing
+# here reaches it; a child's `unset` is the child's alone.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR
+
 # The suite's own name, taken from the file being run so it cannot drift from
 # the name a commit message has to write.
 case "$0" in
