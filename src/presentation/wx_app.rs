@@ -20050,7 +20050,7 @@ fn move_or_copy_here_first(
     asked: AMoveAsked,
 ) {
     use crate::application::choosing_messages::{
-        Chosen, Members, MessageRef, Outcome, what_the_selection_holds, what_was_done,
+        Members, MessageRef, Outcome, what_the_selection_holds, what_was_done,
     };
     use crate::application::mail_across_accounts::{Crossing, whether_it_crosses};
     use crate::data::message_cache::moves_in_flight::LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES;
@@ -20200,19 +20200,18 @@ fn move_or_copy_here_first(
         );
     }
     if !too_large_to_hold.is_empty() {
-        let those = Chosen {
-            messages: too_large_to_hold
-                .iter()
-                .map(|message| MessageRef {
+        let rows: Vec<usize> = (0..too_large_to_hold.len()).collect();
+        let those = what_the_selection_holds(&rows, |row| {
+            too_large_to_hold.get(row).map(|message| {
+                Members::AMessage(MessageRef {
                     row_id: message.row_id,
                     uid: message.uid,
                     subject: message.subject.clone(),
                     read: false,
                     starred: false,
                 })
-                .collect(),
-            ..Default::default()
-        };
+            })
+        });
         spawn_folder_move(app, too_large_to_hold, those, into.clone(), copying);
     }
     let into_for_the_worker = into.clone();
