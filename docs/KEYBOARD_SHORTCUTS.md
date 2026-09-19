@@ -47,6 +47,14 @@ answer that without leaving the list.
 | Read the short form | `Space` | Subject, sender, and snippet in mail; the equivalent line in every other module |
 | Read the whole item | `Space` again | Adds recipients, dates, flags, labels, attachments, and any description the record holds. In mail it reads the message itself once that has been downloaded |
 | Read the whole item outright | `Shift+Space` | The full reading without counting presses |
+| Read the row's headings and text | `Ctrl+Shift+;` | In the message list only: the row under the cursor column by column, each heading then its text, in the order the columns are shown. Also on the Action menu. It is mail content, so `Ctrl+M` mutes it |
+
+`Ctrl+Shift+;` is Ctrl, Shift and the semicolon key. On a keyboard where the
+semicolon sits somewhere else, press whichever key makes a semicolon there:
+the shortcut follows the key. It reads a message row and a conversation row
+alike, and says "Nothing is selected in the message list" when the list is
+not where you are. Why the headings are otherwise spoken on every row, and
+how to turn that off for this program alone, is under NVDA below.
 
 Pressing `Space` a third time goes back to the short form. Moving to another
 row starts again at the short form, so the same key always gives the same
@@ -576,6 +584,7 @@ anything.
 |--------|----------|-------------|
 | Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail. The message the cursor is on, whatever else is selected |
 | Next Unread, Previous Unread | `Ctrl+U`, `Ctrl+Shift+U` | Mail |
+| Read the Row's Headings and Text | `Ctrl+Shift+;` | Mail, with the message list focused. The row under the cursor column by column, each heading then its text, once; muted by `Ctrl+M` like any other reading of mail. See Reading the Item Under the Cursor, above |
 | Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read" |
 | Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many |
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
