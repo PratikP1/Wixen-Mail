@@ -3,6 +3,7 @@
 //! Main application window using wxdragon (wxWidgets bindings).
 //! Native Windows UI with first-class accessibility support.
 
+use crate::application::conversations::RowMessage;
 use crate::application::destinations::Deleting;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
@@ -651,6 +652,51 @@ impl Default for WxUIState {
             calendar_showing: CalendarShowing::agenda_now(),
             downloading: Downloading::default(),
         }
+    }
+}
+
+impl WxUIState {
+    /// Which message the list's row `row` stands for (#31).
+    ///
+    /// Under the flat view the row is a message and stands for itself. Under
+    /// conversation view the row is a conversation and stands for the one
+    /// message the listing chose for it, [`RowMessage`]'s rule: the
+    /// originator when nothing in it has been read, else the first unread.
+    /// Every reader of the cursor that wants one message asks this rather
+    /// than indexing the flat list with a conversation row's index, which
+    /// is what the preview did until 2026-09-19 and showed a message
+    /// unrelated to the row.
+    pub fn the_row_stands_for(&self, row: usize) -> Option<RowMessage> {
+        if self.showing.showing_conversations() {
+            // The red half of 11-08's task 2: the window knows no row
+            // message under conversation view until the green.
+            return None;
+        }
+        self.messages.get(row).map(|message| RowMessage {
+            id: message.message_id,
+            uid: message.uid,
+            from: message.from.clone(),
+        })
+    }
+
+    /// The same, for the row under the cursor.
+    pub fn what_the_cursor_stands_for(&self) -> Option<RowMessage> {
+        self.selected_message_index
+            .and_then(|row| self.the_row_stands_for(row))
+    }
+
+    /// The message row `row` stands for, as the loaded rows hold it.
+    ///
+    /// `None` when the loaded rows do not hold it, which under conversation
+    /// view is a row message filed in another folder of the account: the
+    /// conversation's count reaches the whole account and the flat rows are
+    /// this folder's. What needs only the id and the number asks
+    /// [`Self::the_row_stands_for`] instead and is not stopped by that.
+    pub fn the_loaded_message_the_row_stands_for(&self, row: usize) -> Option<&MessageItem> {
+        let stands_for = self.the_row_stands_for(row)?.id;
+        self.messages
+            .iter()
+            .find(|message| message.message_id == stands_for)
     }
 }
 
@@ -16674,6 +16720,7 @@ fn open_for_scanning(
                 frame,
                 "Scan target",
                 &scan_fixtures::conversation(),
+                None,
                 a11y,
             );
             OnReturn::WindowClosed
@@ -22522,7 +22569,7 @@ fn open_conversation_again(
     nodes: Vec<wx_thread_view::ThreadNode>,
     state: Arc<StdMutex<WxUIState>>,
 ) {
-    let choice = wx_thread_view::show_thread_dialog(frame, &subject, &nodes, a11y);
+    let choice = wx_thread_view::show_thread_dialog(frame, &subject, &nodes, None, a11y);
 
     // What to do when the window this opens is closed: come back here.
     let again = {

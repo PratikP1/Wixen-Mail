@@ -263,7 +263,7 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
 
             let nodes = nodes();
             let (conversation, tree, chosen) =
-                wx_thread_view::build_thread_dialog(&frame, "Quarterly report", &nodes, None)
+                wx_thread_view::build_thread_dialog(&frame, "Quarterly report", &nodes, None, None)
                     .expect("three nodes give the conversation tree a root");
 
             // The conversation view resolves in its own selection handler, so

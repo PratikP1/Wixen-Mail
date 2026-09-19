@@ -154,13 +154,31 @@ fn root_label(count: usize) -> String {
     )
 }
 
+/// Which node the tree opens with the cursor on, when the row somebody
+/// pressed Enter on stands for one of its messages (#31).
+///
+/// The position in `nodes` of the message `open_on` names, or nothing when
+/// nothing was named or the named message is not in this conversation, in
+/// which case the cursor goes on the root and Enter means the whole
+/// conversation, as it always did. Pure over the slice, so the target that
+/// holds it needs no window.
+pub fn where_to_open(nodes: &[ThreadNode], open_on: Option<i64>) -> Option<usize> {
+    // The red half of 11-08's task 2: the root, whatever was asked.
+    let _ = (nodes, open_on);
+    None
+}
+
 /// Show the conversation tree and return what the user chose.
 ///
 /// `nodes` must be in display order, parents before their children.
+/// `open_on` is the message the cursor starts on, by [`where_to_open`], so
+/// Enter on arrival opens the message the list row stood for; nothing puts
+/// the cursor on the root.
 pub fn show_thread_dialog(
     parent: &Frame,
     subject: &str,
     nodes: &[ThreadNode],
+    open_on: Option<i64>,
     a11y: &Arc<Accessibility>,
 ) -> ThreadChoice {
     use crate::presentation::accessibility::announcements::Priority;
@@ -169,9 +187,13 @@ pub fn show_thread_dialog(
         return ThreadChoice::Cancelled;
     }
 
-    let Some((dlg, _tree, chosen)) =
-        build_thread_dialog(parent, subject, nodes, theme::current_from_stored_config())
-    else {
+    let Some((dlg, _tree, chosen)) = build_thread_dialog(
+        parent,
+        subject,
+        nodes,
+        open_on,
+        theme::current_from_stored_config(),
+    ) else {
         return ThreadChoice::Cancelled;
     };
 
@@ -214,6 +236,7 @@ pub fn build_thread_dialog(
     parent: &Frame,
     subject: &str,
     nodes: &[ThreadNode],
+    open_on: Option<i64>,
     palette: Option<theme::Palette>,
 ) -> Option<(
     Dialog,
@@ -297,6 +320,8 @@ pub fn build_thread_dialog(
         ids.push(nodes[row.node].message_id);
     }
     tree.expand_all();
+    // The red half of 11-08's task 2: the root, whatever was asked.
+    let _ = open_on;
     tree.select_item(&root);
     tree.set_focus();
 

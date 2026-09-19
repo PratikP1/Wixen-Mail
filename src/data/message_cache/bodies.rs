@@ -665,6 +665,33 @@ impl MessageCache {
         .map_err(|e| Error::Other(format!("Failed to read a row of mail with no text: {}", e)))
     }
 
+    /// The messages of one conversation with no text here, the one the row
+    /// stands for first and the rest in arrival order (#31).
+    ///
+    /// What selecting a conversation row asks for: the tester's "if a thread
+    /// is highlighted, all messages should be cached". Over
+    /// [`super::messages::conversation_scope`], the same scope the row's
+    /// count was taken under, so the messages offered are the messages the
+    /// row is of, in every folder `reach` names and not only the one on
+    /// screen. `first` is the row message, put first because it is the one
+    /// the preview is waiting for; the rest follow by arrival, which is
+    /// reading order. Left out, as [`Self::messages_with_no_text_here`]
+    /// leaves them out: a message no server holds another copy of, which
+    /// nothing could fetch.
+    pub fn text_missing_in_a_conversation(
+        &self,
+        thread_id: &str,
+        account_id: &str,
+        folder_id: i64,
+        reach: crate::application::conversations::AConversationReaches,
+        first: i64,
+    ) -> Result<Vec<MessageToFetch>> {
+        // The red half of 11-08's task 2: nothing is missing until the
+        // query is written.
+        let _ = (thread_id, account_id, folder_id, reach, first);
+        Ok(Vec::new())
+    }
+
     /// Move any bodies still stored inline in `messages` into this table.
     ///
     /// Databases written by earlier versions hold them in the old columns.
