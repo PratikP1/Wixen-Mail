@@ -243,26 +243,106 @@ expect all "main with a version bump" \
 # this case the git read could come back empty on every commit, every manifest
 # would answer `all` exactly as it does today, and every case above would still
 # pass: a fixture proves the reading and not the reader.
+#
+# A repository of its own: one commit holding the manifest at 0.99.0, and the
+# bump to 0.100.0 staged on top of it. This project's hook is configured on this
+# repository rather than globally, so a fresh one does not inherit it. Pinned at
+# an empty directory anyway: a global hooksPath set one day would otherwise run
+# the whole gate from inside a suite the gate is running.
+a_repository_of_its_own() {
+    local repo="$1"
+    mkdir -p "$repo/no-hooks"
+    git -C "$repo" init --quiet
+    git -C "$repo" config core.hooksPath "$repo/no-hooks"
+    git -C "$repo" config user.email "suite@example.invalid"
+    git -C "$repo" config user.name "the suite"
+    printf '[package]\nname = "wixen-mail"\nversion = "0.99.0"\nedition = "2024"\n' \
+        > "$repo/Cargo.toml"
+    git -C "$repo" add Cargo.toml
+    git -C "$repo" commit --quiet -m "the manifest before the bump"
+    printf '[package]\nname = "wixen-mail"\nversion = "0.100.0"\nedition = "2024"\n' \
+        > "$repo/Cargo.toml"
+    git -C "$repo" add Cargo.toml
+}
+
 a_repo_of_its_own="$scratch/a-repo"
-mkdir -p "$a_repo_of_its_own/no-hooks"
-git -C "$a_repo_of_its_own" init --quiet
-# This project's hook is configured on this repository rather than globally, so
-# a fresh one does not inherit it. Pinned at an empty directory anyway: a global
-# hooksPath set one day would otherwise run the whole gate from inside a suite
-# the gate is running.
-git -C "$a_repo_of_its_own" config core.hooksPath "$a_repo_of_its_own/no-hooks"
-git -C "$a_repo_of_its_own" config user.email "suite@example.invalid"
-git -C "$a_repo_of_its_own" config user.name "the suite"
-printf '[package]\nname = "wixen-mail"\nversion = "0.99.0"\nedition = "2024"\n' \
-    > "$a_repo_of_its_own/Cargo.toml"
-git -C "$a_repo_of_its_own" add Cargo.toml
-git -C "$a_repo_of_its_own" commit --quiet -m "the manifest before the bump"
-printf '[package]\nname = "wixen-mail"\nversion = "0.100.0"\nedition = "2024"\n' \
-    > "$a_repo_of_its_own/Cargo.toml"
-git -C "$a_repo_of_its_own" add Cargo.toml
+a_repository_of_its_own "$a_repo_of_its_own"
 
 expect_from "$a_repo_of_its_own" affected "a version bump staged in a repository of its own" \
     gsd/x Cargo.toml
+
+# ── A repository of its own is its own whatever a hook handed the suite ──────
+# The commit hook runs `check.sh`, which runs every suite here as a child, and
+# git hands a hook the environment of the commit in progress: `GIT_DIR`, which
+# is absolute in a linked worktree, and `GIT_INDEX_FILE`, which is absolute
+# when a partial commit builds a temporary index. `git -C` changes the
+# directory and not the repository once either is absolute, so on 2026-09-18
+# the fixture above, run by the hook from the linked worktree `wixen-mail-sweep`,
+# marked this repository bare, replaced its hooks path and put its commit on
+# `main`; and the same evening, under a partial commit's temporary index, the
+# subject read the real commit's index from inside the fixture and answered
+# `all`. The harness every suite sources clears those variables before any
+# suite's first `git`, and these two cases hold it to that.
+#
+# Neither case touches this repository. Each is handed a throwaway repository,
+# `elsewhere`, and the case asks whether the fixture stayed out of it. If the
+# clearing ever stops, the fixture lands in `elsewhere` and the case is red;
+# nothing points at the repository running the suite.
+#
+# What a hook does to a suite, done to one: a fresh `bash` that sources the
+# harness first, as every suite does, then builds the fixture and runs the
+# subject from it, with the one variable under test handed in and the other
+# four absent. So the case is about that variable alone, whatever this suite
+# was itself handed by whoever ran it.
+export -f a_repository_of_its_own
+a_suite_the_hook_handed() {
+    local variable="$1" value="$2" repo="$3"
+    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX -u GIT_COMMON_DIR \
+        "$variable=$value" \
+        bash -c '. "$1" && a_repository_of_its_own "$2" && cd "$2" && "$3" gsd/x Cargo.toml' \
+        a-suite-the-hook-ran.test.sh "$root/scripts/shell-suite.sh" "$repo" "$subject" 2>/dev/null
+}
+
+elsewhere="$scratch/elsewhere"
+a_repository_of_its_own "$elsewhere"
+# And one more file in its index, so an index of `elsewhere`'s read from inside
+# the fixture holds a blob the fixture's repository does not have and the
+# subject cannot mistake it for the bump alone.
+printf 'what elsewhere holds and the fixture does not\n' > "$elsewhere/elsewhere.txt"
+git -C "$elsewhere" add elsewhere.txt
+elsewhere_head="$(git -C "$elsewhere" rev-parse HEAD)"
+elsewhere_config="$scratch/elsewhere-config-as-handed"
+elsewhere_index="$scratch/elsewhere-index-as-handed"
+cp "$elsewhere/.git/config" "$elsewhere_config"
+cp "$elsewhere/.git/index" "$elsewhere_index"
+
+desc="a repository of its own under an absolute GIT_DIR pointing elsewhere leaves that elsewhere untouched"
+answer="$(a_suite_the_hook_handed GIT_DIR "$elsewhere/.git" "$scratch/under-a-git-dir")"
+head_now="$(git -C "$elsewhere" rev-parse HEAD)"
+if [ "$head_now" != "$elsewhere_head" ] || ! cmp -s "$elsewhere/.git/config" "$elsewhere_config"; then
+    suite_case_failed "$desc" "the fixture landed in elsewhere" \
+        "HEAD was $elsewhere_head and is $head_now" \
+        "core.bare is '$(git -C "$elsewhere" config --get core.bare || true)'" \
+        "core.hooksPath is '$(git -C "$elsewhere" config --get core.hooksPath || true)', pinned at '$elsewhere/no-hooks'" \
+        "the subject answered '$answer'"
+elif [ "$answer" != affected ]; then
+    suite_case_failed "$desc" "answered '$answer', wanted 'affected'"
+else
+    suite_case_passed "$desc"
+fi
+
+desc="a repository of its own under an exported GIT_INDEX_FILE reads its own index"
+an_index_the_hook_handed="$scratch/an-index-the-hook-handed"
+cp "$elsewhere_index" "$an_index_the_hook_handed"
+answer="$(a_suite_the_hook_handed GIT_INDEX_FILE "$an_index_the_hook_handed" "$scratch/under-an-index-file")"
+if ! cmp -s "$an_index_the_hook_handed" "$elsewhere_index"; then
+    suite_case_failed "$desc" "the fixture wrote to the index it was handed" \
+        "the subject answered '$answer'"
+elif [ "$answer" != affected ]; then
+    suite_case_failed "$desc" "answered '$answer', wanted 'affected'"
+else
+    suite_case_passed "$desc"
+fi
 expect affected "the hook itself" gsd/x .githooks/pre-commit
 expect affected "this decision" gsd/x scripts/which-checks.sh
 

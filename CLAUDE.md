@@ -158,6 +158,30 @@ end which commas were separators and which were prose would have been a gate
 deciding by heuristic, and every version of that heuristic leaks on a
 description whose parts happen to look like test paths.
 
+**A suite the hook runs never acts on the repository that runs it, and since
+2026-09-19 that is the harness's promise rather than luck.** Git hands a hook the
+environment of the commit in progress, and `check.sh` runs every suite as a
+child of the hook: `GIT_DIR`, absolute in a linked worktree; `GIT_INDEX_FILE`,
+absolute when a partial commit builds a temporary index; `GIT_WORK_TREE`,
+`GIT_PREFIX` and `GIT_COMMON_DIR` where set. `git -C <dir>` changes the
+directory and not the repository once one of those is absolute, so a suite that
+builds a repository of its own with `git -C` builds it in the real one instead.
+That happened twice on 2026-09-18: a commit made through the hook from the
+linked worktree `wixen-mail-sweep` let `which-checks.test.sh`'s fixture mark this
+repository bare, replace its hooks path and put a stray commit on `main`, all
+undone by hand; and a partial commit from the primary worktree handed the same
+fixture a temporary index, which it wrote to, and the subject read it and
+answered `all`. In the main checkout the relative `.git` had kept the fixture
+isolated, by luck. `shell-suite.sh` now unsets the five variables right after
+`set -uo pipefail`, before any suite's first `git`, and two cases in
+`which-checks.test.sh` are red if that stops, each handing a fresh `bash` the
+harness and one variable and asking whether a throwaway repository, `elsewhere`,
+moved. Neither case points at this repository. The gate's own decision is made
+before the suites run, in the hook's process, and is untouched. Ledger 536 and
+#85; the second incident's rule, never `git commit --only <paths>` while another
+process may commit in the same checkout, still stands, because a partial commit
+takes no `index.lock`.
+
 **One kind of shell change still cannot be split, and it is this mechanism
 itself.** A case asserting how the red gate treats shell suites is red until the
 gate treats them that way, and committing it red needs the very thing it is
@@ -354,7 +378,12 @@ than no check, because it reads as covered.
 Measured 2026-09-10 at `eda2719`, running every `scripts/*.test.sh` in turn, the
 way `check.sh` does. That is paid on every commit in every mode, so it is the
 floor under the cheapest possible run: a documents-only commit cannot come in
-under it however narrow the rest of the scoping gets.
+under it however narrow the rest of the scoping gets. Re-taken the same way on
+2026-09-19 by 11-06.3: 43 seconds at `a7758f83`, before its two cases, and 47
+at `d5c3483e` after them, `which-checks.test.sh` going from 14 to 17 for two
+cases that each start a `bash` and build a repository. Less than half the
+figure above on the same machine, with nothing in the suites removed between
+the two days; what moved is not diagnosed, so quote neither without its date.
 
 Where the figure came from is worth knowing, because the same mistake is
 available to the next person. These suites did once cost milliseconds. They grew
