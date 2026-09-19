@@ -74,8 +74,14 @@ const BLOCK_FUNCTION: &str = "wixenBlock";
 ///
 /// Runs of spaces are not kept. Preserving them needs the CSS that does not
 /// survive the trip, and plain-text mail almost never depends on them.
+///
+/// An address the sender wrote out is a link in the quoted text (#89), made
+/// by the same recogniser the reader uses and through the same gate, so a
+/// reply carries it as a link the way it would have carried a sender's own
+/// anchor. An address never holds a line break, so the breaks are turned
+/// after.
 fn escaped_plain_text(text: &str) -> String {
-    html_escape::encode_text(text)
+    crate::application::links_in_text::as_html(text)
         .replace("\r\n", "\n")
         .replace('\n', "<br>")
 }
@@ -1866,13 +1872,19 @@ mod tests {
         // to one sent the middle of the sentence away with nothing said. The
         // answer cannot be guessed from the string, because "if a < b and c >
         // d" is prose that every guess calls markup; it has to be carried.
+        //
+        // Since 2026-09-19 the address between the brackets is a link (#89);
+        // the brackets round it are still characters.
         let page = editor_document(
             &MessageBody::Plain("Please reply to <ada@example.com>.".into()),
             "en",
             false,
         );
 
-        assert!(page.contains("&lt;ada@example.com&gt;"), "{page}");
+        assert!(
+            page.contains("&lt;<a href=\"mailto:ada@example.com\">ada@example.com</a>&gt;."),
+            "{page}"
+        );
     }
 
     #[test]
