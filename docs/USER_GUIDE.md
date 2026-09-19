@@ -279,7 +279,9 @@ spoken. The status bar at the bottom of the window shows the fuller line,
 looks. Move to Trash, Move to Folder and Copy to Folder work the same way: one
 word on the key, the fuller line on the status bar, and the outcome spoken only
 when the message stayed where it was, which for a copy is always, since the
-copy is the only thing that tells you it happened. Since 2026-09-18; until then a delete
+copy is the only thing that tells you it happened. Since 2026-09-19 a copy
+within one account is made here at once, so its sentence, "Copied to Work:
+Invoice", is the answer to the key and no one word comes before it. Since 2026-09-18; until then a delete
 said "Deleting Invoice..." on the key and "Moved to Trash: Invoice" after the
 server had answered, two sentences with the subject in each, and the wait for
 the second slowed the hand.
@@ -320,6 +322,43 @@ changes then queue for the server one message at a time, and what a server
 makes of thousands at once has not been measured against any provider.
 Until 2026-09-19 the list took one selection, so `Shift+Down` moved it
 instead of growing it and every command acted on one message.
+
+### Moving, deleting and copying happen here first
+
+Since 2026-09-19, a move, a delete or a copy of a message within one
+account happens on this computer first. The row leaves the list the moment
+you choose the folder in the Move to window, or press `Delete`, and the
+cursor lands on the next message the way it does after any delete. The
+status bar shows "Moved to Archive: Invoice" or "Moved to Trash: Invoice";
+nothing is spoken on success, because the row you land on is the
+confirmation. A copy's row stays, so a copy is spoken instead: "Copied to
+Work: Invoice". The server is told in the background straight away, and
+again at the next check for mail before any folder of that account is read,
+so a move made with no network goes when the network is back and you next
+check for mail, and a check does not bring the message back in between.
+Closing the program keeps the change: it is replayed at the next check after
+you start it again.
+
+"Back where it was" means the server refused. When it does, the message
+comes back to the folder it was in, the row reappears if that folder is on
+screen, and the refusal is spoken with the server's reason: "Could not move
+Invoice to Archive: over quota. It is back where it was." A copy the server
+refused says "Nothing was copied". A move that was already done on the
+server, by another device or before a restart, is read as done and nothing
+is put back.
+
+In the Move to window, `Enter` on a folder is the move; on a folder that
+holds other folders it still moves there rather than opening it, and on an
+account row it does nothing. A message moved to a folder on another account
+still waits for both servers before the row leaves, because that move is a
+fetch from one server and an append at the other.
+
+Until 2026-09-19 every move and delete waited for the server to agree before
+the row left, which on a slow connection was a noticeable pause on every
+key, and `Enter` on the chosen folder did nothing. Nobody has yet replayed a
+move against a real mail server after a restart; the loopback servers the
+tests use answer the four ways a server can, and a real account settles the
+rest.
 
 ## Composing Email
 

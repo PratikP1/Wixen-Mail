@@ -466,7 +466,7 @@ every account. Inside that window:
 |------|-----|-------|
 | Open an account | `Right` | On an account row, or on a folder that has folders inside it |
 | Close it again | `Left` | |
-| Choose | `Enter` | |
+| Choose | `Enter` | On a folder, moves or copies the message there, since 2026-09-19. On an account row it does nothing, because an account is somewhere to look rather than somewhere to put a message. `Enter` on a folder that has folders inside it still moves there and does not open it |
 | Leave without choosing | `Esc` | |
 | Menu for this thing | `Applications` or `Shift+F10` | What can be done with the message, task, folder or list you are on |
 | Navigate Forward | `Tab` | Move to next element in current pane |
@@ -475,6 +475,16 @@ every account. Inside that window:
 | First Item | `Home` | Jump to first item in list |
 | Last Item | `End` | Jump to last item in list |
 | Activate Item | `Enter` | Activate selected item (open folder, select message) |
+
+**A move, a delete or a copy within one account happens on this computer
+first, since 2026-09-19.** The row leaves the list the moment you choose the
+folder or press `Delete`, the cursor lands on the next message, and the
+server is told in the background and again at the next check for mail. If
+the server refuses, the message comes back where it was and the refusal is
+spoken with the reason. A move to a folder on another account still waits
+for both servers before the row leaves. Until 2026-09-19 every move and
+delete waited for the server before the row left, and `Enter` on the chosen
+folder in this window did nothing.
 
 ### File Menu
 
