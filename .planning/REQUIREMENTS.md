@@ -4307,7 +4307,9 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
     the next check, `MovePutBack` undoing and speaking at High; Enter on a folder ending the
     dialog with `ID_OK`, measured first on a folder with children; a move across accounts
     unchanged and said (11-07.1). **Overruled 2026-09-19 for the cross-account half: 11-07.2
-    and LIST-22.**
+    and LIST-22, merged at `2526b31f` later that day; a move or a copy across accounts
+    completes here first as well, and the sentence that said it waits is gone from the guide
+    and the changelog.**
   - [S] A replayed move after a restart against a real server, a move of a message the server
     changed meanwhile, and #63's move, copy and delete proofs re-taken after this, are his
     account's.
@@ -4315,7 +4317,7 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
 **Added 2026-09-19: one more for #86's second half, after Pratik overruled 11-07.1's
 decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
 
-- [ ] **LIST-22**: A move or a copy to a folder on another account completes on this
+- [x] **LIST-22**: A move or a copy to a folder on another account completes on this
   computer first: the row moves at once (a copy's stays), the success is shown and not
   spoken, the crossing is recorded as owed with the message's bytes held in the store that
   already holds a moving message, the fetch at the source and the append at the destination
@@ -4323,6 +4325,33 @@ decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
   the source is asked to let go only after the destination has answered, a restart resumes
   from the held bytes without a question, a refusal at either server puts the row back and
   is said, and a message over the ceiling keeps the server-first path and says why.
+  **Ticked 2026-09-19 by 11-07.2, merged at `2526b31f`, on its `[D]` line:** the kinds
+  `MoveAcross` and `CopyAcross` with the other account named, stored in two additive
+  columns, read back over a second connection and offered at a check of either account,
+  four cases in the table; the crossing cut into `fetch_and_keep`, `append_and_ask` and
+  `remove_at_the_source`, `resume_the_append` and `resume_from_the_held_bytes` over a held
+  row, `move_it_across` kept for the ceiling path, the question at start retired with its
+  dialog and `why_it_cannot_be_finished_from_here` in its place, the file at 43 tests as
+  before; the store answering `Held`, keeping a waiting crossing past its backstop and
+  reading the source side from the waiting row, thirteen cases; `what_a_crossing_answered`
+  reading `ItIsNotKnownWhereItIs` as not reached and never as refused, and
+  `replay_the_crossings_waiting_for` over the `OpensASession` seam, held against a source and
+  a destination each on the loopback for done with the row settled under the other
+  account's number, refused with the undo, done and refused and not reached after a hang-up,
+  the resume from held bytes fetching nothing, a copy with nothing removed, two crossings in
+  order, the destination's check, an account gone, an account unreachable, a crossing nothing
+  can settle, and a number the folder held before read as no arrival, eighteen cases; the
+  window's arms routing every set through `move_or_copy_here_first`, which builds the kind
+  per message with both gates met and groups the asks by account, the ceiling path alone
+  through the worker with its sentence, the replay helper running the crossings after the
+  moves on the check, the download and the push, eleven readings and companions in
+  `tests/a_move_across_accounts_completes_here_first.rs`; six records measured, one
+  corrected by hand from the runner's answer. Two things the `[D]` line said were done
+  otherwise and the summary says why: a copy across is a marked copy row in the other
+  account's folder rather than no row, keyed on the copy as a copy within the account is,
+  and a message over the ceiling is kept out of the queue at the key by its size rather than
+  by `TooLargeToHold`, which is the step's answer and is held by a case. The `[S]` line is
+  untouched and is ledger 547.
   - Evidence: at `6911018d` (the same bytes as `15407b1e` in every file named),
     `mail_across_accounts::the_crossing` (`:463-556`) fetches at the source, keeps the bytes
     (`moves_in_flight::keep_the_message_while_it_moves`), appends at the destination, asks
@@ -4478,7 +4507,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
-| LIST-22 | Phase 11 | Pending, 11-07.2 |
+| LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
 
 **Coverage:**
 
