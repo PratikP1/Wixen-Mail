@@ -1,6 +1,6 @@
 # Phase 11: Reading, and the list
 
-Twenty-four plans, one per wave: twelve written 2026-09-18 against `main` at
+Twenty-five plans, one per wave: twelve written 2026-09-18 against `main` at
 `744d05ef`, version `1.0.0-alpha.1`, `guards/guards.toml` holding 912
 records by the TOML reader (census 802 + 110 at `guards.toml:84`),
 `.planning/WINDOWS.md` at entry 529 with 499 open, 8,032 tests on the last
@@ -13,7 +13,9 @@ which became a third task of a plan not yet executed; and one inserted
 later that evening against `61865f61`, with 11-05 merged and 11-06
 executing, for #25 reopened on the tester's word; and three inserted that
 night against `4d9f14bf`, with 11-05.1 merged and the tree free, for #87,
-#85 and #86. Phase 10 closed on 2026-09-18 with all ten plans merged. This is the fourth of the seven
+#85 and #86; and one written on 2026-09-19 against `15407b1e`, while
+11-07 executed, for #86's second half after Pratik overruled decision
+29. Phase 10 closed on 2026-09-18 with all ten plans merged. This is the fourth of the seven
 groups Pratik agreed on 2026-09-16, with two plans in front of it from what
 the morning's push showed.
 
@@ -74,6 +76,26 @@ accounts stays server-first and is said, since replaying it needs the
 bytes held. Their requirements are `LIST-20`, `FOUND-19` and `LIST-21`,
 the criteria 23 to 25; the waves from 11-07 on moved.
 
+**One more was written on 2026-09-19 against `15407b1e`, while 11-07
+executed, and committed in the gap after its merge at `b35a40cd`.**
+Pratik overruled 11-07.1's decision 29 on #86: a move across two
+accounts completes here first as well. 11-07.2 follows 11-07.1 and
+precedes 11-08. Most of its shape is already in the tree from phase 4.1:
+`moves_in_flight` holds a message's bytes while it moves under a 25 MB
+ceiling, `move_it_across` appends before it removes and asks the
+destination whether the identifier landed, and `finish_the_move` resumes
+from held bytes. The plan cuts the crossing at its two seams into steps
+a held row can resume from, queues a crossing in 11-07.1's
+`moves_waiting` with its bytes in the existing store, replays it at a
+check of either account before the first listing, retires the question
+at start, and keeps the server-first path for a message over the ceiling
+with a sentence saying why. Its premise 5 was rewritten from 11-07's
+summary after the merge: the set goes through `spawn_folder_move`'s
+worker (`Vec<AMessageMoving>` and the `Chosen`), `a_set_leaving` is
+landed at once as that summary tells 11-07.1 to do, and the cursor
+handler is on `on_item_focused`. Its requirement is `LIST-22`, its
+criterion 26; the waves from 11-08 on moved one.
+
 **Three plans were inserted later on 2026-09-18, after the plan check
 (two blockers and ten warnings, applied at the same commit).** 11-06.1 is
 #76: deleting a message puts the cursor at the top, because the rule that
@@ -102,7 +124,8 @@ delete) and #77 (attachment said once); and the six of that evening, #79
 (typed Markdown), #80 (where a link opens), #81 (the earcons after hours),
 #82 (the snippet), #83 (a delete said twice) and #84 (Alt+A for the
 attachments); and the three of that night, #85 (the gate's own hazard),
-#86 (a move completes here first; Enter in the Move dialog) and #87 (Tab
+#86 (a move completes here first, in two plans once Pratik overruled the
+cross-account half; Enter in the Move dialog) and #87 (Tab
 into the list lands on a row). Pratik's decisions are in the bodies and comments and are
 settled; each plan quotes his words. The runs: CI 35336142985 (red on one test), NVDA 35336142908
 (green over a failed job) and Accessibility 35336142914 (the five editors
@@ -123,14 +146,15 @@ hears; the log's default follows the build; and the privacy page lists
 every way a reader of mail can be tracked. Behind it, CI is green and the
 NVDA workflow's verdict is the run's.
 
-**Requirements:** `LIST-01` to `LIST-21`, one per issue, in
+**Requirements:** `LIST-01` to `LIST-22`, one per issue and one for #86's
+second half, in
 `.planning/REQUIREMENTS.md` under "Reading, and the list"; `FOUND-17` and
 `FOUND-18` for the two plans in front, under phase 9's section beside
 FOUND-13 to FOUND-16, on the same reasoning: a regression of 09-02's fix
 found by CI, and the workflow 09-06's case runs in; `FOUND-19` beside
 them for 11-06.3, a defect in what the hook and CI run.
 
-**Roadmap success criteria this phase owns:** all twenty-five.
+**Roadmap success criteria this phase owns:** all twenty-six.
 
 ## Pratik's order, and which part of it this is
 
@@ -177,17 +201,18 @@ phase's by insertion, above, and belong to no group either.
 | 11-06.3 | 11 | 25 | #85 | closes | inserted 2026-09-18 (night): `shell-suite.sh` clears `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_PREFIX` and `GIT_COMMON_DIR` before any suite's first git; two cases red against a throwaway repository under an absolute `GIT_DIR` and an exported `GIT_INDEX_FILE`, named `which-checks::<description>`; the rule in `CLAUDE.md` |
 | 11-07 | 12 | 5, and 4's thread clause | #30, #27 | closes both | the list selects a set; seven commands act on it with one sentence; a conversation row contributes its messages; the bound shared with Select All and measured; a set's delete lands after the set through 11-06.1's rule |
 | 11-07.1 | 13 | 24 | #86 | closes | inserted 2026-09-18 (night): a `moves_waiting` table and module on `flag_changes_waiting`'s pattern, the replay held against the scripted loopback servers (done, already done, refused, not reached), the sync replaying before it lists and forgetting nothing a waiting move holds, the move and delete arms completing here first with the success shown, `MovePutBack` undoing and speaking a refusal, Enter on a folder in the Move dialog measured then bound; a move across accounts unchanged and said; #63's proofs re-taken after it |
-| 11-08 | 14 | 6 | #31 | closes | a thread row stands for the originator or the first unread message, chosen in SQL where the columns are; the preview and the window follow it; the conversation's text as one chunk on selection |
-| 11-09 | 15 | 7 | #26 | closes | Ctrl+Shift+; reads the row's columns with their headings on request; the headers on every row are NVDA's setting, and the page gives the profile steps |
-| 11-09.1 | 16 | 16, 19 | #77, #81 | closes both | inserted 2026-09-18: the earcon channel on by default for every event, the attachment event's own default the earcon and the status bar with no speech, the column kept, a stored profile kept, the never-sound-alone rule unable to speak for an on-the-row event; and, added that evening, the player opening the device again on the stream's error flag and after a gap or on Windows' notice by measurement, a failed reopen logged once and said once |
-| 11-09.2 | 17 | 20 | #82 | closes | inserted 2026-09-18 (evening): a row's snippet is the message's first relevant words by written rules, one function per rule with a test each, one derivation for the save and the pass, every stored snippet recomputed once under a new marker |
-| 11-10 | 18 | 8 | #62 | closes | a rule's phrase said first and shown in a column; a sound once per check through a new event; the labels as a column; the phase's longest plan |
-| 11-11 | 19 | 9, 10 | #28, #29 | closes both | pictures shown by default except pixels and decorative ones; the link's words as a description; an undescribed picture by rule with its setting; the privacy page's tracking section |
-| 11-11.1 | 20 | 22 (first half) | #80 | advances | inserted 2026-09-18 (evening): a `page` scan target and an NVDA case as the probe; Open links on the Reading tab; the route as one pure function; the page script catching the anchor's activation; the three menu items; the message view route with its title and its way back; the privacy paragraph |
-| 11-11.2 | 21 | 22 (second half) | #80 | closes | inserted 2026-09-18 (evening): the separate window as a process of its own started with `--show-page`, answered before the claim and the handover, its WebView2 profile of its own by the app name set before the WebView, the route reaching it, the erase reaching the profile |
-| 11-11.3 | 22 | 21 | #79 | closes | inserted 2026-09-18 (evening): a marker counts at the start of any line, a refusal that met a marker is logged, the inline style ends at its delimiter, `- ` on the empty first line measured, a reading types into the real page, the pages say the space in words |
-| 11-13 | 23 | 14 | #75 | closes | inserted 2026-09-18: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after every plan that adds a sentence and before the closing read |
-| 11-12 | 24 | 13 | all twenty-one and #25's correction | closes the phase | the pages, the listening lines, the closing read |
+| 11-07.2 | 14 | 26 | #86, second half | closes | written 2026-09-19 after Pratik overruled decision 29: a move or a copy to another account completes here first; the crossing cut into fetch-and-keep, append-and-ask and remove-at-the-source so a held row resumes it; queued in `moves_waiting` with the bytes in `moves_in_flight` under the existing 25 MB ceiling; replayed at a check of either account before its first listing; the question at start retired; a refusal at either server undone through `MovePutBack` and said; a message over the ceiling keeps the server-first path with a sentence; #63's crossing proofs re-taken after |
+| 11-08 | 15 | 6 | #31 | closes | a thread row stands for the originator or the first unread message, chosen in SQL where the columns are; the preview and the window follow it; the conversation's text as one chunk on selection |
+| 11-09 | 16 | 7 | #26 | closes | Ctrl+Shift+; reads the row's columns with their headings on request; the headers on every row are NVDA's setting, and the page gives the profile steps |
+| 11-09.1 | 17 | 16, 19 | #77, #81 | closes both | inserted 2026-09-18: the earcon channel on by default for every event, the attachment event's own default the earcon and the status bar with no speech, the column kept, a stored profile kept, the never-sound-alone rule unable to speak for an on-the-row event; and, added that evening, the player opening the device again on the stream's error flag and after a gap or on Windows' notice by measurement, a failed reopen logged once and said once |
+| 11-09.2 | 18 | 20 | #82 | closes | inserted 2026-09-18 (evening): a row's snippet is the message's first relevant words by written rules, one function per rule with a test each, one derivation for the save and the pass, every stored snippet recomputed once under a new marker |
+| 11-10 | 19 | 8 | #62 | closes | a rule's phrase said first and shown in a column; a sound once per check through a new event; the labels as a column; the phase's longest plan |
+| 11-11 | 20 | 9, 10 | #28, #29 | closes both | pictures shown by default except pixels and decorative ones; the link's words as a description; an undescribed picture by rule with its setting; the privacy page's tracking section |
+| 11-11.1 | 21 | 22 (first half) | #80 | advances | inserted 2026-09-18 (evening): a `page` scan target and an NVDA case as the probe; Open links on the Reading tab; the route as one pure function; the page script catching the anchor's activation; the three menu items; the message view route with its title and its way back; the privacy paragraph |
+| 11-11.2 | 22 | 22 (second half) | #80 | closes | inserted 2026-09-18 (evening): the separate window as a process of its own started with `--show-page`, answered before the claim and the handover, its WebView2 profile of its own by the app name set before the WebView, the route reaching it, the erase reaching the profile |
+| 11-11.3 | 23 | 21 | #79 | closes | inserted 2026-09-18 (evening): a marker counts at the start of any line, a refusal that met a marker is logged, the inline style ends at its delimiter, `- ` on the empty first line measured, a reading types into the real page, the pages say the space in words |
+| 11-13 | 24 | 14 | #75 | closes | inserted 2026-09-18: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after every plan that adds a sentence and before the closing read |
+| 11-12 | 25 | 13 | all twenty-two and #25's correction | closes the phase | the pages, the listening lines, the closing read |
 
 Requirement coverage: FOUND-17 by 11-01; FOUND-18 by 11-02, which also
 ticks FOUND-08 and FOUND-09; LIST-01 by 11-03; LIST-02 by 11-04; LIST-03 by
@@ -195,15 +220,15 @@ ticks FOUND-08 and FOUND-09; LIST-01 by 11-03; LIST-02 by 11-04; LIST-03 by
 LIST-07 by 11-09; LIST-08 by 11-10; LIST-09 and LIST-10 by 11-11; LIST-11
 by 11-13; LIST-12 and LIST-14 by 11-06.1; LIST-13 and LIST-16 by 11-09.1;
 LIST-15 by 11-04.1; LIST-17 by 11-09.2; LIST-18 by 11-11.3; LIST-19 by
-11-11.1 and 11-11.2; LIST-20 by 11-06.2; LIST-21 by 11-07.1; FOUND-19 by
-11-06.3; 11-12 reads all twenty-one.
+11-11.1 and 11-11.2; LIST-20 by 11-06.2; LIST-21 by 11-07.1; LIST-22 by
+11-07.2; FOUND-19 by 11-06.3; 11-12 reads all twenty-two.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
 publish and the executor may do it; filing or editing other issues is not
 theirs. 11-02 closes nothing: #33 is closed already.
 
-## Why twenty-four plans, and why this order
+## Why twenty-five plans, and why this order
 
 Twelve at first because two things the morning's push showed go before the
 issues, and the ten issues fall into ten pieces that share files only
@@ -215,9 +240,11 @@ rest inserted, #80 as two because a separate window with a profile of its
 own is a process of its own; one more later that evening for #25 reopened,
 a correction to a merged plan; three more that night for #87, #85 and
 #86, the second the gate's own defect and the third the largest insert
-of the phase. One per wave because every plan writes `docs/changelog.md`,
-all but the closing read and the gate's own plan write
-`guards/guards.toml`, eighteen of the twenty-four write
+of the phase; one more the next day for #86's second half, once Pratik
+overruled the decision that had kept it server-first. One per wave
+because every plan writes `docs/changelog.md`, all but the closing read
+and the gate's own plan write `guards/guards.toml`, nineteen of the
+twenty-five write
 `src/presentation/wx_app.rs`, and a wave is a set of plans sharing no
 file. The order:
 
@@ -248,6 +275,8 @@ file. The order:
   asked for a move and a delete, including 11-07's delete of a set, and
   before #31 so the conversation row's arms are written over the new
   shape.
+- **#86's second half right after** (11-07.2), the crossing on the queue
+  11-07.1 writes, before #31 for the same reason.
 - **#31** (11-08), the conversation row, before #26 and #62 read a
   row's cells.
 - **#26** (11-09), what a row says on request, which #62 extends.
@@ -382,18 +411,28 @@ file. The order:
     suite that runs git**, and its two cases use a throwaway repository,
     never this one; its requirement is `FOUND-19` under phase 9's section
     beside the other defects in what the hook and CI run.
-29. **#86 keeps a move across accounts server-first**, because it is a
-    fetch at one server and an append at another, and replaying it from
-    a row needs the bytes held, which is the outbox's shape and a plan of
-    its own; the summary and the close comment say so and Pratik decides.
-    The replay runs before any folder of the account is listed, so a
-    check neither brings a moved message back nor forgets it from its
-    new folder; a `NotReached` ends the account's check rather than
-    listing over a change the server has not heard of.
+29. **#86 kept a move across accounts server-first in 11-07.1, and Pratik
+    overruled that on 2026-09-19**: it completes here first as well, in
+    11-07.2. The reason 11-07.1 gave, that replaying a crossing from a row
+    needs the bytes held, turned out to be already answered in the tree:
+    phase 4.1's `moves_in_flight` holds them under a 25 MB ceiling, so no
+    third store is written and the ceiling is not moved; a message over it
+    keeps the server-first path and says why. The rest of the decision
+    stands: the replay runs before any folder of the account is listed,
+    a `NotReached` ends the account's check rather than listing over a
+    change the server has not heard of, and for a crossing that holds for
+    both accounts.
 30. **#86's Enter is bound on the tree's activation, not by a default
     button**, so Enter on Cancel stays Cancel; whether Enter on a folder
     with children also expands it is measured on a built tree first, and
     the handler collapses it back if it does.
+31. **11-07.2 retires the question at start about an unfinished move**,
+    because under the decision a crossing is what the person asked for
+    and finishing it is the queue's job, not a dialog's: it is replayed at
+    the next check of either account, and the two cases nothing can
+    finish (an account gone, a question that cannot be put) are said once
+    when the replay meets them. Guardrail 7 holds as it does for the
+    outbox and the flag queue: nothing sends on connectivity.
 
 ## What the tree contradicted in the issues and the brief
 
@@ -428,6 +467,8 @@ filed; the shapes held. These moved in kind:
 | #86 | "the way a flag change waits" as one table | the flag queue is two halves, `application::flag_changes_waiting` deciding and `data::message_cache::waiting_flag_changes` storing, offered on a check's session inside `spawn_mail_sync`; the move queue takes the same two halves and is replayed before the check lists, since a listing taken first would put the message back | `grep -n 'pub fn ' src/data/message_cache/waiting_flag_changes.rs`; `sed -n 1383,1390p src/application/mail_sync.rs` |
 | #86 | the move across accounts is one more move to queue | it is a fetch and an append (`after_a_move_across_accounts`), replayable only with the bytes held; it stays server-first and is said | `sed -n 102,130p src/application/server_delete.rs` |
 | #85 | the one variable is `GIT_DIR` | two incidents, two variables: the second, `GIT_INDEX_FILE`, came from a partial commit in the primary worktree the same evening, and the suite's subject read the hook's index; the harness clears five | the commit log of `4b57d312`'s attempts, observation 0706 |
+| #86 (Pratik's comment of 2026-09-19) | the bytes held on the outbox's shape, a new store | the store exists since phase 4.1: `moves_in_flight`, keyed on the message's row, with a 25 MB ceiling, a 64 MB budget and a seven-day give-up; the plan reuses it and adds a queue row, not a table of bytes | `git show main:src/data/message_cache/moves_in_flight.rs \| sed -n 1,85p` |
+| #86 (the comment) | a restart replays after asking | today a restart asks a yes-no question (`say_what_did_not_finish`, `wx_app.rs:28517` at `6911018d`); the plan retires the question | `git show main:src/presentation/wx_app.rs \| sed -n 28517,28580p` |
 
 ## Costs every plan is written around
 
@@ -619,19 +660,22 @@ on this project, so the factor is taken by hand from the files and said here.
 
 1. **The roadmap's phase 11 entry and progress row.** Done by the planner in
    the commit that lands these plans and the ones that land the inserts:
-   the goal, the twenty-four requirements, twenty-five criteria, the plan
+   the goal, the twenty-five requirements, twenty-six criteria, the plan
    list, the row at `0/15`, then `3/20` after the evening's inserts, then
-   `8/24` after the night's, and the milestone paragraph kept true.
+   `8/24` after the night's, then `12/25` after 11-07.2, and the milestone
+   paragraph kept true.
    `test_the_roadmap_counts_the_files_that_are_on_disk` holds the row to
    the files.
 2. **`.planning/REQUIREMENTS.md`.** Done by the planner: the `LIST` section,
-   FOUND-17, FOUND-18 and FOUND-19 beside FOUND-16, the twenty-four
+   FOUND-17, FOUND-18 and FOUND-19 beside FOUND-16, the twenty-five
    traceability rows, the coverage count re-taken at 80, then 86, then 89,
+   then 90,
    the provenance notes.
 3. **`.planning/STATE.md`.** Done by the planner in the same commit, by hand:
    phase 11 current, plan 1 of 15, then `Total Plans in Phase: 20` with
    the current plan left where 11-03's summary put it, then 21 with it
-   where 11-05's put it, then 24 with it where 11-05.1's put it,
+   where 11-05's put it, then 24 with it where 11-05.1's put it, then 25
+   with it where 11-07's put it,
    `progress.total_plans` counted from the disk.
 4. **`docs/changelog.md`.** Every plan but 11-12 writes its entries under
    `[Unreleased]`; 11-12 reads them as one.

@@ -4282,10 +4282,59 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
     first with the success as `Shown`, the push at once on the action's session and again at
     the next check, `MovePutBack` undoing and speaking at High; Enter on a folder ending the
     dialog with `ID_OK`, measured first on a folder with children; a move across accounts
-    unchanged and said (11-07.1).
+    unchanged and said (11-07.1). **Overruled 2026-09-19 for the cross-account half: 11-07.2
+    and LIST-22.**
   - [S] A replayed move after a restart against a real server, a move of a message the server
     changed meanwhile, and #63's move, copy and delete proofs re-taken after this, are his
     account's.
+
+**Added 2026-09-19: one more for #86's second half, after Pratik overruled 11-07.1's
+decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
+
+- [ ] **LIST-22**: A move or a copy to a folder on another account completes on this
+  computer first: the row moves at once (a copy's stays), the success is shown and not
+  spoken, the crossing is recorded as owed with the message's bytes held in the store that
+  already holds a moving message, the fetch at the source and the append at the destination
+  run in the background and at the next check of either account before its first listing,
+  the source is asked to let go only after the destination has answered, a restart resumes
+  from the held bytes without a question, a refusal at either server puts the row back and
+  is said, and a message over the ceiling keeps the server-first path and says why.
+  - Evidence: at `6911018d` (the same bytes as `15407b1e` in every file named),
+    `mail_across_accounts::the_crossing` (`:463-556`) fetches at the source, keeps the bytes
+    (`moves_in_flight::keep_the_message_while_it_moves`), appends at the destination, asks
+    `whether_the_destination_has_it` when the append's answer never came, and only then
+    `the_removal`; `move_it_across` (`:430-461`) runs it in front of the person and lets the
+    bytes go on the way out; `finish_the_move` (`:620-675`) resumes from a held row; the four
+    endings that are not arrived leave the row today
+    (`server_delete::after_a_move_across_accounts`, `:102-157`); the store's ceiling is
+    `LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES`, 25 MB, its budget 64 MB, its give-up seven
+    days (`moves_in_flight.rs:64-85`), and "a message over it still moves"; at start
+    `say_what_did_not_finish` (`wx_app.rs:28517`) asks a yes-no question about an unfinished
+    move; `spawn_folder_move` (`:19816`) takes `Vec<AMessageMoving>` and the `Chosen` since
+    11-07 and its `AnotherAccount` branches (`:19906`, `:19955`) open `the_session_at` for
+    both accounts.
+  - [S] Pratik on #86, 2026-09-19: "a move across two accounts completes here first as well,
+    not server-first ... the message's bytes held here (the outbox's shape) so a cross-account
+    move is replayed from the row after a restart, the fetch at one server and the append at
+    the other done in the background or at the next check, the row moved at once, the
+    refusal at either server undoing it here and said."
+  - [D] `moves_waiting` gains the kinds `MoveAcross` and `CopyAcross` with the destination
+    account; the crossing is cut into `fetch_and_keep`, `append_and_ask` and
+    `remove_at_the_source`, with `resume_from_the_held_bytes` for a held row and
+    `move_it_across` kept for the over-the-ceiling path; `what_a_replay_answered` maps the
+    six `MovedAcross` endings to done, refused or not reached, reading `ItIsNotKnownWhereItIs`
+    as not reached and never as refused; `replay_the_crossings_waiting_for(account)` runs the
+    crossings of which the account is the source or the destination on both sessions, from
+    held bytes or from a fresh fetch; the `AnotherAccount` branches of `spawn_folder_move`'s
+    worker complete here first through 11-07.1's function with the kind as the one
+    difference, `a_set_leaving` landed at once; the question at start retired; a message over
+    the ceiling answers `TooLargeToHold`, takes no queue row, and moves server-first with the
+    sentence; cases against the scripted servers for each ending, the resume both ways, the
+    ceiling and the order; readings over the arms, the three folder-reading paths and the
+    retirement (11-07.2).
+  - [S] Ledger 187's three questions (a ten megabyte upload, Gmail's label for a copy from
+    another account, an identifier the destination already holds) and #63's copy and move
+    across accounts, re-taken after this, are his accounts'.
 
 ## v2 Requirements
 
@@ -4405,12 +4454,18 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Pending, 11-07.1 |
+| LIST-22 | Phase 11 | Pending, 11-07.2 |
 
 **Coverage:**
 
-- v1 requirements: 89 total
-- Mapped to phases: 89
+- v1 requirements: 90 total
+- Mapped to phases: 90
 - Unmapped: 0
+
+**Re-taken 2026-09-19.** This block said 89 and 89 from the night of 2026-09-18 until Pratik
+overruled 11-07.1's decision 29 and #86's second half became 11-07.2. Counted with the same
+command as below, which gives 90 at `6911018d` plus this edit with `LIST-22` in, and the
+traceability table above has 90 rows.
 
 **Re-taken 2026-09-18, in the night.** This block said 86 and 86 from the evening until three
 more issues (#85, #86, #87) were taken by three inserted plans (11-06.2, 11-06.3, 11-07.1).
@@ -4524,6 +4579,10 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-19.** `LIST-22` traces to #86's second half, Pratik's comment of that day
+overruling 11-07.1's decision to keep a move across accounts server-first, taken by 11-07.2
+between 11-07.1 and 11-08. The total is 90.
 
 **Added 2026-09-18, in the night.** `LIST-20` and `LIST-21` trace to #87 and #86, filed after
 the evening's six and taken by inserted plans 11-06.2 (beside 11-06.1, which was at three
