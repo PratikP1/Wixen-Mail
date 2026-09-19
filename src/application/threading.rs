@@ -24,12 +24,18 @@ pub struct ThreadInput {
     pub message_id: String,
     /// `References`, oldest ancestor first, with `In-Reply-To` appended.
     pub references: Vec<String>,
-    /// A thread id the server supplied, such as Gmail's `X-GM-THRID`.
+    /// The conversation the store filed this message under, when it has one.
     ///
-    /// Preferred over anything computed here, because it matches what that
-    /// provider shows the same user in its own interface, and disagreeing with
-    /// the web client about what a conversation is helps nobody.
-    pub server_thread_id: Option<String>,
+    /// On Gmail that is the server's own `X-GM-THRID`, as
+    /// [`crate::application::thread_identity::the_servers_name`] spells it;
+    /// elsewhere it is the root the store derived from the chain. Preferred
+    /// over anything computed here, for the name and for the membership
+    /// both: two messages the store filed apart are not joined by their
+    /// headers, because the rows and counts on screen were read from the
+    /// store's grouping, and a tree that joins what the list keeps apart
+    /// opens on members the row never had (#88). Until 2026-09-19 this was
+    /// `server_thread_id`, and nothing handed it one.
+    pub conversation: Option<String>,
 }
 
 /// Where a message sits in its conversation.
@@ -85,21 +91,21 @@ pub fn thread_messages(messages: &[ThreadInput]) -> Vec<ThreadPlacement> {
         }
     }
 
-    // A server thread id overrides everything computed: messages sharing one
+    // The store's word overrides everything computed: messages sharing one
     // are one conversation whatever the headers say.
-    let mut by_server_id: HashMap<&str, i64> = HashMap::new();
+    let mut by_conversation: HashMap<&str, i64> = HashMap::new();
     for message in messages {
-        let Some(server_id) = message.server_thread_id.as_deref() else {
+        let Some(conversation) = message.conversation.as_deref() else {
             continue;
         };
-        let server_id = server_id.trim();
-        if server_id.is_empty() {
+        let conversation = conversation.trim();
+        if conversation.is_empty() {
             continue;
         }
-        match by_server_id.get(server_id) {
+        match by_conversation.get(conversation) {
             Some(first) => union.union(message.id, *first),
             None => {
-                by_server_id.insert(server_id, message.id);
+                by_conversation.insert(conversation, message.id);
             }
         }
     }
@@ -396,7 +402,15 @@ mod tests {
             id,
             message_id: message_id.to_string(),
             references: references.iter().map(|r| r.to_string()).collect(),
-            server_thread_id: None,
+            conversation: None,
+        }
+    }
+
+    /// The same message, as the store filed it.
+    fn filed(id: i64, message_id: &str, references: &[&str], under: &str) -> ThreadInput {
+        ThreadInput {
+            conversation: Some(under.to_string()),
+            ..message(id, message_id, references)
         }
     }
 
@@ -496,15 +510,68 @@ mod tests {
     fn test_a_server_thread_id_wins_over_the_headers() {
         // Disagreeing with the provider's own web client about what a
         // conversation is helps nobody.
-        let mut a = message(1, "<a@x>", &[]);
-        let mut b = message(2, "<b@x>", &[]);
-        a.server_thread_id = Some("thr-1".to_string());
-        b.server_thread_id = Some("thr-1".to_string());
+        let a = filed(1, "<a@x>", &[], "thr-1");
+        let b = filed(2, "<b@x>", &[], "thr-1");
         let placements = thread_messages(&[a, b]);
         assert_eq!(
             placement(&placements, 1).thread_id,
             placement(&placements, 2).thread_id
         );
+    }
+
+    // ── The store's word, both ways, #88 ─────────────────────────────────
+
+    #[test]
+    fn test_two_messages_the_store_filed_apart_are_not_joined_by_their_headers() {
+        // Case (e) as the list sees it. Gmail filed the reply in a
+        // conversation of its own, whatever the chain says, and the rows on
+        // screen were read from that grouping. A pass here that joined them
+        // by the chain would open the parent's tree on a member its row
+        // never counted, and put the reply at depth 1 under a root the
+        // store keeps apart from it.
+        let parent = filed(1, "<a@x>", &[], "gm:1");
+        let reply = filed(2, "<b@x>", &["<a@x>"], "gm:2");
+        let placements = thread_messages(&[parent, reply]);
+
+        assert_ne!(
+            placement(&placements, 1).thread_id,
+            placement(&placements, 2).thread_id,
+            "the headers joined what the store keeps apart"
+        );
+        assert_eq!(placement(&placements, 2).parent_id, None);
+        assert_eq!(placement(&placements, 2).depth, 0);
+    }
+
+    #[test]
+    fn test_a_conversation_is_named_by_the_stores_word_when_it_has_one() {
+        // The name is what the conversation window looks its members up by:
+        // `conversation_nodes` filters the loaded rows by the id the
+        // conversation row carries, which is the store's. A pass naming the
+        // group after its least Message-ID answers a name the row never
+        // had, and the window opens on nothing.
+        let parent = filed(1, "<z@x>", &[], "gm:7");
+        let reply = filed(2, "<a@x>", &["<z@x>"], "gm:7");
+        let placements = thread_messages(&[parent, reply]);
+
+        assert_eq!(placement(&placements, 1).thread_id, "gm:7");
+        assert_eq!(placement(&placements, 2).thread_id, "gm:7");
+        // The headers still place the reply under its parent inside it.
+        assert_eq!(placement(&placements, 2).parent_id, Some(1));
+        assert_eq!(placement(&placements, 2).depth, 1);
+    }
+
+    #[test]
+    fn test_a_message_with_no_word_joined_by_its_headers_takes_the_conversations_name() {
+        // A draft filed here has a chain and nothing from the server. It
+        // joins its parent's conversation by the chain and is named as the
+        // store would name it, under the server's word, rather than the
+        // other way round.
+        let parent = filed(1, "<z@x>", &[], "gm:7");
+        let draft = message(2, "<a@x>", &["<z@x>"]);
+        let placements = thread_messages(&[parent, draft]);
+
+        assert_eq!(placement(&placements, 2).thread_id, "gm:7");
+        assert_eq!(placement(&placements, 2).parent_id, Some(1));
     }
 
     #[test]

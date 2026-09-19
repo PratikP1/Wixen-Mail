@@ -424,6 +424,15 @@ pub struct ImapMessage {
     /// way to tell "the same message again" from "another message", which is
     /// the difference between a folder listing and a folder listing twice.
     pub gmail_message_id: Option<u64>,
+    /// Gmail's own conversation identifier, `X-GM-THRID`, where the server
+    /// has one.
+    ///
+    /// The conversation Gmail's own interface shows this message in. Handed
+    /// to the store as the conversation's name, where it wins over whatever
+    /// the `References` chain says (#88): a chain can only ever join what
+    /// Gmail already joins, and a reply a sender's program sent without one
+    /// is joined by nothing else.
+    pub gmail_thread_id: Option<u64>,
     /// The labels Gmail has on this message, its own names for its folders.
     ///
     /// Kept because they say where else the same message appears, which is
@@ -1924,6 +1933,7 @@ fn message_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<ImapMess
             AttributeValue::GmailMsgId(id) => Some(*id),
             _ => None,
         }),
+        gmail_thread_id: None,
         receipt_to: parsed.receipt_to,
         list_unsubscribe: parsed.list_unsubscribe,
         labels: attributes
@@ -2494,12 +2504,24 @@ mod tests {
     }
 
     #[test]
-    fn test_the_thread_id_is_not_asked_for() {
-        // Deliberate. `async-imap` parses X-GM-THRID and offers no way to read
-        // it back, so asking would cost bandwidth on every message in every
-        // folder and give nothing. If this starts failing, the library grew
-        // the accessor and threading on Gmail can improve.
-        assert!(!header_query(true).contains("X-GM-THRID"));
+    fn test_the_thread_id_is_asked_for_where_the_server_has_it() {
+        // Until 2026-09-19 this test pinned the opposite: the field was
+        // deliberately left out because the library's own reader hid the
+        // answer. The attributes are read here now and `imap-proto` parses
+        // the field, so the reason is gone and the tester's threads were
+        // still splitting for its absence (#88). Asked for on Gmail alone,
+        // because a server that does not know the word refuses the whole
+        // FETCH, which would be an empty folder everywhere else.
+        assert!(
+            header_query(true).contains("X-GM-THRID"),
+            "{}",
+            header_query(true)
+        );
+        assert!(
+            !header_query(false).contains("X-GM-THRID"),
+            "{}",
+            header_query(false)
+        );
     }
 
     #[test]
@@ -2699,14 +2721,18 @@ mod tests {
     // ── Reading one FETCH response, pure ─────────────────────────────────
 
     #[test]
-    fn test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them() {
+    fn test_gmails_own_fields_reach_the_message_when_the_server_sent_them() {
         // Found by mutation testing: deleting either match arm here left
         // every existing test passing. The only test that touches Gmail's
         // own fields checks the request going out (that the query asks for
-        // X-GM-MSGID and X-GM-LABELS); nothing checked what came back.
+        // X-GM-MSGID and X-GM-LABELS); nothing checked what came back. The
+        // conversation id joined the reply on 2026-09-19 (#88), and the same
+        // reading holds it: a message the server sent with all three carries
+        // all three.
         let attributes = vec![
             AttributeValue::Uid(4),
             AttributeValue::GmailMsgId(99_887_766),
+            AttributeValue::GmailThrId(1_278_455_344_230_334_865),
             AttributeValue::GmailLabels(vec![
                 std::borrow::Cow::Borrowed("\\Important"),
                 std::borrow::Cow::Borrowed("Work"),
@@ -2716,6 +2742,7 @@ mod tests {
         let message = message_from_attributes(&attributes).expect("a UID makes this a message");
 
         assert_eq!(message.gmail_message_id, Some(99_887_766));
+        assert_eq!(message.gmail_thread_id, Some(1_278_455_344_230_334_865));
         assert_eq!(
             message.labels,
             vec!["\\Important".to_string(), "Work".to_string()]

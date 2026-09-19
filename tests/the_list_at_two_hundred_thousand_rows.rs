@@ -487,7 +487,7 @@ fn as_thread_input(row: &MessageListRow) -> ThreadInput {
             .split_whitespace()
             .map(|r| r.to_string())
             .collect(),
-        server_thread_id: None,
+        conversation: None,
     }
 }
 

@@ -13531,7 +13531,7 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
                 .split_whitespace()
                 .map(|r| r.to_string())
                 .collect(),
-            server_thread_id: None,
+            conversation: None,
         })
         .collect();
 

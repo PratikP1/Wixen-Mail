@@ -10276,7 +10276,7 @@ before = """            AttributeValue::GmailMsgId(id) => Some(*id),
         }),"""
 after = """            _ => None,
         }),"""
-red = ["service::protocols::imap::tests::test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them"]
+red = ["service::protocols::imap::tests::test_gmails_own_fields_reach_the_message_when_the_server_sent_them"]
 tests_last_seen = [
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
@@ -10292,7 +10292,7 @@ before = """                AttributeValue::GmailLabels(labels) => Some(
                 ),
                 _ => None,"""
 after = """                _ => None,"""
-red = ["service::protocols::imap::tests::test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them"]
+red = ["service::protocols::imap::tests::test_gmails_own_fields_reach_the_message_when_the_server_sent_them"]
 tests_last_seen = [
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
