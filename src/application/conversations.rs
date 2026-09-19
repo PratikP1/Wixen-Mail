@@ -214,7 +214,8 @@ pub struct ConversationItem {
     pub newest_received: String,
     /// The newest sender date in it.
     pub newest_sent: String,
-    /// The newest message's first line, when there is any.
+    /// The first line of the message the row stands for, when there is any
+    /// (#31; the newest message's until 2026-09-19).
     ///
     /// The same three states as [`crate::presentation::ui_types::MessageItem`]
     /// and for the same reason: `None` is text nobody has fetched and
@@ -222,7 +223,8 @@ pub struct ConversationItem {
     /// conversation row said the same thing about both until this was an
     /// option, and one of the two things it said was untrue.
     pub snippet: Option<String>,
-    /// Every distinct sender, as stored.
+    /// Every distinct sender, as stored, one per line; the cell says
+    /// [`Self::stands_for`]'s sender first and these after it, each once.
     pub senders: String,
     /// Every distinct addressee.
     pub to: String,

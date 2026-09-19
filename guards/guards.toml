@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 162 records have arrived since and have not been through it.
+# 164 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26786,4 +26786,54 @@ red = [
 tests_last_seen = [
     { file = "src/application/moves_waiting.rs", tests = 45 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
+]
+
+# The one ordering every expression about the row message reads, put back
+# to the newest by arrival, which is what the row was until 11-08: the
+# preview, the sender said first, the snippet and the sort all move to the
+# last message in the conversation, which is the row the tester reported
+# (#31). Every case of the target but the conversation of one goes red,
+# since there the newest and the originator are the same message.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a conversation row stands for the first unread or the originator, not the newest"
+file = "src/presentation/message_columns.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = """             ORDER BY r.read ASC, r.received_at ASC, r.id ASC LIMIT 1)\""""
+after = """             ORDER BY r.received_at DESC, r.id DESC LIMIT 1)\""""
+red = [
+    "test_with_nothing_read_the_row_stands_for_the_originator",
+    "test_with_later_messages_read_the_row_still_stands_for_the_originator",
+    "test_with_the_first_messages_read_the_row_stands_for_the_first_unread",
+    "test_with_everything_read_the_row_stands_for_the_originator_again",
+    "test_the_correspondent_cell_says_the_row_messages_sender_first_and_everyone_once",
+    "test_sorting_by_correspondent_orders_conversations_by_their_row_messages_senders",
+]
+tests_last_seen = [
+    { file = "src/presentation/message_columns.rs", tests = 43 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 7 },
+]
+
+# The row message's sender dropped from the front of the Correspondent
+# cell, so the cell lists the senders in stored order again and the first
+# name heard on a thread row is whoever wrote first, not the message the
+# row previews (#31). The cell case on the target goes red; the library's
+# own cell test would too, and this record measures the target.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the correspondent cell says the row message's sender first, not the senders in stored order"
+file = "src/presentation/message_rows.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = """            one_first_then_everyone(&conversation.stands_for.from, &conversation.senders)"""
+after = """            everyone_in(&conversation.senders)"""
+red = [
+    "test_the_correspondent_cell_says_the_row_messages_sender_first_and_everyone_once",
+]
+tests_last_seen = [
+    { file = "src/presentation/message_rows.rs", tests = 41 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 7 },
 ]

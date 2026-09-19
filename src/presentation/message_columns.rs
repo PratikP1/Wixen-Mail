@@ -48,7 +48,11 @@ macro_rules! how_bad_the_safety_word_is {
 /// sender the Correspondent cell says first, the snippet, and the id and
 /// the number the preview, the window and the fetch use. `m` is the
 /// conversation's group, `r` the rows of `here` in the same conversation,
-/// and the first of them in this order is the one.
+/// and the first of them in this order is the one: an unread message
+/// before a read one, then the earlier arrival, then the lower row id. So
+/// the first unread by arrival when any is unread, and the originator when
+/// none is, which is also the answer when every message is read. The
+/// tester's rule of 2026-09-16 (#31), phase 11's decision 9.
 ///
 /// A macro for the reason [`how_bad_the_safety_word_is`] is one: the column
 /// name goes inside a larger literal, and `concat!` joins literals while the
@@ -60,7 +64,7 @@ macro_rules! the_message_the_row_stands_for {
             "(SELECT r.",
             $column,
             " FROM here r WHERE r.thread_id = m.thread_id \
-             ORDER BY r.received_at DESC, r.id DESC LIMIT 1)"
+             ORDER BY r.read ASC, r.received_at ASC, r.id ASC LIMIT 1)"
         )
     };
 }
@@ -230,13 +234,20 @@ impl MessageColumn {
     /// red at compile time, and this is one of them, so a new column cannot
     /// arrive with a display rule and no sort rule.
     ///
-    /// The families, in D-02's own words:
+    /// The families, in D-02's own words, with the change #31 made on
+    /// 2026-09-19:
     ///
-    /// - Dates and Snippet take the newest message's value.
+    /// - Dates take the newest message's value: a conversation's date is
+    ///   when it last moved.
+    /// - `Snippet` and `Correspondent` take the message the row stands for,
+    ///   [`the_message_the_row_stands_for!`]: the originator when nothing is
+    ///   read, else the first unread by arrival. The Correspondent cell says
+    ///   that sender first and the rest after, so its shown value begins
+    ///   with the expression's value.
     /// - `Attachment`, `Flagged`, `Answered` and `Draft` are true if any is.
     /// - `Safety` is the worst.
     /// - `Size` is the sum.
-    /// - `Correspondent` is the distinct senders, and `To` and `Cc` follow it.
+    /// - `To` and `Cc` are the distinct addressees.
     /// - `Subject` is the conversation's name, per D-04.
     /// - `Thread` is the counts, per D-03.
     ///
@@ -259,7 +270,10 @@ impl MessageColumn {
                  (SELECT o.subject FROM here o WHERE o.thread_id = m.thread_id \
                   ORDER BY o.received_at ASC, o.id ASC LIMIT 1))"
             }
-            MessageColumn::Correspondent => EVERYONE_WHO_SENT,
+            // The sender the row says first, which is what sorting by
+            // Correspondent orders by; the rest of the cell is
+            // [`EVERYONE_WHO_SENT`], selected beside it.
+            MessageColumn::Correspondent => the_message_the_row_stands_for!("from_addr"),
             // The server's arrival time, falling back to the sender's date for
             // rows stored before arrival times were kept. `received_at` is that
             // fallback, applied once where the reach is worked out.
