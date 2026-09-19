@@ -686,10 +686,56 @@ impl MessageCache {
         reach: crate::application::conversations::AConversationReaches,
         first: i64,
     ) -> Result<Vec<MessageToFetch>> {
-        // The red half of 11-08's task 2: nothing is missing until the
-        // query is written.
-        let _ = (thread_id, account_id, folder_id, reach, first);
-        Ok(Vec::new())
+        let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
+        let scope = super::messages::conversation_scope();
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!(
+                "{scope}
+                 SELECT m.id, f.path, m.uid, COALESCE(m.size_bytes, 0)
+                 FROM here m
+                 INNER JOIN messages row ON row.id = m.id
+                 INNER JOIN folders f ON row.folder_id = f.id
+                 LEFT JOIN message_bodies b ON b.message_id = m.id
+                 WHERE m.thread_id = ?4
+                   AND b.message_id IS NULL
+                   AND NOT {only_copy_is_here}
+                 ORDER BY CASE WHEN m.id = ?5 THEN 0 ELSE 1 END,
+                          m.received_at ASC, m.id ASC",
+            ))
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to prepare the conversation's missing text query: {e}"
+                ))
+            })?;
+        let counts_the_account = matches!(
+            reach,
+            crate::application::conversations::AConversationReaches::TheWholeAccount
+        );
+        stmt.query_map(
+            rusqlite::params![
+                account_id,
+                folder_id,
+                i64::from(counts_the_account),
+                thread_id,
+                first
+            ],
+            |row| {
+                Ok(MessageToFetch {
+                    message_id: row.get(0)?,
+                    folder_path: row.get(1)?,
+                    uid: row.get(2)?,
+                    size_bytes: row.get::<_, i64>(3)?.try_into().unwrap_or(0),
+                })
+            },
+        )
+        .map_err(|e| Error::Other(format!("Failed to list a conversation's missing text: {e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| {
+            Error::Other(format!(
+                "Failed to read a row of a conversation's missing text: {e}"
+            ))
+        })
     }
 
     /// Move any bodies still stored inline in `messages` into this table.

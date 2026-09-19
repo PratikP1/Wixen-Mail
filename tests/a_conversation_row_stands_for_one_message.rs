@@ -734,7 +734,7 @@ const THE_ROOT_SELECTED: &str = "select_item(&root)";
 /// which message the row stands for, so under conversation view it acts on
 /// the message the row previews and never on the flat row at the same
 /// index.
-const THE_CURSOR_COMMANDS: [&str; 7] = [
+const THE_CURSOR_COMMANDS: [&str; 8] = [
     "fn start_reply(",
     "fn msg_info(",
     "fn receipt_for_the_open_message(",
@@ -742,6 +742,7 @@ const THE_CURSOR_COMMANDS: [&str; 7] = [
     "fn answer_the_invitation(",
     "fn save_the_message_as(",
     "fn mark_what_was_read(",
+    "fn block_the_sender(",
 ];
 
 /// The cursor handler asks which message the row stands for, previews

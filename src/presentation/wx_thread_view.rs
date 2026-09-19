@@ -163,9 +163,8 @@ fn root_label(count: usize) -> String {
 /// conversation, as it always did. Pure over the slice, so the target that
 /// holds it needs no window.
 pub fn where_to_open(nodes: &[ThreadNode], open_on: Option<i64>) -> Option<usize> {
-    // The red half of 11-08's task 2: the root, whatever was asked.
-    let _ = (nodes, open_on);
-    None
+    let open_on = open_on?;
+    nodes.iter().position(|node| node.message_id == open_on)
 }
 
 /// Show the conversation tree and return what the user chose.
@@ -320,12 +319,17 @@ pub fn build_thread_dialog(
         ids.push(nodes[row.node].message_id);
     }
     tree.expand_all();
-    // The red half of 11-08's task 2: the root, whatever was asked.
-    let _ = open_on;
-    tree.select_item(&root);
-    tree.set_focus();
 
-    let chosen = std::rc::Rc::new(std::cell::RefCell::new(ThreadChoice::AsHeadings));
+    // The cursor starts on the message the list row stood for (#31), so
+    // Enter on arrival opens it and Up from it reaches the rest; on the root
+    // when nothing was named, as before, which is the whole conversation.
+    // The choice starts as what that row means, and the selection handler
+    // below keeps it current from there.
+    let opening = where_to_open(nodes, open_on).and_then(|at| items[at].clone());
+    let chosen = std::rc::Rc::new(std::cell::RefCell::new(match (open_on, &opening) {
+        (Some(id), Some(_)) => ThreadChoice::Message(id),
+        _ => ThreadChoice::AsHeadings,
+    }));
 
     // Selection drives the choice, so pressing Enter, clicking Open, and
     // double-clicking a row all act on the same thing: the row you are on.
@@ -341,6 +345,12 @@ pub fn build_thread_dialog(
                 what_a_selection_means(&ids, tree_walk::where_the_selection_sits(&tree));
         }
     });
+
+    match &opening {
+        Some(item) => tree.select_item(item),
+        None => tree.select_item(&root),
+    }
+    tree.set_focus();
 
     tree.on_item_activated(move |_| dlg.end_modal(ID_OK));
     open.on_click(move |_| dlg.end_modal(ID_OK));

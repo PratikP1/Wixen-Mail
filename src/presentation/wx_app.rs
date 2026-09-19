@@ -394,6 +394,10 @@ pub struct WxUIState {
     /// of the list, so the cursor lands once, after the last of them has
     /// left, rather than after each (#30). Nothing between sets.
     pub a_set_leaving: Option<ASetLeaving>,
+    /// The conversations whose text is being fetched because somebody landed
+    /// on their row (#31), by conversation id, so arrowing back onto a row
+    /// does not ask the server for the same conversation twice at once.
+    pub conversations_being_fetched: std::collections::HashSet<String>,
     pub message_preview: MessageBody,
     pub connection_status: ConnectionStatus,
     /// What the person has already been told about the connection.
@@ -618,6 +622,7 @@ impl Default for WxUIState {
             last_checked: std::collections::HashMap::new(),
             selected_message_index: None,
             a_set_leaving: None,
+            conversations_being_fetched: std::collections::HashSet::new(),
             message_preview: MessageBody::default(),
             connection_status: ConnectionStatus::Disconnected,
             connection_voice: ConnectionVoice::default(),
@@ -668,9 +673,10 @@ impl WxUIState {
     /// unrelated to the row.
     pub fn the_row_stands_for(&self, row: usize) -> Option<RowMessage> {
         if self.showing.showing_conversations() {
-            // The red half of 11-08's task 2: the window knows no row
-            // message under conversation view until the green.
-            return None;
+            return self
+                .conversations
+                .get(row)
+                .map(|conversation| conversation.stands_for.clone());
         }
         self.messages.get(row).map(|message| RowMessage {
             id: message.message_id,
@@ -3177,13 +3183,36 @@ impl WxMailApp {
                         rt: &runtime,
                     };
                     let idx = event.get_item_index() as usize;
-                    let landing_events = {
+                    // Which message this row is (#31). Under the flat view
+                    // the row; under conversation view the message the
+                    // listing chose for the row, the originator or the first
+                    // unread, which is what the preview shows, the body fetch
+                    // asks for and the receipt is read from. Until 2026-09-19
+                    // the handler had no conversation branch and read the
+                    // flat list at the row's index, which under conversation
+                    // view is a message unrelated to the row.
+                    let (stands_for, a_conversation, landing_events) = {
                         let mut s = lock_state(&state);
                         s.selected_message_index = Some(idx);
-                        s.messages
-                            .get(idx)
-                            .map(feedback_events_for_landing)
-                            .unwrap_or_default()
+                        let stands_for = s.the_row_stands_for(idx);
+                        if s.showing.showing_conversations() {
+                            let conversation = s.conversations.get(idx);
+                            (
+                                stands_for,
+                                conversation.map(|c| c.thread_id.clone()),
+                                conversation
+                                    .map(feedback_events_for_landing_on_a_conversation)
+                                    .unwrap_or_default(),
+                            )
+                        } else {
+                            (
+                                stands_for,
+                                None,
+                                s.the_loaded_message_the_row_stands_for(idx)
+                                    .map(feedback_events_for_landing)
+                                    .unwrap_or_default(),
+                            )
+                        }
                     };
                     // Landing on a conversation or an attachment is
                     // signalled rather than spoken, so it can be a short
@@ -3198,10 +3227,7 @@ impl WxMailApp {
                     // message 3..." and then loaded nothing: the handler for a
                     // loaded body existed and no code ever sent one, so the
                     // preview was empty for every message ever selected.
-                    let selected = {
-                        let s = lock_state(&state);
-                        s.messages.get(idx).map(|m| (m.message_id, m.uid))
-                    };
+                    let selected = stands_for.as_ref().map(|row| (row.id, row.uid));
                     let body = selected.and_then(|(id, _)| {
                         body_cache
                             .as_ref()
@@ -3240,6 +3266,15 @@ impl WxMailApp {
                                 spawn_body_fetch(app, id, uid);
                             }
                         }
+                    }
+                    // A conversation row selected asks for the text of the
+                    // whole conversation (#31, "if a thread is highlighted,
+                    // all messages should be cached"): one bounded chunk in
+                    // the background, nothing said per message. The row
+                    // message's own text is the fetch above, which reaches
+                    // the preview; this one brings the rest.
+                    if let (Some(thread_id), Some(row)) = (a_conversation, stands_for.as_ref()) {
+                        spawn_conversation_text_fetch(app, thread_id, row.id);
                     }
                     // Whether this sender wanted to be told it had been
                     // opened, and what is being done about that. Said on
@@ -3319,6 +3354,13 @@ impl WxMailApp {
                     if index < 0 {
                         return;
                     }
+                    // The message this row stands for (#31): the row itself
+                    // under the flat view, and under conversation view the
+                    // originator or the first unread, which is where the
+                    // conversation tree puts the cursor so Enter opens it.
+                    let open_on = lock_state(&state)
+                        .the_row_stands_for(index as usize)
+                        .map(|row| row.id);
                     // A collapsed conversation row never expands in place
                     // (D-01). Enter on it opens the conversation tree, which
                     // announces level natively and is the only place the
@@ -3367,6 +3409,7 @@ impl WxMailApp {
                             &msg_list,
                             named,
                             nodes,
+                            open_on,
                             state.clone(),
                         );
                         return;
@@ -3434,6 +3477,7 @@ impl WxMailApp {
                         &msg_list,
                         named,
                         nodes,
+                        open_on,
                         state.clone(),
                     );
                 }
@@ -3633,10 +3677,23 @@ impl WxMailApp {
                     let state = state.clone();
                     let message_cache = message_cache.clone();
                     move |index| {
+                        // The message the row stands for (#31): under
+                        // conversation view the originator or the first
+                        // unread, read as a message of a conversation the
+                        // row's own count sizes; under the flat view the
+                        // row, sized by the rows around it.
                         let (message, in_conversation) = {
                             let s = lock_state(&state);
-                            let message = s.messages.get(index)?.clone();
-                            (message, message_rows::conversation_size(&s.messages, index))
+                            let message = s.the_loaded_message_the_row_stands_for(index)?.clone();
+                            let in_conversation = if s.showing.showing_conversations() {
+                                s.conversations
+                                    .get(index)
+                                    .and_then(|c| usize::try_from(c.messages).ok())
+                                    .filter(|size| *size > 1)
+                            } else {
+                                message_rows::conversation_size(&s.messages, index)
+                            };
+                            (message, in_conversation)
                         };
                         let out = read_aloud::Reading {
                             dates: date_settings,
@@ -3665,7 +3722,10 @@ impl WxMailApp {
                         // day. This closure is told only about the whole
                         // reading.
                         let mut s = lock_state(&state);
-                        let Some(message_id) = s.messages.get(index).map(|m| m.message_id) else {
+                        let Some(message_id) = s
+                            .the_loaded_message_the_row_stands_for(index)
+                            .map(|m| m.message_id)
+                        else {
                             return;
                         };
                         s.reading_began = Some((message_id, std::time::Instant::now()));
@@ -4447,7 +4507,7 @@ impl WxMailApp {
                             let chosen = {
                                 let s = lock_state(&state);
                                 s.selected_message_index
-                                    .and_then(|at| s.messages.get(at))
+                                    .and_then(|at| s.the_loaded_message_the_row_stands_for(at))
                                     .cloned()
                             };
                             let Some(message) = chosen else {
@@ -10767,7 +10827,7 @@ fn mark_what_was_read(
         let mut s = lock_state(state);
         let selected_unread = s
             .selected_message_index
-            .and_then(|index| s.messages.get(index))
+            .and_then(|index| s.the_loaded_message_the_row_stands_for(index))
             .filter(|message| !message.read)
             .map(|message| message.message_id);
         let Some(row) = crate::application::reading_habits::whether_to_mark_read(
@@ -13898,7 +13958,7 @@ fn answer_the_invitation(
         let held = lock_state(state);
         (
             held.selected_message_index
-                .and_then(|at| held.messages.get(at).cloned()),
+                .and_then(|at| held.the_loaded_message_the_row_stands_for(at).cloned()),
             held.active_account_id.clone(),
         )
     };
@@ -14109,7 +14169,7 @@ fn save_the_message_as(
     let under_the_cursor = {
         let held = lock_state(state);
         held.selected_message_index
-            .and_then(|at| held.messages.get(at))
+            .and_then(|at| held.the_loaded_message_the_row_stands_for(at))
             .map(|message| (message.message_id, message.subject.clone()))
     };
     let named = match saving_as(
@@ -15578,7 +15638,7 @@ fn start_reply(
         let s = lock_state(state);
         (
             s.selected_message_index
-                .and_then(|i| s.messages.get(i))
+                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
                 .cloned(),
             s.accounts
                 .iter()
@@ -15817,7 +15877,7 @@ fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
         .lock()
         .map(|s| {
             s.selected_message_index
-                .and_then(|i| s.messages.get(i))
+                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
                 // The reply address, not the sender: a mailing list sets
                 // Reply-To so a reply reaches the list rather than one member.
                 .map(|m| {
@@ -18390,7 +18450,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 // to whoever it went to.
                 s.message_preview = body.clone();
                 s.selected_message_index
-                    .and_then(|index| s.messages.get(index).cloned())
+                    .and_then(|index| s.the_loaded_message_the_row_stands_for(index).cloned())
             };
             let html = the_preview_of(message_cache, showing, body);
             // Where focus is now, recorded before the load rather than after,
@@ -21360,6 +21420,23 @@ fn feedback_events_for_landing(message: &MessageItem) -> Vec<FeedbackEvent> {
     events
 }
 
+/// The same, for a conversation row: a conversation when it holds more
+/// than one message, which is the list's own rule that a conversation of one
+/// is not a conversation, and an attachment when any message in it carries
+/// one.
+fn feedback_events_for_landing_on_a_conversation(
+    conversation: &crate::application::conversations::ConversationItem,
+) -> Vec<FeedbackEvent> {
+    let mut events = Vec::new();
+    if conversation.messages > 1 {
+        events.push(FeedbackEvent::ThreadLanded);
+    }
+    if conversation.any_attachment {
+        events.push(FeedbackEvent::HasAttachment);
+    }
+    events
+}
+
 /// Say whether the open message asked to be acknowledged, and act on it.
 ///
 /// Three outcomes, and every one of them says something. Nothing asked, so
@@ -21377,7 +21454,7 @@ fn receipt_for_the_open_message(app: AppHandles<'_>) {
     let open = {
         let s = lock_state(state);
         s.selected_message_index
-            .and_then(|at| s.messages.get(at))
+            .and_then(|at| s.the_loaded_message_the_row_stands_for(at))
             .map(|message| {
                 (
                     message.receipt_to.clone(),
@@ -21434,7 +21511,7 @@ fn send_receipt_for_the_open_message(app: AppHandles<'_>) {
         let s = lock_state(state);
         let offered = s.receipt_offered;
         s.selected_message_index
-            .and_then(|at| s.messages.get(at))
+            .and_then(|at| s.the_loaded_message_the_row_stands_for(at))
             .filter(|message| offered == Some(message.message_id))
             .and_then(|message| {
                 message
@@ -22558,6 +22635,10 @@ fn spawn_server_change(
 /// owned, because the closure outlives this call and a struct of borrows
 /// cannot. Bundling the rest and leaving `state` beside it would be one
 /// argument shorter and two shapes to remember instead of one.
+///
+/// `open_on` is the message the list row stood for (#31), which the tree
+/// puts the cursor on so Enter on arrival opens it; nothing opens on the
+/// root. Coming back after a message closes opens on the same one.
 #[allow(clippy::too_many_arguments)]
 fn open_conversation_again(
     frame: &Frame,
@@ -22567,9 +22648,10 @@ fn open_conversation_again(
     msg_list: &ListCtrl,
     subject: String,
     nodes: Vec<wx_thread_view::ThreadNode>,
+    open_on: Option<i64>,
     state: Arc<StdMutex<WxUIState>>,
 ) {
-    let choice = wx_thread_view::show_thread_dialog(frame, &subject, &nodes, None, a11y);
+    let choice = wx_thread_view::show_thread_dialog(frame, &subject, &nodes, open_on, a11y);
 
     // What to do when the window this opens is closed: come back here.
     let again = {
@@ -22590,6 +22672,7 @@ fn open_conversation_again(
                 &msg_list,
                 subject.clone(),
                 nodes.clone(),
+                open_on,
                 state.clone(),
             );
         }) as Rc<dyn Fn()>
@@ -23489,11 +23572,13 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
 
         // Only if this is still the message somebody is looking at. Otherwise
         // the preview would fill with a message they have already arrowed past.
+        // Asked by id rather than through the loaded rows, since under
+        // conversation view the row's message may be filed in another folder
+        // and the preview still wants it (#31).
         let still_selected = {
             let s = lock_state(&state);
-            s.selected_message_index
-                .and_then(|i| s.messages.get(i))
-                .is_some_and(|m| m.message_id == message_row_id)
+            s.what_the_cursor_stands_for()
+                .is_some_and(|row| row.id == message_row_id)
         };
         if !still_selected {
             return;
@@ -23506,6 +23591,127 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         handle.block_on(async {
             let _ = tx.send(UIUpdate::MessageBodyLoaded(body)).await;
         });
+    });
+}
+
+/// Fetch the text of a conversation somebody has landed on, as one chunk.
+///
+/// The tester's "if a thread is highlighted, all messages should be cached"
+/// (#31). Since 10-05 the download brings every kept folder's text anyway;
+/// what this adds is the order, since a conversation somebody is looking at
+/// is wanted before the download's next chunk, a folder not kept up to date,
+/// which the download never reaches, and a mailbox under a chosen size,
+/// where the download stops and this does not, because a person asked.
+///
+/// One chunk on the account's session: the conversation's messages with no
+/// text here, under the reach its row was counted with, the row message
+/// first, bounded the way the download's chunks are, through
+/// `what_to_do_next` with no folders to offer and no budget, since the
+/// person asked. More than the chunk's fifty missing is fifty now and the
+/// rest the download's. Skipped when the account's Message Text box forbids
+/// reading, when nothing is missing, and while a fetch of the same
+/// conversation is still running, so arrowing back onto a row does not ask
+/// twice. Nothing is said per message, and the stop reads the download's
+/// pause. A failure is logged with the account and the count, never a
+/// subject: this routine holds bodies in a row, and a log line built from
+/// them would put mail on the disk outside the cache.
+fn spawn_conversation_text_fetch(app: AppHandles<'_>, thread_id: String, first: i64) {
+    use crate::application::bringing_everything_down::{
+        TextBudget, TextStillMissing, WhatToDoNext, what_to_do_next,
+    };
+    let AppHandles { state, rt, .. } = app;
+    let handle = rt.handle().clone();
+    let state = state.clone();
+    let (account, folder_id) = {
+        let mut s = lock_state(&state);
+        let Some((folder_id, account_id)) = the_open_folder_and_its_account(&s) else {
+            return;
+        };
+        let Some(account) = s.accounts.iter().find(|a| a.id == account_id).cloned() else {
+            return;
+        };
+        if !s.conversations_being_fetched.insert(thread_id.clone()) {
+            return;
+        }
+        (account, folder_id)
+    };
+    let reading = crate::application::allowed::allowed_for(&account.id).reading;
+
+    rt.spawn_blocking(move || {
+        let done_with = |state: &Arc<StdMutex<WxUIState>>| {
+            lock_state(state)
+                .conversations_being_fetched
+                .remove(&thread_id);
+        };
+        if !reading || account.imap_server.trim().is_empty() {
+            return done_with(&state);
+        }
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            return done_with(&state);
+        };
+        let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
+            return done_with(&state);
+        };
+        let missing = match cache.text_missing_in_a_conversation(
+            &thread_id,
+            &account.id,
+            folder_id,
+            crate::application::conversations::AConversationReaches::TheWholeAccount,
+            first,
+        ) {
+            Ok(missing) => missing,
+            Err(why) => {
+                tracing::warn!(
+                    "Could not list a conversation's missing text for {}: {why}",
+                    account.name
+                );
+                return done_with(&state);
+            }
+        };
+        let text = TextStillMissing {
+            messages: &missing,
+            kept_bytes: 0,
+        };
+        let WhatToDoNext::TheNextChunkOfText { messages, .. } =
+            what_to_do_next(&[], text, TextBudget::All, None, reading)
+        else {
+            return done_with(&state);
+        };
+
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    tracing::warn!(
+                        "Could not sign in to fetch a conversation's text for {}: {why}",
+                        account.name
+                    );
+                    return done_with(&state);
+                }
+            };
+        let stop = || lock_state(&state).downloading.paused;
+        let done = handle.block_on(crate::application::mail_sync::fetch_over_a_mailbox(
+            controller.as_ref(),
+            &cache,
+            &messages,
+            &stop,
+            &|_| {},
+        ));
+        if done.could_not > 0 {
+            tracing::warn!(
+                "{} of {} messages of a conversation could not be fetched for {}",
+                done.could_not,
+                messages.len(),
+                account.name
+            );
+        } else {
+            tracing::debug!(
+                "The text of {} messages of a conversation landed for {}",
+                done.fetched,
+                account.name
+            );
+        }
+        done_with(&state);
     });
 }
 
@@ -30414,7 +30620,7 @@ fn block_the_sender(
         let held = lock_state(state);
         (
             held.selected_message_index
-                .and_then(|at| held.messages.get(at).cloned()),
+                .and_then(|at| held.the_loaded_message_the_row_stands_for(at).cloned()),
             held.active_account_id.clone(),
             held.accounts.clone(),
         )
