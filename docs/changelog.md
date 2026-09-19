@@ -221,6 +221,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The sounds keep playing after hours open, follow the output device, and say once when no
+  device can be opened.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef`
+  (#81): after a few hours open the earcons went silent and nothing said so. The output device
+  was opened once when the program started and never again, so a device that went away or
+  was invalidated, a headset unplugged, a monitor's speakers switched off, Windows resetting
+  the audio service, ended the stream underneath the mixer and every later sound was played
+  into nothing, with the program still counting it as played. Since 2026-09-19 the stream's
+  own error report marks the device gone and the next sound opens the default device again
+  before it plays; and because a change of default device while the old one stays is one the
+  stream never reports, the next sound after ten seconds' quiet opens the default device
+  again as well, which was measured to cost about eleven milliseconds on the development
+  machine and so is paid on every sound after a gap. When no device can be opened, the log
+  says so once for the outage rather than once per sound, the status bar says "The sounds
+  have stopped: no audio output device could be opened", with Windows' reason and that they
+  come back when one can be, and they do, with one line in the log, when a device can be
+  opened again; a machine with no device at start says so in the log only. Known
+  limitations: what silenced the tester's sounds after hours is not known, only the two ways
+  the sources show a stream can end and a device can change; the reopening was proved at the
+  seam the audio crates document, a stream's error report and the flag it sets, and not by
+  pulling a device on a running build, and nobody has heard the sounds come back after a
+  real device change. If the sounds stop again, the log at its default level (11-04) holds the
+  moment and the reason.
 - **On Gmail a conversation is the conversation Gmail shows, and on every server a reply that
   arrived before its parent joins it when the parent lands.** The tester on 2026-09-19 on
   Gmail (#88): messages of one thread show as several rows with the same subject. Two causes.

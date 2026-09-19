@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 519
+open_count: 520
 waived_count: 0
 fixed_count: 33
-total_count: 552
-last_updated: 2026-09-19T15:20:00.000Z
+total_count: 553
+last_updated: 2026-09-19T15:50:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -567,6 +567,7 @@ last_updated: 2026-09-19T15:20:00.000Z
 | 550 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-09: what only the tester's ear settles for #26. The row heard whole and once on Ctrl+Shift+; and on the Action item, each heading then its text in the order the columns are shown, a conversation row reading its own cells, and the refusal heard when the list is not focused; arrowing through the list quiet under an NVDA configuration profile triggered by this application with Row/column headers set to Rows or Off, which nobody has set up; and what Narrator and JAWS need, whose settings the page names without steps since nobody here has read them. The composition, the item, the arm and the channel are held by cases and readings; none of it has been heard | open |  | 2026-09-19T14:20:00.000Z |  |
 | 551 | 11 | todo | docs/KEYBOARD_SHORTCUTS.md |  | 11-09: an NVDA add-on that quiets the message list's column headers for this program without a configuration profile, if the profile the page describes proves too much to ask of a person setting up. It is a second piece of software installed into NVDA, with its own packaging, versioning and testing, and it serves NVDA alone; nothing under nvda-tests/ is one, that directory drives NVDA rather than extending it. Later work, on the tester's word after the profile has been tried | open |  | 2026-09-19T14:20:00.000Z |  |
 | 552 | 11 | unrun-verify | src/presentation/accessibility/feedback.rs |  | 11-09.1: what only the tester's ear settles for #77. Landing on a message with an attachment heard as the row once, the Attachment column's "Has attachment" in NVDA's reading of the row, with the attachment tone beside it and nothing spoken for the event; and with "Show events in the status bar" off, the tone alone. A fresh profile hearing every event's tone from the start. The default channels, the fallback that never speaks for the event, the tester's stored profile reaching the same default, a profile that chose silence keeping it, the Feedback tab's boxes for the event and the cursor handler adding nothing spoken are held by cases and readings; none of it has been heard | open |  | 2026-09-19T15:20:00.000Z |  |
+| 553 | 11 | unrun-verify | src/presentation/accessibility/feedback.rs |  | 11-09.1: the reproduction of #81 on purpose, and the sounds heard again after a real device change, which need a hand on the machine's Sound settings under a running build. The steps: the program built from the branch and started with WIXEN_MAIL_DATA set to an empty folder (src/common/paths.rs, the one override the paths module honours), so it touches nothing under the wixen-mail folder in LOCALAPPDATA; earcons on; the default output device changed in Windows Sound settings; an event with a sound triggered, Settings saved is the nearest; whether it went silent and what the log said at debug; then a headset unplugged with a sound due, and whether the sound after it plays. Never the installed binary, and never without the override. What the cases prove instead is the seam the crates document: the flag the stream's error callback sets, the reopen before the next sound, the reopen after ten seconds' quiet, the outage told once and the resume | open |  | 2026-09-19T15:50:00.000Z |  |
 
 ````json
 [
@@ -7192,6 +7193,18 @@ last_updated: 2026-09-19T15:20:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T15:20:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 553,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/accessibility/feedback.rs",
+    "line": null,
+    "description": "11-09.1: the reproduction of #81 on purpose, and the sounds heard again after a real device change, which need a hand on the machine's Sound settings under a running build. The steps: the program built from the branch and started with WIXEN_MAIL_DATA set to an empty folder (src/common/paths.rs, the one override the paths module honours), so it touches nothing under the wixen-mail folder in LOCALAPPDATA; earcons on; the default output device changed in Windows Sound settings; an event with a sound triggered, Settings saved is the nearest; whether it went silent and what the log said at debug; then a headset unplugged with a sound due, and whether the sound after it plays. Never the installed binary, and never without the override. What the cases prove instead is the seam the crates document: the flag the stream's error callback sets, the reopen before the next sound, the reopen after ten seconds' quiet, the outage told once and the resume",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T15:50:00.000Z",
     "resolved_at": null
   }
 ]
