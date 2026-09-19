@@ -4395,13 +4395,15 @@ decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
 inserts (11-08.1 after 11-08, whose row message a re-threading moves; 11-10.1 after 11-10
 and before 11-11, so 11-11.1's activation covers a made link).**
 
-- [ ] **LIST-23**: On a server that advertises Gmail's extension the conversation id is
+- [x] **LIST-23**: On a server that advertises Gmail's extension the conversation id is
   asked for in the fetch already made and names the conversation here, the stored id
   follows the server's and a message whose id changes moves; mail already stored gets its
   id once at the next check; on every server a child stored before its parent joins it when
   the parent lands, a sibling with a fuller chain and a reply with a cut one join their
   tree; subject matching stays refused; the conversation row's count and the row message
   follow a re-threading.
+  - Ticked 2026-09-19 by 11-08.1 at `76897058` on its `[D]` line, the orchestrator's
+    instruction overruling the README's "11-12 ticks"; the `[S]` lines are ledger 549.
   - Evidence: at `38ebcb86` (the same bytes as `1962e341` in every file named but
     `mail_sync.rs`, which gained four comment lines), `application::threading` threads from
     `References` and `In-Reply-To` alone (`:1-14`), refuses subject matching
@@ -4429,9 +4431,15 @@ and before 11-11, so 11-11.1's activation covers a made link).**
     cut-reply, Gmail-id-over-headers, differing-id and same-subject cases traced against the
     loopback servers newest first in a target, each case's state before and after in the
     summary, what failed fixed; readings that 11-08's row message and count follow a
-    re-threading; six guard records (11-08.1).
+    re-threading; six guard records (11-08.1). Done by 11-08.1 at `76897058` on 2026-09-19,
+    with three changes of shape the summary names: the server's word goes through
+    `the_conversation_of` in front of `conversation_root` and `rejoin` reads it from the
+    stored name; the row carries the stored conversation and the in-memory pass is handed
+    that, since the window looks members up by it; and the trace found the store already
+    joined the late parent, the fuller sibling and the cut reply, and fixed the in-memory
+    naming instead. Nine records.
   - [S] Whether his split threads become one after the next check, and whether a
-    conversation here matches Gmail's, are his account's.
+    conversation here matches Gmail's, are his account's (ledger 549).
 
 - [ ] **LIST-24**: An address written out in a plain-text message, in the quoted part of a
   reply, in a note shown as a page and in an event or task description read aloud is a
@@ -4585,7 +4593,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
-| LIST-23 | Phase 11 | Pending, 11-08.1 |
+| LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Pending, 11-10.1 |
 
 **Coverage:**
