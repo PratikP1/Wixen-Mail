@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 137 records have arrived since and have not been through it.
+# 143 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -6040,15 +6040,20 @@ tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
+# Rewritten 2026-09-18 by 11-06.1 onto the new shape of the agreed case,
+# which hands the answer to show_or_say_what_happened_next; the break is the
+# same, the window wording a delete's outcome for itself, on the shown
+# channel now, and the same one test goes red on the library.
 [[guard]]
 name = "the delete path says what the one owner of that sentence gave it"
 file = "src/presentation/wx_app.rs"
-before = """                        say(UIUpdate::StatusUpdated(next.said));
+before = """                        show_or_say_what_happened_next(&say, message_row_id, next);
                     }
                 }
                 return;"""
 after = """                        let _ = next.said;
-                        say(UIUpdate::StatusUpdated(format!("Deleted: {subject}")));
+                        say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                        say(UIUpdate::Shown(format!("Deleted: {subject}")));
                     }
                 }
                 return;"""
@@ -25043,7 +25048,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 13 },
+    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 15 },
 ]
 
 # ── The new-mail sound means mail arrived, not that the watch woke (#38) ───
@@ -25073,7 +25078,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 13 },
+    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 15 },
 ]
 
 # ── A check that found nothing says nothing about what arrived (#38) ────────
@@ -26094,4 +26099,155 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 13 },
+]
+
+# ── 11-06.1: where the cursor lands after a delete, and after a re-read ──────
+#
+# #76: deleting a message put the cursor at the top of the list, because the
+# rule that lands it on the next message lived in the window's own record of
+# the selection and nothing set the control's focus to it. The rules are
+# `presentation::landing_after_a_removal`, held by cases on the library, and
+# the control following them is held by the built list in
+# `tests/deleting_a_message_lands_on_the_next_one.rs`.
+
+# The row before the set dropped from the answer, so a delete of the last
+# row, or of a set that reaches the end, lands nowhere: the cursor is left
+# wherever the control puts it, which for a virtual list is no row at all.
+# The two cases that end at the last row and the case holding both ends go
+# red; the first draft named those three and the runner agreed.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the library.
+[[guard]]
+name = "deleting the last row lands on the row before it, not nowhere"
+file = "src/presentation/landing_after_a_removal.rs"
+before = """    Some(
+        after_the_set
+            .or(before_the_set)
+            .unwrap_or(len_after - 1)
+            .min(len_after - 1),
+    )"""
+after = """    after_the_set.map(|row| row.min(len_after - 1))"""
+red = [
+    "presentation::landing_after_a_removal::tests::test_the_last_row_removed_lands_on_the_row_before_it",
+    "presentation::landing_after_a_removal::tests::test_a_set_at_the_end_lands_on_the_row_before_the_first_removed",
+    "presentation::landing_after_a_removal::tests::test_a_set_holding_both_ends_lands_on_the_last_row_left",
+]
+tests_last_seen = [
+    { file = "src/presentation/landing_after_a_removal.rs", tests = 12 },
+]
+
+# A re-read that moves the cursor on every load, whatever row the cursor's
+# message is on now, which is what 10-02 refused: re-selecting moves focus
+# and takes the screen reader's cursor with it. The no-move case goes red.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the library.
+[[guard]]
+name = "a re-read that left the cursor's message where it was moves nothing, not the cursor every load"
+file = "src/presentation/landing_after_a_removal.rs"
+before = """    new_index.filter(|new| Some(*new) != old_index)"""
+after = """    let _ = old_index;
+    new_index"""
+red = [
+    "presentation::landing_after_a_removal::tests::test_a_message_still_on_its_row_is_no_move_and_neither_is_one_that_is_gone",
+]
+tests_last_seen = [
+    { file = "src/presentation/landing_after_a_removal.rs", tests = 12 },
+]
+
+# The landing dropped from the control: the helper still answers the row
+# the rule chose, the record of the selection still moves, and the control
+# is left with whatever the count change left it, which is the tree before
+# this plan. On the built list the middle-row landing raises no focus event
+# and the last-row landing leaves the control holding nothing; the source
+# reading complains that the helper sets nothing on the control. The
+# companions read snippets and stay green.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a removal lands the cursor on the control, not only in the record of the selection"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """    let row = landing_after_a_removal::where_to_land(removed, len_after)?;
+    put_the_cursor_on(list, row);"""
+after = """    let row = landing_after_a_removal::where_to_land(removed, len_after)?;
+    let _ = list;"""
+red = [
+    "test_deleting_a_middle_row_lands_the_cursor_on_the_row_that_followed_it",
+    "test_deleting_the_last_row_lands_the_cursor_on_the_row_before_it",
+    "test_a_removal_lands_the_cursor_on_the_control_through_the_rule",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
+]
+
+# A re-read that puts the cursor on its message's row whatever row it was
+# on, which moves focus on every load and is what 10-02 refused. On the
+# built list the re-read that changed nothing raises a focus event and the
+# helper answers a row; the source reading complains that the helper does
+# not ask whether_to_move.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a re-read moves the cursor only when its message changed row, not on every load"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """    let row = landing_after_a_removal::whether_to_move(old_index, now)?;"""
+after = """    let row = now?;
+    let _ = old_index;"""
+red = [
+    "test_a_re_read_that_left_the_cursors_message_where_it_was_raises_no_focus_event",
+    "test_a_re_read_keeps_the_cursor_on_its_message_and_moves_it_only_when_its_row_changed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
+]
+
+# #83, the third task: a delete says Delete once at the key and nothing on
+# success; the outcome is shown for the eye when the row left and spoken
+# when it stayed. Two breaks, each the tree before this plan on one half.
+
+# The success line sent as StatusUpdated again, which is spoken at Normal,
+# so "Deleted: subject" follows the landed row's reading as it did before
+# 2026-09-18. The outcome reading goes red; the companions read snippets.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a delete that went through is shown for the eye, not spoken over the landed row"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """            say(UIUpdate::Shown(next.said));"""
+after = """            say(UIUpdate::StatusUpdated(next.said));"""
+red = [
+    "test_the_outcome_of_a_delete_is_shown_when_the_row_left_and_spoken_when_it_stayed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
+]
+
+# The subject back in the spoken word at the key, "Deleting subject...",
+# which is the first of the two sentences the tester was waiting through.
+# The one-word reading goes red.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a delete says the one word delete at the key, not the subject again"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """                                say_the_one_word(&a11y, "Delete");"""
+after = """                                say_the_one_word(&a11y, &format!("Deleting {subject}..."));"""
+red = [
+    "test_a_delete_says_the_one_word_delete_at_the_key_and_writes_the_fuller_line",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 19 },
 ]

@@ -33,6 +33,13 @@ pub enum ThenWhat {
 }
 
 /// The row and the sentence, decided together so they cannot disagree.
+///
+/// Whether the sentence is spoken follows the row, and the window decides
+/// it from `then` (#83, 2026-09-18): when the row leaves, the sentence is
+/// shown on the status bar and spoken by nothing, because the row the
+/// cursor lands on is what is heard; when the row stays, nothing else says
+/// anything happened, so the sentence is spoken. `said` is worded the same
+/// either way, for the eye that reads the bar and the ear that hears it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WhatToDoNext {
     pub then: ThenWhat,
@@ -40,6 +47,13 @@ pub struct WhatToDoNext {
 }
 
 /// What to do and what to say after the server answered a delete.
+///
+/// Since 2026-09-18 (#83) the sentence for a delete that went through is
+/// shown and not spoken: the tester heard "Deleting <subject>..." on the key
+/// and this sentence after the round trip, and the decision was one word
+/// on the key and the landed row as the confirmation. The sentence keeps
+/// its words, since the status bar still shows it and a delete that left
+/// the message in the folder is still spoken.
 pub fn after_a_delete(deletion: &Deletion, subject: &str) -> WhatToDoNext {
     let then = match deletion {
         // The original is still in the folder and carries no mark, so the row

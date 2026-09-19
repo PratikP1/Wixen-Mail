@@ -144,6 +144,43 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **After a delete the cursor lands on the next message, or on the previous one when the
+  last was deleted, and stays on the same message when the folder is re-read.** The tester
+  on 2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` under NVDA (#76): "Deleting a message
+  puts the cursor at the top of the list. It should land on the next message, and on the
+  previous one when the deleted message was the last." The rule was already written, in the
+  program's own record of which row is selected; nothing put the list control's own cursor
+  on that row, and the control is what a screen reader follows. A built list showed what the
+  control does on its own: when a middle row goes it keeps the cursor where it was, which is
+  the next message already, and raises nothing a screen reader reads the row from; when the
+  last row goes with the cursor on it, it holds no row at all, which is what reads as the top.
+  Now the cursor is put on the next message, or the previous one after the last, on the
+  control itself, with the focus event a screen reader reads the landed row from, and the
+  preview shows the message the cursor landed on. The same after Move to Trash and after a
+  move out of the folder. And when the folder is re-read afterwards, which the watch does
+  after every delete on an IMAP account, the cursor stays on the same message by its identity
+  and not its position; a re-read that leaves the cursor's message where it was moves
+  nothing, as before. Known limitations: nobody has heard the landed row; whether NVDA reads
+  it once after Delete, and does not read it again when the re-read follows, is the tester's
+  ear. Which of the two paths the tester met was not watched, because a delete cannot be
+  driven on this machine while the tester's copy is open.
+- **A delete says the one word "Delete" and then the row it landed on, and nothing more
+  unless it failed.** The tester on 2026-09-18 (#83): a delete said "Deleting <subject>..."
+  on the key and then, after the server had answered, "Moved to Trash: <subject>", two spoken
+  sentences with the subject in each, and the wait for the second was a delay in the hand's
+  rhythm on every message. Pratik's decision the same day: say "Delete" and nothing more, and
+  say something only when the delete did not go through. Now `Delete` says the one word, at
+  the same level as the other answers to a key, and the next message's row is what is heard
+  after it; a delete the server refused, or that could not be sent, is still spoken with the
+  reason, above the ordinary run of status. The status bar keeps the fuller words for the eye,
+  "Deleting Invoice..." and then "Moved to Trash: Invoice", written and never spoken. The same
+  shape for Move to Trash, Move to Folder and Copy to Folder: one word on the key, the fuller
+  line on the bar, and the outcome spoken only when the message stayed where it was, which a
+  copy always does. A delete of a collapsed conversation row still asks first and says how
+  many it is deleting, once, and its messages' outcomes are now shown and not spoken. Known
+  limitations: whether the one word followed by the landed row is enough confirmation by ear
+  is the tester's; nobody has heard it. Deleting a folder is unchanged, since it asks first
+  and its outcome says how far a delete of several folders got, which no landed row can say.
 - **The first `Space` on a message no longer starts the clock towards marking it read; the
   whole reading and opening do.** #25 was reopened on 2026-09-18 on the tester's answer to
   the question the earlier fix, below, asked him: reading the snippet is not enough to count

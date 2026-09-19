@@ -409,6 +409,23 @@ pub enum UIUpdate {
     ConnectionStatusChanged(ConnectionStatus),
     ErrorOccurred(String),
     StatusUpdated(String),
+    /// A line the eye may want and the ear has already had: written to the
+    /// status bar and its record, and spoken by nothing.
+    ///
+    /// Since 2026-09-18 (#83). A delete's success rides this. The tester
+    /// heard "Deleting <subject>..." on the key and "Deleted: <subject>"
+    /// after the server's round trip, two spoken sentences with the subject
+    /// in each, and the wait for the second was a delay in the hand's
+    /// rhythm; the decision was one word on the key and nothing on success,
+    /// because the row the cursor lands on is the confirmation. The fuller
+    /// line is still worth a glance, so it is shown. The same for a move
+    /// whose row left the folder. Separate from [`Self::StatusUpdated`],
+    /// which is the answer channel and is spoken at Normal, and from
+    /// [`Self::Progress`], which is spoken under Say every step: this is
+    /// spoken under nothing. The kind is decided where the line is made, and
+    /// the arm is named as quiet on purpose in the window's own test with the
+    /// reason, so a second sender cannot make it a spoken channel by mistake.
+    Shown(String),
     /// How many of the open account's messages have no text stored here.
     ///
     /// Sent beside the coverage sentence a saved search or the search box
