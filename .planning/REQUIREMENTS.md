@@ -3709,11 +3709,19 @@ the caveat at the top of this file binds every `[D]` line.
     then the delay moves it, are his; from 11-05.1, whether the first Space leaves the count
     alone and the second moves it.
 
-- [ ] **LIST-04**: Mark as Read says which way it will go on the Action menu, the context
+- [x] **LIST-04**: Mark as Read says which way it will go on the Action menu, the context
   menu and the toolbar, M toggles it in the message list and says read or unread, and a
   conversation row marks the whole thread.
-  **Held 2026-09-18 by 11-06, merged at `fe143d46`, on its first two `[D]` lines; the box
-  waits for the third, which is 11-07's:** `marking_read::what_the_command_says(any_unread)`
+  **Held 2026-09-19 on its third `[D]` line by 11-07, merged at `b35a40cd`:**
+  `toggle_read_state` reads the selection through `chosen_messages`, a conversation row
+  contributing every message of the conversation under `AConversationReaches::TheWholeAccount`
+  through `messages_in_conversation`, marks them read when any is unread and says one
+  sentence, `what_was_done`, "1 conversation, 5 messages marked read"; the cases in
+  `choosing_messages` hold the reach and the sentence, and
+  `tests/every_command_acts_on_the_selection.rs` holds the toggle to the set. The `[S]`
+  lines are untouched, ledger 540 and 544; 11-12 reads the lines again.
+  **Held 2026-09-18 by 11-06, merged at `fe143d46`, on its first two `[D]` lines:**
+  `marking_read::what_the_command_says(any_unread)`
   answers the menu word, the context entry, the spoken form and the help, and
   `what_the_key_says(now_read)` the one word, five cases; `refresh_mark_read_wording` sets
   the item and its help through `find_item_and_menu`, the tool through
@@ -3747,9 +3755,24 @@ the caveat at the top of this file binds every `[D]` line.
   - [S] The label heard on each surface after arrowing between a read and an unread message,
     the word after M, and that M does not jump the list, are his ear's.
 
-- [ ] **LIST-05**: Shift with the arrow keys selects more than one message, every command
+- [x] **LIST-05**: Shift with the arrow keys selects more than one message, every command
   that acts on messages acts on the selection with one announcement saying how many, and a
   conversation row contributes its messages.
+  **Held 2026-09-19 by 11-07, merged at `b35a40cd`, on both `[D]` lines; the `[S]` lines
+  are untouched, ledger 544, and 11-12 reads the lines again:** the first line by the 18
+  cases of `application::choosing_messages` (the rows' order with each message once, the
+  conversation row counted and its reach per command, the sentence with the singular right
+  and the conversations named, the bound read from `editing.rs`), two records on the
+  library; the second by `tests/every_command_acts_on_the_selection.rs`, whose source
+  readings hold the list built without `SingleSel`, the Star arm, `toggle_read_state`,
+  `label_the_message`, the Delete arm and `move_or_copy_message` to `chosen_messages(`,
+  `too_many(` and the one sentence, `spawn_folder_move` to the summed sentence, the six
+  cursor commands and the Copy to arm to `selected_message_index` alone, the cursor
+  handler to the focus event, the words to the selected rows and the removal path to one
+  landing after the set; whose built list measured the focus and selection events and the
+  walk; and whose ignored timing is the 75 ms row on `docs/development/measurements.md`,
+  dated 2026-09-19 at `9155c6be`; three records on the target. The cursor handler moved
+  to the focus event and Reply, Forward, Open and Save As read it, 11-07's deviation 1.
   - Evidence: `ListCtrlStyle::SingleSel` at `wx_app.rs:1108`; 27 sites read
     `selected_message_index` in the shipping half (`grep -c` 28, one in a test), sorted in
     11-07's premise into seven set commands, eleven cursor commands and the bookkeeping;
@@ -4364,8 +4387,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
-| LIST-04 | Phase 11 | In progress, 11-06 at `fe143d46`: the label on three surfaces and M held on the first two `[D]` lines; the thread row is 11-07's; the label heard, the word after M and the list not jumping are the tester's ear, ledger 540 |
-| LIST-05 | Phase 11 | Pending, 11-07 |
+| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544 |
+| LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544 |
 | LIST-06 | Phase 11 | Pending, 11-08 |
 | LIST-07 | Phase 11 | Pending, 11-09 |
 | LIST-08 | Phase 11 | Pending, 11-10 |
