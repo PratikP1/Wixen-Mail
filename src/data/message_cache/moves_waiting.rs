@@ -22,6 +22,16 @@
 //! folder and the number the server still holds the message under. A replay
 //! is then one command the server can carry out, from the folder it has the
 //! message in to the folder the person last chose.
+//!
+//! # A crossing is a row here too, and it belongs to two accounts
+//!
+//! A move or a copy to a folder on another account (11-07.2, Pratik's
+//! decision of 2026-09-19) is the same row with the other account named:
+//! `account_id` is still the account the server has the message at, and
+//! `to_account_id` is the one it is going to. It is replayed at a check of
+//! either, since either check is this program standing in front of one of
+//! the two servers, and the bytes it needs are in
+//! [`super::moves_in_flight`], the store phase 4.1 wrote for exactly this.
 
 use super::MessageCache;
 use crate::common::{Error, Result};
@@ -49,33 +59,76 @@ pub enum WhatAWaitingMoveDoes {
     /// own waiting. `from_folder_path` and `uid` still name the original at
     /// the server, since that is what the server copies from.
     Copy { into_folder_path: String },
+    /// Move it into this folder of another account: fetched from the server
+    /// it is at, appended to the other, and only then removed.
+    MoveAcross {
+        into_folder_path: String,
+        to_account: TheOtherAccount,
+    },
+    /// Copy it into this folder of another account, keyed on the copy's own
+    /// row as a copy within the account is.
+    CopyAcross {
+        into_folder_path: String,
+        to_account: TheOtherAccount,
+    },
+}
+
+/// The account a crossing is going to.
+///
+/// The name beside the identifier, kept with the row, because every
+/// sentence about a crossing names the account ("Moved to Archive in Home")
+/// and the sentence about a refusal can be said a restart later, when what
+/// the account was called is a fact this row should still carry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TheOtherAccount {
+    pub id: String,
+    pub name: String,
 }
 
 impl WhatAWaitingMoveDoes {
-    /// The word the row carries, and the folder beside it when there is one.
-    fn as_stored(&self) -> (&'static str, Option<&str>) {
+    /// The word the row carries, the folder beside it when there is one, and
+    /// the other account for a crossing.
+    fn as_stored(&self) -> (&'static str, Option<&str>, Option<&TheOtherAccount>) {
         match self {
-            Self::Move { into_folder_path } => ("move", Some(into_folder_path)),
-            Self::DeleteToTrash { trash_path } => ("delete_to_trash", Some(trash_path)),
-            Self::DeleteOutright => ("delete_outright", None),
-            Self::Copy { into_folder_path } => ("copy", Some(into_folder_path)),
+            Self::Move { into_folder_path } => ("move", Some(into_folder_path), None),
+            Self::DeleteToTrash { trash_path } => ("delete_to_trash", Some(trash_path), None),
+            Self::DeleteOutright => ("delete_outright", None, None),
+            Self::Copy { into_folder_path } => ("copy", Some(into_folder_path), None),
+            Self::MoveAcross {
+                into_folder_path,
+                to_account,
+            } => ("move_across", Some(into_folder_path), Some(to_account)),
+            Self::CopyAcross {
+                into_folder_path,
+                to_account,
+            } => ("copy_across", Some(into_folder_path), Some(to_account)),
         }
     }
 
     /// Back from the columns, where the word is one this version knows.
-    fn from_stored(kind: &str, folder: Option<String>) -> Option<Self> {
-        match (kind, folder) {
-            ("move", Some(into_folder_path)) => Some(Self::Move { into_folder_path }),
-            ("delete_to_trash", Some(trash_path)) => Some(Self::DeleteToTrash { trash_path }),
-            ("delete_outright", _) => Some(Self::DeleteOutright),
-            ("copy", Some(into_folder_path)) => Some(Self::Copy { into_folder_path }),
+    fn from_stored(
+        kind: &str,
+        folder: Option<String>,
+        to_account: Option<TheOtherAccount>,
+    ) -> Option<Self> {
+        match (kind, folder, to_account) {
+            ("move", Some(into_folder_path), _) => Some(Self::Move { into_folder_path }),
+            ("delete_to_trash", Some(trash_path), _) => Some(Self::DeleteToTrash { trash_path }),
+            ("delete_outright", _, _) => Some(Self::DeleteOutright),
+            ("copy", Some(into_folder_path), _) => Some(Self::Copy { into_folder_path }),
             _ => None,
         }
     }
 
-    /// Whether the waiting row is a copy that has not reached the server.
+    /// Whether the waiting row is a copy that has not reached the server,
+    /// within the account or across.
     pub fn is_a_copy(&self) -> bool {
-        matches!(self, Self::Copy { .. })
+        matches!(self, Self::Copy { .. } | Self::CopyAcross { .. })
+    }
+
+    /// The account the message is going to, for a crossing.
+    pub fn crosses_to(&self) -> Option<&TheOtherAccount> {
+        self.as_stored().2
     }
 
     /// Where the message is meant to end up, for the kinds that have one.
@@ -100,6 +153,14 @@ pub struct AWaitingMove {
     pub asked_at: String,
 }
 
+impl AWaitingMove {
+    /// The account the destination folder is in: the other account for a
+    /// crossing, this row's own otherwise.
+    pub fn the_account_it_is_going_to(&self) -> &str {
+        self.account_id.as_str()
+    }
+}
+
 impl MessageCache {
     /// Keep a move or delete that has been made here and not yet at the
     /// server.
@@ -107,7 +168,7 @@ impl MessageCache {
     /// A message already waiting keeps the folder and the number the server
     /// still has it under, and takes the new ask: the module header says why.
     pub fn keep_a_move_waiting(&self, waiting: &AWaitingMove) -> Result<()> {
-        let (kind, into) = waiting.what.as_stored();
+        let (kind, into, to_account) = waiting.what.as_stored();
         // Where the server still has it: the earlier row's answer when
         // there is one, this ask's otherwise.
         let already: Option<(String, i64)> = self
@@ -127,8 +188,8 @@ impl MessageCache {
             .execute(
                 "INSERT OR REPLACE INTO moves_waiting
                  (message_row_id, account_id, from_folder_path, uid, kind,
-                  into_folder_path, asked_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                  into_folder_path, asked_at, to_account_id, to_account_name)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     waiting.message_row_id,
                     waiting.account_id,
@@ -137,27 +198,55 @@ impl MessageCache {
                     kind,
                     into,
                     waiting.asked_at,
+                    to_account.map(|other| other.id.as_str()),
+                    to_account.map(|other| other.name.as_str()),
                 ],
             )
             .map_err(|e| Error::Other(format!("A move could not be kept waiting: {e}")))?;
         Ok(())
     }
 
-    /// Every move waiting for one account, in the order they were asked.
+    /// Every move within one account waiting for it, in the order they were
+    /// asked.
     ///
-    /// A row whose kind this version does not recognise is left out rather
-    /// than refused, so a database written by a later version still hands
-    /// back the moves this one understands instead of failing whole.
+    /// A crossing is not among them: it is one command at each of two
+    /// servers, and [`MessageCache::crossings_waiting_touching`] answers it
+    /// to whichever account's check comes first. A row whose kind this
+    /// version does not recognise is left out rather than refused, so a
+    /// database written by a later version still hands back the moves this
+    /// one understands instead of failing whole.
     pub fn moves_waiting_for(&self, account_id: &str) -> Result<Vec<AWaitingMove>> {
         let mut statement = self
             .conn
             .prepare(
                 "SELECT message_row_id, account_id, from_folder_path, uid, kind,
-                        into_folder_path, asked_at
-                 FROM moves_waiting WHERE account_id = ?1
+                        into_folder_path, asked_at, to_account_id, to_account_name
+                 FROM moves_waiting WHERE account_id = ?1 AND to_account_id IS NULL
                  ORDER BY asked_at, message_row_id",
             )
             .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
+        read_waiting_rows(statement.query_map(params![account_id], read_a_row))
+    }
+
+    /// Every crossing waiting that this account is one end of, in the order
+    /// asked: the account the message is at, or the one it is going to.
+    ///
+    /// Either, because a check of either account is this program standing in
+    /// front of one of the two servers a crossing needs, and the other is
+    /// opened from there; a crossing offered to the source's check alone
+    /// would wait for an account whose check may never come.
+    pub fn crossings_waiting_touching(&self, account_id: &str) -> Result<Vec<AWaitingMove>> {
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT message_row_id, account_id, from_folder_path, uid, kind,
+                        into_folder_path, asked_at, to_account_id, to_account_name
+                 FROM moves_waiting
+                 WHERE to_account_id IS NOT NULL
+                   AND (account_id = ?1 OR to_account_id = ?1)
+                 ORDER BY asked_at, message_row_id",
+            )
+            .map_err(|e| Error::Other(format!("The waiting crossings could not be read: {e}")))?;
         read_waiting_rows(statement.query_map(params![account_id], read_a_row))
     }
 
@@ -228,7 +317,7 @@ impl MessageCache {
             .conn
             .prepare(
                 "SELECT message_row_id, account_id, from_folder_path, uid, kind,
-                        into_folder_path, asked_at
+                        into_folder_path, asked_at, to_account_id, to_account_name
                  FROM moves_waiting WHERE message_row_id = ?1",
             )
             .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
@@ -306,9 +395,27 @@ impl MessageCache {
     }
 }
 
-/// One row of the table as the two queries above select it, with its kind
-/// still in words.
-fn read_a_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(AWaitingMove, String, Option<String>)> {
+/// One row of the table as the queries above select it, with its kind still
+/// in words: the row, the word, the folder, and the other account when the
+/// row names one.
+type ARowStillInWords = (
+    AWaitingMove,
+    String,
+    Option<String>,
+    Option<TheOtherAccount>,
+);
+
+fn read_a_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ARowStillInWords> {
+    let to_account = match (
+        row.get::<_, Option<String>>(7)?,
+        row.get::<_, Option<String>>(8)?,
+    ) {
+        (Some(id), name) => Some(TheOtherAccount {
+            id,
+            name: name.unwrap_or_default(),
+        }),
+        (None, _) => None,
+    };
     Ok((
         AWaitingMove {
             message_row_id: row.get(0)?,
@@ -320,23 +427,22 @@ fn read_a_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(AWaitingMove, String
         },
         row.get(4)?,
         row.get(5)?,
+        to_account,
     ))
 }
 
 /// The rows a query answered, each with its kind read, and a row whose kind
 /// this version does not know left out.
 fn read_waiting_rows<'a>(
-    rows: rusqlite::Result<
-        impl Iterator<Item = rusqlite::Result<(AWaitingMove, String, Option<String>)>> + 'a,
-    >,
+    rows: rusqlite::Result<impl Iterator<Item = rusqlite::Result<ARowStillInWords>> + 'a>,
 ) -> Result<Vec<AWaitingMove>> {
     let rows =
         rows.map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
     let mut waiting = Vec::new();
     for row in rows {
-        let (without_its_kind, kind, into) =
+        let (without_its_kind, kind, into, to_account) =
             row.map_err(|e| Error::Other(format!("A waiting move could not be read: {e}")))?;
-        if let Some(what) = WhatAWaitingMoveDoes::from_stored(&kind, into) {
+        if let Some(what) = WhatAWaitingMoveDoes::from_stored(&kind, into, to_account) {
             waiting.push(AWaitingMove {
                 what,
                 ..without_its_kind
@@ -354,18 +460,20 @@ mod tests {
     use rusqlite::params;
     use std::path::Path;
 
-    /// A cache in this folder, holding one account's Inbox, Archive and Trash.
+    /// A cache in this folder, holding one account's Inbox, Archive and Trash,
+    /// and another account's Work folder for a crossing to go to.
     fn a_cache_at(dir: &Path) -> MessageCache {
         let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
-        for (name, kind) in [
-            ("INBOX", "Inbox"),
-            ("Archive", "Archive"),
-            ("Trash", "Trash"),
+        for (account, name, kind) in [
+            ("an account", "INBOX", "Inbox"),
+            ("an account", "Archive", "Archive"),
+            ("an account", "Trash", "Trash"),
+            ("another account", "Work", "Custom"),
         ] {
             cache
                 .save_folder(&CachedFolder {
                     id: 0,
-                    account_id: "an account".to_string(),
+                    account_id: account.to_string(),
                     name: name.to_string(),
                     path: name.to_string(),
                     folder_type: kind.to_string(),
@@ -375,6 +483,20 @@ mod tests {
                 .expect("a folder");
         }
         cache
+    }
+
+    /// A move of the row into the other account's Work folder.
+    fn a_crossing_of(row: i64, uid: u32, from: &str) -> AWaitingMove {
+        AWaitingMove {
+            what: WhatAWaitingMoveDoes::MoveAcross {
+                into_folder_path: "Work".to_string(),
+                to_account: TheOtherAccount {
+                    id: "another account".to_string(),
+                    name: "Home".to_string(),
+                },
+            },
+            ..a_move_of(row, uid, from, "Work")
+        }
     }
 
     fn a_cache() -> TempHome<MessageCache> {
@@ -455,6 +577,116 @@ mod tests {
             vec![a_move_of(row, 42, "INBOX", "Archive")],
             "a move kept only in memory is one the program loses on its way out"
         );
+    }
+
+    #[test]
+    fn test_a_crossing_survives_being_written_down_and_read_back() {
+        // The other account named on the row, kept with it, and read back
+        // over a second connection the way a restart opens one: a crossing
+        // is what a restart most needs to find, since the fetch and the
+        // append may both still be owed.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.keep_a_move_waiting(&a_crossing_of(row, 42, "INBOX"))
+            .expect("a crossing kept");
+        let reopened = MessageCache::new(home.path().to_path_buf(), None).expect("the cache again");
+        assert_eq!(
+            reopened
+                .crossings_waiting_touching("an account")
+                .expect("the waiting crossings"),
+            vec![a_crossing_of(row, 42, "INBOX")],
+            "a crossing kept only in memory is one the program loses on its way out"
+        );
+    }
+
+    #[test]
+    fn test_a_crossing_is_offered_at_a_check_of_either_account() {
+        // Either check is this program in front of one of the two servers
+        // the crossing needs. A crossing offered to the source's check alone
+        // would wait for an account whose check may never come.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.keep_a_move_waiting(&a_crossing_of(row, 42, "INBOX"))
+            .expect("a crossing kept");
+
+        for account in ["an account", "another account"] {
+            let rows: Vec<i64> = home
+                .crossings_waiting_touching(account)
+                .expect("the waiting crossings")
+                .iter()
+                .map(|waiting| waiting.message_row_id)
+                .collect();
+            assert_eq!(rows, vec![row], "the crossing is not offered to {account}");
+        }
+        assert!(
+            home.crossings_waiting_touching("a third account")
+                .expect("the waiting crossings")
+                .is_empty(),
+            "a crossing was offered to an account it has nothing to do with"
+        );
+    }
+
+    #[test]
+    fn test_a_crossing_is_not_among_the_moves_within_the_account() {
+        // The within-account replay is one command at one server, and a
+        // crossing handed to it would be a MOVE naming a folder that server
+        // does not have. The two reads answer disjoint rows.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let within = a_message_in_the_inbox(&home, 43);
+        home.keep_a_move_waiting(&a_crossing_of(row, 42, "INBOX"))
+            .expect("a crossing kept");
+        home.keep_a_move_waiting(&a_move_of(within, 43, "INBOX", "Archive"))
+            .expect("a move kept");
+
+        let rows: Vec<i64> = home
+            .moves_waiting_for("an account")
+            .expect("the waiting moves")
+            .iter()
+            .map(|waiting| waiting.message_row_id)
+            .collect();
+        assert_eq!(
+            rows,
+            vec![within],
+            "the crossing was handed to the one-server replay"
+        );
+        assert_eq!(
+            home.crossings_waiting_touching("an account")
+                .expect("the waiting crossings")
+                .len(),
+            1,
+            "the move within the account was handed to the crossing replay"
+        );
+    }
+
+    #[test]
+    fn test_a_move_within_the_account_and_then_across_keeps_where_the_server_still_has_it() {
+        // Inbox to Archive with no network, then Archive to the other
+        // account's Work. The server has the message in the Inbox under 42,
+        // so the crossing fetches it from there, and one row says so.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        home.keep_a_move_waiting(&a_crossing_of(row, 4_294_967_000, "Archive"))
+            .expect("a crossing kept");
+
+        assert!(
+            home.moves_waiting_for("an account")
+                .expect("the waiting moves")
+                .is_empty(),
+            "the row is still a move within the account"
+        );
+        let crossings = home
+            .crossings_waiting_touching("an account")
+            .expect("the waiting crossings");
+        assert_eq!(crossings.len(), 1, "{crossings:?}");
+        assert_eq!(
+            (crossings[0].from_folder_path.as_str(), crossings[0].uid),
+            ("INBOX", 42),
+            "the crossing would fetch from a folder and a number the server never gave"
+        );
+        assert_eq!(crossings[0].the_account_it_is_going_to(), "another account");
     }
 
     #[test]

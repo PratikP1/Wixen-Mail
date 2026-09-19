@@ -5250,25 +5250,25 @@ impl WxMailApp {
                                     Err(why) => send_refusal(&ui_tx, &runtime, &why),
                                 }
                             }
-                            for (account, asks) in deleting_here_first.into_values() {
-                                complete_here_then_tell_the_server(
-                                    app,
-                                    &msg_list,
-                                    &cache_for_deleting,
-                                    account,
-                                    asks,
-                                    None,
-                                    move |ask| {
-                                        spawn_server_change(
-                                            app,
-                                            ask.asked.message_row_id,
-                                            ask.asked.uid,
-                                            ask.subject,
-                                            ServerChange::Deleted(asked),
-                                        )
-                                    },
-                                );
-                            }
+                            complete_here_then_tell_the_server(
+                                app,
+                                &msg_list,
+                                &cache_for_deleting,
+                                deleting_here_first
+                                    .into_values()
+                                    .map(|(account, asks)| AsksOfOneAccount { account, asks })
+                                    .collect(),
+                                None,
+                                move |ask| {
+                                    spawn_server_change(
+                                        app,
+                                        ask.asked.message_row_id,
+                                        ask.asked.uid,
+                                        ask.subject,
+                                        ServerChange::Deleted(asked),
+                                    )
+                                },
+                            );
                         }
                         _ if id == ID_MARK_READ => {
                             // The Action menu, the context menu and the
@@ -6156,27 +6156,14 @@ impl WxMailApp {
                 ask_about_the_alpha_once(&frame, &a11y);
             }
 
-            // A move this program was closed part way through, found on the
-            // next start. After show and after the alpha question, for the
-            // same reasons: a dialog needs a frame that is on screen, and two
-            // questions must not open over one another. Skipped during a scan
-            // run, which has nobody to answer it.
-            //
-            // This is the whole reason the bytes of a crossing are kept. A
-            // store written for an interruption and read by nothing after one
-            // would be a whole unencrypted message on somebody's disk in
-            // exchange for a capability that does not exist.
-            if scan_target.is_none() {
-                say_what_did_not_finish(
-                    AppHandles {
-                        state: &state,
-                        tx: &scan_tx,
-                        rt: &scan_rt,
-                    },
-                    &frame,
-                    &a11y,
-                );
-            }
+            // A move to another account this program was closed part way
+            // through used to be a question here, after the alpha question
+            // (phase 4.1). Since 11-07.2 it is not asked: the crossing is
+            // what the person asked for, so it waits in `moves_waiting` with
+            // its bytes held, and the next check of either account finishes
+            // it from those bytes before it reads a folder, through
+            // `replay_the_moves_that_were_waiting`. The two crossings nothing
+            // can finish are said once by that replay, and undone.
 
             // What Windows handed over, if it handed over anything: the
             // `mailto:` link somebody followed or the `.ics` or `.vcf` file
@@ -15132,14 +15119,64 @@ pub(crate) fn send_refusal(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, why: &str) 
 /// server it could not reach. A refusal is undone here and said, through the
 /// update the window handles; a move the server carried out, or had already,
 /// stops waiting with its row where the server holds it.
+///
+/// Then the crossings this account is one end of (11-07.2), on the same
+/// session for this account and the other account's own, opened through
+/// `TheAccountsSetUpHere`: the fetch here and the append there, or the
+/// resume from the bytes held since the fetch, and the removal at the source
+/// last. A crossing whose source is this account and could not be finished
+/// ends the check for the reason above; one whose source is the other
+/// account leaves this account's folders safe to read, since the row sits
+/// in this account's folder marked as filed here and nothing lists it.
 fn replay_the_moves_that_were_waiting(
     cache: &crate::data::message_cache::MessageCache,
     controller: &crate::application::mail_controller::MailController,
     account_id: &str,
+    accounts: &[Account],
     handle: &tokio::runtime::Handle,
     say: &dyn Fn(UIUpdate),
 ) -> std::result::Result<(), String> {
-    use crate::application::moves_waiting::{Replayed, replay_the_moves_waiting_for};
+    use crate::application::mail_session::TheAccountsSetUpHere;
+    use crate::application::moves_waiting::{
+        Replayed, replay_the_crossings_waiting_for, replay_the_moves_waiting_for,
+    };
+    use crate::data::message_cache::moves_waiting::AWaitingMove;
+    let settle = |waiting: AWaitingMove, answer: Replayed| -> std::result::Result<(), String> {
+        match answer {
+            Replayed::Done | Replayed::AlreadyDone => Ok(()),
+            // The row left at the key; what is left to say is that the
+            // message is in two places, which nothing else will.
+            Replayed::DoneWithSomethingToSay(said) => {
+                say(UIUpdate::StatusUpdated(said));
+                Ok(())
+            }
+            // Undone and said by the window's arm, which holds the list the
+            // row goes back into.
+            Replayed::Refused(reason) => {
+                say(UIUpdate::MovePutBack { waiting, reason });
+                Ok(())
+            }
+            Replayed::NotReached if waiting.account_id != account_id => {
+                tracing::info!(
+                    "A move of message {} from another account is still waiting: that \
+                     account's server could not be reached",
+                    waiting.message_row_id
+                );
+                Ok(())
+            }
+            Replayed::NotReached => {
+                tracing::info!(
+                    "A move of message {} is still waiting: the server could not be reached",
+                    waiting.message_row_id
+                );
+                Err(
+                    "The mail server could not be reached, so a move made here is still \
+                     waiting and this account was not read"
+                        .to_string(),
+                )
+            }
+        }
+    };
     let replayed =
         match handle.block_on(replay_the_moves_waiting_for(controller, cache, account_id)) {
             Ok(replayed) => replayed,
@@ -15150,23 +15187,22 @@ fn replay_the_moves_that_were_waiting(
             }
         };
     for (waiting, answer) in replayed {
-        match answer {
-            Replayed::Done | Replayed::AlreadyDone => {}
-            // Undone and said by the window's arm, which holds the list the
-            // row goes back into.
-            Replayed::Refused(reason) => say(UIUpdate::MovePutBack { waiting, reason }),
-            Replayed::NotReached => {
-                tracing::info!(
-                    "A move of message {} is still waiting: the server could not be reached",
-                    waiting.message_row_id
-                );
-                return Err(
-                    "The mail server could not be reached, so a move made here is still \
-                     waiting and this account was not read"
-                        .to_string(),
-                );
-            }
+        settle(waiting, answer)?;
+    }
+    let crossed = match handle.block_on(replay_the_crossings_waiting_for(
+        &TheAccountsSetUpHere(accounts),
+        cache,
+        account_id,
+    )) {
+        Ok(crossed) => crossed,
+        Err(why) => {
+            return Err(format!(
+                "A move to another account made here could not be finished: {why}"
+            ));
         }
+    };
+    for (waiting, answer) in crossed {
+        settle(waiting, answer)?;
     }
     Ok(())
 }
@@ -18711,14 +18747,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             // The folder the row is back in, or the copy left, read again
             // when it is the one on screen, so the list shows the message
-            // where it is.
+            // where it is. The destination is the other account's for a
+            // crossing.
             let folders_to_read: Vec<i64> = [
-                Some(waiting.from_folder_path.as_str()),
-                waiting.what.destination(),
+                (
+                    waiting.account_id.as_str(),
+                    Some(waiting.from_folder_path.as_str()),
+                ),
+                (
+                    waiting.the_account_it_is_going_to(),
+                    waiting.what.destination(),
+                ),
             ]
             .into_iter()
-            .flatten()
-            .filter_map(|path| cache.get_folder(&waiting.account_id, path).ok().flatten())
+            .filter_map(|(account, path)| Some((account, path?)))
+            .filter_map(|(account, path)| cache.get_folder(account, path).ok().flatten())
             .map(|folder| folder.id)
             .collect();
             for folder_id in folders_to_read {
@@ -20082,28 +20125,36 @@ fn move_or_copy_here_first(
         })
         .collect();
     let into_for_the_worker = into.clone();
-    complete_here_then_tell_the_server(app, list, cache, account, asks, one_sentence, move |ask| {
-        let one = MessageRef {
-            row_id: ask.asked.message_row_id,
-            uid: ask.asked.uid,
-            subject: ask.subject.clone(),
-            read: false,
-            starred: false,
-        };
-        let chosen_one = what_the_selection_holds(&[0], |_| Some(Members::AMessage(one.clone())));
-        spawn_folder_move(
-            app,
-            vec![AMessageMoving {
+    complete_here_then_tell_the_server(
+        app,
+        list,
+        cache,
+        vec![AsksOfOneAccount { account, asks }],
+        one_sentence,
+        move |ask| {
+            let one = MessageRef {
                 row_id: ask.asked.message_row_id,
                 uid: ask.asked.uid,
-                subject: ask.subject,
-                from: ask.asked.from_folder_path,
-            }],
-            chosen_one,
-            into_for_the_worker.clone(),
-            copying,
-        );
-    });
+                subject: ask.subject.clone(),
+                read: false,
+                starred: false,
+            };
+            let chosen_one =
+                what_the_selection_holds(&[0], |_| Some(Members::AMessage(one.clone())));
+            spawn_folder_move(
+                app,
+                vec![AMessageMoving {
+                    row_id: ask.asked.message_row_id,
+                    uid: ask.asked.uid,
+                    subject: ask.subject,
+                    from: ask.asked.from_folder_path,
+                }],
+                chosen_one,
+                into_for_the_worker.clone(),
+                copying,
+            );
+        },
+    );
 }
 
 /// One message a move or a copy is taking, as the worker needs it.
@@ -20163,41 +20214,50 @@ fn complete_here_then_tell_the_server(
     app: AppHandles<'_>,
     list: &ListCtrl,
     cache: &Arc<MessageCache>,
-    account: Account,
-    asks: Vec<AnAskMadeHere>,
+    asks: Vec<AsksOfOneAccount>,
     one_sentence_for_the_set: Option<String>,
     server_first: impl Fn(AnAskMadeHere),
 ) {
     use crate::application::moves_waiting::{NotMadeHere, what_happens_here};
     let AppHandles { state, tx, rt } = app;
-    let a_set = asks.len() > 1;
+    let a_set = asks.iter().map(|of_one| of_one.asks.len()).sum::<usize>() > 1;
     let mut made_here = 0usize;
     let mut a_copy = false;
-    for ask in asks {
-        match what_happens_here(cache, &ask.asked, &ask.subject) {
-            Ok(made) => {
-                made_here += 1;
-                if made.kept.what.is_a_copy() {
-                    a_copy = true;
-                    if a_set {
-                        send_shown(tx, rt, &made.shown);
+    // The accounts whose sessions the push may need: each account told, and
+    // for a crossing the account the message is going to.
+    let mut to_tell: Vec<Account> = Vec::new();
+    for AsksOfOneAccount { account, asks } in asks {
+        let mut made_here_for_this_account = 0usize;
+        for ask in asks {
+            match what_happens_here(cache, &ask.asked, &ask.subject) {
+                Ok(made) => {
+                    made_here += 1;
+                    made_here_for_this_account += 1;
+                    if made.kept.what.is_a_copy() {
+                        a_copy = true;
+                        if a_set {
+                            send_shown(tx, rt, &made.shown);
+                        } else {
+                            send_status(tx, rt, &made.shown);
+                        }
                     } else {
-                        send_status(tx, rt, &made.shown);
+                        take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                        send_shown(tx, rt, &made.shown);
                     }
-                } else {
-                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
-                    send_shown(tx, rt, &made.shown);
+                }
+                Err(NotMadeHere::RefusedInWords(words)) => send_refusal(tx, rt, &words),
+                Err(NotMadeHere::CouldNotBeRecorded(why)) => {
+                    tracing::warn!(
+                        "A change to message {} could not be recorded here, so the server is \
+                         asked first: {why}",
+                        ask.asked.message_row_id
+                    );
+                    server_first(ask);
                 }
             }
-            Err(NotMadeHere::RefusedInWords(words)) => send_refusal(tx, rt, &words),
-            Err(NotMadeHere::CouldNotBeRecorded(why)) => {
-                tracing::warn!(
-                    "A change to message {} could not be recorded here, so the server is \
-                     asked first: {why}",
-                    ask.asked.message_row_id
-                );
-                server_first(ask);
-            }
+        }
+        if made_here_for_this_account > 0 {
+            to_tell.push(account);
         }
     }
     if made_here == 0 {
@@ -20211,13 +20271,15 @@ fn complete_here_then_tell_the_server(
         }
     }
 
-    // The push: once, in the background, on the session this account is
-    // signed in with. A connection of this thread's own to the store, the
+    // The push: once per account told, in the background, on the session
+    // that account is signed in with, and for a crossing on the other
+    // account's as well. A connection of this thread's own to the store, the
     // way every other worker here opens one. Nothing here fails for the
     // person: a server that cannot be reached, or signed in to, leaves the
     // change waiting for the next check, and the log says so.
     let tx = tx.clone();
     let handle = rt.handle().clone();
+    let accounts = lock_state(state).accounts.clone();
     rt.spawn_blocking(move || {
         let say = |update: UIUpdate| {
             handle.block_on(async {
@@ -20235,23 +20297,37 @@ fn complete_here_then_tell_the_server(
                 return;
             }
         };
-        let controller =
-            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
-                Ok(session) => session,
-                Err(why) => {
-                    tracing::info!(
-                        "The change made here waits for the next check of {}: {why}",
-                        account.name
-                    );
-                    return;
-                }
-            };
-        if let Err(why) =
-            replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
-        {
-            tracing::info!("{why}");
+        for account in to_tell {
+            let controller =
+                match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                    Ok(session) => session,
+                    Err(why) => {
+                        tracing::info!(
+                            "The change made here waits for the next check of {}: {why}",
+                            account.name
+                        );
+                        continue;
+                    }
+                };
+            if let Err(why) = replay_the_moves_that_were_waiting(
+                &cache,
+                &controller,
+                &account.id,
+                &accounts,
+                &handle,
+                &say,
+            ) {
+                tracing::info!("{why}");
+            }
         }
     });
+}
+
+/// The asks made here first that one account is told about: the account the
+/// server holds each message at.
+struct AsksOfOneAccount {
+    account: Account,
+    asks: Vec<AnAskMadeHere>,
 }
 
 /// Do the move or copy on the server, and only then change the list.
@@ -20458,6 +20534,7 @@ fn spawn_folder_move(
                     crate::application::mail_across_accounts::TheMoveAsThisProgramRecordsIt {
                         cache: keeping.as_ref(),
                         row: message_row_id,
+                        from_account_id: &account.id,
                         to_account_id: &destination_account.id,
                     },
                 )) {
@@ -23388,8 +23465,10 @@ fn start_the_download(app: AppHandles<'_>) {
     // Before anything is dialled, as a step: the first thing the run itself
     // does is a sign-in that takes as long as a mail server takes.
     send_progress(tx, rt, STARTING_THE_DOWNLOAD);
-    let accounts: Vec<Account> = lock_state(state)
-        .accounts
+    // Every account, for a crossing's other end, and the ones the download
+    // reads.
+    let every_account: Vec<Account> = lock_state(state).accounts.clone();
+    let accounts: Vec<Account> = every_account
         .iter()
         .filter(|account| {
             account.enabled && account.protocol() == crate::common::types::Protocol::Imap
@@ -23448,9 +23527,14 @@ fn start_the_download(app: AppHandles<'_>) {
             // at the server is replayed here as well before the first listing
             // (#86); a server that could not be reached about one is a server
             // that stopped.
-            if let Err(why) =
-                replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
-            {
+            if let Err(why) = replay_the_moves_that_were_waiting(
+                &cache,
+                &controller,
+                &account.id,
+                &every_account,
+                &handle,
+                &say,
+            ) {
                 tracing::warn!("The download stopped at {}: {why}", account.name);
                 ended = WhyTheRunEnded::AServerStopped;
                 break;
@@ -23927,6 +24011,9 @@ fn spawn_mail_sync(
             s.last_checked.insert(account.id.clone(), now);
         }
     }
+    // Every account set up here, for the other end of a crossing waiting
+    // on one of the accounts this check reads.
+    let every_account: Vec<Account> = lock_state(&state).accounts.clone();
 
     rt.spawn_blocking(move || {
         let say = |update: UIUpdate| {
@@ -24020,10 +24107,16 @@ fn spawn_mail_sync(
             // this account is listed (#86): a listing taken first would
             // bring back a message the server still has where it was.
             // A server that could not be reached about one ends this
-            // account's check.
-            if let Err(why) =
-                replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
-            {
+            // account's check. The crossings this account is one end of
+            // go with them, on the other account's session as well.
+            if let Err(why) = replay_the_moves_that_were_waiting(
+                &cache,
+                &controller,
+                &account.id,
+                &every_account,
+                &handle,
+                &say,
+            ) {
                 fail(why);
                 continue;
             }
@@ -29052,221 +29145,6 @@ fn ask_about_the_alpha_once(frame: &Frame, a11y: &Accessibility) {
             crate::presentation::accessibility::announcements::Priority::High,
         );
     }
-}
-
-/// Say what happened to a move this program did not finish, and offer to
-/// finish it.
-///
-/// Once, when the window is ready. The read is local: it opens the cache, asks
-/// which moves have no ending, and touches no server, which is what lets it run
-/// here at all. At this moment no account has necessarily signed in, and the
-/// asking and the sending happen when somebody answers, by which time the
-/// sessions exist.
-///
-/// It is not an error and the words do not read like one. A move is append then
-/// remove and the removal is last, so at every point the program can stop the
-/// message is still at the account it came from. Nothing was lost, and saying
-/// so is the first thing the sentence does.
-///
-/// Every decision this makes is somewhere a test can reach without a window:
-/// what to say and whether there is anything to offer are
-/// [`crate::application::mail_across_accounts::what_to_say_about_an_unfinished_move`],
-/// and what a resume then does is
-/// [`crate::application::mail_across_accounts::how_to_finish`].
-fn say_what_did_not_finish(app: AppHandles<'_>, frame: &Frame, a11y: &Accessibility) {
-    use crate::application::mail_across_accounts::{
-        AboutAnUnfinishedMove, TheAccountsInvolved, what_to_say_about_an_unfinished_move,
-    };
-    use crate::presentation::accessibility::announcements::Priority;
-    use crate::presentation::asking::{Answered, which_of_the_two, yes_no_where_enter_answers_no};
-
-    let AppHandles { state, tx, rt } = app;
-    let Some(cache) = AppPaths::resolve()
-        .ok()
-        .map(|paths| paths.cache_dir())
-        .and_then(|dir| crate::data::message_cache::MessageCache::new(dir, None).ok())
-    else {
-        return;
-    };
-    let unfinished = match cache.moves_that_did_not_finish() {
-        Ok(unfinished) => unfinished,
-        Err(e) => {
-            tracing::warn!("The moves that did not finish could not be read: {e}");
-            return;
-        }
-    };
-    if unfinished.is_empty() {
-        return;
-    }
-    let accounts = {
-        let s = lock_state(state);
-        s.accounts.clone()
-    };
-    // What each account is called, or nothing at all where it is no longer set
-    // up here. A row can outlive the account it names, and offering to finish
-    // a move to an account that has gone would be offering a command with
-    // nowhere to send it.
-    let named = |id: &str| accounts.iter().find(|a| a.id == id).map(|a| a.name.clone());
-
-    for move_ in unfinished {
-        let it_is_in = named(&move_.from_account_id);
-        let it_was_going_to = named(&move_.to_account_id);
-        let said = what_to_say_about_an_unfinished_move(
-            &move_,
-            TheAccountsInvolved {
-                it_is_in: it_is_in.as_deref(),
-                it_was_going_to: it_was_going_to.as_deref(),
-            },
-        );
-        match said {
-            // Nothing can be done, so it is said rather than asked, and the
-            // kept bytes go: a whole message left on the disk for a move
-            // nobody can finish is a copy with nothing saying it is there.
-            AboutAnUnfinishedMove::JustSay(words) => {
-                let _ = a11y.announce(&words, Priority::High);
-                send_status(tx, rt, &words);
-                if let Err(e) = cache.the_move_is_over(move_.message_row_id) {
-                    tracing::warn!("The bytes kept for a move nobody can finish stayed: {e}");
-                }
-            }
-            AboutAnUnfinishedMove::Ask { title, words } => {
-                // Spoken as well as shown. A message box is read out when it
-                // opens, and the announcement is what reaches somebody whose
-                // reader was mid-sentence on something else.
-                let _ = a11y.announce(&words, Priority::High);
-                // Enter answers No, because Yes here speaks to two servers and
-                // may take the message off one of them.
-                let asked = MessageDialog::builder(frame, &words, &title)
-                    .with_style(yes_no_where_enter_answers_no())
-                    .build()
-                    .show_modal();
-                match which_of_the_two(asked) {
-                    Answered::Yes => spawn_finishing_the_move(
-                        AppHandles { state, tx, rt },
-                        move_,
-                        it_is_in.unwrap_or_default(),
-                        it_was_going_to.unwrap_or_default(),
-                    ),
-                    // A decision, so the bytes go and the question is not put
-                    // again. The message is where it always was.
-                    Answered::No => {
-                        if let Err(e) = cache.the_move_is_over(move_.message_row_id) {
-                            tracing::warn!("The bytes kept for an abandoned move stayed: {e}");
-                        }
-                        send_status(
-                            tx,
-                            rt,
-                            &format!(
-                                "{} was left where it is, and you will not be asked again.",
-                                move_.subject
-                            ),
-                        );
-                    }
-                    // Nobody answered. Nothing is written and nothing is sent,
-                    // so a later start asks again, and the backstop takes the
-                    // row on its own if it never is answered.
-                    Answered::Neither => (),
-                }
-            }
-        }
-    }
-}
-
-/// Finish a move on the two servers, once somebody has said to.
-///
-/// Both sessions are opened here rather than when the question was put, so
-/// nothing signs in on behalf of a question that might be answered No, and the
-/// permission each account carries is asked again at the moment the command
-/// goes.
-fn spawn_finishing_the_move(
-    app: AppHandles<'_>,
-    unfinished: crate::data::message_cache::moves_in_flight::AMoveLeftUnfinished,
-    it_is_in: String,
-    it_was_going_to: String,
-) {
-    let AppHandles { state, tx, rt } = app;
-    let tx = tx.clone();
-    let handle = rt.handle().clone();
-    let (source, destination) = {
-        let s = lock_state(state);
-        (
-            s.accounts
-                .iter()
-                .find(|a| a.id == unfinished.from_account_id)
-                .cloned(),
-            s.accounts
-                .iter()
-                .find(|a| a.id == unfinished.to_account_id)
-                .cloned(),
-        )
-    };
-
-    rt.spawn_blocking(move || {
-        let say = |update: UIUpdate| {
-            handle.block_on(async {
-                let _ = tx.send(update).await;
-            });
-        };
-        let (Some(source), Some(destination)) = (source, destination) else {
-            return say(UIUpdate::ErrorOccurred(format!(
-                "{} could not be finished: one of the two accounts is no longer set up.",
-                unfinished.subject
-            )));
-        };
-        let leaving =
-            match handle.block_on(crate::application::mail_session::the_session_at(&source)) {
-                Ok(session) => session,
-                Err(why) => {
-                    return say(UIUpdate::ErrorOccurred(format!(
-                        "{} could not be finished: {it_is_in} could not be signed in to. {why}",
-                        unfinished.subject
-                    )));
-                }
-            };
-        let taking = match handle.block_on(crate::application::mail_session::the_session_at(
-            &destination,
-        )) {
-            Ok(session) => session,
-            Err(why) => {
-                return say(UIUpdate::ErrorOccurred(format!(
-                    "{} could not be finished: {it_was_going_to} could not be signed \
-                     in to. {why}",
-                    unfinished.subject
-                )));
-            }
-        };
-
-        let across = handle.block_on(crate::application::mail_across_accounts::finish_the_move(
-            &unfinished,
-            taking.as_ref(),
-            leaving.as_ref(),
-        ));
-        // Whatever happened, the kept bytes have done their job: the move
-        // reached an ending and there is nothing left to resume.
-        if let Some(cache) = AppPaths::resolve()
-            .ok()
-            .map(|paths| paths.cache_dir())
-            .and_then(|dir| crate::data::message_cache::MessageCache::new(dir, None).ok())
-            && let Err(e) = cache.the_move_is_over(unfinished.message_row_id)
-        {
-            tracing::warn!("The bytes kept for a finished move stayed: {e}");
-        }
-
-        // The same words the move itself uses, from the same place, so a move
-        // finished a day later does not read differently from one that
-        // finished at the time.
-        let next = crate::application::server_delete::after_a_move_across_accounts(
-            &across,
-            &unfinished.to_folder,
-            &it_was_going_to,
-            &unfinished.from_folder,
-            &unfinished.subject,
-        );
-        if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
-            say(UIUpdate::MessageDeletedFromCache(unfinished.message_row_id));
-        }
-        say(UIUpdate::StatusUpdated(next.said));
-    });
 }
 
 #[cfg(test)]

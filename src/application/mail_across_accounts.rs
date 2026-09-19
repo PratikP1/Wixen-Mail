@@ -32,7 +32,7 @@
 
 use crate::common::Result;
 use crate::data::message_cache::MessageCache;
-use crate::data::message_cache::moves_in_flight::{AMoveLeftUnfinished, AMoveStarting};
+use crate::data::message_cache::moves_in_flight::{AMoveLeftUnfinished, AMoveStarting, Held};
 use crate::service::protocols::imap::{ImapMessage, LetGo, flag};
 
 /// Whether a chosen destination is at the same server the message is at.
@@ -207,6 +207,9 @@ pub(crate) struct TheMoveAsThisProgramRecordsIt<'a> {
     pub cache: Option<&'a MessageCache>,
     /// The message's own row in that cache.
     pub row: i64,
+    /// The account the message is at, which a resume names to find the
+    /// source's session again.
+    pub from_account_id: &'a str,
     /// The account the destination folder belongs to.
     ///
     /// Here rather than beside the folder path because it is no part of the
@@ -215,6 +218,36 @@ pub(crate) struct TheMoveAsThisProgramRecordsIt<'a> {
     /// what a later run of the program needs in order to find that connection
     /// again.
     pub to_account_id: &'a str,
+}
+
+/// What the first step of a crossing came back with: the message as the
+/// store would hand it back, and whether the store took it.
+///
+/// The owned shape of [`AMoveStarting`], which is what a resume reads, so
+/// the second and third steps take the same thing whether the first step
+/// ran a moment ago or on an earlier run of the program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Fetched {
+    pub message: AMoveLeftUnfinished,
+    /// The store's answer, or `None` where this computer had no store to ask.
+    pub held: Option<Held>,
+}
+
+/// What the append step came back with.
+///
+/// Two answers, and the second carries the ending as a move would word it,
+/// because the three ways an append can fail to land are the three endings
+/// a move has before the removal, and a copy reads them the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Appended {
+    /// The destination has the message: it said so, or it was asked and
+    /// answered yes.
+    ItLanded,
+    /// It did not, or nobody can tell, as one of
+    /// [`MovedAcross::TheDestinationRefusedIt`],
+    /// [`MovedAcross::ItNeverArrivedSoNothingWasRemoved`] and
+    /// [`MovedAcross::ItIsNotKnownWhereItIs`]. Nothing was removed.
+    ItDidNot(MovedAcross),
 }
 
 /// Every way a move to a folder on another account can end.
@@ -336,11 +369,12 @@ fn the_destination_never_answered(why: &crate::common::Error) -> bool {
 ///
 /// Two of the three ways [`whether_the_destination_has_it`] can come back
 /// unanswerable are settled before any server is involved, and one place says
-/// so rather than two. That matters because the second reader is the window
-/// that meets an unfinished move on the next start: it has to know, before it
-/// offers to finish anything, whether there is a question to put at all. Two
-/// readings of the same rule would eventually offer somebody a choice that
-/// cannot be carried out.
+/// so rather than two. That matters because the second reader is the replay
+/// that meets a crossing held from an earlier run: it has to know, before it
+/// sends anything, whether there is a question to put at all
+/// ([`why_it_cannot_be_finished_from_here`]). Two readings of the same rule
+/// would eventually send a message on the strength of a question that
+/// cannot be settled.
 ///
 /// `None` means the question can be put. It says nothing about the answer.
 fn why_the_question_cannot_be_put(
@@ -427,6 +461,12 @@ pub(crate) async fn whether_the_destination_has_it(
 /// [`crate::service::protocols::imap::ImapSession::move_message`] already has.
 /// Everything that did change something comes back as a [`MovedAcross`] naming
 /// where the message now is.
+///
+/// The three steps in order, for a caller that wants the whole crossing in
+/// front of the person: since 11-07.2 that is a message over the store's
+/// ceiling, which cannot be replayed from here and so goes the old way. A
+/// crossing made here first runs the same three steps from the queue, one
+/// or more checks apart, and lets the bytes go when it lands or is undone.
 pub(crate) async fn move_it_across(
     the_account_it_is_in: &(impl TheAccountItIsIn + TheAccountItIsLeaving),
     from: &str,
@@ -435,14 +475,25 @@ pub(crate) async fn move_it_across(
     into: &str,
     recording: TheMoveAsThisProgramRecordsIt<'_>,
 ) -> Result<MovedAcross> {
-    let ended = the_crossing(
-        the_account_it_is_in,
-        from,
-        uid,
-        the_account_it_is_going_to,
-        into,
-        recording,
-    )
+    let ended = async {
+        let fetched = fetch_and_keep(
+            the_account_it_is_in,
+            the_account_it_is_going_to,
+            from,
+            uid,
+            into,
+            recording,
+        )
+        .await?;
+        Ok(
+            match append_and_ask(the_account_it_is_going_to, &fetched.message).await {
+                Appended::ItLanded => {
+                    remove_at_the_source(the_account_it_is_in, &fetched.message).await
+                }
+                Appended::ItDidNot(ending) => ending,
+            },
+        )
+    }
     .await;
 
     // Once, on the way out, rather than in each of the six endings and the two
@@ -459,24 +510,39 @@ pub(crate) async fn move_it_across(
     ended
 }
 
-/// The crossing itself, with the kept bytes written in the middle of it.
-async fn the_crossing(
-    the_account_it_is_in: &(impl TheAccountItIsIn + TheAccountItIsLeaving),
+/// The first step of a crossing: the message from the source, what the
+/// destination folder held beforehand, and the bytes kept.
+///
+/// Nothing is written at either server. An `Err` is the source saying nothing
+/// usable about the message, or not answering, and the crossing has not
+/// started.
+///
+/// The destination is read before the message goes, because afterwards it is
+/// too late: a folder holding one message with that identifier cannot say
+/// whether it is the one just sent or one that was always there. A folder that
+/// cannot be read now is not a failure and does not stop the move; it only
+/// means an append whose answer never arrives cannot be settled, and the
+/// ending then says so rather than guessing.
+///
+/// The bytes are kept before the append, which is the whole point of keeping
+/// them. From here until the crossing reaches an ending, this computer holds
+/// everything needed to finish it without going back to the source: the
+/// bytes, where they were going, how they were to be filed, and what the
+/// destination folder held beforehand. A store that would not take them is
+/// logged and not fatal: it costs the resume, not the move, since the append
+/// still goes first and the source still holds the message until the
+/// destination has answered. The answer says which.
+pub(crate) async fn fetch_and_keep(
+    the_account_it_is_in: &impl TheAccountItIsIn,
+    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
     from: &str,
     uid: u32,
-    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
     into: &str,
     recording: TheMoveAsThisProgramRecordsIt<'_>,
-) -> Result<MovedAcross> {
+) -> Result<Fetched> {
     let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
     let identifier = the_identifier_to_ask_about(filed.message_id.as_deref());
 
-    // Asked before the message goes, because afterwards it is too late: a
-    // folder holding one message with that identifier cannot say whether it is
-    // the one just sent or one that was always there. A folder that cannot be
-    // read now is not a failure and does not stop the move; it only means an
-    // append whose answer never arrives cannot be settled, and the ending then
-    // says so rather than guessing.
     let was_there_before = match identifier {
         Some(identifier) => the_account_it_is_going_to
             .which_messages_carry(into, identifier)
@@ -488,63 +554,98 @@ async fn the_crossing(
     let flags = the_flags_that_travel(&filed.flags);
     let arrived = when_it_arrived(filed.internal_date.as_deref());
 
-    // Before the append, which is the whole point of keeping them. From here
-    // until the move reaches an ending, this computer holds everything needed
-    // to finish the move without going back to the source for the message: the
-    // bytes, where they were going, how they were to be filed, and what the
-    // destination folder held beforehand. Written after the append it would
-    // cover the removal and not the append, and the append is the half that can
-    // leave a question open.
-    //
-    // Failure here is logged and not fatal. It costs the safeguard, not the
-    // move: the append still goes first and the source still holds the message
-    // until the destination has answered.
-    if let Some(cache) = recording.cache
-        && let Err(e) = cache.keep_the_message_while_it_moves(&AMoveStarting {
-            message_row_id: recording.row,
-            to_account_id: recording.to_account_id,
-            to_folder: into,
-            flags: flags.as_deref(),
-            arrived: arrived.as_deref(),
-            was_there_before: was_there_before.as_deref(),
-            raw: &raw,
-        })
-    {
-        tracing::warn!("The message being moved could not be kept while it moves: {e}");
-    }
+    let held = recording.cache.and_then(|cache| {
+        cache
+            .keep_the_message_while_it_moves(&AMoveStarting {
+                message_row_id: recording.row,
+                to_account_id: recording.to_account_id,
+                to_folder: into,
+                flags: flags.as_deref(),
+                arrived: arrived.as_deref(),
+                was_there_before: was_there_before.as_deref(),
+                raw: &raw,
+            })
+            .inspect_err(|e| {
+                tracing::warn!("The message being moved could not be kept while it moves: {e}");
+            })
+            .ok()
+    });
 
-    if let Err(why) = the_account_it_is_going_to
-        .take_this_message(into, flags.as_deref(), arrived.as_deref(), &raw)
-        .await
-    {
-        if !the_destination_never_answered(&why) {
-            return Ok(MovedAcross::TheDestinationRefusedIt(why.to_string()));
-        }
-        match whether_the_destination_has_it(
-            the_account_it_is_going_to,
-            into,
-            identifier,
-            was_there_before.as_deref(),
+    Ok(Fetched {
+        message: AMoveLeftUnfinished {
+            message_row_id: recording.row,
+            subject: filed.subject,
+            identifier: identifier.unwrap_or_default().to_string(),
+            from_account_id: recording.from_account_id.to_string(),
+            from_folder: from.to_string(),
+            uid,
+            to_account_id: recording.to_account_id.to_string(),
+            to_folder: into.to_string(),
+            flags,
+            arrived,
+            was_there_before,
+            raw,
+            started_at: chrono::Utc::now().to_rfc3339(),
+        },
+        held,
+    })
+}
+
+/// The second step: the message handed to the destination, and the
+/// destination asked whether it holds it when the answer never came.
+///
+/// Nothing is said to the source. A refusal is an answer, and nothing needs
+/// asking; a connection that dropped has not answered, and only then is the
+/// folder read, against what it held before the message went.
+pub(crate) async fn append_and_ask(
+    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
+    kept: &AMoveLeftUnfinished,
+) -> Appended {
+    let Err(why) = the_account_it_is_going_to
+        .take_this_message(
+            &kept.to_folder,
+            kept.flags.as_deref(),
+            kept.arrived.as_deref(),
+            &kept.raw,
         )
         .await
-        {
-            // It landed after all. The removal may go, and it goes for the same
-            // reason it would have gone had the answer arrived.
-            WhetherItLanded::ItIsThere => {}
-            WhetherItLanded::ItIsNotThere => {
-                return Ok(MovedAcross::ItNeverArrivedSoNothingWasRemoved(
-                    why.to_string(),
-                ));
-            }
-            WhetherItLanded::ItCannotBeAsked(unanswerable) => {
-                return Ok(MovedAcross::ItIsNotKnownWhereItIs(format!(
-                    "{why}, and {unanswerable}"
-                )));
-            }
-        }
+    else {
+        return Appended::ItLanded;
+    };
+    if !the_destination_never_answered(&why) {
+        return Appended::ItDidNot(MovedAcross::TheDestinationRefusedIt(why.to_string()));
     }
+    match whether_the_destination_has_it(
+        the_account_it_is_going_to,
+        &kept.to_folder,
+        the_identifier_to_ask_about(Some(&kept.identifier)),
+        kept.was_there_before.as_deref(),
+    )
+    .await
+    {
+        // It landed after all, and the removal may go for the same reason it
+        // would have gone had the answer arrived.
+        WhetherItLanded::ItIsThere => Appended::ItLanded,
+        WhetherItLanded::ItIsNotThere => Appended::ItDidNot(
+            MovedAcross::ItNeverArrivedSoNothingWasRemoved(why.to_string()),
+        ),
+        WhetherItLanded::ItCannotBeAsked(unanswerable) => Appended::ItDidNot(
+            MovedAcross::ItIsNotKnownWhereItIs(format!("{why}, and {unanswerable}")),
+        ),
+    }
+}
 
-    Ok(the_removal(the_account_it_is_in, from, uid).await)
+/// The third step: the source asked to let the message go, once the
+/// destination has it.
+///
+/// Only ever after [`Appended::ItLanded`]. The source is named by the folder
+/// and number the server still has the message under, which for a crossing
+/// made here first is the waiting row's answer and not the row's own.
+pub(crate) async fn remove_at_the_source(
+    the_account_it_is_leaving: &impl TheAccountItIsLeaving,
+    kept: &AMoveLeftUnfinished,
+) -> MovedAcross {
+    the_removal(the_account_it_is_leaving, &kept.from_folder, kept.uid).await
 }
 
 /// Ask the source to let the message go, and say what really happened.
@@ -608,20 +709,23 @@ pub fn how_to_finish(landed: &WhetherItLanded) -> FinishingIt {
     }
 }
 
-/// Finish a move the program was stopped part way through.
+/// The append step, resumed from held bytes on a later run.
 ///
 /// Asks the destination first, always, and then does what [`how_to_finish`]
-/// says. Nothing reaches either server before that question has been put.
+/// says. Nothing reaches either server before that question has been put:
+/// a row surviving a restart means the program stopped somewhere between
+/// the write and the ending, and the append may well have landed. Sending
+/// it again because a row exists is how somebody ends up with two copies of
+/// their message and nothing saying why.
 ///
-/// Both accounts' permissions still apply and both are asked again, because
-/// each command goes down its own account's held session and the answer may
-/// have changed between the run that started the move and the run that
-/// finishes it.
-pub(crate) async fn finish_the_move(
-    unfinished: &AMoveLeftUnfinished,
+/// A second append that is not answered either leaves the same question open
+/// again, and this time the folder's before-list is stale: the first append
+/// may have landed since it was taken. So nothing is removed and the ending
+/// says so.
+pub(crate) async fn resume_the_append(
     the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
-    the_account_it_is_leaving: &impl TheAccountItIsLeaving,
-) -> MovedAcross {
+    unfinished: &AMoveLeftUnfinished,
+) -> Appended {
     let landed = whether_the_destination_has_it(
         the_account_it_is_going_to,
         &unfinished.to_folder,
@@ -631,14 +735,7 @@ pub(crate) async fn finish_the_move(
     .await;
 
     match how_to_finish(&landed) {
-        FinishingIt::TakeItOffTheSource => {
-            the_removal(
-                the_account_it_is_leaving,
-                &unfinished.from_folder,
-                unfinished.uid,
-            )
-            .await
-        }
+        FinishingIt::TakeItOffTheSource => Appended::ItLanded,
         FinishingIt::SendItAgainThenTakeItOff => {
             match the_account_it_is_going_to
                 .take_this_message(
@@ -649,107 +746,58 @@ pub(crate) async fn finish_the_move(
                 )
                 .await
             {
-                Ok(()) => {
-                    the_removal(
-                        the_account_it_is_leaving,
-                        &unfinished.from_folder,
-                        unfinished.uid,
-                    )
-                    .await
-                }
-                // A second append that is not answered either leaves the same
-                // question open again, and this time the folder's before-list
-                // is stale: the first append may have landed since it was
-                // taken. So nothing is removed and the ending says so.
+                Ok(()) => Appended::ItLanded,
                 Err(why) if the_destination_never_answered(&why) => {
-                    MovedAcross::ItIsNotKnownWhereItIs(why.to_string())
+                    Appended::ItDidNot(MovedAcross::ItIsNotKnownWhereItIs(why.to_string()))
                 }
-                Err(why) => MovedAcross::TheDestinationRefusedIt(why.to_string()),
+                Err(why) => {
+                    Appended::ItDidNot(MovedAcross::TheDestinationRefusedIt(why.to_string()))
+                }
             }
         }
-        FinishingIt::NothingCanBeSent(why) => MovedAcross::ItIsNotKnownWhereItIs(why),
+        FinishingIt::NothingCanBeSent(why) => {
+            Appended::ItDidNot(MovedAcross::ItIsNotKnownWhereItIs(why))
+        }
     }
 }
 
-/// What somebody is told about a move the program did not finish.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AboutAnUnfinishedMove {
-    /// It can be finished if they say so. Two answers, and the words say what
-    /// each of them does.
-    Ask {
-        /// What the window is called.
-        title: String,
-        /// What is said and read out.
-        words: String,
-    },
-    /// Nothing can be done about it. Said rather than asked, and the kept bytes
-    /// go, because a question whose only honest answer is "nothing" is not a
-    /// question.
-    JustSay(String),
-}
-
-/// The two accounts a move was between, as somebody hears them named.
+/// A move resumed from held bytes: the append step again, and the removal
+/// once the destination has the message.
 ///
-/// `None` where the account is no longer set up on this computer, which is a
-/// real case: a row can outlive the account it names. Offering to finish a move
-/// to an account that has gone would be offering a command with nowhere to go.
-#[derive(Debug, Clone, Copy)]
-pub struct TheAccountsInvolved<'a> {
-    /// What the account still holding the message is called.
-    pub it_is_in: Option<&'a str>,
-    /// What the account it was going to is called.
-    pub it_was_going_to: Option<&'a str>,
-}
-
-/// What to say to somebody about a move that did not finish.
-///
-/// Written here rather than in the window for the reason above, and it decides
-/// three things at once: whether there is anything to offer, what the sentence
-/// says, and which of the two shapes it takes.
-///
-/// It is not an error and it must not read like one. Nothing was lost: the
-/// message is still where it was, because a move is append then remove and the
-/// removal is last. The words say that first.
-pub fn what_to_say_about_an_unfinished_move(
+/// Both accounts' permissions still apply and both are asked again, because
+/// each command goes down its own account's held session and the answer may
+/// have changed between the run that started the move and the run that
+/// finishes it.
+pub(crate) async fn resume_from_the_held_bytes(
     unfinished: &AMoveLeftUnfinished,
-    accounts: TheAccountsInvolved<'_>,
-) -> AboutAnUnfinishedMove {
-    let subject = &unfinished.subject;
-    let (Some(it_is_in), Some(it_was_going_to)) = (accounts.it_is_in, accounts.it_was_going_to)
-    else {
-        return AboutAnUnfinishedMove::JustSay(format!(
-            "Moving {subject} did not finish, and one of the two accounts it was \
-             between is no longer set up on this computer, so it cannot be \
-             finished from here. Nothing was lost."
-        ));
-    };
-    let where_it_is = format!("{} in {it_is_in}", unfinished.from_folder);
-    let where_it_was_going = format!("{} in {it_was_going_to}", unfinished.to_folder);
-
-    if let Some(why) = why_the_question_cannot_be_put(
-        the_identifier_to_ask_about(Some(&unfinished.identifier)),
-        unfinished.was_there_before.as_deref(),
-    ) {
-        return AboutAnUnfinishedMove::JustSay(format!(
-            "Moving {subject} to {where_it_was_going} did not finish. The message \
-             is still in {where_it_is} and nothing was lost. It cannot be \
-             finished from here, because {why}. Look in {where_it_was_going} to \
-             see whether a copy arrived there, and move it again if it did not."
-        ));
+    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
+    the_account_it_is_leaving: &impl TheAccountItIsLeaving,
+) -> MovedAcross {
+    match resume_the_append(the_account_it_is_going_to, unfinished).await {
+        Appended::ItLanded => remove_at_the_source(the_account_it_is_leaving, unfinished).await,
+        Appended::ItDidNot(ending) => ending,
     }
+}
 
-    AboutAnUnfinishedMove::Ask {
-        title: "A move that did not finish".to_string(),
-        words: format!(
-            "Moving {subject} to {where_it_was_going} did not finish, because \
-             this program closed part way through it. The message is still in \
-             {where_it_is} and nothing was lost.\n\n\
-             Finish the move now? {it_was_going_to} is asked first whether it \
-             already has the message, and it is only sent again if it does not. \
-             Answer No to leave the message where it is; you will not be asked \
-             about it again."
-        ),
-    }
+/// Why a crossing held from an earlier run can never be finished from here,
+/// or nothing when it can.
+///
+/// Decided without speaking to either server, from the two facts a resume
+/// turns on: whether the message carries an identifier to ask about, and
+/// whether the destination folder was read before the message went. Until
+/// 11-07.2 this was a question put to the person at the next start; a
+/// crossing is what they asked for, so the replay finishes it, and only the
+/// crossing nothing can settle is said, once, with where to look. It is not
+/// an error and it must not read like one: nothing was lost, because a move
+/// is append then remove and the removal is last.
+pub fn why_it_cannot_be_finished_from_here(
+    unfinished: &AMoveLeftUnfinished,
+    the_account_it_was_going_to: &str,
+) -> Option<String> {
+    Some(format!(
+        "{} in {the_account_it_was_going_to}",
+        unfinished.to_folder
+    ))
 }
 
 impl TheAccountItIsIn for crate::application::mail_controller::MailController {
@@ -787,21 +835,22 @@ impl TheAccountItIsLeaving for crate::application::mail_controller::MailControll
     }
 }
 
+/// The two loopback ends of a crossing, for this module's tests and the
+/// queue's, which replays a crossing against the same pair.
 #[cfg(test)]
-mod tests {
+pub(crate) mod for_tests {
     use super::*;
-    use crate::common::answering::{Conversation, LONG_ENOUGH, Turn, conversing};
-    use crate::common::temp_home::TempHome;
+    use crate::common::answering::{Conversation, Turn, conversing};
     use crate::service::protocols::imap::ImapSession;
     use crate::service::protocols::imap::against_a_server_that_answers::{
-        a_server_that_can, a_server_that_refuses, reading_only_on, signed_in_to,
+        reading_only_on, signed_in_to,
     };
 
     /// The UID every test here asks for.
-    const THE_UID: u32 = 4;
+    pub(crate) const THE_UID: u32 = 4;
 
     /// The message the source server hands over, byte for byte.
-    const THE_MESSAGE: &str =
+    pub(crate) const THE_MESSAGE: &str =
         "Subject: Lunch\r\nFrom: Ada <ada@example.com>\r\n\r\nOne o'clock?\r\n";
 
     /// The headers the source server answers a header fetch with.
@@ -811,7 +860,7 @@ mod tests {
     ///
     /// A header a stranger wrote, which is the whole reason it is quoted before
     /// it becomes a search key rather than pasted into one.
-    const THE_IDENTIFIER: &str = "<lunch.4@example.com>";
+    pub(crate) const THE_IDENTIFIER: &str = "<lunch.4@example.com>";
 
     /// The same identifier as this program holds it.
     ///
@@ -820,7 +869,7 @@ mod tests {
     /// search. It matches the header either way: `HEADER MESSAGE-ID` looks for
     /// the value inside the header's text rather than for the whole of it, which
     /// is how the draft-replacement path has always found its previous copy.
-    const THE_IDENTIFIER_AS_IT_IS_HELD: &str = "lunch.4@example.com";
+    pub(crate) const THE_IDENTIFIER_AS_IT_IS_HELD: &str = "lunch.4@example.com";
 
     /// How the server holding the message behaves.
     ///
@@ -828,26 +877,26 @@ mod tests {
     /// are strings and a test reading `("", "", "UIDPLUS", "")` says nothing
     /// about which is which.
     #[derive(Clone, Copy)]
-    struct ASourceServer {
+    pub(crate) struct ASourceServer {
         /// The UID the one message it holds really has. Different from the one
         /// being asked about is a folder the message has been taken out of.
-        uid: u32,
-        flags: &'static str,
+        pub uid: u32,
+        pub flags: &'static str,
         /// Empty means the server names no date at all, which is a real answer
         /// and a different one from a date that cannot be read.
-        internal_date: &'static str,
+        pub internal_date: &'static str,
         /// What it advertises. `UIDPLUS` is what lets one message be removed on
         /// its own; without it the only expunge available takes every message
         /// in the mailbox flagged for removal, which is other people's mail.
-        capabilities: &'static str,
+        pub capabilities: &'static str,
         /// One command it turns down, matched against the whole line without
         /// case, so `"UID STORE"` refuses the mark and leaves the rest alone.
-        refusing: &'static str,
+        pub refusing: &'static str,
         /// The `Message-ID` header the message carries, or empty for a message
         /// that arrived without one. Real mail does: `mail_sync.rs:564` keeps
         /// such a message with an empty identifier, and an empty identifier is
         /// not something a destination can be asked about.
-        message_id: &'static str,
+        pub message_id: &'static str,
     }
 
     impl Default for ASourceServer {
@@ -863,40 +912,97 @@ mod tests {
         }
     }
 
-    /// A mail server holding one message, filed with these flags on this date.
+    /// One end of a crossing, behind the lock a shared session needs.
+    ///
+    /// The three traits take `&self` because the program holds each session
+    /// in an `Arc`, and a session's own commands take `&mut self`. In the
+    /// program the lock is inside `MailController`; here it is around the
+    /// bare session.
+    pub(crate) struct AnAccountAt(pub tokio::sync::Mutex<ImapSession>);
+
+    impl TheAccountItIsIn for AnAccountAt {
+        async fn the_headers_of(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
+            let mut session = self.0.lock().await;
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.fetch_headers(uids).await
+        }
+
+        async fn the_bytes_of(&self, folder: &str, uid: u32) -> Result<Vec<u8>> {
+            let mut session = self.0.lock().await;
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.fetch_body(uid).await
+        }
+    }
+
+    impl TheAccountItIsGoingTo for AnAccountAt {
+        async fn take_this_message(
+            &self,
+            into: &str,
+            flags: Option<&str>,
+            arrived: Option<&str>,
+            raw: &[u8],
+        ) -> Result<()> {
+            self.0
+                .lock()
+                .await
+                .append_message(into, flags, arrived, raw)
+                .await
+        }
+
+        async fn which_messages_carry(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
+            let mut session = self.0.lock().await;
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.uids_with_message_id(message_id).await
+        }
+    }
+
+    impl TheAccountItIsLeaving for AnAccountAt {
+        async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo> {
+            let mut session = self.0.lock().await;
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.take_this_one_off(uid).await
+        }
+    }
+
+    /// A source account signed in to that server, allowed to read.
+    ///
+    /// Reading and no more, which is what a copy across accounts needs from the
+    /// account the message is in and is worth proving rather than assuming: a
+    /// crossing that needed the source's write permission would be a crossing
+    /// that could change the source.
+    pub(crate) async fn the_account_it_is_in(server: &Conversation) -> AnAccountAt {
+        AnAccountAt(tokio::sync::Mutex::new(reading_only_on(server).await))
+    }
+
+    /// A destination account signed in to that server, allowed to write.
+    pub(crate) async fn the_account_it_is_going_to(server: &Conversation) -> AnAccountAt {
+        AnAccountAt(tokio::sync::Mutex::new(signed_in_to(server).await))
+    }
+
+    /// The account a message is moving out of, allowed to change things.
+    ///
+    /// A move needs the source's write permission and a copy does not, which is
+    /// the difference between the two acts stated where it is used. The copy
+    /// tests keep [`the_account_it_is_in`], which cannot write at all.
+    pub(crate) async fn the_account_it_is_leaving(server: &Conversation) -> AnAccountAt {
+        AnAccountAt(tokio::sync::Mutex::new(signed_in_to(server).await))
+    }
+
+    /// A mail server holding one message, behaving as `how` says.
     ///
     /// `a_server_that_can` cannot stand in for this. It answers a `UID FETCH`
     /// with `OK` and no data at all, which reads to the client as a message
     /// that is not there, so neither the flags nor the bytes a crossing needs
     /// could come back from it.
-    async fn a_server_holding_the_message(
-        flags: &'static str,
-        internal_date: &'static str,
-    ) -> Conversation {
-        a_source_server(ASourceServer {
-            flags,
-            internal_date,
-            // What the copy tests have always had, so widening this fixture for
-            // the move does not quietly give them an extension they were
-            // written without.
-            capabilities: "",
-            ..ASourceServer::default()
-        })
-        .await
-    }
-
-    /// The same, for a server whose message is not the one being asked about.
-    async fn a_server_naming_a_different_message() -> Conversation {
-        a_source_server(ASourceServer {
-            uid: THE_UID + 1,
-            internal_date: "",
-            capabilities: "",
-            ..ASourceServer::default()
-        })
-        .await
-    }
-
-    async fn a_source_server(how: ASourceServer) -> Conversation {
+    pub(crate) async fn a_source_server(how: ASourceServer) -> Conversation {
         let ASourceServer {
             uid,
             flags,
@@ -964,93 +1070,49 @@ mod tests {
         })
         .await
     }
+}
 
-    /// One end of a crossing, behind the lock a shared session needs.
-    ///
-    /// The two traits take `&self` because the program holds each session in an
-    /// `Arc`, and a session's own commands take `&mut self`. In the program the
-    /// lock is inside `MailController`; here it is around the bare session.
-    struct AnAccountAt(tokio::sync::Mutex<ImapSession>);
+#[cfg(test)]
+mod tests {
+    use super::for_tests::*;
+    use super::*;
+    use crate::common::answering::{Conversation, LONG_ENOUGH};
+    use crate::common::temp_home::TempHome;
+    use crate::service::protocols::imap::against_a_server_that_answers::{
+        a_server_that_can, a_server_that_refuses, reading_only_on,
+    };
 
-    impl TheAccountItIsIn for AnAccountAt {
-        async fn the_headers_of(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
-            let mut session = self.0.lock().await;
-            if session.selected_folder() != Some(folder) {
-                session.select_folder(folder).await?;
-            }
-            session.fetch_headers(uids).await
-        }
-
-        async fn the_bytes_of(&self, folder: &str, uid: u32) -> Result<Vec<u8>> {
-            let mut session = self.0.lock().await;
-            if session.selected_folder() != Some(folder) {
-                session.select_folder(folder).await?;
-            }
-            session.fetch_body(uid).await
-        }
+    /// A mail server holding one message, filed with these flags on this date.
+    async fn a_server_holding_the_message(
+        flags: &'static str,
+        internal_date: &'static str,
+    ) -> Conversation {
+        a_source_server(ASourceServer {
+            flags,
+            internal_date,
+            // What the copy tests have always had, so widening this fixture for
+            // the move does not quietly give them an extension they were
+            // written without.
+            capabilities: "",
+            ..ASourceServer::default()
+        })
+        .await
     }
 
-    impl TheAccountItIsGoingTo for AnAccountAt {
-        async fn take_this_message(
-            &self,
-            into: &str,
-            flags: Option<&str>,
-            arrived: Option<&str>,
-            raw: &[u8],
-        ) -> Result<()> {
-            self.0
-                .lock()
-                .await
-                .append_message(into, flags, arrived, raw)
-                .await
-        }
-
-        async fn which_messages_carry(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
-            let mut session = self.0.lock().await;
-            if session.selected_folder() != Some(folder) {
-                session.select_folder(folder).await?;
-            }
-            session.uids_with_message_id(message_id).await
-        }
-    }
-
-    impl TheAccountItIsLeaving for AnAccountAt {
-        async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo> {
-            let mut session = self.0.lock().await;
-            if session.selected_folder() != Some(folder) {
-                session.select_folder(folder).await?;
-            }
-            session.take_this_one_off(uid).await
-        }
-    }
-
-    /// A source account signed in to that server, allowed to read.
-    ///
-    /// Reading and no more, which is what a copy across accounts needs from the
-    /// account the message is in and is worth proving rather than assuming: a
-    /// crossing that needed the source's write permission would be a crossing
-    /// that could change the source.
-    async fn the_account_it_is_in(server: &Conversation) -> AnAccountAt {
-        AnAccountAt(tokio::sync::Mutex::new(reading_only_on(server).await))
-    }
-
-    /// A destination account signed in to that server, allowed to write.
-    async fn the_account_it_is_going_to(server: &Conversation) -> AnAccountAt {
-        AnAccountAt(tokio::sync::Mutex::new(signed_in_to(server).await))
+    /// The same, for a server whose message is not the one being asked about.
+    async fn a_server_naming_a_different_message() -> Conversation {
+        a_source_server(ASourceServer {
+            uid: THE_UID + 1,
+            internal_date: "",
+            capabilities: "",
+            ..ASourceServer::default()
+        })
+        .await
     }
 
     /// A destination account this program may not change anything at.
     async fn a_destination_this_program_may_not_write_to(server: &Conversation) -> AnAccountAt {
         AnAccountAt(tokio::sync::Mutex::new(reading_only_on(server).await))
-    }
-
-    /// The account a message is moving out of, allowed to change things.
-    ///
-    /// A move needs the source's write permission and a copy does not, which is
-    /// the difference between the two acts stated where it is used. The copy
-    /// tests keep [`the_account_it_is_in`], which cannot write at all.
-    async fn the_account_it_is_leaving(server: &Conversation) -> AnAccountAt {
-        AnAccountAt(tokio::sync::Mutex::new(signed_in_to(server).await))
     }
 
     /// What the destination does with the append it is sent.
@@ -1205,6 +1267,7 @@ mod tests {
             TheMoveAsThisProgramRecordsIt {
                 cache: Some(&self.cache),
                 row: self.row,
+                from_account_id: "acc-1",
                 to_account_id: THE_DESTINATION_ACCOUNT,
             }
         }
@@ -2420,7 +2483,7 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
 
-        waiting_for(finish_the_move(
+        waiting_for(resume_from_the_held_bytes(
             &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
             &destination,
             &the_account_it_is_leaving(&source).await,
@@ -2446,7 +2509,7 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
 
-        let across = waiting_for(finish_the_move(
+        let across = waiting_for(resume_from_the_held_bytes(
             &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
             &destination,
             &the_account_it_is_leaving(&source).await,
@@ -2474,7 +2537,7 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])]);
 
-        let across = waiting_for(finish_the_move(
+        let across = waiting_for(resume_from_the_held_bytes(
             &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
             &destination,
             &the_account_it_is_leaving(&source).await,
@@ -2511,7 +2574,7 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
 
-        let across = waiting_for(finish_the_move(
+        let across = waiting_for(resume_from_the_held_bytes(
             &left_unfinished("", Some(Vec::new())),
             &destination,
             &the_account_it_is_leaving(&source).await,
@@ -2541,7 +2604,7 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
 
-        let across = waiting_for(finish_the_move(
+        let across = waiting_for(resume_from_the_held_bytes(
             &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, None),
             &destination,
             &the_account_it_is_leaving(&source).await,
@@ -2575,31 +2638,34 @@ mod tests {
         );
     }
 
-    // ── What somebody is told about it ───────────────────────────────────
+    // ── What somebody is told about a crossing nothing can finish ────────
 
-    /// Both accounts still set up, named as somebody hears them.
-    fn both_accounts() -> TheAccountsInvolved<'static> {
-        TheAccountsInvolved {
-            it_is_in: Some("Work"),
-            it_was_going_to: Some("Home"),
-        }
+    #[test]
+    fn test_a_crossing_that_can_be_asked_about_has_nothing_saying_it_cannot_be_finished() {
+        // The question at start is retired (11-07.2): a crossing is what the
+        // person asked for, and finishing it is the replay's job. Nothing
+        // here may turn a crossing that can be settled into a sentence.
+        assert_eq!(
+            why_it_cannot_be_finished_from_here(
+                &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
+                "Home"
+            ),
+            None,
+            "a crossing the replay can finish was declared unfinishable"
+        );
     }
 
     #[test]
-    fn test_the_offer_says_where_the_message_is_and_does_not_read_like_an_error() {
-        // Nothing was lost and it must not sound as though something was. A
-        // move is append then remove and the removal is last, so at every
-        // point the program can stop the message is still at the account it
-        // came from.
-        let AboutAnUnfinishedMove::Ask { words, .. } = what_to_say_about_an_unfinished_move(
-            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
-            both_accounts(),
-        ) else {
-            panic!("a move that can be finished was not offered");
-        };
+    fn test_a_crossing_nothing_can_settle_says_where_to_look_and_does_not_read_like_an_error() {
+        // A message with no identifier cannot be asked about, so the replay
+        // must not send anything; the person is told where to look instead.
+        // Nothing was lost, since a move is append then remove and the
+        // removal is last, and the words must not sound as though something
+        // was.
+        let words =
+            why_it_cannot_be_finished_from_here(&left_unfinished("", Some(Vec::new())), "Home")
+                .expect("a crossing nothing can settle has a sentence");
 
-        assert!(words.contains("Lunch"), "{words}");
-        assert!(words.contains("INBOX in Work"), "{words}");
         assert!(words.contains("Archive in Home"), "{words}");
         assert!(
             words.contains("nothing was lost"),
@@ -2614,43 +2680,19 @@ mod tests {
     }
 
     #[test]
-    fn test_a_move_nothing_can_settle_is_told_rather_than_offered() {
-        // Offering to finish a move that cannot be finished is offering a
-        // choice whose only honest outcome is nothing happening. The person is
-        // told where the message is and where to look instead.
-        let said = what_to_say_about_an_unfinished_move(
-            &left_unfinished("", Some(Vec::new())),
-            both_accounts(),
-        );
+    fn test_a_crossing_whose_folder_nobody_read_cannot_be_finished_either() {
+        // The second unanswerable case, and not the same as the first: a
+        // folder nobody read before the message went cannot tell a message
+        // that has just arrived from one that was always there, so a hit
+        // proves nothing and the replay must not remove on it.
+        let words = why_it_cannot_be_finished_from_here(
+            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, None),
+            "Home",
+        )
+        .expect("a crossing whose folder nobody read has a sentence");
 
-        let AboutAnUnfinishedMove::JustSay(words) = said else {
-            panic!("a move nothing can settle was offered as a choice: {said:?}");
-        };
-        assert!(words.contains("INBOX in Work"), "{words}");
+        assert!(words.contains("was not read before"), "{words}");
         assert!(words.contains("Archive in Home"), "{words}");
-        assert!(
-            words.contains("nothing was lost"),
-            "the words do not say the message is safe: {words}"
-        );
-    }
-
-    #[test]
-    fn test_a_move_to_an_account_that_has_gone_is_told_rather_than_offered() {
-        // A row can outlive the account it names. Offering to finish the move
-        // would be offering a command with nowhere to send it, and the answer
-        // Yes would sign in to nothing.
-        let said = what_to_say_about_an_unfinished_move(
-            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
-            TheAccountsInvolved {
-                it_is_in: Some("Work"),
-                it_was_going_to: None,
-            },
-        );
-
-        assert!(
-            matches!(said, AboutAnUnfinishedMove::JustSay(_)),
-            "{said:?}"
-        );
     }
 
     #[test]

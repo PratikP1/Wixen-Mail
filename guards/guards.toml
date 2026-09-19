@@ -26537,15 +26537,17 @@ tests_last_seen = [
 # #86). The made-here reading goes red on the target.
 #
 # Measured 2026-09-19 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. The break re-indented
+# on 2026-09-19 by 11-07.2, which nests the loop one level deeper for the
+# asks of several accounts; the code is the same and was measured again.
 [[guard]]
 name = "a row that left at the key has its line shown, not spoken as well"
 file = "src/presentation/wx_app.rs"
 suite = "a_move_completes_here_first"
-before = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
-                    send_shown(tx, rt, &made.shown);"""
-after = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
-                    send_status(tx, rt, &made.shown);"""
+before = """                        take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                        send_shown(tx, rt, &made.shown);"""
+after = """                        take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                        send_status(tx, rt, &made.shown);"""
 red = [
     "test_the_row_leaves_and_the_line_is_shown_before_any_session_is_asked_for",
 ]
