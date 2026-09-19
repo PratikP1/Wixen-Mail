@@ -4013,7 +4013,7 @@ phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
   - [S] That NVDA reads the landed row once after Delete and not again after the re-read is
     his ear's.
 
-- [ ] **LIST-13**: Landing on a message with an attachment says the word once: the earcon
+- [x] **LIST-13**: Landing on a message with an attachment says the word once: the earcon
   plays by default, the spoken event is off by default, the Attachment column stays.
   - Evidence: `feedback_events_for_landing` (`wx_app.rs:19625-19634`) signals `HasAttachment`,
     spoken at Low as "Has attachment" (`feedback.rs:202, 256`) with a tone (`:304`); the
@@ -4030,8 +4030,11 @@ phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
     Earcon channel is enabled by default for every event ..., and per-event exceptions stay
     allowed ... For this event the exception is the default itself: the earcon plus the status
     bar and braille, no speech."
-  - [D] `FeedbackSettings::default()` enables every channel and holds `HasAttachment`'s own set
-    of earcon and status bar, phase 6's reason kept and dated; `from_stored("off=earcon")`
+  - [D] `FeedbackSettings::default()` enables every channel, and `HasAttachment`'s own set of
+    earcon and status bar is `the_default_for`, read wherever no answer was stored for the
+    event (amended 2026-09-19 by 11-09.1: the plan put the set in a fresh profile's per-event
+    list, which would not have reached the tester's stored profile of `off=`), phase 6's
+    reason kept and dated; `from_stored("off=earcon")`
     keeps earcons off; an event whose text is already on the row never gains speech or braille
     from the never-sound-alone rule, only the status bar; the older-file test and the Feedback
     tab readback are rewritten in place; a reading holds the landing arm to signalling and
@@ -4114,7 +4117,7 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
   - [S] That Alt+A lands on the attachments under NVDA from inside the document is his
     ear's.
 
-- [ ] **LIST-16**: The earcons keep playing after hours open: a device that goes away or is
+- [x] **LIST-16**: The earcons keep playing after hours open: a device that goes away or is
   invalidated is noticed from the stream's error callback and the default device is opened
   again before the next sound; a default device that changes under a live stream is covered
   by a reopen after a gap or by Windows' notice, whichever a measurement chooses; a reopen
@@ -4585,10 +4588,10 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-10 | Phase 11 | Pending, 11-11 |
 | LIST-11 | Phase 11 | Pending, 11-13 |
 | LIST-12 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether NVDA reads the landed row once after Delete and not again after the re-read is the tester's ear, ledger 541 |
-| LIST-13 | Phase 11 | Pending, 11-09.1 |
+| LIST-13 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; whether the row is heard once with the tone, and the tone alone with the status bar off, is the tester's ear (ledger 552) |
 | LIST-14 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether "Delete" once and the landed row are enough by ear, and the refusal heard on a failure, are the tester's, ledger 542 |
 | LIST-15 | Phase 11 | Complete, 11-04.1 at `70d84bc5`; whether Alt+A lands on the list and NVDA says the landing in both views, and whether the reader's way back through the accelerator fires, are the tester's ear, ledger 538 |
-| LIST-16 | Phase 11 | Pending, 11-09.1 |
+| LIST-16 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; the sounds heard again after a real device change, and what silenced them after hours, are the tester's machine's (ledger 553) |
 | LIST-17 | Phase 11 | Pending, 11-09.2 |
 | LIST-18 | Phase 11 | Pending, 11-11.3 |
 | LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
