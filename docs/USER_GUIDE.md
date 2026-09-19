@@ -243,6 +243,28 @@ recently.** If you last arranged columns in Sent, that is what comes back in
 Sent next time you start, and your inbox opens with its usual columns. Sorting a
 column counts as changing the arrangement.
 
+### Hearing a row's columns with their headings
+
+`Ctrl+Shift+;` reads the row you are on column by column, each heading and
+then its text, in the order the columns are shown: "Subject, Quarterly
+report. Correspondent, Ada Lovelace. Unread. Received, yesterday." The same
+command is on the Action menu as Read the Row's Headings and Text. It reads
+once each time you press it, it works on a conversation row as well as a
+single message, and because it is your mail it is silenced by `Ctrl+M` like
+every other reading. Press it when a cell has left you unsure which column
+you heard.
+
+Whether the headings are also spoken on every row as you arrow is your screen
+reader's setting, not this program's. Under NVDA it is Document Formatting,
+"Row/column headers", and the way to turn it off for Wixen Mail alone is a
+configuration profile that switches on while this program is in front: NVDA
+menu, Configuration profiles, New, and under "Use this profile for" choose
+"Current application"; then set "Row/column headers" to "Rows" or "Off" while
+that profile is active. The step-by-step version, with the names NVDA uses
+and the date they were read, is in
+[Keyboard Shortcuts](KEYBOARD_SHORTCUTS.md) under NVDA Shortcuts. Nobody has
+heard this program under such a profile yet.
+
 ### Message Actions
 
 **Using Context Menu (Right-Click):**
