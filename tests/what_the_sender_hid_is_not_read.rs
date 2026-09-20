@@ -40,6 +40,7 @@
 
 use std::time::Instant;
 
+use wixen_mail::application::long_text::{Piece, pieces_of_markup};
 use wixen_mail::application::pictures::Fetching;
 use wixen_mail::common::types::MessageBody;
 use wixen_mail::presentation::HtmlRenderer;
@@ -410,6 +411,128 @@ fn test_a_message_on_its_way_out_keeps_what_its_writer_hid() {
 
     let (read, _) = a_reader().sanitize_and_count_held_back(body);
     assert!(!read.contains("kept for the person written to"), "{read}");
+}
+
+// ── The reader's own structure over the same message (ledger 555) ─────────
+
+/// Every piece's words in order, joined with one space, so a join across
+/// two blocks can be read for.
+fn the_words_of(pieces: &[Piece]) -> String {
+    pieces
+        .iter()
+        .map(|piece| match piece {
+            Piece::Heading { text, .. }
+            | Piece::Item { text, .. }
+            | Piece::Quote(text)
+            | Piece::Image(text)
+            | Piece::Paragraph(text) => text.clone(),
+            Piece::Table { columns, rows } => columns
+                .iter()
+                .chain(rows.iter().flatten())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn test_the_reader_reads_the_newsletter_as_blocks_apart_and_no_layout_table_as_a_table() {
+    let pieces = pieces_of_markup(THE_NEWSLETTER);
+    let words = the_words_of(&pieces);
+
+    // Ledger 555: on 2026-09-19 the whole message arrived as one Table piece
+    // whose one cell ran every block's last word into the next block's
+    // first. Each of the joins it quoted, apart now.
+    assert!(
+        !pieces
+            .iter()
+            .any(|piece| matches!(piece, Piece::Table { .. })),
+        "a layout table is read as a table: {pieces:?}"
+    );
+    for apart in [
+        "for more Top three ways",
+        "seven days Actions speak louder than words",
+        "Actions speak louder than words Gary Marcus",
+        "Gary Marcus Sep 19",
+    ] {
+        assert!(words.contains(apart), "{apart:?} is not in {words}");
+    }
+    for run_together in ["moreTop", "daysActions", "wordsGary", "MarcusSep"] {
+        assert!(
+            !words.contains(run_together),
+            "{run_together:?} is in {words}"
+        );
+    }
+    // The hidden preheader and its padding never reach the reader either,
+    // so the subtitle is one piece, the sender's own.
+    assert_eq!(
+        words.matches("Actions speak louder than words").count(),
+        1,
+        "{words}"
+    );
+    assert!(!words.contains('\u{34f}'), "{words}");
+    assert!(!words.contains('\u{ad}'), "{words}");
+}
+
+#[test]
+fn test_a_data_table_is_still_a_table_piece_with_its_columns() {
+    let pieces = pieces_of_markup(
+        "<p>Prices.</p><table><tr><th>Item</th><th>Cost</th></tr><tr><td>Tea</td><td>2</td></tr></table>",
+    );
+
+    assert_eq!(
+        pieces,
+        vec![
+            Piece::Paragraph("Prices.".to_string()),
+            Piece::Table {
+                columns: vec!["Item".to_string(), "Cost".to_string()],
+                rows: vec![vec!["Tea".to_string(), "2".to_string()]],
+            },
+        ]
+    );
+}
+
+#[test]
+fn test_a_data_tables_cell_reads_its_blocks_apart() {
+    let pieces = pieces_of_markup(
+        "<table><tr><th>Notes</th></tr><tr><td><p>First paragraph.</p><p>Second paragraph.</p></td></tr></table>",
+    );
+
+    assert_eq!(
+        pieces,
+        vec![Piece::Table {
+            columns: vec!["Notes".to_string()],
+            rows: vec![vec!["First paragraph. Second paragraph.".to_string()]],
+        }]
+    );
+}
+
+#[test]
+fn test_a_layout_table_is_read_as_its_blocks_in_order() {
+    let pieces = pieces_of_markup(
+        "<table role=\"presentation\"><tbody>\
+         <tr><td><h1>Title</h1></td></tr>\
+         <tr><td>Forwarded this email? <a href=\"https://example.com/s\">Subscribe here</a> for more</td></tr>\
+         <tr><td><p>One</p></td><td><p>Two</p></td></tr>\
+         <tr><td><table role=\"presentation\"><tr><td><p>Nested</p></td></tr></table></td></tr>\
+         </tbody></table>",
+    );
+
+    assert_eq!(
+        pieces,
+        vec![
+            Piece::Heading {
+                level: 1,
+                text: "Title".to_string()
+            },
+            Piece::Paragraph("Forwarded this email? Subscribe here for more".to_string()),
+            Piece::Paragraph("One".to_string()),
+            Piece::Paragraph("Two".to_string()),
+            Piece::Paragraph("Nested".to_string()),
+        ]
+    );
 }
 
 // ── The cost ──────────────────────────────────────────────────────────────
