@@ -4202,7 +4202,7 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     writes a described one as its words (11-09.2, tasks 1 and 2).
   - [S] That the rows now say the message is his ear's (ledger 554).
 
-- [ ] **LIST-18**: A Markdown block marker typed with its space at the start of any line of
+- [x] **LIST-18**: A Markdown block marker typed with its space at the start of any line of
   the message body becomes its structure, on the first line, after a line break in a body
   that arrived as plain text, after Enter on the empty first line and after Shift+Enter; a
   refusal that met a marker is logged and never announced; text after a closing inline
@@ -4221,7 +4221,15 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     releases the style after its closing delimiter; `- ` on the empty first line is measured
     and made to work or said; `tests/a_marker_counts_at_the_start_of_any_line.rs` drives the
     real page with keystrokes through the steps; the pages say "type the marker, then a
-    space" in words and the guide lists the markers (11-11.3).
+    space" in words and the guide lists the markers (11-11.3). Held at `6e23656b`
+    (2026-09-20): `startsItsLine` true for no previous sibling, a `<br>` or a block, the
+    refused post after a `blockRule` match, `parse_message` reading it as
+    `BlockMarkerRefused(NotAtTheStartOfItsLine)` and `wx_compose` writing it at debug; the
+    first character typed after a closing delimiter taken out of the style with
+    `removeFormat`, since the toggle was measured to leave a code span out; `- item` on the
+    empty first line measured to make a list; the reading's twelve steps on the real page
+    with posted keys each waited for; the two pages; two guard records; ledger 565 for the
+    ear (11-11.3).
   - [S] Which of the two states he was in, a lower line or no space, is his ear's; the by-ear
     steps are in the ledger.
 
@@ -4864,7 +4872,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-15 | Phase 11 | Complete, 11-04.1 at `70d84bc5`; whether Alt+A lands on the list and NVDA says the landing in both views, and whether the reader's way back through the accelerator fires, are the tester's ear, ledger 538 |
 | LIST-16 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; the sounds heard again after a real device change, and what silenced them after hours, are the tester's machine's (ledger 553) |
 | LIST-17 | Phase 11 | Complete, 11-09.2 at `4d9a41d2`; whether the rows now say the message is the tester's ear (ledger 554) |
-| LIST-18 | Phase 11 | Pending, 11-11.3 |
+| LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
 | LIST-19 | Phase 11 | In progress: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page; ledger 560 for the ear); 11-11.2 the separate window |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
