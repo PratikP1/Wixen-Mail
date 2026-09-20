@@ -4240,6 +4240,16 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     `wxStandardPaths::GetUserLocalDataDir()`, which is `%LOCALAPPDATA%\wixen-mail` here
     (`EBWebView` sits beside `cache` and `config` in the tester's profile, read through
     Python).
+  - Held by 11-11.1 at `8340e5e6` on 2026-09-20: the setting on the Reading tab with the
+    browser first and the older-file test carrying it; the three items on the link's menu
+    on both surfaces; a link activated any way going where the setting says, caught in the
+    page by `page_links::SCRIPT` because the veto never fired (wxdragon 0.9.17 hands a
+    navigating event an empty string, measured in
+    `tests/a_link_opens_where_the_setting_says.rs`); every route through
+    `safe_external_url` before `opening_links::route`; the message view route with its host,
+    title, failure and way back said; the privacy page's "Where a link opens". Not yet held:
+    the separate window as a process of its own with a profile of its own, 11-11.2's, and
+    the box waits for it.
   - [S] #80, Pratik on 2026-09-18: the setting, the three menu items, the in-app routes in a
     profile of their own, the privacy line; and the tester: "Enter on a message and Enter on
     a link both open in the same window; the link does not go to the default browser."
@@ -4700,7 +4710,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-16 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; the sounds heard again after a real device change, and what silenced them after hours, are the tester's machine's (ledger 553) |
 | LIST-17 | Phase 11 | Complete, 11-09.2 at `4d9a41d2`; whether the rows now say the message is the tester's ear (ledger 554) |
 | LIST-18 | Phase 11 | Pending, 11-11.3 |
-| LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
+| LIST-19 | Phase 11 | In progress: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page; ledger 560 for the ear); 11-11.2 the separate window |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
