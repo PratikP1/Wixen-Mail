@@ -4527,7 +4527,7 @@ and before 11-11, so 11-11.1's activation covers a made link).**
 insert (11-11.0 after 11-11, which changes the same renderer for pictures, and before
 11-11.1, whose listener reads the page this plan cleans).**
 
-- [ ] **LIST-25**: An HTML message read in the formatted view says what the sender showed,
+- [x] **LIST-25**: An HTML message read in the formatted view says what the sender showed,
   once: text the sender hid is dropped before the sanitiser by the sender's own rule and
   never by content, invisible filler is stripped, a count is said once only when a dropped
   block held words that were not a preheader, a layout table is not a table to the reader,
@@ -4567,6 +4567,21 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     recipient's token replaced, a case holding its shapes and the token's absence; a target
     over the fixture through `wrap_body`, `render_thread_under_a_bar` and
     `pieces_of_markup`; the drop's cost on the fixture measured; six guard records (11-11.0).
+    Amended 2026-09-20 by 11-11.0 as landed: `drop_what_the_sender_hid` lives in
+    `hidden_text` and the renderer calls it, since the reader in the application layer
+    calls it too; the drop runs in `sanitize_and_count_held_back` and never in
+    `sanitize_html`, which is the sending path (the reply editor and the editor's body go
+    through it); the blocks' count travels in a renderer-level `LeftOut` beside the pictures'
+    `HeldBack` and the three sentences share the one `held-back-count` paragraph; the
+    `aria-label` rule is `hidden_text::keeps_its_label`, decided in the walk because the
+    cleaner's filter cannot see a table's role, and the cleaner admits the attribute on `a`
+    and `table` only; `keep_the_layout_claim` is the one allowance both cleaners take; the
+    reader drops and reads layout tables as blocks for speech only, and a `div` holding
+    blocks is walked as blocks; thirty addresses replaced, the nine app links and three
+    open-in-app links carrying the recipient's token too; the fixture holds three pictures
+    a pixel square, not two; the cost a median of 11.6 to 12.1 ms over ten runs in the
+    debug profile; six records new and one rewritten twice; no test added to
+    `html_renderer.rs` or `long_text.rs`.
   - [S] That the newsletter now reads once, with no table and no grouping announced, is his
     ear's.
 
@@ -4691,7 +4706,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
-| LIST-25 | Phase 11 | Pending, 11-11.0 |
+| LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
 
 **Coverage:**
 
