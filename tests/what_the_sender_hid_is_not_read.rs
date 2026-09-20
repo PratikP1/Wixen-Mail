@@ -121,8 +121,15 @@ fn test_the_newsletters_hidden_preheader_is_not_in_the_page_and_its_subtitle_is_
     assert!(!page.contains("&#847;"));
     assert!(!page.contains("class=\"preview\""));
     // A preheader is what the hiding is for, so nothing is said about it.
+    // The one paragraph at the top is the pictures' (#28): the message
+    // carries three pictures a pixel square, the two Substack beacons and
+    // the Mailgun one, and the plan's count of two missed the third.
     assert!(!page.contains("left out"), "{page}");
-    assert!(!page.contains("held-back-count"), "{page}");
+    assert_eq!(page.matches("held-back-count").count(), 1, "{page}");
+    assert!(
+        page.contains("3 pictures that looked like tracking pixels were not fetched."),
+        "{page}"
+    );
     // The words the sender showed are there.
     assert!(page.contains("Top three ways Dario Amodei has blown his credibility"));
     assert!(page.contains("Slowdown? What slowdown?"));

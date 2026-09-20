@@ -350,6 +350,21 @@ pub struct HtmlRenderer {
     whose: crate::application::pictures::WhoseMessage,
 }
 
+/// What a page tells its reader was not shown, and why.
+///
+/// The pictures not fetched, by the switch or as tracking pixels, and the
+/// blocks the sender hid that held words beyond a preheader (#90). One value
+/// rather than two returns, because one paragraph at the top of the message
+/// says all of it, and a caller that shows a message wants the markup and
+/// that paragraph together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LeftOut {
+    pub pictures: crate::application::pictures::HeldBack,
+    /// Counted by [`crate::application::hidden_text::drop_what_the_sender_hid`]
+    /// and said by [`crate::application::hidden_text::what_was_left_out`].
+    pub blocks_the_sender_hid: usize,
+}
+
 /// One message in a combined conversation document.
 ///
 /// The body is untrusted and is sanitized on the way in, like every other
@@ -544,18 +559,28 @@ impl HtmlRenderer {
     /// so here. [`Self::sanitize_html`] does not, because it also cleans a
     /// message on its way out, and the note is for the person reading, not
     /// for the person being written to.
-    pub fn sanitize_and_count_held_back(
-        &self,
-        html: &str,
-    ) -> (String, crate::application::pictures::HeldBack) {
+    ///
+    /// Before the cleaner sees the markup, what the sender hid is dropped
+    /// (#90): a block hidden by the sender's own rule, and the invisible
+    /// filler a preheader is padded with, would otherwise become visible
+    /// text once the cleaner strips `style`. That pass runs here and in the
+    /// reader's own structure, never in [`Self::sanitize_html`], because a
+    /// message on its way out is its writer's to send whole.
+    pub fn sanitize_and_count_held_back(&self, html: &str) -> (String, LeftOut) {
         if self.plain_text_only {
-            return (
-                self.sanitize_html(html),
-                crate::application::pictures::HeldBack::default(),
-            );
+            return (self.sanitize_html(html), LeftOut::default());
         }
-        let cleaned = say_which_links_are_not_opened_here(&cleaner().clean(html).to_string());
-        self.hold_back_what_would_be_fetched(&cleaned)
+        let (shown, blocks_the_sender_hid) =
+            crate::application::hidden_text::drop_what_the_sender_hid(html);
+        let cleaned = say_which_links_are_not_opened_here(&cleaner().clean(&shown).to_string());
+        let (markup, pictures) = self.hold_back_what_would_be_fetched(&cleaned);
+        (
+            markup,
+            LeftOut {
+                pictures,
+                blocks_the_sender_hid,
+            },
+        )
     }
 
     /// Convert HTML to accessible plain text
@@ -730,15 +755,22 @@ impl HtmlRenderer {
     /// Its own paragraph rather than a heading. A heading here would land
     /// between the message's heading and its body and give a screen reader
     /// user navigating by `H` a stop that is not a message.
-    fn what_a_reader_is_told_was_held_back(
-        &self,
-        held_back: crate::application::pictures::HeldBack,
-    ) -> String {
+    fn what_a_reader_is_told_was_held_back(&self, left_out: LeftOut) -> String {
         use crate::application::pictures::WhoseMessage;
         if self.whose == WhoseMessage::BeingWrittenHere {
             return String::new();
         }
-        let said = crate::application::pictures::what_was_held_back(held_back);
+        // The pictures' sentences first, since they were there first, and
+        // the blocks' after; one paragraph, so a reader moving by paragraph
+        // meets everything the page left out as one stop.
+        let said = [
+            crate::application::pictures::what_was_held_back(left_out.pictures),
+            crate::application::hidden_text::what_was_left_out(left_out.blocks_the_sender_hid),
+        ]
+        .into_iter()
+        .filter(|sentence| !sentence.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
         if said.is_empty() {
             return String::new();
         }
@@ -1099,7 +1131,7 @@ mod tests {
             HtmlRenderer::with_fetching(Fetching::Blocked).sanitize_and_count_held_back(&stored);
 
         assert_eq!(
-            held_back,
+            held_back.pictures,
             crate::application::pictures::HeldBack::default(),
             "a carried picture was held back: {shown}"
         );
@@ -1166,7 +1198,7 @@ mod tests {
         );
 
         assert_eq!(
-            held_back,
+            held_back.pictures,
             HeldBack {
                 by_the_switch: 0,
                 as_beacons: 1
@@ -1200,7 +1232,10 @@ mod tests {
                 r#"<img src="https://cdn.example/x.jpg" alt="Our spring range">"#,
             );
 
-        assert_eq!(held_back, crate::application::pictures::HeldBack::default());
+        assert_eq!(
+            held_back.pictures,
+            crate::application::pictures::HeldBack::default()
+        );
         assert!(shown.contains("cdn.example"), "{shown}");
     }
 
@@ -1844,7 +1879,7 @@ mod tests {
                     r#"<img src="https://cdn.example/pixel.gif" alt="">"#,
                 );
 
-        assert_eq!(held_back.by_the_switch, 1);
+        assert_eq!(held_back.pictures.by_the_switch, 1);
         assert!(shown.contains(&what_stands_in_for_it("")), "{shown}");
         assert!(
             !shown.contains(WHAT_A_DECORATIVE_PICTURE_SAYS),

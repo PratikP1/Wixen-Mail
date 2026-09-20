@@ -280,6 +280,30 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Text a sender hid is not read, and a line at the top says when words were left out.**
+  The tester on 2026-09-19, on build `1.0.0-alpha.1` at `39537d13` under NVDA (#90): reading
+  an HTML message in the formatted view is verbose, groupings are announced and phrases repeat.
+  Measured on the message he named, a Substack newsletter, on its raw markup: two blocks at
+  the top styled `display:none` hold the post's subtitle and two hundred invisible padding
+  characters, the platform's preview line for the inbox row, and the cleaner strips `style`,
+  so both became visible text, the subtitle read twice and the padding read as symbols. Since
+  2026-09-20 a block the sender hid is dropped before the cleaner sees the message, by the
+  sender's own hiding and never by what the block says: `display:none`, `visibility:hidden`,
+  `font-size:0`, `max-height:0` together with `overflow:hidden`, `mso-hide:all`, or
+  `aria-hidden="true"`; `opacity:0` on its own is not a hiding, since a fade-in starts there.
+  The invisible padding is dropped wherever it stands, and a soft hyphen inside a word goes
+  with the word left whole. A hidden block that held words, other than a short preview line
+  before the message's first visible text, is counted, and one sentence at the top says so,
+  "1 block the sender did not show was left out.", in the same paragraph as the sentence about
+  tracking pixels, so nothing is left out in silence; a preview line and empty spacer cells
+  are dropped and nothing is said. The same drop runs in the reader that makes a row's snippet
+  and reads a message's structure, so a hidden line never reaches a row. The plain-text part
+  of a message is never parsed and a message on its way out, the composer's preview and the
+  editor's body, keeps everything its writer hid. Known limitations: a sender who hides one
+  copy of a block for small screens and shows another through a stylesheet rule now shows the
+  copy the stylesheet hid, since the stylesheet is dropped and only the inline hiding is read;
+  nobody has heard the newsletter read once. Measured 2026-09-20: the drop costs a median of
+  12 ms over ten runs on the 92 KB newsletter in a debug build.
 - **An address written out in a message is a link.** The tester on 2026-09-19, on build
   `1.0.0-alpha.1` under NVDA (#89): a FanFiction chapter alert, sent as plain text with the
   chapter's address on a line of its own, showed the address as text and NVDA's link list

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 202 records have arrived since and have not been through it.
+# 205 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17674,16 +17674,19 @@ tests_last_seen = [
 # it went in for this reason.
 #
 # Measured by hand with --all-targets --no-fail-fast from a green tree.
+# Rewritten 2026-09-20 by 11-11.0 onto the joined sentence, the pictures'
+# and the hidden blocks' in one paragraph (#90), and measured again through
+# `scripts/guards.sh --remeasure`: the same one.
 
 [[guard]]
 name = "an ordinary message grows nothing where the count would be"
 file = "src/presentation/html_renderer.rs"
-before = """        let said = crate::application::pictures::what_was_held_back(held_back);
+before = """        .join(" ");
         if said.is_empty() {
             return String::new();
         }
         format!("""
-after = """        let said = crate::application::pictures::what_was_held_back(held_back);
+after = """        .join(" ");
         format!("""
 red = [
     "presentation::html_renderer::tests::test_a_message_with_nothing_held_back_says_nothing",
@@ -27840,4 +27843,73 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
+]
+
+# ── What the sender hid is not read (#90, 11-11.0) ──────────────────────────
+#
+# A block is dropped by the sender's own hiding and never by what it says
+# (guardrail 6), and the hiding rules are exactly six. The two records on
+# the module hold the two ways the set was most likely to widen: a rule
+# that hides on a declaration a sender writes for something else. opacity:0
+# on its own is a fade-in's first frame, and a block hidden by opacity alone
+# still takes its space; the newsletter writes it beside display:none, and
+# it is display:none that hides. The break makes opacity:0 a rule, and the
+# module's companion case for it goes red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "opacity nought alone is not a hiding"
+file = "src/application/hidden_text.rs"
+before = """            ("mso-hide", "all") => return Some(Rule::MsoHideAll),"""
+after = """            ("mso-hide", "all") | ("opacity", "0") => return Some(Rule::MsoHideAll),"""
+red = [
+    "application::hidden_text::tests::test_opacity_nought_alone_is_not_a_hiding",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 26 },
+]
+
+# max-height:0 hides only together with overflow:hidden: alone, the block
+# overflows its nought height and is read; overflow:hidden alone hides
+# nothing of a block that fits. The break lets either half hide on its own,
+# and the module's case for the pair goes red on both companions.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "max-height nought hides only with overflow hidden beside it"
+file = "src/application/hidden_text.rs"
+before = """    (max_height_nought && overflow_hidden).then_some(Rule::MaxHeightZeroOverflowHidden)"""
+after = """    (max_height_nought || overflow_hidden).then_some(Rule::MaxHeightZeroOverflowHidden)"""
+red = [
+    "application::hidden_text::tests::test_max_height_nought_hides_only_together_with_overflow_hidden",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 26 },
+]
+
+# The drop is the reading path's and never the sending path's. sanitize_html
+# cleans a reply's quoted message on its way into the editor and the
+# editor's body on its way out, and a block the writer hid is theirs to
+# send. The break runs the drop inside sanitize_html, and on the target the
+# case that sends a hidden block through the composer's renderer and the
+# editor's goes red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "what the sender hid is dropped on the reading path and never on the sending path"
+file = "src/presentation/html_renderer.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = """        cleaner().clean(html).to_string()"""
+after = """        cleaner()
+            .clean(&crate::application::hidden_text::drop_what_the_sender_hid(html).0)
+            .to_string()"""
+red = [
+    "test_a_message_on_its_way_out_keeps_what_its_writer_hid",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 10 },
 ]

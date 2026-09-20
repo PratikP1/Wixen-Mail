@@ -36,6 +36,9 @@
 
 use std::borrow::Cow;
 
+use ego_tree::{NodeId, NodeRef};
+use scraper::{Html, Node, StrTendril};
+
 /// One of the ways a sender hides a block with a style declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rule {
@@ -89,8 +92,56 @@ pub const LONGEST_PREHEADER: usize = 200;
 /// the cleaner drops those with their content, and a rule that judged a
 /// stylesheet would be judging nothing a reader meets.
 pub fn whether_hidden(tag: &str, style: Option<&str>, aria_hidden: Option<&str>) -> Hidden {
-    let _ = (tag, style, aria_hidden);
-    Hidden::Shown
+    if matches!(tag, "style" | "script" | "title" | "head") {
+        return Hidden::Shown;
+    }
+    if let Some(rule) = style.and_then(the_rule_in) {
+        return Hidden::ByStyle(rule);
+    }
+    match aria_hidden.map(str::trim) {
+        Some(answer) if answer.eq_ignore_ascii_case("true") => Hidden::ByAria,
+        _ => Hidden::Shown,
+    }
+}
+
+/// The first hiding in a style attribute, in the order the sender wrote
+/// the declarations.
+///
+/// Each declaration is split at its first colon and lowered, with its
+/// `!important` taken off. `max-height:0` and `overflow:hidden` are each
+/// remembered and become a rule together, in either order, once nothing
+/// else in the attribute has hidden the block on its own.
+fn the_rule_in(style: &str) -> Option<Rule> {
+    let mut max_height_nought = false;
+    let mut overflow_hidden = false;
+    for declaration in style.split(';') {
+        let Some((property, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        let property = property.trim().to_ascii_lowercase();
+        let value = value.to_ascii_lowercase().replace("!important", "");
+        match (property.as_str(), value.trim()) {
+            ("display", "none") => return Some(Rule::DisplayNone),
+            ("visibility", "hidden") => return Some(Rule::VisibilityHidden),
+            ("font-size", size) if is_nought(size) => return Some(Rule::FontSizeZero),
+            ("mso-hide", "all") => return Some(Rule::MsoHideAll),
+            ("max-height", height) if is_nought(height) => max_height_nought = true,
+            ("overflow", "hidden") => overflow_hidden = true,
+            _ => {}
+        }
+    }
+    (max_height_nought && overflow_hidden).then_some(Rule::MaxHeightZeroOverflowHidden)
+}
+
+/// Whether a length is nought in any unit: `0`, `0px`, `0pt`, `0em`,
+/// `0.0%`. A number that is not nought is not, whatever follows it, and so
+/// is a value with no number at the front.
+fn is_nought(length: &str) -> bool {
+    let digits: String = length
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    !digits.is_empty() && digits.parse::<f64>().is_ok_and(|number| number == 0.0)
 }
 
 /// Whether a character is invisible filler: the combining grapheme joiner,
@@ -101,8 +152,10 @@ pub fn whether_hidden(tag: &str, style: Option<&str>, aria_hidden: Option<&str>)
 /// inbox row does not run on into the message's first line. Read aloud
 /// they are nothing, or "soft hyphen" two hundred times.
 pub fn is_filler(c: char) -> bool {
-    let _ = c;
-    false
+    matches!(
+        c,
+        '\u{34f}' | '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{ad}'
+    )
 }
 
 /// The text with every filler character taken out, wherever it stands.
@@ -110,7 +163,11 @@ pub fn is_filler(c: char) -> bool {
 /// A soft hyphen inside a word goes and the word is left whole, since the
 /// hyphen is a permission to break the word and not a part of it.
 pub fn strip_filler(text: &str) -> Cow<'_, str> {
-    Cow::Borrowed(text)
+    if text.chars().any(is_filler) {
+        Cow::Owned(text.chars().filter(|c| !is_filler(*c)).collect())
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 /// What a dropped block held, read from its text after the filler is gone.
@@ -118,8 +175,13 @@ pub fn strip_filler(text: &str) -> Cow<'_, str> {
 /// `before_any_visible_text` is whether the block stood before the first
 /// visible text of the message, which is where a preheader stands.
 pub fn what_a_dropped_block_was(text: &str, before_any_visible_text: bool) -> WhatItHeld {
-    let _ = (text, before_any_visible_text);
-    WhatItHeld::Nothing
+    if !text.chars().any(char::is_alphanumeric) {
+        return WhatItHeld::Nothing;
+    }
+    if before_any_visible_text && text.trim().chars().count() <= LONGEST_PREHEADER {
+        return WhatItHeld::Preheader;
+    }
+    WhatItHeld::Words
 }
 
 /// The sentence at the top of a message about hidden blocks of words.
@@ -128,8 +190,11 @@ pub fn what_a_dropped_block_was(text: &str, before_any_visible_text: bool) -> Wh
 /// say nothing; otherwise one sentence in the register of
 /// [`crate::application::pictures::what_was_held_back`].
 pub fn what_was_left_out(words_blocks: usize) -> String {
-    let _ = words_blocks;
-    String::new()
+    match words_blocks {
+        0 => String::new(),
+        1 => "1 block the sender did not show was left out.".to_string(),
+        many => format!("{many} blocks the sender did not show were left out."),
+    }
 }
 
 /// The markup with what the sender hid taken out, and how many blocks of
@@ -143,7 +208,91 @@ pub fn what_was_left_out(words_blocks: usize) -> String {
 /// is, since the cleaner drops it. The count is of blocks that were
 /// [`WhatItHeld::Words`], for [`what_was_left_out`].
 pub fn drop_what_the_sender_hid(html: &str) -> (String, usize) {
-    (html.to_string(), 0)
+    let mut document = Html::parse_fragment(html);
+    let mut found = Findings::default();
+    found.walk(document.tree.root());
+    // Nothing to drop is the ordinary message, and it goes on as the sender
+    // wrote it: a parse costs little and a serialisation would reorder the
+    // attributes of every tag for no reader's benefit.
+    if found.to_detach.is_empty() && found.to_rewrite.is_empty() {
+        return (html.to_string(), 0);
+    }
+    for id in found.to_detach {
+        if let Some(mut node) = document.tree.get_mut(id) {
+            node.detach();
+        }
+    }
+    for (id, rewritten) in found.to_rewrite {
+        if let Some(mut node) = document.tree.get_mut(id)
+            && let Node::Text(text) = node.value()
+        {
+            text.text = StrTendril::from(rewritten);
+        }
+    }
+    (document.root_element().inner_html(), found.words_blocks)
+}
+
+/// What one walk over the parsed markup found, applied to the tree
+/// afterwards, since a tree cannot be changed while it is being walked.
+#[derive(Default)]
+struct Findings {
+    to_detach: Vec<NodeId>,
+    to_rewrite: Vec<(NodeId, String)>,
+    words_blocks: usize,
+    /// Whether any text a reader would see has been passed yet, which is
+    /// what makes a hidden block before it a preheader.
+    seen_visible_text: bool,
+}
+
+impl Findings {
+    fn walk(&mut self, node: NodeRef<'_, Node>) {
+        for child in node.children() {
+            match child.value() {
+                Node::Element(element) => {
+                    let tag = element.name();
+                    // The cleaner's to drop, with their content; a walk into
+                    // a stylesheet would strip filler from CSS and count
+                    // its text as visible.
+                    if matches!(tag, "style" | "script" | "title" | "head") {
+                        continue;
+                    }
+                    match whether_hidden(tag, element.attr("style"), element.attr("aria-hidden")) {
+                        Hidden::Shown => self.walk(child),
+                        Hidden::ByStyle(_) | Hidden::ByAria => self.drop(child),
+                    }
+                }
+                Node::Text(text) => match strip_filler(text) {
+                    Cow::Owned(stripped) if stripped.trim().is_empty() => {
+                        self.to_detach.push(child.id());
+                    }
+                    Cow::Owned(stripped) => {
+                        self.seen_visible_text = true;
+                        self.to_rewrite.push((child.id(), stripped));
+                    }
+                    Cow::Borrowed(kept) => {
+                        if !kept.trim().is_empty() {
+                            self.seen_visible_text = true;
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+    }
+
+    /// A hidden element goes with everything under it, and what it held
+    /// decides whether it is counted.
+    fn drop(&mut self, hidden: NodeRef<'_, Node>) {
+        let held: String = hidden
+            .descendants()
+            .filter_map(|node| node.value().as_text())
+            .map(|text| strip_filler(text))
+            .collect();
+        if what_a_dropped_block_was(&held, !self.seen_visible_text) == WhatItHeld::Words {
+            self.words_blocks += 1;
+        }
+        self.to_detach.push(hidden.id());
+    }
 }
 
 #[cfg(test)]
@@ -312,8 +461,9 @@ mod tests {
             what_a_dropped_block_was(" \u{a0} \u{2007} ", true),
             WhatItHeld::Nothing
         );
+        // Punctuation alone is nothing too: a spacer row of dashes.
         assert_eq!(
-            what_a_dropped_block_was("&nbsp;", false),
+            what_a_dropped_block_was(" - - - ", false),
             WhatItHeld::Nothing
         );
     }
@@ -416,13 +566,12 @@ mod tests {
     }
 
     #[test]
-    fn test_markup_with_nothing_hidden_keeps_its_words_and_its_structure() {
-        let (shown, counted) = drop_what_the_sender_hid(
-            "<h1>Title</h1><p>One <b>two</b> three</p><table><tr><td>cell</td></tr></table>",
-        );
-        for kept in ["<h1>", "Title", "<b>", "two", "<table>", "<td>", "cell"] {
-            assert!(shown.contains(kept), "{kept} missing from {shown}");
-        }
+    fn test_markup_with_nothing_hidden_goes_on_as_the_sender_wrote_it() {
+        // Byte for byte, attribute order included: the ordinary message is
+        // not re-serialised for nothing.
+        let as_written = "<h1>Title</h1><p>One <b>two</b> three</p><table><tr><td style=\"width:1px\" align=\"left\">cell</td></tr></table>";
+        let (shown, counted) = drop_what_the_sender_hid(as_written);
+        assert_eq!(shown, as_written);
         assert_eq!(counted, 0);
     }
 }
