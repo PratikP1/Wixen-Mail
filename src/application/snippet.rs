@@ -135,18 +135,13 @@ fn repeats_the_line_before(line: &str, kept: &[String]) -> bool {
 
 /// The line with the characters nobody hears taken out: soft hyphens, the
 /// combining grapheme joiner and the zero-width joiners and spaces a
-/// newsletter platform pads its hidden preheader with. The reader keeps
-/// them on the preheader's own line, between its words and the spaces it
-/// collapses, and read aloud they are nothing or "soft hyphen" thirty times.
+/// newsletter platform pads its hidden preheader with. Since #90 the reader
+/// drops a hidden preheader before this sees it, but a plain-text part is
+/// never parsed and can carry the same padding, so the line is read through
+/// the one set of filler characters, `hidden_text::is_filler`, rather than
+/// a second copy of it here.
 fn without_invisible_characters(line: &str) -> String {
-    line.chars()
-        .filter(|c| {
-            !matches!(
-                c,
-                '\u{ad}' | '\u{34f}' | '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}'
-            )
-        })
-        .collect()
+    super::hidden_text::strip_filler(line).into_owned()
 }
 
 /// A line beginning with the quote mark, whatever indents it.

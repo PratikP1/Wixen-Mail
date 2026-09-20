@@ -283,6 +283,42 @@ no description of its own takes the link's words, so a linked picture reads
 as "Our spring range" rather than as "graphic". The same choice reaches a
 picture in a note, a task or an event read aloud with `Space`.
 
+### What the formatted view leaves out
+
+A message written as a web page carries things its sender never meant you to
+read. Since 2026-09-20 the formatted view leaves them out, and says so when it
+matters.
+
+Text the sender hid is not read. A newsletter usually opens with a hidden
+block holding the line your inbox shows as its preview, padded with a few
+hundred invisible characters so the preview does not run on into the message;
+shown as a page, the line was read twice and the padding was read as symbols.
+A block is left out only when the sender hid it in one of the ways web pages
+hide things (`display:none` and its five siblings), never because of what it
+says, and the invisible padding characters are dropped wherever they stand.
+When a hidden block held words, other than that short preview line at the
+top, a line at the top of the message says so: "1 block the sender did not
+show was left out." You hear that line only when something with words in it
+was left out, in the same paragraph as the line about tracking pixels, so a
+message that hid nothing but its preview line says nothing.
+
+A layout table is not a table to your screen reader. Newsletters lay their
+blocks out in tables, dozens of them, and each was announced as a table with
+rows and columns on the way in and the way out. A table the sender marked as
+layout is now shown as one, so nothing is announced around the block inside
+it; a table that holds data is still a table. A grouping the sender named for
+a sighted layout, "Post header", is not announced either; a name is kept only
+where it is a link's or a data table's.
+
+The page itself says each thing once: the subject as the page's heading, the
+sender in the message's heading, which is numbered only in a conversation, and
+the count of messages only for a conversation. The sender's own "From" line in
+the body is the sender's and stays.
+
+None of this touches a plain-text message, which is shown as written, and none
+of it touches a message you are writing: a reply that quotes a web-page message
+quotes the whole of it, hidden parts and all, because it is yours to send.
+
 ### When a message counts as read
 
 Moving through the list never marks anything. You can arrow through a folder,

@@ -394,7 +394,7 @@ fn test_a_newsletters_pictures_show_and_its_beacon_is_held_back_and_counted() {
         "the beacon's address survived, so the browser will fetch it: {shown}"
     );
     assert_eq!(
-        held,
+        held.pictures,
         HeldBack {
             by_the_switch: 0,
             as_beacons: 1
@@ -429,7 +429,7 @@ fn test_a_decorative_remote_picture_is_not_fetched_and_is_said_or_passed_over_as
         "the reader asked to be told and was not: {out_loud}"
     );
     assert_eq!(
-        held,
+        held.pictures,
         HeldBack::default(),
         "counted as held back by the switch or as a beacon"
     );
@@ -445,7 +445,7 @@ fn test_a_decorative_remote_picture_is_not_fetched_and_is_said_or_passed_over_as
             && !silently.contains("Picture not shown"),
         "something was said about a picture the reader chose to pass over: {silently}"
     );
-    assert_eq!(held, HeldBack::default());
+    assert_eq!(held.pictures, HeldBack::default());
 }
 
 #[test]
@@ -499,7 +499,7 @@ fn test_under_the_switch_a_beacon_is_the_switchs_and_the_sentence_names_the_swit
         "{shown}"
     );
     assert_eq!(
-        held,
+        held.pictures,
         HeldBack {
             by_the_switch: 3,
             as_beacons: 0

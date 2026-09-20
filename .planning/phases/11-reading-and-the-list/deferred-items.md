@@ -45,3 +45,17 @@ them.
   until the next set replaces it or a refusal arrives; the rows that did leave
   are landed then. Reachable only when the local store errs mid-set. 11-07.1,
   which completes a delete here first, changes this path.
+
+## Found by 11-11.0 task 2, 2026-09-20
+
+- **The plain-text reader's conversation heading numbers a single message
+  too.** `reader_text::conversation` (`src/presentation/reader_text.rs`, the
+  heading built from `position + 1`) heads one message "1. Message from ..."
+  the way the page did until 11-11.0, and its title line counts the messages
+  for one as well. #90 is about the formatted view, and that is what 11-11.0
+  changed; the text reader is a separate surface, `reader_text.rs` is named by
+  13 records and holds 125 tests, and two of them find "1. Message from" in a
+  two-part conversation. Whoever next changes the text reader's heading drops
+  the number for one message the same way, with the two tests rewritten in
+  place. Not a ledger entry: nothing is wrong that a reader would call a
+  defect, and it is said here so it is not found again by ear.

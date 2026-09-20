@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 202 records have arrived since and have not been through it.
+# 208 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17674,16 +17674,19 @@ tests_last_seen = [
 # it went in for this reason.
 #
 # Measured by hand with --all-targets --no-fail-fast from a green tree.
+# Rewritten 2026-09-20 by 11-11.0 onto the joined sentence, the pictures'
+# and the hidden blocks' in one paragraph (#90), and measured again through
+# `scripts/guards.sh --remeasure`: the same one.
 
 [[guard]]
 name = "an ordinary message grows nothing where the count would be"
 file = "src/presentation/html_renderer.rs"
-before = """        let said = crate::application::pictures::what_was_held_back(held_back);
+before = """        .join(" ");
         if said.is_empty() {
             return String::new();
         }
         format!("""
-after = """        let said = crate::application::pictures::what_was_held_back(held_back);
+after = """        .join(" ");
         format!("""
 red = [
     "presentation::html_renderer::tests::test_a_message_with_nothing_held_back_says_nothing",
@@ -27840,4 +27843,150 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
+]
+
+# ── What the sender hid is not read (#90, 11-11.0) ──────────────────────────
+#
+# A block is dropped by the sender's own hiding and never by what it says
+# (guardrail 6), and the hiding rules are exactly six. The two records on
+# the module hold the two ways the set was most likely to widen: a rule
+# that hides on a declaration a sender writes for something else. opacity:0
+# on its own is a fade-in's first frame, and a block hidden by opacity alone
+# still takes its space; the newsletter writes it beside display:none, and
+# it is display:none that hides. The break makes opacity:0 a rule, and the
+# module's companion case for it goes red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "opacity nought alone is not a hiding"
+file = "src/application/hidden_text.rs"
+before = """            ("mso-hide", "all") => return Some(Rule::MsoHideAll),"""
+after = """            ("mso-hide", "all") | ("opacity", "0") => return Some(Rule::MsoHideAll),"""
+red = [
+    "application::hidden_text::tests::test_opacity_nought_alone_is_not_a_hiding",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 29 },
+]
+
+# max-height:0 hides only together with overflow:hidden: alone, the block
+# overflows its nought height and is read; overflow:hidden alone hides
+# nothing of a block that fits. The break lets either half hide on its own,
+# and the module's case for the pair goes red on both companions.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "max-height nought hides only with overflow hidden beside it"
+file = "src/application/hidden_text.rs"
+before = """    (max_height_nought && overflow_hidden).then_some(Rule::MaxHeightZeroOverflowHidden)"""
+after = """    (max_height_nought || overflow_hidden).then_some(Rule::MaxHeightZeroOverflowHidden)"""
+red = [
+    "application::hidden_text::tests::test_max_height_nought_hides_only_together_with_overflow_hidden",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 29 },
+]
+
+# The drop is the reading path's and never the sending path's. sanitize_html
+# cleans a reply's quoted message on its way into the editor and the
+# editor's body on its way out, and a block the writer hid is theirs to
+# send. The break runs the drop inside sanitize_html, and on the target the
+# case that sends a hidden block through the composer's renderer and the
+# editor's goes red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "what the sender hid is dropped on the reading path and never on the sending path"
+file = "src/presentation/html_renderer.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = """        cleaner().clean(html).to_string()"""
+after = """        cleaner()
+            .clean(&crate::application::hidden_text::drop_what_the_sender_hid(html).0)
+            .to_string()"""
+red = [
+    "test_a_message_on_its_way_out_keeps_what_its_writer_hid",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+]
+
+# The one role the cleaner keeps is presentation, on a table's four tags,
+# because it is the sender's own claim that a table is layout and a reader
+# is better off without a table announced around every block. The break
+# lets every role value through on those tags, so a table's grid, row and
+# gridcell roles survive the cleaner and reach the page. On the target the
+# case that counts the roles goes red; the newsletter's case stays green,
+# since its region and its button are not a table's tags.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named. Rewritten the same
+# day when the allowance moved into hidden_text::keep_the_layout_claim,
+# the one place the page's cleaner and the reader's take it from, and
+# measured again: the same one.
+[[guard]]
+name = "no role but presentation survives the cleaner"
+file = "src/application/hidden_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = """        builder.add_tag_attribute_values(tag, "role", [LAYOUT_CLAIM]);"""
+after = """        builder.add_tag_attributes(tag, ["role"]);"""
+red = [
+    "test_no_role_but_presentation_survives_and_only_on_a_tables_four_tags",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+]
+
+# A sender's label is a name only where a reader would use it as one, and
+# a layout table's label names a grouping. The break keeps every table's
+# label whatever its role, so a presentational table reaches the page
+# named, which the cleaner lets through because a table may carry a label.
+# On the target the case that puts a labelled layout table beside a
+# labelled data table goes red. A break on the div arm would redden the
+# module's cases and never the page's, since the cleaner drops a div's
+# label on its own; this break is the one the page can see.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a layout table's label is not a name a reader would hear"
+file = "src/application/hidden_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = """        "table" => !is_a_layout_claim(role),"""
+after = """        "table" => true,"""
+red = [
+    "test_a_label_is_kept_where_it_is_a_name_and_dropped_where_it_named_a_grouping",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+]
+
+# The reader reads a layout table as its blocks in order and never as a
+# Table piece (ledger 555): a layout table has no columns to name, and
+# read as one the whole newsletter arrived as a single cell with every
+# block's last word run into the next block's first. The break sends a
+# presentational table back down the table arm, so the reader answers a
+# Table piece for it again. On the target the hand-built layout table and
+# the newsletter both go red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a layout table is read as its blocks and never as a table piece"
+file = "src/application/long_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = """                        layout_table(child, out, keeping)"""
+after = """                        table(child, out, keeping)"""
+red = [
+    "test_a_layout_table_is_read_as_its_blocks_in_order",
+    "test_the_reader_reads_the_newsletter_as_blocks_apart_and_no_layout_table_as_a_table",
+]
+tests_last_seen = [
+    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
