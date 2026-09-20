@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 228 records have arrived since and have not been through it.
+# 229 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -13575,7 +13575,7 @@ red = [
     "presentation::view_state::tests::test_the_count_in_conversation_mode_is_the_conversation_count",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 
 [[guard]]
@@ -13609,7 +13609,7 @@ red = [
     "presentation::view_state::tests::test_two_of_a_conversation_s_five_messages_come_back_as_those_two",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 
 [[guard]]
@@ -13768,7 +13768,7 @@ red = [
     "presentation::view_state::tests::test_nothing_changing_repaints_nothing_and_leaves_the_count_alone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 before = """        rows: (0..now.len())
             .filter(|row| was.get(*row) != Some(&now[*row]))
@@ -28342,7 +28342,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 
 # The setting is read where the folder opens and handed to the rule; a
@@ -28507,7 +28507,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 10 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 11 },
 ]
 
 # All Inboxes holds every account's messages at once, and the same thread
@@ -28532,5 +28532,31 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 10 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 11 },
+]
+
+# D-11's switch to conversations selects the rows holding what was
+# selected, and under All Inboxes a row is named by its account and its
+# thread id together, since the same thread id in two accounts is two rows
+# (T-01-47). The break keys a message by its thread id with no account, so
+# a message of the second account comes back selected on the first
+# account's row, and a command on that row would act on the other
+# account's mail (T-11-113). Red in the reading over the switch's keys.
+# Found on the branch before the merge, by reading the helper the switch
+# already used rather than by the plan.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "switching all inboxes to conversations selects the row's own account's conversation"
+file = "src/presentation/wx_app.rs"
+suite = "all_inboxes_keeps_a_view_of_its_own"
+before = """                        .map(|thread| (m.account_id.clone(), thread)),"""
+after = """                        .map(|thread| (String::new(), thread)),"""
+red = [
+    "test_switching_to_conversations_selects_the_rows_own_accounts_conversation",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 11 },
 ]

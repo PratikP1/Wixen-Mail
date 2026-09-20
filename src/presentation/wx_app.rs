@@ -15476,18 +15476,29 @@ fn put_the_selection_back(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl)
 }
 
 /// Select the conversation rows holding what was selected, D-11's other half.
+///
+/// A conversation is named by its account and its thread id together (#92),
+/// because under All Inboxes the same thread id in two accounts is two rows
+/// (T-01-47), and a message of the second must come back on the second.
 fn select_the_conversations_holding_it(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl) {
     let rows = {
         let s = lock_state(state);
-        let of_each: Vec<(i64, Option<String>)> = s
+        let of_each: Vec<(i64, Option<(String, String)>)> = s
             .messages
             .iter()
-            .map(|m| (m.message_id, m.thread_id.clone()))
+            .map(|m| {
+                (
+                    m.message_id,
+                    m.thread_id
+                        .clone()
+                        .map(|thread| (m.account_id.clone(), thread)),
+                )
+            })
             .collect();
-        let ids: Vec<String> = s
+        let ids: Vec<(String, String)> = s
             .conversations
             .iter()
-            .map(|c| c.thread_id.clone())
+            .map(|c| (c.read_in.account_id.clone(), c.thread_id.clone()))
             .collect();
         view_state::conversations_holding(&s.selection_before_the_switch, &of_each, &ids)
     };
