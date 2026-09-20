@@ -422,6 +422,30 @@ fn test_the_set_the_fetch_and_the_tree_read_the_rows_own_account() {
     the_rows_readers_read_its_own_account(&shipped()).unwrap_or_else(|why| panic!("{why}"));
 }
 
+/// The selection held across a switch comes back on the row of its own
+/// account (D-11 under All Inboxes): the keys the window hands the rule
+/// carry the account beside the thread id on both sides, or a message in
+/// the second account would come back selected on the first account's row
+/// when both hold the thread id.
+fn the_switch_selects_the_rows_own_accounts_conversation(app: &str) -> Result<(), String> {
+    let body = body_of(app, "fn select_the_conversations_holding_it(")?;
+    if !body.contains("m.account_id") || !body.contains("read_in.account_id") {
+        return Err(
+            "select_the_conversations_holding_it keys the rows by thread id alone, so under All \
+             Inboxes a selected message comes back on whichever account's row holds the thread \
+             id first"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_switching_to_conversations_selects_the_rows_own_accounts_conversation() {
+    the_switch_selects_the_rows_own_accounts_conversation(&shipped())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
 fn a_loaded_message(id: i64, account: &str, thread: &str) -> MessageItem {
     MessageItem {
         uid: id as u32,
