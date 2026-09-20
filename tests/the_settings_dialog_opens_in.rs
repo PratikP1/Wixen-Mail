@@ -331,6 +331,7 @@ mod windows_of {
     const BM_GETCHECK: u32 = 0x00F0;
     const BM_SETCHECK: u32 = 0x00F1;
     const BST_CHECKED: isize = 1;
+    const BN_CLICKED: usize = 0;
 
     #[link(name = "user32")]
     unsafe extern "system" {
@@ -346,6 +347,8 @@ mod windows_of {
         fn PostMessageW(window: Hwnd, message: u32, w: usize, l: isize) -> i32;
         fn SendMessageW(window: Hwnd, message: u32, w: usize, l: isize) -> isize;
         fn GetWindow(window: Hwnd, which: u32) -> Hwnd;
+        fn GetParent(window: Hwnd) -> Hwnd;
+        fn GetDlgCtrlID(window: Hwnd) -> i32;
     }
 
     /// Whether the window has any child window at all, which is what a page
@@ -398,10 +401,23 @@ mod windows_of {
 
     /// Tick or clear a check box the way a click leaves it, so what OK
     /// reads back is the control's own state.
+    ///
+    /// The control's state and then the notification a click sends the
+    /// parent, because wxWidgets keeps a check box's state itself and reads
+    /// the control's only when a click is reported
+    /// (`wxCheckBox::MSWCommand`); `BM_SETCHECK` alone moves the control
+    /// and leaves `GetValue` answering the old state.
     pub fn set_checked(check_box: Hwnd, on: bool) {
-        // Safe: a message to a handle the toolkit gave us.
+        // Safe: messages to handles the toolkit gave us.
         unsafe {
             SendMessageW(check_box, BM_SETCHECK, usize::from(on), 0);
+            let id = GetDlgCtrlID(check_box) as usize & 0xFFFF;
+            SendMessageW(
+                GetParent(check_box),
+                WM_COMMAND,
+                (BN_CLICKED << 16) | id,
+                check_box,
+            );
         }
     }
 
@@ -998,7 +1014,9 @@ fn test_the_check_box_carries_its_words_on_both_channels_and_is_written_back_on_
         )),
         "the check box is not named {SHOW_CONVERSATIONS_BY_DEFAULT:?} on the channel NVDA reads"
     );
-    let readback = collapsed(body_of(&source, "read_settings"));
+    // `read_settings` reads each page through a function of its own, and the
+    // Reading page's is where the box has to be written back.
+    let readback = collapsed(body_of(&source, "read_the_reading_page"));
     assert!(
         readback.contains(
             "cfg.show_conversations_by_default = w.show_conversations_by_default.get_value();"

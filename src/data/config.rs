@@ -439,7 +439,7 @@ pub struct AppConfig {
     /// wins where one was made, and a folder chosen flat stays flat whatever
     /// this says; the rule is `Showing::from_stored`, and the main window
     /// reads this where a folder opens, never once at startup.
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub show_conversations_by_default: bool,
     /// How dates are shown in lists: "absolute" or "relative".
     ///
@@ -816,7 +816,7 @@ impl Default for AppConfig {
             told_about_the_alpha: false,
             check_spelling_as_you_type: default_true(),
             default_sort_order: default_sort_order(),
-            show_conversations_by_default: false,
+            show_conversations_by_default: default_true(),
             default_reminder_minutes: default_reminder_minutes(),
             calendar_view: default_calendar_view(),
         }

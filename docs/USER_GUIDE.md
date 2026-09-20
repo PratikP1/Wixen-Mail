@@ -716,7 +716,14 @@ appears in folders that hold a conversation of more than one message and stays
 out of folders where every message stands alone. If you show or hide it
 yourself in View, Columns, your choice wins from then on in that folder.
 
-Each folder remembers its own view, and a folder you have never set is flat.
+Each folder remembers its own view. A folder you have never set shows
+conversations, or messages if you turn off **Show conversations by default**
+under Settings, Reading, in the Message List section beside Default sort
+order; the next folder you open reads it, with no restart. A folder you set
+yourself keeps your choice whatever that setting says, including a folder you
+set to one row per message. Until 2026-09-20 a folder never set was flat, and
+on a profile from before that day every folder you never set changes to
+conversations on the next build; turn the setting off to have them flat again.
 **Apply View To Other Folders**, on the same menu, gives your choice to the
 folders under this one, to every folder in this account, or to every folder in
 every account. It tells you which folders it will change and how many that is,

@@ -19,10 +19,14 @@ use crate::presentation::message_columns::Sort;
 /// Whether the list is one row per message or one row per conversation.
 ///
 /// Stored per folder (D-09), which is why the stored form is a number rather
-/// than a flag: `None` is a folder nobody has ever set, and that is flat.
+/// than a flag: `None` is a folder nobody has ever set. Until 2026-09-20 that
+/// was flat; since then (#92) it is whatever Show conversations by default
+/// says, handed in by the caller, and a stored nought is still a choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Showing {
-    /// One row per message, which is what a folder nobody has set does.
+    /// One row per message. The default is what the list holds before any
+    /// row is opened, not what a folder nobody has set shows: that is the
+    /// setting's, through [`Showing::when_nobody_set_one`].
     #[default]
     Messages,
     /// One row per conversation, collapsed.
@@ -31,24 +35,34 @@ pub enum Showing {
 
 impl Showing {
     /// What a folder nobody has set shows, from the setting that says so.
-    pub fn when_nobody_set_one(show_conversations: bool) -> Self {
-        let _ = show_conversations;
-        Self::Messages
+    ///
+    /// Show conversations by default, on the Reading tab, on unless somebody
+    /// turns it off (#92, 2026-09-20). The caller reads the setting where a
+    /// folder opens and hands the answer to [`Showing::from_stored`]; this
+    /// module takes a view and never a configuration.
+    pub const fn when_nobody_set_one(show_conversations: bool) -> Self {
+        if show_conversations {
+            Self::Conversations
+        } else {
+            Self::Messages
+        }
     }
 
     /// What the view was left as, or `when_unset` for a folder never set.
     ///
-    /// D-09 says a folder never set is flat, so the absence of a row and a row
-    /// saying nought are the same answer here and both mean messages.
-    pub fn from_stored(stored: Option<i64>, when_unset: Showing) -> Self {
-        // Anything this version does not recognise reads as flat, which is the
-        // same answer a folder nobody has set gets. A settings file from a
-        // later version is a thing that happens, and flat is a better answer
-        // than a guess at what a number was supposed to mean.
-        let _ = when_unset;
+    /// A stored nought is not the absence of a row: it is a folder somebody
+    /// chose flat, and it stays flat whatever `when_unset` says, so turning
+    /// the setting on does not undo a choice. Until 2026-09-20 (#92) the two
+    /// were one answer here, because a folder never set was flat.
+    pub const fn from_stored(stored: Option<i64>, when_unset: Showing) -> Self {
+        // Anything this version does not recognise reads as what a folder
+        // nobody has set shows. A settings file from a later version is a
+        // thing that happens, and the person's own default is a better
+        // answer than a guess at what a number was supposed to mean.
         match stored {
             Some(1) => Self::Conversations,
-            _ => Self::Messages,
+            Some(0) => Self::Messages,
+            _ => when_unset,
         }
     }
 
