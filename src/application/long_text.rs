@@ -282,7 +282,32 @@ fn the_same_words(pieces: &[Piece], written: &str) -> bool {
 ///
 /// Text with no structure in it is returned as it was written, so a plain note
 /// is not made longer to listen to by a feature it never used.
+///
+/// A picture nobody described is read as the Reading tab says (#28), read
+/// from the stored settings here the way the message renderer reads its own
+/// picture answers: the callers are the readings of a note, a task, an event
+/// and a contact's notes, none of which holds a setting, and one file read
+/// per reading is the cost. [`spoken_with_pictures_read_as`] is the same
+/// with the answer given, for a caller that has it.
 pub fn spoken(written: &str) -> String {
+    spoken_with_pictures_read_as(
+        written,
+        crate::application::describing_pictures::UndescribedPicture::from_stored_settings(),
+    )
+}
+
+/// [`spoken`], told outright what a picture nobody described is read as.
+///
+/// Under nothing, the default, the picture is passed over: its line is not
+/// said and the words round it are read as though it were not there, which
+/// is what a screen reader does with an empty description in a message.
+/// Under a word, the word alone is said where the picture is, and not
+/// "image, image": the word stands where the sender's description would
+/// have stood, and a described picture is still "image, {description}".
+pub fn spoken_with_pictures_read_as(
+    written: &str,
+    read_as: crate::application::describing_pictures::UndescribedPicture,
+) -> String {
     let pieces = structure(written);
     // Text with nothing marked up in it comes back exactly as written, so a
     // plain note is not reflowed or made longer to listen to by a feature it
@@ -329,23 +354,14 @@ pub fn spoken(written: &str) -> String {
                         format!("heading level {level}, {}", with_addresses_said(text))
                     }
                     Piece::Table { columns, rows } => a_table_said(columns, rows),
-                    _ => a_settled_piece_said(settled),
+                    _ => a_settled_piece_said(settled, read_as),
                 }
             }
         })
+        // A picture passed over says nothing, and nothing is not a line.
+        .filter(|said| !said.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// The same, told outright what a picture nobody described is read as.
-///
-/// A stub that ignores the answer, so the three cases are red until the
-/// reader takes it.
-pub fn spoken_with_pictures_read_as(
-    written: &str,
-    _read_as: crate::application::describing_pictures::UndescribedPicture,
-) -> String {
-    spoken(written)
 }
 
 /// The words with each address written out in them said as a link to its
@@ -432,15 +448,21 @@ fn counted(how_many: usize, noun: &str) -> String {
 }
 
 /// The pieces whose announcement does not depend on what came before them.
-fn a_settled_piece_said(piece: &Piece) -> String {
+fn a_settled_piece_said(
+    piece: &Piece,
+    read_as: crate::application::describing_pictures::UndescribedPicture,
+) -> String {
     match piece {
         Piece::Quote(text) => format!("quote, {}", with_addresses_said(text)),
         Piece::Image(described) if described.is_empty() => {
-            // Said rather than skipped. The sender left no description,
-            // and that is worth knowing: it is why the picture cannot be
-            // read out, and it is their omission rather than this
-            // application's.
-            format!("image with {NO_DESCRIPTION}")
+            // The sender left no description. Until 2026-09-19 this said
+            // "image with no description" so the omission was heard; since
+            // #28 it says what the reader chose, which by default is
+            // nothing, the same as a message's undescribed picture: passed
+            // over, so a note is not made longer by a picture nobody can
+            // read out. The word, when one was chosen, stands alone where
+            // the description would have been.
+            read_as.description().to_string()
         }
         Piece::Image(described) => format!("image, {described}"),
         Piece::Paragraph(text) => with_addresses_said(text),

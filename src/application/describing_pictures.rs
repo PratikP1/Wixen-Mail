@@ -88,6 +88,22 @@ impl UndescribedPicture {
         }
     }
 
+    /// What the stored settings say, read from the file.
+    ///
+    /// For the note reader, `long_text::spoken`, whose callers hold no
+    /// setting. The message renderer reads the same field itself, once, with
+    /// its two other picture answers, so a message costs one file read and
+    /// not three. A settings file that cannot be read at all answers the
+    /// default, nothing, which is the safe way to be wrong here: a picture
+    /// passed over is a picture a reader can still ask about, and a word
+    /// written because the file was broken would be a description this
+    /// program invented.
+    pub fn from_stored_settings() -> Self {
+        crate::data::config::ConfigManager::load_stored()
+            .map(|stored| Self::from_stored(&stored.app_config().undescribed_pictures_read_as))
+            .unwrap_or_default()
+    }
+
     /// The description written on a picture that has none: empty, or the
     /// one word chosen.
     pub fn description(self) -> &'static str {

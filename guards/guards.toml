@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 200 records have arrived since and have not been through it.
+# 202 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17632,20 +17632,22 @@ tests_last_seen = [
 name = "the composer asks for the renderer that does not name a sender"
 file = "src/presentation/html_renderer.rs"
 before = """    pub fn for_a_message_being_written() -> Self {
-        let (fetching, announcing) = what_the_settings_say();
+        let (fetching, announcing, describing) = what_the_settings_say();
         Self {
             plain_text_only: false,
             fetching,
             announcing,
+            describing,
             whose: crate::application::pictures::WhoseMessage::BeingWrittenHere,
         }
     }"""
 after = """    pub fn for_a_message_being_written() -> Self {
-        let (fetching, announcing) = what_the_settings_say();
+        let (fetching, announcing, describing) = what_the_settings_say();
         Self {
             plain_text_only: false,
             fetching,
             announcing,
+            describing,
             whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
         }
     }"""
@@ -27701,9 +27703,10 @@ tests_last_seen = [
 # rule over the size the sender declared. The break makes the rule answer
 # no for everything: the closure compares against a size no declaration
 # reaches, so a one-by-one pixel is fetched and reports the opening. On the
-# target the beacon cases go red; the cases for a picture with no size, for
-# the switch and for the descriptions stay green, since none of them asks
-# the size rule to say yes.
+# target the beacon cases go red, and from task 2 the newsletter shown
+# through the renderer, whose pixel is then fetched and counted by nothing;
+# the cases for a picture with no size, for the switch and for the
+# descriptions stay green, since none of them asks the size rule to say yes.
 #
 # Measured 2026-09-19 on the branch the record was written on, through
 # `scripts/guards.sh --remeasure`, the target named.
@@ -27714,12 +27717,13 @@ suite = "pictures_show_by_default_except_beacons"
 before = """        .any(|pixels| pixels <= MOST_A_BEACON_MAY_MEASURE)"""
 after = """        .any(|pixels| pixels == u32::MAX)"""
 red = [
+    "test_a_newsletters_pictures_show_and_its_beacon_is_held_back_and_counted",
     "test_a_nothing_by_nothing_picture_and_a_one_pixel_strip_are_beacons_too",
     "test_a_one_by_one_picture_is_a_beacon_by_its_declared_size",
 ]
 tests_last_seen = [
     { file = "src/application/pictures.rs", tests = 44 },
-    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 15 },
+    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
 ]
 
 # A description this program invented. The undescribed rule stops asking
@@ -27728,8 +27732,9 @@ tests_last_seen = [
 # who chose to pass over such pictures hears "image" forty times over a
 # mailing, and the word is this program's and not the sender's (guardrail
 # 9). On the target the case that walks the three answers goes red on
-# nothing and on photo; the case that counts the words under image stays
-# green, since image is the word the break writes.
+# nothing and on photo, and from task 2 so does the same walk through the
+# renderer; the case that counts the words under image stays green, since
+# image is the word the break writes.
 #
 # Measured 2026-09-19 on the branch the record was written on, through
 # `scripts/guards.sh --remeasure`, the target named.
@@ -27740,11 +27745,12 @@ suite = "pictures_show_by_default_except_beacons"
 before = """                None => with_a_description(picture, read_as.description()),"""
 after = """                None => with_a_description(picture, "image"),"""
 red = [
+    "test_an_undescribed_picture_is_described_as_the_reader_chose_when_shown",
     "test_an_undescribed_picture_is_described_as_the_setting_says",
 ]
 tests_last_seen = [
     { file = "src/application/pictures.rs", tests = 44 },
-    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 15 },
+    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
 ]
 
 # The default moved to a word. The tester's decision in #28 is "" unless
@@ -27771,4 +27777,67 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/describing_pictures.rs", tests = 8 },
+]
+
+# A reader's word sent to a recipient. The undescribed rule moves into
+# sanitize_html, which also cleans a message on its way out, so the word
+# this reader chose for pictures nobody described is written on the
+# pictures in a message being sent, as though the writer had put it there
+# (T-11-41). On the target the case that sends a message through the
+# cleaner under each answer goes red, and so does the source reading that
+# holds the sending path to calling none of the three rules; and seven
+# more, because every fixture on the target is cleaned through the same
+# call, so under the break each arrives with a description already on it.
+# The first draft of this record named two, and the runner named nine.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a description written for reading is never written on a message going out"
+file = "src/presentation/html_renderer.rs"
+suite = "pictures_show_by_default_except_beacons"
+before = """        cleaner().clean(html).to_string()
+    }"""
+after = """        crate::application::pictures::describe_the_undescribed(
+            &cleaner().clean(html).to_string(),
+            self.describing,
+        )
+    }"""
+red = [
+    "test_a_description_written_for_reading_is_never_sent",
+    "test_a_linked_picture_whose_link_has_no_words_stays_undescribed",
+    "test_a_linked_picture_with_no_description_takes_the_links_words",
+    "test_a_picture_with_no_declared_size_is_fetched",
+    "test_a_remote_picture_the_sender_marked_decorative_is_not_fetched",
+    "test_an_undescribed_picture_is_described_as_the_setting_says",
+    "test_every_picture_in_a_message_is_described_and_the_described_ones_left",
+    "test_the_links_words_are_stripped_of_markup_and_escaped_before_they_become_a_description",
+    "test_the_sending_path_calls_none_of_the_three_rules_and_the_reading_path_calls_all",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
+]
+
+# The Reading tab's choice read back as its first entry whatever was
+# chosen: the control shows the stored answer, offers the three, and OK
+# writes nothing back every time, which is the shape ten settings in this
+# file once had and the two settings guards cannot see, since the field's
+# name is in the screen and in a reader either way. On the target the
+# read-back case goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the word chosen for an undescribed picture is what OK writes back"
+file = "src/presentation/wx_settings.rs"
+suite = "pictures_show_by_default_except_beacons"
+before = """        .get(sel(&w.undescribed_pictures_read_as) as usize)"""
+after = """        .get(0)"""
+red = [
+    "test_a_choice_made_on_the_reading_tab_is_what_ok_writes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
 ]
