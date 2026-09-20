@@ -54,6 +54,8 @@ pub mod forget;
 pub mod from_message;
 pub mod handover;
 pub mod help;
+/// What a sender hid is not read, and a reader is told when words were left out.
+pub mod hidden_text;
 pub mod how_far_it_got;
 pub mod import_tree;
 pub mod importing_an_outlook_data_file;
