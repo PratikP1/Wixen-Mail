@@ -338,6 +338,10 @@ pub(super) fn conversations_query(order: &str) -> String {
 pub(super) fn conversation_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationItem> {
     Ok(ConversationItem {
         thread_id: row.get(0)?,
+        read_in: crate::application::conversations::ReadIn {
+            account_id: String::new(),
+            folder_id: 0,
+        },
         subject: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
         messages: row.get(2)?,
         unread: row.get(3)?,
@@ -2384,6 +2388,16 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to collect conversations: {e}")))?;
 
         Ok(rows)
+    }
+
+    /// List every account's inbox as conversations, one row per account and
+    /// conversation (#92).
+    pub fn conversations_in_every_inbox(
+        &self,
+        _reach: AConversationReaches,
+        _order_by: Option<&str>,
+    ) -> Result<Vec<ConversationItem>> {
+        Ok(Vec::new())
     }
 
     /// Every message of one conversation, under the same reach its row counts.
@@ -6895,6 +6909,165 @@ mod tests {
             .conversations_in(home, "other", TheWholeAccount, None)
             .unwrap();
         assert_eq!(conversation(&at_home, "root@example.com").messages, 1);
+    }
+
+    // ── All Inboxes as conversations (#92, 11-11.1.3) ────────────────────────
+
+    /// The inbox of a named account, typed as the sync types it, which is
+    /// what makes it one of the folders All Inboxes lists.
+    fn inbox_of(cache: &super::super::MessageCache, account_id: &str) -> i64 {
+        cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: account_id.to_string(),
+                name: "INBOX".to_string(),
+                path: format!("{account_id}/INBOX"),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn test_all_inboxes_lists_a_conversation_held_in_two_accounts_as_two_rows() {
+        // T-01-47's rule, one list wider (#92): a conversation is an
+        // account's, so the same identifier in two inboxes is two rows, each
+        // counting its own account's messages and each saying whose it is
+        // and where it was read, so an act on the row reaches that account.
+        // The same fixture as `test_two_accounts_do_not_share_a_conversation`,
+        // with the folders typed as inboxes.
+        let cache = fresh("every_inbox_two_accounts");
+        let work = inbox_of(&cache, "acc");
+        let home = inbox_of(&cache, "other");
+        for (uid, folder_id) in [(1, work), (2, work), (3, home)] {
+            cache
+                .upsert_message(&in_conversation(
+                    folder_id,
+                    uid,
+                    "Quarterly report",
+                    "root@example.com",
+                    1,
+                ))
+                .unwrap();
+        }
+
+        let rows = cache
+            .conversations_in_every_inbox(TheWholeAccount, None)
+            .unwrap();
+        let read_in: Vec<(&str, i64, i64)> = rows
+            .iter()
+            .filter(|row| row.thread_id == "root@example.com")
+            .map(|row| {
+                (
+                    row.read_in.account_id.as_str(),
+                    row.read_in.folder_id,
+                    row.messages,
+                )
+            })
+            .collect();
+        assert_eq!(
+            read_in,
+            vec![("acc", work, 2), ("other", home, 1)],
+            "one row per account, each counting its own and saying where it was read: {rows:#?}"
+        );
+    }
+
+    #[test]
+    fn test_all_inboxes_counts_a_message_filed_elsewhere_only_when_the_reach_is_the_whole_account()
+    {
+        // D-08's reach, applied per account: a reply filed in Archive counts
+        // toward the inbox's row under the whole account and not under the
+        // inbox alone, the way a folder's own listing counts.
+        let cache = fresh("every_inbox_reach");
+        let inbox = inbox_of(&cache, "acc");
+        let archive = folder_in(&cache, "acc", "Archive");
+        cache
+            .upsert_message(&in_conversation(
+                inbox,
+                1,
+                "Quarterly report",
+                "root@example.com",
+                1,
+            ))
+            .unwrap();
+        cache
+            .upsert_message(&in_conversation(
+                archive,
+                2,
+                "Re: Quarterly report",
+                "root@example.com",
+                2,
+            ))
+            .unwrap();
+
+        let whole = cache
+            .conversations_in_every_inbox(TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&whole, "root@example.com").messages, 2);
+        let inbox_alone = cache
+            .conversations_in_every_inbox(ThisFolderOnly, None)
+            .unwrap();
+        assert_eq!(conversation(&inbox_alone, "root@example.com").messages, 1);
+    }
+
+    #[test]
+    fn test_an_account_whose_inbox_is_empty_contributes_no_row_to_all_inboxes() {
+        // A conversation is listed for an inbox it touches, and an account
+        // whose inbox holds none of it has no row, whatever its other folders
+        // hold; otherwise every archived conversation of every account would
+        // sit in All Inboxes under the whole-account reach.
+        let cache = fresh("every_inbox_empty");
+        let _empty = inbox_of(&cache, "other");
+        let archive = folder_in(&cache, "other", "Archive");
+        let busy = inbox_of(&cache, "acc");
+        cache
+            .upsert_message(&in_conversation(
+                archive,
+                1,
+                "Quarterly report",
+                "root@example.com",
+                1,
+            ))
+            .unwrap();
+        cache
+            .upsert_message(&in_conversation(busy, 2, "Lunch", "lunch@example.com", 1))
+            .unwrap();
+
+        let rows = cache
+            .conversations_in_every_inbox(TheWholeAccount, None)
+            .unwrap();
+        let whose: Vec<(&str, &str)> = rows
+            .iter()
+            .map(|row| (row.read_in.account_id.as_str(), row.thread_id.as_str()))
+            .collect();
+        assert_eq!(whose, vec![("acc", "lunch@example.com")], "{rows:#?}");
+    }
+
+    #[test]
+    fn test_a_folders_conversation_rows_say_the_folder_and_the_account_they_were_read_in() {
+        // The same field on a folder's own rows, so an act on a row asks the
+        // scope the row was counted with whichever listing built it.
+        let cache = fresh("folder_rows_say_where");
+        let work = folder_in(&cache, "acc", "Work");
+        cache
+            .upsert_message(&in_conversation(
+                work,
+                1,
+                "Quarterly report",
+                "root@example.com",
+                1,
+            ))
+            .unwrap();
+
+        let rows = cache
+            .conversations_in(work, "acc", TheWholeAccount, None)
+            .unwrap();
+        let row = conversation(&rows, "root@example.com");
+        assert_eq!(
+            (row.read_in.account_id.as_str(), row.read_in.folder_id),
+            ("acc", work)
+        );
     }
 
     #[test]

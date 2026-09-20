@@ -40,7 +40,7 @@
 
 use std::fs;
 
-use wixen_mail::application::conversations::{ConversationItem, RowMessage};
+use wixen_mail::application::conversations::{ConversationItem, ReadIn, RowMessage};
 use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::presentation::date_display::DateSettings;
 use wixen_mail::presentation::message_columns::{ColumnLayout, FolderKind, MessageColumn};
@@ -228,6 +228,10 @@ fn test_a_conversation_row_is_composed_from_its_own_cells() {
     // the newest date. Nothing here reaches into the flat rows.
     let conversation = ConversationItem {
         thread_id: "gm:5".to_string(),
+        read_in: ReadIn {
+            account_id: "acc".to_string(),
+            folder_id: 1,
+        },
         subject: "Quarterly report".to_string(),
         messages: 3,
         unread: 0,

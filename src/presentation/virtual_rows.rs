@@ -155,6 +155,10 @@ mod tests {
     fn a_conversation(subject: &str) -> ConversationItem {
         ConversationItem {
             thread_id: "root@example.com".to_string(),
+            read_in: crate::application::conversations::ReadIn {
+                account_id: "acc".to_string(),
+                folder_id: 1,
+            },
             subject: subject.to_string(),
             messages: 3,
             unread: 1,
