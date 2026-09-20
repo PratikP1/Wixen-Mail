@@ -3398,11 +3398,11 @@ impl WxMailApp {
                         let opening = lock_state(&state)
                             .conversations
                             .get(index as usize)
-                            .map(|c| (c.thread_id.clone(), c.subject.clone()));
-                        let Some((thread_id, subject)) = opening else {
+                            .map(|c| (c.thread_id.clone(), c.subject.clone(), c.read_in.clone()));
+                        let Some((thread_id, subject, read_in)) = opening else {
                             return;
                         };
-                        let nodes = conversation_nodes(&state, &thread_id);
+                        let nodes = conversation_nodes(&state, &read_in.account_id, &thread_id);
                         let named =
                             how_a_conversation_reads(&state, &thread_cache, &thread_id, &subject);
                         if nodes.len() < 2 {
@@ -3462,7 +3462,7 @@ impl WxMailApp {
                         );
                         return;
                     };
-                    let nodes = conversation_nodes(&state, &thread_id);
+                    let nodes = conversation_nodes(&state, &message.account_id, &thread_id);
                     if nodes.len() < 2 {
                         open_single_message(
                             &frame,
@@ -13915,8 +13915,13 @@ fn conversation_parts(
 /// Built from what the list already holds rather than from a fresh query: the
 /// tree opens on a keystroke and must not wait on the database, and everything
 /// it needs is already in memory.
-fn conversation_nodes(
+///
+/// `account_id` is the row's own (#92): All Inboxes holds every account's
+/// messages at once, and the same thread id in two accounts is two
+/// conversations (T-01-47), so the tree a row opens is its own account's.
+pub fn conversation_nodes(
     state: &Arc<StdMutex<WxUIState>>,
+    _account_id: &str,
     thread_id: &str,
 ) -> Vec<wx_thread_view::ThreadNode> {
     let s = lock_state(state);
@@ -27929,7 +27934,7 @@ mod tests {
             safety_reasons: Vec::new(),
             receipt_to: None,
             list_unsubscribe: None,
-            account_id: String::new(),
+            account_id: "acc".to_string(),
             labels: Vec::new(),
             says_first: None,
         }
@@ -27946,7 +27951,7 @@ mod tests {
             threaded(2, 2, "2026-07-26 11:00", 1, "t1"),
         ];
 
-        let nodes = conversation_nodes(&state, "t1");
+        let nodes = conversation_nodes(&state, "acc", "t1");
         assert_eq!(
             nodes.iter().map(|n| n.message_id).collect::<Vec<_>>(),
             vec![1, 2, 3]
@@ -27963,7 +27968,7 @@ mod tests {
             threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
             threaded(2, 2, "2026-07-26 11:00", 0, "t2"),
         ];
-        let nodes = conversation_nodes(&state, "t1");
+        let nodes = conversation_nodes(&state, "acc", "t1");
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].message_id, 1);
     }
@@ -27978,7 +27983,7 @@ mod tests {
             threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
             threaded(2, 2, "2026-07-26 11:00", 4, "t1"),
         ];
-        let nodes = conversation_nodes(&state, "t1");
+        let nodes = conversation_nodes(&state, "acc", "t1");
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[1].parent, None);
     }
