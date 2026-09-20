@@ -3891,7 +3891,7 @@ the caveat at the top of this file binds every `[D]` line.
   - [S] The phrase at the start of a row, the sound once after a check with several matches,
     and the labels read as part of the row, are his ear's (ledger 556).
 
-- [ ] **LIST-09**: Pictures a message points at are shown by default except tracking pixels
+- [x] **LIST-09**: Pictures a message points at are shown by default except tracking pixels
   and pictures the sender marked decorative, a linked picture takes the link's words as its
   description, and an undescribed picture is described as nothing unless Settings says image
   or photo.
@@ -3913,17 +3913,28 @@ the caveat at the top of this file binds every `[D]` line.
     width or height of a pixel or less; a beacon and a decorative remote picture are not
     fetched and the message-top sentence counts the pixels; the switch still holds every
     remote picture back when on; a tracker the size of a picture is fetched, said on the
-    privacy page.
+    privacy page. Landed 2026-09-19 by 11-11 at `f497785f`, held by
+    `tests/pictures_show_by_default_except_beacons.rs` (the rules through the real cleaner,
+    the newsletter through the renderer with its beacon counted and its sentence in the
+    document, the switch's path) and the renderer's own `test_a_tracking_pixel_is_not_fetched`
+    rewritten to the shipped default. Amended by 11-11: a decorative remote picture is said
+    or passed over as `announce_decorative_pictures` says, the reader's existing say over the
+    sender's mark, and is counted by neither count (11-11, tasks 1 and 2).
   - [D] A linked picture with no `alt` and some link text takes the text, escaped; a picture
     with no `alt` takes `undescribed_pictures_read_as`'s answer, nothing by default, image or
     photo by choice, on the Reading tab under the two picture boxes with a sentence; a
     sender's description is untouched; the sending path is untouched, held by a case; a
     note's undescribed picture follows the same setting, its test rewritten in place; fixtures
-    through the real cleaner hold each rule.
+    through the real cleaner hold each rule. Landed 2026-09-19 by 11-11 at `f497785f`, held
+    by the same target (the link's words, the three answers pure and through the renderer,
+    the sending path both as a case and as a source reading, the choice read back from the
+    built dialog) and `long_text`'s rewritten image test. Amended by 11-11: under a word the
+    note reader says the word alone where the picture is, not "image, image"
+    (11-11, tasks 1 and 2).
   - [S] A shown picture in the preview, a passed-over undescribed one, the link's words as a
     description and the sentence about tracking pixels are his reader's.
 
-- [ ] **LIST-10**: The privacy page lists every way a reader of mail can be tracked, what
+- [x] **LIST-10**: The privacy page lists every way a reader of mail can be tracked, what
   this program does about each by default, what a person can change, and what it cannot
   protect against, each read from the code.
   - Evidence: `docs/privacy.md:314-330` is the one section, "Pictures a message points at",
@@ -3941,7 +3952,14 @@ the caveat at the top of this file binds every `[D]` line.
     and what this program does about each" lists remote pictures, read receipts, links and
     link checking, meeting invitations, the update check and download, the whole-mailbox
     download and the watch, and what is never sent, each naming the file it was read from or
-    the section it cross-references, the "never" row quoting its grep.
+    the section it cross-references, the "never" row quoting its grep. Landed 2026-09-19 by
+    11-11 at `f497785f`; the "never" paragraph is the census re-taken that day, 38 places in
+    14 files, twelve shipping and each named for what it is for, the two others compiled only
+    into the tests (`common::answering` is a loopback test server, not the meeting-reply
+    sender the plan took it for). Amended by 11-11: the receipts paragraph also says, traced
+    through `opening_pgp::the_body_to_show`, that an opened PGP message is shown as text and
+    so points at no picture the new default would fetch, which is the `rsa` advisory's expiry
+    condition not tripping, and `.cargo/audit.toml` records the same (11-11, task 3).
   - [S] Whether the page is clear to the person it is for is his.
 
 **Added 2026-09-18, later the same day: three more, from three issues filed that day after the
@@ -4657,8 +4675,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
-| LIST-09 | Phase 11 | Pending, 11-11 |
-| LIST-10 | Phase 11 | Pending, 11-11 |
+| LIST-09 | Phase 11 | Complete, 11-11 at `f497785f`; a shown picture, a passed-over one, the link's words and the sentence about tracking pixels are the tester's reader (ledger 558) |
+| LIST-10 | Phase 11 | Complete, 11-11 at `f497785f`; whether the page is clear to the person it is for is his |
 | LIST-11 | Phase 11 | Pending, 11-13 |
 | LIST-12 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether NVDA reads the landed row once after Delete and not again after the re-read is the tester's ear, ledger 541 |
 | LIST-13 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; whether the row is heard once with the tone, and the tone alone with the status bar off, is the tester's ear (ledger 552) |
