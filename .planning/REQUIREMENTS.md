@@ -4718,7 +4718,18 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     per message."; `conversation_nodes` filtering by the row's account and `chosen_messages`
     and `spawn_conversation_text_fetch` reading `read_in`;
     `tests/all_inboxes_keeps_a_view_of_its_own.rs`; four guard records; the pages and the
-    changelog; no version move (11-11.1.3).
+    changelog; no version move (11-11.1.3). Held for the first half at `ae0fa4d2`
+    (2026-09-20): `show_conversations_by_default` with `default_true` absent and in the
+    struct's default, the older-file test and the two guards green; `when_nobody_set_one`
+    and `from_stored(Option<i64>, Showing)` with `Some(0)` flat whatever the setting and an
+    unknown number the setting, six D-09 tests; `what_a_folder_never_set_shows` read once
+    per landing outside the startup block and handed in, the landing reading in the
+    settings target requiring it of every `from_stored` call in the window; the box after
+    Then by captioned and named with the same words, ticked from the file, cleared through
+    the real control and read back through `read_settings`; the sentences dated in
+    `view_state.rs`, `folders.rs`, the guide, the shortcuts page, the first-run screen and
+    the alpha page; four records at 2, 1, 2 and 1 red; the box on this line left, since it
+    covers 11-11.1.3's half too.
   - [S] A folder never set heard as conversations on a fresh profile, All Inboxes threaded
     and its view kept when he comes back to it, and a conversation in two of his accounts
     heard as two rows, are his ear's.
@@ -4846,7 +4857,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
 | LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
 | LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
-| LIST-27 | Phase 11 | Pending, 11-11.1.2 and 11-11.1.3; a folder never set heard as conversations, All Inboxes threaded and its view kept, a two-account conversation as two rows, are his ear's |
+| LIST-27 | Phase 11 | In progress, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages); 11-11.1.3 pending; a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept, a two-account conversation as two rows, are his ear's |
 
 **Coverage:**
 
