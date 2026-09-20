@@ -632,18 +632,57 @@ img {{ max-width: 100%; height: auto; }}
     selection.addRange(range);
   }}
 
-  // Put the caret after what was just inserted rather than inside it, so the
-  // next word is not swallowed by the formatting that was meant to end.
-  function caretAfterInserted() {{
+  // The element the last closing delimiter made, until the next character
+  // is typed into it.
+  //
+  // A caret put after an inline element is put back inside it by the engine,
+  // at the end of its text, because the two positions look the same and it
+  // keeps the earlier one. So the caret was moved after the `<strong>` the
+  // applier made and the next word was bold all the same, and so was every
+  // line after it (#79's side finding: "**bold** next" became
+  // "<strong>bold next</strong>", measured on this engine). Toggling the
+  // style's command off would release bold and italic and nothing releases a
+  // code span that way, so this remembers the element instead and the first
+  // character typed after the close is taken back out of it, below.
+  var justClosed = null;
+
+  function elementJustMade() {{
     var placed = body.querySelector('[data-md]');
     if (!placed) {{ return; }}
     placed.removeAttribute('data-md');
-    var after = document.createRange();
-    after.setStartAfter(placed);
-    after.collapse(true);
-    var selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(after);
+    justClosed = placed;
+  }}
+
+  // The first character typed after a closing delimiter is plain.
+  //
+  // It lands inside the element the close made, or inside the copy the engine
+  // makes of that element for a new line after Enter, which then holds
+  // nothing but the character. Either way the character is selected and
+  // `removeFormat` takes the element off it, the same command Ctrl+Space
+  // runs, so the engine splits the element round it and puts it outside, and
+  // Ctrl+Z still puts things back a step at a time. Measured: `removeFormat`
+  // on a caret does nothing, a caret put in an empty text node after the
+  // element is put back inside, and a code span as an inline block is typed
+  // into all the same; on a selected character it splits every one of these
+  // elements, which is the list it was written for.
+  //
+  // Only the first character, and only at the end of the element: anything
+  // else, a Backspace, a paste, an arrow key and a word, means the person is
+  // writing inside it on purpose.
+  function releaseTheStyle(at, typed) {{
+    var closed = justClosed;
+    justClosed = null;
+    if (!closed || at.offset !== at.node.data.length || at.before.length < typed.length) {{
+      return false;
+    }}
+    var holder = at.node.parentNode;
+    var itsCopy = holder !== closed && holder.nodeType === 1
+      && holder.tagName === closed.tagName && holder.textContent === typed;
+    if (holder !== closed && !itsCopy) {{ return false; }}
+    selectBack(at.node, at.offset - typed.length, at.offset);
+    document.execCommand('removeFormat');
+    window.getSelection().collapseToEnd();
+    return true;
   }}
 
   // ── Recognising, kept apart from applying ──────────────────────────────
@@ -784,7 +823,7 @@ img {{ max-width: 100%; height: auto; }}
     document.execCommand('insertHTML', false,
       '<' + hit.style.tag + ' data-md="1">' + escapeText(hit.content)
       + '</' + hit.style.tag + '>');
-    caretAfterInserted();
+    elementJustMade();
     post({{ kind: 'style', index: hit.style.index }});
   }}
 
@@ -819,9 +858,21 @@ img {{ max-width: 100%; height: auto; }}
   }}
 
   body.addEventListener('input', function (event) {{
-    if (!typingInput(event.inputType) || !event.data) {{ return; }}
+    if (!typingInput(event.inputType) || !event.data) {{
+      // A new line keeps the closed style waiting, since the engine carries
+      // the style onto it; anything else, a deletion, a paste, a command, is
+      // the person working inside what they made.
+      if (event.inputType !== 'insertParagraph' && event.inputType !== 'insertLineBreak') {{
+        justClosed = null;
+      }}
+      return;
+    }}
     var at = caretText();
     if (!at) {{ return; }}
+    if (releaseTheStyle(at, event.data)) {{
+      at = caretText();
+      if (!at) {{ return; }}
+    }}
     // Dictation puts in a finished phrase rather than a character, so there is
     // no delimiter to look at, and the Markdown rules have nothing to match: a
     // marker is typed, and none of these is one character long.
