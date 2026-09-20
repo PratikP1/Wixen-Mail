@@ -211,9 +211,26 @@ pub fn what_was_left_out(words_blocks: usize) -> String {
 /// cleaner's attribute filter because that filter sees one attribute at a
 /// time and a table's answer depends on its `role`.
 pub fn keeps_its_label(tag: &str, role: Option<&str>) -> bool {
-    let _ = (tag, role);
-    true
+    match tag {
+        "a" | "button" => true,
+        "table" => !is_a_layout_claim(role),
+        _ => false,
+    }
 }
+
+/// Whether a `role` attribute is the sender's claim that the element is
+/// layout and not a table to anybody: `presentation`, however it is cased
+/// or spaced.
+///
+/// The one value the cleaner keeps on `table`, `tr`, `td` and `th`, and no
+/// other role on any tag, since a layout table is the only sender's role a
+/// reader is better off hearing; a browser keeps the claim too.
+pub fn is_a_layout_claim(role: Option<&str>) -> bool {
+    role.is_some_and(|claim| claim.trim().eq_ignore_ascii_case(LAYOUT_CLAIM))
+}
+
+/// The `role` value that says a table is layout.
+pub const LAYOUT_CLAIM: &str = "presentation";
 
 /// The markup with what the sender hid taken out, and how many blocks of
 /// words that took.
@@ -232,7 +249,7 @@ pub fn drop_what_the_sender_hid(html: &str) -> (String, usize) {
     // Nothing to drop is the ordinary message, and it goes on as the sender
     // wrote it: a parse costs little and a serialisation would reorder the
     // attributes of every tag for no reader's benefit.
-    if found.to_detach.is_empty() && found.to_rewrite.is_empty() {
+    if found.to_detach.is_empty() && found.to_rewrite.is_empty() && found.to_unlabel.is_empty() {
         return (html.to_string(), 0);
     }
     for id in found.to_detach {
@@ -247,6 +264,15 @@ pub fn drop_what_the_sender_hid(html: &str) -> (String, usize) {
             text.text = StrTendril::from(rewritten);
         }
     }
+    for id in found.to_unlabel {
+        if let Some(mut node) = document.tree.get_mut(id)
+            && let Node::Element(element) = node.value()
+        {
+            element
+                .attrs
+                .retain(|(name, _)| &*name.local != "aria-label");
+        }
+    }
     (document.root_element().inner_html(), found.words_blocks)
 }
 
@@ -256,6 +282,9 @@ pub fn drop_what_the_sender_hid(html: &str) -> (String, usize) {
 struct Findings {
     to_detach: Vec<NodeId>,
     to_rewrite: Vec<(NodeId, String)>,
+    /// Elements whose `aria-label` named a grouping and not a thing, by
+    /// [`keeps_its_label`].
+    to_unlabel: Vec<NodeId>,
     words_blocks: usize,
     /// Whether any text a reader would see has been passed yet, which is
     /// what makes a hidden block before it a preheader.
@@ -275,7 +304,14 @@ impl Findings {
                         continue;
                     }
                     match whether_hidden(tag, element.attr("style"), element.attr("aria-hidden")) {
-                        Hidden::Shown => self.walk(child),
+                        Hidden::Shown => {
+                            if element.attr("aria-label").is_some()
+                                && !keeps_its_label(tag, element.attr("role"))
+                            {
+                                self.to_unlabel.push(child.id());
+                            }
+                            self.walk(child);
+                        }
                         Hidden::ByStyle(_) | Hidden::ByAria => self.drop(child),
                     }
                 }

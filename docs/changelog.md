@@ -299,7 +299,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   are dropped and nothing is said. The same drop runs in the reader that makes a row's snippet
   and reads a message's structure, so a hidden line never reaches a row. The plain-text part
   of a message is never parsed and a message on its way out, the composer's preview and the
-  editor's body, keeps everything its writer hid. Known limitations: a sender who hides one
+  editor's body, keeps everything its writer hid. A layout table is not a table to the
+  reader: the sender's own claim that a table is layout, `role="presentation"`, is kept on
+  the table and its rows and cells, where until now the cleaner dropped every role and NVDA
+  announced a table with rows and columns around each block of the newsletter, forty-eight
+  times; no other role survives. A sender's `aria-label` is kept only where it is a name a
+  reader would use, on a link or a button, or on a table that is not layout, and dropped
+  where it named a grouping laid out for a sighted reader, so the newsletter's "Post header"
+  is no longer announced on the way in and the way out. And the page's own markup says each
+  thing once: the subject as the page's heading, the sender in the message's heading, which
+  is numbered only in a conversation, where until now a single message was headed "1. Message
+  from" with a number that counted nothing; the count of messages is said only for a
+  conversation, as before. Known limitations: a sender who hides one
   copy of a block for small screens and shows another through a stylesheet rule now shows the
   copy the stylesheet hid, since the stylesheet is dropped and only the inline hiding is read;
   nobody has heard the newsletter read once. Measured 2026-09-20: the drop costs a median of

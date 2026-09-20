@@ -248,6 +248,24 @@ fn cleaner() -> &'static ammonia::Builder<'static> {
         schemes.insert("data");
         schemes.insert("cid");
         builder.url_schemes(schemes);
+        // A layout table stays one to the reader (#90): the sender's own
+        // claim that a table is presentation is kept on a table's four tags,
+        // and no other role on any tag, so NVDA announces no table, row or
+        // column around a block laid out in one. A sender's label is kept
+        // only where it is a name a reader would use, a link's or a data
+        // table's; which tables those are is decided before the cleaner, in
+        // `hidden_text::keeps_its_label`, because this filter sees one
+        // attribute at a time and a table's answer depends on its role.
+        for tag in ["table", "tr", "td", "th"] {
+            builder.add_tag_attribute_values(
+                tag,
+                "role",
+                [crate::application::hidden_text::LAYOUT_CLAIM],
+            );
+        }
+        for tag in ["a", "table"] {
+            builder.add_tag_attributes(tag, ["aria-label"]);
+        }
         builder.attribute_filter(|element, attribute, value| {
             let looks_like_an_address = matches!(attribute, "src" | "href" | "background");
             if !looks_like_an_address {
@@ -1008,12 +1026,21 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
                 // The markup has run out of levels, so the depth is spoken.
                 format!("Reply, level {}", part.depth + 1)
             };
+            // Numbered only in a conversation. For one message the number
+            // counted nothing and was the first thing read after the subject
+            // (#90); the heading stays, since a page needs one and the row is
+            // another control.
+            let position = if parts.len() > 1 {
+                format!("{}. ", position + 1)
+            } else {
+                String::new()
+            };
             body.push_str(&format!(
-                "<h{level}>{position}. {role} from {sender}</h{level}>
+                "<h{level}>{position}{role} from {sender}</h{level}>
 <p>{date}</p>
 ",
                 level = level,
-                position = position + 1,
+                position = position,
                 role = html_escape::encode_text(&role),
                 sender = html_escape::encode_text(&part.sender),
                 date = html_escape::encode_text(&part.date),
