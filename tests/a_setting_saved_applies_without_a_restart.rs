@@ -79,9 +79,18 @@ const THE_SETTINGS_SAVED_ARM: (&str, &str) = (
 );
 
 /// The update the Settings-saved arm sends for the wait, and what the arm
-/// builds it from.
+/// builds it from. The second is matched with the whitespace taken out and
+/// ends before the closing bracket, because where rustfmt breaks a call and
+/// whether it leaves a trailing comma are the formatter's choices and not
+/// the code's.
 const THE_MARK_READ_UPDATE: &str = "UIUpdate::MarkReadAfterChanged(";
-const THE_MARK_READ_SETTING: &str = "MarkRead::from_setting(&new_config.mark_read_after)";
+const THE_MARK_READ_SETTING: &str = "MarkRead::from_setting(&new_config.mark_read_after";
+
+/// The text with every run of whitespace removed, so a call reads the same
+/// however the formatter broke it.
+fn without_whitespace(text: &str) -> String {
+    text.split_whitespace().collect()
+}
 
 /// The write into state the startup block makes, so the field holds the
 /// stored answer from the first tick.
@@ -135,7 +144,7 @@ fn saving_settings_sends_the_wait(app: &str) -> Result<(), String> {
                 .to_string(),
         );
     };
-    if !arm.contains(THE_MARK_READ_SETTING) {
+    if !without_whitespace(arm).contains(THE_MARK_READ_SETTING) {
         return Err(
             "the Settings-saved arm sends MarkReadAfterChanged from something other than the \
              saved mark_read_after, read through MarkRead::from_setting"

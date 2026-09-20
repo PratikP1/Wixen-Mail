@@ -610,6 +610,14 @@ pub enum UIUpdate {
     /// Settings. Carried the same way as the working day and for the same
     /// reason: the due window's look reads it from shared state.
     DefaultEventAlertLeadChanged(i64),
+    /// The wait before a message read aloud or opened is marked read was
+    /// saved in Settings (#91, 2026-09-20).
+    ///
+    /// Carried the same way as the working day: the main timer reads the
+    /// wait from shared state on every tick, so a save that only wrote the
+    /// file left the timer with the wait it started with, and the setting
+    /// appeared not to work until the program was started again.
+    MarkReadAfterChanged(crate::application::reading_habits::MarkRead),
     /// Calendar sync completed
     CalendarSyncComplete {
         created: usize,

@@ -366,7 +366,11 @@ on. Move off it before the delay runs and it stays unread. Choose Only when I
 say so and nothing is ever marked on its own; marking by hand still works as
 it did. Until 2026-09-18 the delay was counted from the moment a row was
 selected, so listening to a row was enough to mark it, and from the build of
-2026-09-18 until this one the first `Space` counted too.
+2026-09-18 until this one the first `Space` counted too. Changing the delay
+applies as soon as you save Settings: the next message you read is marked after
+the new wait, with no restart. Until 2026-09-20 the delay was read once when
+the program started, so a change made in Settings did nothing until the next
+start.
 
 ### Choosing columns, and what is remembered
 

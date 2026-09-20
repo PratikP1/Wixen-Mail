@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 213 records have arrived since and have not been through it.
+# 215 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25847,7 +25847,9 @@ tests_last_seen = [
 # and stays green.
 #
 # Measured 2026-09-18 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. The break rewritten
+# 2026-09-20 (11-11.1.1, #91) when the wait became the state's rather than
+# a parameter, and measured again the same day.
 [[guard]]
 name = "the timer asks whether to mark what was read, not marks the selected one itself"
 file = "src/presentation/wx_app.rs"
@@ -25856,12 +25858,11 @@ before = """        let Some(row) = crate::application::reading_habits::whether_
             s.reading_began,
             selected_unread,
             std::time::Instant::now(),
-            marks_read,
+            s.marks_read,
         ) else {
             return;
         };"""
-after = """        let _ = marks_read;
-        let Some(row) = selected_unread else {
+after = """        let Some(row) = selected_unread else {
             return;
         };"""
 red = [
@@ -28113,4 +28114,56 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 20 },
+]
+
+# ── A setting saved in Settings applies without a restart (#91, 11-11.1.1) ──
+#
+# The wait before a message read aloud or opened is marked read lives in the
+# window's state, written where the window is built and by the
+# MarkReadAfterChanged arm, and the main timer reads it from there. Until
+# 2026-09-20 the timer's closure captured a value read once at startup, so
+# the setting did nothing however the tester set it until the next start.
+# The first break makes the arm write nothing: a save sends the update and
+# the timer goes on asking with the old wait. The target's arm reading goes
+# red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a wait saved in settings reaches the timer, because its arm writes the state"
+file = "src/presentation/wx_app.rs"
+suite = "a_setting_saved_applies_without_a_restart"
+before = """        UIUpdate::MarkReadAfterChanged(wait) => {
+            lock_state(state).marks_read = *wait;"""
+after = """        UIUpdate::MarkReadAfterChanged(wait) => {
+            let _ = wait;"""
+red = [
+    "test_the_update_writes_the_wait_into_the_state",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 9 },
+]
+
+# The second break puts the capture back: the startup block binds the wait
+# into a local instead of writing it into the state, which is the line #91
+# met, and the timer reads the state's default from then on. The target's
+# no-capture reading goes red on the local.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the wait is written into the state where the window is built, not bound into a local a closure captures"
+file = "src/presentation/wx_app.rs"
+suite = "a_setting_saved_applies_without_a_restart"
+before = """            lock_state(&state).marks_read = stored_config
+                .as_ref()"""
+after = """            let _marks_read = stored_config
+                .as_ref()"""
+red = [
+    "test_nothing_captures_the_wait_where_the_window_is_built",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 9 },
 ]

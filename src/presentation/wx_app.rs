@@ -510,6 +510,17 @@ pub struct WxUIState {
     /// In state rather than captured by the paint callback, so saving new
     /// hours in Settings changes what the rows say without a restart.
     pub working_day: crate::application::reading_habits::WorkingDay,
+    /// How long after reading began a message is marked read: the Mark as
+    /// read after setting.
+    ///
+    /// In state for the reason the working day is. Until 2026-09-20 (#91)
+    /// the main timer's closure captured a value read once where the window
+    /// was built, so the wait chosen in Settings governed the next start and
+    /// never the next tick, and the tester found the setting did nothing
+    /// however he set it. Written where the window is built and by the
+    /// [`UIUpdate::MarkReadAfterChanged`] arm; read by the timer's
+    /// `mark_what_was_read`.
+    pub marks_read: crate::application::reading_habits::MarkRead,
     /// How many minutes before an event the due window raises it when its
     /// stored alerts say nothing: `default_reminder_minutes` in Settings.
     ///
@@ -659,6 +670,7 @@ impl Default for WxUIState {
             calendars: Vec::new(),
             selected_note_id: None,
             working_day: crate::application::reading_habits::WorkingDay::default(),
+            marks_read: crate::application::reading_habits::MarkRead::default(),
             default_event_alert_lead: i64::from(
                 crate::data::config::AppConfig::default().default_reminder_minutes,
             ),
@@ -1291,7 +1303,12 @@ impl WxMailApp {
                     CalendarView::from_stored(&cfg.calendar_view)
                 });
             lock_state(&state).calendar_showing = CalendarShowing::now(opens_on);
-            let marks_read = stored_config
+            // How long after reading a message is marked read. Into state
+            // rather than into a local the timer's closure captures: that
+            // local is what made the setting do nothing until the next
+            // start (#91, 2026-09-20), and the Settings-saved arm writes the
+            // same field.
+            lock_state(&state).marks_read = stored_config
                 .as_ref()
                 .map(|cfg| {
                     crate::application::reading_habits::MarkRead::from_setting(&cfg.mark_read_after)
@@ -6031,7 +6048,7 @@ impl WxMailApp {
                         tx: &ui_tx,
                         rt: &runtime,
                     };
-                    mark_what_was_read(app, marks_read);
+                    mark_what_was_read(app);
 
                     // Whether this computer still has a network. On this timer
                     // and on its own interval, for the same reason the
@@ -10819,10 +10836,13 @@ fn refresh_mark_read_wording(
 /// The write is the one it always was: the row in state, the list told, the
 /// server told. Nothing is announced, because this is not something somebody
 /// did, and the count in the folder tree is where it shows.
-fn mark_what_was_read(
-    app: AppHandles<'_>,
-    marks_read: crate::application::reading_habits::MarkRead,
-) {
+///
+/// The wait is the state's, read under the lock this already takes, and not
+/// a parameter: a parameter is handed a value the caller read once, and
+/// until 2026-09-20 (#91) that value was captured where the window was
+/// built, so a wait changed in Settings governed the next start and never
+/// the next tick.
+fn mark_what_was_read(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
 
     let marked = {
@@ -10836,7 +10856,7 @@ fn mark_what_was_read(
             s.reading_began,
             selected_unread,
             std::time::Instant::now(),
-            marks_read,
+            s.marks_read,
         ) else {
             return;
         };
@@ -18304,6 +18324,14 @@ fn handle_settings(
             // in Settings that the calendar only takes up after a restart is a
             // setting that appears not to work.
             let opens_on = CalendarView::from_stored(&new_config.calendar_view);
+            // The wait before a message read aloud or opened is marked read.
+            // Sent to the window like the working day, because the main
+            // timer reads it from the state; until 2026-09-20 (#91) it was
+            // captured once at startup, and the tester found the setting did
+            // nothing however he set it.
+            let wait = crate::application::reading_habits::MarkRead::from_setting(
+                &new_config.mark_read_after,
+            );
             // Read before `new_config` moves into storage below, and kept
             // regardless of whether the save that follows succeeds: a save
             // failure is already reported through `send_status`, and should
@@ -18320,6 +18348,7 @@ fn handle_settings(
                     mgr.app_config().default_reminder_minutes,
                 )));
                 let _ = tx.try_send(UIUpdate::CalendarViewChanged(opens_on));
+                let _ = tx.try_send(UIUpdate::MarkReadAfterChanged(wait));
                 send_status(tx, rt, "Settings saved");
                 // The two levels a report reads the rest of the log by, and
                 // nothing else from the settings (#71): a person's choices
@@ -19494,6 +19523,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::DefaultEventAlertLeadChanged(minutes) => {
             lock_state(state).default_event_alert_lead = *minutes;
+        }
+        // Nothing announced and nothing repainted: the next tick of the main
+        // timer reads the new wait, and "Settings saved" was said already.
+        UIUpdate::MarkReadAfterChanged(wait) => {
+            lock_state(state).marks_read = *wait;
         }
         UIUpdate::CalendarViewChanged(view) => {
             // The day is kept, not reset to today. Somebody who was looking at
