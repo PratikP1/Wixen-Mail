@@ -4650,7 +4650,7 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     the orchestrator's instruction, 11-12 still reads it.
   - [S] The delay changed in Settings and a message marked after the new wait, without a
     restart, is his ear's.
-- [ ] **LIST-27**: Thread View is on by default, as a setting, and All Inboxes has a view of
+- [x] **LIST-27**: Thread View is on by default, as a setting, and All Inboxes has a view of
   its own. A folder nobody has set shows one row per conversation because Show conversations
   by default, on the Reading tab and on unless turned off, answers a folder never set, read
   where the folder opens; a folder's own choice still wins and a stored nought still means
@@ -4728,8 +4728,24 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     Then by captioned and named with the same words, ticked from the file, cleared through
     the real control and read back through `read_settings`; the sentences dated in
     `view_state.rs`, `folders.rs`, the guide, the shortcuts page, the first-run screen and
-    the alpha page; four records at 2, 1, 2 and 1 red; the box on this line left, since it
-    covers 11-11.1.3's half too.
+    the alpha page; four records at 2, 1, 2 and 1 red. Held for the second half at
+    `1e39650a` (2026-09-20): `ReadIn` and `ConversationItem::read_in` at the six literal
+    sites the compiler named; `conversations_in_every_inbox(reach, order)` over
+    `every_inbox_scope()`, the one-folder scope's text with four parts replaced, grouped by
+    account and thread id, the two-rows test asserting each row's account, folder, count
+    and row message, and the three correlations in `message_columns.rs` keyed by the
+    account too; `the_identity_whose_view_is_kept()` answering All Inboxes by its own row
+    identity, `the_view_kept_under()` the one `from_stored` call handing the setting in,
+    `settle_the_view_on_arrival()` the one place a landing sets the view and syncs the
+    check mark, used by the folder landing, the All Inboxes arm, the Label arm and the
+    `SavedSearchRan` arm; `load_every_inbox` loading conversations when shown and
+    `switch_the_view` loading them on All Inboxes, storing under `all-inboxes`; the
+    sentence naming All Inboxes; `chosen_messages`, `spawn_conversation_text_fetch`,
+    `conversation_nodes`, `count_a_conversation` and `select_the_conversations_holding_it`
+    reading the row's own account, the last found on the branch;
+    `tests/all_inboxes_keeps_a_view_of_its_own.rs` at 11; six records at 1, 1, 1, 1, 2 and
+    1 red; the pages and the changelog; the version at `1.0.0-alpha.1`; the box ticked on
+    the orchestrator's word, 11-12 still reading it.
   - [S] A folder never set heard as conversations on a fresh profile, All Inboxes threaded
     and its view kept when he comes back to it, and a conversation in two of his accounts
     heard as two rows, are his ear's.
@@ -4857,7 +4873,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
 | LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
 | LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
-| LIST-27 | Phase 11 | In progress, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages); 11-11.1.3 pending; a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept, a two-account conversation as two rows, are his ear's |
+| LIST-27 | Phase 11 | Complete, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages) and 11-11.1.3 at `1e39650a` (All Inboxes' own view, the every-inbox listing, the row's own account, the sentence, the pages); a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept and a two-account conversation as two rows (ledger 563), are his ear's |
 
 **Coverage:**
 
