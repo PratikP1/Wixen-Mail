@@ -185,15 +185,114 @@ const WHICH_MESSAGE_THIS_ROW_IS: &str = "CASE
 /// this: an index is searched from its leftmost column and theirs begin with
 /// `folder_id`, which [`unified_inbox_query`] already explains for a query of
 /// the same shape.
+///
+/// # The account on every row, since 2026-09-20 (#92)
+///
+/// `here` carries `account_id` and `read_in_folder`, and `elsewhere` keys a
+/// copy by its account as well as its message. Neither changes what one
+/// folder's listing answers, since every row of one scope is one account's;
+/// both are what lets [`every_inbox_scope`] hold two accounts in one `here`
+/// without a row of one account standing in for a conversation of the
+/// other. The text is [`the_scope_over`]'s, with this scope's four parts.
 pub(super) fn conversation_scope() -> String {
+    the_scope_over(&ONE_FOLDER)
+}
+
+/// The same scope over every account's inbox at once, for All Inboxes shown
+/// as conversations (#92, 2026-09-20).
+///
+/// One text with [`conversation_scope`], through [`the_scope_over`], with
+/// four parts replaced: the inboxes named first, `reach` being every inbox
+/// or, when `?1` is 1, every folder of every account that has one, so D-08's
+/// reach is applied per account as one folder's is; the folder a row was
+/// read in being its account's inbox; and the conversations listed being
+/// those an account's inbox touches, per account, so an account whose inbox
+/// holds none of a conversation contributes no row for it whatever its
+/// other folders hold.
+///
+/// `?1` alone: there is no folder being stood in and no one account.
+pub(super) fn every_inbox_scope() -> String {
+    the_scope_over(&EVERY_INBOX)
+}
+
+/// What one folder's scope and the every-inbox scope do not share.
+///
+/// Four holes in one text rather than two texts, for the reason the scope
+/// is a function at all: the part that decides which messages exist is
+/// written once, and a listing of every inbox cannot come to count a
+/// conversation differently from the folder's own listing of it.
+struct AScope {
+    /// A table the scope wants before `reach`, with its trailing comma, or
+    /// nothing.
+    before_reach: &'static str,
+    /// The `WHERE` of `reach`: which folders count.
+    reached: &'static str,
+    /// The folder a row of `here` says it was read in, as an expression
+    /// over `mf`, the row's folder.
+    read_in_folder: &'static str,
+    /// Which conversations are listed: a predicate over `m` and `mf` that
+    /// holds when the row's conversation touches the folder stood in.
+    ///
+    /// Its subquery must name nothing of `m` or `mf`, so SQLite runs it
+    /// once and keeps the set: a first draft correlated the every-inbox
+    /// one on the row's account and rescanned the messages per row, which
+    /// on 16,000 rows over two accounts took 198 s against 27 ms for the
+    /// message listing, measured 2026-09-20 on a release build.
+    listed: &'static str,
+}
+
+/// One folder: `?1` the account, `?2` the folder, `?3` whether the reach is
+/// the whole account.
+const ONE_FOLDER: AScope = AScope {
+    before_reach: "",
+    reached: "account_id = ?1 AND (?3 = 1 OR id = ?2)",
+    read_in_folder: "?2",
+    listed: "m.thread_id IN (
+                   SELECT thread_id FROM messages
+                   WHERE folder_id = ?2 AND deleted = 0
+                     AND thread_id IS NOT NULL AND thread_id <> ''
+               )",
+};
+
+/// Every inbox: `?1` whether the reach is the whole account, applied per
+/// account.
+///
+/// `MIN(id)` because an account has one inbox, and a database that somehow
+/// typed two would otherwise hand a row two folders; the lower id is the
+/// one the sync wrote first. The conversations listed are keyed by account
+/// and conversation as one string, the way `elsewhere` keys a copy, so the
+/// membership is one set built once.
+const EVERY_INBOX: AScope = AScope {
+    before_reach: "inboxes AS (
+             SELECT id, account_id FROM folders WHERE folder_type = 'Inbox'
+         ),",
+    reached: "(?1 = 1 AND account_id IN (SELECT account_id FROM inboxes))
+               OR id IN (SELECT id FROM inboxes)",
+    read_in_folder: "(SELECT MIN(i.id) FROM inboxes i WHERE i.account_id = mf.account_id)",
+    listed: "mf.account_id || ':' || m.thread_id IN (
+                   SELECT ib.account_id || ':' || i.thread_id FROM messages i
+                   INNER JOIN inboxes ib ON i.folder_id = ib.id
+                   WHERE i.deleted = 0
+                     AND i.thread_id IS NOT NULL AND i.thread_id <> ''
+               )",
+};
+
+/// The scope's text, with one scope's four parts in it.
+fn the_scope_over(scope: &AScope) -> String {
+    let AScope {
+        before_reach,
+        reached,
+        read_in_folder,
+        listed,
+    } = scope;
     format!(
-        "WITH reach AS (
+        "WITH {before_reach}
+         reach AS (
              SELECT id FROM folders
-             WHERE account_id = ?1
-               AND (?3 = 1 OR id = ?2)
+             WHERE {reached}
          ),
          elsewhere AS (
-             SELECT DISTINCT {WHICH_MESSAGE_THIS_ROW_IS} AS message
+             SELECT DISTINCT f.account_id || ':' || {WHICH_MESSAGE_THIS_ROW_IS} AS message
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE m.folder_id IN (SELECT id FROM reach)
@@ -201,7 +300,8 @@ pub(super) fn conversation_scope() -> String {
                AND f.holds_all_mail = 0
          ),
          here AS (
-             SELECT m.thread_id, m.id, m.uid, m.subject, m.snippet, m.read, m.starred,
+             SELECT mf.account_id, {read_in_folder} AS read_in_folder,
+                    m.thread_id, m.id, m.uid, m.subject, m.snippet, m.read, m.starred,
                     m.answered, m.draft, m.has_attachments, m.safety,
                     m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date, m.says_first,
                     COALESCE(m.internaldate, m.date) AS received_at
@@ -210,14 +310,10 @@ pub(super) fn conversation_scope() -> String {
              WHERE m.folder_id IN (SELECT id FROM reach)
                AND m.deleted = 0
                AND (mf.holds_all_mail = 0
-                    OR {WHICH_MESSAGE_THIS_ROW_IS}
+                    OR mf.account_id || ':' || {WHICH_MESSAGE_THIS_ROW_IS}
                        NOT IN (SELECT message FROM elsewhere))
                AND m.thread_id IS NOT NULL AND m.thread_id <> ''
-               AND m.thread_id IN (
-                   SELECT thread_id FROM messages
-                   WHERE folder_id = ?2 AND deleted = 0
-                     AND thread_id IS NOT NULL AND thread_id <> ''
-               )
+               AND {listed}
          )"
     )
 }
@@ -275,7 +371,47 @@ pub(super) fn messages_in_one_conversation() -> String {
 /// once each, one per line. Both are the column enum's own expressions, so
 /// the rule above holds for them: what the cell shows is what the sort
 /// orders by.
+///
+/// # Where the row was read (#92)
+///
+/// Two more after those, since 2026-09-20: the account and the folder the
+/// row was read in, from `here`, which the scope fills. The text is
+/// [`a_conversation_listing`]'s over [`conversation_scope`], grouped by
+/// conversation; [`conversations_in_every_inbox_query`] is the same text
+/// over [`every_inbox_scope`], grouped by account and conversation.
 pub(super) fn conversations_query(order: &str) -> String {
+    a_conversation_listing(
+        conversation_scope(),
+        "m.thread_id",
+        order,
+        "m.thread_id ASC",
+    )
+}
+
+/// The query All Inboxes runs when it shows conversations (#92).
+///
+/// [`conversations_query`]'s text over [`every_inbox_scope`], grouped by
+/// account and conversation: a conversation is an account's, so the same
+/// identifier in two inboxes is two rows, each counting its own account's
+/// messages (T-01-47, one list wider). Ordered as the folder's listing is,
+/// then by account and conversation, so two rows the sort cannot tell apart
+/// come in one order every time.
+pub(super) fn conversations_in_every_inbox_query(order: &str) -> String {
+    a_conversation_listing(
+        every_inbox_scope(),
+        "m.account_id, m.thread_id",
+        order,
+        "m.account_id ASC, m.thread_id ASC",
+    )
+}
+
+/// The column list every conversation listing selects, once, over a scope.
+///
+/// `grouped_by` is what a row is, and `then_by` the tie-break after
+/// `order`, both fixed strings chosen here and never anything a person
+/// typed, which is what makes interpolating them safe. The two callers say
+/// which scope and which grouping; nothing else about a listing differs.
+fn a_conversation_listing(scope: String, grouped_by: &str, order: &str, then_by: &str) -> String {
     use crate::presentation::message_columns::{EVERYONE_WHO_SENT, MessageColumn};
 
     format!(
@@ -300,11 +436,12 @@ pub(super) fn conversations_query(order: &str) -> String {
                 {stands_for_uid},
                 {correspondent},
                 {says_first},
-                {labels}
+                {labels},
+                m.account_id,
+                m.read_in_folder
          FROM here m
-         GROUP BY m.thread_id
-         ORDER BY {order}, m.thread_id ASC",
-        scope = conversation_scope(),
+         GROUP BY {grouped_by}
+         ORDER BY {order}, {then_by}",
         senders = EVERYONE_WHO_SENT,
         stands_for = MessageColumn::conversation_stands_for_expression(),
         stands_for_uid = MessageColumn::conversation_stands_for_uid_expression(),
@@ -338,9 +475,12 @@ pub(super) fn conversations_query(order: &str) -> String {
 pub(super) fn conversation_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationItem> {
     Ok(ConversationItem {
         thread_id: row.get(0)?,
+        // Never null either: every row of `here` has a folder, and the scope
+        // names the folder the row was read in. Read as what they are, for
+        // the reason `stands_for` gives.
         read_in: crate::application::conversations::ReadIn {
-            account_id: String::new(),
-            folder_id: 0,
+            account_id: row.get(21)?,
+            folder_id: row.get(22)?,
         },
         subject: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
         messages: row.get(2)?,
@@ -2391,13 +2531,44 @@ impl MessageCache {
     }
 
     /// List every account's inbox as conversations, one row per account and
-    /// conversation (#92).
+    /// conversation (#92, 2026-09-20).
+    ///
+    /// What All Inboxes shows under Thread View. A conversation is an
+    /// account's, so a conversation whose messages sit in two accounts is
+    /// two rows here, each counting its own account's messages under `reach`
+    /// applied to that account, and each saying whose it is and where it was
+    /// read, so an act on the row reaches its own account and never the one
+    /// that happens to be open (T-01-47's rule, one list wider).
+    ///
+    /// `order_by` must come from `Sort::conversation_order_by_clause`, as
+    /// [`Self::conversations_in`]'s must, and `None` is newest first. What it
+    /// costs beside [`Self::unified_inbox`] on a two-account cache is in
+    /// 11-11.1.3's summary.
     pub fn conversations_in_every_inbox(
         &self,
-        _reach: AConversationReaches,
-        _order_by: Option<&str>,
+        reach: AConversationReaches,
+        order_by: Option<&str>,
     ) -> Result<Vec<ConversationItem>> {
-        Ok(Vec::new())
+        let order = order_by.unwrap_or(NEWEST_CONVERSATION_FIRST);
+        let query = conversations_in_every_inbox_query(order);
+        let mut stmt = self.conn.prepare_cached(&query).map_err(|e| {
+            Error::Other(format!(
+                "Failed to prepare the conversations of every inbox: {e}"
+            ))
+        })?;
+
+        let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
+        let rows = stmt
+            .query_map(params![i64::from(counts_the_account)], conversation_row)
+            .map_err(|e| Error::Other(format!("Failed to list every inbox's conversations: {e}")))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to collect every inbox's conversations: {e}"
+                ))
+            })?;
+
+        Ok(rows)
     }
 
     /// Every message of one conversation, under the same reach its row counts.
@@ -6940,22 +7111,25 @@ mod tests {
         let cache = fresh("every_inbox_two_accounts");
         let work = inbox_of(&cache, "acc");
         let home = inbox_of(&cache, "other");
-        for (uid, folder_id) in [(1, work), (2, work), (3, home)] {
-            cache
-                .upsert_message(&in_conversation(
-                    folder_id,
-                    uid,
-                    "Quarterly report",
-                    "root@example.com",
-                    1,
-                ))
-                .unwrap();
-        }
+        let ids: Vec<i64> = [(1, work), (2, work), (3, home)]
+            .into_iter()
+            .map(|(uid, folder_id)| {
+                cache
+                    .upsert_message(&in_conversation(
+                        folder_id,
+                        uid,
+                        "Quarterly report",
+                        "root@example.com",
+                        1,
+                    ))
+                    .unwrap()
+            })
+            .collect();
 
         let rows = cache
             .conversations_in_every_inbox(TheWholeAccount, None)
             .unwrap();
-        let read_in: Vec<(&str, i64, i64)> = rows
+        let read_in: Vec<(&str, i64, i64, i64)> = rows
             .iter()
             .filter(|row| row.thread_id == "root@example.com")
             .map(|row| {
@@ -6963,13 +7137,19 @@ mod tests {
                     row.read_in.account_id.as_str(),
                     row.read_in.folder_id,
                     row.messages,
+                    row.stands_for.id,
                 )
             })
             .collect();
+        // Each row stands for its own account's originator, never the
+        // other's: the row message is chosen among the rows of one account
+        // (T-11-113), where a choice over the whole `here` would hand the
+        // second account the first account's message to preview and open.
         assert_eq!(
             read_in,
-            vec![("acc", work, 2), ("other", home, 1)],
-            "one row per account, each counting its own and saying where it was read: {rows:#?}"
+            vec![("acc", work, 2, ids[0]), ("other", home, 1, ids[2])],
+            "one row per account, each counting its own, saying where it was read and \
+             standing for its own message: {rows:#?}"
         );
     }
 
@@ -8336,9 +8516,10 @@ mod a_listing_reads_no_message_text {
             super::listing_query(newest_first, " LIMIT 50"),
             super::conversations_query(super::NEWEST_CONVERSATION_FIRST),
             // All Inboxes, which is a folder listing that names no folder,
-            // bounded and whole.
+            // bounded and whole, and its conversations (#92).
             super::unified_inbox_query(newest_first, Some(100)),
             super::unified_inbox_query(newest_first, None),
+            super::conversations_in_every_inbox_query(super::NEWEST_CONVERSATION_FIRST),
             super::super::tags::label_listing_query(newest_first, None),
             super::super::saved_searches::results_query("1,2", newest_first),
         ];
@@ -8349,6 +8530,9 @@ mod a_listing_reads_no_message_text {
             queries.push(super::listing_query(&clause, " LIMIT 50"));
             queries.push(super::listing_query(&clause, ""));
             queries.push(super::conversations_query(
+                &order.conversation_order_by_clause(),
+            ));
+            queries.push(super::conversations_in_every_inbox_query(
                 &order.conversation_order_by_clause(),
             ));
             // The three listings that take the chosen sort since 10-02.1, so
