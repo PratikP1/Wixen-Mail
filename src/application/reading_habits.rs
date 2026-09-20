@@ -143,6 +143,23 @@ pub const WHAT_MARK_READ_COUNTS_FROM: &str = "Counted from when you read the who
      with Space twice or Shift+Space, or open it; never from the first Space or from moving \
      onto it.";
 
+/// The sentence under a setting that cannot follow a save: the log level,
+/// which is set up once when the program starts and has no way to be
+/// changed while it runs.
+///
+/// Every other setting applies the moment Settings is saved, and since
+/// 2026-09-20 (#91) a reading holds that: a setting read once at startup
+/// either follows a save or carries this sentence on its control, so a
+/// person changing it is told rather than left to find out.
+pub const TAKES_EFFECT_AT_THE_NEXT_START: &str = "Takes effect the next time Wixen Mail starts.";
+
+/// The sentence under the default sort order, which applies at the next
+/// start and only where no layout was saved: a folder whose columns were
+/// arranged with `F8` keeps the sort that arrangement carries, which is the
+/// more recent answer.
+pub const WHERE_THE_DEFAULT_SORT_ORDER_APPLIES: &str = "Takes effect the next time Wixen Mail \
+     starts, and only in folders whose columns you have not arranged.";
+
 /// Whether the message somebody began reading is to be marked read now.
 ///
 /// The clock starts when the whole message is read aloud from the list or
