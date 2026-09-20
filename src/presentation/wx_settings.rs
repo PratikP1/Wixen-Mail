@@ -1488,6 +1488,9 @@ pub struct ReadingTabControls {
     pub undescribed_pictures_read_as: Choice,
     read_receipts: Choice,
     read_messages_as: Choice,
+    /// Public because a test builds this dialog and reads the choice back
+    /// through `read_settings` the way OK does (#80).
+    pub open_links_in: Choice,
     date_style: Choice,
     date_order: Choice,
     date_wording: Choice,
@@ -1838,6 +1841,17 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     style_row.add(&style_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     read_sec.add_sizer(&style_row, 0, SizerFlag::Expand, 0);
 
+    // Where a link opens (#80), right after how a message opens, because it
+    // is the next thing that happens when somebody reads one.
+    let open_links_in = labelled_choice(
+        panel,
+        &read_sec,
+        crate::application::opening_links::SETTING_LABEL,
+        crate::application::opening_links::SETTING_NAME,
+        &[],
+        0,
+    );
+
     // Read receipts. On the Reading tab because it is a thing that happens
     // when you open a message, which is where somebody would look for it.
     let receipt_row = BoxSizer::builder(Orientation::Horizontal).build();
@@ -2036,6 +2050,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         sort_order: sort_choice,
         read_receipts: receipt_choice,
         read_messages_as: style_choice,
+        open_links_in,
         date_style,
         date_order,
         date_wording,

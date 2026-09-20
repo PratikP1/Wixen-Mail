@@ -16707,6 +16707,32 @@ fn open_for_scanning(
             std::mem::forget(reader);
             OnReturn::WindowStillUp
         }
+        ScanTarget::Page => {
+            // The formatted message window, the default way a message opens
+            // and the surface the tester met #80 on. A frame of its own, so
+            // it does not block, opened on a made-up conversation: a message
+            // written as a page with a link in it, and a reply written as
+            // text with an address on a line of its own, which the renderer
+            // makes a link (#89). The NVDA case presses Enter on each.
+            let reader = Rc::new(wx_reader::ReaderWindow::new(frame, a11y));
+            reader.wire_menu();
+            let parts: Vec<reader_text::ConversationPart> = scan_fixtures::page_conversation()
+                .into_iter()
+                .enumerate()
+                .map(|(depth, (message, body))| {
+                    let shown = what_a_message_shows_and_says(&None, &message, body);
+                    reader_text::ConversationPart {
+                        message,
+                        body: shown.body,
+                        said: shown.said,
+                        depth,
+                    }
+                })
+                .collect();
+            show_conversation_as_page(frame, &reader, a11y, "Scan target", &parts, None);
+            std::mem::forget(reader);
+            OnReturn::WindowStillUp
+        }
         ScanTarget::Search => {
             // With a folder open, so the "In" list is offered with every one of
             // its answers on it and the scan meets the box somebody using mail

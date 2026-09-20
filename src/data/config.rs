@@ -400,6 +400,16 @@ pub struct AppConfig {
     /// failing to parse, and the default here keeps what the sender wrote.
     #[serde(default)]
     pub read_messages_as: String,
+    /// Where a link in a message opens: the default browser, the message
+    /// view, or a separate Wixen Mail window (#80).
+    ///
+    /// Stored as a word, as `read_messages_as` is, and read by
+    /// `crate::application::opening_links::Where::from_stored`, which answers
+    /// the browser for anything it does not know: a page opened inside the
+    /// program shares the preview's browser profile, and a settings file
+    /// from a later version should not quietly choose that.
+    #[serde(default)]
+    pub open_links_in: String,
     /// Whether the person has been shown what this alpha can and cannot do.
     ///
     /// False on a fresh installation and on an upgrade from before this
@@ -779,6 +789,9 @@ impl Default for AppConfig {
                 .to_string(),
             read_messages_as: crate::application::reading_style::Style::Formatted
                 .as_str()
+                .to_string(),
+            open_links_in: crate::application::opening_links::Where::DefaultBrowser
+                .stored()
                 .to_string(),
             told_about_the_alpha: false,
             check_spelling_as_you_type: default_true(),
@@ -1738,6 +1751,7 @@ mod permission_tests {
             "message_text_kept",
             "announce_while_fetching",
             "feedback_channels",
+            "open_links_in",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1849,6 +1863,18 @@ mod permission_tests {
                 &parsed.announce_while_fetching
             ),
             crate::application::what_is_said_while_fetching::HowMuchToSay::WhatArrived
+        );
+        // An absent key opens links in the browser (#80, 2026-09-20): a page
+        // opened inside the program shares the preview's browser profile,
+        // which is a choice somebody makes and never one an upgrade makes.
+        assert_eq!(
+            parsed.open_links_in, "browser",
+            "an absent key answering anything but the browser would open a \
+             stranger's page beside the sanitised mail for everybody upgrading"
+        );
+        assert_eq!(
+            crate::application::opening_links::Where::from_stored(&parsed.open_links_in),
+            crate::application::opening_links::Where::DefaultBrowser
         );
 
         // These belong to the module that owns the setting. What matters here
