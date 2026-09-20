@@ -4594,7 +4594,7 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     `html_renderer.rs` or `long_text.rs`.
   - [S] That the newsletter now reads once, with no table and no grouping announced, is his
     ear's.
-- [ ] **LIST-26**: A setting saved in Settings applies without a restart. Mark as read after
+- [x] **LIST-26**: A setting saved in Settings applies without a restart. Mark as read after
   governs the next tick the moment it is saved, because the setting lives in the window's
   state, written at startup and by the Settings-saved arm through an update, and the timer
   reads the state; the date settings follow a save the same way; every setting the startup
@@ -4641,7 +4641,13 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     and the audit that every `stored_config` binding in the startup block is in an allowlist
     with a disposition; the two sentences read back from the built page; four guard records;
     the guide and the changelog naming the build and the regression's shape; no version
-    move (11-11.1.1).
+    move (11-11.1.1). Held at `051c3529` (2026-09-20): the target's twenty tests and the
+    readback in `the_settings_dialog_opens_in.rs`, six records new and three re-measured,
+    the audit reading eleven settings from the block (the captured local was held at ten
+    sites, not the three the plan named, the contact details and the due window's look
+    among them), the layout's disposition the window's own rather than the plan's
+    "offered by no control", since Then by writes its second level; ticked on this line by
+    the orchestrator's instruction, 11-12 still reads it.
   - [S] The delay changed in Settings and a message marked after the new wait, without a
     restart, is his ear's.
 - [ ] **LIST-27**: Thread View is on by default, as a setting, and All Inboxes has a view of
@@ -4839,7 +4845,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
 | LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
-| LIST-26 | Phase 11 | Pending, 11-11.1.1; the delay changed in Settings and a message marked after the new wait without a restart is his ear's |
+| LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
 | LIST-27 | Phase 11 | Pending, 11-11.1.2 and 11-11.1.3; a folder never set heard as conversations, All Inboxes threaded and its view kept, a two-account conversation as two rows, are his ear's |
 
 **Coverage:**
