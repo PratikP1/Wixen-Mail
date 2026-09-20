@@ -24,6 +24,7 @@
 //! found here rather than by the next tester.
 
 use std::sync::{Arc, Mutex};
+use wixen_mail::application::reading_habits::WHERE_THE_DEFAULT_SORT_ORDER_APPLIES;
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::wx_settings;
@@ -144,15 +145,23 @@ fn test_then_by_is_the_tab_stop_after_default_sort_order() {
             let reading = settings.reading();
             match what_sits_between(&reading.sort_order, &reading.sort_then, 3) {
                 Ok(between) => {
-                    // What sits between is its own label and nothing else,
-                    // said in the failure so the next person reads the
-                    // shape rather than a count.
-                    let only_its_label =
-                        between.len() == 1 && between[0].trim_end_matches(':') == "Then by";
+                    // What sits between is the sentence under Default sort
+                    // order, which is about that control and belongs under
+                    // it (#91, 2026-09-20), then Then by's own label, and
+                    // nothing else; said in the failure so the next person
+                    // reads the shape rather than a count.
+                    let after_the_sentence = between
+                        .strip_prefix(&[WHERE_THE_DEFAULT_SORT_ORDER_APPLIES.to_string()][..])
+                        .unwrap_or(&between);
+                    let only_its_label = after_the_sentence.len() == 1
+                        && after_the_sentence[0].trim_end_matches(':') == "Then by";
                     if !only_its_label {
                         wrong.push((
                             "what sits between Default sort order and Then by".to_string(),
-                            format!("wanted Then by's own label and nothing else, met {between:?}"),
+                            format!(
+                                "wanted the sentence under Default sort order, then Then by's own \
+                                 label, and nothing else, met {between:?}"
+                            ),
                         ));
                     }
                 }

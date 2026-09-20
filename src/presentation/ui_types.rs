@@ -618,6 +618,15 @@ pub enum UIUpdate {
     /// file left the timer with the wait it started with, and the setting
     /// appeared not to work until the program was started again.
     MarkReadAfterChanged(crate::application::reading_habits::MarkRead),
+    /// The four date settings were saved in Settings (#91, 2026-09-20).
+    ///
+    /// Carried the same way as the working day: the row callback, the PIM
+    /// cells and the read-aloud closures read the dates from shared state,
+    /// and the arm repaints the six lists once so the next paint shows them.
+    /// Until this existed those closures held a copy captured at startup,
+    /// and a date style saved in Settings changed the calendar heading and
+    /// not the rows until the program was started again.
+    DateSettingsChanged(crate::presentation::date_display::DateSettings),
     /// Calendar sync completed
     CalendarSyncComplete {
         created: usize,

@@ -12,7 +12,8 @@ use crate::application::describing_pictures::{
 use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::opening_links::Where as OpenLinks;
 use crate::application::reading_habits::{
-    CopyLines, MarkRead, WHAT_MARK_READ_COUNTS_FROM, WorkingDay,
+    CopyLines, MarkRead, TAKES_EFFECT_AT_THE_NEXT_START, WHAT_MARK_READ_COUNTS_FROM,
+    WHERE_THE_DEFAULT_SORT_ORDER_APPLIES, WorkingDay,
 };
 use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
@@ -433,6 +434,16 @@ fn sel(choice: &Choice) -> u32 {
 /// Create a labelled section sizer using StaticBoxSizerBuilder::new_with_label.
 fn section(parent: &Panel, label: &str) -> StaticBoxSizer {
     StaticBoxSizerBuilder::new_with_label(Orientation::Vertical, parent, label).build()
+}
+
+/// A sentence under a control, named on both channels, the way the sentence
+/// under Mark as read after is built: a static text whose accessible name is
+/// its words, so a screen reader meets it in the tab order after the control
+/// it is about and hears what the control cannot say on its own.
+fn a_sentence_under(parent: &Panel, section: &StaticBoxSizer, words: &str) {
+    let note = StaticText::builder(parent).with_label(words).build();
+    set_accessible_name(&note, words);
+    section.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 }
 
 // ── Public entry point ───────────────────────────────────────────────────────
@@ -1620,6 +1631,12 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     );
     sort_row.add(&sort_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     list_sec.add_sizer(&sort_row, 0, SizerFlag::Expand, 0);
+    // Where and when the order applies, under the choice (#91, 2026-09-20):
+    // it is read once where the main window is built, and only where no
+    // column layout was saved, since a saved layout carries its own sort.
+    // Every other setting on this screen applies on save, so the one that
+    // cannot has to say so, or it looks like a setting that does nothing.
+    a_sentence_under(panel, &list_sec, WHERE_THE_DEFAULT_SORT_ORDER_APPLIES);
 
     // The second level of that sort, and the next tab stop after it. It was
     // built into Dates and Times at the bottom of this tab, so somebody
@@ -2584,6 +2601,11 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> AdvancedTabControls 
     );
     log_row.add(&log_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     log_sec.add_sizer(&log_row, 0, SizerFlag::Expand, 0);
+    // The level is set up once when the program starts and nothing can
+    // change it while it runs, so the control says a change waits for the
+    // next start (#91, 2026-09-20) rather than looking like a setting that
+    // does nothing.
+    a_sentence_under(panel, &log_sec, TAKES_EFFECT_AT_THE_NEXT_START);
 
     sizer.add_sizer(&log_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 

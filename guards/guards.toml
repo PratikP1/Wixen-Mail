@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 215 records have arrived since and have not been through it.
+# 219 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -22661,7 +22661,9 @@ tests_last_seen = [
 # target, so a commit that touches the closure runs the reading.
 #
 # Measured by hand on 2026-09-14 against the target: 1 passed and exactly
-# these five failed.
+# these five failed. The break's text rewritten 2026-09-20 (11-11.1.1, #91)
+# when the closure began reading the dates from the state rather than a
+# captured local, and measured again the same day.
 
 [[guard]]
 name = "the message list's closure calls the function rather than painting for itself"
@@ -22677,7 +22679,7 @@ before = """                    let columns = column_layout.borrow().visible();
                         &columns,
                         row,
                         column,
-                        date_settings,
+                        state.dates,
                         chrono::Local::now(),
                     )
                 }
@@ -22693,7 +22695,7 @@ after = """                    let columns = column_layout.borrow().visible();
                                 Some(conversation) => message_rows::conversation_cell_text(
                                     conversation,
                                     c,
-                                    date_settings,
+                                    state.dates,
                                     now,
                                 ),
                                 None => message_rows::PLACEHOLDER.to_string(),
@@ -22701,7 +22703,7 @@ after = """                    let columns = column_layout.borrow().visible();
                         }
                         view_state::Showing::Messages => match state.messages.get(row as usize) {
                             Some(message) => {
-                                message_rows::cell_text(message, c, date_settings, now)
+                                message_rows::cell_text(message, c, state.dates, now)
                             }
                             None => message_rows::PLACEHOLDER.to_string(),
                         },
@@ -28142,7 +28144,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 9 },
+    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 20 },
 ]
 
 # The second break puts the capture back: the startup block binds the wait
@@ -28165,5 +28167,103 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 9 },
+    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 20 },
+]
+
+# The date settings had the same fault as the wait: captured at startup into
+# the row callback, the PIM cells and every read-aloud closure, while the
+# calendar heading read the file afresh. The break puts that capture back,
+# a local named as it was, and the target's reading over the rows goes red
+# on the name: a local is what a closure captures.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the dates are written into the state where the window is built, not captured into a local"
+file = "src/presentation/wx_app.rs"
+suite = "a_setting_saved_applies_without_a_restart"
+before = """            lock_state(&state).dates = stored_config
+                .as_ref()
+                .map(date_settings_from)"""
+after = """            let _date_settings = stored_config
+                .as_ref()
+                .map(date_settings_from)"""
+red = [
+    "test_the_rows_and_the_cells_read_the_dates_from_the_state",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 20 },
+]
+
+# The audit's half. The break drops the update the Settings-saved arm sends
+# for the dates, so a save writes the file and the rows keep the dates the
+# window started with. Two readings go red: the one over the arm, and the
+# audit, which lists the dates as following a save through that update and
+# finds the arm no longer sends it. That second red is the audit doing the
+# job it exists for: a setting captured at startup that a save no longer
+# reaches is exactly #91.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a date setting saved in settings reaches the rows, and the audit says so when it does not"
+file = "src/presentation/wx_app.rs"
+suite = "a_setting_saved_applies_without_a_restart"
+before = """                let _ = tx.try_send(UIUpdate::DateSettingsChanged(dates));"""
+after = """                let _ = dates;"""
+red = [
+    "test_saving_settings_sends_the_dates_after_the_save",
+    "test_every_setting_read_at_startup_has_a_disposition_the_tree_honours",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 20 },
+]
+
+# The log level cannot follow a save: it is set up once when the program
+# starts. So its control says so, in a sentence under it named on both
+# channels, and the one test that builds the Advanced page in a window
+# session reads the sentence off the built page. The break drops the
+# sentence and keeps the constant's name in a `let _`, so the import stays
+# used and only the page changes; the page-building test goes red with
+# "holds no static text saying".
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the sentence saying the log level takes effect at the next start is on the advanced page"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    a_sentence_under(panel, &log_sec, TAKES_EFFECT_AT_THE_NEXT_START);"""
+after = """    let _ = TAKES_EFFECT_AT_THE_NEXT_START;"""
+red = [
+    "test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# The default sort order is next-start by nature, and the audit lists it
+# that way with the sentence under its control as the evidence. The break
+# drops the sentence altogether (the import goes unused, which is a warning
+# and compiles), and the audit goes red: a setting listed as taking effect
+# at the next start with nothing under its control saying so is a setting
+# that appears to do nothing.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the sentence saying where the default sort order applies is under its control, and the audit holds it there"
+file = "src/presentation/wx_settings.rs"
+suite = "a_setting_saved_applies_without_a_restart"
+before = """    a_sentence_under(panel, &list_sec, WHERE_THE_DEFAULT_SORT_ORDER_APPLIES);"""
+after = """    let _ = &list_sec;"""
+red = [
+    "test_every_setting_read_at_startup_has_a_disposition_the_tree_honours",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/a_setting_saved_applies_without_a_restart.rs", tests = 20 },
 ]
