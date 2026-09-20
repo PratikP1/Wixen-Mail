@@ -190,12 +190,20 @@ pub enum ScanTarget {
     /// every checkbox it has is. `Accounts` reached the Account Manager and
     /// stopped at Edit.
     AccountEditor,
+    /// The formatted message window, which a message opens into under the
+    /// default reading style and which `Reader` never reached: that target
+    /// opens the plain-text reader. Opened on a made-up conversation of two
+    /// messages, one written as a page with a link in it and one written as
+    /// text with an address on a line of its own that the renderer makes a
+    /// link, so the NVDA case for #80 has a sender's link and a made one to
+    /// press Enter on (11-11.1, 2026-09-20).
+    Page,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 35] = [
+    pub const ALL: [ScanTarget; 36] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -231,6 +239,7 @@ impl ScanTarget {
         ScanTarget::FilterEditor,
         ScanTarget::SignatureEditor,
         ScanTarget::AccountEditor,
+        ScanTarget::Page,
     ];
 
     /// The name used on the command line.
@@ -271,6 +280,7 @@ impl ScanTarget {
             Self::FilterEditor => "filter-editor",
             Self::SignatureEditor => "signature-editor",
             Self::AccountEditor => "account-editor",
+            Self::Page => "page",
         }
     }
 
@@ -391,6 +401,10 @@ mod tests {
         // from inside a manager, behind Add or Edit, so the manager targets
         // never reached them, and two testers met an unnamed checkbox in two
         // of them on the first day of testing.
+        //
+        // The page window arrived on 2026-09-20 (#80): the default way a
+        // message opens, never scanned, because `reader` opens the other
+        // surface.
         for name in [
             "columns",
             "which-copy",
@@ -417,6 +431,7 @@ mod tests {
             "filter-editor",
             "signature-editor",
             "account-editor",
+            "page",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));

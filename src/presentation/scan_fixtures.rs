@@ -19,11 +19,77 @@ use crate::application::conflict_choice::{AField, BothCopies, TheOtherCopy};
 use crate::application::destinations::{Branch, Destination};
 use crate::application::due::Due;
 use crate::application::saved_searches::Question;
+use crate::common::types::MessageBody;
+use crate::presentation::ui_types::MessageItem;
 use crate::presentation::wx_folder_choice::FolderRow;
 use crate::presentation::wx_managers::{
     AddressItem, ContactEntry, CustomFieldItem, EmailItem, FilterRule, PhoneItem, SignatureEntry,
 };
 use crate::presentation::wx_thread_view::ThreadNode;
+
+/// The link the page target's sender wrote, which the NVDA case for #80
+/// presses Enter on.
+pub const THE_SENDERS_LINK: &str = "https://example.com/where-it-went";
+
+/// The address the page target's reply wrote out on a line of its own, which
+/// the renderer makes a link (#89) and the same case presses Enter on.
+pub const THE_ADDRESS_WRITTEN_OUT: &str = "https://example.org/written-out";
+
+/// The conversation the formatted page window opens on for the scan: a
+/// message written as a page holding one paragraph and one link, and a reply
+/// written as text holding an address on a line of its own.
+///
+/// Two messages rather than one because the renderer makes a link out of a
+/// bare address only in a text body (`links_in_text` runs in the plain
+/// page), and a page body keeps the sender's own anchors; one message cannot
+/// carry both kinds. Each is a message somebody could have sent.
+pub fn page_conversation() -> Vec<(MessageItem, MessageBody)> {
+    let message = |message_id: i64, from: &str, is_thread_parent: bool| MessageItem {
+        uid: u32::try_from(message_id).unwrap_or(0),
+        message_id,
+        subject: "Scan target".to_string(),
+        from: from.to_string(),
+        date: "2026-01-01T00:00:00+00:00".to_string(),
+        read: true,
+        starred: false,
+        answered: false,
+        draft: false,
+        has_attachments: false,
+        attachments: Vec::new(),
+        thread_depth: usize::from(!is_thread_parent),
+        is_thread_parent,
+        thread_id: None,
+        snippet: None,
+        size_bytes: Some(512),
+        to: "me@example.com".to_string(),
+        cc: String::new(),
+        reply_to: String::new(),
+        header_message_id: String::new(),
+        refs_header: None,
+        safety: crate::service::safety::Safety::Ordinary,
+        safety_reasons: Vec::new(),
+        receipt_to: None,
+        list_unsubscribe: None,
+        account_id: String::new(),
+        labels: Vec::new(),
+        says_first: None,
+    };
+    vec![
+        (
+            message(1, "Somebody <somebody@example.com>", true),
+            MessageBody::Html(format!(
+                "<p>Some text, and a link the sender wrote: \
+                 <a href=\"{THE_SENDERS_LINK}\">Where it went</a>.</p>"
+            )),
+        ),
+        (
+            message(2, "Me <me@example.com>", false),
+            MessageBody::Plain(format!(
+                "An address written out on a line of its own:\n\n{THE_ADDRESS_WRITTEN_OUT}\n"
+            )),
+        ),
+    ]
+}
 
 /// A conversation with a reply in it, so the tree has a second level.
 pub fn conversation() -> Vec<ThreadNode> {
@@ -402,5 +468,33 @@ mod tests {
             crate::application::calendar::asking_is_needed(&repeating_event().repeats),
             "the event does not repeat, so the question is never asked"
         );
+    }
+
+    #[test]
+    fn test_the_page_conversation_renders_a_senders_link_and_a_made_one() {
+        // The NVDA case for #80 presses K twice and Enter on each link. A page
+        // with one link, or with a bare address the renderer left as text,
+        // would let the case's second K find nothing and say the route held.
+        let parts: Vec<_> = page_conversation()
+            .into_iter()
+            .enumerate()
+            .map(
+                |(depth, (message, body))| crate::presentation::reader_text::ConversationPart {
+                    message,
+                    body,
+                    said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+                    depth,
+                },
+            )
+            .collect();
+        let page = crate::presentation::reader_text::conversation_html("Scan target", &parts);
+
+        for link in [THE_SENDERS_LINK, THE_ADDRESS_WRITTEN_OUT] {
+            assert!(
+                page.contains(&format!("href=\"{link}\"")),
+                "{link} is not a link on the page, so the case has nothing to press Enter on:\n{page}"
+            );
+        }
+        assert_eq!(page.matches("<a ").count(), 2, "{page}");
     }
 }

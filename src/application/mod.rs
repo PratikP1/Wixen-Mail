@@ -85,6 +85,8 @@ pub mod notes_backend;
 pub mod notes_sync;
 pub mod occurrences;
 pub mod opening;
+/// Where a link in a message opens, and the one decision from the setting and the ask to the route (#80).
+pub mod opening_links;
 pub mod opening_pgp;
 pub mod other_items;
 pub mod pictures;

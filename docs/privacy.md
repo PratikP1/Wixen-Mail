@@ -330,8 +330,12 @@ A message can carry its pictures or point at them. A picture it carries is alrea
 computer, and showing it tells nobody anything. Where it points at one, the address the
 sender wrote is in the message, and a surface that shows the message in a browser asks that
 address for the picture. Two surfaces do that: the preview pane, which is off until you
-switch it on in the View menu, and the conversation window. The window a message opens into
-when you press Enter on it is a text control and asks nobody for anything.
+switch it on in the View menu, and the formatted message window, which is where a message
+opens when you press Enter on it unless Settings, Reading, "Open messages" says plain text,
+and which a whole conversation opens into as well. The plain-text reader is a text control
+and asks nobody for anything. Until 2026-09-20 this paragraph said the window a message
+opens into was the text control; that stopped being the default on 2026-07-30 and the page
+did not follow.
 
 The request tells whoever is at the other end that the message was opened and roughly when.
 Senders use that on purpose: a picture the size of a full stop, with a different address
@@ -368,6 +372,37 @@ This was read out of the code rather than measured on the wire: `src/application
 holds the rules, `looks_like_a_beacon` and `what_to_do_about_a_tag`, and
 `src/presentation/html_renderer.rs` applies them where a message is shown and nowhere a
 message is sent.
+
+## Where a link opens
+
+A link in a message opens in your default browser unless you choose otherwise. The choice is
+on the Reading tab in Settings, "Open links": the default browser, the message view, or a
+separate Wixen Mail window. The browser is the default for a reason this section is about.
+
+A message shown here is a cleaned copy: its scripts are stripped before it is shown, and it
+has no address of its own, so it cannot set a cookie or keep anything. A page you open in the
+message view is not a cleaned copy. It is the live page, with its scripts, its cookies and
+its storage, and it runs in the same browser profile the message preview and the formatted
+message window use, because this program's browser controls all share one profile and
+nothing in the toolkit it is built on can clear it. So a cookie or a stored value that page
+sets is sent again when a later message loads a picture from the same site, and the site can
+join the two: the page you visited, and the message you opened. Your own browser would keep
+that cookie in its own profile, where a message shown here never reaches it. That is what
+opening a link inside the program tells a site that the browser would not, and it is why the
+browser is the default.
+
+The separate window, when it arrives, is a process of its own with a profile of its own, and
+shares nothing with the preview. Until then, choosing it opens the browser and the status bar
+says so. Whichever you choose, a link is handed on only when it is a web address, an email
+address or a telephone number, the same rule as before; an address of any other kind is
+refused and said to be.
+
+This was read out of the code rather than measured on the wire, on 2026-09-20:
+`src/application/opening_links.rs` holds the setting and `route`, the one decision from the
+setting and the way a link was asked for to where it goes, and `follow_the_link_the_page_posted`
+in `src/presentation/wx_app.rs` carries the answer out after `safe_external_url` has passed the
+address; `src/presentation/page_links.rs` says why the link is caught in the page rather than
+at the navigation.
 
 ## How a reader of mail can be tracked, and what this program does about each
 
@@ -409,10 +444,12 @@ is written out in `.cargo/audit.toml` under the `rsa` advisory.
 **Links.** An address in a message can carry who you are: a mailing's links often hold a
 token per recipient, so opening one tells the site which recipient opened it, and when.
 Wixen Mail hands a link to Windows, which opens it in your browser, and nothing here sends
-a link anywhere before that. Only web addresses, email addresses and telephone numbers are
-handed over; a link of any other kind keeps its words and says beside them that it was not
-opened here. What it cannot protect against: what the site learns when your browser arrives.
-Read from `safe_external_url` in `src/presentation/html_renderer.rs`. Link checking, if you
+a link anywhere before that, unless you chose the message view on the Reading tab, which
+[Where a link opens](#where-a-link-opens) says the cost of. Only web addresses, email
+addresses and telephone numbers are handed over; a link of any other kind keeps its words
+and says beside them that it was not opened here. What it cannot protect against: what the
+site learns when your browser arrives. Read from `safe_external_url` in
+`src/presentation/html_renderer.rs` and `route` in `src/application/opening_links.rs`. Link checking, if you
 switch it on, is the one feature that sends anything about a link to a third party, and
 [Link checking, if you switch it on](#link-checking-if-you-switch-it-on) says exactly what:
 four bytes of a hash, sometimes, and never the address.

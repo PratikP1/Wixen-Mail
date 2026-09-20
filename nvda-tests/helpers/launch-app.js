@@ -80,6 +80,65 @@ async function mainWindowHandle(pid) {
 }
 
 /**
+ * The titles of every visible top-level window, either the ones the process
+ * owns (`owned: true`) or everybody else's (`owned: false`), in the order
+ * Windows enumerates them.
+ *
+ * `MainWindowTitle` names one window, and a message opened into the page
+ * window is a second frame of the same process, so a case that wants to
+ * know what that window is called after a key has to list them all; and a
+ * link that went to the default browser is a window some other process
+ * owns, which is the one way to see from outside that it left. Asked of
+ * Windows through PowerShell for the same reason `mainWindowHandle` is: a
+ * few reads per run are not worth a native dependency.
+ */
+async function windowTitles(pid, { owned = true } = {}) {
+  const test = owned ? `$owner -eq ${pid}` : `$owner -ne ${pid}`;
+  const { stdout } = await execFileAsync("powershell", [
+    "-NoProfile",
+    "-Command",
+    [
+      "Add-Type -Namespace WixenNvda -Name Windows -MemberDefinition @'",
+      "[DllImport(\"user32.dll\")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lp);",
+      "[DllImport(\"user32.dll\")] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);",
+      "[DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);",
+      "[DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);",
+      "public delegate bool EnumWindowsProc(IntPtr h, IntPtr lp);",
+      "'@",
+      "$titles = New-Object System.Collections.Generic.List[string]",
+      "[WixenNvda.Windows]::EnumWindows({ param($h, $lp)",
+      "  $owner = 0; [void][WixenNvda.Windows]::GetWindowThreadProcessId($h, [ref]$owner)",
+      `  if (${test} -and [WixenNvda.Windows]::IsWindowVisible($h)) {`,
+      "    $sb = New-Object System.Text.StringBuilder 512",
+      "    [void][WixenNvda.Windows]::GetWindowText($h, $sb, 512)",
+      "    if ($sb.Length -gt 0) { $titles.Add($sb.ToString()) }",
+      "  }",
+      "  $true }, [IntPtr]::Zero) | Out-Null",
+      "$titles -join \"`n\"",
+    ].join("\n"),
+  ]);
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/**
+ * Bring the window whose title starts with `title` to the front, so keys
+ * sent next reach it. A link that went to the default browser leaves the
+ * browser in front; a case that then wants to read the page window has to
+ * put it back. Answers whether Windows agreed.
+ */
+async function activateWindow(title) {
+  const { stdout } = await execFileAsync("powershell", [
+    "-NoProfile",
+    "-Command",
+    `(New-Object -ComObject WScript.Shell).AppActivate(${JSON.stringify(title)})`,
+  ]);
+  return stdout.trim().toLowerCase() === "true";
+}
+
+/**
  * Wait for the process to publish a main window, the way
  * accessibility.yml polls rather than guessing at a fixed sleep: wxWidgets
  * needs a moment to realise the frame, and that moment is not the same on
@@ -126,6 +185,8 @@ module.exports = {
   freshProfileDir,
   launchForScanning,
   waitForWindow,
+  windowTitles,
+  activateWindow,
   killApp,
   sleep,
 };

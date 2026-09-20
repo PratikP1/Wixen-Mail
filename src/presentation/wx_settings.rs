@@ -10,6 +10,7 @@ use crate::application::describing_pictures::{
     UNDESCRIBED_PICTURES_LABEL, UndescribedPicture, WHAT_THE_CHOICE_LEAVES_ALONE,
 };
 use crate::application::folder_settings::{self, UnreadOnAParent};
+use crate::application::opening_links::Where as OpenLinks;
 use crate::application::reading_habits::{
     CopyLines, MarkRead, WHAT_MARK_READ_COUNTS_FROM, WorkingDay,
 };
@@ -1488,6 +1489,9 @@ pub struct ReadingTabControls {
     pub undescribed_pictures_read_as: Choice,
     read_receipts: Choice,
     read_messages_as: Choice,
+    /// Public because a test builds this dialog and reads the choice back
+    /// through `read_settings` the way OK does (#80).
+    pub open_links_in: Choice,
     date_style: Choice,
     date_order: Choice,
     date_wording: Choice,
@@ -1838,6 +1842,30 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     style_row.add(&style_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     read_sec.add_sizer(&style_row, 0, SizerFlag::Expand, 0);
 
+    // Where a link opens (#80), right after how a message opens, because it
+    // is the next thing that happens when somebody reads one. The browser
+    // first and by default, and the sentence under the choice says what each
+    // answer costs, since three places cannot say that on their own: a page
+    // in the message view shares the preview's browser profile, and the
+    // separate window is not built yet.
+    let open_links_labels: Vec<&str> = OpenLinks::ALL.iter().map(|choice| choice.label()).collect();
+    let open_links_in = labelled_choice(
+        panel,
+        &read_sec,
+        crate::application::opening_links::SETTING_LABEL,
+        crate::application::opening_links::SETTING_NAME,
+        &open_links_labels,
+        crate::application::opening_links::offered_index(&config.open_links_in) as u32,
+    );
+    let open_links_note = StaticText::builder(panel)
+        .with_label(crate::application::opening_links::WHAT_EACH_CHOICE_COSTS)
+        .build();
+    set_accessible_name(
+        &open_links_note,
+        crate::application::opening_links::WHAT_EACH_CHOICE_COSTS,
+    );
+    read_sec.add(&open_links_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
     // Read receipts. On the Reading tab because it is a thing that happens
     // when you open a message, which is where somebody would look for it.
     let receipt_row = BoxSizer::builder(Orientation::Horizontal).build();
@@ -2036,6 +2064,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         sort_order: sort_choice,
         read_receipts: receipt_choice,
         read_messages_as: style_choice,
+        open_links_in,
         date_style,
         date_order,
         date_wording,
@@ -3520,6 +3549,14 @@ fn read_the_reading_page(w: &ReadingTabControls, base: &AppConfig, cfg: &mut App
         .copied()
         .unwrap_or_default()
         .as_str()
+        .to_string();
+    // Where a link opens, by position out of `Where::ALL` for the same
+    // reason (#80).
+    cfg.open_links_in = OpenLinks::ALL
+        .get(sel(&w.open_links_in) as usize)
+        .copied()
+        .unwrap_or_default()
+        .stored()
         .to_string();
 
     // Dates and times, read in every module.

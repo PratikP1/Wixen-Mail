@@ -255,6 +255,39 @@ missing in silence: "Text us (link not opened here: sms)".
 The row's Snippet column is the one place an address is not a link and not
 said at all: a row is a hint, and the address is in the message.
 
+### Where a link opens
+
+Press `Enter` on a link in a message, or activate it the way your screen
+reader activates links, and it opens where you have chosen. The choice is
+under Settings, then Reading, then "Open links", and there are three:
+
+- In the default browser. This is the default, and what happens if you never
+  change it. The page opens in your own browser, and nothing about it stays
+  with your mail.
+- In the message view. The page loads in the place the message was, in the
+  same window. Wixen Mail says "Opening" and the site's name as it starts,
+  says the page's title when it arrives, and says why if the page will not
+  open. `Backspace` or `Alt+Left` brings the message back and says "Back to
+  the message". A page opened this way shares the browser profile the message
+  preview uses, so a cookie it sets is sent again when a later message loads a
+  picture from the same site; [What Wixen Mail sends, and
+  where](privacy.md#where-a-link-opens) says what that means.
+- In a separate Wixen Mail window. That window arrives with the next build.
+  Until then this choice opens your browser and the status bar says so.
+
+Whatever you chose, the link's menu offers all three. Press the `Applications`
+key or `Shift+F10` on a link, or right-click it, and choose Open in Message
+View, Open in Default Browser or Open in Separate Window; Copy Link and Save
+Link As are below them. `Ctrl+Enter` opens the browser and `Shift+Enter` a
+separate window, whatever the setting, the way those keys work in a browser.
+An email address or a telephone number in a message is handed to Windows
+whatever you chose, since neither is a page.
+
+Until the build of 2026-09-20 a link opened inside the window whatever the
+program meant to do, because the check that was to hand it to the browser was
+never given the address; that was #80, and the finding is written there.
+Nobody has heard any of this in a screen reader yet.
+
 ### Pictures in a message
 
 A message can carry its pictures or point at them on the internet. Since
