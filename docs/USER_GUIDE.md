@@ -635,6 +635,39 @@ rest.
 5. Type your message in the body field
 6. Click **Send** or press `Ctrl+Enter`
 
+### Structure, typed as Markdown
+
+The message body is a live editor. Headings, lists, quotes, bold, italic, code
+and links are on the Format menu and on keys, and every one of them can be
+typed instead, without leaving the sentence. Type the marker, then a space,
+then keep writing. The space is what turns the marker into structure, and a
+marker with no space after it stays as it was typed. Each marker says what it
+made, so you hear "Heading level 2" or "Bulleted list" after the space, and
+`Ctrl+Z` puts the characters back if you meant them literally.
+
+| Type this | What it makes | What is said |
+|-----------|---------------|--------------|
+| One number sign, then a space, at the start of a line | A level 1 heading | Heading level 1 |
+| Two number signs, then a space, at the start of a line | A level 2 heading | Heading level 2 |
+| Three number signs, then a space, at the start of a line | A level 3 heading | Heading level 3 |
+| A hyphen or a star, then a space, at the start of a line | A bulleted list | Bulleted list |
+| A number, a dot, then a space, at the start of a line | A numbered list | Numbered list |
+| A greater-than sign, then a space, at the start of a line | A quote | Quote |
+| Two stars or two underscores on each side of the words | Bold | Bold, at the closing star |
+| One star or one underscore on each side of the words | Italic | Italic, at the closing star |
+| A backtick on each side of the words | Code | Code, at the closing backtick |
+| The words in square brackets, then the address in round brackets | A link on those words | "Link to" and the address at the closing bracket, or that the address is not one this can link to and the words are left as they are |
+
+A marker counts at the start of any line: the first line of a new message, a
+line of the quoted text in a reply, a line after Enter and a line after
+Shift+Enter. It only counts when it is the whole line so far, so a sentence
+that ends in a hyphen stays a sentence. The word after a closing star,
+underscore or backtick is plain again. Until 2026-09-20 a marker on a line
+after a line break, which is every line of a reply to a message that arrived
+as plain text and every line after Shift+Enter, was left as typed with nothing
+said; that is fixed, and a marker the editor met and would not turn into
+structure is now written to the log, so a report can say which line it was on.
+
 ### Saving Drafts
 
 - Click **Save Draft** button or press `Ctrl+S`

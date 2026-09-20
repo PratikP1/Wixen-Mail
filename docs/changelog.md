@@ -280,6 +280,35 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A Markdown marker typed with its space counts at the start of any line of the message,
+  not only the first.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef`
+  (#79): "The compose dialog does not allow for markdown writing", and "I'm expecting the
+  structure". Since 2026-07-29, in every build, a marker typed on a line after a line break,
+  which is every line of a reply, forward or mailto body that arrived as plain text, every
+  line after Shift+Enter, and the line after Enter on the empty first line of such a reply,
+  was refused before it was read: no heading, no list, nothing said and nothing in the log.
+  On the first line of a new message it worked, in this build and in the one before, on the
+  same browser engine the tester has; which of the two he was on is his ear's, and the
+  steps to check are in the plan's summary. Since 2026-09-20 the editor asks whether the
+  marker starts its line rather than whether anything at all comes before it in the
+  document, so a marker counts on any line, and a marker it met and would not turn into
+  structure is written to the log so the next report can say which path refused. Also
+  fixed on the way: the word after `**bold**`, and every line after it, stayed bold, and the
+  word after a code span stayed code, because the engine continues an inline style at its
+  end; the first character typed after a closing star, underscore or backtick is plain now.
+  A hyphen and a space as the first thing in an empty message make a list, measured. And a
+  marker with no space after it was never a marker: the pages wrote every marker as a code
+  span with a trailing space, which a screen reader does not voice, and now say "type the
+  marker, then a space, then keep writing" in words, with the markers listed in the user
+  guide for the first time. The promise of 2026-07-28 below needs no retraction: every
+  marker it names has a rule. A test now types into the real editor page in the hosted
+  browser and checks the document after each marker. Known limitations: the test delivers
+  keys to the page as posted characters and not through a screen reader's hook, so what is
+  heard is still the tester's; and Ctrl+Z pressed right after the first character that
+  follows a closing delimiter puts that character back inside the style first, and takes
+  it away on the next press, because taking it out of the style is a step of its own. No version
+  moves for it: the counter moves at the first behaviour change after a cut, and none has
+  been cut since `1.0.0-alpha.1` was set.
 - **All Inboxes keeps a view of its own, and shows every inbox's conversations when it
   shows conversations.** Pratik's decision of 2026-09-20 on build `1.0.0-alpha.1` at
   `4a09bfc2` (#92), the second half. What the tester saw was worse than the issue said:
