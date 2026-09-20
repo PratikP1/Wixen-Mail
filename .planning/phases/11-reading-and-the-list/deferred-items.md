@@ -59,3 +59,28 @@ them.
   the number for one message the same way, with the two tests rewritten in
   place. Not a ledger entry: nothing is wrong that a reader would call a
   defect, and it is said here so it is not found again by ear.
+
+## Found by 11-11.1, 2026-09-20
+
+- **The second line behind the page's listener cannot route what it
+  stops.** wxdragon 0.9.17 hands a navigating event the command event's
+  string, empty for it, and exposes no `GetURL`; `PageHost::wire_the_second_line`
+  vetoes a main-frame navigation the window did not ask for and logs it,
+  with no address to hand anywhere. A live page in the message view whose
+  own script moves to another page is stopped in silence beyond the log.
+  The fix is upstream, a `WebViewEventData::get_url` in wxdragon, or a
+  patch of it; the probe's live half in
+  `tests/a_link_opens_where_the_setting_says.rs` goes red the day the
+  string carries the address, which is the day the veto could route again.
+  Said in the changelog's known limitations.
+- **The main window's title does not carry a page's title** when a page
+  opens in the preview pane; the page window's does. The main window's
+  title names the folder, and a pane of it showing a page did not seem
+  worth renaming the window for; the title is announced instead. Whoever
+  hears the preview route decides whether that is enough.
+- **A live page in the message view can post to `window.contextMenu`**,
+  which a sanitised message never could, since its scripts are stripped.
+  Everything it can post is a request the window validates: a link goes
+  through `safe_external_url` and the setting, the way out and the jumps
+  move focus. Recorded so the surface is known; 11-11.2's separate window
+  is a process of its own and shares no handler.

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 525
+open_count: 526
 waived_count: 0
 fixed_count: 34
-total_count: 559
-last_updated: 2026-09-20T02:32:39.000Z
+total_count: 560
+last_updated: 2026-09-20T04:54:36.000Z
 ---
 
 # Broken Windows Ledger
@@ -574,6 +574,7 @@ last_updated: 2026-09-20T02:32:39.000Z
 | 557 | 11 | unrun-verify | src/application/links_in_text.rs |  | 11-10.1: what only the tester's ear settles for #89. The FanFiction chapter alert, plain text with the chapter's address on a line of its own: the address in NVDA's link list on the preview and in the reader window, and Enter on it going where Open links says once 11-11.1 lands; an address in an event's description read with Space heard as "link to" its site; a note's bare address a link when the note is shown as a page; an address with a full stop after it linking without the stop; a sender's mailto link on a name still working; a sender's sms link heard as its words with "link not opened here: sms" after them. The anchors, the host said, the code block left alone, the corpus and the snippet still bare are held by tests/an_address_written_out_is_a_link.rs and the renderer's own cases; none of it has been heard | open |  | 2026-09-19T22:30:00.000Z |  |
 | 558 | 11 | unrun-verify | src/presentation/html_renderer.rs |  | 11-11: what only the tester's reader settles for #28. A newsletter's pictures shown in the preview pane on a fresh profile, and on his, where the switch was already off; a one-pixel beacon passed over with "1 picture that looked like a tracking pixel was not fetched." heard once at the top; a linked picture with no description heard as the link's words; an undescribed picture heard as nothing under the default and as "image" or "photo" once chosen on the Reading tab; a remote picture the sender marked decorative passed over, or heard as "Picture the sender marked decorative" with that box on; a note with an undescribed picture read with Space and the picture passed over. The rules through the real cleaner, the renderer's order, the sending path untouched and the choice read back from the built dialog are held by tests/pictures_show_by_default_except_beacons.rs; none of it has been heard | open |  | 2026-09-20T00:20:25.000Z |  |
 | 559 | 11 | unrun-verify | src/presentation/html_renderer.rs |  | 11-11.0: what only the tester's ear settles for #90. The Substack newsletter he named, read in the formatted view under NVDA: the subtitle heard once, where the sender's own line stands and not at the top; no run of symbols where the padding was; no "table with N rows and N columns" around any block; no "Post header" grouping announced; the subject heard once, as the heading, and the sender once, in the heading with no number before it; and another newsletter of his choosing read the same way. The drop, the count line, the roles, the label rule, the page's own markup and the reader's structure are held by tests/what_the_sender_hid_is_not_read.rs over the fixture; none of it has been heard | open |  | 2026-09-20T02:32:39.000Z |  |
+| 560 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-11.1: what only the tester's ear and the NVDA run settle for #80. Enter on a link under NVDA, on the preview pane and on the formatted message window, going where Open links says: the browser under the default, the page in the message view with "Opening" and the host said, the title said once when it arrives, and "Back to the message" on Backspace or Alt+Left; the link's menu on the Applications key offering the three places on both surfaces; a page that will not load saying why; the separate window choice opening the browser with its status line. The listener, the route table, the three items, the arms, the sanitiser first and the second line are held by tests/a_link_opens_where_the_setting_says.rs, and the probe's finding is measured there against a built browser control; the NVDA case a-link-opens-where-the-setting-says.test.js is written and runs at the next push of main; none of it has been heard | open |  | 2026-09-20T04:54:36.000Z |  |
 
 ````json
 [
@@ -7283,6 +7284,18 @@ last_updated: 2026-09-20T02:32:39.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T02:32:39.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 560,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "11-11.1: what only the tester's ear and the NVDA run settle for #80. Enter on a link under NVDA, on the preview pane and on the formatted message window, going where Open links says: the browser under the default, the page in the message view with \"Opening\" and the host said, the title said once when it arrives, and \"Back to the message\" on Backspace or Alt+Left; the link's menu on the Applications key offering the three places on both surfaces; a page that will not load saying why; the separate window choice opening the browser with its status line. The listener, the route table, the three items, the arms, the sanitiser first and the second line are held by tests/a_link_opens_where_the_setting_says.rs, and the probe's finding is measured there against a built browser control; the NVDA case a-link-opens-where-the-setting-says.test.js is written and runs at the next push of main; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T04:54:36.000Z",
     "resolved_at": null
   }
 ]
