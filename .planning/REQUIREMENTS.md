@@ -4925,10 +4925,13 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
   is gated, how a key is checked offline, what a lapse does, what the alpha carries, the
   prices and the trial as decided, the merchants compared, and every decision that is
   Pratik's in one table; nothing in the product is gated.
-  - Evidence: `grep -rniE 'licen[cs]e key|subscription|entitle' src --include=*.rs` on
-    2026-09-20 at `0ad66e48`: three unrelated matches (`allowed.rs:365`, `:377` "entitled to
-    refuse"; `answering.rs:884` "a subscription they never made"), so nothing knows a
-    licence; `grep -n '^name = "ed25519-dalek"\|^name = "ring"\|^name = "keyring"' Cargo.lock`:
+  - Evidence: `grep -rniE 'licen[cs]e key|entitlement' src --include=*.rs` on 2026-09-20 at
+    `0ad66e48`: nothing, so nothing knows a licence (the issue's wider grep with
+    `subscription|entitle` answers 202 lines of iCal and folder subscriptions and 23 of
+    `entitle` in ten files, none about a licence, among them the `Entitles` type at
+    `wx_app.rs:12920`, the page window's title handoff, which the design names beside its
+    seam; corrected 2026-09-20 by the plan check from "three unrelated matches");
+    `grep -n '^name = "ed25519-dalek"\|^name = "ring"\|^name = "keyring"' Cargo.lock`:
     all three present; `grep -n 'pub fn verify' src/service/update_download.rs`: `:858`, the
     signed-thing-checked-offline pattern; `ls docs/plans/`: four designs named
     `YYYYMMDD-name.md`, where this one goes.

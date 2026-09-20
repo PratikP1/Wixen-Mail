@@ -5,14 +5,34 @@ Twelve plans, one per wave: two moved in from phase 11 and ten written on
 `guards/guards.toml` holding 1,029 records by the TOML reader (the census
 lines at `guards.toml:83-84` say 798 swept and 231 since), `.planning/WINDOWS.md`
 at entry 566 with 531 open and 35 fixed, 8,651 tests on the last whole gate
-(11-12's, on its branch at `f38140a8`), `main` pushed (`git rev-list
-origin/main..HEAD --count` is 0) and the push's NVDA run red on one case.
+(11-12's, on its branch at `f38140a8`), `main` pushed at `0ad66e48`
+(`git rev-list origin/main..HEAD --count` was 0 there and is 1 from
+`19ad8648`, the commit that landed these plans, until Pratik pushes) and
+the push's NVDA run red on one case.
 Phase 11 closed on 2026-09-20 with twenty-nine of its thirty-one plans
 merged and two deferred to the front of this phase on Pratik's decision
 under his token budget. This is the fifth of the seven groups he agreed on
 2026-09-16, the editors, with three things in front of it (the red run
 and the two deferred plans) and two things after it that the public alpha
 owes (About and Send Feedback), plus the pro licence as a design.
+
+**Checked the same day against `19ad8648`** (`PLAN-CHECK.md` beside this
+file, the checker's record): three blockers and sixteen warnings, all
+applied in the commit after it. The blockers: 12-08's field could not
+land green without the form-open read, because the read-by guard's
+census excludes `config.rs` and `wx_settings.rs`, so task 1 carries the
+read and names both guards by module path; 12-07 listed eight of the
+seventeen files the three `ContactEntry` fields touch and did not name
+the merge-chain record the insertion splits, so the nine files, their
+filters, the place in the merge literal and the record pair are in the
+plan now; 12-03 rewrites a site a record anchors on ("mark as read acts
+on every selected message, not the cursor row alone", `wx_app.rs:10801`)
+and now names it as rewritten and re-measured, with the probe over the
+register for every literal the census lists. The warnings were line
+numbers, names and counts, each taken again by the command the report
+gives; the two refusals the 12-03 re-take missed ("Nothing is selected
+in the message list" at `:17887`, "Choose a folder first" at `:5072`)
+add a fourth kind, a folder, to the status module.
 
 **Goal.** The three editors the tester named work by keyboard the way he
 asked: every number a spin control whose typing field has a name; the
