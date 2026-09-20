@@ -991,17 +991,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   no longer depends on that check. Settings, Reading, "Open links" says where: in the
   default browser, which is the default and what happens on every installation that has
   not chosen; in the message view, where the page loads in the place the message was, says
-  "Opening" and the site's name, and `Backspace` or `Alt+Left` brings the message back with
-  "Back to the message"; or in a separate Wixen Mail window. `Ctrl+Enter` or a Ctrl-click opens the
-  browser and `Shift+Enter` or a Shift-click a separate window whatever the setting, the
-  browser's own conventions. An email address or a telephone number is handed to Windows
-  whatever the setting, since neither is a page. The privacy page says what a page in the
-  message view shares with the message preview and why the browser is the default. A new
-  scan target, `page`, opens the formatted message window for the accessibility scan and for
-  an NVDA case that presses Enter on a link the way a person does. Known limitations: the
-  separate window arrives with the next build, and until then choosing it opens the browser
-  and says so on the status line; nobody has heard any of it in a screen reader, and the
-  NVDA case has not yet run.
+  "Opening" and the site's name, says the page's title once when it arrives, says why when
+  the page will not open and brings the message back, and `Backspace` or `Alt+Left` brings
+  the message back with "Back to the message"; or in a separate Wixen Mail window. The link's
+  menu, on the `Applications` key or a right-click, offers Open in Message View, Open in
+  Default Browser and Open in Separate Window above Copy Link and Save Link As, whatever the
+  setting says, and the formatted message window has that menu now where it had none.
+  `Ctrl+Enter` or a Ctrl-click opens the browser and `Shift+Enter` or a Shift-click a separate
+  window whatever the setting, the browser's own conventions. An email address or a telephone
+  number is handed to Windows whatever the setting, since neither is a page. The privacy page
+  says what a page in the message view shares with the message preview and why the browser is
+  the default. A new scan target, `page`, opens the formatted message window for the
+  accessibility scan and for an NVDA case that presses Enter on a link the way a person
+  does. Save Link As is on S rather than A, which Select All already had on the same menu.
+  Known limitations: the separate window arrives with the next build, and until then
+  choosing it opens the browser and says so on the status line; the check behind the page's
+  listener still cannot read an address, so a navigation the listener does not catch, a live
+  page's own script moving somewhere for instance, is stopped and logged rather than routed;
+  the main window's title does not change for a page in the preview pane; nobody has heard
+  any of it in a screen reader, and the NVDA case has not yet run.
 - **A rule can change how a row is announced: a phrase said first, a sound once per check, and
   the labels as a column.** From the Outlook gap report of 2026-08-27 and the audit of
   2026-09-15 (#62): conditional formatting in the sense that matters to somebody working by

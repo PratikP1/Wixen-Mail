@@ -171,6 +171,9 @@ menu_ids!(
     ID_PIM_TOGGLE_DONE,
     ID_PIM_TOGGLE_PIN,
     ID_CTX_SELECT_ALL,
+    ID_CTX_OPEN_IN_MESSAGE_VIEW,
+    ID_CTX_OPEN_IN_BROWSER,
+    ID_CTX_OPEN_IN_SEPARATE_WINDOW,
     ID_CTX_COPY_LINK,
     ID_CTX_SAVE_LINK,
     ID_MODULE_MAIL,
@@ -1478,6 +1481,9 @@ impl WxMailApp {
                     let focus_home_cell = focus_home_cell.clone();
                     move || focus_home_cell.set(FocusHome::Elsewhere)
                 }),
+                // The main window's title names the folder; a page in one
+                // pane of it does not rename the window.
+                Rc::new(|_| {}),
             );
 
             // Only configure advanced WebView2 features when the backend is available
@@ -1488,54 +1494,13 @@ impl WxMailApp {
                 // which are this application's keys, not its content's.
                 preview.enable_browser_accelerator_keys(false);
 
-                // Block all navigation: open links in default browser instead
-                preview.on_navigating({
-                    let a11y = a11y.clone();
-                    move |event: WebViewEventData| {
-                        if let Some(url) = event.get_string() {
-                            // An empty URL is the control loading its own document,
-                            // not a link the user followed. Vetoing it blocked the
-                            // message preview from rendering at all.
-                            if !url.is_empty()
-                                && url != "about:blank"
-                                && !url.starts_with("about:")
-                                && !url.starts_with("data:")
-                            {
-                                event.event.event.veto();
-                                // The sender of a message does not get to choose
-                                // what this machine opens.
-                                if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
-                                    let _ = open::that(&safe);
-                                } else {
-                                    tracing::warn!(
-                                        "Refused to open unsafe URL from message: {}",
-                                        url
-                                    );
-                                    say_the_link_was_refused(&a11y);
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // Block new window requests
-                preview.on_new_window({
-                    let a11y = a11y.clone();
-                    move |event: WebViewEventData| {
-                        if let Some(url) = event.get_string() {
-                            event.event.event.veto();
-                            if url.is_empty() {
-                                return;
-                            }
-                            if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
-                                let _ = open::that(&safe);
-                            } else {
-                                tracing::warn!("Refused to open unsafe URL from message: {}", url);
-                                say_the_link_was_refused(&a11y);
-                            }
-                        }
-                    }
-                });
+                // A link is caught in the page and routed by the setting
+                // (#80); these are the second line behind that, and what a
+                // page says when it arrives. Until 2026-09-20 a veto stood
+                // here that read the event's string, which is always empty,
+                // and so vetoed nothing: every link opened inside the pane.
+                preview_host.wire_the_second_line();
+                preview_host.wire_a_pages_arrival(&a11y);
 
                 // Custom context menu, and the way out.
                 //
@@ -1605,39 +1570,14 @@ impl WxMailApp {
                                 );
                                 return;
                             }
-                            // serde_json handles the escaping that a hand
-                            // rolled scan does not, and the href is a value the
-                            // sender controls, so it is validated before it is
-                            // stored for the menu handlers to act on.
-                            let href = serde_json::from_str::<serde_json::Value>(&json)
-                                .ok()
-                                .and_then(|value| {
-                                    value
-                                        .get("href")
-                                        .and_then(|h| h.as_str())
-                                        .map(str::to_string)
-                                })
-                                .and_then(|href| HtmlRenderer::safe_external_url(&href));
-                            let has_link = href.is_some();
-
-                            let mut menu = Menu::builder()
-                                .append_item(ID_CTX_SELECT_ALL, "Select &All", "Select all content")
-                                .build();
-                            if has_link {
-                                menu.append_separator();
-                                menu.append(
-                                    ID_CTX_COPY_LINK,
-                                    "&Copy Link",
-                                    "Copy link to clipboard",
-                                    ItemKind::Normal,
-                                );
-                                menu.append(
-                                    ID_CTX_SAVE_LINK,
-                                    "Save Link &As...",
-                                    "Save link target",
-                                    ItemKind::Normal,
-                                );
-                            }
+                            // The menu, for a context request and nothing
+                            // else: until 2026-09-20 any kind that was not a
+                            // leave popped it, which 11-04.1 recorded.
+                            let Some(href) = the_context_menus_link(&json) else {
+                                return;
+                            };
+                            // The same menu the page window offers (#80).
+                            let mut menu = the_links_menu(href.is_some());
 
                             // Store link href for the menu handler to read
                             {
@@ -3968,6 +3908,9 @@ impl WxMailApp {
                 // drains the updates holds it too, and it has to be the same
                 // layout, not a second one.
                 let column_layout = Rc::clone(&column_layout);
+                // The preview as a host, for the link's menu; the tick that
+                // drains the updates holds the same one.
+                let preview_host = preview_host.clone();
                 // `folder_tree` is copied in by the `move` below, the same as
                 // the lists above. All Inboxes is a row of that tree, and the
                 // command moves the cursor onto it rather than loading it
@@ -4900,26 +4843,19 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
-                        // Context menu actions from WebView popup
-                        _ if id == ID_CTX_SELECT_ALL => {
-                            preview.select_all();
-                        }
-                        _ if id == ID_CTX_COPY_LINK => {
-                            let s = lock_state(&state);
-                            if let Some(ref href) = s.context_link_href {
-                                Clipboard::get().set_text(href);
-                            }
-                        }
-                        _ if id == ID_CTX_SAVE_LINK => {
-                            let s = lock_state(&state);
-                            if let Some(ref href) = s.context_link_href {
-                                if let Some(safe) = HtmlRenderer::safe_external_url(href) {
-                                    let _ = open::that(&safe);
-                                } else {
-                                    tracing::warn!("Refused to open unsafe link: {}", href);
-                                    say_the_link_was_refused(&a11y);
-                                }
-                            }
+                        // The link's menu, raised from the preview's page and
+                        // answered by the same arms the page window's is
+                        // (#80). The href is taken out of the state before
+                        // the answer runs, so the lock does not span a load.
+                        _ if id == ID_CTX_SELECT_ALL
+                            || id == ID_CTX_OPEN_IN_MESSAGE_VIEW
+                            || id == ID_CTX_OPEN_IN_BROWSER
+                            || id == ID_CTX_OPEN_IN_SEPARATE_WINDOW
+                            || id == ID_CTX_COPY_LINK
+                            || id == ID_CTX_SAVE_LINK =>
+                        {
+                            let href = lock_state(&state).context_link_href.clone();
+                            answer_the_links_menu(id, href.as_deref(), &preview_host, &a11y);
                         }
                         // Quit really quits, and says so to the close handler
                         // before asking it to close. Both this and the window's
@@ -12852,6 +12788,8 @@ fn where_links_open() -> opening_links::Where {
 /// message window, are one of these, so what a followed link does cannot
 /// differ between them: the vetoes they used to rely on were written twice
 /// and were wrong the same way twice (#80).
+type Entitles = Rc<dyn Fn(Option<&str>)>;
+
 #[derive(Clone)]
 struct PageHost {
     view: WebView,
@@ -12861,6 +12799,15 @@ struct PageHost {
     message: Rc<RefCell<String>>,
     /// Whether a page stands in the message's place now.
     showing_a_page: Rc<Cell<bool>>,
+    /// Whether the view is loading something this window asked for, the
+    /// message or a page, redirects included; set before every load and
+    /// cleared when the load ends either way. The second line below vetoes a
+    /// main-frame navigation that arrives while this is off, since the event
+    /// cannot say where it is going.
+    loading: Rc<Cell<bool>>,
+    /// Whether the page's title has been said, so it is said once and not on
+    /// every change a page makes to it.
+    title_said: Rc<Cell<bool>>,
     /// A line for the person: the status bar where the surface has one,
     /// said where it has none.
     tell: Rc<dyn Fn(&str)>,
@@ -12868,6 +12815,11 @@ struct PageHost {
     /// focus back home after every load, and a page somebody followed is
     /// where they are, so it asks not to.
     before_a_page: Rc<dyn Fn()>,
+    /// The window's title while a page stands in the message's place, and
+    /// its own again when the message is back. The page window carries the
+    /// page's title; the main window's title names the folder, and a page
+    /// in one pane of it does not rename the window.
+    entitle: Entitles,
 }
 
 impl PageHost {
@@ -12876,14 +12828,18 @@ impl PageHost {
         surface: &'static str,
         tell: Rc<dyn Fn(&str)>,
         before_a_page: Rc<dyn Fn()>,
+        entitle: Entitles,
     ) -> Self {
         Self {
             view,
             surface,
             message: Rc::new(RefCell::new(String::new())),
             showing_a_page: Rc::new(Cell::new(false)),
+            loading: Rc::new(Cell::new(false)),
+            title_said: Rc::new(Cell::new(false)),
             tell,
             before_a_page,
+            entitle,
         }
     }
 
@@ -12891,6 +12847,8 @@ impl PageHost {
     fn show_the_message(&self, html: &str) {
         self.message.replace(html.to_string());
         self.showing_a_page.set(false);
+        self.loading.set(true);
+        (self.entitle)(None);
         self.view.set_page(html, "about:blank");
     }
 
@@ -12898,6 +12856,8 @@ impl PageHost {
     fn show_the_page(&self, address: &str, a11y: &Arc<Accessibility>) {
         (self.before_a_page)();
         self.showing_a_page.set(true);
+        self.title_said.set(false);
+        self.loading.set(true);
         let _ = a11y.announce(
             &opening_links::what_is_said_when_opening(address),
             crate::presentation::accessibility::announcements::Priority::Normal,
@@ -12921,6 +12881,228 @@ impl PageHost {
             crate::presentation::accessibility::announcements::Priority::Normal,
         );
     }
+
+    /// The second line behind the page's listener: a navigation this window
+    /// did not ask for is stopped, and a new window is never opened.
+    ///
+    /// Neither reads an address. wxdragon 0.9.17 hands a navigating event
+    /// the command event's string, which is empty for it, so the veto that
+    /// stood here until 2026-09-20 and keyed on that string being non-empty
+    /// vetoed nothing, ever (#80). What can be read is whether the event is
+    /// the main frame's and whether this window is loading something it
+    /// asked for; a main-frame navigation outside a load is a page's own
+    /// script or a link the listener did not catch, and it is stopped and
+    /// logged, since with no address there is nothing to route. A frame
+    /// inside a live page is left alone.
+    fn wire_the_second_line(&self) {
+        self.view.on_navigating({
+            let host = self.clone();
+            move |event: WebViewEventData| {
+                let main_frame = event.get_int() == Some(1);
+                let asked_for = host.loading.get();
+                tracing::debug!(
+                    "{}: navigating event carried {:?}; main frame: {main_frame}; asked for: \
+                     {asked_for}",
+                    host.surface,
+                    event.get_string()
+                );
+                if main_frame && !asked_for {
+                    event.event.event.veto();
+                    tracing::warn!(
+                        "{}: stopped a navigation the window did not ask for; the event \
+                         carries no address to route",
+                        host.surface
+                    );
+                }
+            }
+        });
+        self.view.on_navigated({
+            let host = self.clone();
+            move |_| host.loading.set(false)
+        });
+        self.view.on_new_window({
+            let host = self.clone();
+            move |event: WebViewEventData| {
+                event.event.event.veto();
+                tracing::debug!("{}: a new window was asked for and refused", host.surface);
+            }
+        });
+    }
+
+    /// What a page says when it arrives, and when it will not.
+    ///
+    /// The title once, at Normal, when a page stands in the message's place,
+    /// and the window titled with it (T-11-67); a failure said at High with
+    /// the browser's reason in words, and the message brought back so
+    /// nothing blank stands where it was. A message's own document is
+    /// neither: its title is the window's already, and it does not fail.
+    fn wire_a_pages_arrival(&self, a11y: &Arc<Accessibility>) {
+        self.view.on_title_changed({
+            let host = self.clone();
+            let a11y = a11y.clone();
+            move |event: WebViewEventData| {
+                let Some(title) = event.get_string().filter(|title| !title.trim().is_empty())
+                else {
+                    return;
+                };
+                if !host.showing_a_page.get() || host.title_said.get() {
+                    return;
+                }
+                host.title_said.set(true);
+                (host.entitle)(Some(&title));
+                let _ = a11y.announce(
+                    &title,
+                    crate::presentation::accessibility::announcements::Priority::Normal,
+                );
+            }
+        });
+        self.view.on_error({
+            let host = self.clone();
+            let a11y = a11y.clone();
+            move |event: WebViewEventData| {
+                host.loading.set(false);
+                if !host.showing_a_page.get() {
+                    return;
+                }
+                let said = opening_links::could_not_be_opened(event.get_int());
+                tracing::warn!("{}: {said}", host.surface);
+                let _ = a11y.announce(
+                    &said,
+                    crate::presentation::accessibility::announcements::Priority::High,
+                );
+                host.back_to_the_message(&a11y);
+            }
+        });
+    }
+}
+
+/// The link's context menu, the same on both surfaces (#80): the three places
+/// a link can open, whatever the setting says, above Copy Link and Save Link.
+fn the_links_menu(has_link: bool) -> Menu {
+    let menu = Menu::builder()
+        .append_item(ID_CTX_SELECT_ALL, "Select &All", "Select all content")
+        .build();
+    if has_link {
+        menu.append_separator();
+        menu.append(
+            ID_CTX_OPEN_IN_MESSAGE_VIEW,
+            "Open in &Message View",
+            "Open this link where the message is; Backspace brings the message back",
+            ItemKind::Normal,
+        );
+        menu.append(
+            ID_CTX_OPEN_IN_BROWSER,
+            "Open in Default &Browser",
+            "Open this link in your default browser",
+            ItemKind::Normal,
+        );
+        menu.append(
+            ID_CTX_OPEN_IN_SEPARATE_WINDOW,
+            "Open in Separate &Window",
+            "Open this link in a separate Wixen Mail window",
+            ItemKind::Normal,
+        );
+        menu.append_separator();
+        menu.append(
+            ID_CTX_COPY_LINK,
+            "&Copy Link",
+            "Copy link to clipboard",
+            ItemKind::Normal,
+        );
+        // S, not A: Select All has A, and the two shared it until 2026-09-20,
+        // when the menu became one function the letter guard can read.
+        menu.append(
+            ID_CTX_SAVE_LINK,
+            "&Save Link As...",
+            "Save link target",
+            ItemKind::Normal,
+        );
+    }
+    menu
+}
+
+/// The link's menu answered, on whichever surface raised it: the three
+/// places through the one route with the item's own ask, Copy Link to the
+/// clipboard, Save Link through the browser as before. Answers whether the
+/// id was one of the menu's.
+fn answer_the_links_menu(
+    id: i32,
+    href: Option<&str>,
+    host: &PageHost,
+    a11y: &Arc<Accessibility>,
+) -> bool {
+    match id {
+        _ if id == ID_CTX_SELECT_ALL => host.view.select_all(),
+        _ if id == ID_CTX_OPEN_IN_MESSAGE_VIEW => {
+            if let Some(href) = href {
+                follow_the_link_the_page_posted(
+                    host,
+                    href,
+                    opening_links::Asked::InMessageView,
+                    a11y.clone(),
+                );
+            }
+        }
+        _ if id == ID_CTX_OPEN_IN_BROWSER => {
+            if let Some(href) = href {
+                follow_the_link_the_page_posted(
+                    host,
+                    href,
+                    opening_links::Asked::InBrowser,
+                    a11y.clone(),
+                );
+            }
+        }
+        _ if id == ID_CTX_OPEN_IN_SEPARATE_WINDOW => {
+            if let Some(href) = href {
+                follow_the_link_the_page_posted(
+                    host,
+                    href,
+                    opening_links::Asked::InSeparateWindow,
+                    a11y.clone(),
+                );
+            }
+        }
+        _ if id == ID_CTX_COPY_LINK => {
+            if let Some(href) = href {
+                Clipboard::get().set_text(href);
+            }
+        }
+        _ if id == ID_CTX_SAVE_LINK => {
+            if let Some(href) = href {
+                if let Some(safe) = HtmlRenderer::safe_external_url(href) {
+                    let _ = open::that(&safe);
+                } else {
+                    tracing::warn!("Refused to open unsafe link: {}", href);
+                    let a11y = a11y.clone();
+                    say_the_link_was_refused(&a11y);
+                }
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// The link under a context-menu request the page posted, when the message
+/// is one: `None` for any other kind, `Some(None)` for a request with no
+/// link or one the sanitiser refused, `Some(Some(address))` for a link that
+/// may be opened.
+///
+/// serde_json handles the escaping that a hand-rolled scan does not, and
+/// the href is a value the sender controls, so it is validated before it is
+/// stored for the menu's arms to act on.
+fn the_context_menus_link(json: &str) -> Option<Option<String>> {
+    let posted = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    if posted.get("kind").and_then(serde_json::Value::as_str) != Some("context") {
+        return None;
+    }
+    Some(
+        posted
+            .get("href")
+            .and_then(serde_json::Value::as_str)
+            .and_then(HtmlRenderer::safe_external_url),
+    )
 }
 
 /// What a page posted about a link or the way back, answered (#80).
@@ -23140,29 +23322,9 @@ fn show_conversation_as_page(
     page.enable_access_to_dev_tools(false);
     // The browser does not get this application's keys.
     page.enable_browser_accelerator_keys(false);
-    // A sender does not choose what this machine opens.
-    page.on_navigating({
-        let a11y = a11y.clone();
-        move |event: WebViewEventData| {
-            if let Some(url) = event.get_string()
-                && !url.is_empty()
-                && url != "about:blank"
-                && !url.starts_with("about:")
-                && !url.starts_with("data:")
-            {
-                event.event.event.veto();
-                match HtmlRenderer::safe_external_url(&url) {
-                    Some(safe) => {
-                        let _ = open::that(&safe);
-                    }
-                    None => {
-                        tracing::warn!("Refused to open unsafe URL from message: {}", url);
-                        say_the_link_was_refused(&a11y);
-                    }
-                }
-            }
-        }
-    });
+    // A sender does not choose what this machine opens: the page's listener
+    // and the host's second line, wired below once the host exists, are how
+    // (#80). A veto stood here until 2026-09-20 and never fired.
 
     // Anything hanging off these messages, in a list of its own. Without it,
     // reading formatted would quietly cost somebody their attachments: the page
@@ -23238,8 +23400,11 @@ fn show_conversation_as_page(
     // list to jump to, and a key bound on the browser control never fires
     // while the browser has focus, which is what #84 met with F8.
     wire_the_way_out(&page, "conversation window", PageKeys::TheWayOutAndTheJumps);
-    // This window has no status bar, so a line for the person is said; and
-    // no focus home to keep, since the browser holds focus here on purpose.
+    // This window has no status bar, so a line for the person is said; no
+    // focus home to keep, since the browser holds focus here on purpose; and
+    // the window carries a page's title while one stands in the message's
+    // place, its own again when the message is back.
+    let the_windows_own_title = frame.get_title();
     let host = PageHost::new(
         page,
         "conversation window",
@@ -23253,7 +23418,31 @@ fn show_conversation_as_page(
             }
         }),
         Rc::new(|| {}),
+        Rc::new(move |title: Option<&str>| match title {
+            Some(title) => frame.set_title(&format!("{title} - Wixen Mail")),
+            None => frame.set_title(&the_windows_own_title),
+        }),
     );
+    // The second line behind the page's listener, and what a page says when
+    // it arrives (#80). Until 2026-09-20 a veto stood here that read the
+    // event's string, which is always empty, and vetoed nothing: the
+    // tester's Enter on a link opened it in this window.
+    host.wire_the_second_line();
+    host.wire_a_pages_arrival(a11y);
+    // The link's menu, the preview's, raised from the page and answered by
+    // the same arms. The href the page posted with the menu is kept here
+    // for the arm to read, through the sanitiser first as the preview keeps
+    // its own.
+    let context_link_href: Rc<RefCell<Option<String>>> = Rc::default();
+    frame.on_menu({
+        let host = host.clone();
+        let a11y = a11y.clone();
+        let context_link_href = context_link_href.clone();
+        move |event| {
+            let href = context_link_href.borrow().clone();
+            answer_the_links_menu(event.get_id(), href.as_deref(), &host, &a11y);
+        }
+    });
     page.on_script_message_received({
         let a11y = a11y.clone();
         let host = host.clone();
@@ -23266,6 +23455,14 @@ fn show_conversation_as_page(
             // (#80), through the same answer the preview gives.
             if let Some(posted) = page_links::what_the_page_posted(&json) {
                 answer_what_the_page_posted(&host, posted, &a11y);
+                return;
+            }
+            // The menu, on a link or on the page, as the preview has it.
+            if let Some(href) = the_context_menus_link(&json) {
+                let mut menu = the_links_menu(href.is_some());
+                context_link_href.replace(href);
+                page.popup_menu(&mut menu, None);
+                context_link_href.replace(None);
                 return;
             }
             match page_jumps::the_jump_the_page_asked_for(&json) {

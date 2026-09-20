@@ -632,7 +632,14 @@ fn test_the_three_items_are_on_the_links_menu_with_their_names_above_copy_link()
 #[test]
 fn test_the_menu_reading_sees_a_missing_item_and_a_wrong_name() {
     let app = shipped(THE_MAIN_WINDOW);
-    let without = app.replacen("ID_CTX_OPEN_IN_BROWSER,", "ID_CTX_SELECT_ALL,", 1);
+    // Planted in the menu's own body: the id is named earlier in the file,
+    // in the id list and the main window's arm.
+    let menu = body_of(&app, "fn the_links_menu(").unwrap_or_default();
+    let without = app.replacen(
+        &menu,
+        &menu.replacen("ID_CTX_OPEN_IN_BROWSER,", "ID_CTX_SELECT_ALL,", 1),
+        1,
+    );
     assert!(
         the_three_items_are_on_the_menu(&without).is_err(),
         "the reading passed a menu with the browser item gone"
@@ -776,7 +783,7 @@ fn the_way_back_the_title_and_the_failure(app: &str) -> Result<(), String> {
     if !title.contains("title_said") {
         return Err("a page's title is said on every change rather than once".to_string());
     }
-    let failure = between(&arrival, ".on_error(", "\n    });")?;
+    let failure = between(&arrival, ".on_error(", "});")?;
     if !failure.contains("opening_links::could_not_be_opened(") {
         return Err("a page that will not load fails in silence".to_string());
     }
@@ -836,7 +843,7 @@ fn the_vetoes_are_the_second_line(app: &str) -> Result<(), String> {
                 .to_string(),
         );
     }
-    let new_window = between(&second_line, ".on_new_window(", "\n    });")?;
+    let new_window = between(&second_line, ".on_new_window(", "});")?;
     if !new_window.contains(".veto()") {
         return Err("a new window asked for by a page is not vetoed".to_string());
     }

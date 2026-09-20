@@ -240,6 +240,16 @@ mod tests {
     }
 
     #[test]
+    fn test_a_garbled_stored_choice_selects_the_browsers_entry() {
+        // A hand-edited file, or one from a later version, reads as the
+        // default, so the entry it selects is the default's and saving that
+        // back writes the default rather than the garbage.
+        assert_eq!(offered_index("nonsense"), 0);
+        assert_eq!(offered_index(""), 0);
+        assert_eq!(Where::ALL[offered_index("nonsense")], Where::DefaultBrowser);
+    }
+
+    #[test]
     fn test_each_choice_says_where_in_plain_words() {
         assert_eq!(Where::DefaultBrowser.label(), "In the default browser");
         assert_eq!(Where::MessageView.label(), "In the message view");

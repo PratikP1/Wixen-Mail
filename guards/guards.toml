@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 210 records have arrived since and have not been through it.
+# 213 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -28015,8 +28015,8 @@ red = [
     "test_the_route_table_holds_cell_by_cell",
 ]
 tests_last_seen = [
-    { file = "src/application/opening_links.rs", tests = 11 },
-    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 6 },
+    { file = "src/application/opening_links.rs", tests = 12 },
+    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 20 },
 ]
 
 # The Reading tab offers the three places, in the module's order, and OK
@@ -28044,5 +28044,73 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 6 },
+    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 20 },
+]
+
+# The page's click listener takes the click from the browser before it
+# posts the address; without preventDefault the browser navigates as well,
+# and the link opens inside the window beside wherever the setting sent
+# it, which is the tester's report with the fix on top. The break drops
+# the one line; the target's listener reading goes red. The module's own
+# case goes red in the library too and is not in the suite named here.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the page's click listener takes the click from the browser before posting the link"
+file = "src/presentation/page_links.rs"
+suite = "a_link_opens_where_the_setting_says"
+before = """    e.preventDefault();
+    e.stopPropagation();
+    var data = { kind: 'link', href: link.href };"""
+after = """    e.stopPropagation();
+    var data = { kind: 'link', href: link.href };"""
+red = [
+    "test_every_page_is_given_the_link_listener_and_it_takes_the_click_from_the_browser",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_links.rs", tests = 7 },
+    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 20 },
+]
+
+# Open in Message View asks for the message view whatever the setting says;
+# the break sends the item to the browser, which is the setting's default
+# and so would look right on every fresh profile. The target's arm reading
+# goes red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "open in message view asks for the message view and not the browser"
+file = "src/presentation/wx_app.rs"
+suite = "a_link_opens_where_the_setting_says"
+before = """                    opening_links::Asked::InMessageView,"""
+after = """                    opening_links::Asked::InBrowser,"""
+red = [
+    "test_each_item_reaches_the_one_route_with_its_own_ask_on_both_surfaces",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 20 },
+]
+
+# The sanitiser runs before the route on every path (T-11-68): the break
+# takes the address as the page wrote it when the sanitiser refuses it, so
+# a javascript: or file: link a sender wrote would reach the route and the
+# browser. The target's sanitiser reading goes red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the sanitiser runs before the route on every path a link takes"
+file = "src/presentation/wx_app.rs"
+suite = "a_link_opens_where_the_setting_says"
+before = """    let Some(safe) = HtmlRenderer::safe_external_url(href) else {"""
+after = """    let Some(safe) = HtmlRenderer::safe_external_url(href).or_else(|| Some(href.to_string())) else {"""
+red = [
+    "test_the_sanitiser_runs_before_the_route_on_every_path",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 20 },
 ]
