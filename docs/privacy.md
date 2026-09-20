@@ -381,6 +381,13 @@ tracking pixels and decorative pictures left out; the switch on the Reading tab 
 What it cannot protect against: a tracker the size of a picture. Read from
 `src/application/pictures.rs` and `src/presentation/html_renderer.rs`.
 
+**Text a sender hid.** Since 2026-09-20 a block the sender hid, and the invisible padding a
+newsletter puts before its preview line, are left out before the message is shown, by the
+sender's own hiding and never by what the block says, and a line at the top says when words
+were left out. Nothing is sent anywhere by this: the block is dropped here, on this computer,
+and the sender learns nothing from it. Read from `src/application/hidden_text.rs` and
+`src/presentation/html_renderer.rs`.
+
 **Read receipts.** A sender can ask, with a header, to be told when you read their message.
 When you open one that asks, Wixen Mail says so on the status bar, whatever your setting.
 The setting, "Tell senders when you read their mail" on the Reading tab, is Never by

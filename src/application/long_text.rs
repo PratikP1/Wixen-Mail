@@ -647,15 +647,28 @@ enum Keeping {
 }
 
 fn read_markup(html: &str, keeping: Keeping) -> String {
+    // What the sender hid is dropped before anything reads it (#90), so a
+    // hidden preheader and its padding reach neither a row's snippet nor a
+    // description read aloud. Only for speech: a note read back to be
+    // edited keeps everything typed, hidden or not, for the reason on
+    // [`from_markup_to_edit`].
+    let shown = match keeping {
+        Keeping::OnlyWhatIsSpoken => {
+            std::borrow::Cow::Owned(super::hidden_text::drop_what_the_sender_hid(html).0)
+        }
+        Keeping::EverythingTyped => std::borrow::Cow::Borrowed(html),
+    };
     // `ammonia`'s defaults drop a `<script>` or `<style>` element with its
     // content and strip every other disallowed tag around its content. A
     // `<title>` is the one element whose content is not part of what a reader
     // would say either: a whole message carries one in its head, and kept, it
-    // arrived at the front of every newsletter's snippet (#32).
-    let cleaned = ammonia::Builder::default()
-        .add_clean_content_tags(["title"])
-        .clean(html)
-        .to_string();
+    // arrived at the front of every newsletter's snippet (#32). A table's
+    // claim to be layout is kept, so the walk below can read one as its
+    // blocks rather than as a table with no columns to name.
+    let mut cleaner = ammonia::Builder::default();
+    cleaner.add_clean_content_tags(["title"]);
+    super::hidden_text::keep_the_layout_claim(&mut cleaner);
+    let cleaned = cleaner.clean(&shown).to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
@@ -728,7 +741,8 @@ mod markup {
                         let level = element.name()[1..].parse::<usize>().unwrap_or(1);
                         push_paragraph(&format!("{} ", "#".repeat(level)), child, out, keeping);
                     }
-                    "p" | "div" => push_paragraph("", child, out, keeping),
+                    "p" => push_paragraph("", child, out, keeping),
+                    "div" => blocks_or_a_paragraph(child, out, keeping),
                     "ul" => {
                         list(child, out, None, "", keeping);
                         out.push('\n');
@@ -741,6 +755,19 @@ mod markup {
                         // A list item with no list around it. Malformed, but a
                         // bullet is a better answer than silently dropping it.
                         push_item("- ", child, out, keeping);
+                    }
+                    // A table the sender says is layout is its blocks in
+                    // order, for speech: it has no columns to name, and
+                    // read as a table every block in a newsletter arrived as
+                    // one cell (#90). Read back to be edited it stays a
+                    // table, since that is what was typed.
+                    "table"
+                        if keeping == Keeping::OnlyWhatIsSpoken
+                            && super::super::hidden_text::is_a_layout_claim(
+                                element.attr("role"),
+                            ) =>
+                    {
+                        layout_table(child, out, keeping)
                     }
                     "table" => table(child, out, keeping),
                     "blockquote" => quote(child, out, keeping),
@@ -932,7 +959,92 @@ mod markup {
         out.push('\n');
     }
 
+    /// A layout table's cells, each read as the blocks it holds, in order.
+    ///
+    /// A cell holding a block, a paragraph or a heading or another table, is
+    /// walked as blocks; a cell holding only inline content, a line of words
+    /// with a link in it, is one paragraph, since walking it as blocks would
+    /// cut the line at the link into three.
+    fn layout_table(node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
+        for child in node.children() {
+            let Node::Element(element) = child.value() else {
+                continue;
+            };
+            match element.name() {
+                "td" | "th" => blocks_or_a_paragraph(child, out, keeping),
+                _ => layout_table(child, out, keeping),
+            }
+        }
+    }
+
+    /// A container read as the blocks it holds when it holds any, and as
+    /// one paragraph when it holds only inline content.
+    ///
+    /// For a layout table's cell and for a `div`. A `div` used to be a
+    /// paragraph whatever it held, which is right for a note's `div` of
+    /// words and wrong for a newsletter, whose whole body is a `div`
+    /// holding its headings, its tables and its paragraphs: read as one
+    /// paragraph, the heading was not a heading and every block's words
+    /// ran into the next block's (#90). A container holding only a line of
+    /// words with a link in it is one paragraph, since walking it as blocks
+    /// would cut the line at the link into three.
+    fn blocks_or_a_paragraph(node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
+        let holds_a_block = node
+            .children()
+            .any(|inside| matches!(inside.value(), Node::Element(e) if is_a_block(e.name())));
+        match holds_a_block {
+            true => blocks(node, out, keeping),
+            false => push_paragraph("", node, out, keeping),
+        }
+    }
+
+    /// Whether a tag is a block, for the places a block met inside inline
+    /// content wants a space around it rather than its words run into its
+    /// neighbours', and a container holding one is walked as blocks.
+    fn is_a_block(tag: &str) -> bool {
+        matches!(
+            tag,
+            "h1" | "h2"
+                | "h3"
+                | "h4"
+                | "h5"
+                | "h6"
+                | "p"
+                | "div"
+                | "ul"
+                | "ol"
+                | "li"
+                | "table"
+                | "tbody"
+                | "thead"
+                | "tr"
+                | "td"
+                | "th"
+                | "blockquote"
+                | "pre"
+                | "hr"
+                | "figure"
+                | "figcaption"
+                | "section"
+                | "article"
+                | "header"
+                | "footer"
+                | "nav"
+                | "aside"
+                | "center"
+                | "dl"
+                | "dt"
+                | "dd"
+                | "details"
+                | "summary"
+        )
+    }
+
     /// Every `tr` under this node, however many `thead` or `tbody` wrap them.
+    ///
+    /// A cell's text is its inline reading with the spacing collapsed, so a
+    /// cell holding two paragraphs reads them with one space between and
+    /// not a line break a markdown row cannot hold (ledger 555).
     fn collect_rows(node: NodeRef<'_, Node>, rows: &mut Vec<Vec<String>>, keeping: Keeping) {
         for child in node.children() {
             let Node::Element(element) = child.value() else {
@@ -948,7 +1060,7 @@ mod markup {
                         .map(|cell| {
                             let mut text = String::new();
                             inline(cell, &mut text, keeping);
-                            text.trim().to_string()
+                            text.split_whitespace().collect::<Vec<_>>().join(" ")
                         })
                         .collect::<Vec<_>>();
                     if !cells.is_empty() {
@@ -1049,6 +1161,15 @@ mod markup {
                         }
                     }
                     "script" | "style" => {}
+                    // A block met inside inline content, a paragraph inside
+                    // a table cell, is read with a space either side, or its
+                    // last word runs into the next block's first (ledger
+                    // 555: "seven daysActions speak louder than wordsGary").
+                    tag if is_a_block(tag) => {
+                        out.push(' ');
+                        inline(child, out, keeping);
+                        out.push(' ');
+                    }
                     _ => inline(child, out, keeping),
                 },
                 _ => {}

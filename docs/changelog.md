@@ -310,7 +310,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   thing once: the subject as the page's heading, the sender in the message's heading, which
   is numbered only in a conversation, where until now a single message was headed "1. Message
   from" with a number that counted nothing; the count of messages is said only for a
-  conversation, as before. Known limitations: a sender who hides one
+  conversation, as before. The reader that makes a row's snippet and reads a message's
+  structure for speech reads the same message with its blocks apart: a layout table is read
+  as the blocks it holds, in order, and never as a table with columns to name, a cell holding
+  two paragraphs reads them with a space between, and a block that holds headings and tables
+  is walked as those rather than read as one paragraph, where until now the whole newsletter
+  arrived as one table cell with every block's last word run into the next block's first.
+  Known limitations: a sender who hides one
   copy of a block for small screens and shows another through a stylesheet rule now shows the
   copy the stylesheet hid, since the stylesheet is dropped and only the inline hiding is read;
   nobody has heard the newsletter read once. Measured 2026-09-20: the drop costs a median of

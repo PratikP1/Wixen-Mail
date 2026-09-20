@@ -256,13 +256,7 @@ fn cleaner() -> &'static ammonia::Builder<'static> {
         // table's; which tables those are is decided before the cleaner, in
         // `hidden_text::keeps_its_label`, because this filter sees one
         // attribute at a time and a table's answer depends on its role.
-        for tag in ["table", "tr", "td", "th"] {
-            builder.add_tag_attribute_values(
-                tag,
-                "role",
-                [crate::application::hidden_text::LAYOUT_CLAIM],
-            );
-        }
+        crate::application::hidden_text::keep_the_layout_claim(&mut builder);
         for tag in ["a", "table"] {
             builder.add_tag_attributes(tag, ["aria-label"]);
         }

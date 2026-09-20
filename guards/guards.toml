@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 207 records have arrived since and have not been through it.
+# 208 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27911,7 +27911,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 92 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 15 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
 # The one role the cleaner keeps is presentation, on a table's four tags,
@@ -27923,23 +27923,22 @@ tests_last_seen = [
 # since its region and its button are not a table's tags.
 #
 # Measured 2026-09-20 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. Rewritten the same
+# day when the allowance moved into hidden_text::keep_the_layout_claim,
+# the one place the page's cleaner and the reader's take it from, and
+# measured again: the same one.
 [[guard]]
 name = "no role but presentation survives the cleaner"
-file = "src/presentation/html_renderer.rs"
+file = "src/application/hidden_text.rs"
 suite = "what_the_sender_hid_is_not_read"
-before = """            builder.add_tag_attribute_values(
-                tag,
-                "role",
-                [crate::application::hidden_text::LAYOUT_CLAIM],
-            );"""
-after = """            builder.add_tag_attributes(tag, ["role"]);"""
+before = """        builder.add_tag_attribute_values(tag, "role", [LAYOUT_CLAIM]);"""
+after = """        builder.add_tag_attributes(tag, ["role"]);"""
 red = [
     "test_no_role_but_presentation_survives_and_only_on_a_tables_four_tags",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 15 },
+    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
 # A sender's label is a name only where a reader would use it as one, and
@@ -27964,5 +27963,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/hidden_text.rs", tests = 29 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 15 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+]
+
+# The reader reads a layout table as its blocks in order and never as a
+# Table piece (ledger 555): a layout table has no columns to name, and
+# read as one the whole newsletter arrived as a single cell with every
+# block's last word run into the next block's first. The break sends a
+# presentational table back down the table arm, so the reader answers a
+# Table piece for it again. On the target the hand-built layout table and
+# the newsletter both go red.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a layout table is read as its blocks and never as a table piece"
+file = "src/application/long_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = """                        layout_table(child, out, keeping)"""
+after = """                        table(child, out, keeping)"""
+red = [
+    "test_a_layout_table_is_read_as_its_blocks_in_order",
+    "test_the_reader_reads_the_newsletter_as_blocks_apart_and_no_layout_table_as_a_table",
+]
+tests_last_seen = [
+    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]

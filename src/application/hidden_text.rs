@@ -232,6 +232,19 @@ pub fn is_a_layout_claim(role: Option<&str>) -> bool {
 /// The `role` value that says a table is layout.
 pub const LAYOUT_CLAIM: &str = "presentation";
 
+/// Let a cleaner keep the layout claim, on a table's four tags and no other
+/// value on any tag.
+///
+/// The one place the allowance is written, for the page's cleaner and the
+/// reader's: a layout table has to reach the reader's walk with its claim
+/// on it to be read as its blocks, and reach the page with it to be no
+/// table to NVDA, and two allowances would be two things to drift.
+pub fn keep_the_layout_claim(builder: &mut ammonia::Builder<'_>) {
+    for tag in ["table", "tr", "td", "th"] {
+        builder.add_tag_attribute_values(tag, "role", [LAYOUT_CLAIM]);
+    }
+}
+
 /// The markup with what the sender hid taken out, and how many blocks of
 /// words that took.
 ///
