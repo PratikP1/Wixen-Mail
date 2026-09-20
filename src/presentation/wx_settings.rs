@@ -1489,6 +1489,7 @@ pub struct ReadingTabControls {
     empty_reaches_subfolders: CheckBox,
     mark_read_reaches_subfolders: CheckBox,
     pub sort_order: Choice,
+    show_conversations_by_default: CheckBox,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
     a_conversation_reaches: Choice,
@@ -1655,13 +1656,33 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         second_level_index(&config.message_columns),
     );
 
-    // A checkbox reading "Enable threaded view by default" used to sit here.
-    // Threaded view is not implemented: its View menu item is built disabled
-    // for that reason and says so, and this box was unticked, saved by nothing
-    // and read by nothing. A default for something that cannot be switched on
-    // is a setting for a feature that is not there.
+    // A checkbox reading "Enable threaded view by default" sat here once and
+    // was taken out because threaded view did not exist then: it was unticked,
+    // saved by nothing and read by nothing, a setting for a feature that was
+    // not there. This one is the same question asked once the feature is
+    // (#92, Pratik's decision of 2026-09-20): what a folder nobody has set
+    // shows, on unless turned off, read by the main window where a folder
+    // opens. A folder's own choice through View, Thread View still wins. Built
+    // after Then by so the sort and its second level stay adjacent tab stops
+    // (#36).
+    let show_conversations_by_default = CheckBox::builder(panel)
+        .with_label("&Show conversations by default")
+        .build();
+    show_conversations_by_default.set_value(config.show_conversations_by_default);
+    set_accessible_name_and_description(
+        &show_conversations_by_default,
+        "Show conversations by default",
+        "A folder you have never switched shows one row per conversation; View, Thread View \
+         still chooses for one folder",
+    );
+    list_sec.add(
+        &show_conversations_by_default,
+        0,
+        SizerFlag::Left | SizerFlag::All,
+        4,
+    );
 
-    // This one does something, which is the difference. The folder tree opens
+    // This one does something too. The folder tree opens
     // with no row chosen, so mail is listed only once somebody arrows onto a
     // folder; ticking this lands them in the combined inbox instead.
     let start_in_all_inboxes = CheckBox::builder(panel)
@@ -2088,6 +2109,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         clock_hours,
         mark_read_after: markread_choice,
         sort_then,
+        show_conversations_by_default,
         start_in_all_inboxes,
         unread_on_a_parent,
         a_conversation_reaches,
@@ -3562,6 +3584,9 @@ fn read_the_reading_page(w: &ReadingTabControls, base: &AppConfig, cfg: &mut App
         _ => "date_newest",
     }
     .to_string();
+    // What a folder nobody has set shows (#92); the next folder opened reads
+    // it.
+    cfg.show_conversations_by_default = w.show_conversations_by_default.get_value();
 
     // Read receipts. Read by position out of `Policy::ALL`, which is the same
     // order the choices were built from, so the two cannot drift apart the way

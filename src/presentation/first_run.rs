@@ -128,7 +128,9 @@ pub const TITLE: &str = "Before you start";
 /// `test_the_first_run_text_stays_short_enough_to_be_heard` is what stops that
 /// reasoning being used a second and a third time.
 pub const INTRODUCTION: &str = "\
-Wixen Mail is an alpha. Reading your mail is the part that has been used.
+Wixen Mail is an alpha. Reading your mail is the part that has been used. Your \
+folders show one row per conversation; View, Thread View switches a folder, and \
+Settings, Reading changes what a folder you never set shows.
 
 Everything that writes is experimental: sending, moving, deleting, filing a \
 copy in Sent, and sending your changes to tasks, contacts and the calendar \

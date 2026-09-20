@@ -348,8 +348,10 @@ impl MessageCache {
 
     /// Which view a folder was left in, or nothing if it was never set.
     ///
-    /// `None` is a real answer and not a failure: D-09 says a folder nobody has
-    /// set is flat, and the caller reads that through `Showing::from_stored`.
+    /// `None` is a real answer and not a failure: a folder nobody has set. Under
+    /// D-09 that was flat until 2026-09-20 (#92); since then it shows what
+    /// Show conversations by default says, and the caller reads that through
+    /// `Showing::from_stored` with the setting's answer in hand.
     pub fn folder_view(&self, identity: &str) -> Result<Option<i64>> {
         self.one_number_from_the_tree_state("thread_view", identity)
     }
@@ -1167,7 +1169,8 @@ mod tests {
         assert_eq!(
             cache.folder_view(&folder_row("acc", "INBOX")).unwrap(),
             None,
-            "a folder never set is flat, and that is the absence of a number"
+            "a folder never set is the absence of a number, which was flat until 2026-09-20 \
+             and is what Show conversations by default says since (#92)"
         );
     }
 
@@ -1178,8 +1181,10 @@ mod tests {
         let cache = &*home;
         let row = folder_row("acc", "INBOX");
         cache.set_folder_view(&row, Showing::Conversations).unwrap();
+        // Handed the other view for a folder never set, so it is the stored
+        // answer that comes back and not the default.
         assert_eq!(
-            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::from_stored(cache.folder_view(&row).unwrap(), Showing::Messages),
             Showing::Conversations
         );
     }
@@ -1192,8 +1197,10 @@ mod tests {
         let row = folder_row("acc", "INBOX");
         cache.set_folder_view(&row, Showing::Conversations).unwrap();
         cache.set_folder_view(&row, Showing::Messages).unwrap();
+        // A stored nought is a choice and stays flat whatever a folder never
+        // set would show (#92).
         assert_eq!(
-            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::from_stored(cache.folder_view(&row).unwrap(), Showing::Conversations),
             Showing::Messages
         );
     }
@@ -1209,9 +1216,14 @@ mod tests {
             .set_folder_view(&here, Showing::Conversations)
             .unwrap();
         assert_eq!(
-            Showing::from_stored(cache.folder_view(&there).unwrap()),
-            Showing::Messages,
+            cache.folder_view(&there).unwrap(),
+            None,
             "D-09 stores this per folder, so setting one did not set the other"
+        );
+        assert_eq!(
+            Showing::from_stored(cache.folder_view(&there).unwrap(), Showing::Messages),
+            Showing::Messages,
+            "and the other folder shows what a folder never set shows"
         );
     }
 
@@ -1234,7 +1246,7 @@ mod tests {
             "the folder is still collapsed after a restart"
         );
         assert_eq!(
-            Showing::from_stored(again.folder_view(&row).unwrap()),
+            Showing::from_stored(again.folder_view(&row).unwrap(), Showing::Messages),
             Showing::Conversations,
             "and it is still showing conversations"
         );
@@ -1262,7 +1274,7 @@ mod tests {
             "opening the row still opens it"
         );
         assert_eq!(
-            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::from_stored(cache.folder_view(&row).unwrap(), Showing::Messages),
             Showing::Conversations,
             "and it did not take the folder's view with it"
         );
@@ -1343,7 +1355,7 @@ mod tests {
             .set_folder_thread_column(&row, ThreadColumn::ChosenOff)
             .unwrap();
         assert_eq!(
-            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::from_stored(cache.folder_view(&row).unwrap(), Showing::Messages),
             Showing::Conversations
         );
         assert_eq!(

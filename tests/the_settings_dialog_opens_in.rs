@@ -70,6 +70,7 @@ use wixen_mail::application::reading_habits::{
 };
 use wixen_mail::common::paths::AppPaths;
 use wixen_mail::common::started;
+use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::accessibility::sound_scheme::SoundScheme;
@@ -326,6 +327,11 @@ mod windows_of {
     const WM_COMMAND: u32 = 0x0111;
     const MF_BYPOSITION: u32 = 0x0400;
     const GW_CHILD: u32 = 5;
+    const GW_HWNDNEXT: u32 = 2;
+    const BM_GETCHECK: u32 = 0x00F0;
+    const BM_SETCHECK: u32 = 0x00F1;
+    const BST_CHECKED: isize = 1;
+    const BN_CLICKED: usize = 0;
 
     #[link(name = "user32")]
     unsafe extern "system" {
@@ -339,7 +345,10 @@ mod windows_of {
         fn GetMenuItemID(menu: Hmenu, at: i32) -> u32;
         fn GetMenuStringW(menu: Hmenu, item: u32, text: *mut u16, most: i32, by: u32) -> i32;
         fn PostMessageW(window: Hwnd, message: u32, w: usize, l: isize) -> i32;
+        fn SendMessageW(window: Hwnd, message: u32, w: usize, l: isize) -> isize;
         fn GetWindow(window: Hwnd, which: u32) -> Hwnd;
+        fn GetParent(window: Hwnd) -> Hwnd;
+        fn GetDlgCtrlID(window: Hwnd) -> i32;
     }
 
     /// Whether the window has any child window at all, which is what a page
@@ -349,11 +358,10 @@ mod windows_of {
         unsafe { GetWindow(window, GW_CHILD) != 0 }
     }
 
-    /// The window text of each direct child of the window, in sibling
+    /// Each direct child of the window with its window text, in sibling
     /// order: a label's words, a static text's sentence, a button's caption.
-    pub fn child_texts(window: Hwnd) -> Vec<String> {
-        const GW_HWNDNEXT: u32 = 2;
-        let mut texts = Vec::new();
+    fn children(window: Hwnd) -> Vec<(Hwnd, String)> {
+        let mut found = Vec::new();
         // Safe: plain window queries on handles the toolkit gave us; every
         // buffer is passed with its length.
         unsafe {
@@ -361,11 +369,56 @@ mod windows_of {
             while child != 0 {
                 let mut text = [0u16; 512];
                 let length = GetWindowTextW(child, text.as_mut_ptr(), text.len() as i32);
-                texts.push(String::from_utf16_lossy(&text[..length.max(0) as usize]));
+                found.push((
+                    child,
+                    String::from_utf16_lossy(&text[..length.max(0) as usize]),
+                ));
                 child = GetWindow(child, GW_HWNDNEXT);
             }
         }
-        texts
+        found
+    }
+
+    /// The window text of each direct child of the window, in sibling order.
+    pub fn child_texts(window: Hwnd) -> Vec<String> {
+        children(window).into_iter().map(|(_, text)| text).collect()
+    }
+
+    /// The direct child whose caption is `label` once the mnemonic ampersand
+    /// is dropped, which is how a check box carries its own label.
+    pub fn child_labelled(window: Hwnd, label: &str) -> Option<Hwnd> {
+        children(window)
+            .into_iter()
+            .find(|(_, text)| text.replace('&', "") == label)
+            .map(|(child, _)| child)
+    }
+
+    /// Whether a check box is ticked, asked of the control itself.
+    pub fn is_checked(check_box: Hwnd) -> bool {
+        // Safe: a query on a handle the toolkit gave us.
+        unsafe { SendMessageW(check_box, BM_GETCHECK, 0, 0) == BST_CHECKED }
+    }
+
+    /// Tick or clear a check box the way a click leaves it, so what OK
+    /// reads back is the control's own state.
+    ///
+    /// The control's state and then the notification a click sends the
+    /// parent, because wxWidgets keeps a check box's state itself and reads
+    /// the control's only when a click is reported
+    /// (`wxCheckBox::MSWCommand`); `BM_SETCHECK` alone moves the control
+    /// and leaves `GetValue` answering the old state.
+    pub fn set_checked(check_box: Hwnd, on: bool) {
+        // Safe: messages to handles the toolkit gave us.
+        unsafe {
+            SendMessageW(check_box, BM_SETCHECK, usize::from(on), 0);
+            let id = GetDlgCtrlID(check_box) as usize & 0xFFFF;
+            SendMessageW(
+                GetParent(check_box),
+                WM_COMMAND,
+                (BN_CLICKED << 16) | id,
+                check_box,
+            );
+        }
     }
 
     /// Every visible top-level window of one process, with its title.
@@ -749,6 +802,7 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
             // back for that page is visible.
             let config = AppConfig {
                 default_sort_order: "sender_az".to_string(),
+                show_conversations_by_default: true,
                 ..AppConfig::default()
             };
             let widgets = wx_settings::build_settings_dialog(&frame, &config, &[], false, &a11y);
@@ -811,6 +865,29 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
                     after_a_change.default_sort_order
                 ));
             }
+            // Show conversations by default (#92, 11-11.1.2): a check box on
+            // the built Reading page carrying its own words, ticked because
+            // the settings file says on, and OK writing back what the box
+            // says once it is cleared, through the path the dialog saves by.
+            match windows_of::child_labelled(reading, SHOW_CONVERSATIONS_BY_DEFAULT) {
+                None => wrong.push(format!(
+                    "the built Reading page holds no check box labelled {SHOW_CONVERSATIONS_BY_DEFAULT:?}"
+                )),
+                Some(the_box) => {
+                    if !windows_of::is_checked(the_box) {
+                        wrong.push(format!(
+                            "{SHOW_CONVERSATIONS_BY_DEFAULT:?} is not ticked for a settings file that says on"
+                        ));
+                    }
+                    windows_of::set_checked(the_box, false);
+                }
+            }
+            let with_the_box_cleared = wx_settings::read_settings(&widgets, &config);
+            if with_the_box_cleared.show_conversations_by_default {
+                wrong.push(format!(
+                    "{SHOW_CONVERSATIONS_BY_DEFAULT:?} was cleared on the shown Reading page and OK wrote true"
+                ));
+            }
 
             // The sentence under Log level (#91, 11-11.1.1): the level is set
             // up once when the program starts, so the control says a change
@@ -844,10 +921,108 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
     );
 }
 
-/// The window layer's source, for the two readings below.
+/// The words on the check box, which are also its name on both channels
+/// and the words the guide sends somebody to.
+const SHOW_CONVERSATIONS_BY_DEFAULT: &str = "Show conversations by default";
+
+/// The window layer's source, for the readings below.
 fn the_settings_source() -> String {
     std::fs::read_to_string("src/presentation/wx_settings.rs")
         .expect("src/presentation/wx_settings.rs is read from the repository root")
+}
+
+/// The shipping half of the main window's source, test modules left out.
+fn the_windows_source() -> String {
+    let source = std::fs::read_to_string("src/presentation/wx_app.rs")
+        .expect("src/presentation/wx_app.rs is read from the repository root");
+    what_ships(&source)
+}
+
+/// Source with its whitespace collapsed to single spaces, so a call rustfmt
+/// broke across lines reads as one line and a reading does not depend on
+/// where the formatter put the breaks.
+fn collapsed(source: &str) -> String {
+    source.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// ── Show conversations by default (#92, 11-11.1.2) ─────────────────────────
+
+#[test]
+fn test_the_folder_landing_reads_show_conversations_by_default_where_the_folder_opens() {
+    // The setting says what a folder nobody has set shows, and it is read
+    // where a folder opens: once per landing, beside the view's own read,
+    // and handed to the rule as the answer for a folder never set. Not
+    // captured at startup, which `tests/a_setting_saved_applies_without_a_restart.rs`
+    // holds for the whole block, and not per row, since the paint callback
+    // reads no configuration.
+    let app = the_windows_source();
+    let reader = collapsed(body_of(&app, "what_a_folder_never_set_shows"));
+    assert!(
+        reader.contains("load_stored()") && reader.contains(".show_conversations_by_default"),
+        "what_a_folder_never_set_shows reads something other than the stored setting"
+    );
+    assert!(
+        reader.contains("Showing::when_nobody_set_one("),
+        "what_a_folder_never_set_shows does not turn the setting into a view through the rule"
+    );
+
+    let whole = collapsed(&app);
+    let landings: Vec<&str> = whole
+        .match_indices("Showing::from_stored(")
+        .map(|(at, _)| {
+            let rest = &whole[at..];
+            let call_ends = rest.find(");").unwrap_or(rest.len());
+            &rest[..call_ends]
+        })
+        .collect();
+    assert!(
+        !landings.is_empty(),
+        "nothing in the main window reads a folder's view through Showing::from_stored"
+    );
+    let handed_a_constant: Vec<&&str> = landings
+        .iter()
+        .filter(|call| !call.contains("what_a_folder_never_set_shows()"))
+        .collect();
+    assert!(
+        handed_a_constant.is_empty(),
+        "a folder landing hands Showing::from_stored something other than what the setting \
+         says a folder never set shows, so the setting is taken and ignored there:\n  {}",
+        handed_a_constant
+            .iter()
+            .map(|call| call.to_string())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_check_box_carries_its_words_on_both_channels_and_is_written_back_on_save() {
+    // UI Automation reads a check box's own caption; NVDA reads the MSAA
+    // object `set_accessible_name` installs. The words are the same on
+    // both, and what the box says on OK goes into the setting the folder
+    // landing reads.
+    let source = the_settings_source();
+    let build = collapsed(body_of(&source, "build_reading_tab"));
+    assert!(
+        build.contains(&format!("\"&{SHOW_CONVERSATIONS_BY_DEFAULT}\"")),
+        "the Reading tab builds no check box captioned {SHOW_CONVERSATIONS_BY_DEFAULT:?}"
+    );
+    assert!(
+        build.contains(&format!(
+            "set_accessible_name_and_description( &show_conversations_by_default, \
+             \"{SHOW_CONVERSATIONS_BY_DEFAULT}\","
+        )),
+        "the check box is not named {SHOW_CONVERSATIONS_BY_DEFAULT:?} on the channel NVDA reads"
+    );
+    // `read_settings` reads each page through a function of its own, and the
+    // Reading page's is where the box has to be written back.
+    let readback = collapsed(body_of(&source, "read_the_reading_page"));
+    assert!(
+        readback.contains(
+            "cfg.show_conversations_by_default = w.show_conversations_by_default.get_value();"
+        ),
+        "OK does not write the check box back into show_conversations_by_default"
+    );
 }
 
 /// The body of one function in a source file: from its `fn name(` to the

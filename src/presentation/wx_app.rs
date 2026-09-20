@@ -3129,8 +3129,11 @@ impl WxMailApp {
                             }
                         }
                         // D-09: the folder comes back in the view it was left
-                        // in, and a folder nobody has ever set is flat. Read
-                        // before the mail is asked for, because the count the
+                        // in, and a folder nobody has ever set shows what
+                        // Show conversations by default says, which since
+                        // 2026-09-20 (#92) is conversations unless turned
+                        // off; until then it was flat. Both read here, before
+                        // the mail is asked for, because the count the
                         // control is told is decided by which view this is.
                         let showing = match (
                             folder_cache.as_ref(),
@@ -3138,6 +3141,7 @@ impl WxMailApp {
                         ) {
                             (Some(cache), Some(folder)) => view_state::Showing::from_stored(
                                 cache.folder_view(&folder).unwrap_or_default(),
+                                what_a_folder_never_set_shows(),
                             ),
                             _ => view_state::Showing::Messages,
                         };
@@ -6820,8 +6824,9 @@ impl WxMailApp {
             // never expands in place: Enter on it opens the conversation tree,
             // which announces level natively, and the list stays flat and
             // virtual so UI Automation keeps the real set size. Kept per folder
-            // (D-09), so a folder somebody set stays set and one they never
-            // touched is flat.
+            // (D-09), so a folder somebody set stays set; one they never
+            // touched shows what Show conversations by default says, on
+            // unless turned off since 2026-09-20 (#92), and was flat before.
             .append_check_item(
                 ID_THREAD_VIEW,
                 "&Thread View\tCtrl+T",
@@ -15107,6 +15112,26 @@ fn load_folder_messages(
             )));
         }
     }
+}
+
+/// What a folder nobody has set shows, read where the folder opens (#92).
+///
+/// Show conversations by default, on the Reading tab, on unless turned off,
+/// by Pratik's decision of 2026-09-20; until then a folder never set was flat
+/// (D-09). Read once per landing beside the folder's own stored view, the way
+/// [`the_sort_as`] reads the sort once per listing, and never in the block
+/// where the window is built: a value captured there is what #91 was about,
+/// and `tests/a_setting_saved_applies_without_a_restart.rs` holds that block
+/// to a list. Never per row either, since the paint callback reads no
+/// configuration. A settings file that cannot be read answers what a fresh
+/// one would.
+fn what_a_folder_never_set_shows() -> view_state::Showing {
+    let show_conversations = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().show_conversations_by_default)
+        .unwrap_or_else(|_| {
+            crate::data::config::AppConfig::default().show_conversations_by_default
+        });
+    view_state::Showing::when_nobody_set_one(show_conversations)
 }
 
 /// The stored sort, expressed for whichever view is being drawn.

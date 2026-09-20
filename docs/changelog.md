@@ -306,6 +306,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: nobody has yet changed the wait, pressed Enter on an unread message, and
   heard the count move after the new wait without a restart, or changed how dates are written
   and heard the rows follow.
+- **A folder you have never set shows one row per conversation, as a setting you can turn
+  off.** Pratik's decision of 2026-09-20 on build `1.0.0-alpha.1` at `4a09bfc2` (#92): Thread
+  View is on by default, and his amendment the same day: as a setting, "Show conversations by
+  default", on the Reading tab beside Default sort order, on unless you turn it off. Until
+  then a folder nobody had set was flat, so anyone who wanted conversations set every folder
+  by hand or applied one folder's view to the rest. Since 2026-09-20 a folder you open reads
+  the setting as it opens, so a change applies to the next folder you open with no restart.
+  A folder you set yourself through View, Thread View keeps your choice whatever the setting
+  says, and that includes a folder you set to one row per message: a stored choice of flat
+  stays flat. On a profile from before this build, every folder you never set changes to
+  conversations; turn the setting off to have them flat again, and the folders you did set
+  are untouched. No version moves for it: the counter moves at the first behaviour change
+  after a cut, and none has been cut since `1.0.0-alpha.1` was set. Known limitations: All
+  Inboxes still shows whatever the folder before it left, which is the second half of #92
+  and the next change; and nobody has yet opened a folder never set on a fresh profile and
+  heard conversations, or turned the setting off and heard the next folder flat.
 - **Text a sender hid is not read, and a line at the top says when words were left out.**
   The tester on 2026-09-19, on build `1.0.0-alpha.1` at `39537d13` under NVDA (#90): reading
   an HTML message in the formatted view is verbose, groupings are announced and phrases repeat.

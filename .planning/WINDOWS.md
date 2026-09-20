@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 527
+open_count: 528
 waived_count: 0
 fixed_count: 34
-total_count: 561
-last_updated: 2026-09-20T07:02:22.000Z
+total_count: 562
+last_updated: 2026-09-20T08:47:13.000Z
 ---
 
 # Broken Windows Ledger
@@ -576,6 +576,7 @@ last_updated: 2026-09-20T07:02:22.000Z
 | 559 | 11 | unrun-verify | src/presentation/html_renderer.rs |  | 11-11.0: what only the tester's ear settles for #90. The Substack newsletter he named, read in the formatted view under NVDA: the subtitle heard once, where the sender's own line stands and not at the top; no run of symbols where the padding was; no "table with N rows and N columns" around any block; no "Post header" grouping announced; the subject heard once, as the heading, and the sender once, in the heading with no number before it; and another newsletter of his choosing read the same way. The drop, the count line, the roles, the label rule, the page's own markup and the reader's structure are held by tests/what_the_sender_hid_is_not_read.rs over the fixture; none of it has been heard | open |  | 2026-09-20T02:32:39.000Z |  |
 | 560 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-11.1: what only the tester's ear and the NVDA run settle for #80. Enter on a link under NVDA, on the preview pane and on the formatted message window, going where Open links says: the browser under the default, the page in the message view with "Opening" and the host said, the title said once when it arrives, and "Back to the message" on Backspace or Alt+Left; the link's menu on the Applications key offering the three places on both surfaces; a page that will not load saying why; the separate window choice opening the browser with its status line. The listener, the route table, the three items, the arms, the sanitiser first and the second line are held by tests/a_link_opens_where_the_setting_says.rs, and the probe's finding is measured there against a built browser control; the NVDA case a-link-opens-where-the-setting-says.test.js is written and runs at the next push of main; none of it has been heard | open |  | 2026-09-20T04:54:36.000Z |  |
 | 561 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-11.1.1: what only the tester's ear settles for #91. Mark as read after changed in Settings, OK, then Enter on an unread message: the message marked after the new wait, without a restart; how dates are written changed in Settings, OK: the list's dates changing at once; the sentence under Default sort order and the sentence under Log level heard after each control's name. The state field, the update, the arm, the absence of the startup capture, the dates on the row and cell callbacks, the audit over the startup block and the two sentences on the built pages are held by tests/a_setting_saved_applies_without_a_restart.rs and tests/the_settings_dialog_opens_in.rs; none of it has been heard | open |  | 2026-09-20T07:02:22.000Z |  |
+| 562 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-11.1.2: what only the tester's ear settles for the first half of #92. A folder never set opened on a fresh profile and heard as conversation rows, with the Thread View check mark on; Show conversations by default turned off under Settings, Reading, OK, then the next folder never set opened and heard as one row per message, without a restart; a folder set flat by hand still flat with the setting on; the check box heard by its name and state on the Reading tab after Then by. The rule, the landing reading the setting where the folder opens, the box on the built page and its readback are held by src/presentation/view_state.rs and tests/the_settings_dialog_opens_in.rs; none of it has been heard | open |  | 2026-09-20T08:47:13.000Z |  |
 
 ````json
 [
@@ -7309,6 +7310,18 @@ last_updated: 2026-09-20T07:02:22.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T07:02:22.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 562,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "11-11.1.2: what only the tester's ear settles for the first half of #92. A folder never set opened on a fresh profile and heard as conversation rows, with the Thread View check mark on; Show conversations by default turned off under Settings, Reading, OK, then the next folder never set opened and heard as one row per message, without a restart; a folder set flat by hand still flat with the setting on; the check box heard by its name and state on the Reading tab after Then by. The rule, the landing reading the setting where the folder opens, the box on the built page and its readback are held by src/presentation/view_state.rs and tests/the_settings_dialog_opens_in.rs; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:47:13.000Z",
     "resolved_at": null
   }
 ]
