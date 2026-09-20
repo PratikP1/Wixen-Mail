@@ -34,17 +34,22 @@
 //! tester's ear and the NVDA case on the `page` scan target, and is on the
 //! ledger.
 
+use std::fs;
 use std::process::{Command, ExitStatus};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use wixen_mail::application::opening_links::{self, Asked, Route, Where};
+use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::browser_ready::BrowserReady;
+use wixen_mail::presentation::page_links;
 use wixen_mail::presentation::wx_settings;
 use wxdragon::event::WebViewEvents;
 use wxdragon::prelude::*;
 use wxdragon::widgets::{WebView, WebViewBackend};
+
+const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 
 // ── The probe: what a navigating event carries ────────────────────────────
 
@@ -486,5 +491,413 @@ fn test_a_choice_made_on_the_reading_tab_is_what_ok_writes_back() {
          settings file gets:\n  {}",
         wrong.len(),
         wrong.join("\n  ")
+    );
+}
+
+// ── The readings: the listener, the menu, the arms, the sanitiser first ────
+//
+// Read from the source rather than run, because the route is a script in a
+// browser control inside a window with a running event loop, and what a
+// reading can hold is the shape. Each reading is a function over the text
+// with a companion that plants the opposite and requires a complaint.
+
+fn shipped(path: &str) -> String {
+    what_ships(
+        &fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("{path}: {e}"))
+            .replace("\r\n", "\n"),
+    )
+}
+
+/// One function's text, from its signature to the closing brace at column
+/// nought, or a complaint when the signature is gone.
+fn body_of(source: &str, signature: &str) -> Result<String, String> {
+    let at = source.find(signature).ok_or(format!(
+        "{signature} is no longer in this file, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let ends = rest.find("\n}\n").map_or(rest.len(), |end| end + 2);
+    Ok(rest[..ends].to_string())
+}
+
+/// The text after the first `from` up to the next `to`, or a complaint
+/// naming which anchor is gone.
+fn between<'a>(text: &'a str, from: &str, to: &str) -> Result<&'a str, String> {
+    let start = text
+        .find(from)
+        .ok_or(format!("{from:?} is no longer here, so this reads nothing"))?
+        + from.len();
+    let rest = &text[start..];
+    let end = rest
+        .find(to)
+        .ok_or(format!("{to:?} is no longer here, so this reads nothing"))?;
+    Ok(&rest[..end])
+}
+
+/// Every page is given the link listener, and the listener takes the click
+/// from the browser before posting the address.
+fn every_page_is_given_the_listener(app: &str, script: &str) -> Result<(), String> {
+    let wiring = body_of(app, "fn wire_the_way_out(")?;
+    let the_preview = between(
+        &wiring,
+        "PageKeys::TheWayOut =>",
+        "PageKeys::TheWayOutAndTheJumps =>",
+    )?;
+    if !the_preview.contains("page_links::SCRIPT") {
+        return Err("the preview is not given the link listener".to_string());
+    }
+    let the_page_window = between(&wiring, "PageKeys::TheWayOutAndTheJumps =>", "};")?;
+    if !the_page_window.contains("page_links::SCRIPT") {
+        return Err("the page window is not given the link listener".to_string());
+    }
+    let the_click = between(
+        script,
+        "addEventListener('click'",
+        "addEventListener('keydown'",
+    )?;
+    if !the_click.contains("e.preventDefault();") {
+        return Err(
+            "the click listener posts the address and lets the browser navigate too, so the \
+             link opens inside the window as well as where the setting says"
+                .to_string(),
+        );
+    }
+    if !the_click.contains("kind: 'link'") {
+        return Err("the click listener posts no link".to_string());
+    }
+    Ok(())
+}
+
+#[test]
+fn test_every_page_is_given_the_link_listener_and_it_takes_the_click_from_the_browser() {
+    every_page_is_given_the_listener(&shipped(THE_MAIN_WINDOW), page_links::SCRIPT)
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_listener_reading_sees_a_click_left_to_the_browser() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let without = page_links::SCRIPT.replacen("e.preventDefault();", "", 1);
+    assert!(
+        every_page_is_given_the_listener(&app, &without).is_err(),
+        "the reading passed a listener that lets the browser navigate"
+    );
+    let without = app.replacen("page_links::SCRIPT", "\"\"", 1);
+    assert!(
+        every_page_is_given_the_listener(&without, page_links::SCRIPT).is_err(),
+        "the reading passed a wiring that gives one surface no listener"
+    );
+}
+
+/// The three items are on the link's menu, in order, named, above Copy Link.
+fn the_three_items_are_on_the_menu(app: &str) -> Result<(), String> {
+    let menu = body_of(app, "fn the_links_menu(")?;
+    let items = [
+        ("ID_CTX_OPEN_IN_MESSAGE_VIEW", "\"Open in &Message View\""),
+        ("ID_CTX_OPEN_IN_BROWSER", "\"Open in Default &Browser\""),
+        (
+            "ID_CTX_OPEN_IN_SEPARATE_WINDOW",
+            "\"Open in Separate &Window\"",
+        ),
+    ];
+    let mut last = 0;
+    for (id, label) in items {
+        let at = menu
+            .find(id)
+            .ok_or(format!("{id} is not on the link's menu"))?;
+        if at < last {
+            return Err(format!("{id} is out of order on the menu"));
+        }
+        last = at;
+        let call = between(&menu[at..], id, ");")?;
+        if !call.contains(label) {
+            return Err(format!("{id} is not named {label} on the menu"));
+        }
+    }
+    let copy = menu
+        .find("ID_CTX_COPY_LINK")
+        .ok_or("Copy Link is no longer on the menu, so the order cannot be read".to_string())?;
+    if copy < last {
+        return Err("the three items sit below Copy Link rather than above it".to_string());
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_three_items_are_on_the_links_menu_with_their_names_above_copy_link() {
+    the_three_items_are_on_the_menu(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_menu_reading_sees_a_missing_item_and_a_wrong_name() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let without = app.replacen("ID_CTX_OPEN_IN_BROWSER,", "ID_CTX_SELECT_ALL,", 1);
+    assert!(
+        the_three_items_are_on_the_menu(&without).is_err(),
+        "the reading passed a menu with the browser item gone"
+    );
+    let renamed = app.replacen("\"Open in Separate &Window\"", "\"Open in New &Window\"", 1);
+    assert!(
+        the_three_items_are_on_the_menu(&renamed).is_err(),
+        "the reading passed a menu whose item has another name"
+    );
+}
+
+/// Each item's arm reaches the one route with its own ask, and both surfaces
+/// answer their menu through the same function.
+fn each_item_reaches_the_one_route(app: &str) -> Result<(), String> {
+    let arms = body_of(app, "fn answer_the_links_menu(")?;
+    for (id, asked) in [
+        ("ID_CTX_OPEN_IN_MESSAGE_VIEW", "Asked::InMessageView"),
+        ("ID_CTX_OPEN_IN_BROWSER", "Asked::InBrowser"),
+        ("ID_CTX_OPEN_IN_SEPARATE_WINDOW", "Asked::InSeparateWindow"),
+    ] {
+        let at = arms
+            .find(&format!("{id} =>"))
+            .ok_or(format!("{id} has no arm"))?;
+        let arm = between(&arms[at..], "=>", "ID_CTX_")
+            .or_else(|_| between(&arms[at..], "=>", "\n    }\n"))?;
+        if !arm.contains("follow_the_link_the_page_posted(") {
+            return Err(format!("{id}'s arm does not reach the route"));
+        }
+        if !arm.contains(asked) {
+            return Err(format!("{id}'s arm asks for something other than {asked}"));
+        }
+    }
+    let answered = app.matches("answer_the_links_menu(").count();
+    if answered < 3 {
+        return Err(format!(
+            "answer_the_links_menu is called from {} place(s), and both surfaces have a menu",
+            answered.saturating_sub(1)
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_each_item_reaches_the_one_route_with_its_own_ask_on_both_surfaces() {
+    each_item_reaches_the_one_route(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_arms_reading_sees_an_item_routed_to_the_wrong_place() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let arms = body_of(&app, "fn answer_the_links_menu(").unwrap_or_default();
+    let wrong = arms.replacen("Asked::InMessageView", "Asked::InBrowser", 1);
+    let planted = app.replacen(&arms, &wrong, 1);
+    assert!(
+        each_item_reaches_the_one_route(&planted).is_err(),
+        "the reading passed Open in Message View going to the browser"
+    );
+}
+
+/// The sanitiser runs before the route on every path, and a page reaches the
+/// view through the one route.
+fn the_sanitiser_runs_before_the_route(app: &str) -> Result<(), String> {
+    let route = body_of(app, "fn follow_the_link_the_page_posted(")?;
+    let sanitised = route
+        .find("let Some(safe) = HtmlRenderer::safe_external_url(href) else {")
+        .ok_or(
+            "the route no longer passes the address through safe_external_url first".to_string(),
+        )?;
+    let routed = route
+        .find("opening_links::route(")
+        .ok_or("the route no longer asks opening_links::route".to_string())?;
+    if routed < sanitised {
+        return Err("the route is decided before the address is sanitised".to_string());
+    }
+    if app.matches("opening_links::route(").count() != 1 {
+        return Err(format!(
+            "opening_links::route is asked in {} places, and one is the number that keeps \
+             every path behind the one sanitiser",
+            app.matches("opening_links::route(").count()
+        ));
+    }
+    if app.matches(".load_url(").count() != 1 {
+        return Err(format!(
+            "load_url is called in {} places; the one in show_the_page is the only way a page \
+             reaches a view",
+            app.matches(".load_url(").count()
+        ));
+    }
+    // Called once, from the route; the definition is the other match.
+    if app.matches("show_the_page(").count() != 2 {
+        return Err(format!(
+            "show_the_page is reached from {} place(s) rather than the route alone",
+            app.matches("show_the_page(").count().saturating_sub(1)
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_sanitiser_runs_before_the_route_on_every_path() {
+    the_sanitiser_runs_before_the_route(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_sanitiser_reading_sees_a_path_that_skips_it() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let skipped = app.replacen(
+        "let Some(safe) = HtmlRenderer::safe_external_url(href) else {",
+        "let Some(safe) = Some(href.to_string()) else {",
+        1,
+    );
+    assert!(
+        the_sanitiser_runs_before_the_route(&skipped).is_err(),
+        "the reading passed a route that takes the address as written"
+    );
+    let second = format!("{app}\nfn elsewhere(view: &WebView) {{ view.load_url(\"x\"); }}\n");
+    assert!(
+        the_sanitiser_runs_before_the_route(&second).is_err(),
+        "the reading passed a second way for a page to reach a view"
+    );
+}
+
+/// The way back brings the message and says so; a page's title is said once
+/// when it arrives and a page that will not load says why and brings the
+/// message back; both surfaces are wired for it.
+fn the_way_back_the_title_and_the_failure(app: &str) -> Result<(), String> {
+    let back = body_of(app, "fn back_to_the_message(")?;
+    if !back.contains("opening_links::BACK_TO_THE_MESSAGE") {
+        return Err("the way back brings the message and says nothing".to_string());
+    }
+    if !back.contains("show_the_message(") {
+        return Err("the way back says the message is back and shows nothing".to_string());
+    }
+    let arrival = body_of(app, "fn wire_a_pages_arrival(")?;
+    let title = between(&arrival, ".on_title_changed(", ".on_error(")?;
+    if !title.contains("announce(") {
+        return Err("a page's title arrives and is not said".to_string());
+    }
+    if !title.contains("title_said") {
+        return Err("a page's title is said on every change rather than once".to_string());
+    }
+    let failure = between(&arrival, ".on_error(", "\n    });")?;
+    if !failure.contains("opening_links::could_not_be_opened(") {
+        return Err("a page that will not load fails in silence".to_string());
+    }
+    if !failure.contains("back_to_the_message(") {
+        return Err("a page that will not load leaves nothing where the message was".to_string());
+    }
+    let wired = app.matches("wire_a_pages_arrival(").count();
+    if wired < 3 {
+        return Err(format!(
+            "wire_a_pages_arrival is called from {} place(s), and both surfaces show a page",
+            wired.saturating_sub(1)
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_way_back_says_so_and_a_pages_title_and_failure_are_said_on_both_surfaces() {
+    the_way_back_the_title_and_the_failure(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_arrival_reading_sees_a_silent_failure_and_a_silent_way_back() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let silent = app.replacen("opening_links::could_not_be_opened(", "String::from(", 1);
+    assert!(
+        the_way_back_the_title_and_the_failure(&silent).is_err(),
+        "the reading passed a failure said in no words"
+    );
+    let silent = app.replacen("opening_links::BACK_TO_THE_MESSAGE", "\"\"", 1);
+    assert!(
+        the_way_back_the_title_and_the_failure(&silent).is_err(),
+        "the reading passed a way back that says nothing"
+    );
+}
+
+/// The vetoes stay as the second line on both surfaces: a main-frame
+/// navigation the window did not ask for is vetoed and logged, and a new
+/// window is vetoed; neither reads an address, since the event carries none.
+fn the_vetoes_are_the_second_line(app: &str) -> Result<(), String> {
+    let second_line = body_of(app, "fn wire_the_second_line(")?;
+    let navigating = between(&second_line, ".on_navigating(", ".on_new_window(")?;
+    for needed in [
+        "get_int() == Some(1)",
+        ".veto()",
+        "tracing::debug!(",
+        "loading",
+    ] {
+        if !navigating.contains(needed) {
+            return Err(format!("the navigating veto no longer reads {needed}"));
+        }
+    }
+    if navigating.contains("is_empty()") {
+        return Err(
+            "the navigating veto keys on the event's string again, which is always empty (#80)"
+                .to_string(),
+        );
+    }
+    let new_window = between(&second_line, ".on_new_window(", "\n    });")?;
+    if !new_window.contains(".veto()") {
+        return Err("a new window asked for by a page is not vetoed".to_string());
+    }
+    let wired = app.matches("wire_the_second_line(").count();
+    if wired < 3 {
+        return Err(format!(
+            "wire_the_second_line is called from {} place(s), and both surfaces host a browser",
+            wired.saturating_sub(1)
+        ));
+    }
+    if app.matches("on_navigating(").count() != 1 || app.matches("on_new_window(").count() != 1 {
+        return Err("a surface still binds a veto of its own beside the shared one".to_string());
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_vetoes_are_one_second_line_on_both_surfaces_and_read_no_address() {
+    the_vetoes_are_the_second_line(&shipped(THE_MAIN_WINDOW)).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_veto_reading_sees_the_old_guard_on_the_empty_string() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let old = app.replacen("get_int() == Some(1)", "!url.is_empty()", 1);
+    assert!(
+        the_vetoes_are_the_second_line(&old).is_err(),
+        "the reading passed the veto that never fired"
+    );
+}
+
+/// The page window has the link's menu too, answered by the same arms.
+fn the_page_window_has_the_menu(app: &str) -> Result<(), String> {
+    let window = body_of(app, "fn show_conversation_as_page(")?;
+    for needed in [
+        "the_links_menu(",
+        ".popup_menu(",
+        ".on_menu(",
+        "answer_the_links_menu(",
+    ] {
+        if !window.contains(needed) {
+            return Err(format!(
+                "the page window has no context menu on a link: {needed} is not in it"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_page_window_offers_the_links_menu_and_answers_it_through_the_same_arms() {
+    the_page_window_has_the_menu(&shipped(THE_MAIN_WINDOW)).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_page_window_reading_sees_a_window_with_no_menu() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let window = body_of(&app, "fn show_conversation_as_page(").unwrap_or_default();
+    let without = app.replacen(&window, &window.replace("the_links_menu(", "no_menu("), 1);
+    assert!(
+        the_page_window_has_the_menu(&without).is_err(),
+        "the reading passed a page window with no menu"
     );
 }
