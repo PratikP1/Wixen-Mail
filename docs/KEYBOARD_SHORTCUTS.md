@@ -929,25 +929,34 @@ off under Settings, General, "Mark misspelled words as I write". The same
 setting controls a short sound at the end of a word that is wrong, which is
 silent until you switch earcons on under Feedback.
 
-**Markdown, typed straight into the message.** Type the marker and keep
-writing. Each one says what it made, and `Ctrl+Z` puts the characters back if
-you meant them literally.
+**Markdown, typed straight into the message.** Type the marker, then a space,
+then keep writing. The space is what turns the marker into structure: two
+number signs and a word with no space between them stay as they were typed.
+Each marker says what it made, and `Ctrl+Z` puts the characters back if you
+meant them literally.
 
 | Type this | And you get |
 |-----------|-------------|
-| `# ` at the start of a line | Heading 1 |
-| `## ` at the start of a line | Heading 2 |
-| `### ` at the start of a line | Heading 3 |
-| `- ` or `* ` at the start of a line | A bulleted list |
-| `1. `, or any number and a dot | A numbered list |
-| `> ` at the start of a line | A quote |
-| `**words**` or `__words__` | **Bold** |
-| `*words*` or `_words_` | *Italic* |
-| `` `words` `` | Code |
-| `[the words](https://example.com)` | A link on those words |
+| One number sign, then a space, at the start of a line (`# `) | Heading 1 |
+| Two number signs, then a space, at the start of a line (`## `) | Heading 2 |
+| Three number signs, then a space, at the start of a line (`### `) | Heading 3 |
+| A hyphen or a star, then a space, at the start of a line (`- ` or `* `) | A bulleted list |
+| A number, a dot, then a space, at the start of a line (`1. `) | A numbered list |
+| A greater-than sign, then a space, at the start of a line (`> `) | A quote |
+| Two stars or two underscores on each side of the words (`**words**`) | **Bold** |
+| One star or one underscore on each side of the words (`*words*`) | *Italic* |
+| A backtick on each side of the words (`` `words` ``) | Code |
+| The words in square brackets, then the address in round ones (`[the words](https://example.com)`) | A link on those words |
 
-A marker only counts when it is the whole line so far, so a sentence ending in a
-hyphen stays a sentence. An address the application will not carry, such as a
+A marker counts at the start of any line: the first line of a new message, a
+line of the quoted text in a reply, a line after Enter and a line after
+Shift+Enter. Until 2026-09-20 a marker on a line after a line break, which is
+every line of a reply to a message that arrived as plain text, every line
+after Shift+Enter and the line after Enter on the empty first line of such a
+reply, was left as typed with nothing said. A marker only
+counts when it is the whole line so far, so a sentence ending in a hyphen
+stays a sentence. The word after a closing star, underscore or backtick is
+plain again. An address the application will not carry, such as a
 `javascript:` one, leaves the words alone and says so rather than making a link
 that goes somewhere different.
 
