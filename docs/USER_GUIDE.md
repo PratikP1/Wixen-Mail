@@ -255,6 +255,34 @@ missing in silence: "Text us (link not opened here: sms)".
 The row's Snippet column is the one place an address is not a link and not
 said at all: a row is a hint, and the address is in the message.
 
+### Pictures in a message
+
+A message can carry its pictures or point at them on the internet. Since
+2026-09-19 both kinds are shown, in the preview pane and in the conversation
+window. Until then a picture the message only pointed at was left out until
+you found the switch, so most newsletters showed no pictures at all.
+
+Two kinds of pointed-at picture are left out on purpose. A picture whose
+declared size is a pixel or less is a tracking pixel, not a picture: it exists
+so the sender learns you opened the message. It is not fetched, and the
+message says at the top how many it left out, "1 picture that looked like a
+tracking pixel was not fetched." A picture the sender marked as having nothing
+to say, a decorative one, is left out as well. Fetching any other pointed-at
+picture tells its sender the message was opened; [What Wixen Mail sends, and
+where](privacy.md#pictures-a-message-points-at) says what that means and what
+it cannot prevent.
+
+Two settings on the Reading tab, under Settings, decide the rest. "Do not
+fetch any picture a message only points at" is off by default; on, none of
+them is fetched, and the message says at the top how many it held back and
+that this switch is why. "An undescribed picture is read as" decides what your
+screen reader says for a picture the sender gave no description: Nothing, so
+it is passed over, which is the default; The word image; or The word photo. A
+description the sender wrote is always kept, and a picture inside a link with
+no description of its own takes the link's words, so a linked picture reads
+as "Our spring range" rather than as "graphic". The same choice reaches a
+picture in a note, a task or an event read aloud with `Space`.
+
 ### When a message counts as read
 
 Moving through the list never marks anything. You can arrow through a folder,

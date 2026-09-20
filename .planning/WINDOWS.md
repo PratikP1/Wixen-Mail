@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 524
+open_count: 525
 waived_count: 0
 fixed_count: 33
-total_count: 557
-last_updated: 2026-09-19T22:30:00.000Z
+total_count: 558
+last_updated: 2026-09-20T00:20:25.000Z
 ---
 
 # Broken Windows Ledger
@@ -572,6 +572,7 @@ last_updated: 2026-09-19T22:30:00.000Z
 | 555 | 11 | todo | src/application/long_text.rs |  | 11-09.2: the reader gives a layout table's cell as one run with no space between the blocks in it. Read on 2026-09-19 through pieces_of_markup over the Substack message saved as the public fixture for #90: the whole message arrives as one Table piece whose one cell reads "Forwarded this email? Subscribe here for moreTop three ways ... seven daysActions speak louder than wordsGary MarcusSep 19image with no description", every block's last word run into the next block's first. The snippet rules then skip the whole cell as boilerplate, since it holds the forwarding line, and the row says the subtitle the hidden preheader carried, which is a fair hint by luck rather than by rule. The reader's business, not the snippet's: a cell's blocks want a space or a line between them, in the block walk in long_text.rs, with a case over a cell holding two paragraphs; 18 records name the file | open |  | 2026-09-19T17:45:00.000Z |  |
 | 556 | 11 | unrun-verify | src/presentation/virtual_rows.rs |  | 11-10: what only the tester's ear settles for #62. A rule with Say this first and the phrase Urgent: a row the rule matched heard as "Urgent, Unread, ..." with the phrase before the first column, and as "Urgent" alone when the first cell is empty; the Says first column showing the word once switched on with F8, and Ctrl+Shift+; saying the phrase without "Says first" before it; a rule with the sound box ticked playing the Rule matched tone once after a check that found several matches across folders, and its words "Rule matched, 3 messages" on the Feedback tab's default channels; the Labels column, switched on, read as part of the row, "Work, Money", and on a conversation row every label once. The prefix, the columns, the count and the one signal are held by tests/a_rule_can_change_how_a_row_is_announced.rs; none of it has been heard | open |  | 2026-09-19T20:25:00.000Z |  |
 | 557 | 11 | unrun-verify | src/application/links_in_text.rs |  | 11-10.1: what only the tester's ear settles for #89. The FanFiction chapter alert, plain text with the chapter's address on a line of its own: the address in NVDA's link list on the preview and in the reader window, and Enter on it going where Open links says once 11-11.1 lands; an address in an event's description read with Space heard as "link to" its site; a note's bare address a link when the note is shown as a page; an address with a full stop after it linking without the stop; a sender's mailto link on a name still working; a sender's sms link heard as its words with "link not opened here: sms" after them. The anchors, the host said, the code block left alone, the corpus and the snippet still bare are held by tests/an_address_written_out_is_a_link.rs and the renderer's own cases; none of it has been heard | open |  | 2026-09-19T22:30:00.000Z |  |
+| 558 | 11 | unrun-verify | src/presentation/html_renderer.rs |  | 11-11: what only the tester's reader settles for #28. A newsletter's pictures shown in the preview pane on a fresh profile, and on his, where the switch was already off; a one-pixel beacon passed over with "1 picture that looked like a tracking pixel was not fetched." heard once at the top; a linked picture with no description heard as the link's words; an undescribed picture heard as nothing under the default and as "image" or "photo" once chosen on the Reading tab; a remote picture the sender marked decorative passed over, or heard as "Picture the sender marked decorative" with that box on; a note with an undescribed picture read with Space and the picture passed over. The rules through the real cleaner, the renderer's order, the sending path untouched and the choice read back from the built dialog are held by tests/pictures_show_by_default_except_beacons.rs; none of it has been heard | open |  | 2026-09-20T00:20:25.000Z |  |
 
 ````json
 [
@@ -7257,6 +7258,18 @@ last_updated: 2026-09-19T22:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T22:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 558,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/html_renderer.rs",
+    "line": null,
+    "description": "11-11: what only the tester's reader settles for #28. A newsletter's pictures shown in the preview pane on a fresh profile, and on his, where the switch was already off; a one-pixel beacon passed over with \"1 picture that looked like a tracking pixel was not fetched.\" heard once at the top; a linked picture with no description heard as the link's words; an undescribed picture heard as nothing under the default and as \"image\" or \"photo\" once chosen on the Reading tab; a remote picture the sender marked decorative passed over, or heard as \"Picture the sender marked decorative\" with that box on; a note with an undescribed picture read with Space and the picture passed over. The rules through the real cleaner, the renderer's order, the sending path untouched and the choice read back from the built dialog are held by tests/pictures_show_by_default_except_beacons.rs; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T00:20:25.000Z",
     "resolved_at": null
   }
 ]

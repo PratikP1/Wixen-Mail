@@ -274,44 +274,48 @@ fn cleaner() -> &'static ammonia::Builder<'static> {
     })
 }
 
-/// What the stored settings say about fetching pictures.
+/// The three picture answers the stored settings hold, read in one go.
 ///
-/// Blocked when the settings cannot be read at all, which is the safe way to be
-/// wrong: a message shown without its remote pictures is a message somebody can
-/// still read, and one shown with them is a message that has already reported
-/// them.
-/// Both picture answers the stored settings hold, read in one go.
-///
-/// One read rather than two. [`HtmlRenderer::new`] is called from
+/// One read rather than three. [`HtmlRenderer::new`] is called from
 /// `editor_document::body_from_editor`, which runs every time the editor is
 /// read, and a second `load_stored` there doubles a file read on the path a
 /// message is autosaved and sent through.
 ///
-/// Both fall back the safe way when the settings cannot be read at all, and
-/// "safe" is the opposite direction for the two. A message shown without its
-/// remote pictures is still readable and one shown with them has already
-/// reported the reader, so pictures stay blocked. A reader told a picture was
-/// there can ignore the line and one not told cannot ask, so announcing stays
-/// on.
+/// A fresh profile is not this function's fallback: `load_stored` writes the
+/// defaults for a profile with no file and answers `Ok`, so a fresh profile
+/// reads the defaults the settings ship with, which since 2026-09-19 (#28)
+/// fetch the pictures. The fallback below is for a file that exists and
+/// cannot be read, and each answer falls the safe way, which is a different
+/// direction for each. A message shown without its remote pictures is still
+/// readable and one shown with them has already reported the reader, so
+/// pictures stay blocked. A reader told a picture was there can ignore the
+/// line and one not told cannot ask, so announcing stays on. A picture
+/// passed over can still be asked about, and a word written because the
+/// file was broken would be a description this program invented, so an
+/// undescribed picture reads as nothing.
 fn what_the_settings_say() -> (
     crate::application::pictures::Fetching,
     crate::application::pictures::Announcing,
+    crate::application::describing_pictures::UndescribedPicture,
 ) {
+    use crate::application::describing_pictures::UndescribedPicture;
     use crate::application::pictures::{Announcing, Fetching};
 
     let stored = crate::data::config::ConfigManager::load_stored();
-    let (blocked, announce) = stored
+    let (blocked, announce, read_as) = stored
         .map(|stored| {
             let app = stored.app_config();
             (
                 app.hold_back_remote_pictures,
                 app.announce_decorative_pictures,
+                UndescribedPicture::from_stored(&app.undescribed_pictures_read_as),
             )
         })
-        .unwrap_or((true, true));
+        .unwrap_or((true, true, UndescribedPicture::Nothing));
     (
         Fetching::from_setting(blocked),
         Announcing::from_setting(announce),
+        read_as,
     )
 }
 
@@ -323,13 +327,21 @@ pub struct HtmlRenderer {
     ///
     /// Fetching one tells the server it came from that this message was opened,
     /// by this computer, at this moment, which is the whole of how mail
-    /// tracking works. Held back unless somebody has said otherwise.
+    /// tracking works. Fetched by default since 2026-09-19 (#28), with the
+    /// ones that look like tracking pixels held back by their declared size;
+    /// held back altogether when somebody has turned the switch on.
     fetching: crate::application::pictures::Fetching,
     /// Whether a picture the sender marked decorative is said to be there.
     ///
     /// The reader's answer rather than the sender's. Read here rather than at
     /// the seam that uses it, so the settings are read once per renderer.
     announcing: crate::application::pictures::Announcing,
+    /// What a picture nobody described is read as.
+    ///
+    /// The reader's answer, written on the reading path only, after every
+    /// other rule has had the picture: a link's words come first, and the
+    /// decorative rewrite must never see the empty description this writes.
+    describing: crate::application::describing_pictures::UndescribedPicture,
     /// Whose message this renderer is making a document out of.
     ///
     /// Decides whether the count of held-back pictures is said, because the
@@ -375,11 +387,12 @@ impl HtmlRenderer {
     /// reader told a picture was held back can ignore the line, and one not
     /// told cannot ask.
     pub fn new() -> Self {
-        let (fetching, announcing) = what_the_settings_say();
+        let (fetching, announcing, describing) = what_the_settings_say();
         Self {
             plain_text_only: false,
             fetching,
             announcing,
+            describing,
             whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
         }
     }
@@ -396,27 +409,30 @@ impl HtmlRenderer {
     /// says nothing gets [`Self::new`], which is wrong in the direction that
     /// tells somebody too much rather than too little.
     pub fn for_a_message_being_written() -> Self {
-        let (fetching, announcing) = what_the_settings_say();
+        let (fetching, announcing, describing) = what_the_settings_say();
         Self {
             plain_text_only: false,
             fetching,
             announcing,
+            describing,
             whose: crate::application::pictures::WhoseMessage::BeingWrittenHere,
         }
     }
 
     /// Create a renderer that returns plain text only
     pub fn plain_text_only() -> Self {
-        let (fetching, announcing) = what_the_settings_say();
+        let (fetching, announcing, describing) = what_the_settings_say();
         Self {
             plain_text_only: true,
             // Nothing is fetched in plain text either way, since there is no
             // browser to fetch with, but the field decides what the words say
-            // where a picture would have been. `announcing` reaches nothing at
-            // all here: `html_to_plain_text` strips every tag, so no picture
-            // says anything in that path, described or decorative.
+            // where a picture would have been. `announcing` and `describing`
+            // reach nothing at all here: `html_to_plain_text` strips every
+            // tag, so no picture says anything in that path, described or
+            // decorative or neither.
             fetching,
             announcing,
+            describing,
             // `whose` reaches nothing here either, and deliberately.
             // `sanitize_and_count_held_back` answers nought in plain text,
             // because every tag went, pictures with them, so nothing was held
@@ -439,8 +455,21 @@ impl HtmlRenderer {
             plain_text_only: false,
             fetching,
             announcing: crate::application::pictures::Announcing::OutLoud,
+            describing: crate::application::describing_pictures::UndescribedPicture::default(),
             whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
         }
+    }
+
+    /// The same renderer, told what a picture nobody described is read as.
+    ///
+    /// For tests, and for any caller that has the answer already; the
+    /// constructors that read the settings take it from the file.
+    pub fn describing_undescribed_pictures_as(
+        mut self,
+        read_as: crate::application::describing_pictures::UndescribedPicture,
+    ) -> Self {
+        self.describing = read_as;
+        self
     }
 
     /// The same, for a message being written rather than one that arrived.
@@ -458,6 +487,7 @@ impl HtmlRenderer {
             plain_text_only: false,
             fetching,
             announcing: crate::application::pictures::Announcing::OutLoud,
+            describing: crate::application::describing_pictures::UndescribedPicture::default(),
             whose: crate::application::pictures::WhoseMessage::BeingWrittenHere,
         }
     }
@@ -473,6 +503,7 @@ impl HtmlRenderer {
             plain_text_only: false,
             fetching,
             announcing,
+            describing: crate::application::describing_pictures::UndescribedPicture::default(),
             whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
         }
     }
@@ -513,9 +544,15 @@ impl HtmlRenderer {
     /// so here. [`Self::sanitize_html`] does not, because it also cleans a
     /// message on its way out, and the note is for the person reading, not
     /// for the person being written to.
-    pub fn sanitize_and_count_held_back(&self, html: &str) -> (String, usize) {
+    pub fn sanitize_and_count_held_back(
+        &self,
+        html: &str,
+    ) -> (String, crate::application::pictures::HeldBack) {
         if self.plain_text_only {
-            return (self.sanitize_html(html), 0);
+            return (
+                self.sanitize_html(html),
+                crate::application::pictures::HeldBack::default(),
+            );
         }
         let cleaned = say_which_links_are_not_opened_here(&cleaner().clean(html).to_string());
         self.hold_back_what_would_be_fetched(&cleaned)
@@ -556,42 +593,77 @@ impl HtmlRenderer {
         text.trim().to_string()
     }
 
-    /// Hold back the pictures that would have to be fetched.
+    /// Hold back the pictures that would have to be fetched, and describe
+    /// the rest as this reader chose.
     ///
     /// Run over the cleaned markup rather than the sender's, so the tags being
     /// matched are ones ammonia has already written and the shape of them is
-    /// known. A picture held back leaves the sender's own description in its
-    /// place, so somebody can tell what they would be asking for.
+    /// known. The reading path's three picture rules run here and nowhere
+    /// else, in this order: a linked picture with no description takes the
+    /// link's words; then each picture is decided by
+    /// `pictures::what_to_do_about_a_tag`; then every picture still with no
+    /// description at all gains the one the Reading tab says. Last, because
+    /// the empty description the default writes must never reach the
+    /// decorative rewrite, which reads an empty `alt` as the sender's mark.
     ///
-    /// Returns the markup and how many were held back, because the count is
-    /// what the sentence above the message reports and counting twice would be
-    /// two answers to one question.
-    fn hold_back_what_would_be_fetched(&self, cleaned: &str) -> (String, usize) {
-        use crate::application::pictures::{Showing, what_stands_in_for_it, what_to_do_about};
+    /// A picture held back by the switch leaves the sender's own description
+    /// in its place, so somebody can tell what they would be asking for. A
+    /// tracking pixel leaves nothing where it was and is counted, because
+    /// the sentence at the top of the message is where a count of them is
+    /// worth hearing and thirty markers in the body are not (guardrail 5). A
+    /// picture the sender marked decorative and this did not fetch is said
+    /// or passed over exactly as a shown decorative picture is, by the
+    /// reader's own setting, and is counted by neither count.
+    ///
+    /// Returns the markup and the two counts, because the counts are what the
+    /// sentence above the message reports and counting twice would be two
+    /// answers to one question.
+    fn hold_back_what_would_be_fetched(
+        &self,
+        cleaned: &str,
+    ) -> (String, crate::application::pictures::HeldBack) {
+        use crate::application::pictures::{
+            Announcing, HeldBack, Showing, WHAT_A_DECORATIVE_PICTURE_SAYS,
+            describe_the_undescribed, the_links_text_as_a_description, what_stands_in_for_it,
+            what_to_do_about_a_tag,
+        };
 
-        let mut held_back = 0;
-        let out = img_tag_whole_re()
-            .replace_all(cleaned, |caught: &regex::Captures<'_>| {
-                let tag = &caught[0];
-                let address = one_attribute(tag, "src").unwrap_or_default();
-                match what_to_do_about(&address, self.fetching) {
-                    // The picture is shown, so it is not replaced. What may
-                    // change is one attribute on it.
-                    Showing::ItIsCarried | Showing::ItWillBeFetched => {
-                        self.say_where_a_decorative_picture_is(tag)
+        let mut held = HeldBack::default();
+        let decided = img_tag_whole_re()
+            .replace_all(
+                &the_links_text_as_a_description(cleaned),
+                |caught: &regex::Captures<'_>| {
+                    let tag = &caught[0];
+                    match what_to_do_about_a_tag(tag, self.fetching) {
+                        // The picture is shown, so it is not replaced. What
+                        // may change is one attribute on it.
+                        Showing::ItIsCarried | Showing::ItWillBeFetched => {
+                            self.say_where_a_decorative_picture_is(tag)
+                        }
+                        Showing::HeldBack => {
+                            held.by_the_switch += 1;
+                            let described = one_attribute(tag, "alt").unwrap_or_default();
+                            format!(
+                                "<span class=\"held-back\">{}</span>",
+                                html_escape::encode_text(&what_stands_in_for_it(&described))
+                            )
+                        }
+                        Showing::HeldBackAsABeacon => {
+                            held.as_beacons += 1;
+                            "<span class=\"held-back\"></span>".to_string()
+                        }
+                        Showing::HeldBackAsDecorative => match self.announcing {
+                            Announcing::OutLoud => format!(
+                                "<span class=\"held-back\">{}</span>",
+                                html_escape::encode_text(WHAT_A_DECORATIVE_PICTURE_SAYS)
+                            ),
+                            Announcing::Silently => "<span class=\"held-back\"></span>".to_string(),
+                        },
                     }
-                    Showing::HeldBack => {
-                        held_back += 1;
-                        let described = one_attribute(tag, "alt").unwrap_or_default();
-                        format!(
-                            "<span class=\"held-back\">{}</span>",
-                            html_escape::encode_text(&what_stands_in_for_it(&described))
-                        )
-                    }
-                }
-            })
+                },
+            )
             .into_owned();
-        (out, held_back)
+        (describe_the_undescribed(&decided, self.describing), held)
     }
 
     /// Put words on a picture the sender marked decorative, if this reader
@@ -658,7 +730,10 @@ impl HtmlRenderer {
     /// Its own paragraph rather than a heading. A heading here would land
     /// between the message's heading and its body and give a screen reader
     /// user navigating by `H` a stop that is not a message.
-    fn what_a_reader_is_told_was_held_back(&self, held_back: usize) -> String {
+    fn what_a_reader_is_told_was_held_back(
+        &self,
+        held_back: crate::application::pictures::HeldBack,
+    ) -> String {
         use crate::application::pictures::WhoseMessage;
         if self.whose == WhoseMessage::BeingWrittenHere {
             return String::new();
@@ -1023,7 +1098,11 @@ mod tests {
         let (shown, held_back) =
             HtmlRenderer::with_fetching(Fetching::Blocked).sanitize_and_count_held_back(&stored);
 
-        assert_eq!(held_back, 0, "a carried picture was held back: {shown}");
+        assert_eq!(
+            held_back,
+            crate::application::pictures::HeldBack::default(),
+            "a carried picture was held back: {shown}"
+        );
         assert!(shown.contains("data:image/png;base64,"), "{shown}");
         assert!(shown.contains("Company logo"), "{shown}");
     }
@@ -1066,14 +1145,34 @@ mod tests {
     #[test]
     fn test_a_tracking_pixel_is_not_fetched() {
         // One invisible pixel is the whole of how mail tracking works. This is
-        // the test that says the default protects against it.
-        use crate::application::pictures::Fetching;
-        let (shown, held_back) = HtmlRenderer::with_fetching(Fetching::Blocked)
-            .sanitize_and_count_held_back(
-                r#"<p>Hello</p><img src="https://tracker.example/pixel.gif" width="1" height="1">"#,
-            );
+        // the test that says the default protects against it, and what the
+        // default is changed on 2026-09-19 (#28): until then every remote
+        // picture was held back by the switch, and this test passed
+        // `Fetching::Blocked` by hand; since then the switch is off by default
+        // and what protects a reader is the beacon rule in
+        // `application::pictures`, which reads the size the sender declared.
+        // So the renderer is built from the default the settings ship with,
+        // and the pixel is held back as a beacon, counted as one, and not as
+        // the switch's. The switch is the second line of defence: on, it
+        // holds this back too, with the tracker the size of a photograph that
+        // the beacon rule cannot tell from one.
+        use crate::application::pictures::{Fetching, HeldBack};
+        let shipped = Fetching::from_setting(
+            crate::data::config::AppConfig::default().hold_back_remote_pictures,
+        );
+        assert_eq!(shipped, Fetching::Allowed, "the default is not to fetch");
+        let (shown, held_back) = HtmlRenderer::with_fetching(shipped).sanitize_and_count_held_back(
+            r#"<p>Hello</p><img src="https://tracker.example/pixel.gif" width="1" height="1">"#,
+        );
 
-        assert_eq!(held_back, 1, "nothing was held back: {shown}");
+        assert_eq!(
+            held_back,
+            HeldBack {
+                by_the_switch: 0,
+                as_beacons: 1
+            },
+            "the pixel was not held back as a beacon: {shown}"
+        );
         assert!(
             !shown.contains("tracker.example"),
             "the address survived, so the browser will still fetch it: {shown}"
@@ -1101,7 +1200,7 @@ mod tests {
                 r#"<img src="https://cdn.example/x.jpg" alt="Our spring range">"#,
             );
 
-        assert_eq!(held_back, 0);
+        assert_eq!(held_back, crate::application::pictures::HeldBack::default());
         assert!(shown.contains("cdn.example"), "{shown}");
     }
 
@@ -1614,15 +1713,31 @@ mod tests {
         // who said nothing; an empty one is a sender who said there is nothing
         // to say. Writing "the sender marked this decorative" over the first
         // would put words in the mouth of somebody who never opened it.
+        //
+        // Since 2026-09-19 (#28) a picture nobody described does gain a
+        // description on the reading path, the one the reader chose, which
+        // by default is empty. So what is held here is that the decorative
+        // words never reach it, under either announcing answer, and that the
+        // description it carries is the reader's own answer and not the
+        // sender's mark: the rule that writes it runs after the rule that
+        // reads the mark, and this is the case that would catch the order
+        // being swapped.
         let silent = a_carried_picture(None);
 
         for announcing in [Announcing::OutLoud, Announcing::Silently] {
             let shown = read_with(announcing, &silent);
-            assert_eq!(
-                one_attribute(&shown, "alt"),
-                None,
+            assert!(
+                !shown.contains(WHAT_A_DECORATIVE_PICTURE_SAYS),
                 "a picture whose sender said nothing was reported as marked \
                  decorative under {announcing:?}: {shown}"
+            );
+            assert_eq!(
+                one_attribute(&shown, "alt").as_deref(),
+                Some(
+                    crate::application::describing_pictures::UndescribedPicture::default()
+                        .description()
+                ),
+                "the description is not the reader's default answer under {announcing:?}: {shown}"
             );
         }
     }
@@ -1729,7 +1844,7 @@ mod tests {
                     r#"<img src="https://cdn.example/pixel.gif" alt="">"#,
                 );
 
-        assert_eq!(held_back, 1);
+        assert_eq!(held_back.by_the_switch, 1);
         assert!(shown.contains(&what_stands_in_for_it("")), "{shown}");
         assert!(
             !shown.contains(WHAT_A_DECORATIVE_PICTURE_SAYS),
@@ -1749,13 +1864,16 @@ mod tests {
         // the wrong reason and fail on a machine where somebody had turned it
         // off. What this pins is that the constructors ask, not what the
         // answer happens to be here.
-        let (_, from_the_settings) = what_the_settings_say();
+        let (_, from_the_settings, describing) = what_the_settings_say();
 
         assert_eq!(HtmlRenderer::new().announcing, from_the_settings);
         assert_eq!(
             HtmlRenderer::plain_text_only().announcing,
             from_the_settings
         );
+        // The same for the third answer, since 2026-09-19 (#28): a word
+        // wired only into the test door would describe nothing anybody reads.
+        assert_eq!(HtmlRenderer::new().describing, describing);
     }
 
     #[test]

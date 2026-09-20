@@ -3,8 +3,11 @@
 Short version: your mail goes to your mail provider, and your contacts, your calendar and
 your tasks go to the provider you signed in to, because a new installation allows changes
 to those three to be sent. Showing a message that points at a picture asks that address for
-the picture, and the section below says what that means. There is no analytics, no
-telemetry and no crash reporting service. Wixen Mail can ask GitHub whether a newer version
+the picture, by default since 2026-09-19 and with tracking pixels left out, and the section
+below says what that means and where the switch is. There is no analytics, no telemetry and
+no crash reporting service, and [the section on tracking](#how-a-reader-of-mail-can-be-tracked-and-what-this-program-does-about-each)
+lists every place the source opens a connection outward, so that sentence is a list rather
+than a promise. Wixen Mail can ask GitHub whether a newer version
 has been published, which sends nothing about you but does reach a server; it is off on a
 new installation and [Asking whether there is a newer version](#asking-whether-there-is-a-newer-version)
 says exactly what it sends.
@@ -179,7 +182,7 @@ group changes nothing about their contact.
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
 | GitHub | Checking whether a newer version has been published, which you ask for or switch on, see below | The request, which carries nothing about you |
 | OneNote | Never. Nothing here reads or writes a notebook, see below | Nothing |
-| Whoever a sender points a picture at | Showing a message in the preview pane or a conversation window | The request for the picture, which says the message was opened |
+| Whoever a sender points a picture at | Showing a message in the preview pane or a conversation window, by default since 2026-09-19, except a tracking pixel and a decorative picture, and not at all with the switch on, see below | The request for the picture, which says the message was opened |
 
 Nothing else is asked for by this program on its own account. There is no server belonging
 to this project, so there is nowhere for anything of yours to go even by accident. The
@@ -323,21 +326,134 @@ was synced and how many events moved.
 
 ## Pictures a message points at
 
-A message can carry its pictures or point at them. Where it points at one, the address the
-sender wrote is left in the message, and a surface that shows the message in a browser asks
-that address for the picture. Two surfaces do that: the preview pane, which is off until
-you switch it on in the View menu, and the conversation window. The window a message opens
-into when you press Enter on it is a text control and asks nobody for anything.
+A message can carry its pictures or point at them. A picture it carries is already on your
+computer, and showing it tells nobody anything. Where it points at one, the address the
+sender wrote is in the message, and a surface that shows the message in a browser asks that
+address for the picture. Two surfaces do that: the preview pane, which is off until you
+switch it on in the View menu, and the conversation window. The window a message opens into
+when you press Enter on it is a text control and asks nobody for anything.
 
 The request tells whoever is at the other end that the message was opened and roughly when.
 Senders use that on purpose: a picture the size of a full stop, with a different address
 for every recipient, is how a mailing list learns who read it.
 
+**Since the build of 2026-09-19, the pictures a message points at are shown by default.**
+That was the tester's decision on #28, and it costs what the paragraph above says: a sender
+whose picture you fetch learns the message was opened. Two kinds of picture are not fetched
+whatever else is. A picture whose declared width or height is a pixel or less is a tracking
+pixel and not a picture, and it is left out; the message says at the top how many it left
+out. And a picture the sender marked as having nothing to say, a decorative one, is left out
+too, because by the sender's own word there is nothing to see. What this cannot do is tell a
+tracker the size of a picture from a picture: the only way to know is to fetch it, and
+fetching it is the report. So under the default a tracker shaped like a picture is fetched.
+A list of known tracking hosts was considered and is not kept, because such a list is stale
+the day it is written and nothing here could keep it current.
+
+The switch is on the Reading tab in Settings, "Do not fetch any picture a message only points
+at". Off by default. On, none of them is fetched, a photograph no more than a pixel, and the
+message says at the top how many it held back and that this switch is why. An installation
+that had it on keeps it on. Until 2026-09-19 it was on by default, and every picture a
+message pointed at was held back until somebody found the switch, which is what #28 was
+about.
+
 There is no setting for this yet. The Reading tab in Settings says so, where a switch for
 it would be. Until there is one, the way to avoid it is to leave the preview pane off and
 read a message in its own window, which is what happens unless you ask for the preview.
+Those three sentences were written on 2026-08-09, before the switch existed, and stood here
+until 2026-09-19 saying so: the switch has been on the Reading tab since 2026-08-27, the
+sentence under it on that tab said the same thing until 2026-09-19, and neither page knew.
+The third sentence is still true of the reading window, and the switch is the other way.
 
-This was read out of the code rather than measured on the wire.
+This was read out of the code rather than measured on the wire: `src/application/pictures.rs`
+holds the rules, `looks_like_a_beacon` and `what_to_do_about_a_tag`, and
+`src/presentation/html_renderer.rs` applies them where a message is shown and nowhere a
+message is sent.
+
+## How a reader of mail can be tracked, and what this program does about each
+
+Reading mail can tell somebody something, and the ways are known. Each one below says what
+this program does about it by default, what you can change, and what it cannot protect
+against. Each is read from the code, with the file named, and none has been measured on
+the wire.
+
+**Pictures a message points at.** The section above. Shown by default since 2026-09-19;
+tracking pixels and decorative pictures left out; the switch on the Reading tab fetches none.
+What it cannot protect against: a tracker the size of a picture. Read from
+`src/application/pictures.rs` and `src/presentation/html_renderer.rs`.
+
+**Read receipts.** A sender can ask, with a header, to be told when you read their message.
+When you open one that asks, Wixen Mail says so on the status bar, whatever your setting.
+The setting, "Tell senders when you read their mail" on the Reading tab, is Never by
+default, and then nothing is sent and the status bar says "Nothing has been sent". Set to
+Ask, the status bar says nothing has been sent yet and names Action, Send Read Receipt,
+which sends one for that message and no other. Set to Always, one is sent and the status
+bar says so. A receipt is never sent for a message in the junk folder, whatever the setting.
+What it cannot protect against: nothing, since nothing goes without the setting or the
+command; and one narrower thing worth writing down, because it was checked rather than
+assumed. A receipt is decided from the header alone, when the message is selected, and never
+from whether an encrypted message opened, so a sender who asks cannot learn from a receipt
+whether you could read what they sent. The same holds for pictures: a PGP message that opens
+is shown as its words, as text, so it points at no picture a browser could fetch. Read from
+`receipt_for_the_open_message` and `send_receipt_for_the_open_message` in
+`src/presentation/wx_app.rs`, `src/application/receipts.rs`, and
+`the_body_to_show` in `src/application/opening_pgp.rs`; the reasoning about encrypted mail
+is written out in `.cargo/audit.toml` under the `rsa` advisory.
+
+**Links.** An address in a message can carry who you are: a mailing's links often hold a
+token per recipient, so opening one tells the site which recipient opened it, and when.
+Wixen Mail hands a link to Windows, which opens it in your browser, and nothing here sends
+a link anywhere before that. Only web addresses, email addresses and telephone numbers are
+handed over; a link of any other kind keeps its words and says beside them that it was not
+opened here. What it cannot protect against: what the site learns when your browser arrives.
+Read from `safe_external_url` in `src/presentation/html_renderer.rs`. Link checking, if you
+switch it on, is the one feature that sends anything about a link to a third party, and
+[Link checking, if you switch it on](#link-checking-if-you-switch-it-on) says exactly what:
+four bytes of a hash, sometimes, and never the address.
+
+**Meeting invitations.** Answering an invitation sends your answer to the organiser as mail,
+which is the whole point of answering, and tells them nothing more than the answer. Saving a
+meeting with people on it may make your provider write to them;
+[Saving a meeting with people on it](#saving-a-meeting-with-people-on-it) says when. Asking
+when people are free asks your own calendar server and nobody else;
+[Asking when the people invited to a meeting are free](#asking-when-the-people-invited-to-a-meeting-are-free)
+says what goes. Read from `src/application/attaching.rs`, which builds the reply, and
+`src/service/free_busy.rs`.
+
+**The update check and the download.** Off on a new installation. When you ask, or switch it
+on, a request goes to GitHub that carries nothing about you but your address;
+[Asking whether there is a newer version](#asking-whether-there-is-a-newer-version) and
+[Downloading an update](#downloading-an-update) have all of it. Read from
+`src/service/update_check.rs` and `src/service/update_download.rs`.
+
+**The whole-mailbox download, and the connection held open all day.** Your provider sees
+every folder you keep up to date asked for, a chunk at a time, and a connection that stays
+open to hear new mail;
+[A whole mailbox, a chunk at a time, and a connection held open all day](#a-whole-mailbox-a-chunk-at-a-time-and-a-connection-held-open-all-day)
+says what that looks like from their side. It is your own provider, who has the mail
+already. Read from `src/application/mail_sync.rs`.
+
+**What is never sent.** "No analytics, no telemetry, no crash reporting" at the top of this
+page is a claim, and a search for those words in the source would prove only that nobody
+wrote the words. So the claim is made the other way round, as a list: every place in the
+source that opens an outbound web client, read on 2026-09-19 with
+`grep -rn 'reqwest::Client::\|reqwest::blocking::Client\|reqwest::get(' src`, which found 38
+places in 14 files. Twelve of the files ship, and each is one of the things this page already
+covers: `src/service/caldav.rs` and `src/service/carddav.rs`, a calendar or contacts server
+you added; `src/service/google_api.rs`, `src/service/microsoft_graph.rs` and
+`src/service/tasks_api.rs`, the provider you signed in to; `src/service/oauth.rs`, the
+sign-in itself; `src/service/free_busy.rs`, asking when people are free;
+`src/service/ical_subscription.rs`, a calendar feed you subscribed to;
+`src/service/safebrowsing/client.rs`, link checking, if you switched it on;
+`src/service/update_check.rs` and `src/service/update_download.rs`, GitHub, if you asked;
+and `src/service/outward.rs`, the gate every one of those goes through, which refuses a
+request that would change something at the other end unless Allow Changes is on. The other
+two files are compiled only into the tests: `src/common/answering.rs` is a server on this
+computer that tests point a client at, and `src/common/what_ships.rs` reads source files and
+names the client in its own test text. Mail itself goes over IMAP, POP3 and SMTP, which are
+not web clients and are the first row of the table under
+[Who Wixen Mail talks to](#who-wixen-mail-talks-to). Nothing else in the tree opens a
+connection outward, and if that sentence stops being true the way to find out is to run the
+command again, not to reread this page.
 
 ## Reading your messages to mark suspicious ones
 

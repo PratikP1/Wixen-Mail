@@ -77,18 +77,30 @@ pub struct AppConfig {
     /// was not there.
     #[serde(default = "default_true")]
     pub add_signature_automatically: bool,
-    /// Leave a picture a message only points at unfetched.
+    /// Leave every picture a message only points at unfetched.
     ///
-    /// On unless somebody turns it off, and this is the one setting in this
-    /// file that starts on and takes something away. Fetching such a picture
+    /// Off by default since 2026-09-19, by the tester's decision in #28: the
+    /// pictures a message points at are shown, and what is held back is
+    /// decided per picture by `application::pictures`, which does not fetch
+    /// one whose declared size is a pixel or less (a tracking pixel) or one
+    /// the sender marked decorative. Until then this was on by default, the
+    /// one setting in this file that started on and took something away, and
+    /// the tester's first day of testing found no picture shown in any
+    /// message.
+    ///
+    /// What the switch still does: on, nothing a message points at is
+    /// fetched, a photograph no more than a pixel. Fetching such a picture
     /// tells the server it came from that this message was opened, by this
     /// computer, at this moment, which is the whole of how mail tracking
-    /// works: a single invisible pixel, in nearly every marketing message and
-    /// a good deal worse.
+    /// works; under the default a tracker the size of a picture is fetched,
+    /// and this switch is the way to fetch none.
     ///
-    /// A picture the message carries is not affected. It is already here and
-    /// showing it tells nobody anything.
-    #[serde(default = "default_true")]
+    /// A picture the message carries is not affected either way. It is
+    /// already here and showing it tells nobody anything.
+    ///
+    /// A settings file that carries the key keeps its answer; the absent
+    /// key answers the default of the day, which the older-file test holds.
+    #[serde(default)]
     pub hold_back_remote_pictures: bool,
     /// Say where a picture the sender marked decorative is.
     ///
@@ -121,6 +133,22 @@ pub struct AppConfig {
     /// is recorded in `.planning/WINDOWS.md`.
     #[serde(default = "default_true")]
     pub announce_decorative_pictures: bool,
+    /// What a picture nobody described is read as: "nothing", "image" or
+    /// "photo".
+    ///
+    /// Offered on the Reading tab under the two picture boxes, read by the
+    /// reading path of `presentation::html_renderer` and by a note read
+    /// aloud through `application::long_text`, as
+    /// `describing_pictures::UndescribedPicture`. The default is nothing, so
+    /// an undescribed picture is passed over the way a decorative one is,
+    /// by the tester's decision in #28; an absent key answers the same, and
+    /// so does a garbled value, because either of the two words written for
+    /// a file nobody chose would be a description this program invented.
+    ///
+    /// A description the sender wrote is never touched by this, and nothing
+    /// written under it reaches a message on its way out.
+    #[serde(default = "default_undescribed_pictures_read_as")]
+    pub undescribed_pictures_read_as: String,
     /// The typeface the item lists are drawn in.
     ///
     /// Empty means whatever Windows uses, which is the default and is stored
@@ -578,6 +606,10 @@ fn default_announce_while_fetching() -> String {
     crate::application::what_is_said_while_fetching::HowMuchToSay::default().as_stored()
 }
 
+fn default_undescribed_pictures_read_as() -> String {
+    crate::application::describing_pictures::UndescribedPicture::default().as_stored()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -726,8 +758,9 @@ impl Default for AppConfig {
             deleting_a_conversation_row: default_deleting_a_conversation_row(),
             empty_reaches_subfolders: default_true(),
             mark_read_reaches_subfolders: default_true(),
-            hold_back_remote_pictures: default_true(),
+            hold_back_remote_pictures: false,
             announce_decorative_pictures: default_true(),
+            undescribed_pictures_read_as: default_undescribed_pictures_read_as(),
             font_family: String::new(),
             check_default_programs_at_startup: false,
             keep_running_in_the_tray: false,
@@ -1698,6 +1731,8 @@ mod permission_tests {
             "default_reminder_minutes",
             "unread_on_a_parent",
             "announce_decorative_pictures",
+            "hold_back_remote_pictures",
+            "undescribed_pictures_read_as",
             "undo_send_hold_seconds",
             "calendar_view",
             "message_text_kept",
@@ -1761,6 +1796,36 @@ mod permission_tests {
             parsed.announce_decorative_pictures,
             "an absent key answered no, so every existing installation would \
              silently take every sender's word that a picture said nothing"
+        );
+        // The one setting here whose absent answer was flipped after it
+        // shipped. Until 2026-09-19 an absent key held every remote picture
+        // back; by the tester's decision in #28 the pictures show and the
+        // beacon rule in `application::pictures` holds the tracking pixels
+        // back. A file that carries the key keeps its answer either way; the
+        // tester's own carries `false` already.
+        assert!(
+            !parsed.hold_back_remote_pictures,
+            "an absent key answered yes, so a fresh profile would hold every \
+             picture back, which is the default #28 was filed about"
+        );
+        assert_eq!(
+            AppConfig::default().hold_back_remote_pictures,
+            parsed.hold_back_remote_pictures,
+            "the struct's default and the field's absent answer disagree, so a \
+             settings screen built over the defaults would show one answer and \
+             an older file would read the other"
+        );
+        assert_eq!(
+            parsed.undescribed_pictures_read_as, "nothing",
+            "an absent key answering a word would write that word on every \
+             undescribed picture for everybody upgrading, which is a description \
+             this program invented"
+        );
+        assert_eq!(
+            crate::application::describing_pictures::UndescribedPicture::from_stored(
+                &parsed.undescribed_pictures_read_as
+            ),
+            crate::application::describing_pictures::UndescribedPicture::Nothing
         );
         assert_eq!(
             parsed.message_text_kept, "all",

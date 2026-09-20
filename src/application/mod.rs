@@ -32,6 +32,7 @@ pub mod context_menu;
 pub mod conversations;
 pub mod deleting_at_the_server;
 pub mod deletions;
+pub mod describing_pictures;
 pub mod destinations;
 pub mod draft_copy;
 pub mod draft_message;

@@ -6,6 +6,9 @@
 
 use crate::application::autosave::AutosaveInterval;
 use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
+use crate::application::describing_pictures::{
+    UNDESCRIBED_PICTURES_LABEL, UndescribedPicture, WHAT_THE_CHOICE_LEAVES_ALONE,
+};
 use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::reading_habits::{
     CopyLines, MarkRead, WHAT_MARK_READ_COUNTS_FROM, WorkingDay,
@@ -1428,6 +1431,26 @@ const SIGNATURE_LABEL: &str = "Start every message with my &signature";
 const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your signature stays on the account and can \
      still be added by hand.";
 
+/// What the box that holds every pointed-at picture back says, with its
+/// keyboard letter.
+///
+/// "Any", because since 2026-09-19 the default fetches them and holds back
+/// only the ones that look like tracking pixels, so what this box adds is
+/// fetching none. A constant for the reason its neighbour below gives.
+const HOLD_BACK_PICTURES_LABEL: &str = "Do not &fetch any picture a message only points at";
+
+/// What the unticked state means, which a check box alone cannot say.
+///
+/// It says which way it ships, what off does and what on does, because a
+/// person meeting a box for the first time cannot tell a default from a
+/// choice somebody made, and because the default here changed (#28).
+const HOLD_BACK_PICTURES_WHEN_THIS_IS_OFF: &str = "Off by default. Off: pictures a message points at are fetched and shown, \
+     except one whose declared size is a pixel or less, which is a tracking \
+     pixel and is not fetched, and one the sender marked decorative. Fetching \
+     a picture tells its sender you opened the message. On: none of them is \
+     fetched. Pictures the message carries are always shown; they are already \
+     here and showing them tells nobody anything.";
+
 /// What the box for decorative pictures says, with its keyboard letter.
 ///
 /// A constant because two places name it: the label the box carries, which is
@@ -1460,6 +1483,9 @@ pub struct ReadingTabControls {
     deleting_a_conversation_row: Choice,
     hold_back_remote_pictures: CheckBox,
     announce_decorative_pictures: CheckBox,
+    /// Public because a test builds this dialog and reads the choice back
+    /// through `read_settings` the way OK does (#28).
+    pub undescribed_pictures_read_as: Choice,
     read_receipts: Choice,
     read_messages_as: Choice,
     date_style: Choice,
@@ -1854,17 +1880,18 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
 
     // There was a checkbox here once that saved nothing and was read by
     // nothing, and then a sentence admitting the pictures were fetched and
-    // there was no switch. This is the switch, and it does what it says.
+    // there was no switch. This is the switch, and it does what it says. Off
+    // by default since 2026-09-19 (#28): the pictures show, and the ones
+    // that look like tracking pixels are held back by their declared size
+    // whether or not this is on.
     let hold_back_remote_pictures = CheckBox::builder(panel)
-        .with_label("Do not &fetch pictures a message only points at")
+        .with_label(HOLD_BACK_PICTURES_LABEL)
         .build();
     hold_back_remote_pictures.set_value(config.hold_back_remote_pictures);
     set_accessible_name_and_description(
         &hold_back_remote_pictures,
-        "Do not fetch pictures a message only points at",
-        "On by default. Fetching one tells the sender you opened the message. \
-         Pictures the message carries are always shown; they are already here \
-         and showing them tells nobody anything",
+        &HOLD_BACK_PICTURES_LABEL.replace('&', ""),
+        HOLD_BACK_PICTURES_WHEN_THIS_IS_OFF,
     );
     read_sec.add(&hold_back_remote_pictures, 0, SizerFlag::All, 4);
 
@@ -1881,6 +1908,37 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         DECORATIVE_PICTURES_WHEN_THIS_IS_OFF,
     );
     read_sec.add(&announce_decorative_pictures, 0, SizerFlag::All, 4);
+
+    // What a picture nobody described is read as (#28). Under the two
+    // picture boxes, because it is the third thing a picture does when a
+    // message is read here. Three sentences rather than a mechanism, the
+    // default first, and the sentence under it says what the choice leaves
+    // alone: the sender's own description, and a link's words.
+    let undescribed_labels: Vec<&str> = UndescribedPicture::ALL
+        .iter()
+        .map(|choice| choice.label())
+        .collect();
+    let undescribed_pictures_read_as = labelled_choice(
+        panel,
+        &read_sec,
+        UNDESCRIBED_PICTURES_LABEL,
+        UNDESCRIBED_PICTURES_LABEL
+            .replace('&', "")
+            .trim_end_matches(':'),
+        &undescribed_labels,
+        crate::application::describing_pictures::offered_index(&config.undescribed_pictures_read_as)
+            as u32,
+    );
+    let undescribed_leaves_alone = StaticText::builder(panel)
+        .with_label(WHAT_THE_CHOICE_LEAVES_ALONE)
+        .build();
+    set_accessible_name(&undescribed_leaves_alone, WHAT_THE_CHOICE_LEAVES_ALONE);
+    read_sec.add(
+        &undescribed_leaves_alone,
+        0,
+        SizerFlag::Expand | SizerFlag::All,
+        4,
+    );
 
     let images_note = StaticText::builder(panel)
         .with_label(REMOTE_IMAGES_ARE_FETCHED)
@@ -1992,26 +2050,29 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
         announce_decorative_pictures,
+        undescribed_pictures_read_as,
     }
 }
 
-/// What happens to a picture a message points at, said rather than switched.
+/// Where a picture a message points at is fetched, and where it is not.
 ///
 /// Narrower than the checkbox that used to stand here, and narrower than the
 /// first version of this sentence, which said a picture was fetched whenever a
 /// message was shown. The reading window is a text control and fetches
 /// nothing. The two surfaces that show a message body in a browser are the
-/// preview pane and the conversation window, and the address the sender wrote
-/// is still in the message on both of them.
+/// preview pane and the conversation window.
 ///
-/// Read rather than measured: the code leaves the address in the message and
-/// hands it to a browser, and nothing here refuses the request. No network
-/// trace has been taken.
-const REMOTE_IMAGES_ARE_FETCHED: &str = "A picture a message points at rather than carries is left in the message. \
-     The preview pane and the conversation window show a message in a browser, \
-     which fetches the picture and so tells the sender the message was opened. \
-     The reading window shows text and fetches nothing. There is no setting \
-     for this yet.";
+/// Until 2026-09-19 this ended "There is no setting for this yet", under the
+/// very switch that is the setting: the sentence was written before the
+/// switch and never read again once the switch arrived above it. It now says
+/// which surfaces fetch and which cannot, which is the part no switch says.
+///
+/// Read rather than measured: the code hands the message to a browser on
+/// those two surfaces and to a text control on the third. No network trace
+/// has been taken.
+const REMOTE_IMAGES_ARE_FETCHED: &str = "The preview pane and the conversation window show a message in a browser, \
+     which is where a picture a message points at is fetched. The reading \
+     window shows text and fetches nothing.";
 
 /// What the second level of the sort can be, in the order it is offered.
 ///
@@ -3400,6 +3461,14 @@ fn read_the_reading_page(w: &ReadingTabControls, base: &AppConfig, cfg: &mut App
     cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
     cfg.hold_back_remote_pictures = w.hold_back_remote_pictures.get_value();
     cfg.announce_decorative_pictures = w.announce_decorative_pictures.get_value();
+    // By position out of `UndescribedPicture::ALL`, the same order the
+    // choices were built from, so the two cannot drift apart the way a
+    // second list of words would.
+    cfg.undescribed_pictures_read_as = UndescribedPicture::ALL
+        .get(sel(&w.undescribed_pictures_read_as) as usize)
+        .copied()
+        .unwrap_or_default()
+        .as_stored();
     // By the words shown rather than the row number. A row number needs the
     // list the control was built from a second time to mean anything, and if
     // that list differed at saving from the one somebody chose from, their

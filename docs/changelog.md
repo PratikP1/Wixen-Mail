@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Pictures a message points at are shown by default, except tracking pixels and the ones
+  the sender marked decorative; a picture nobody described is passed over, or called what
+  you choose.** The tester on 2026-09-15, on build `1.0.0-alpha.1` (#28): "none of the
+  pictures in emails are shown", and his decision: "By default, only beacons should be
+  avoided along with decorative images. Photo links should have the link text as the
+  default alt for the photo unless there's an associated alt. Photos without descriptions
+  should automatically be given "" as the alt by default unless the user specifically
+  chooses either 'image' or 'photo' in settings." Since 2026-09-19 a fresh installation
+  fetches the pictures a message points at, where until then every one was held back until
+  the switch on the Reading tab was turned off. What that costs is said plainly: fetching a
+  picture tells its sender the message was opened, and roughly when. What is not fetched: a
+  picture whose declared width or height is a pixel or less, which is a tracking pixel and
+  not a picture, and a picture the sender marked as having nothing to say. A tracker the
+  size of a picture is fetched, because the only way to tell it from a picture is to fetch
+  it. The message says at the top how many tracking pixels it held back. The switch is still
+  on the Reading tab, off by default, and an installation that had it on keeps it on; on, it
+  fetches none of them and the sentence at the top names the switch as before. A picture
+  inside a link with no description of its own takes the link's words as its description,
+  so a screen reader says "Our spring range" and not "graphic". A picture with no
+  description at all is passed over by default, the way a decorative one is, unless the new
+  choice on the Reading tab, "An undescribed picture is read as", says the word image or
+  the word photo; a description the sender wrote is never touched. A note, a task or an
+  event read aloud follows the same choice for a picture in its text, where until now it
+  said "image with no description". The sentence on the Reading tab that said there was no
+  setting for this, under the switch that is the setting, is gone. Known limitations: a
+  tracker the size of a picture is fetched and cannot be told from one; nobody has heard a
+  shown picture, a passed-over one, the link's words or the sentence about tracking pixels
+  in a screen reader; and `docs/privacy.md` has the rest of what reading a message can tell
+  its sender.
 - **A message row's snippet is the message's first relevant words, not its first 200
   characters.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef` under NVDA
   (#82): a snippet holding a link read the whole address out, character by character, on a
