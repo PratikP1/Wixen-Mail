@@ -98,9 +98,11 @@ and this page exists because structure present is not experience good.
 
 ## A. Blind: screen readers
 
-Fifty-seven items. Walk them in order; the first ones are the ground the rest
+Eighty-three items. Walk them in order; the first ones are the ground the rest
 stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57 the same day,
-for what phase 10 built; this line said forty-one until then.
+for what phase 10 built; this line said forty-one until then. Items 58 to 83
+were added on 2026-09-20 for what phase 11 built; this line said fifty-seven
+until then.
 
 ### The main window
 
@@ -422,6 +424,204 @@ own, so read them before that check rather than after it.
     entry should read `1.0.0-alpha.1` followed by a number and a commit, the
     number larger than the build before it, and Windows should have installed
     it as an upgrade rather than beside the old one. **Both.** [ledger 517]
+
+### Reading, and the list
+
+Added 2026-09-20 for what phase 11 built. Everything in this group has been
+proved by readings of the code, by tests on a built window and by a stand-in
+server inside the tests, and none of it has been heard. Two of the phase's
+plans are not in the build these items describe: the separate window a link
+can open in, and the pass over the status bar's sentences, both put off to the
+next phase on 2026-09-20.
+
+58. **Open Tools, Folders to Keep Up to Date and arrow down the tree.** Each
+    folder should be heard as a check box with its state, "checked" for a kept
+    folder and "not checked" for the rest, never "read-only"; a folder inside
+    another should be read with its level; Space should say the new state;
+    the window's title should be the account's name; and on a Gmail account
+    the sentence under the tree about All Mail should be reachable and make
+    sense. **NVDA.** [ledger 533]
+59. **Press Alt+A from inside an open message, in the formatted view and in
+    the plain-text reader.** "Attachments, N" and focus on the list; Alt+A
+    again, "Message" and focus back in the body; F7, "Security warning" and
+    back; with nothing to go to, "No attachments" and "No warning". Say
+    whether the list announcing itself after the sentence is one thing too
+    many. **NVDA.** [ledger 538]
+60. **Arrow through a folder with unread messages, letting the screen reader
+    finish every row.** The unread count should be where it was. Then Space
+    once on an unread message: the count should still not move, however long
+    you stay. Space again, the whole message: after two seconds with the row
+    still selected, the count should move. Shift+Space and Enter should do the
+    same; moving off before the delay should leave it unread. On the Reading
+    tab, the sentence under Mark as read after should be read once, on the
+    choice's own row. **NVDA.** [ledger 539]
+61. **Arrow onto a read message and open the Action menu, then onto an unread
+    one.** The item should be heard as Mark as Unread and then as Mark as
+    Read, the context menu's entry the same, and the toolbar button's name the
+    same under the screen reader's own navigation. Press M on a message: one
+    word, "read" or "unread", and the list staying on the same row. Alt+A then
+    E should reach the item whichever way it goes. **NVDA.** [ledger 540]
+62. **Delete a message in the middle of the list, then the last one.** After
+    the first, the next message's row read once and not again when the folder
+    is re-read a moment later; after the last, the previous row read once; the
+    same after Move to Trash and after a move out of the folder; the preview
+    showing the message you landed on. **NVDA.** [ledger 541]
+63. **Listen to what a delete says.** "Delete" once at the key and nothing
+    after it when it went through; with the network off, the refusal heard
+    with its reason; Move to Trash and Move to Folder the same; Copy to
+    Folder's "Copied to" still heard, since its row stays; and the fuller line,
+    "Deleting" then "Moved to Trash", on the status bar with NVDA+End and not
+    otherwise. **NVDA.** [ledger 542]
+64. **Open a folder, then Tab from the folder tree into the message list.**
+    The newest message's row read once and not twice; F6 into the list the
+    same; back to the tree and Tab again landing on the row you left, with
+    nothing moved; an empty folder's list saying "No messages" once. **NVDA.**
+    [ledger 543]
+65. **Grow a selection with Shift+Down and shrink it with Shift+Up, then
+    Ctrl+A.** "selected" for each row added and the row read, "not selected"
+    for the row that leaves, and the count on its own after Ctrl+A. Then Mark
+    as Read over three: "3 messages marked read" once and nothing per message.
+    Delete over several: "Delete" once and the row after the set read once
+    when they have gone. M on a conversation row: "1 conversation, 5 messages
+    marked read". Select more than 5,000 and press a command: the refusal
+    heard once with the count. **NVDA.** [ledger 544]
+66. **Move a message to another folder in the same account.** The row should
+    leave at once and the cursor be read on the next message; in the Move
+    dialog, Enter on the chosen folder should be the move. With the network
+    off, move a message, put the network back and check for mail: if the
+    server says no, the message should come back and the refusal be heard
+    once. Move a message with the network off, close the program, start it
+    again and check: the message should be in the destination and not brought
+    back. Copy a message: "Copied to Work" once, the row staying. What a real
+    server does with a replayed move is the account's. **NVDA, and a real
+    account.** [ledger 546]
+67. **Move a message to a folder on another account.** The row leaving at
+    once, the cursor read on the next message, "Moved to Work in Home" on the
+    status bar, and the message in that folder of the other account at its
+    next check; with the network off, the row going and coming back with the
+    refusal spoken once when a server says no; a restart with the crossing
+    unfinished finishing it at the next check of either account without a
+    question; a message over 25 MB saying it goes now; a copy across accounts
+    heard once. **NVDA, and two real accounts.** [ledger 547]
+68. **Land on a conversation row in Thread View.** The sender heard first
+    should be the message that started the conversation when nothing in it is
+    read, and the first unread message otherwise; the preview should show that
+    message; Enter should open the conversation window with the cursor on it,
+    so Enter again opens it; Space should read it; M should mark the whole
+    thread; a conversation with everything read should give the oldest. On a
+    Gmail account, landing on the row should bring the conversation's text
+    down without a word. **NVDA, and a Gmail account.** [ledger 548]
+69. **On a Gmail account whose threads showed as several rows, check for mail
+    once and look again.** The split threads should be one conversation row,
+    with the count matching what Gmail's own client shows; Enter should open
+    the same messages Gmail shows; a reply that arrived without its headers
+    should sit in its thread; two unrelated threads with one subject should
+    stay two rows. Note what the once-only pass took on your mailbox. **A Gmail
+    account.** [ledger 549]
+70. **Press Ctrl+Shift+; on a row, then choose Read the Row's Headings and
+    Text from the Action menu.** The row heard whole and once, each heading
+    then its text in the order the columns are shown, a conversation row
+    reading its own cells, and the refusal heard when the list does not have
+    focus. Then set up the NVDA configuration profile the shortcuts page
+    describes, with Row/column headers off for this program, and arrow: the
+    rows should be quiet of headings. What Narrator and JAWS need is unread.
+    **NVDA.** [ledger 550, ledger 551]
+71. **Land on a message with an attachment.** The row read once, with "Has
+    attachment" inside the row's reading, the attachment tone beside it and
+    nothing spoken for the event; with "Show events in the status bar" off,
+    the tone alone. On a fresh profile every event's tone should be heard from
+    the start. **NVDA, ears.** [ledger 552]
+72. **Change the output device while the program runs, under a build started
+    against an empty data folder.** With earcons on, change the default device
+    in Windows Sound settings and trigger an event with a sound, Settings
+    saved being the nearest: say whether it went silent and what the log said
+    at debug. Then unplug a headset with a sound due, and say whether the sound
+    after it plays. The steps are in the ledger entry; never the installed
+    build, and never against your own profile. **Ears.** [ledger 553]
+73. **Arrow onto a row whose message opens with a web address, a newsletter's
+    row, and a reply's row.** The first heard as the message's first sentence
+    and not the address; the second as its first real line and not "View this
+    email in your browser"; the third as the new words and not the quote. After
+    the first start on this build, the rows of mail downloaded before it should
+    read the new way, and the log should say how many were put right and in how
+    long. **NVDA.** [ledger 554]
+74. **Make a rule with Say this first and the phrase Urgent, and one with the
+    sound box ticked.** A matching row heard as "Urgent, Unread, ..." with the
+    phrase before the first column, and as "Urgent" alone when the first cell
+    is empty; the Says first column showing the word once switched on with F8;
+    Ctrl+Shift+; saying the phrase without "Says first" before it; the Rule
+    matched tone once after a check that found several matches across folders,
+    and its words "Rule matched, 3 messages"; the Labels column, switched on,
+    read as part of the row, and on a conversation row every label once.
+    **NVDA, ears.** [ledger 556]
+75. **Open a plain-text message with an address on a line of its own, the
+    chapter alert that was reported.** The address in NVDA's link list on the
+    preview and in the reader window, and Enter on it going where Open links
+    says; an address in an event's description read with Space heard as "link
+    to" its site; a note's bare address a link when the note is shown as a
+    page; an address with a full stop after it linking without the stop; a
+    sender's mailto link on a name still working; a sender's sms link heard as
+    its words with "link not opened here: sms" after them. **NVDA.** [ledger
+    557]
+76. **Open a newsletter in the preview, on a fresh profile and on your own.**
+    Its pictures shown; a one-pixel beacon passed over with "1 picture that
+    looked like a tracking pixel was not fetched." heard once at the top; a
+    linked picture with no description heard as the link's words; an
+    undescribed picture heard as nothing under the default and as "image" or
+    "photo" once chosen on the Reading tab; a picture the sender marked
+    decorative passed over, or heard as such with that box on; a note with an
+    undescribed picture read with Space and the picture passed over. **NVDA.**
+    [ledger 558]
+77. **Read the Substack newsletter that was reported, in the formatted view.**
+    The subtitle heard once, where the sender's own line stands and not at the
+    top; no run of symbols where the padding was; no "table with N rows and N
+    columns" around any block; no "Post header" grouping announced; the subject
+    heard once as the heading and the sender once in the heading with no number
+    before it; then another newsletter of your choosing read the same way.
+    **NVDA.** [ledger 559]
+78. **Press Enter on a link, on the preview pane and on the formatted message
+    window, under each of the three answers to Open links.** The browser under
+    the default; the page in the message view with "Opening" and the site's
+    name, the title said once when it arrives, and "Back to the message" on
+    Backspace or Alt+Left; the link's menu on the Applications key offering the
+    three places on both surfaces; a page that will not load saying why; the
+    separate window choice opening the browser with its status line, since that
+    window is a later build's. **NVDA.** [ledger 560]
+79. **Change Mark as read after in Settings, press OK, and press Enter on an
+    unread message.** The message marked after the new wait, without a restart;
+    change how dates are written, OK, and the list's dates changing at once;
+    the sentence under Default sort order and the sentence under Log level
+    heard after each control's name. **NVDA.** [ledger 561]
+80. **Open a folder you have never set, on a fresh profile.** Conversation rows,
+    with the Thread View check mark on; turn Show conversations by default off
+    under Settings, Reading, OK, and open the next folder never set: one row
+    per message, without a restart; a folder set flat by hand still flat with
+    the setting on; the check box heard by its name and state on the Reading
+    tab after Then by. **NVDA.** [ledger 562]
+81. **Land on All Inboxes from a fresh profile.** Conversation rows with the
+    Thread View check mark on; Ctrl+T there heard as the flat view's sentence,
+    a folder visited and All Inboxes returned to still flat with the check
+    mark off; a conversation held in two of your accounts heard as two rows,
+    one per account, each with its own count, and a command on one of them
+    reaching that account; Ctrl+T on a label or a saved search heard as the
+    refusal naming All Inboxes. **NVDA.** [ledger 563]
+82. **Type Markdown into a new message and into a reply, with NVDA in focus
+    mode and a moment's wait after each Space.** Two number signs, Space, a
+    word on the first line: "Heading level 2", and Up then Down reading the
+    line as a heading with the signs gone. In a reply to a plain-text message,
+    Down into the quoted text, Home, the same marker: "Heading level 2", which
+    is the case that was broken. The same after Enter on the empty first line
+    and after Shift+Enter. Two signs, a word, Space, with no space after the
+    signs: nothing, and the signs stay. Two stars, a word, two stars, a word:
+    "Bold" at the closing star and the next word read plain; a hyphen, Space
+    and a word on a new line: "Bulleted list". Ctrl+Enter to the preview, then
+    H: land on each heading. **NVDA.** [ledger 565]
+83. **After a day on this build, open the log and write one report from it.**
+    The level starts at Debug under the alpha, and each check's line per
+    folder, the download's chunk lines, the settings save line and the
+    held-back line should be there; say whether they are the lines that make
+    your next problem diagnosable, and what the day's log came to on the disk.
+    **A person, with the log.** [ledger 535]
 
 ## B. Low vision and colour
 

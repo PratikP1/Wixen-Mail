@@ -293,7 +293,14 @@ a second copy would be a duplicate of the one Google already saved.
 conversation grouping, so a conversation here may be split differently from the
 same conversation in Gmail's web interface. Gmail does publish its grouping over
 IMAP; the library Wixen Mail is built on reads it and provides no way to get at
-it.
+it. **Until the build after 2026-09-19.** Since then a conversation on a Gmail
+account is the one Gmail shows: its own name for each message's conversation is
+asked for with the message and decides which messages belong together, whatever
+the headers say, and mail already on this computer gets its name once at the
+next check. The sentence about the library had outlived the change that let
+this program read the server's answer itself. Nobody has yet seen split threads
+become one on a real Gmail account; [the user guide](USER_GUIDE.md#thread-view)
+says what happens on every other provider.
 
 ### Troubleshooting Gmail
 

@@ -290,8 +290,13 @@ under Settings, then Reading, then "Open links", and there are three:
   preview uses, so a cookie it sets is sent again when a later message loads a
   picture from the same site; [What Wixen Mail sends, and
   where](privacy.md#where-a-link-opens) says what that means.
-- In a separate Wixen Mail window. That window arrives with the next build.
-  Until then this choice opens your browser and the status bar says so.
+- In a separate Wixen Mail window. That window arrives with a later build:
+  it was to come with the next one, and on 2026-09-20 it was put off to the
+  phase after this one. Until it lands this choice opens your browser and the
+  status bar says so. Two sentences in the program itself, the one under the
+  setting and the status bar's line, still say "the next build"; they were
+  true when they were written on 2026-09-20 and are not now, and they change
+  when the window lands.
 
 Whatever you chose, the link's menu offers all three. Press the `Applications`
 key or `Shift+F10` on a link, or right-click it, and choose Open in Message
@@ -507,7 +512,8 @@ yet; the tester's copy is the first that will.
 - `Ctrl+Shift+R` - Reply all
 - `Ctrl+L` - Forward
 - `Delete` - Delete message
-- `S` - Star/flag message
+- `Ctrl+Shift+S` - Star or unstar the selected messages. Until 2026-09-20 this
+  line said `S`, and `S` on its own has never been bound to anything.
 - `M` - Mark the message as read or as unread, whichever it is not, and hear
   which. `Space` reads the message aloud; until 2026-09-18 this line said it
   toggled read and unread, and it never did.
@@ -931,13 +937,16 @@ every module in full.
 - `Ctrl+Shift+R` - Reply all
 - `Ctrl+L` - Forward
 - `Delete` - Delete message
-- `S` - Star/flag message
+- `Ctrl+Shift+S` - Star or unstar the selected messages. Until 2026-09-20 this
+  line said `S`, which has never been bound
 - `M` - Mark as read or as unread, and hear which
 - `Space` - Read the message aloud
 
 ### Navigation
-- `N` - Next unread message
-- `P` - Previous unread message
+- `Ctrl+U` - Next unread message. Until 2026-09-20 this line said `N`, which
+  has never been bound
+- `Ctrl+Shift+U` - Previous unread message. Until 2026-09-20 this line said
+  `P`, which has never been bound
 - `Up/Down` - Navigate messages
 - `Home/End` - First/last message
 

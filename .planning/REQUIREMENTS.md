@@ -3553,6 +3553,22 @@ Nothing here has met a real provider except through the tester's Gmail account. 
 requirement's last `[S]` line says what only his ear, his reader or his account can settle;
 the caveat at the top of this file binds every `[D]` line.
 
+**Read clause by clause on 2026-09-20 by the phase's closing read, 11-12, against `main` at
+`1993b56e`.** Each ticked requirement was ticked by its own plan on the orchestrator's
+instruction, which overruled the README's "11-12 ticks"; this read re-took every name.
+Every test the twenty-eight summaries' coverage blocks name was checked to exist in its file
+with `grep -n 'fn <name>'`: 449 names found, one not, 11-05's
+`test_reading_a_row_aloud_records_when_reading_began`, which 11-05.1 split into
+`test_the_short_form_records_nothing_about_reading` and
+`test_the_whole_reading_records_when_reading_began`, both found, as LIST-03's amended line
+says. So the twenty-four ticks stand: LIST-01, 03 to 10, 12 to 18 and 20 to 27, each on the
+names its own paragraph gives. Three stay open, each for a reason on its own lines: LIST-02
+owes the two size rows (ledger 537); LIST-11 is 11-13's, and LIST-19's second half is
+11-11.2's, and both plans were deferred to the front of the next phase on Pratik's decision
+of 2026-09-20 under his token budget, so neither box can be ticked here. The `[S]` lines are
+untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
+`docs/manual-accessibility-pass.md`.
+
 - [x] **LIST-01**: Folders to Keep Up to Date is a tree whose ticks a screen reader hears,
   names the account, shows All Mail when the server lists it, and is on the Tools menu.
   **Ticked 2026-09-18 by 11-03, merged at `70f4737b`, on its two `[D]` lines:** a
@@ -3611,7 +3627,9 @@ the caveat at the top of this file binds every `[D]` line.
   second copy and the tester's copy was open all afternoon (ledger 537); the harness now
   refuses to start while any copy runs and pins the level, and the guide says the cost is
   owed. The box is ticked when the rows are on the page. The `[S]` line is untouched and
-  is ledger 535.
+  is ledger 535. **Read again 2026-09-20 by 11-12: the rows are still not on the page
+  (`grep -c 'two-minute start' docs/development/measurements.md` answers 0), so the box
+  stays open on that clause alone; the other two lines' names were found in the tree.**
   - Evidence: `grep -n 'log_level: "info"' src/data/config.rs` -> `703`, and `LoggerConfig::default`
     at `logging.rs:62`, two literals; the field has no serde default (`config.rs:47`);
     `main.rs:100-106` reads the stored level first. Counts on 2026-09-18: `error` 59, `warn`
@@ -3967,6 +3985,11 @@ phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
 
 - [ ] **LIST-11**: Every sentence the status bar shows reads to one shape in a person's words,
   read in one pass, with a reading that holds new sentences to the shape where a reading can.
+  **Open at the phase's close, 2026-09-20.** 11-13, the plan that holds it, was deferred to
+  the front of the next phase on Pratik's decision of 2026-09-20 under his token budget;
+  nothing of it landed, and the `[D]` line below is still the plan's proposal. The closing
+  read, 11-12, read the pages with the bar's sentences as the phase left them, which the
+  plan was to have rewritten first. The `[S]` line is untouched.
   - Evidence: at `08197657` on 2026-09-18, `grep -rn --include='*.rs' -F "<call>" src`, comments
     excluded, test modules not: `send_status(` 110, `send_refusal(` 99, `said_and_shown(` 82,
     `set_status_text(` 45, `UIUpdate::StatusUpdated(` 34, `UIUpdate::Progress(` 17,
@@ -4257,7 +4280,14 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     `safe_external_url` before `opening_links::route`; the message view route with its host,
     title, failure and way back said; the privacy page's "Where a link opens". Not yet held:
     the separate window as a process of its own with a profile of its own, 11-11.2's, and
-    the box waits for it.
+    the box waits for it. **Open at the phase's close, 2026-09-20:** 11-11.2 was deferred
+    to the front of the next phase on Pratik's decision of 2026-09-20 under his token
+    budget, so the separate-window clause is unheld and the box stays open; the closing
+    read, 11-12, found 11-11.1's names in the tree and reworded the pages' "with the next
+    build" to a later build, dated. The program's own two sentences, `WHAT_EACH_CHOICE_COSTS`
+    and `SEPARATE_WINDOWS_ARRIVE_LATER` in `src/application/opening_links.rs`, still say the
+    next build, held by a test to those words; they are ledger 566 and 11-11.2's to retire,
+    as 11-11.1's summary already says.
   - [S] #80, Pratik on 2026-09-18: the setting, the three menu items, the in-app routes in a
     profile of their own, the privacy line; and the tester: "Enter on a message and Enter on
     a link both open in the same window; the link does not go to the default browser."
@@ -4765,7 +4795,7 @@ section and is real work; none is declined.
 
 | Requirement | Reason for deferral |
 |---|---|
-| Gmail X-GM-THRID conversations and X-GM-RAW server-side search | Blocked on the IMAP library, not on this codebase. Roadmap Phase 2 and `docs/changelog.md` both record it that way. |
+| Gmail X-GM-THRID conversations and X-GM-RAW server-side search | Blocked on the IMAP library, not on this codebase. Roadmap Phase 2 and `docs/changelog.md` both record it that way. Corrected 2026-09-20 by 11-12's read: `X-GM-THRID` landed on 2026-09-19 in 11-08.1 (LIST-23), since this code reads the server's attributes itself and the library no longer stood in the way; only `X-GM-RAW` stays deferred, and the pages that said the library blocked both are corrected by dating. |
 | The Exchange path described in `docs/plans/20260726-mail-at-scale.md` | The Microsoft work that shipped went through Graph for contacts, calendar and tasks. With EWS declined, this section proposes a path nothing needs. |
 | JMAP | `docs/development/requirements-backlog.md`, future, priority Low. |
 | Plugin and extension system | `docs/development/requirements-backlog.md`, future, priority Low. |
@@ -4856,7 +4886,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
-| LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
+| LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
 | LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544 |
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544 |
@@ -4865,7 +4895,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
 | LIST-09 | Phase 11 | Complete, 11-11 at `f497785f`; a shown picture, a passed-over one, the link's words and the sentence about tracking pixels are the tester's reader (ledger 558) |
 | LIST-10 | Phase 11 | Complete, 11-11 at `f497785f`; whether the page is clear to the person it is for is his |
-| LIST-11 | Phase 11 | Pending, 11-13 |
+| LIST-11 | Phase 11 | Open, 11-13 deferred to the front of the next phase on Pratik's decision of 2026-09-20 under his token budget; nothing landed; the phase closed without it on 2026-09-20 |
 | LIST-12 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether NVDA reads the landed row once after Delete and not again after the re-read is the tester's ear, ledger 541 |
 | LIST-13 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; whether the row is heard once with the tone, and the tone alone with the status bar off, is the tester's ear (ledger 552) |
 | LIST-14 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether "Delete" once and the landed row are enough by ear, and the refusal heard on a failure, are the tester's, ledger 542 |
@@ -4873,7 +4903,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-16 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; the sounds heard again after a real device change, and what silenced them after hours, are the tester's machine's (ledger 553) |
 | LIST-17 | Phase 11 | Complete, 11-09.2 at `4d9a41d2`; whether the rows now say the message is the tester's ear (ledger 554) |
 | LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
-| LIST-19 | Phase 11 | In progress: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page; ledger 560 for the ear); 11-11.2 the separate window |
+| LIST-19 | Phase 11 | In progress: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page; ledger 560 for the ear); 11-11.2, the separate window, deferred to the front of the next phase on Pratik's decision of 2026-09-20; the program's own "next build" sentences are ledger 566 |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |

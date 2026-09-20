@@ -415,7 +415,7 @@ and in the formatted message window a message opens into.
 |--------|----------|--------------|
 | Follow a link | `Enter` on the link | Where "Open links" says. Your screen reader's own Enter on a link does the same |
 | Open a link in the default browser, whatever the setting | `Ctrl+Enter`, or a Ctrl-click | The browser's own convention for a new tab |
-| Open a link in a separate window, whatever the setting | `Shift+Enter`, or a Shift-click | The browser's own convention for a new window. The separate window arrives with the next build; until then this opens the browser and says so |
+| Open a link in a separate window, whatever the setting | `Shift+Enter`, or a Shift-click | The browser's own convention for a new window. The separate window arrives with a later build, put off on 2026-09-20 from the next one to the phase after this; until it lands this opens the browser and says so |
 | The link's menu | `Applications` or `Shift+F10` on the link, or a right-click | Open in Message View, Open in Default Browser, Open in Separate Window, then Copy Link and Save Link As. The three places are offered whatever the setting says |
 | Back to the message from a page in the message view | `Backspace` or `Alt+Left` | The message is shown again and "Back to the message" is said |
 

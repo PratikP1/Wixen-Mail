@@ -15,6 +15,36 @@ flat, `Ctrl+T` in that folder does it, and Show conversations by default under
 Settings, Reading turns the default off for every folder you never set. Nobody
 has yet heard a folder never set announce conversations on a fresh profile.
 
+**Between 2026-09-18 and 2026-09-20 the message list and the reader changed in
+most of the ways the first three days of testing asked for, and none of it has
+been heard by anybody yet.** Moving through the list marks nothing read; a
+message counts as read after you read the whole of it from the list, `Space`
+twice or `Shift+Space`, or open it with `Enter`, and then after the delay the
+setting names. `M` marks the message you are on read or unread, whichever it is
+not, and says which; the command says which way it will go on the Action menu,
+the context menu and the toolbar. `Shift+Down` and `Ctrl+A` select more than
+one message, and Delete, Move to, Copy to, Mark as Read, Star and the label keys
+act on every selected message with one sentence saying how many. A conversation
+row stands for the message that started it when nothing in it has been read and
+for the first unread message otherwise; that sender is said first and the
+preview shows that message. `Ctrl+Shift+;` reads the row you are on column by
+column with each heading, once, on request. Folders to Keep Up to Date is on the
+Tools menu, as a tree with a check box beside each folder. Pictures a message
+points at are shown, except tracking pixels and pictures the sender marked
+decorative; an undescribed picture is passed over unless Settings says image or
+photo. `Delete` says the one word and the row you land on is the confirmation,
+and a move, a delete or a copy happens on this computer first with the server
+told afterwards. `Tab` into the list lands on a row. A row's snippet is the
+message's first real words. An address written out in a message is a link, and
+where a link opens is a setting. Text a newsletter hid is not read and its
+layout tables are not tables. A rule can say a phrase first. A Markdown marker
+typed with its space counts on any line of a message you write. A setting saved
+in Settings applies without a restart, apart from the two that say so under
+their controls. The log starts at Debug while the version says alpha, so a
+report comes with the lines it needs. Every one of those was proved by a test
+over a built window, a fixture or a stand-in server, and the list further down
+says, one thing at a time, what nobody has heard.
+
 **Since the build of 2026-09-18, your mail comes down whole and keeps coming,
 and none of that has met a real account yet.** After every check for mail,
 every message of every folder you keep up to date comes down on its own, for
@@ -161,6 +191,20 @@ In rough order of how useful it is to know.
    sentence naming each folder that received something; say whether anything
    was spoken on the way that should not have been, and whether the one
    sentence reads as an ending.
+13. **A walk through a folder with unread messages.** Since the build after
+   2026-09-18 moving through the list marks nothing, and the first `Space` on
+   a row marks nothing either. Arrow through an unread folder letting your
+   screen reader finish every row, and say whether the unread count is where
+   it was; then `Space` twice on one message and say whether it is marked
+   after the delay and not before.
+14. **A selection of many.** `Shift+Down` a few rows, then Mark as Read or
+   Delete. Say what your screen reader said as the selection grew, whether one
+   sentence with the count came after the command, and after Delete, whether
+   you heard "Delete" once and then the row you landed on and nothing else.
+15. **A shown picture.** Open a newsletter in the preview. Say whether its
+   pictures are there, whether the line about tracking pixels was heard once
+   at the top, what a picture with no description was read as, and whether a
+   picture inside a link read as the link's words.
 
 ## What is already known to be missing or unproven
 
@@ -234,6 +278,115 @@ Written down so you do not spend time reporting things already on the list.
   is said whatever you chose. Which sentence is a step and which a result was
   decided by reading each line's words, and a line sorted wrongly is silent
   under the default or spoken under it. Say which you hear.
+- **Nothing the message list and the reader gained between 2026-09-18 and
+  2026-09-20 has been heard.** Each of the following was proved by a test on a
+  built window, a fixture or a stand-in server and by nobody's ear, and each
+  names what only your ear or your account can settle.
+- **The folder chooser's check boxes.** Folders to Keep Up to Date is a tree
+  on the Tools menu with the tree control's own check boxes, so what a screen
+  reader says for one comes from Windows. Nobody has heard whether a kept
+  folder is "checked", whether Space says the new state, whether a nested
+  folder's level is read, whether the title is heard as the account's name, and
+  whether the sentence under the tree about Gmail's All Mail is reached.
+- **The log at Debug.** The lines a report needs are written at Info and
+  Debug, and nobody has yet written a report from a log at that level or seen
+  what a day at Debug on a real account costs on the disk; the two size rows
+  the page below owes are still owed.
+- **Alt+A to the attachments from inside a message.** The landing sentence
+  "Attachments, N", "Message" on the way back, F7 to the warning bar and the
+  two "No attachments" and "No warning" answers have not been heard, in the
+  formatted view or in the plain-text reader.
+- **Read state on a walk.** Whether the unread count stays put while you arrow
+  through a folder, stays put on the first `Space`, and moves after the second
+  `Space`, `Shift+Space` or `Enter` and then the delay, is your ear's; so is the
+  sentence under Mark as read after being read once.
+- **Mark as Read's label and `M`.** The item heard as Mark as Unread on a read
+  message and Mark as Read on an unread one, on the Action menu, the context
+  menu and the toolbar; `M` heard as one word, "read" or "unread", with the
+  list staying on the row; none of it has been heard.
+- **Where the cursor lands after a delete.** Whether the next message's row is
+  read once and not again when the folder is re-read a moment later, and the
+  previous row after deleting the last, has not been heard; a delete could not
+  be driven on this machine while the tester's copy was open.
+- **A delete's one word.** "Delete" once at the key and nothing after it when
+  the delete went through, the refusal heard with its reason when it failed,
+  Move to Trash and Move to Folder the same, and "Copied to" still heard for a
+  copy, have not been heard.
+- **Tab into the list.** Whether the row is read once on arrival by Tab, F6 or
+  a click, whether coming back to the list is quiet, and whether "No messages"
+  is heard once for an empty folder, are your ear's.
+- **Selecting more than one message.** Your screen reader's own "selected" and
+  "not selected" as the selection grows and shrinks, the count after `Ctrl+A`,
+  one sentence after a command over many, "Delete" once and the row after the
+  set, and the refusal above 5,000 messages, have not been heard.
+- **A move that completes here first.** The row leaving at once, Enter on the
+  chosen folder in the Move dialog moving the message, a move made offline put
+  back with the refusal spoken when the server says no, and a move replayed at
+  the next check after a restart, have met no real server; the same for a move
+  or a copy to a folder on another account, which has met no pair of servers,
+  and what a real destination does with a message it already holds is unknown.
+- **Which message a thread row is.** The sender said first on a conversation
+  row, the preview showing that message, Enter opening the conversation window
+  on it, and the conversation's text arriving from Gmail when you land on the
+  row, are your ear's and your account's.
+- **Gmail's own conversations.** Whether your split threads become one
+  conversation row after the next check, with the count matching Gmail's own
+  client, and what one fetch of the thread names for every stored message costs
+  on your mailbox, has not met a Gmail account.
+- **The row's columns on request.** `Ctrl+Shift+;` heard whole and once, each
+  heading then its text, and the list quiet under an NVDA configuration
+  profile with Row/column headers off, which nobody has set up; what Narrator
+  and JAWS need is unread.
+- **Attachment said once.** Whether landing on a message with an attachment is
+  heard as the row with the attachment tone beside it and nothing spoken for
+  the event, and whether a fresh profile hears every event's tone from the
+  start, has not been heard.
+- **The sounds after hours.** The earcons stopping after hours open was
+  reported and could not be reproduced on purpose here; whether they now come
+  back after the output device changes or a headset is unplugged needs a hand
+  on the machine's Sound settings under a running build, and if they stop again
+  the log at Debug holds the moment.
+- **The snippet.** Whether a row now says the message's first sentence rather
+  than an address or "View this email in your browser", and whether the rows of
+  mail downloaded before this build are put right at the next start, is your
+  ear's.
+- **A rule's phrase said first.** "Urgent, Unread, ..." on a matching row, the
+  Says first column, the Rule matched sound once after a check with several
+  matches, and the Labels column read as part of the row, have not been heard.
+- **Addresses written out as links.** The chapter address of a plain-text
+  alert in your screen reader's link list, an address in a description read as
+  "link to" its site, and a sender's `sms:` link heard with "link not opened
+  here" after it, have not been heard.
+- **Pictures shown by default.** A newsletter's pictures in the preview, the
+  tracking-pixel line heard once at the top, a linked picture read as the
+  link's words, an undescribed picture passed over or called image or photo,
+  and a decorative one passed over, are your reader's.
+- **What the formatted view leaves out.** A newsletter read once under NVDA,
+  with no run of symbols where the hidden padding was, no table announced
+  around a layout block, no grouping name, and the subject and the sender each
+  heard once, has not been heard.
+- **Where a link opens.** Enter on a link going to the browser, or to the
+  message view with "Opening" and the site's name and the page's title said
+  once, and "Back to the message" on Backspace, have not been heard; the
+  separate Wixen Mail window is deferred to a later build, and until it lands
+  that choice opens the browser and says so.
+- **A setting saved applies at once.** Mark as read after changed in Settings
+  and a message marked after the new wait without a restart, the dates in the
+  list changing at once, and the two sentences under Log level and Default sort
+  order heard after each control's name, have not been heard.
+- **Show conversations by default.** A folder never set heard as conversation
+  rows on a fresh profile, the setting turned off and the next folder heard
+  flat without a restart, and the check box heard by name and state after Then
+  by, are your ear's.
+- **All Inboxes' own view.** All Inboxes heard as conversations on a fresh
+  profile, `Ctrl+T` there and the view kept when you come back, a conversation
+  in two of your accounts heard as two rows with a command on one reaching that
+  account, and the refusal on a label or a saved search, have not been heard.
+- **Markdown typed into a message.** "Heading level 2" heard after the marker
+  and its space on the first line, on a line of the quoted text in a reply,
+  after Enter on the empty first line and after Shift+Enter, and the word after
+  a closing star read plain, have not been heard; the steps are on the
+  listening page.
 - **Notes can now go to a calendar server, and no build has ever sent one to a
   real server.** If you added a calendar by its address, that same server is
   where your notes for that account now go, under the same sign-in. Settings
@@ -434,7 +587,17 @@ Written down so you do not spend time reporting things already on the list.
 - **Conversations on Gmail are worked out from the message headers**, so a
   conversation here may be split differently from the same one in Gmail's web
   interface. Gmail publishes its own grouping and the library this is built on
-  gives no way to read it.
+  gives no way to read it. **Until the build after 2026-09-19.** Since then a
+  conversation on a Gmail account is the one Gmail shows: Gmail's own name for
+  each message's conversation is asked for with the message and decides which
+  messages belong together, whatever the headers say, and mail you already had
+  gets its name once at the next check. The name was out of reach while the
+  library's own reader stood between this program and the server's answer;
+  once this program read the answer itself, asking for the name was a decision
+  rather than a limit, and the sentence had outlived that. Nobody has yet seen
+  split threads
+  become one on a real Gmail account; on every other provider the headers still
+  decide.
 - **A folder can be created, renamed, moved, deleted, emptied, and marked read.**
   Renaming or moving the inbox is refused on purpose, because on a mail server
   that empties the inbox into a new folder rather than renaming it, and deleting

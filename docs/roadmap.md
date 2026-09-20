@@ -62,7 +62,11 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
       this computer are a fixed set. None of the server side has run against a
       real mail server
 - [ ] Gmail's X-GM-THRID for conversations, and X-GM-RAW for server-side search.
-      Both are blocked on the IMAP library rather than on this code
+      Both are blocked on the IMAP library rather than on this code. Corrected
+      2026-09-20: X-GM-THRID landed on 2026-09-19, since this code reads the
+      server's answer itself and the library no longer stood in the way; a
+      Gmail conversation here is the one Gmail names. X-GM-RAW is still not
+      asked for, so the box stays open for it
 
 ### SMTP Implementation
 - [x] Implement SMTP client for sending emails

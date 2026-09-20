@@ -620,7 +620,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   that mattered. Now selecting a row marks nothing, however long you stay on it. A message
   is marked read after you read it aloud from the list with `Space` or `Shift+Space`, or
   open it with `Enter`, and then after the delay under Settings, then Reading, then Mark as
-  read after. The setting keeps its four kinds of answer, Immediately, a number of seconds,
+  read after (corrected on 2026-09-20: the whole message, `Space` twice or `Shift+Space`;
+  the first `Space`, which reads the subject, the sender and the snippet, counts for
+  nothing since the entry above, on the tester's word that reading the snippet is not
+  reading). The setting keeps its four kinds of answer, Immediately, a number of seconds,
   a minute and Only when I say so, and its default is still two seconds, now counted from
   reading rather than from moving onto the row; a sentence under the setting says so. A
   profile set to Only when I say so keeps that, and marking by hand is unchanged. The
@@ -1099,7 +1102,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   accessibility scan and for an NVDA case that presses Enter on a link the way a person
   does. Save Link As is on S rather than A, which Select All already had on the same menu.
   Known limitations: the separate window arrives with the next build, and until then
-  choosing it opens the browser and says so on the status line; the check behind the page's
+  choosing it opens the browser and says so on the status line (corrected on 2026-09-20: a
+  later build, since the plan that builds it was put off that day to the phase after this
+  one; the sentence under the setting and the status line in the program still say the next
+  build until that plan lands); the check behind the page's
   listener still cannot read an address, so a navigation the listener does not catch, a live
   page's own script moving somewhere for instance, is stopped and logged rather than routed;
   the main window's title does not change for a page in the preview pane; nobody has heard
@@ -12279,7 +12285,7 @@ be added by its address, and an event read aloud says its category.
 
 ### Known limitations
 
-- Conversations on Gmail are worked out from the message headers, the same way they are on every other provider, so a conversation here can be split differently from the same one in Gmail's web interface. Gmail does publish its own grouping, and the library Wixen Mail is built on reads it and provides no way to get at it, so this is not something Wixen Mail can currently fix at its end.
+- Conversations on Gmail are worked out from the message headers, the same way they are on every other provider, so a conversation here can be split differently from the same one in Gmail's web interface. Gmail does publish its own grouping, and the library Wixen Mail is built on reads it and provides no way to get at it, so this is not something Wixen Mail can currently fix at its end. Corrected on 2026-09-20: since 2026-09-19 a conversation on a Gmail account is the one Gmail names (#88, the entry under Fixed near the top of this section); the library no longer stood in the way once this program read the server's answer itself, and the sentence had outlived that.
 - The Sent copy does not list blind copy recipients. That is a consequence of how blind copies are kept blind on the way out, and it means the saved copy records what you wrote rather than everyone who received it.
 - Which folders sync is set per account, not once for all of them. Turning one off takes it out of the folder tree straight away; turning one on brings its messages down at the next check for mail rather than immediately.
 

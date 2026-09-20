@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 531
 waived_count: 0
-fixed_count: 34
-total_count: 565
-last_updated: 2026-09-20T14:11:12.000Z
+fixed_count: 35
+total_count: 566
+last_updated: 2026-09-20T15:10:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -580,6 +580,7 @@ last_updated: 2026-09-20T14:11:12.000Z
 | 563 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-11.1.3: what only the tester's ear settles for the second half of #92. All Inboxes landed on from a fresh profile and heard as conversation rows with the Thread View check mark on; Ctrl+T there heard as the flat view's sentence, a folder visited and All Inboxes returned to still flat with the check mark off; a conversation held in two of his accounts heard as two rows, one per account, each with its own count, and a command on one of them reaching that account; Ctrl+T on a label or a saved search heard as the refusal naming All Inboxes. The own key, the landing, the loads, the check mark's four sites, the sentence and the row's own account are held by tests/all_inboxes_keeps_a_view_of_its_own.rs and the two-rows cache test in src/data/message_cache/messages.rs; none of it has been heard | open |  | 2026-09-20T10:30:00.000Z |  |
 | 564 | 11 | todo | src/presentation/wx_app.rs |  | 11-11.1.3: mail arriving while All Inboxes is open refreshes nothing, in either view. reread_folder_if_open re-reads only a folder whose id is folder_on_screen, which is None on All Inboxes, so a message that lands in any inbox during a check is not listed until the row is left and landed on again. Found while planning #92 on 2026-09-20 and older than it: the flat view had it before this plan and the conversation view inherits it. The remedy is a re-read of every inbox on a check's arrival, in whichever view All Inboxes is in, through the same loads the landing uses | open |  | 2026-09-20T10:30:00.000Z |  |
 | 565 | 11 | unrun-verify | src/presentation/editor_document.rs |  | 11-11.3: what only the tester's ear settles for #79, with NVDA in focus mode in the message body, a moment's wait after each Space since NVDA cuts speech on the next key. 1: a new message, first line, number sign, number sign, Space, a word: hear Heading level 2 after the Space, and Up then Down reads the line as a heading with the number signs gone. 2: a reply to a message that arrived as plain text, Down once into the quoted text, Home, then number sign, number sign, Space, a word: hear Heading level 2; this is the case that was broken, and before the fix it said nothing and the number signs stayed. 3: the same reply, back at the top, Enter once on the empty first line, then the marker with its Space: hear Heading level 2. 4: a new message, a word, Shift+Enter, then the marker with its Space: hear Heading level 2. 5: a new message, number sign, number sign, a word, Space, with no space after the signs: hear nothing, and the signs stay; this is not a heading and never was. 6: on any line, two stars, a word, two stars, then a word: hear Bold at the closing star, and the word after it read plain; then a hyphen, Space and a word on a new line: hear Bulleted list. 7: Ctrl+Enter to the preview after 1 to 4, then H in the preview: land on each heading. 8: a misspelt word on a heading line with earcons on: the short sound at the end of the word still plays. The reading in tests/a_marker_counts_at_the_start_of_any_line.rs holds the document after each of 1 to 6 on the real page with posted keys, never through a screen reader's hook; none of it has been heard | open |  | 2026-09-20T14:11:12.000Z |  |
+| 566 | 11 | todo | src/application/opening_links.rs | 174 | 11-12: the program promises the separate window with the next build, and since 2026-09-20 that is not so. WHAT_EACH_CHOICE_COSTS, the sentence under Open links on the Reading tab, ends by saying that a separate Wixen Mail window arrives with the next build and opens the browser until then, and SEPARATE_WINDOWS_ARRIVE_LATER, the status line when that choice is taken, says that separate windows arrive with the next build and the page was opened in the browser; test_the_words_on_the_reading_tab_name_the_trade_and_the_wait holds the first to the words next build. 11-11.2, the plan that builds the window and retires both sentences, was deferred to the front of the next phase on Pratik's decision of 2026-09-20, so the next build carries the promise and not the window. The closing read, 11-12, is documents only and reworded the guide, the shortcuts page and the changelog to a later build, and the guide says the program's own sentences still say the next build. The remedy is 11-11.2 landing, or, if the next build goes out first, the two sentences reworded to a later build with the test rewritten in place, a code change on a branch with its red | open |  | 2026-09-20T15:10:00.000Z |  |
 
 ````json
 [
@@ -7361,6 +7362,18 @@ last_updated: 2026-09-20T14:11:12.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T14:11:12.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 566,
+    "kind": "todo",
+    "phase": "11",
+    "file": "src/application/opening_links.rs",
+    "line": 174,
+    "description": "11-12: the program promises the separate window with the next build, and since 2026-09-20 that is not so. WHAT_EACH_CHOICE_COSTS, the sentence under Open links on the Reading tab, ends by saying that a separate Wixen Mail window arrives with the next build and opens the browser until then, and SEPARATE_WINDOWS_ARRIVE_LATER, the status line when that choice is taken, says that separate windows arrive with the next build and the page was opened in the browser; test_the_words_on_the_reading_tab_name_the_trade_and_the_wait holds the first to the words next build. 11-11.2, the plan that builds the window and retires both sentences, was deferred to the front of the next phase on Pratik's decision of 2026-09-20, so the next build carries the promise and not the window. The closing read, 11-12, is documents only and reworded the guide, the shortcuts page and the changelog to a later build, and the guide says the program's own sentences still say the next build. The remedy is 11-11.2 landing, or, if the next build goes out first, the two sentences reworded to a later build with the test rewritten in place, a code change on a branch with its red",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T15:10:00.000Z",
     "resolved_at": null
   }
 ]
