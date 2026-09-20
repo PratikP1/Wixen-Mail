@@ -144,6 +144,13 @@ fn where_keys_go(body_editor: &WebView) -> isize {
         .unwrap_or(0)
 }
 
+fn describe(hwnd: isize) -> String {
+    if hwnd == 0 {
+        return "no window".to_string();
+    }
+    format!("0x{hwnd:x} ({})", class_name(hwnd))
+}
+
 fn post_char(hwnd: isize, ch: char) {
     // SAFETY: a live window handle; the message carries a character.
     unsafe {
@@ -258,9 +265,29 @@ enum Phase {
     WaitingForPage,
     /// Ticks of nothing before the next act, so posts have arrived.
     Settling(u32),
+    /// A character was posted; waiting for the page's `input` event for it
+    /// before the next key goes, and posting it again if it never comes.
+    WaitingForInput {
+        ch: char,
+        /// How many `input` events the page will have seen once this one
+        /// lands.
+        expected: usize,
+        /// The tick it was posted on, so a character the page never saw is
+        /// told from one it has not seen yet.
+        posted_at: u32,
+        /// How many times it has been posted.
+        tries: u32,
+    },
     Acting,
     Done,
 }
+
+/// Ticks to wait for a character's `input` event before posting it again:
+/// a second, which is many times longer than the engine takes when it is
+/// not dropping the key.
+const TICKS_BEFORE_A_KEY_IS_POSTED_AGAIN: u32 = 33;
+/// How many times one character is posted before the step gives up on it.
+const TRIES_PER_KEY: u32 = 4;
 
 struct Run {
     acts: Vec<Act>,
@@ -270,6 +297,9 @@ struct Run {
     posted: Vec<String>,
     failures: Vec<String>,
     step: &'static str,
+    /// Where each key of the current step went, as the window's class, so a
+    /// step that lost a key says which window it was posted to.
+    delivered: Vec<String>,
     /// A tick is running. `run_script` waits through `wxYield`, which
     /// delivers the next `WM_TIMER` into the middle of this one; a nested
     /// tick returns at once rather than running the same act twice.
@@ -515,6 +545,7 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
                 posted: Vec::new(),
                 failures: Vec::new(),
                 step: "before the first step",
+                delivered: Vec::new(),
                 busy: false,
             }));
 
@@ -576,6 +607,12 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
                                 Phase::Acting
                             }
                         }
+                        Phase::WaitingForInput {
+                            ch,
+                            expected,
+                            posted_at,
+                            tries,
+                        } => wait_for_the_key(&run, &body_editor, ch, expected, posted_at, tries),
                         Phase::Acting => one_act(&run, &body_editor),
                         Phase::Done => Phase::Done,
                     };
@@ -638,11 +675,90 @@ fn instrument(body_editor: &WebView) {
     ));
 }
 
+/// How many `input` events the page has seen since it was instrumented.
+fn inputs_seen(body_editor: &WebView) -> usize {
+    unquoted(body_editor.run_script("String(window.__inputs_seen || 0)"))
+        .parse()
+        .unwrap_or(0)
+}
+
+/// Post one character and wait for the page to see it.
+fn post_a_char(
+    run: &Rc<RefCell<Run>>,
+    body_editor: &WebView,
+    ch: char,
+    expected: usize,
+    tries: u32,
+) -> Phase {
+    let target = where_keys_go(body_editor);
+    let posted_at = {
+        let mut run = run.borrow_mut();
+        let went = if tries == 1 {
+            format!("{ch:?} to {}", describe(target))
+        } else {
+            let again = format!("{ch:?} again, try {tries}, to {}", describe(target));
+            say(&format!("POSTED AGAIN {again}"));
+            again
+        };
+        run.delivered.push(went);
+        run.ticks
+    };
+    post_char(target, ch);
+    Phase::WaitingForInput {
+        ch,
+        expected,
+        posted_at,
+        tries,
+    }
+}
+
+/// Whether the character posted has reached the page, and what to do when
+/// it has not.
+///
+/// Posted one per tick with nothing waited for, the engine dropped a
+/// character now and then in the tenth of a second after it had rebuilt the
+/// line: measured on 2026-09-20, three runs in ten lost two or three
+/// characters right after an Enter or right after a marker had made its
+/// block, with every key posted to the same window. A person's keys go
+/// through the input method's own queue and a posted message does not. So
+/// each character is waited for before the next goes, which was twenty runs
+/// green with no character posted twice; and one the page has not seen
+/// after a second is posted again, with a line saying so, so a run that
+/// needed it is not read as a clean one.
+fn wait_for_the_key(
+    run: &Rc<RefCell<Run>>,
+    body_editor: &WebView,
+    ch: char,
+    expected: usize,
+    posted_at: u32,
+    tries: u32,
+) -> Phase {
+    if inputs_seen(body_editor) >= expected {
+        return Phase::Acting;
+    }
+    let now = run.borrow().ticks;
+    if now - posted_at < TICKS_BEFORE_A_KEY_IS_POSTED_AGAIN {
+        return Phase::WaitingForInput {
+            ch,
+            expected,
+            posted_at,
+            tries,
+        };
+    }
+    if tries >= TRIES_PER_KEY {
+        let step = run.borrow().step;
+        run.borrow_mut().failures.push(format!(
+            "{step}: the page never saw {ch:?} after {tries} postings, so the step's keys \
+             did not all arrive"
+        ));
+        return Phase::Acting;
+    }
+    post_a_char(run, body_editor, ch, expected, tries + 1)
+}
+
 fn read(run: &Rc<RefCell<Run>>, body_editor: &WebView) -> Seen {
     let html = unquoted(body_editor.run_script(&editor_document::read_body_script()));
-    let inputs = unquoted(body_editor.run_script("String(window.__inputs_seen || 0)"))
-        .parse()
-        .unwrap_or(0);
+    let inputs = inputs_seen(body_editor);
     let raw = run.borrow().posted.clone();
     let posts = raw
         .iter()
@@ -669,7 +785,9 @@ fn one_act(run: &Rc<RefCell<Run>>, body_editor: &WebView) -> Phase {
     match act {
         Act::Step(name) => {
             say(&format!("STEP {name}"));
-            run.borrow_mut().step = name;
+            let mut run = run.borrow_mut();
+            run.step = name;
+            run.delivered.clear();
             Phase::Acting
         }
         Act::Open(body) => {
@@ -678,11 +796,15 @@ fn one_act(run: &Rc<RefCell<Run>>, body_editor: &WebView) -> Phase {
             Phase::WaitingForPage
         }
         Act::Char(ch) => {
-            post_char(where_keys_go(body_editor), ch);
-            Phase::Acting
+            let expected = inputs_seen(body_editor) + 1;
+            post_a_char(run, body_editor, ch, expected, 1)
         }
         Act::Key(vk) => {
-            post_key(where_keys_go(body_editor), vk);
+            let target = where_keys_go(body_editor);
+            run.borrow_mut()
+                .delivered
+                .push(format!("key 0x{vk:02x} to {}", describe(target)));
+            post_key(target, vk);
             Phase::Settling(TICKS_TO_SETTLE)
         }
         Act::Script(script) => {
@@ -700,8 +822,11 @@ fn one_act(run: &Rc<RefCell<Run>>, body_editor: &WebView) -> Phase {
             match assertion(&seen) {
                 Ok(()) => say(&format!("HELD {step}: {:?}", seen.html)),
                 Err(why) => {
-                    say(&format!("RED {step}: {why}"));
-                    run.borrow_mut().failures.push(format!("{step}: {why}"));
+                    let delivered = run.borrow().delivered.join(", ");
+                    say(&format!("RED {step}: {why}; the keys went: {delivered}"));
+                    run.borrow_mut()
+                        .failures
+                        .push(format!("{step}: {why}; the keys went: {delivered}"));
                 }
             }
             Phase::Acting

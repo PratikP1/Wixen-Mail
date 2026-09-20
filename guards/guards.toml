@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 229 records have arrived since and have not been through it.
+# 230 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16916,7 +16916,7 @@ red = [
     "presentation::editor_page_harness::tests::test_a_file_dropped_on_the_message_is_turned_away_when_the_page_runs",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 82 },
+    { file = "src/presentation/editor_document.rs", tests = 83 },
     { file = "src/presentation/editor_page_harness.rs", tests = 36 },
 ]
 
@@ -28559,4 +28559,32 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 11 },
+]
+
+# ── A Markdown marker counts at the start of any line (#79) ─────────────────
+#
+# The block rule fires on the typed space, and from 2026-07-29 until 11-11.3
+# it refused whenever the text node holding the marker had a previous
+# sibling, which every line after a line break in a reply to plain text
+# has, as does a line after Shift+Enter and a line after Enter on the empty
+# first line. The guard asks the line now: nothing before the node, or a
+# `<br>`, or a block. The break puts the node question back, so a marker on
+# any line after the first is refused again with nothing posted. Red in the
+# one reading that drives the real page: steps 2, 3, 4 and 7b of it, which
+# are one function.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a marker is refused when anything at all precedes it in its parent"
+file = "src/presentation/editor_document.rs"
+suite = "a_marker_counts_at_the_start_of_any_line"
+before = """    if (!startsItsLine(at.node)) {{ post({{ kind: 'refused', where: 'line' }}); return; }}"""
+after = """    if (at.node.previousSibling) {{ return; }}"""
+red = [
+    "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 83 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 1 },
 ]

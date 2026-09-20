@@ -744,10 +744,33 @@ img {{ max-width: 100%; height: auto; }}
 
   // ── Applying ───────────────────────────────────────────────────────────
 
+  // Whether a text node is the first thing on its line: nothing before it in
+  // its parent, or a line break, or a block, which ends the line before it.
+  //
+  // The question is the line's and not the node's. This asked whether the
+  // node had a previous sibling at all, and every line after the first of a
+  // reply to plain text is a text node after a `<br>`, as is a line after
+  // Shift+Enter; a line after Enter on the empty first line of such a body
+  // sits after the `<div>` the engine made for that Enter. Each of those
+  // was refused before the marker was read, with nothing said, from
+  // 2026-07-29 until #79. Text or an inline element before the node means
+  // the marker is mid-line and is still refused, which is the rule the
+  // shortcuts page promises: a marker counts when it is the whole line so
+  // far.
+  function startsItsLine(node) {{
+    var before = node.previousSibling;
+    if (!before) {{ return true; }}
+    if (before.nodeType !== 1) {{ return false; }}
+    if (before.tagName === 'BR') {{ return true; }}
+    return window.getComputedStyle(before).display === 'block';
+  }}
+
   function blockMarkdown(at) {{
-    if (at.node.previousSibling) {{ return; }}
     var rule = blockRule(at.before.slice(0, at.before.length - 1));
     if (!rule) {{ return; }}
+    // Said on the wire and never to the ear, so the log can say which path
+    // refused; an ordinary space, which matched no rule above, posts nothing.
+    if (!startsItsLine(at.node)) {{ post({{ kind: 'refused', where: 'line' }}); return; }}
     selectBack(at.node, 0, at.offset);
     document.execCommand('delete');
     document.execCommand(rule.command, false, rule.value);
@@ -1733,6 +1756,14 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
         "leave" => Some(EditorMessage::Leaving {
             back: value.get("back")?.as_bool()?,
         }),
+        // Only the one place the page can refuse at. A place the page never
+        // posts is read as nothing, like a format index from nowhere.
+        "refused" => match value.get("where")?.as_str()? {
+            "line" => Some(EditorMessage::BlockMarkerRefused(
+                WhyAMarkerWasRefused::NotAtTheStartOfItsLine,
+            )),
+            _ => None,
+        },
         _ => None,
     }
 }
