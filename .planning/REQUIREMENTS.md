@@ -3200,6 +3200,37 @@ seven groups.
   - [S] Nothing here is a person's to settle; the runs are quoted with the real repository's
     `HEAD`, config and reflog unchanged.
 
+- [ ] **FOUND-20**: The NVDA case for #80 is green at the next push of `main` for the reason
+  its second half was written, and its next failure names its own cause from the record it
+  writes. Added 2026-09-20 for phase 12's 12-01, under this section beside FOUND-17 to
+  FOUND-19 on the same reasoning: a defect in what CI runs, found by a push.
+  - Evidence: `gh run view 35520201976 --json headSha,conclusion` on 2026-09-20: `0ad66e48`,
+    failure, one job, the failed step "Run the NVDA tests";
+    `tests/a-link-opens-where-the-setting-says.test.js` failed at its line 151, the second
+    `waitToHearAll`, with NVDA having said `main landmark, Where it went, link`, `document`
+    and one empty phrase. The artefact `nvda-transcripts`, downloaded the same day: after
+    the first Enter `otherWindowsAfterTheFirstEnter` gained "Example Domain - Profile 1 -
+    Microsoft Edge", `ownWindowsAfterTheFirstEnter` still held "Scan target - headings -
+    Wixen Mail", `pageWindowPutBackInFront` was `true`, so the route held and the second K
+    is what failed. `grep -n 'async function activateWindow' -A 8 nvda-tests/helpers/launch-app.js`:
+    `WScript.Shell.AppActivate(title)`, whose answer means found, not in front.
+    `grep -n 'page.set_focus()' src/presentation/wx_app.rs`: two sites when the window opens
+    and when the message comes back, no activation handler;
+    `target/debug/wxWidgets/src/msw/webview_edge.cpp:1171-1175`: `OnSetFocus` calls
+    `MoveFocus`, the chain that should put focus in the document on re-activation.
+  - [S] The run's own words: "never heard all of ["example.org/written-out"] within 15000ms.
+    Everything NVDA said: ["main landmark, Where it went, link","document",""]".
+  - [D] A reading on a built page window in a test process raises a second frame over it,
+    activates the page window again and asserts `GetFocus()` is Chromium's window inside the
+    WebView; if red, the page window gains an activation handler that gives the WebView focus
+    and the reading holds it; if green, the product is cleared by measurement (12-01, task 1).
+  - [D] The case returns to the page window with Alt+Tab, waits until `GetForegroundWindow`
+    is the page window (falling back to `AppActivate` once, recording which worked), records
+    the UI Automation focused element and the foreground beside its spoken log after each
+    return, and only then presses K; `nvda-tests/README.md` says an activation call's answer
+    is not evidence a window is in front (12-01, task 2).
+  - [S] The run at the next push of `main` is Pratik's; the ledger entry 12-01 writes names it.
+
 ### All the mail, and what is said while it comes
 
 Added 2026-09-17 for phase 10, the third of the seven groups Pratik agreed on 2026-09-16.
@@ -3989,7 +4020,10 @@ phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
   the front of the next phase on Pratik's decision of 2026-09-20 under his token budget;
   nothing of it landed, and the `[D]` line below is still the plan's proposal. The closing
   read, 11-12, read the pages with the bar's sentences as the phase left them, which the
-  plan was to have rewritten first. The `[S]` line is untouched.
+  plan was to have rewritten first. The `[S]` line is untouched. **Moved later on
+  2026-09-20 to phase 12 as 12-03** (the file renamed with `git mv`, its premises re-taken
+  against `0ad66e48`, 12-02's two new sentences added to the pass); the box is 12-03's to
+  tick, and the traceability row says phase 12.
   - Evidence: at `08197657` on 2026-09-18, `grep -rn --include='*.rs' -F "<call>" src`, comments
     excluded, test modules not: `send_status(` 110, `send_refusal(` 99, `said_and_shown(` 82,
     `set_status_text(` 45, `UIUpdate::StatusUpdated(` 34, `UIUpdate::Progress(` 17,
@@ -4287,7 +4321,10 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     build" to a later build, dated. The program's own two sentences, `WHAT_EACH_CHOICE_COSTS`
     and `SEPARATE_WINDOWS_ARRIVE_LATER` in `src/application/opening_links.rs`, still say the
     next build, held by a test to those words; they are ledger 566 and 11-11.2's to retire,
-    as 11-11.1's summary already says.
+    as 11-11.1's summary already says. **Moved later on 2026-09-20 to phase 12 as 12-02**
+    (the file renamed with `git mv`, its premises re-taken against `0ad66e48`, the two
+    sentences and ledger 566 added to its task 2); the box is 12-02's to tick, and the
+    traceability row says phase 12.
   - [S] #80, Pratik on 2026-09-18: the setting, the three menu items, the in-app routes in a
     profile of their own, the privacy line; and the tester: "Enter on a message and Enter on
     a link both open in the same window; the link does not go to the default browser."
@@ -4788,6 +4825,487 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     and its view kept when he comes back to it, and a conversation in two of his accounts
     heard as two rows, are his ear's.
 
+### The editors, and what the alpha still owes
+
+Added 2026-09-20 for phase 12, the fifth of the seven groups Pratik agreed on 2026-09-16,
+with what the public alpha owes beside it (#78, #64, #71's third point) and the pro licence
+as a design (#65). Every requirement here is one GitHub issue, or two the tester joined, in
+his words on its `[S]` lines, with the `[D]` lines written on 2026-09-20 by the planner as
+proposals in the sense the top of this file gives. Every evidence line was re-taken against
+`main` at `0ad66e48` on 2026-09-20, and where a premise moved the evidence line says which
+way. The plans are in `.planning/phases/12-the-editors-and-what-the-alpha-still-owes/README.md`.
+The two plans moved from phase 11 keep their ids there: LIST-19 (12-02) and LIST-11 (12-03).
+FOUND-20 (12-01) sits under phase 9's section beside FOUND-19.
+
+Nothing here has met a real provider except through the tester's Gmail account. Each
+requirement's last `[S]` line says what only his ear, his reader, his account, the runner or
+the site can settle; the caveat at the top of this file binds every `[D]` line.
+
+- [ ] **ALPHA-01**: The About dialog names the copyright holders and the licence in words held
+  to LICENSE, keeps the full version with the build counter, and links to wixen.app and
+  wixen.app/support as controls a screen reader names by their address.
+  - Evidence: `grep -n 'fn build_about_dialog' src/presentation/wx_app.rs` on 2026-09-20 at
+    `0ad66e48`: `:26170`; the dialog holds four `StaticText` lines and OK, the copyright line
+    "Copyright 2024-2026 Wixen Mail Contributors"; `sed -n 3p LICENSE`: "Copyright (c) 2026
+    Pratik Patel", so the years and the holders disagree today. `grep -rn 'wixen.app' src
+    docs README.md --include=*.rs --include=*.md`: only `docs/plans/20260823-earcon-sound-schemes.md`.
+    `grep -rn HyperlinkCtrl src --include=*.rs`: nothing, so what the control answers over
+    MSAA is unmeasured on this tree. `curl -s -o /dev/null -w '%{http_code}' -A Mozilla/5.0
+    --max-time 30 https://wixen.app/` and the same for `/support`: 522 and 522.
+  - [S] #78, Pratik on 2026-09-18: "the About dialog carries a copyright line naming Pratik
+    Patel and the Wixen Project, with other contributors; the full version of the build;
+    links to `wixen.app` and `wixen.app/support`; and a way into the feedback dialog planned
+    in #64"; and on #64: the button "is added in the same commit as the dialog, not before,
+    so nothing dead sits on About until then".
+  - [D] `application::about` holds `COPYRIGHT`, `LICENCE_NAME`, `HOME_PAGE`, `SUPPORT_PAGE`
+    and `lines()`; `build_about_dialog` reads them; `LICENSE:3` names the same years and
+    holders; two controls after the copyright, one per address, named by the bare address
+    on both channels, the kind chosen by a reading over MSAA on the built dialog, each
+    opening the browser through `safe_external_url`; the order the two links then OK; no
+    Send Feedback button until 12-05 adds it; a reading in
+    `tests/the_about_dialog_names_its_owners_and_its_links.rs` holds the texts, the
+    LICENSE agreement, the roles and names over MSAA and the absence of the button (12-04).
+  - [S] The two controls heard under NVDA, and Enter on one opening his browser, are the
+    tester's ear; whether both pages are up before the public alpha is Pratik's (they
+    answered 522 on 2026-09-20).
+
+- [ ] **ALPHA-02**: Feedback can be sent from the Help menu and from About: a category, the
+  questions that fit it, a payload the person reads before it goes, the log excerpt attached
+  by default and redacted, sent as an email from the person's default account to
+  support@wixen.app through the program's own sending path and gate.
+  - Evidence: `sed -n 7514,7550p src/presentation/wx_app.rs` on 2026-09-20 at `0ad66e48`:
+    Help holds Contents, the topics, Load Sample Mailbox, Check for Updates and About, and
+    nothing sends anything; `grep -n 'Ctrl+Shift+F' docs/KEYBOARD_SHORTCUTS.md src/presentation/wx_app.rs`:
+    nothing, the key is free; `grep -n 'fn queue_for_sending' src/presentation/wx_app.rs`:
+    `:17054`, the one `QueuedOutboxMessage` literal in the file (`grep -v '^\s*//'
+    src/presentation/wx_app.rs | grep -c 'QueuedOutboxMessage {'` is 1);
+    `grep -n 'allowed_for(&account.id).mail' src/presentation/wx_app.rs`: the gate a send
+    reads; `grep -n 'pub fn mask_email' src/common/logging.rs`: `:163`, the masking rule
+    the log uses; `grep -rn 'nvda.exe\|RtlGetVersion' src --include=*.rs`: nothing, so the
+    screen reader and the Windows build are new readers;
+    `gh api repos/PratikP1/Wixen-Mail/private-vulnerability-reporting`: enabled;
+    `sed -n 173,192p docs/privacy.md`: the table of who this program talks to, which gains
+    a row.
+  - [S] #64, the tester on 2026-09-16: "There is no support mechanism built into the app
+    itself. I'd like users to have a direct way to provide feedback from the app's help menu
+    ... I'd like the user to pick categories for the support including 'report a problem',
+    'request a feature', etc. Pick other relevant categories. Then, ask for relevant
+    information to resolve the issue being reported." Pratik on 2026-09-17 (#71): "the log
+    excerpt is attached by default ... a person clears it when the report does not need
+    it." Pratik on 2026-09-18: "the report goes as an email from the person's default
+    account to support@wixen.app, through the program's own sending path (the outbox, the
+    same gate every send passes ...) ... the person sees the exact message before it goes
+    ... a copy is kept locally ... if there is no account, or sending is forbidden, the
+    dialog says so and offers to copy the report to the clipboard and to open the GitHub
+    issue page as the second door; the security category still goes to the private channel
+    only. The privacy page's list of what is sent and where (#29) gains support@wixen.app."
+  - [D] `application::feedback_report`: `Category` (Problem, Feature, ScreenReaderBarrier,
+    Question, Security, Other) with its questions, `Include` defaulting to the version and
+    the log excerpt, `Facts`, `compose`, `redact` masking every address and every subject,
+    `last_lines`, `where_it_goes`; `service::this_machine`: the Windows build, the display
+    language, the screen reader by process name and file version, on the tree's
+    `extern "system"` pattern with no new crate (12-05, task 1).
+  - [D] `presentation::wx_feedback`: the dialog in Tab order with every control named on both
+    channels, the category focused on open, the payload box holding `compose()`'s exact text
+    refreshed on every change, Send enabled by `what_the_doors_do` only for a non-security
+    category with an account whose `allowed_for(id).mail` is true, the clipboard and GitHub
+    doors always, the private reporting page for Security; Send through the queued-row
+    function extracted from `queue_for_sending` and called by both, the excerpt and the copy
+    under `paths.feedback_dir()`; Help, Send Feedback on `Ctrl+Shift+F`; About's button;
+    `ScanTarget::Feedback` in the workflow; a reading in
+    `tests/the_feedback_dialog_shows_what_it_sends_before_it_goes.rs` (12-05, task 2).
+  - [D] `docs/privacy.md`'s table gains the address and what a report carries; the shortcuts
+    page, the guide and the alpha page say how to send one; #64, #71 and #78 closed from the
+    merge (12-05, task 3).
+  - [S] The dialog under NVDA is the tester's ear; a report from a real account arriving at
+    support@wixen.app is his mailbox's, which must exist and be read; priority for pro
+    subscribers waits on #65, by his own words on #64.
+
+- [ ] **ALPHA-03**: The pro licence is designed in a document the tree keeps as a design: what
+  is gated, how a key is checked offline, what a lapse does, what the alpha carries, the
+  prices and the trial as decided, the merchants compared, and every decision that is
+  Pratik's in one table; nothing in the product is gated.
+  - Evidence: `grep -rniE 'licen[cs]e key|subscription|entitle' src --include=*.rs` on
+    2026-09-20 at `0ad66e48`: three unrelated matches (`allowed.rs:365`, `:377` "entitled to
+    refuse"; `answering.rs:884` "a subscription they never made"), so nothing knows a
+    licence; `grep -n '^name = "ed25519-dalek"\|^name = "ring"\|^name = "keyring"' Cargo.lock`:
+    all three present; `grep -n 'pub fn verify' src/service/update_download.rs`: `:858`, the
+    signed-thing-checked-offline pattern; `ls docs/plans/`: four designs named
+    `YYYYMMDD-name.md`, where this one goes.
+  - [S] #65, the tester on 2026-09-16: "plan a pro license with gated features under pro.
+    Multiple account support. Future RSS reader. PGP support. Allow working with multiple
+    calendars. Future sound packs for event announcements. Suggest other potential pro
+    features." Pratik on 2026-09-16: "a $10 a year supporter licence; a $19 pro licence
+    (yearly); a $99 perpetual pro licence; a 60-day trial of pro"; and his merchant table
+    of the same day, Paddle recommended and undecided.
+  - [D] `docs/plans/20260920-pro-licence.md` (dated the day it is written) with ten
+    sections: what it is for and is not; what exists today, each claim with its command; the
+    free and pro line as a table with each feature's state in the tree; the licence as a
+    signed string checked offline, entered on Settings, kept in the credential store; the
+    `Entitlement` seam on `application::allowed`'s pattern with a gated command greyed and
+    labelled; a lapse deleting nothing; the prices as decided; the merchant table carried
+    whole with its date; the decisions table for Pratik with an empty answer column; what
+    follows the decisions. A row in `docs/development/requirements-backlog.md`; a ledger
+    `todo` naming the decisions as his; no file under `src/`, `tests/` or `guards/` touched
+    (12-11).
+  - [S] Every row of the decisions table is Pratik's: the free and pro line, whether several
+    accounts are gated at all, the merchant, online revocation, how long a perpetual licence
+    carries updates, a trial with no card, whether the supporter tier delivers a real
+    licence, how priority support is carried.
+
+- [ ] **EDIT-01**: Every number a person sets in the account editor and in Settings is a spin
+  control, the check interval first, and every spin control's typing field has a name on the
+  channel a screen reader reads.
+  - Evidence: `grep -n 'Check &Interval' src/presentation/wx_account_manager.rs` on
+    2026-09-20 at `0ad66e48`: `:1639`, `tf_with_description`, a `TextCtrl`, read back at
+    `:1254` with `.parse().unwrap_or(5).clamp(1, 60)`; the `spin` closure at `:1488-1499`
+    with a fixed range 0..=3650. `grep -n 'font_size\|default_reminder\|mark_read_after'
+    src/presentation/wx_settings.rs`: Font size a `TextCtrl` (`:1109-1112`, saved with
+    `.clamp(8, 72)` at `:3397-3402`), Default reminder a `TextCtrl` (`:2472-2473`, `.min(1440)`
+    at `:3669-3674`), Mark read after a `Choice` over `reading_habits::MarkRead::ALL`
+    (`:1511`, `:1834`); the undo-send hold and the autosave interval already `SpinCtrl`s
+    (`:1337`, `:1380`). `grep -rn 'SpinCtrl::builder' src --include=*.rs | grep -v '^\s*//'
+    | cut -d: -f1 | sort | uniq -c`: ten sites in four files. `awk -F'|' '$2 >= 405 && $2
+    <= 426' .planning/WINDOWS.md`: twelve spinner entries (408, 409, 410, 412, 413, 414,
+    419, 420, 421, 422, 424, 425) whose typing field has no name on either channel, with the
+    annotation-service remedy written in 408 and the visible-label route measured in 424 as
+    naming UI Automation alone. `grep -rn 'UDM_GETBUDDY\|SetHwndPropStr' src --include=*.rs`:
+    nothing.
+  - [S] #35, the tester on 2026-09-15: "In settings dialog where numbers are expected, spin
+    boxes/controls should be used so that users can use up/down arrow keys to make
+    changes." #73, the tester on 2026-09-18: the check interval "should be a spin control,
+    so Up and Down change it and the bounds are the control's own." Pratik on #35,
+    2026-09-18: "Same rule, same reading over MSAA for the buddy edit's name (ledger 408);
+    worth fixing together."
+  - [D] `names::name_the_spin_control(spin, name)` names the arrows through the existing
+    accessible and the typing field through `IAccPropServices::SetHwndPropStr` on the buddy
+    from `UDM_GETBUDDY`, three features of the `windows` crate switched on and no crate
+    added; every `SpinCtrl::builder` site in the tree calls it; a reading in
+    `tests/every_spin_control_names_the_field_a_person_types_in.rs` finds every
+    `msctls_updown32` in the built account editor, Settings, the item form and the table
+    asker and asserts the buddy's MSAA name equals the arrows' (12-06, task 1).
+  - [D] The check interval a spin control 1..=60 with its sentence as its description; Font
+    size 8..=72 and Default reminder 0..=1440 as spin controls with the saves' parse-and-clamp
+    gone; Mark read after a three-way `Choice` (Immediately, After a number of seconds,
+    Never) with a seconds spin enabled for the middle one, the stored string unchanged in
+    shape through `MarkRead::parts` and `from_parts`; the ports stay typed and the summary
+    says why; the two settings guards in `config.rs` stay green (12-06, task 2).
+  - [D] The twelve ledger entries marked fixed on the reading in both halves; the pages say
+    which numbers are spin controls and how they are worked; #73 and #35 closed (12-06,
+    task 3).
+  - [S] A field and its arrows heard with one name, the values said after Up and Down, and
+    Mark read after's three entries are the tester's ear; the twelve findings gone from the
+    scan is the next push.
+
+- [ ] **EDIT-02**: The contact editor has prefix, middle name and suffix fields; a whole name
+  and its parts fill each other without overwriting what the person typed; the birthday is
+  a date control; an email address and a phone number are checked without refusing real ones.
+  - Evidence: `sed -n 1276,1312p src/presentation/wx_managers.rs` on 2026-09-20 at
+    `0ad66e48`: Basic Info holds Name, Given name, Family name, Nickname, Company,
+    Department, Job Title, Birthday (`add_panel_field`, a `TextCtrl`, `:1297`), Website,
+    Relationship, Avatar URL, Favourite (named outright at `:1305-1310` since `165fd811`);
+    no prefix, middle or suffix. `sed -n 591,620p src/data/message_cache/mod.rs`:
+    `ContactEntry` has `given_name`, `family_name` and `birthday: Option<String>` and no
+    prefix, middle or suffix. `sed -n 795,810p src/data/message_cache/contacts.rs`: vcard
+    `N` written as family;given;;; with three empty parts. `sed -n 65,95p
+    src/service/google_api.rs`: `GoogleName` carries given and family only. `sed -n 36,60p
+    src/service/microsoft_graph.rs`: the contact carries given, surname and no title,
+    middle or generation. `sed -n 735,750p src/application/contacts_sync.rs`: why the sync
+    stopped guessing (Hopper, van der Berg). `grep -n 'YEAR_LEFT_OUT' src/common/types.rs`:
+    `:211`, "--", the marker a birthday without a year is stored with. `grep -n 'pub fn
+    is_an_address' src/application/links_in_text.rs`: `:199`, the address rule.
+    `grep -rn 'ContactEntry {' src tests --include=*.rs | grep -v 'pub struct' | wc -l`: 114
+    literal sites.
+  - [S] #40, the tester on 2026-09-15: "There is no prefix/suffix fields with common options.
+    There is no field for middle name. On the basic tab, if the user enters the full name in
+    the first field, it should be parsed so that the remaining fields ... should
+    automatically fill in appropriately. Similarly, if the full name field is not filled in
+    and the other fields are subsequently completed, the full name field should be updated
+    automatically. The birthday field should be a date similar to other date fields used in
+    calendars, tasks, reminders, etc. Are email addresses and phone number validated for
+    formatting and country designations for phone numbers?" Pratik on 2026-09-16: "Point 5
+    (the unnamed Favourite checkbox) is fixed in 165fd811 with #42; points 1 to 4 and 6 are
+    later phases and this issue stays open for them."
+  - [D] `application::contact_names` with `guess_parts` and `compose` over titles, suffixes
+    and particles, the Hopper and van der Berg cases; `application::phone_countries` with
+    every calling code and `with_country`; `name_prefix`, `middle_name` and `name_suffix`
+    as columns through `ensure_column_exists` and fields on `ContactEntry`; vcard `N` with
+    five parts; `GoogleName` with `honorific_prefix`, `middle_name`, `honorific_suffix`;
+    the Graph contact with `title`, `middle_name`, `generation`; each carried both ways
+    (12-07, task 1).
+  - [D] The editor's Prefix and Suffix as `ComboBox`es with room to type, Middle name, the
+    birthday through `build_date_fields` with a no-year position stored as `YEAR_LEFT_OUT`,
+    the fills each way guarded by per-field typed flags, an address checked by
+    `is_an_address` and a number by `looks_like_a_number` with a country choice beside it,
+    every new control named on both channels; a reading in
+    `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` drives the
+    built editor and reads the Favourite box over MSAA (12-07, task 2).
+  - [S] The tab heard in order, the fill heard after a name, the no-year position and a
+    refusal are the tester's ear; a contact with five name parts round-tripping through
+    Google is his account's; whether a phone-number library is wanted beyond the digit rule
+    is Pratik's.
+
+- [ ] **EDIT-03**: Event, task and reminder times move in 15, 30 or 60 minute blocks from a
+  setting, a new item starts at the next boundary with a default length, the end follows the
+  start, and Left and Right move by a minute.
+  - Evidence: `sed -n 901,946p src/presentation/wx_item_form.rs` on 2026-09-20 at
+    `0ad66e48`: `build_time_fields` with the hour spin and the minute spin 0..=59 stepping
+    one, anchored on `now` or the stored `HH:MM`; nothing aligns or sets an end. `grep -n
+    'wx_item_form::ask_for' src/presentation/managers.rs`: `:1213` and `:2733`, the one door
+    for all three editors. `grep -n 'pub event_length\|event_length_minutes'
+    src/data/config.rs`: nothing. `grep -n 'impl crate::event::WindowEvents for SpinCtrl'
+    ~/.cargo/registry/src/*/wxdragon-0.9.17/src/widgets/spinctrl.rs`: `:201`, and no
+    `set_increment`, so a step is a key handler.
+  - [S] #41, the tester on 2026-09-15: "each event should be blocked for 30 minutes by
+    default unless the user has indicated otherwise in settings ... The configuration should
+    allow for 15 minutes, 30 minutes, or 1 hour ... Pressing up and down arrow keys when
+    picking time should move in those blocks. However the user should be able to choose other
+    times minutely using left and right arrow keys." His four answers of 2026-09-15: the
+    next boundary after now (14:37 gives 15:00); the end moves with the start unless edited
+    explicitly; Left and Right stepping single minutes accepted, typing over the selection
+    still works; the same for the task and reminder editors.
+  - [D] `application::time_blocks` with `Block`, `next_boundary` strictly after now,
+    `step_by_block`, `step_by_minute`, `end_after` and `follow`, cases at every boundary of
+    the day and the 12-hour face; `event_length_minutes` in `config.rs` defaulting to 30
+    with the older-file test, a `Choice` on the Calendar and PIM tab, read where the form
+    opens and never captured at startup (12-08, task 1).
+  - [D] On the minute control Up and Down by the block and Left and Right by a minute, the
+    key consumed, the hour rolling, in all three editors; a new item on the next boundary
+    with its end one block later; the end following the start until edited; where the key
+    arrives measured first on the built form; a reading in
+    `tests/event_times_move_in_blocks.rs` drives the keys and reads the values (12-08,
+    task 2).
+  - [S] The value spoken after Up and after Left, the end heard following, and the setting's
+    list are the tester's ear.
+
+- [ ] **EDIT-04**: Signatures are one set assignable per account, with one default for any
+  account that has none, and compose follows the From account.
+  - Evidence: `grep -n 'CREATE TABLE IF NOT EXISTS signatures' -A 9 src/data/message_cache/mod.rs`
+    on 2026-09-20 at `0ad66e48`: `:1830`, `account_id NOT NULL`, `is_default`, `UNIQUE(account_id, name)`;
+    `grep -n 'pub fn ' src/data/message_cache/signatures.rs`: every reader takes an account
+    and nothing reads across; `grep -n 'get_default_signature' src/presentation/wx_app.rs`:
+    `:16601`, compose reading the active account's default; `sed -n 190,215p
+    src/presentation/managers.rs`: the manager reads one account's set and says nothing of
+    which; `grep -n 'account_choice' src/presentation/wx_compose.rs`: the From `Choice` at
+    `:809-820` with no handler reaching the signature; `grep -n 'pub fn '
+    src/application/sign_off.rs`: `split` and `carries_one`, which find the block again;
+    `grep -n 'CREATE TABLE IF NOT EXISTS work_done_once' src/data/message_cache/mod.rs`:
+    `:2379`, the marker table a once-only pass uses.
+  - [S] #43, the tester on 2026-09-15: "Allow signatures to be assigned by email account.
+    Default should apply if no signature is assigned to a particular account."
+  - [D] `application::signatures::which_signature` (the assignment, else the default, else
+    none) and `whether_to_swap` (only a block still equal to the previous signature);
+    `signature_assignments` as a new table; `get_every_signature`, `assign`,
+    `assignment_for`, `set_the_default` clearing every other row, `signature_for_account`;
+    `make_signatures_one_set` once under a marker writing an assignment for every account
+    that had a default before clearing all but the oldest (12-09, task 1).
+  - [D] The manager over the whole set with a Used by column and one Default box meaning for
+    everyone; "Signature:" as a `Choice` on the account's own edit dialog with "Use the
+    default" first; compose opening with the From account's signature and swapping the
+    block on a From change only while untouched, said at Normal; a reading in
+    `tests/a_signature_follows_the_from_account.rs` (12-09, task 2).
+  - [S] The manager's columns, the choice and the sentence on a From change are the tester's
+    ear; where the choice reads better by ear is his.
+
+- [ ] **EDIT-05**: The Label submenu shows the account's labels by their current names in a
+  stored order with the key beside each, leads to a manager that creates, edits and orders
+  them, and the keys apply the label the menu shows.
+  - Evidence: `sed -n 6918,6946p src/presentation/wx_app.rs` on 2026-09-20 at `0ad66e48`:
+    the submenu built once from `tagging::TO_BEGIN_WITH` by index, slots six to nine "Label",
+    the comment claiming the names are rewritten on load; `grep -n labels_menu
+    src/presentation/wx_app.rs`: the build at `:6927-6941` and the append at `:7346` and no
+    rewrite; `sed -n 72,78p src/data/message_cache/tags.rs`: `ORDER BY name`, so Ctrl+N
+    applies the alphabetical Nth (Important, Later, Personal, To Do, Work) while the menu
+    shows Important, Work, Personal, To Do, Later; `grep -n 'CREATE TABLE IF NOT EXISTS
+    tags' -A 7 src/data/message_cache/mod.rs`: `:1802`, no position column; `grep -n
+    'ID_TAG_MGR' src/presentation/wx_app.rs`: `:7449` "Ta&gs..." on Tools; `grep -n 'Tag
+    Manager' src/presentation/wx_managers.rs`: `:3659`, Add and Edit, no move; `grep -n
+    'reordering::moved' src/application/account_order.rs src/application/favourites.rs`: the
+    gesture's two callers.
+  - [S] #48, the tester on 2026-09-15: "The action menu allows the user to apply labels.
+    Currently there are five preconfigured labels. Four additional slots are available but
+    are not assigned. There is NO UI for creating these labels. Create a UI for this
+    functionality for additional labels as well as for editing and moving labels' order."
+  - [D] `position` on `tags` through `ensure_column_exists`, `get_tags_for_account` ordered
+    by position then name, a once-only numbering in name order under a marker, `move_tag`
+    through `reordering::moved`; `tagging::what_the_menu_says` giving each label its line and
+    key for the first nine (12-10, task 1).
+  - [D] The submenu rebuilt from the labels on load and after the manager closes, ending
+    with Edit Labels; Tools says Labels and the manager is the Label Manager with Move Up,
+    Move Down and a Key column; a reading in
+    `tests/the_label_menu_says_the_labels_an_account_has.rs` reads the items after a rename
+    and a move and `at_number` against them (12-10, task 2).
+  - [S] The submenu's items with their keys, Edit Labels, a move said and the Key column are
+    the tester's ear.
+
+### New features, most from the Outlook gap audit
+
+Added 2026-09-20 for phase 13, the sixth of the seven groups Pratik agreed on 2026-09-16.
+Written as requirements only, from the issues as they stand on 2026-09-20; no plan exists,
+because a plan written now would rot against a tree phase 12 changes, and the order inside
+the group is the planner's for Pratik to confirm before planning. Each `[D]` line is the
+issue's own "what closes it" condensed, and each is re-read against the tree when the phase
+is planned. Nothing here has met a real provider.
+
+- [ ] **GAP-01**: File, Print (Ctrl+P) prints a message or the item under the cursor on
+  every surface that shows one, through the native dialog, the header lines and the text.
+  - Evidence: `gh issue view 45 --json title,state` on 2026-09-20: open; `grep -rn 'Ctrl+P'
+    src/presentation/wx_app.rs docs/KEYBOARD_SHORTCUTS.md`: nothing bound (re-take when
+    planned).
+  - [S] #45, the tester on 2026-09-15: "Add print functionality."
+  - [D] File, Print on the mail surfaces and the other modules' items; the route (the native
+    printout or the browser's print) decided by a measurement; the shortcuts page and the
+    guide.
+  - [S] What a printed page looks like is a sighted reader's; whether the dialog is worked by
+    keyboard is the tester's ear.
+
+- [ ] **GAP-02**: Edit, Undo and Redo act on the focused text everywhere, and then on actions
+  on items with the item named.
+  - Evidence: `gh issue view 47 --json state` on 2026-09-20: open; the composer's own
+    Ctrl+Z and Ctrl+Y exist and the Edit menu holds none (the issue's reading; re-take when
+    planned).
+  - [S] #47, the tester on 2026-09-15, "no general Undo/Redo".
+  - [D] Edit, Undo and Redo for the focused control on every surface first; an undo of a
+    delete, a move and a mark with the item named as its own plan; the shortcuts page.
+  - [S] Whether the undone action is heard as undone is the tester's ear.
+
+- [ ] **GAP-03**: A PGP key manager lists the keys, imports a public key, removes and exports
+  one, and says where a person reads it what the keys can and cannot do here.
+  - Evidence: `gh issue view 49 --json state` on 2026-09-20: open; one private key with no
+    passphrase, used only to open inline PGP (the issue's reading; re-take when planned).
+  - [S] #49, the tester on 2026-09-15, "no way to manage PGP keys".
+  - [D] The manager under Tools; the limits said on the manager and the pages; passphrase
+    keys a decision of their own, listed for Pratik.
+  - [S] A real key from a real correspondent is his.
+
+- [ ] **GAP-04**: The reader shows and announces a meeting invitation with its answers, and a
+  cancellation or an update reaches the calendar.
+  - Evidence: `gh issue view 50 --json state` on 2026-09-20: open.
+  - [S] #50, from the Outlook gap audit of 2026-09-15, in the tester's list.
+  - [D] The invitation's part shown and said before the body with Accept, Tentative and
+    Decline; a cancellation removing and an update moving the event; the answer sent through
+    the outbox and the gate.
+  - [S] An invitation from a real organiser and its answer arriving are his account's.
+
+- [ ] **GAP-05**: S/MIME-encrypted and PGP/MIME mail is read, a PGP signature is verified and
+  said, and a message can be sent signed and encrypted.
+  - Evidence: `gh issue view 52 --json state` on 2026-09-20: open.
+  - [S] #52, from the audit, in the tester's list.
+  - [D] Reading first, then verifying, then sending; each said in the reader's sentence the
+    way the unverified-signature sentence is said today; the key manager (GAP-03) before it.
+  - [S] A message from a real correspondent's key is his account's.
+
+- [ ] **GAP-06**: A sender can be reported as junk to a provider that takes reports, and a
+  block moves the sender's existing mail.
+  - Evidence: `gh issue view 54 --json state` on 2026-09-20: open.
+  - [S] #54, from the audit, in the tester's list.
+  - [D] Report Junk on the Action menu for a provider with an endpoint, said when there is
+    none; a block that moves what is already here, said with the count; through the gate.
+  - [S] Whether Gmail takes the report is his account's.
+
+- [ ] **GAP-07**: Directory lookup answers from Graph for a Microsoft account and from an LDAP
+  directory that needs a sign-in.
+  - Evidence: `gh issue view 55 --json state` on 2026-09-20: open; `ldap3` is in
+    `Cargo.toml` with rustls.
+  - [S] #55, from the audit, in the tester's list.
+  - [D] Graph people search while typing an address on a Microsoft account; an LDAP
+    directory with a bind, its sign-in kept in the credential store; the privacy page's row.
+  - [S] A real directory is his to set up.
+
+- [ ] **GAP-08**: Free/busy asks a Google source and every source an account has, and shows
+  guests' times in their zones.
+  - Evidence: `gh issue view 57 --json state` on 2026-09-20: open; free/busy asks one
+    source per account today (#65's reading of the tree).
+  - [S] #57, from the audit, in the tester's list.
+  - [D] The Google free/busy endpoint; every calendar source an account has asked; a guest's
+    zone shown beside the time.
+  - [S] A real guest's free/busy is his account's.
+
+- [ ] **GAP-09**: Saved searches can be reordered, given a key, and saved from scratch, and
+  the two pages that drifted are corrected.
+  - Evidence: `gh issue view 58 --json state` on 2026-09-20: open.
+  - [S] #58, from the audit, in the tester's list.
+  - [D] The reordering gesture the tree has; a key per search on the pattern labels take in
+    EDIT-05; Save as Search from an empty box; the pages corrected by dating.
+  - [S] The order and the key heard are the tester's ear.
+
+- [ ] **GAP-10**: Several identities per account, the first step to shared mailboxes and
+  delegation.
+  - Evidence: `gh issue view 59 --json state` on 2026-09-20: open.
+  - [S] #59, from the audit, in the tester's list.
+  - [D] An identity (a From name and address) per account beyond the first, offered in
+    compose's From list; shared mailboxes and delegation as their own later work, said.
+  - [S] A shared mailbox on a real provider is his.
+
+- [ ] **GAP-11**: Quick Steps: a named multi-action command on a key, over the selected
+  messages.
+  - Evidence: `gh issue view 60 --json state` on 2026-09-20: open; the selection and the
+    set commands exist since 11-07.
+  - [S] #60, from the audit, in the tester's list.
+  - [D] A Quick Step as a rule's actions run by hand over the selection, named, with a key,
+    on the pattern 11-07's set commands use; one sentence saying what it did.
+  - [S] Whether a step is worked by keyboard and heard as one act is the tester's ear.
+
+- [ ] **GAP-12**: A rule can be run over a folder on demand, saying first how many messages it
+  would touch.
+  - Evidence: `gh issue view 61 --json state` on 2026-09-20: open; rules run once when mail
+    arrives (11-10's comment on #62).
+  - [S] #61, from the audit, in the tester's list.
+  - [D] Run Rule Now on the rule editor and the Action menu; the count said before the run
+    with a way to stop; the run through the same arms a check uses.
+  - [S] Whether the count and the result read as one act is the tester's ear.
+
+- [ ] **GAP-13**: Mail export as a bare mbox or loose eml files, msg read, and pst export, or
+  each said plainly to be out.
+  - Evidence: `gh issue view 53 --json state` on 2026-09-20: open; Pratik's comments of
+    2026-09-17: points 1 to 3 and 7 landed in `06fdc9b7` and `8eba6a38`, "4 to 6 are later
+    work".
+  - [S] #53, from the audit, in the tester's list; Pratik on 2026-09-17: "Points 4 to 6 (a
+    bare .mbox or loose .eml export, .msg, .pst export) are later work."
+  - [D] Each of the three built or refused with a sentence on the page saying which and why;
+    a refused format is not a menu item.
+  - [S] A real Outlook file is his.
+
+### The real-account proofs
+
+Added 2026-09-20 for phase 14, the seventh of the seven groups Pratik agreed on 2026-09-16,
+the ones that need his account. Written as requirements only; no plan exists, for the same
+reason as phase 13 and because the steps a tester follows are written against the build that
+carries phase 12. Sending is proven; the rest is not.
+
+- [ ] **REAL-01**: Adding a Gmail account brings its calendars, contacts and tasks, and
+  Refresh in each module brings what the account has.
+  - Evidence: `gh issue view 22 --json state,comments` on 2026-09-20: open; the tester on
+    2026-09-15: Refresh in Calendar and in Contacts brings nothing; read from his profile on
+    2026-09-16 with his agreement: two calendar rows, neither `google:`, `contacts` 0 rows,
+    `calendar_events` 0, `sync_state` 0, against 12,872 messages then cached, so mail reached
+    the server and the PIM sync did not or wrote nothing; the log that would say which was
+    empty then (#66) and is at Debug since 11-04.
+  - [S] #22, the tester on 2026-09-15: "Setting up a Gmail account does not carry over the
+    corresponding calendars, contacts, etc."
+  - [D] The profile's log at the moment of a Refresh read first, with his agreement; the
+    request the sync makes and what Google answers traced against the loopback servers and
+    then his account; the sync run on account creation as well as on Refresh.
+  - [S] What Google answers his account is his account's.
+
+- [ ] **REAL-02**: The five write paths, copy within an account, copy across two, move within
+  an account, move across two, and delete, are each proved against a real account and
+  recorded, and the gate's default moves per path on Pratik's word.
+  - Evidence: `gh issue view 63 --json comments` on 2026-09-20: sending proven 2026-09-18
+    ("Sending works. It's confirmed."); Pratik on 2026-09-18: "move and copy are tested
+    separately ... four write paths, not three"; on 2026-09-19: the move, copy and delete
+    proofs are re-taken after `fa20d04a` (11-07.1) and `2526b31f` (11-07.2), since they
+    complete here first now; ledgers 187, 191, 376, 546 and 547 name what only a live
+    account answers.
+  - [S] #63: "Prove send, move and delete against a real account, then let the gate say
+    so"; Pratik's four comments as quoted.
+  - [D] A steps page per path against the build that carries phase 12, each run by him and
+    recorded on the issue with the date and the build; a move made with the network off and
+    replayed, one replayed after a restart, a message another client changed meanwhile;
+    `application::allowed`'s default moved per proven path and the four warning surfaces
+    reworded, on his word.
+  - [S] Every proof is his account's; the order of the four lines is his to confirm.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -4885,6 +5403,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
+| FOUND-20 | Phase 12 | Pending, 12-01; the run at the next push of `main` is Pratik's |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
@@ -4895,7 +5414,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
 | LIST-09 | Phase 11 | Complete, 11-11 at `f497785f`; a shown picture, a passed-over one, the link's words and the sentence about tracking pixels are the tester's reader (ledger 558) |
 | LIST-10 | Phase 11 | Complete, 11-11 at `f497785f`; whether the page is clear to the person it is for is his |
-| LIST-11 | Phase 11 | Open, 11-13 deferred to the front of the next phase on Pratik's decision of 2026-09-20 under his token budget; nothing landed; the phase closed without it on 2026-09-20 |
+| LIST-11 | Phase 11, then phase 12 | Open, 11-13 deferred to the front of the next phase on Pratik's decision of 2026-09-20 under his token budget; nothing landed; the phase closed without it on 2026-09-20; moved later that day to phase 12 as 12-03, whose merge ticks it |
 | LIST-12 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether NVDA reads the landed row once after Delete and not again after the re-read is the tester's ear, ledger 541 |
 | LIST-13 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; whether the row is heard once with the tone, and the tone alone with the status bar off, is the tester's ear (ledger 552) |
 | LIST-14 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether "Delete" once and the landed row are enough by ear, and the refusal heard on a failure, are the tester's, ledger 542 |
@@ -4903,7 +5422,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-16 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; the sounds heard again after a real device change, and what silenced them after hours, are the tester's machine's (ledger 553) |
 | LIST-17 | Phase 11 | Complete, 11-09.2 at `4d9a41d2`; whether the rows now say the message is the tester's ear (ledger 554) |
 | LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
-| LIST-19 | Phase 11 | In progress: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page; ledger 560 for the ear); 11-11.2, the separate window, deferred to the front of the next phase on Pratik's decision of 2026-09-20; the program's own "next build" sentences are ledger 566 |
+| LIST-19 | Phase 11, then phase 12 | In progress: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page; ledger 560 for the ear); 11-11.2, the separate window, deferred to the front of the next phase on Pratik's decision of 2026-09-20; the program's own "next build" sentences are ledger 566; moved later that day to phase 12 as 12-02, whose merge ticks it and fixes 566 |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
@@ -4912,12 +5431,41 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
 | LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
 | LIST-27 | Phase 11 | Complete, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages) and 11-11.1.3 at `1e39650a` (All Inboxes' own view, the every-inbox listing, the row's own account, the sentence, the pages); a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept and a two-account conversation as two rows (ledger 563), are his ear's |
+| ALPHA-01 | Phase 12 | Pending, 12-04 |
+| ALPHA-02 | Phase 12 | Pending, 12-05 |
+| ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
+| EDIT-01 | Phase 12 | Pending, 12-06 |
+| EDIT-02 | Phase 12 | Pending, 12-07 |
+| EDIT-03 | Phase 12 | Pending, 12-08 |
+| EDIT-04 | Phase 12 | Pending, 12-09 |
+| EDIT-05 | Phase 12 | Pending, 12-10 |
+| GAP-01 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-02 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-03 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-04 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-05 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-06 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-07 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-08 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-09 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-10 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-11 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-12 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-13 | Phase 13 | Not planned, 2026-09-20 |
+| REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
+| REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |
 
 **Coverage:**
 
-- v1 requirements: 95 total
-- Mapped to phases: 95
+- v1 requirements: 119 total
+- Mapped to phases: 119
 - Unmapped: 0
+
+**Re-taken 2026-09-20, later.** This block said 95 and 95 from the morning until phase 12
+was planned and phases 13 and 14 were written as entries. Counted with the same command as
+below, which gives 119 at `0ad66e48` plus this edit with `FOUND-20`, `ALPHA-01` to
+`ALPHA-03`, `EDIT-01` to `EDIT-05`, `GAP-01` to `GAP-13` and `REAL-01` and `REAL-02` in, and
+the traceability table above has 119 rows.
 
 **Re-taken 2026-09-20.** This block said 93 and 93 from the afternoon of 2026-09-19 until
 #91 and #92 were taken by the inserted 11-11.1.1, 11-11.1.2 and 11-11.1.3. Counted with the
