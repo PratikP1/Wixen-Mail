@@ -213,6 +213,27 @@ The only exceptions are the ones GSD already lists for `tdd="true"`: configurati
 documentation, glue code wiring already-tested components, styling. Anything that changes
 behaviour gets a failing test first; if a change seems to need an exception, say so and ask.
 
+**GSD's completion step is the other place it disagrees with what this project
+needs, and the brief an executor is handed names every mark, not the file.**
+When a plan completes it leaves marks in four places: the roadmap's progress
+row, the plan's own `- [ ]` line in the phase's plan list, the current plan
+number in `STATE.md` in its frontmatter and again in its body, and the
+requirement's `[D]` lines. A brief that says "update the roadmap" gets the one
+mark the executor already knows about, and a brief copied to every plan in a
+phase copies the omission to every plan. Phase 11's brief said "the ROADMAP
+progress row", twenty-five executors did exactly that, and on 2026-09-20 the
+list showed three ticks against a row reading 25 of 31; it was found because a
+later brief happened to name one unticked line and that executor reported the
+twenty-one beside it. GSD's own `roadmap update-plan-progress` writes the row
+and the plan count and ticks no plan line, read in
+`gsd-core/bin/lib/roadmap.cjs` the same day, so the tick is done by hand, and
+`tests/the_planning_files_agree_with_themselves.rs` compares `STATE.md`'s plan
+number with the roadmap's row and counts no ticks, so the two drifted for two
+days with a green test on every commit. Widening that test to count ticked
+lines against the row is the check this paragraph wants and does not have yet;
+until it exists this is a rule that lives in a document, which the rest of this
+file says is not enough.
+
 GSD's vendored tooling under `.claude/` is gitignored and reinstallable with
 `npx @opengsd/gsd-core@latest --claude --local --profile=full`. `.claude/guardrails/` and
 `.planning/` are tracked on purpose.
@@ -367,6 +388,22 @@ be run at all. **A command in a plan is a claim about that plan, and an untested
 one is the same kind of thing this file keeps warning about: a check nobody
 reads.** Two executors found it independently, three plans apart, because the
 finding could not reach a plan that was already written.
+
+**Two more shapes of a check that cannot fail, both found in phase 8's plans on
+2026-09-14.** A plan that claims a sentence is absent, or present at exactly N
+sites, searches for it with a pattern that tolerates line breaks and
+indentation, or joins the lines first. Prose wraps, and a single-line regex has
+a hole exactly one line break wide: a phase 8 plan asserted "the four sites" of
+a sentence by `grep -rn` over named files and made "the grep finds nothing" its
+acceptance criterion, and one of the four carried the sentence wrapped across
+two comment lines, so the grep could not see that site before the edit and could
+not have proved its removal after. And a `<verify><automated>` command must be
+one whose exit status carries the answer. A command ending in `| wc -l`,
+`|| true`, `| cat`, or anything else that exits 0 whatever it found, cannot fail,
+and a plan checker treats one as a blocker rather than as verification. The same
+plan's verify ended in `| wc -l`, which prints a count and then succeeds. The
+vendored checker refuses `|| true` on the right of an assignment and nothing
+else in this family, which is why the rule is written here.
 
 **The scripts that decide all this have their own suites, and the gate runs
 them.** `scripts/*.test.sh` runs on every invocation of `check.sh`, in every
@@ -557,6 +594,29 @@ So `test_every_test_a_guard_record_names_is_a_test_that_exists` asks the other
 direction, in milliseconds, on every commit. **If you rename a test, that check
 tells you which records name it, and the record then wants re-measuring rather
 than editing**, because a rename can change what the break reddens.
+
+**A record is coupled to the tree a second way, by the text it anchors on, and a
+plan lists the records it will touch by both readings.** The first reading is
+the one plans already make: records naming a changed file in `tests_last_seen`
+or in `file`. The second is records whose `before` or `after` text lies inside
+any file the plan edits. For each of those the plan says whether the edit
+duplicates the anchor, removes it, or moves it, and names the record as one the
+executor rewrites and re-measures in the same commit. A task that extracts,
+inlines, moves or re-indents a block moves every anchor inside that block, even
+where no line in it changes meaning. Both halves were paid for on 2026-09-17,
+by `test_every_guard_record_still_names_one_place_in_the_tree` refusing a green
+commit each time. Plan 10-02.2 added `fetch-depth: 0` to a second checkout in
+`ci.yml`, and the record for the first checkout, anchored on that bare line,
+named two places from then on; the plan's record list, taken by
+`tests_last_seen` and `file` alone, had not seen it. Plan 10-04 extracted the
+inline Feedback block into `read_the_feedback_page`, re-indented by four spaces,
+and a record anchored on a line inside the block stopped naming one place the
+moment the extraction landed; the checker had grepped the register for the one
+line the task rewrote and not for the block another task moved. So when you
+write a record, anchor a text break on the longest unique context that still
+names one place, the comment line above plus the line, because a short generic
+anchor, a YAML key or a one-word arm, is right on the day it is written and
+wrong the first time a sibling is added.
 
 **Guard re-measurement is not on the critical path.** This used to say "run
 `scripts/guards.sh` unfiltered before you finish", and that instruction put the
@@ -798,6 +858,146 @@ at all. Low coverage in `service/protocols`, `service/oauth` and the provider
 clients is the network transport that has never been run against a live account,
 which is tracked as work rather than fixable by writing more tests.
 
+### Premises a plan checks before execution
+
+A plan is a set of claims about the tree, and the executor pays for every one
+nobody checked. GSD's planner and checker are vendored under `.claude/` and
+rewritten on reinstall, so the checks that came out of running Wixen Mail's
+plans live here rather than in the skill files. Each rule below opens with what
+the plan does and then says which plan taught it. They are about premises, the
+things a plan takes as given before its first task, and every one was found by
+an executor meeting a tree that differed from the one the plan described.
+Added 2026-09-20 from the skill review; three related rules sit where they act:
+the absence check that cannot fail under "CI must stay green", the anchor-text
+reading of the guard register under "Tests that would notice", and the
+completion marks under "Test-driven development".
+
+**Try the read before accepting "cannot be read from here".** When a plan says
+a value cannot be read from here, cannot be known until execution, or only
+somebody else can confirm it, the checker treats that as an absence claim like
+any other and attempts the read with a targeted read-only command on the machine
+it is running on, reporting the result either way: the value and what it
+settles, or the command that failed and why. Plan 09-02 said on 2026-09-16 that
+the tester's stored language "cannot be read from here". The checker was running
+on the tester's own machine, the settings file was two commands away, and the
+value, a bare `en`, confirmed the plan's cause. A strong confirmation had been
+turned into a hedge because nobody tried.
+
+**Read both places an "or" offers, or say which one the requirement is about.**
+When a verify or acceptance line names two places to read one fact, the plan
+either names the one the requirement is about and says why the other is not it,
+or requires both readings and a sentence on any difference. An "or" between
+artefacts is a claim that they agree, and it needs a command behind it like any
+other premise; when a value has two carriers, the one that disagrees is usually
+the finding. Plan 10-02.2's brief said on 2026-09-17 to read the Windows file
+version off "the built setup exe or the exe inside target/release". Both were
+read. The setup file carried `1.0.0.14114`; the exe inside it carried
+`1.0.0.0`, because `winresource` in `build.rs` stamps that resource from the
+crate version and nothing hands it the build. Reading the exe alone would have
+reported the feature absent, and reading the setup file alone would have missed
+that the installed program's own Properties never show the counter, which
+`docs/changelog.md` then had to say.
+
+**Add the files this project writes by rule to every plan's `files_modified`
+before deciding whether two plans share a wave.** Those files are
+`docs/changelog.md` for any user-visible change, `guards/guards.toml` for any
+new or re-measured guard, `.planning/WINDOWS.md` where a plan opens or closes a
+ledger entry, and `docs/development/measurements.md` where it takes a figure.
+Only after they are added are two plans' lists compared. A brief's claim that
+two plans touch different subjects says nothing about the files, and a wave
+check that starts from the subjects passes two plans that collide on the
+commit. Phase 10's brief for two plans inserted after 10-02, one a list's sort
+order and one the build counter, said on 2026-09-17 that they shared no file and
+could share a wave; both write the changelog and both write the records file,
+so the roadmap's own definition of a wave put them in two. It was written by
+somebody who knew both rules. Phase 11's README applies this by hand, "One per
+wave" with the reason, which is how the rule was seen to hold across phases.
+
+**When another phase is executing against the same tree, derive the overlap
+from its plans rather than from the brief.** Research for a phase run beside
+another lists the files the other phase's own plans name, ranked by how often
+they name them, intersects that with the files this phase will touch, and
+reports the intersection as a named section that separates what the brief
+anticipated from what the intersection found. Two phases collide where their
+shared infrastructure lives, not where their subjects meet, and the strongest
+predictor of a collision is a mechanism cheap enough that both chose it. On
+2026-09-12 a brief named the collision surface between two phases as a version
+module, the About dialog and two accessor functions, and it was careful and
+incomplete: one command over the sibling's plan directory found that both
+phases edit the settings-reachability test module in `src/data/config.rs`,
+because both had found that a new field there "fails on arrival, which is the
+RED half for free", and both add a control to the same settings dialog. Neither
+side's documents mentioned the other. The parallel-planning rule in memory,
+that a planner working beside an executor writes to the scratchpad, is the
+adjacent rule and does not cover this step.
+
+**Check a packing formula against the property the field exists to keep, at the
+boundaries, not only against its bound.** When a brief or research note hands
+the plan a formula that packs several values into one bounded field, the plan
+states the property the field is for, usually an order, a uniqueness or a round
+trip, and checks the formula at the largest value of each term and at each
+transition between terms, such as the last step of one stage against the first
+step of the next. A formula that only fits under the maximum is not yet
+checked, and the boundary cases go into the test as rows rather than being
+trusted as arithmetic a second time. The brief for 10-02.2 offered
+`stage * 10000 + step * 1000 + counter` for the 16-bit fourth field of the
+Windows file version on 2026-09-17 and said it held counter to 999 and step to
+25 under 65535. The bound claim was wrong, stage 3 with step 25 and counter 999
+is 65999, and the worse fault was quiet: under that formula `rc.11` at 41000
+sits above the release at 40000, and ordering builds is the only reason the
+field is stamped. The weights in `src/common/version.rs` are derived from the
+order instead, with the caps of 12 and 999 that the Versioning section gives
+and a largest value of 64999, and the transitions are rows in its test.
+
+**A criterion that greps for a call inside a named function is checked against
+what that function can reach.** The checker reads the function's parameters and
+captured environment and asks whether the callee is reachable from them. A
+function on a worker thread that talks to the interface through a sender cannot
+call the interface's layers directly, so a grep for that call inside the worker
+cannot be satisfied; the plan then names the update the worker sends and the
+arm where the call really lands, and writes the criterion against that site.
+Plan 10-04 moved the new-mail signal into `spawn_mail_sync` on 2026-09-17 and
+made "`grep -c 'a11y.signal(FeedbackEvent::NewMail'` is 1, inside
+`spawn_mail_sync`" its acceptance criterion. The worker holds state, a sender
+and a runtime, and the accessibility layer is only reachable on the interface
+thread through the update handler, so the executor had to decide where the
+signal lands, in the arm the worker's end-of-check update reaches, and record a
+deviation for a criterion that could not have been met as written.
+
+**Before reporting that a plan leaves a check unrun, read its verify command
+and acceptance criteria, not only its prose.** Three questions, answered apart:
+does the plan name the check, does the plan run it, and does the recommended
+action violate it. Only the second is a gate failure; the first is a note on
+the plan's writing, and the third alone is a design error. On 2026-09-08 a
+review claim said a plan set a trap by recommending a menu placement that would
+redden a whole-tree guard the plan never named. Both halves were true. The claim
+still did not hold, because the plan's `<verify>` command and its first
+acceptance criterion each ran the suite the guard lives in, so the guard would
+have fired inside the plan's own verification rather than after it. Unnamed and
+unrun had been read as one finding.
+
+**A ledger entry that hands work to a named later plan is not filed until that
+plan's own text mentions it.** The same commit adds one line to the plan's
+`<premise_corrections>` or its file list if the plan exists on disk, or to the
+phase README's row for it if it does not. `.planning/WINDOWS.md` is read by
+whoever reads the ledger; a plan's executor reads the plan, and an assignment
+written into only the first depends on the executor happening to read both.
+Plan 08-01's summary ledgered a fifth stale figure in `scripts/guards.py` "for
+08-06 to point at the page" on 2026-09-14, and 08-06's plan, written the same
+day from the research document and the phase README, listed four figures and
+never named the file. The executor found it only because the brief said to read
+all five earlier summaries, and fixed it as a deviation on a file the plan did
+not list.
+
+**A plan that prescribes an instrument to explain what a screen reader hears
+names the channel that screen reader reads for the control, and puts the logger
+there.** On Windows that is UI Automation or MSAA and win events, and where
+both carry the control the plan logs both and says which one the reporter's
+screen reader uses. A quiet capture on the other channel is not evidence that
+the producer is clean, and a plan branch that reads it that way is a premise to
+correct before execution. The case, 09-06 and #33 on 2026-09-16, is in the
+Accessibility section beside the two channels it is about.
+
 ### Done means it runs
 
 Compiling and green tests are not done. A feature is done when a non-test path reaches it and it is
@@ -830,9 +1030,34 @@ system's name for those controls and never the one the code set. The accessibili
 Axe.Windows over UI Automation and `scripts/msaa-names.ps1` over MSAA, per window, and a name that
 fails on either channel is a name somebody does not hear.
 
+**The same two channels decide where a diagnostic instrument goes, and a plan
+that names the instrument names the channel.** When a plan prescribes a logger
+to explain what a screen reader does with a control, it says which channel that
+screen reader reads for that control and puts the logger there; where both
+channels carry the control, it logs both and says which one the reporter's
+screen reader uses. A capture on the other channel that shows nothing wrong is
+not evidence that the producer is clean, and a plan branch that reads it that
+way is a premise to correct before execution. Measured on 2026-09-16 against
+#33, a Settings tab NVDA spoke twice: plan 09-06 prescribed a UI Automation
+event logger with three subscriptions, and run as written it showed exactly one
+`ElementSelected` per arrow key, which the plan's own third branch would have
+read as "the second reading is NVDA's own, ask for its debug log" and changed no
+code. NVDA reads a native `SysTabControl32` through MSAA and win events, not
+through UI Automation. A `SetWinEventHook` on the same process, added in the
+same run, showed `EVENT_OBJECT_FOCUS` raised twice on the same tab one
+millisecond apart, and moving the selection through `TCM_SETCURSEL` raised it
+once, which named the fix (`src/presentation/wx_settings.rs`). The instrument
+was right for Narrator and blind for the screen reader that reported the bug.
+`scripts/uia-events.ps1` logs both channels since then, so the question a plan
+has to answer is not which script to run but which channel's lines to read.
+
 A control with a visible label beside it gets that label as its MSAA name even when nothing set one,
 because Windows falls back to the nearest static text. That is a real name and it is really spoken,
-so a clean run does not mean every name came from this code.
+so a clean run does not mean every name came from this code. Two further rules on the same
+channels, verifying a name at the handle that takes keyboard focus on both of them and treating
+mnemonic letters as one shared set per dialog, live in the Accessibility section of
+`~/.claude/CLAUDE.md`, because each was learned here the way `set_name()` was and neither is
+particular to this project.
 
 - **Blind, screen readers.** Every control exposes a correct UI Automation Name, Role, Value, and
   State. Focus is managed and never lost when a panel or dialog changes. Announce dynamic changes
