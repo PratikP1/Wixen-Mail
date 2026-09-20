@@ -153,6 +153,19 @@ ignore = [
     # advisory. That is why the condition is written in the words they would
     # recognise rather than in the words the advisory uses.
     #
+    # One such feature arrived on 2026-09-19 and was connected, so this
+    # records why the condition did not trip. Pictures a message points at
+    # are fetched by default from that day (#28, `hold_back_remote_pictures`
+    # off), which is a background fetch, and the question is whether its
+    # presence depends on whether a body opened. It does not: a PGP message
+    # that opens is handed on as `MessageBody::Plain`, its words as text, by
+    # `the_body_to_show` in src/application/opening_pgp.rs, and text is
+    # escaped into the page and never parsed for a picture, so an opened
+    # message points at nothing a browser could fetch and a closed one is
+    # shown as its armour. The line this now also turns on: make an opened
+    # PGP body a `MessageBody::Html`, and the fetch of its pictures says
+    # "this decrypted" to whoever hosts them.
+    #
     # ## What to watch, and it is not the advisory
     #
     # RustCrypto/RSA PR 680. The advisory clears only when all four concerns are
