@@ -42,10 +42,11 @@
 //! **One function.** The budget is one `wxdragon::main` per process
 //! (`tests/theme_reach.rs` explains it, and this file spends its one), so
 //! every shape is a step inside one run, each asserted on its own, and the
-//! failures are gathered
-//! rather than stopping at the first so a red run says which steps were red.
-//! The first thing read is how many `input` events the page saw, so a run
-//! where no key arrived is told apart from a run where the rule refused.
+//! failures are gathered rather than stopping at the first, so a red run
+//! says which steps were red. The first thing read is how many `input`
+//! events the page saw, so a run where no key arrived is told apart from a
+//! run where the rule refused; and each character is waited for before the
+//! next goes, for the reason `wait_for_the_key` gives.
 //!
 //! Runs under `WIXEN_NO_AUDIO` as CI does, and on a temporary data
 //! directory in `WIXEN_MAIL_DATA`, never a person's profile.
@@ -492,6 +493,88 @@ fn the_steps() -> Vec<Act> {
             seen.refused(WhyAMarkerWasRefused::NotAtTheStartOfItsLine),
             seen,
             "a refused post saying the marker was not at the start of its line",
+        )
+    }));
+
+    // 8. Text after a closing inline delimiter is plain. The probe of
+    // 2026-09-18 found the caret continuing the <strong> the applier had
+    // made, so the space and every line after it stayed bold; the applier
+    // has to release the style as well as move the caret, and a code span
+    // has no command to release it with, so it is read as well.
+    acts.push(Act::Step("8a: the word after **bold** is not bold"));
+    acts.push(Act::Open(MessageBody::Plain(String::new())));
+    acts.extend(typed("**bold** next"));
+    acts.extend(checked(|seen| {
+        expect(
+            seen.inside("strong") == Some("bold"),
+            seen,
+            "a <strong> holding bold alone",
+        )?;
+        expect(
+            seen.html.contains("</strong>") && seen.html.ends_with("next"),
+            seen,
+            "next outside the <strong>, at the end",
+        )?;
+        expect(seen.styled_with("**"), seen, "a style post for Bold")
+    }));
+    acts.push(Act::Step("8b: the word after `code` is not code"));
+    acts.push(Act::Open(MessageBody::Plain(String::new())));
+    acts.extend(typed("`code` after"));
+    acts.extend(checked(|seen| {
+        expect(
+            seen.inside("code") == Some("code"),
+            seen,
+            "a <code> holding code alone",
+        )?;
+        expect(
+            seen.html.contains("</code>") && seen.html.ends_with("after"),
+            seen,
+            "after outside the <code>, at the end",
+        )?;
+        expect(seen.styled_with("`"), seen, "a style post for Code")
+    }));
+
+    // 9. A list marker as the first thing in an empty message. July's note
+    // on `block()` says `insertUnorderedList` did nothing on an empty root
+    // from the menu; the typed rule is measured here.
+    acts.push(Act::Step(
+        "9: - item as the first thing in an empty message",
+    ));
+    acts.push(Act::Open(MessageBody::Plain(String::new())));
+    acts.extend(typed("- item"));
+    acts.extend(checked(|seen| {
+        expect(
+            seen.inside("li") == Some("item"),
+            seen,
+            "a list item holding item",
+        )?;
+        expect(
+            seen.formatted(Format::BulletList),
+            seen,
+            "a format post for Bulleted list",
+        )
+    }));
+
+    // 8c. Enter right after the closing delimiter: the engine carries the
+    // style onto the new line, which is the "every line after it" half of
+    // the side finding, so the first thing typed there has to be plain too.
+    acts.push(Act::Step(
+        "8c: the line after **bold** and Enter is not bold",
+    ));
+    acts.push(Act::Open(MessageBody::Plain(String::new())));
+    acts.extend(typed("**bold**"));
+    acts.push(Act::Key(VK_RETURN));
+    acts.extend(typed("- item"));
+    acts.extend(checked(|seen| {
+        expect(
+            seen.inside("strong") == Some("bold"),
+            seen,
+            "a <strong> holding bold alone",
+        )?;
+        expect(
+            seen.inside("li") == Some("item"),
+            seen,
+            "a list item holding item with no style round it",
         )
     }));
 
