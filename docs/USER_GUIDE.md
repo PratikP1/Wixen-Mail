@@ -725,6 +725,23 @@ set to one row per message. A folder never set was flat until 2026-09-20; on a
 profile from before that day, every folder you never set changes to
 conversations on the next build, and turning Show conversations by default off
 has them flat again.
+
+**All Inboxes keeps a view of its own.** It follows Show conversations by
+default until you press `Ctrl+T` there, and then it keeps your choice the way a
+folder does, whatever the folder you came from was showing. Showing
+conversations, it lists every account's inbox as conversations. A conversation
+belongs to an account, so a conversation whose messages are in two of your
+accounts is two rows there, one per account, each counting only that account's
+messages; whatever you do to a row, reply, file, delete, mark as read, reaches
+that row's own account. Until 2026-09-20 All Inboxes showed whatever the folder
+before it had left, so a folder in Thread View put its own conversation rows
+under the All Inboxes title, and mail arriving while All Inboxes is open still
+does not refresh the list, in either view.
+
+A label and a saved search show one row per message. Pressing `Ctrl+T` there
+says so and names the places conversations can be shown: a folder, or All
+Inboxes.
+
 **Apply View To Other Folders**, on the same menu, gives your choice to the
 folders under this one, to every folder in this account, or to every folder in
 every account. It tells you which folders it will change and how many that is,
