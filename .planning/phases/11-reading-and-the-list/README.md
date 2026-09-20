@@ -1,6 +1,6 @@
 # Phase 11: Reading, and the list
 
-Twenty-eight plans, one per wave: twelve written 2026-09-18 against `main` at
+Thirty-one plans, one per wave: twelve written 2026-09-18 against `main` at
 `744d05ef`, version `1.0.0-alpha.1`, `guards/guards.toml` holding 912
 records by the TOML reader (census 802 + 110 at `guards.toml:84`),
 `.planning/WINDOWS.md` at entry 529 with 499 open, 8,032 tests on the last
@@ -17,8 +17,10 @@ night against `4d9f14bf`, with 11-05.1 merged and the tree free, for #87,
 11-07 executed, for #86's second half after Pratik overruled decision
 29; and two written later that day against `1962e341`, while 11-07.2
 executed, for #88 and #89; and one written that afternoon against
-`ced898eb`, while 11-10 executed, for #90. Phase 10 closed on 2026-09-18
-with all ten plans merged. This is the fourth of the seven
+`ced898eb`, while 11-10 executed, for #90; and three written on 2026-09-20
+against `4a09bfc2`, while 11-11.1 executed, and re-read against
+`390a580c` with it merged, for #91 and, in two plans, #92. Phase 10
+closed on 2026-09-18 with all ten plans merged. This is the fourth of the seven
 groups Pratik agreed on 2026-09-16, with two plans in front of it from what
 the morning's push showed.
 
@@ -139,6 +141,71 @@ requirement is `LIST-25`, its criterion 29; the waves from 11-11.1 on
 moved one. Its plan number is written as the string `"11.0"` in the
 frontmatter because the bare number would parse as 11, which is 11-11's.
 
+**One more was written on 2026-09-20 against `4a09bfc2`, while 11-11.1
+executed on its branch, and committed after its merge with its lines
+re-read at `390a580c`.** #91 (Mark as read after has no effect however it
+is set) is 11-11.1.1, after 11-11.1 and before 11-11.2. The tester
+confirmed it after a restart, and the tree agrees: the main timer asks
+the rule with a value read once at startup (`wx_app.rs:1294`, `let
+marks_read`, captured by the timer's closure), and saving Settings
+writes the file and nothing the timer holds. The plan puts the setting
+in the window's state, written at startup and by the Settings-saved arm
+through a new update, the way the working day already travels, and the
+timer reads the state. It then audits every setting the startup block
+captures once, from the block itself: the four date settings have the
+same fault, captured at `:1260` into the row, cell and read-aloud
+closures while four other sites read them on use, and they follow a save
+the same way; the default sort order applies by design only where no
+layout was saved and then at the next start, and the log level is
+initialised once with no reload, so both controls gain the sentence
+"Takes effect the next time Wixen Mail starts"; everything else either
+follows a save already (the working day, the alert lead, the calendar
+view, the feedback settings, the theme, the font, the tray) or is read
+where it acts, 11-11.1's `open_links_in` among the latter. A reading in
+`tests/` holds that list to the tree so a new capture with no
+disposition fails, and another holds that a save changes what the next
+tick does without a restart. The changelog names the build and the
+regression's shape; no version moves. Its requirement is `LIST-26`, its
+criterion 30. Its plan number is the string `"11.1.1"`, so the file sorts
+between 11-11.1 and 11-11.2.
+
+**Two more were written the same day against the same commit, for #92,
+Pratik's decisions of 2026-09-20 with his amendment.** Thread View is on
+by default, and All Inboxes has a view of its own. The amendment made
+the default a setting, "Show conversations by default" on the Reading
+tab beside Default sort order, on unless turned off, with a folder's own
+choice through View, Thread View still winning and a stored nought still
+flat; and that half is a screen control, two settings guards red on
+arrival and the older-file test, while the other half is a cache query
+and a field on the conversation row, so they are 11-11.1.2 and 11-11.1.3
+after 11-11.1.1 and before 11-11.2, two plans for one requirement the way
+#80's are. 11-11.1.2: `Showing::from_stored` takes the answer for a
+folder never set from the setting, read at the landing and never captured
+at startup, which 11-11.1.1's audit reading now holds; the field, its
+first reader and the check box are one green, because the two settings
+guards leave no green commit between them (what 11-11.1's summary found
+for its handlers); the D-09 sentences in the code, the guide, the
+shortcuts page, the first-run screen and the alpha page corrected by
+dating. 11-11.1.3: what the tester saw is worse than the issue says,
+since landing on All Inboxes leaves the view and the conversation rows
+as the last folder left them and `load_every_inbox` reads messages only,
+so a threaded folder open before puts that folder's conversation rows
+under All Inboxes' title with the check mark saying whichever; the view
+goes under All Inboxes' own row identity in `tree_state`, the key the
+collapsed state and the landing already use (the sort has no per-row
+key, which corrects the issue's words), switched with Ctrl+T, answering
+the setting when nothing was stored; the check mark synced at every
+landing and at the saved search's arrival; showing conversations there
+lists every inbox's through a query grouped by account and thread id,
+each row carrying where it was read, so a conversation in two accounts
+is two rows and every act on a row reaches its own account (T-01-47's
+shape, one list wider); a label and a saved search stay one row per
+message with the refusal sentence naming All Inboxes. Mail arriving
+while All Inboxes is open refreshes nothing today in either view, older
+than #92 and ledgered. Requirement `LIST-27`, criterion 31; the waves
+from 11-11.2 on moved three in all. Plan numbers the strings `"11.1.2"`
+and `"11.1.3"`.
+
 **Three plans were inserted later on 2026-09-18, after the plan check
 (two blockers and ten warnings, applied at the same commit).** 11-06.1 is
 #76: deleting a message puts the cursor at the top, because the rule that
@@ -155,7 +222,7 @@ so it reads every sentence this phase adds, and before the closing read,
 which then reads the bar's words as that pass left them. Their requirements
 are `LIST-11` to `LIST-13`; the plans after each insert moved up a wave.
 
-**Planned from twenty-five issues and three runs.** The issues: #70 (the folder
+**Planned from twenty-seven issues and three runs.** The issues: #70 (the folder
 chooser, filed on the second day of testing), #71 (the log level's default,
 Pratik's decision of 2026-09-17), and the eight of group 4 from the first
 day: #25 (read state on traversal), #26 (column headers on every row), #27
@@ -172,7 +239,10 @@ cross-account half; Enter in the Move dialog) and #87 (Tab
 into the list lands on a row); and the two of the morning of 2026-09-19,
 #88 (threads split on Gmail) and #89 (an address written out is not a
 link); and #90 of that afternoon (the formatted view repeating what the
-sender hid). Pratik's decisions are in the bodies and comments and are
+sender hid); and the two of 2026-09-20, #91 (a setting saved in Settings
+not applied until the next start) and #92 (Thread View on by default, as
+a setting; All Inboxes with a view of its own). Pratik's decisions are in
+the bodies and comments and are
 settled; each plan quotes his words. The runs: CI 35336142985 (red on one test), NVDA 35336142908
 (green over a failed job) and Accessibility 35336142914 (the five editors
 walked), all on `744d05ef`, read with `gh run view` and quoted in 11-01 and
@@ -192,7 +262,7 @@ hears; the log's default follows the build; and the privacy page lists
 every way a reader of mail can be tracked. Behind it, CI is green and the
 NVDA workflow's verdict is the run's.
 
-**Requirements:** `LIST-01` to `LIST-25`, one per issue and one for #86's
+**Requirements:** `LIST-01` to `LIST-27`, one per issue and one for #86's
 second half, in
 `.planning/REQUIREMENTS.md` under "Reading, and the list"; `FOUND-17` and
 `FOUND-18` for the two plans in front, under phase 9's section beside
@@ -200,7 +270,7 @@ FOUND-13 to FOUND-16, on the same reasoning: a regression of 09-02's fix
 found by CI, and the workflow 09-06's case runs in; `FOUND-19` beside
 them for 11-06.3, a defect in what the hook and CI run.
 
-**Roadmap success criteria this phase owns:** all twenty-nine.
+**Roadmap success criteria this phase owns:** all thirty-one.
 
 ## Pratik's order, and which part of it this is
 
@@ -258,10 +328,13 @@ phase's by insertion, above, and belong to no group either.
 | 11-11 | 22 | 9, 10 | #28, #29 | closes both | pictures shown by default except pixels and decorative ones; the link's words as a description; an undescribed picture by rule with its setting; the privacy page's tracking section |
 | 11-11.0 | 23 | 29 | #90 | closes | written 2026-09-19: `application::hidden_text` with a rule per way a sender hides (`display:none`, `visibility:hidden`, `font-size:0`, `max-height:0` with `overflow:hidden`, `mso-hide:all`, `aria-hidden`) and the filler characters, the drop before the sanitiser on the reading path with a count said once only for words that were not a preheader; `role="presentation"` kept on tables; `aria-label` kept only as a link's or a data table's name; the page's own heading unnumbered for one message; the reader's cell walk separating blocks and a presentational table read as blocks (ledger 555); the Substack fixture under `tests/fixtures/` with its addresses replaced |
 | 11-11.1 | 24 | 22 (first half) | #80 | advances | inserted 2026-09-18 (evening): a `page` scan target and an NVDA case as the probe; Open links on the Reading tab; the route as one pure function; the page script catching the anchor's activation; the three menu items; the message view route with its title and its way back; the privacy paragraph |
-| 11-11.2 | 25 | 22 (second half) | #80 | closes | inserted 2026-09-18 (evening): the separate window as a process of its own started with `--show-page`, answered before the claim and the handover, its WebView2 profile of its own by the app name set before the WebView, the route reaching it, the erase reaching the profile |
-| 11-11.3 | 26 | 21 | #79 | closes | inserted 2026-09-18 (evening): a marker counts at the start of any line, a refusal that met a marker is logged, the inline style ends at its delimiter, `- ` on the empty first line measured, a reading types into the real page, the pages say the space in words |
-| 11-13 | 27 | 14 | #75 | closes | inserted 2026-09-18: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after every plan that adds a sentence and before the closing read |
-| 11-12 | 28 | 13 | all twenty-five and #25's correction | closes the phase | the pages, the listening lines, the closing read |
+| 11-11.1.1 | 25 | 30 | #91 | closes | written 2026-09-20: the Mark as read after setting in the window's state, written at startup and by the Settings-saved arm, the timer reading the state; the date settings the same way, the row, cell and read-aloud closures reading state; the audit of every startup capture as a reading held to the tree, each following a save or saying on its control that it takes effect at the next start (the log level, the default sort order); the changelog naming the build and the shape |
+| 11-11.1.2 | 26 | 31 (first half) | #92 | advances | written 2026-09-20: `Show conversations by default` on the Reading tab beside Default sort order, on by default, in the older-file test with the two settings guards green; `Showing::from_stored` answering a folder never set from the setting, a stored nought still flat, an unrecognised number answering the setting; the folder landing reading the setting on use; the field, its first reader and the check box one green; the D-09 sentences dated in the code and on the pages; the first-run and alpha pages saying what a new profile shows |
+| 11-11.1.3 | 27 | 31 (second half) | #92 | closes | written 2026-09-20: `conversations_in_every_inbox` grouped by account and thread id with `read_in` on every row; one function answering the identity whose view is kept, All Inboxes included; the view stored under `all-inboxes`, switched with Ctrl+T, read at the landing through the setting; the check mark synced at every landing and the saved search's arrival; `conversation_nodes` and the acts on a row reading the row's own account; the label and saved-search sentence; the arrival gap ledgered |
+| 11-11.2 | 28 | 22 (second half) | #80 | closes | inserted 2026-09-18 (evening): the separate window as a process of its own started with `--show-page`, answered before the claim and the handover, its WebView2 profile of its own by the app name set before the WebView, the route reaching it, the erase reaching the profile |
+| 11-11.3 | 29 | 21 | #79 | closes | inserted 2026-09-18 (evening): a marker counts at the start of any line, a refusal that met a marker is logged, the inline style ends at its delimiter, `- ` on the empty first line measured, a reading types into the real page, the pages say the space in words |
+| 11-13 | 30 | 14 | #75 | closes | inserted 2026-09-18: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after every plan that adds a sentence and before the closing read |
+| 11-12 | 31 | 13 | all twenty-seven and #25's correction | closes the phase | the pages, the listening lines, the closing read |
 
 Requirement coverage: FOUND-17 by 11-01; FOUND-18 by 11-02, which also
 ticks FOUND-08 and FOUND-09; LIST-01 by 11-03; LIST-02 by 11-04; LIST-03 by
@@ -271,14 +344,15 @@ by 11-13; LIST-12 and LIST-14 by 11-06.1; LIST-13 and LIST-16 by 11-09.1;
 LIST-15 by 11-04.1; LIST-17 by 11-09.2; LIST-18 by 11-11.3; LIST-19 by
 11-11.1 and 11-11.2; LIST-20 by 11-06.2; LIST-21 by 11-07.1; LIST-22 by
 11-07.2; LIST-23 by 11-08.1; LIST-24 by 11-10.1; LIST-25 by 11-11.0;
-FOUND-19 by 11-06.3; 11-12 reads all twenty-five.
+LIST-26 by 11-11.1.1; LIST-27 by 11-11.1.2 and 11-11.1.3;
+FOUND-19 by 11-06.3; 11-12 reads all twenty-seven.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
 publish and the executor may do it; filing or editing other issues is not
 theirs. 11-02 closes nothing: #33 is closed already.
 
-## Why twenty-eight plans, and why this order
+## Why thirty-one plans, and why this order
 
 Twelve at first because two things the morning's push showed go before the
 issues, and the ten issues fall into ten pieces that share files only
@@ -295,10 +369,15 @@ overruled the decision that had kept it server-first; two more that
 morning for #88 and #89, the first after the plan that chooses a
 conversation's row and the second before the plan that routes a link;
 one more that afternoon for #90, between the plan that changes the
-renderer for pictures and the plan that routes a link. One per wave
+renderer for pictures and the plan that routes a link; three more the
+next day, after the plan that routes a link and before the one that
+opens the separate window: one for #91, a setting that did not follow
+its save, and two for #92, the default as a setting and All Inboxes'
+own view, because the screen half and the cache half share no file but
+the window. One per wave
 because every plan writes `docs/changelog.md`, all but the closing read
-and the gate's own plan write `guards/guards.toml`, twenty of the
-twenty-eight write
+and the gate's own plan write `guards/guards.toml`, twenty-three of the
+thirty-one write
 `src/presentation/wx_app.rs`, and a wave is a set of plans sharing no
 file. The order:
 
@@ -354,6 +433,12 @@ file. The order:
 - **#80 in two plans after it** (11-11.1, 11-11.2), because both write
   beside the privacy section 11-11 rewrites, and the separate window is a
   process of its own.
+- **#91 and #92 between them** (11-11.1.1, 11-11.1.2, 11-11.1.3), a
+  setting saved and not applied, then the default as a setting and All
+  Inboxes' own view, after 11-11.1 because it was executing and before
+  11-11.2 because 11-11.1.1's audit reads what 11-11.1's summary says
+  about `open_links_in` and 11-11.1.2 reads the setting the way that
+  audit allows.
 - **#79 after them** (11-11.3), the composer, which shares no file with the
   list plans but the pages and the records.
 - **#75 after every plan that adds a sentence** (11-13), so the pass reads
@@ -541,6 +626,66 @@ file. The order:
     number parses as 11 and collides with 11-11; the file name orders it
     between 11-11 and 11-11.1, which is where it runs.
 
+42. **A setting the window needs travels as an update, never as a capture**
+    (11-11.1.1). The working day already goes this way: a `WxUIState`
+    field, an `UIUpdate` sent by the Settings-saved arm, the readers
+    reading state. Mark as read after and the four date settings join it.
+    The other way, `load_stored` at the point of use, is kept where it is
+    (twenty-odd settings read where they act) and is not extended to the
+    paint path, whose own comment says why: the callback runs per visible
+    cell and must not touch configuration.
+
+43. **A setting that cannot follow a save says so on its control**
+    (11-11.1.1). The log level is initialised once with no reload handle,
+    and the default sort order applies only in folders whose columns were
+    never arranged, so both get "Takes effect the next time Wixen Mail
+    starts" under the control, on both channels. A reading holds every
+    capture in the startup block to a list with a disposition each, so a
+    third setting cannot be captured quietly.
+
+44. **11-11.1.1, 11-11.1.2 and 11-11.1.3 are numbered as strings**
+    (`plan: "11.1.1"` and so on), like 11-11.0, because the files have to
+    sort between `11-11.1-PLAN.md` and `11-11.2-PLAN.md` and the numbers
+    are not ones YAML would read.
+
+45. **What a folder never set shows is a setting, read where the folder
+    opens** (11-11.1.2, Pratik's amendment of 2026-09-20). `Show
+    conversations by default`, on by default, answers
+    `Showing::from_stored` for `None`; a stored nought still means flat,
+    so a person who chose flat keeps it; a number this version does not
+    recognise answers the setting too, the old rule's "flat rather than a
+    guess" with the guess replaced by the person's own default. Read
+    once per landing through `load_stored`, as the sort is per load, and
+    never in the startup block, which decision 42's reading forbids. The
+    field, its first reader (the landing) and the check box are one green
+    commit, because the read-by-something guard skips the settings screen
+    and the offered-by-a-screen guard needs it, so no green commit can
+    hold fewer than the three.
+
+46. **All Inboxes' view is kept under its own row identity** (11-11.1.3).
+    `WhichRow::AllInboxes.stored()` is the identity `tree_state` already
+    keys the collapsed state by and the landing lands by, so the view
+    and the Thread column's hand choice go under it with no schema
+    change; the sort has no per-row key and the issue's "the key the sort
+    uses" meant this one. It answers the setting when nothing is stored,
+    like a folder.
+
+47. **A conversation is an account's, so All Inboxes shows one row per
+    account and conversation** (11-11.1.3). A thread id from two
+    accounts is two rows, each counting its own account's messages, each
+    carrying where it was read, and every act on a row reads that rather
+    than the active account: T-01-47's rule, one list wider. A label and
+    a saved search keep one row per message, the search by its own
+    comment and the label because it groups messages of many folders in
+    one account; Ctrl+T there says so and names All Inboxes.
+
+48. **#92 is two plans** (11-11.1.2, 11-11.1.3). The setting's half
+    writes `config.rs`, `view_state.rs`, `wx_settings.rs` and the pages;
+    the list's half writes the cache, the conversation row at
+    twenty-nine literal sites and the window. They share no file but
+    `wx_app.rs` and the changelog, and one plan of both would be the
+    phase's largest by some way.
+
 ## What the tree contradicted in the issues and the brief
 
 Every file and line the ten issues cite was re-checked on 2026-09-18 at
@@ -584,6 +729,11 @@ filed; the shapes held. These moved in kind:
 | #90 | forty-nine tables carry `role="presentation"` | forty-eight of forty-nine; the fixture's case asserts 48 | the same |
 | #90 | the padding is zero-width spaces | U+034F (the combining grapheme joiner) two hundred times, with no-break spaces, figure spaces and soft hyphens between; no U+200B in the file; the filler rule names the joiner, the zero-width set, U+2060, U+FEFF and the soft hyphen | the same |
 | #90 | the drop can be done in the sanitiser's filter | ammonia's filter sees attributes, not elements; the drop is a pass over a `scraper` parse before the clean, which the reader already does for its own structure | `git show main:src/application/long_text.rs \| sed -n 560,566p` |
+| #91 | `wx_app.rs:1291-1296`, `:6098`, `:10894-10904` | those were the 11-11.1 branch's lines at `5b99cd7c`; at `main` before the merge the binding was `:1289`, the timer's call `:6065` and the function `:10853-10870`, and at `390a580c` after it they are `:1294`, `:6034` and `:10822-10839`; the shapes are the same bytes, and the issue's account holds: `SettingsResult::Updated` (`:18269-18335`) sends the working day, the alert lead and the calendar view and nothing for this | `grep -n marks_read src/presentation/wx_app.rs`, 2026-09-20 |
+| #91 | `announce_while_fetching`, `message_text_kept`, `read_messages_as` and the column settings are the ones to check | the first follows the Settings-saved arm already, the next two are read on use, the columns are the saved layout's by design; the date settings, which the issue did not name, share the fault: captured at `:1260` into the row, cell and read-aloud closures while `date_settings_from_stored_config()` is read on use at four sites; the audit found no third | `sed -n 1255,1380p src/presentation/wx_app.rs`, the same day |
+| #92 | All Inboxes shows conversations when the account's inbox is in Thread View | it shows the previous folder's conversation rows under its own title: the landing leaves `s.showing` and `s.conversations` as the last folder left them and `load_every_inbox` reads messages only, so the control is told the previous folder's conversation count and paints its rows | `sed -n 2947,2951p;7565,7589p;21744,21751p src/presentation/wx_app.rs`, 2026-09-20 at `390a580c` |
+| #92 | the `WhichRow::AllInboxes.stored()` identity the sort already uses | the sort (`the_sort_as`, `:15073`) reads one `message_columns` layout keyed by nothing; `all-inboxes` is the row identity `tree_state` keys the collapsed state by and the landing (`:4774`, `:17970`) lands by, and the view goes under it in the same table with no schema change | `sed -n 334,355p src/data/message_cache/folders.rs`; `sed -n 142,144p src/presentation/folder_tree.rs` |
+| #92 | one setting's default | Pratik's amendment: a setting on the Reading tab, on by default, read on use; the plan is written that way and the issue's first point is its first half | the issue's comment of 2026-09-20 |
 
 ## Costs every plan is written around
 
@@ -775,24 +925,25 @@ on this project, so the factor is taken by hand from the files and said here.
 
 1. **The roadmap's phase 11 entry and progress row.** Done by the planner in
    the commit that lands these plans and the ones that land the inserts:
-   the goal, the twenty-eight requirements, twenty-nine criteria, the plan
+   the goal, the thirty requirements, thirty-one criteria, the plan
    list, the row at `0/15`, then `3/20` after the evening's inserts, then
    `8/24` after the night's, then `12/25` after 11-07.2, then `14/27` after
-   11-08.1 and 11-10.1, then `20/28` after 11-11.0, and the milestone
-   paragraph kept true.
+   11-08.1 and 11-10.1, then `20/28` after 11-11.0, then `24/31` after
+   the three of 2026-09-20, and the milestone paragraph kept true.
    `test_the_roadmap_counts_the_files_that_are_on_disk` holds the row to
    the files.
 2. **`.planning/REQUIREMENTS.md`.** Done by the planner: the `LIST` section,
-   FOUND-17, FOUND-18 and FOUND-19 beside FOUND-16, the twenty-eight
+   FOUND-17, FOUND-18 and FOUND-19 beside FOUND-16, the thirty
    traceability rows, the coverage count re-taken at 80, then 86, then 89,
-   then 90, then 92, then 93,
+   then 90, then 92, then 93, then 95,
    the provenance notes.
 3. **`.planning/STATE.md`.** Done by the planner in the same commit, by hand:
    phase 11 current, plan 1 of 15, then `Total Plans in Phase: 20` with
    the current plan left where 11-03's summary put it, then 21 with it
    where 11-05's put it, then 24 with it where 11-05.1's put it, then 25
    with it where 11-07's put it, then 27 with it where 11-07.2's put it,
-   then 28 with it where 11-10's put it,
+   then 28 with it where 11-10's put it, then 31 with it where 11-11.1's
+   put it,
    `progress.total_plans` counted from the disk.
 4. **`docs/changelog.md`.** Every plan but 11-12 writes its entries under
    `[Unreleased]`; 11-12 reads them as one.

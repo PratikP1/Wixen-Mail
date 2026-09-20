@@ -4594,6 +4594,128 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     `html_renderer.rs` or `long_text.rs`.
   - [S] That the newsletter now reads once, with no table and no grouping announced, is his
     ear's.
+- [ ] **LIST-26**: A setting saved in Settings applies without a restart. Mark as read after
+  governs the next tick the moment it is saved, because the setting lives in the window's
+  state, written at startup and by the Settings-saved arm through an update, and the timer
+  reads the state; the date settings follow a save the same way; every setting the startup
+  block captures once either follows a save or says on its control that it takes effect the
+  next time the program starts, and a reading holds that list to the tree.
+  - Evidence: at `390a580c` (2026-09-20, re-taken after 11-11.1's merge; first read at
+    `4a09bfc2` with the same shapes), `wx_app.rs:1294-1299` binds `let marks_read =
+    stored_config.as_ref().map(|cfg| MarkRead::from_setting(&cfg.mark_read_after))`, the
+    timer's closure captures it and hands it to `mark_what_was_read(app, marks_read)` at
+    `:6034`, and `:10822-10839` passes it to `whether_to_mark_read`; `grep -n marks_read`
+    finds those three sites and no other. `SettingsResult::Updated` (`:18269-18335`) writes
+    the file and sends `UIUpdate::WorkingDayChanged`, `DefaultEventAlertLeadChanged` and
+    `CalendarViewChanged`, which the arms at `:19484` and beside it write into `WxUIState`;
+    it sends nothing for this setting and nothing for the date settings, which `:1260` binds
+    once into the row callback (`:1419`), the PIM cells (`:1723-1736`) and the read-aloud
+    closures (`:1811-1887`), while `date_settings_from_stored_config()` (`:11991`) is read
+    on use at `:2133`, `:17000`, `:17182` and `:19519`. The startup block (`:1255-1380`)
+    reads `stored_config` once, "rather than per row: the paint callback runs for every
+    visible cell and must not touch configuration", so the fix is the working day's shape
+    and not a `load_stored` on the paint path. Of the fifty-seven `AppConfig` fields (11-11.1
+    added `open_links_in`, read at the route through `where_links_open()`, `:12777`), nine
+    are bound in that block; the rest are read where they act or, for `log_level`
+    (`logging.rs:119`, once, no reload), `start_in_all_inboxes` and
+    `check_default_programs_at_startup`, are startup by nature. The settings screen says
+    nothing under the log level or the default sort order about when they apply
+    (`wx_settings.rs:1557`, `:1480`). The issue's line numbers (`:1291`, `:6098`,
+    `:10894-10904`) were the 11-11.1 branch's at `5b99cd7c`; the shapes are the same bytes.
+  - [S] #91, the tester on 2026-09-20, on `1.0.0-alpha.1` at `4a09bfc2` or the build
+    before: "Mark as read after" is not applied, not after Enter opens a message, not after
+    Space reads the whole message, not after Shift+Space, and he changed the setting to each
+    of its values to be certain; and his comment the same day, after restarting: with the
+    setting at 10 seconds from startup, Enter, Space and Shift+Space mark the message, so
+    there is one fault and no second, and the probe for a second is not owed.
+  - [D] `WxUIState::marks_read` and `WxUIState::dates`, written at startup where the
+    bindings were and by the arms for `UIUpdate::MarkReadAfterChanged(MarkRead)` and
+    `UIUpdate::DateSettingsChanged(DateSettings)`, both sent by the Settings-saved arm
+    after the file is written; `mark_what_was_read(app)` reading the state and taking no
+    setting; the row callback, the PIM cells and the read-aloud closures reading the state
+    under the lock they already take, with the six lists refreshed once when the dates
+    change; `reading_habits::TAKES_EFFECT_AT_THE_NEXT_START` under the log level's control
+    and, with "and only in folders whose columns you have not arranged", under the default
+    sort order's, named on both channels; `tests/a_setting_saved_applies_without_a_restart.rs`
+    reading `what_ships` for the field, the update, the arm, the absence of both captures,
+    and the audit that every `stored_config` binding in the startup block is in an allowlist
+    with a disposition; the two sentences read back from the built page; four guard records;
+    the guide and the changelog naming the build and the regression's shape; no version
+    move (11-11.1.1).
+  - [S] The delay changed in Settings and a message marked after the new wait, without a
+    restart, is his ear's.
+- [ ] **LIST-27**: Thread View is on by default, as a setting, and All Inboxes has a view of
+  its own. A folder nobody has set shows one row per conversation because Show conversations
+  by default, on the Reading tab and on unless turned off, answers a folder never set, read
+  where the folder opens; a folder's own choice still wins and a stored nought still means
+  flat. All Inboxes keeps its view under its own row identity, switched with Ctrl+T, answering
+  the setting when nothing was stored and read when it is landed on; the Thread View check
+  mark says the view of what is on screen; showing conversations there lists every inbox's,
+  one row per account and conversation, each row acting on its own account; a label view and
+  a saved search keep one row per message and say so.
+  - Evidence: at `390a580c` (2026-09-20), `view_state.rs:37-46` answers `Messages` for
+    `None` by D-09 with the tests at `:605-630`; the folder landing (`wx_app.rs:3084-3095`)
+    reads `cache.folder_view(&folder)` per landing and `Messages` for a row that opens no
+    folder. `switch_the_view` (`:15144-15162`) refuses without a folder, and
+    `the_folder_being_looked_at` (`:15519`) answers `None` for All Inboxes by its own doc;
+    landing on All Inboxes (`:2947-2951`) sets the title and `load_every_inbox` and leaves
+    `s.showing` and `s.conversations` as the last folder left them, and `load_every_inbox`
+    (`:7565-7589`) reads messages only, so with a threaded folder open before,
+    `tell_the_list_how_many` (`:21744`) is told the previous folder's conversation count and
+    the paint callback (`:1402-1421`) draws the previous folder's conversation rows under All
+    Inboxes' title, with the check mark saying whichever that was. The view store is
+    `tree_state(identity, thread_view)` (`folders.rs:334-355`), keyed by the row identity,
+    and `WhichRow::AllInboxes.stored()` is `"all-inboxes"` (`folder_tree.rs:142-144`), the
+    identity the collapsed state and the landing (`wx_app.rs:4774`, `:17970`) use; the sort
+    (`the_sort_as`, `:15073`) is one layout keyed by nothing, so the issue's "the key the sort
+    uses" is the row identity and no schema change is needed. `conversations_in`
+    (`messages.rs:2362`) is per account and folder through `conversation_scope`
+    (`:188-222`); `unified_inbox_query` (`:467-483`) is every `folder_type = 'Inbox'`;
+    `ConversationItem` (`conversations.rs:200`) carries no account, `conversation_nodes`
+    (`wx_app.rs:13860-13868`) filters by thread id alone, and `the_open_folder_and_its_account`
+    (`:10526`) is read at `:10580` and `:24165`; `test_two_accounts_do_not_share_a_conversation`
+    (`messages.rs:6866-6898`, T-01-47) is the fixture with one thread id in two accounts. A
+    label (`:2953-2968`) leaves `s.showing` as All Inboxes does; a saved search's arm
+    (`:18778-18792`) sets `Messages` by its own comment and syncs no check mark.
+    `reread_folder_if_open` (`:18574`) re-reads a folder only, so mail arriving while All
+    Inboxes is open refreshes nothing in either view, older than #92. Settings: the
+    `default_true` shape at `config.rs:427`, the two guards at `:2595` (which skips the
+    settings screen, so a field's first reader must act) and `:2972` red on a new field, the
+    older-file test at `:1728`; the Reading tab's Message List section at
+    `wx_settings.rs:1579-1624`. Pages: `USER_GUIDE.md:697` "a folder you have never set is
+    flat", `KEYBOARD_SHORTCUTS.md:706` "Kept per folder", `first_run.rs:130-144` and
+    `ALPHA_TESTING.md:9-10` say nothing of the view.
+  - [S] #92, Pratik on 2026-09-20 on `1.0.0-alpha.1+321.g4a09bfc2`: Thread View is on by
+    default; Thread View cannot be switched on while All Inboxes is open, yet All Inboxes
+    shows conversations when the account's inbox is in Thread View, which the tester saw;
+    and his amendment the same day: what a folder shows when nobody has set it is a setting
+    on the Reading tab, "Show conversations by default", on by default, beside Default sort
+    order; a folder's own choice still wins; All Inboxes takes the setting when its own key
+    holds nothing; read on use, never captured at startup.
+  - [D] `AppConfig::show_conversations_by_default` with serde default true, in the
+    older-file test, the two guards green; `Showing::when_nobody_set_one(bool)` and
+    `Showing::from_stored(Option<i64>, Showing)` with `Some(0)` flat whatever the setting
+    and an unrecognised number answering the setting, the D-09 tests moved; the folder
+    landing reading the setting on use, the field's first reader; the check box beside
+    Default sort order named on both channels and read back, with
+    `tests/the_settings_dialog_opens_in.rs` reading it back; the field, the landing and the
+    box one green commit because the two guards allow none between; the D-09 sentences in
+    `view_state.rs`, `folders.rs`, the guide, the shortcuts page, the first-run screen and
+    the alpha page dated; four guard records (11-11.1.2). `ConversationItem::read_in` with
+    the account and the folder, at every literal site; `MessageCache::conversations_in_every_inbox(reach, order)`
+    grouped by account and thread id, the two-rows test over T-01-47's fixture; one
+    function answering the identity whose view and Thread column are kept, All Inboxes
+    included; `switch_the_view` storing under it and loading every inbox's conversations
+    there; the All Inboxes landing reading the key through the setting, clearing the rows,
+    syncing the check mark; the Label landing and the `SavedSearchRan` arm syncing it; the
+    sentence "Open a folder or All Inboxes first. A label and a saved search show one row
+    per message."; `conversation_nodes` filtering by the row's account and `chosen_messages`
+    and `spawn_conversation_text_fetch` reading `read_in`;
+    `tests/all_inboxes_keeps_a_view_of_its_own.rs`; four guard records; the pages and the
+    changelog; no version move (11-11.1.3).
+  - [S] A folder never set heard as conversations on a fresh profile, All Inboxes threaded
+    and its view kept when he comes back to it, and a conversation in two of his accounts
+    heard as two rows, are his ear's.
 
 ## v2 Requirements
 
@@ -4717,12 +4839,19 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
 | LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
+| LIST-26 | Phase 11 | Pending, 11-11.1.1; the delay changed in Settings and a message marked after the new wait without a restart is his ear's |
+| LIST-27 | Phase 11 | Pending, 11-11.1.2 and 11-11.1.3; a folder never set heard as conversations, All Inboxes threaded and its view kept, a two-account conversation as two rows, are his ear's |
 
 **Coverage:**
 
-- v1 requirements: 93 total
-- Mapped to phases: 93
+- v1 requirements: 95 total
+- Mapped to phases: 95
 - Unmapped: 0
+
+**Re-taken 2026-09-20.** This block said 93 and 93 from the afternoon of 2026-09-19 until
+#91 and #92 were taken by the inserted 11-11.1.1, 11-11.1.2 and 11-11.1.3. Counted with the
+same command as below, which gives 95 at `390a580c` plus this edit with `LIST-26` and
+`LIST-27` in, and the traceability table above has 95 rows.
 
 **Re-taken 2026-09-19, in the afternoon.** This block said 92 and 92 from the morning until
 #90 was taken by the inserted 11-11.0. Counted with the same command as below, which gives
@@ -4851,6 +4980,12 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-20.** `LIST-26` traces to #91, filed that day and taken by the inserted
+11-11.1.1 between 11-11.1 and 11-11.2; `LIST-27` traces to #92, Pratik's decisions of that
+day with his amendment, taken by the inserted 11-11.1.2 and 11-11.1.3 after 11-11.1.1, two
+plans for one requirement the way #80's are, because the setting's screen half and the
+list's cache half share no file but the window. The total is 95.
 
 **Added 2026-09-19, in the afternoon.** `LIST-25` traces to #90, filed that afternoon and
 taken by the inserted 11-11.0 between 11-11 and 11-11.1. The total is 93.
