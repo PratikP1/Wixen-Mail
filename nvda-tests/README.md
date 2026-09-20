@@ -28,8 +28,8 @@ not close any other way:
    repeating event, focuses and ticks the same answer, so what NVDA announces on open names one
    answer as chosen rather than naming one and ticking another.
 
-Three cases have been added since, and the table below is the inventory: five files under
-`tests/`, four that run and one that is skipped. The skipped one is the second above, written
+Four cases have been added since, and the table below is the inventory: six files under
+`tests/`, five that run and one that is skipped. The skipped one is the second above, written
 and correct. Read `tests/which-days-focus-and-tick.test.js` for why: reaching that dialog from
 a clean, disposable profile needs a Rust change this package's own scope does not cover, and
 the file explains what that change is and why it is out of scope here rather than made silently.
@@ -55,7 +55,7 @@ Jest directly against these files, on a computer you or anyone else is using.
 |---|---|
 | `package.json` | Declares the two real dependencies: `@guidepup/guidepup` drives NVDA; `@guidepup/setup` downloads the disposable, portable copy of NVDA it drives. `jest` runs the tests. |
 | `jest.config.js` | Raises Jest's test timeout. Starting the application, starting NVDA, and waiting for a debounced announcement all take longer than Jest's five-second default expects. |
-| `helpers/launch-app.js` | Starts and stops the built `wixen-mail.exe`, and waits for its window the way `accessibility.yml` already does in PowerShell: poll for the main window rather than guess at a fixed delay, then settle briefly for a dialog opened on top of it. |
+| `helpers/launch-app.js` | Starts and stops the built `wixen-mail.exe`, and waits for its window the way `accessibility.yml` already does in PowerShell: poll for the main window rather than guess at a fixed delay, then settle briefly for a dialog opened on top of it. Since 2026-09-20 it also lists the titles of the windows the process owns, and of the ones it does not, and puts a window back in front by its title, for the case that watches a link leave. |
 | `helpers/nvda-navigation.js` | Finds a control by tabbing until NVDA says its name, the way a screen reader user finds it, rather than by counting how many Tab presses come first. Also polls the spoken-phrase log rather than reading it once immediately after an action, since an announcement takes a moment to arrive and Guidepup's own capture debounces it. |
 | `helpers/results.js` | Writes everything NVDA said during a test to `results/`, so the CI workflow can upload it as an artifact. |
 | `tests/account-manager-sign-in-failure.test.js` | The first case described above: tabs to Sign In Again on a synthesised account no provider recognises, presses it, and waits to hear "Signing in failed" with its reason. Runs. |
@@ -63,6 +63,7 @@ Jest directly against these files, on a computer you or anyone else is using.
 | `tests/calendar-immediate-actions.test.js` | Presses Edit Event, Delete Event and Sync on an empty calendar and waits to hear each button's own answer, because those three once ran their answer while the window was hidden and NVDA heard nothing. Runs. |
 | `tests/filter-manager-delete.test.js` | Presses Delete in the Filter Manager with nothing selected and waits to hear the same sentence Delete shows, the same class of bug as the calendar's. Runs. |
 | `tests/settings-tabs-read-once.test.js` | Opens Settings on a fresh profile and presses Right six times and Left once, holding the log to each reached tab heard once (#33). Counts from a mark taken after the dialog has settled, not from an opening announcement; see below. Runs. |
+| `tests/a-link-opens-where-the-setting-says.test.js` | Opens the formatted message window on the `page` scan target, moves to each of its two links with `K` and presses Enter on each, the way NVDA activates a link (#80). Holds the page window to still holding the message afterwards, by finding the second link where the message has it, and writes what NVDA said and which windows appeared beside the log. Added 2026-09-20. Runs. |
 
 ## Why only these two dependencies
 
@@ -91,7 +92,7 @@ The `NVDA` workflow:
 1. Builds the release binary (`cargo build --release`).
 2. Installs Node and this package's dependencies (`npm ci`).
 3. Downloads the disposable, portable copy of NVDA `@guidepup/guidepup` expects.
-4. Runs every case in `tests/` that is not skipped: four on 2026-09-18.
+4. Runs every case in `tests/` that is not skipped: five on 2026-09-20.
 5. Uploads whatever NVDA said, as a plain text artifact, whether the run passed or failed.
 
 Since 2026-09-18 a case that fails fails the run. Until then the job carried

@@ -51,16 +51,24 @@ impl Where {
     }
 
     /// Read a stored setting; anything unknown is the browser, the default.
-    pub fn from_stored(_stored: &str) -> Self {
-        Where::DefaultBrowser
+    ///
+    /// A settings file written by a later version, or edited by hand, should
+    /// not quietly open a stranger's page beside the sanitised mail.
+    pub fn from_stored(stored: &str) -> Self {
+        match stored.trim().to_ascii_lowercase().as_str() {
+            "message-view" => Where::MessageView,
+            "separate-window" => Where::SeparateWindow,
+            _ => Where::DefaultBrowser,
+        }
     }
 
-    /// The words the Reading tab shows for the choice.
+    /// The words the Reading tab shows for the choice: where, and nothing
+    /// about which is better, since the trade is real in both directions.
     pub const fn label(self) -> &'static str {
         match self {
-            Where::DefaultBrowser => "",
-            Where::MessageView => "",
-            Where::SeparateWindow => "",
+            Where::DefaultBrowser => "In the default browser",
+            Where::MessageView => "In the message view",
+            Where::SeparateWindow => "In a separate Wixen Mail window",
         }
     }
 }
@@ -123,16 +131,30 @@ impl From<Where> for Route {
 }
 
 /// Whether an address is a page a browser control can show.
-pub fn is_a_page(_address: &str) -> bool {
-    false
+///
+/// The two web schemes and nothing else: `mailto:` and `tel:`, which the
+/// sanitiser also allows, open whatever answers them and not a page.
+pub fn is_a_page(address: &str) -> bool {
+    let lower = address.trim().to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
 }
 
 /// The route for a link, from the setting and the way it was asked for.
 ///
 /// Total: every setting, every ask and every kind of address answers, and the
-/// table in the tests has a case for each cell.
-pub fn route(_setting: Where, _asked: Asked, _address: &str) -> Route {
-    Route::Browser
+/// table in the tests has a case for each cell. An activation follows the
+/// setting; a menu item, or the browser's own modifier, names its own place
+/// whatever the setting says; an address that is not a page is the system's.
+pub fn route(setting: Where, asked: Asked, address: &str) -> Route {
+    if !is_a_page(address) {
+        return Route::System;
+    }
+    match asked {
+        Asked::Activated => Route::from(setting),
+        Asked::InMessageView => Route::MessageView,
+        Asked::InBrowser => Route::Browser,
+        Asked::InSeparateWindow => Route::SeparateWindow,
+    }
 }
 
 /// The label beside the Reading tab's choice.
@@ -151,9 +173,20 @@ pub const WHAT_EACH_CHOICE_COSTS: &str = "In the default browser, a page shares 
 pub const SEPARATE_WINDOWS_ARRIVE_LATER: &str =
     "Separate windows arrive with the next build; opened in the browser";
 
-/// What is said when the message view starts loading a page.
-pub fn what_is_said_when_opening(_address: &str) -> String {
-    String::new()
+/// What is said when the message view starts loading a page: the host, not
+/// the whole address, which can be two hundred characters of token.
+pub fn what_is_said_when_opening(address: &str) -> String {
+    match host_of(address) {
+        Some(host) => format!("Opening {host}"),
+        None => "Opening the page".to_string(),
+    }
+}
+
+/// The host of a web address, for saying where a page comes from.
+fn host_of(address: &str) -> Option<&str> {
+    let rest = address.trim().split_once("://")?.1;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    (!host.is_empty()).then_some(host)
 }
 
 /// What is said when Backspace or Alt+Left brings the message back.
@@ -162,9 +195,21 @@ pub const BACK_TO_THE_MESSAGE: &str = "Back to the message";
 /// What is said when a page in the message view will not load.
 ///
 /// `kind` is the browser control's own code for what went wrong, as
-/// wxWidgets numbers `wxWebViewNavigationError`, read from the event's int.
-pub fn could_not_be_opened(_kind: Option<i32>) -> String {
-    String::new()
+/// wxWidgets numbers `wxWebViewNavigationError`, read from the event's int:
+/// a reason in words, never the number.
+pub fn could_not_be_opened(kind: Option<i32>) -> String {
+    let reason = match kind {
+        Some(0) => "the connection failed",
+        Some(1) => "the site's certificate was not trusted",
+        Some(2) => "the site asked for a sign-in",
+        Some(3) => "the browser refused it as unsafe",
+        Some(4) => "the page was not found",
+        Some(5) => "the request was refused",
+        Some(6) => "the load was cancelled",
+        Some(_) => "the browser could not say why",
+        None => "the browser gave no reason",
+    };
+    format!("The page could not be opened: {reason}")
 }
 
 #[cfg(test)]

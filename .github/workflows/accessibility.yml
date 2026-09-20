@@ -145,12 +145,18 @@ jobs:
         # that open only from inside a manager, behind Add or Edit, so the
         # manager targets never reached them and two testers met an unnamed
         # checkbox in two of them. Each opens directly on a fixture.
+        #
+        # 'page', added 2026-09-20 (#80), is the formatted message window,
+        # the default way a message opens; 'reader' opens the plain-text
+        # reader, so the default surface had never been scanned. The NVDA
+        # workflow's case for #80 launches the same target.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
           'which-days', 'send-later', 'add-address-book', 'about',
           'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
-          'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor'
+          'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
+          'page'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

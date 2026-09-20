@@ -11,6 +11,7 @@ use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun}
 // Named here rather than written out at each of its two uses, so the label and
 // the accessible name are visibly the same binding rather than two spellings a
 // reader has to compare character by character.
+use crate::application::opening_links;
 use crate::application::the_network_coming_and_going::WHAT_THE_OFFER_SAYS;
 use crate::application::what_is_said_while_fetching::Kind;
 use crate::common::Result;
@@ -27,6 +28,7 @@ use crate::presentation::landing_after_a_removal;
 use crate::presentation::mail_sort::sort_messages;
 use crate::presentation::one_question_at_a_time;
 use crate::presentation::page_jumps;
+use crate::presentation::page_links;
 use crate::presentation::sample_mailbox::{SAMPLE_MAILBOX_SIZE, sample_mailbox};
 use crate::presentation::ui_types::*;
 use crate::presentation::view_state;
@@ -51,7 +53,7 @@ use crate::presentation::reader_text;
 use crate::presentation::theme;
 use crate::presentation::wx_reader::{self, GoneBack};
 use async_channel::{Receiver, Sender};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -1456,6 +1458,28 @@ impl WxMailApp {
             preview.set_can_focus(false);
             tracing::info!("WebView widget created");
 
+            // Where focus goes back to after the preview loads; the load
+            // handler below reads it. Made before the preview's handlers,
+            // because a page somebody followed into the preview asks it to
+            // leave focus where it is (#80).
+            let focus_home_cell = Rc::new(std::cell::Cell::new(FocusHome::Elsewhere));
+            // The preview as the one thing both surfaces are: a message, and
+            // maybe a page in its place. A line for the person rides the
+            // status channel, which is spoken and shown.
+            let preview_host = PageHost::new(
+                preview,
+                "preview",
+                Rc::new({
+                    let ui_tx = ui_tx.clone();
+                    let runtime = runtime.clone();
+                    move |line: &str| send_status(&ui_tx, &runtime, line)
+                }),
+                Rc::new({
+                    let focus_home_cell = focus_home_cell.clone();
+                    move || focus_home_cell.set(FocusHome::Elsewhere)
+                }),
+            );
+
             // Only configure advanced WebView2 features when the backend is available
             if webview_available {
                 preview.enable_context_menu(false);
@@ -1533,10 +1557,18 @@ impl WxMailApp {
                 preview.on_script_message_received({
                     let state = state.clone();
                     let a11y = a11y.clone();
+                    let preview_host = preview_host.clone();
                     move |event: WebViewEventData| {
                         if let Some(json) = event.get_string() {
                             use crate::presentation::panes;
 
+                            // A link activated in the page, or the way back
+                            // from a page (#80), before anything that would
+                            // pop a menu for it.
+                            if let Some(posted) = page_links::what_the_page_posted(&json) {
+                                answer_what_the_page_posted(&preview_host, posted, &a11y);
+                                return;
+                            }
                             if let Some(going) = panes::leaving_which_way(&json) {
                                 use crate::presentation::panes::Pane;
 
@@ -1627,7 +1659,7 @@ impl WxMailApp {
                 let renderer = HtmlRenderer::new();
                 let blank = renderer
                     .wrap_body(&MessageBody::Plain("Select a message to view.".to_string()));
-                preview.set_page(&blank, "about:blank");
+                preview_host.show_the_message(&blank);
             }
 
             // Start with the preview hidden, matching the unchecked View menu
@@ -1961,8 +1993,9 @@ impl WxMailApp {
             // it anyway a moment later.
             //
             // Registered here rather than beside the preview because it needs
-            // the folder tree, which does not exist that early.
-            let focus_home_cell = Rc::new(std::cell::Cell::new(FocusHome::Elsewhere));
+            // the folder tree, which does not exist that early; the cell it
+            // reads is made beside the preview, since a page followed into
+            // the preview writes it (#80).
             preview.on_loaded({
                 let focus_home_cell = focus_home_cell.clone();
                 move |_| match focus_home_cell.get() {
@@ -6013,7 +6046,7 @@ impl WxMailApp {
                                 folder_tree: &folder_tree,
                                 msg_list: &msg_list,
                                 column_layout: &column_layout,
-                                preview: &preview,
+                                preview: &preview_host,
                                 frame: &frame,
                                 toolbar: toolbar_handle,
                                 a11y: &a11y,
@@ -12785,15 +12818,154 @@ fn wire_the_way_out(view: &WebView, surface: &str, keys: PageKeys) -> bool {
     if !channel {
         tracing::error!("{surface}: script channel refused, the Back button will do nothing");
     }
+    // Every page is given the link listener as well (#80): a link is caught
+    // in the page before the browser navigates, because the window cannot
+    // read where a navigation is going; `page_links` says why.
     let script = match keys {
-        PageKeys::TheWayOut => THE_WAY_OUT.to_string(),
-        PageKeys::TheWayOutAndTheJumps => format!("{THE_WAY_OUT}\n{}", page_jumps::SCRIPT),
+        PageKeys::TheWayOut => format!("{THE_WAY_OUT}\n{}", page_links::SCRIPT),
+        PageKeys::TheWayOutAndTheJumps => format!(
+            "{THE_WAY_OUT}\n{}\n{}",
+            page_jumps::SCRIPT,
+            page_links::SCRIPT
+        ),
     };
     let script = view.add_user_script(&script, WebViewUserScriptInjectionTime::AtDocumentStart);
     if !script {
         tracing::error!("{surface}: user script refused, Escape will not leave the page");
     }
     channel && script
+}
+
+/// Where a link opens, as the Reading tab has it (#80): read at the moment
+/// a link is followed, so a change on the tab counts from the next link.
+fn where_links_open() -> opening_links::Where {
+    crate::data::config::ConfigManager::load_stored()
+        .ok()
+        .map(|mgr| opening_links::Where::from_stored(&mgr.app_config().open_links_in))
+        .unwrap_or_default()
+}
+
+/// One browser control that shows a message, and may show a page in the
+/// message's place.
+///
+/// Both surfaces that host a browser, the preview pane and the formatted
+/// message window, are one of these, so what a followed link does cannot
+/// differ between them: the vetoes they used to rely on were written twice
+/// and were wrong the same way twice (#80).
+#[derive(Clone)]
+struct PageHost {
+    view: WebView,
+    /// Which surface, for the log.
+    surface: &'static str,
+    /// The message the view was given last, kept so the way back has it.
+    message: Rc<RefCell<String>>,
+    /// Whether a page stands in the message's place now.
+    showing_a_page: Rc<Cell<bool>>,
+    /// A line for the person: the status bar where the surface has one,
+    /// said where it has none.
+    tell: Rc<dyn Fn(&str)>,
+    /// Run before a page loads in the message's place. The preview puts
+    /// focus back home after every load, and a page somebody followed is
+    /// where they are, so it asks not to.
+    before_a_page: Rc<dyn Fn()>,
+}
+
+impl PageHost {
+    fn new(
+        view: WebView,
+        surface: &'static str,
+        tell: Rc<dyn Fn(&str)>,
+        before_a_page: Rc<dyn Fn()>,
+    ) -> Self {
+        Self {
+            view,
+            surface,
+            message: Rc::new(RefCell::new(String::new())),
+            showing_a_page: Rc::new(Cell::new(false)),
+            tell,
+            before_a_page,
+        }
+    }
+
+    /// Show a rendered message, and remember it as the thing to come back to.
+    fn show_the_message(&self, html: &str) {
+        self.message.replace(html.to_string());
+        self.showing_a_page.set(false);
+        self.view.set_page(html, "about:blank");
+    }
+
+    /// Load a page where the message was, saying whose it is first (T-11-67).
+    fn show_the_page(&self, address: &str, a11y: &Arc<Accessibility>) {
+        (self.before_a_page)();
+        self.showing_a_page.set(true);
+        let _ = a11y.announce(
+            &opening_links::what_is_said_when_opening(address),
+            crate::presentation::accessibility::announcements::Priority::Normal,
+        );
+        tracing::debug!("{}: loading a page in the message's place", self.surface);
+        self.view.load_url(address);
+    }
+
+    /// The message back in the page's place, said; nothing when no page
+    /// stands there, so Backspace on a message is a key that does nothing
+    /// rather than one that reloads it.
+    fn back_to_the_message(&self, a11y: &Arc<Accessibility>) {
+        if !self.showing_a_page.get() {
+            return;
+        }
+        (self.before_a_page)();
+        let message = self.message.borrow().clone();
+        self.show_the_message(&message);
+        let _ = a11y.announce(
+            opening_links::BACK_TO_THE_MESSAGE,
+            crate::presentation::accessibility::announcements::Priority::Normal,
+        );
+    }
+}
+
+/// What a page posted about a link or the way back, answered (#80).
+fn answer_what_the_page_posted(
+    host: &PageHost,
+    posted: page_links::Posted,
+    a11y: &Arc<Accessibility>,
+) {
+    match posted {
+        page_links::Posted::Link { href, asked } => {
+            follow_the_link_the_page_posted(host, &href, asked, a11y.clone());
+        }
+        page_links::Posted::Back => host.back_to_the_message(a11y),
+    }
+}
+
+/// A link the page posted, followed where the setting or the ask says (#80).
+///
+/// The one place both surfaces and every menu item go through. The sanitiser
+/// runs before the route on every path (T-11-68), and a refused address is
+/// said as it always was. The separate window is 11-11.2's: until it lands,
+/// that route opens the browser and says so, never silently.
+fn follow_the_link_the_page_posted(
+    host: &PageHost,
+    href: &str,
+    asked: opening_links::Asked,
+    a11y: Arc<Accessibility>,
+) {
+    let Some(safe) = HtmlRenderer::safe_external_url(href) else {
+        tracing::warn!("Refused to open unsafe URL from message: {}", href);
+        say_the_link_was_refused(&a11y);
+        return;
+    };
+    let route = opening_links::route(where_links_open(), asked, &safe);
+    tracing::debug!("{}: a link asked {asked:?} goes to {route:?}", host.surface);
+    match route {
+        opening_links::Route::Browser | opening_links::Route::System => {
+            let _ = open::that(&safe);
+        }
+        opening_links::Route::MessageView => host.show_the_page(&safe, &a11y),
+        opening_links::Route::SeparateWindow => {
+            let _ = open::that(&safe);
+            (host.tell)(opening_links::SEPARATE_WINDOWS_ARRIVE_LATER);
+        }
+    }
 }
 
 /// Which keys a page gives back to its window.
@@ -18012,7 +18184,8 @@ struct UpdateTargets<'a> {
     /// interface thread, which is the only thread a control may be touched
     /// from, and this is read beside the control it rebuilds.
     column_layout: &'a Rc<RefCell<ColumnLayout>>,
-    preview: &'a WebView,
+    /// The preview, as the message it shows and maybe a page in its place.
+    preview: &'a PageHost,
     frame: &'a Frame,
     /// The main toolbar, when the frame made one, so a read flag landing on
     /// the row can make Mark as Read say which way it will go there too
@@ -18590,7 +18763,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // anybody who had pressed F6 to reach the tree was pulled out of
             // it by the next body to arrive.
             focus_home_cell.set(focus_home(folder_tree.has_focus(), msg_list.has_focus()));
-            preview.set_page(&html, "about:blank");
+            preview.show_the_message(&html);
         }
         UIUpdate::ConnectionStatusChanged(status) => {
             let report = {
@@ -23065,13 +23238,36 @@ fn show_conversation_as_page(
     // list to jump to, and a key bound on the browser control never fires
     // while the browser has focus, which is what #84 met with F8.
     wire_the_way_out(&page, "conversation window", PageKeys::TheWayOutAndTheJumps);
+    // This window has no status bar, so a line for the person is said; and
+    // no focus home to keep, since the browser holds focus here on purpose.
+    let host = PageHost::new(
+        page,
+        "conversation window",
+        Rc::new({
+            let a11y = a11y.clone();
+            move |line: &str| {
+                let _ = a11y.announce(
+                    line,
+                    crate::presentation::accessibility::announcements::Priority::Normal,
+                );
+            }
+        }),
+        Rc::new(|| {}),
+    );
     page.on_script_message_received({
         let a11y = a11y.clone();
+        let host = host.clone();
         move |event: WebViewEventData| {
             use crate::presentation::accessibility::announcements::Priority;
             let Some(json) = event.get_string() else {
                 return;
             };
+            // A link activated in the page, or the way back from a page
+            // (#80), through the same answer the preview gives.
+            if let Some(posted) = page_links::what_the_page_posted(&json) {
+                answer_what_the_page_posted(&host, posted, &a11y);
+                return;
+            }
             match page_jumps::the_jump_the_page_asked_for(&json) {
                 // Said as well as moved to, because a jump somebody cannot
                 // see needs to say where it landed: where focus is now, then
@@ -23117,10 +23313,7 @@ fn show_conversation_as_page(
         }
     });
 
-    page.set_page(
-        &reader_text::conversation_html(subject, parts),
-        "about:blank",
-    );
+    host.show_the_message(&reader_text::conversation_html(subject, parts));
 
     // Closing has to work, and a frame that is destroyed while its WebView is
     // still hosting an out of process browser takes the application with it.

@@ -50,14 +50,67 @@ pub enum Posted {
 /// An anchor's `href` is posted as the page resolved it. A fragment, `#top`,
 /// is left to the browser: it moves within the document and leaves it. A key
 /// pressed in a field somebody is typing in is theirs.
-pub const SCRIPT: &str = "";
+pub const SCRIPT: &str = r#"document.addEventListener('click', function(e) {
+    // A link followed any way at all: a click, Enter on a focused link, and
+    // the default action a screen reader's Enter performs in browse mode,
+    // which the browser delivers as a click. Taken before the browser
+    // navigates, because the window cannot read where a navigation is going
+    // (wxdragon 0.9.17 hands it the event's string, which a navigating event
+    // leaves empty), so the veto it used to rely on never saw a link.
+    var link = e.target && e.target.closest ? e.target.closest('a[href], area[href]') : null;
+    if (!link) { return; }
+    var written = link.getAttribute('href') || '';
+    // A fragment moves within the document and leaves it; the browser keeps it.
+    if (written.charAt(0) === '#') { return; }
+    e.preventDefault();
+    e.stopPropagation();
+    var data = { kind: 'link', href: link.href };
+    // The browser's own conventions: Ctrl for a new tab, Shift for a new
+    // window, which are the browser and the separate window here.
+    if (e.ctrlKey) { data.asked = 'browser'; }
+    else if (e.shiftKey) { data.asked = 'separate'; }
+    window.contextMenu.postMessage(JSON.stringify(data));
+}, true);
+document.addEventListener('keydown', function(e) {
+    // Backspace and Alt+Left bring the message back when a page stands in
+    // its place; whether one does is the window's decision. Not from a field
+    // somebody is typing in, where Backspace is a character going.
+    var target = e.target;
+    var typing = target && (target.isContentEditable ||
+        /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || ''));
+    var back = (e.key === 'Backspace' && !typing && !e.altKey && !e.ctrlKey) ||
+        (e.key === 'ArrowLeft' && e.altKey && !e.ctrlKey);
+    if (!back) { return; }
+    e.preventDefault();
+    e.stopPropagation();
+    window.contextMenu.postMessage(JSON.stringify({ kind: 'back' }));
+}, true);"#;
 
 /// What the page posted, read from the message it sent.
 ///
 /// `None` for the way out, the jumps, the context menu and anything
-/// unreadable, which the window answers elsewhere or ignores.
-pub fn what_the_page_posted(_json: &str) -> Option<Posted> {
-    None
+/// unreadable, which the window answers elsewhere or ignores. A `link` with
+/// no address is nothing: there is nothing to route. An `asked` nobody wrote
+/// is a plain activation, which follows the setting, the safest of the
+/// three answers.
+pub fn what_the_page_posted(json: &str) -> Option<Posted> {
+    let posted = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    match posted.get("kind").and_then(serde_json::Value::as_str)? {
+        "link" => {
+            let href = posted.get("href").and_then(serde_json::Value::as_str)?;
+            let asked = match posted.get("asked").and_then(serde_json::Value::as_str) {
+                Some("browser") => Asked::InBrowser,
+                Some("separate") => Asked::InSeparateWindow,
+                _ => Asked::Activated,
+            };
+            Some(Posted::Link {
+                href: href.to_string(),
+                asked,
+            })
+        }
+        "back" => Some(Posted::Back),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

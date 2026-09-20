@@ -976,6 +976,32 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Where a link opens is your choice, and a link followed in a message goes there.** Pratik's
+  ask of 2026-09-18 (#80), and the tester's finding the same day under NVDA on
+  `1.0.0-alpha.1+149.g744d05ef`: "Enter on a message and Enter on a link both open in the
+  same window; the link does not go to the default browser." The code meant every link to
+  go to the browser and had since the preview was written; what it did was follow the link
+  inside the window, for every link, every way of activating one, and on both surfaces that
+  show a message in a browser. The reason, found by reading and then measured against a
+  built browser control: the check that hands a navigation to the browser is given an empty
+  string where the address should be, because the toolkit's binding never passes a
+  navigating event's address through, and the check took an empty string for the control
+  loading its own document and stood aside. Since 2026-09-20 a link is caught in the page
+  itself, before the browser moves, and handed to the window with its address, so the route
+  no longer depends on that check. Settings, Reading, "Open links" says where: in the
+  default browser, which is the default and what happens on every installation that has
+  not chosen; in the message view, where the page loads in the place the message was, says
+  "Opening" and the site's name, and `Backspace` or `Alt+Left` brings the message back with
+  "Back to the message"; or in a separate Wixen Mail window. `Ctrl+Enter` or a Ctrl-click opens the
+  browser and `Shift+Enter` or a Shift-click a separate window whatever the setting, the
+  browser's own conventions. An email address or a telephone number is handed to Windows
+  whatever the setting, since neither is a page. The privacy page says what a page in the
+  message view shares with the message preview and why the browser is the default. A new
+  scan target, `page`, opens the formatted message window for the accessibility scan and for
+  an NVDA case that presses Enter on a link the way a person does. Known limitations: the
+  separate window arrives with the next build, and until then choosing it opens the browser
+  and says so on the status line; nobody has heard any of it in a screen reader, and the
+  NVDA case has not yet run.
 - **A rule can change how a row is announced: a phrase said first, a sound once per check, and
   the labels as a column.** From the Outlook gap report of 2026-08-27 and the audit of
   2026-09-15 (#62): conditional formatting in the sense that matters to somebody working by

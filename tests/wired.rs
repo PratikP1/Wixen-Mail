@@ -1137,6 +1137,11 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
         // src/presentation/wx_columns.rs, the `key.alt_down()` arm.
         "Alt+Up",
         "Alt+Down",
+        // The way back from a page in the message view (#80). The page's own
+        // script tests for `e.key === 'ArrowLeft' && e.altKey`, which is not
+        // the string `Alt+Left`, and posts the way back to the window.
+        // src/presentation/page_links.rs.
+        "Alt+Left",
     ]
 }
 

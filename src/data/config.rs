@@ -408,7 +408,7 @@ pub struct AppConfig {
     /// the browser for anything it does not know: a page opened inside the
     /// program shares the preview's browser profile, and a settings file
     /// from a later version should not quietly choose that.
-    #[serde(default)]
+    #[serde(default = "default_open_links_in")]
     pub open_links_in: String,
     /// Whether the person has been shown what this alpha can and cannot do.
     ///
@@ -722,6 +722,16 @@ fn default_calendar_view() -> String {
     "agenda".to_string()
 }
 
+/// Where a link opens when the settings file does not say: the browser, so
+/// an absent key and the struct's default agree, which the older-file test
+/// holds. `#[serde(default)]` on a `String` answers the empty string, which
+/// reads as the browser too and would have written "" back on the next save.
+fn default_open_links_in() -> String {
+    crate::application::opening_links::Where::DefaultBrowser
+        .stored()
+        .to_string()
+}
+
 fn default_autosave_minutes() -> u32 {
     crate::application::autosave::AutosaveInterval::default().minutes()
 }
@@ -790,9 +800,7 @@ impl Default for AppConfig {
             read_messages_as: crate::application::reading_style::Style::Formatted
                 .as_str()
                 .to_string(),
-            open_links_in: crate::application::opening_links::Where::DefaultBrowser
-                .stored()
-                .to_string(),
+            open_links_in: default_open_links_in(),
             told_about_the_alpha: false,
             check_spelling_as_you_type: default_true(),
             default_sort_order: default_sort_order(),

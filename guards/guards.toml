@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 208 records have arrived since and have not been through it.
+# 210 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27989,4 +27989,60 @@ red = [
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 60 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+]
+
+# ── 11-11.1: where a link opens (#80), 2026-09-20 ──────────────────────────
+#
+# A link activated in the page follows the Reading tab's setting; the
+# route is one pure function over the setting and the ask. The break
+# sends an activation to the browser whatever the setting says, which is
+# what the tree did before the setting existed, and the target's table of
+# every cell goes red on the two settings that are not the browser. The
+# module's own cases go red as well and are not in the suite named here,
+# which is the target, so the record counts the target's one.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "an activated link follows the setting rather than always the browser"
+file = "src/application/opening_links.rs"
+suite = "a_link_opens_where_the_setting_says"
+before = """    match asked {
+        Asked::Activated => Route::from(setting),"""
+after = """    match asked {
+        Asked::Activated => Route::Browser,"""
+red = [
+    "test_the_route_table_holds_cell_by_cell",
+]
+tests_last_seen = [
+    { file = "src/application/opening_links.rs", tests = 11 },
+    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 6 },
+]
+
+# The Reading tab offers the three places, in the module's order, and OK
+# writes the chosen one back. The break builds the choice with no entries,
+# so the built page offers nothing and the readback answers the default for
+# whatever was stored; the target's three readings over the built dialog
+# go red together, since the harvest they share cannot choose an entry. The
+# settings guard in config.rs that asks whether a screen offers the field
+# reads the field's name and stays green under this break: a name on the
+# screen and a choice somebody can make are two facts, and this record is
+# the second.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the reading tab offers the three places a link can open and writes the chosen one back"
+file = "src/presentation/wx_settings.rs"
+suite = "a_link_opens_where_the_setting_says"
+before = """        &open_links_labels,"""
+after = """        &[],"""
+red = [
+    "test_the_reading_tab_offers_the_browser_then_the_message_view_then_a_separate_window",
+    "test_a_stored_separate_window_is_shown_as_the_third_entry_and_written_back_as_itself",
+    "test_a_choice_made_on_the_reading_tab_is_what_ok_writes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/a_link_opens_where_the_setting_says.rs", tests = 6 },
 ]

@@ -397,6 +397,27 @@ have configured, and you never leave the list.
 A readable, focusable text view of the message body is the proper long-term
 answer and is not built yet.
 
+### Links in a message
+
+Where a link opens is a setting, since 2026-09-20: Settings, Reading, "Open
+links", which is the default browser unless you change it, the message view,
+or a separate Wixen Mail window. These keys work the same in the preview pane
+and in the formatted message window a message opens into.
+
+| Action | Shortcut | What happens |
+|--------|----------|--------------|
+| Follow a link | `Enter` on the link | Where "Open links" says. Your screen reader's own Enter on a link does the same |
+| Open a link in the default browser, whatever the setting | `Ctrl+Enter`, or a Ctrl-click | The browser's own convention for a new tab |
+| Open a link in a separate window, whatever the setting | `Shift+Enter`, or a Shift-click | The browser's own convention for a new window. The separate window arrives with the next build; until then this opens the browser and says so |
+| Back to the message from a page in the message view | `Backspace` or `Alt+Left` | The message is shown again and "Back to the message" is said |
+
+A page opened in the message view says "Opening" and the site's name as it
+starts. `Backspace` does nothing while the message itself is showing, and is
+left to a field you are typing in on a page. Until 2026-09-20 every link
+opened inside the window whatever the code meant, because the check that was
+meant to hand it to the browser never saw an address; #80 has the finding.
+Nobody has heard any of this in a screen reader yet.
+
 ### Conversations
 
 | Where | Key | Result |
