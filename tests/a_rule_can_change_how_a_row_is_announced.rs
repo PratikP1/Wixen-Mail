@@ -39,7 +39,9 @@
 
 use std::fs;
 
-use wixen_mail::application::conversations::{AConversationReaches, ConversationItem, RowMessage};
+use wixen_mail::application::conversations::{
+    AConversationReaches, ConversationItem, ReadIn, RowMessage,
+};
 use wixen_mail::application::filters::{FilterEngine, SAY_FIRST_LIMIT};
 use wixen_mail::application::mail_sync::{Filtering, apply_rules};
 use wixen_mail::common::types::FolderType;
@@ -380,6 +382,10 @@ fn a_row(read: bool, says_first: Option<&str>, labels: &[&str]) -> MessageItem {
 fn a_conversation_row(unread: i64, says_first: Option<&str>, labels: &str) -> ConversationItem {
     ConversationItem {
         thread_id: "root@example.com".to_string(),
+        read_in: ReadIn {
+            account_id: "acc".to_string(),
+            folder_id: 1,
+        },
         subject: "Quarterly report".to_string(),
         messages: 3,
         unread,

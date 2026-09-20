@@ -200,6 +200,15 @@ impl DeletingAConversationRow {
 pub struct ConversationItem {
     /// Which conversation, from `messages.thread_id`.
     pub thread_id: String,
+    /// Whose conversation, and where its row was read (#92, 2026-09-20).
+    ///
+    /// A conversation is an account's: the same identifier in two accounts
+    /// is two conversations (T-01-47), and All Inboxes lists both, one row
+    /// each. Every act on a row reads this rather than whichever account is
+    /// open, the way a message row carries
+    /// [`crate::presentation::ui_types::MessageItem::account_id`], and for
+    /// the same reason.
+    pub read_in: ReadIn,
     /// What it is called: the oldest message present, named by [`name_of`].
     pub subject: String,
     /// How many messages, within the reach that was asked for.
@@ -252,6 +261,22 @@ pub struct ConversationItem {
     /// line, by name; empty when there are none. A line apiece because a
     /// label may hold a comma, the same reason `senders` gives.
     pub labels: String,
+}
+
+/// Where a conversation row was read: the account and the folder (#92).
+///
+/// The folder is the one the row was listed for, which under All Inboxes is
+/// the account's inbox, so a read of the conversation's messages asks the
+/// same scope its row was counted with, whichever row of the tree is on
+/// screen. Two fields rather than the folder alone because a folder id names
+/// its account only through a read, and every act on a row wants the account
+/// first, to open the session the act goes down.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadIn {
+    /// The account the conversation belongs to.
+    pub account_id: String,
+    /// The folder its row was listed for.
+    pub folder_id: i64,
 }
 
 /// The one message a conversation row stands for (#31).

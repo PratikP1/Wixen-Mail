@@ -2991,12 +2991,29 @@ impl WxMailApp {
                                 }
                                 return;
                             }
+                            // All Inboxes has a view of its own since
+                            // 2026-09-20 (#92), kept under its own row
+                            // identity and read here the way a folder's is,
+                            // before the mail is asked for. Until then this
+                            // arm set nothing, and All Inboxes came up in
+                            // whatever view the last folder left, drawing that
+                            // folder's conversation rows under its own title.
                             WhichRow::AllInboxes => {
                                 lock_state(&state).selected_folder = Some(which.clone());
                                 frame.set_title("All Inboxes - Mail - Wixen Mail");
-                                load_every_inbox(&folder_cache, &ui_tx);
+                                let showing = the_view_kept_under(
+                                    &folder_cache,
+                                    &WhichRow::AllInboxes.stored(),
+                                );
+                                settle_the_view_on_arrival(&state, &frame, showing);
+                                load_every_inbox(&folder_cache, showing, &ui_tx);
                                 return;
                             }
+                            // A label shows one row per message: it groups
+                            // messages of many folders in one account, so a
+                            // conversation there would be neither one folder's
+                            // nor every inbox's. Settled flat so the check
+                            // mark says so (#92).
                             WhichRow::Label(tag_id) => {
                                 let label_name = {
                                     let mut s = lock_state(&state);
@@ -3010,6 +3027,11 @@ impl WxMailApp {
                                     frame
                                         .set_title(&format!("{label_name} - Mail - Wixen Mail"));
                                 }
+                                settle_the_view_on_arrival(
+                                    &state,
+                                    &frame,
+                                    view_state::Showing::Messages,
+                                );
                                 load_messages_with_label(&folder_cache, &state, tag_id.as_str(), &ui_tx);
                                 return;
                             }
@@ -3135,31 +3157,11 @@ impl WxMailApp {
                         // off; until then it was flat. Both read here, before
                         // the mail is asked for, because the count the
                         // control is told is decided by which view this is.
-                        let showing = match (
-                            folder_cache.as_ref(),
-                            which.opens().map(|folder| folder.stored()),
-                        ) {
-                            (Some(cache), Some(folder)) => view_state::Showing::from_stored(
-                                cache.folder_view(&folder).unwrap_or_default(),
-                                what_a_folder_never_set_shows(),
-                            ),
-                            _ => view_state::Showing::Messages,
+                        let showing = match which.opens().map(|folder| folder.stored()) {
+                            Some(folder) => the_view_kept_under(&folder_cache, &folder),
+                            None => view_state::Showing::Messages,
                         };
-                        {
-                            let mut s = lock_state(&state);
-                            s.showing = showing;
-                            // The folder before this one's conversations are
-                            // not this one's, and a stale set would be drawn
-                            // for as long as it took the new one to arrive.
-                            s.conversations.clear();
-                            s.selection_before_the_switch =
-                                view_state::KeptSelection::default();
-                        }
-                        sync_menu_check(
-                            &frame,
-                            ID_THREAD_VIEW,
-                            showing.showing_conversations(),
-                        );
+                        settle_the_view_on_arrival(&state, &frame, showing);
                         // Selecting a folder used to announce "Loading
                         // INBOX..." and then load nothing at all. This is
                         // the read that makes the status true.
@@ -3226,7 +3228,7 @@ impl WxMailApp {
                             let conversation = s.conversations.get(idx);
                             (
                                 stands_for,
-                                conversation.map(|c| c.thread_id.clone()),
+                                conversation.map(|c| (c.read_in.clone(), c.thread_id.clone())),
                                 conversation
                                     .map(feedback_events_for_landing_on_a_conversation)
                                     .unwrap_or_default(),
@@ -3300,8 +3302,10 @@ impl WxMailApp {
                     // the background, nothing said per message. The row
                     // message's own text is the fetch above, which reaches
                     // the preview; this one brings the rest.
-                    if let (Some(thread_id), Some(row)) = (a_conversation, stands_for.as_ref()) {
-                        spawn_conversation_text_fetch(app, thread_id, row.id);
+                    if let (Some((read_in, thread_id)), Some(row)) =
+                        (a_conversation, stands_for.as_ref())
+                    {
+                        spawn_conversation_text_fetch(app, read_in, thread_id, row.id);
                     }
                     // Whether this sender wanted to be told it had been
                     // opened, and what is being done about that. Said on
@@ -3398,13 +3402,17 @@ impl WxMailApp {
                         let opening = lock_state(&state)
                             .conversations
                             .get(index as usize)
-                            .map(|c| (c.thread_id.clone(), c.subject.clone()));
-                        let Some((thread_id, subject)) = opening else {
+                            .map(|c| (c.thread_id.clone(), c.subject.clone(), c.read_in.clone()));
+                        let Some((thread_id, subject, read_in)) = opening else {
                             return;
                         };
-                        let nodes = conversation_nodes(&state, &thread_id);
-                        let named =
-                            how_a_conversation_reads(&state, &thread_cache, &thread_id, &subject);
+                        let nodes = conversation_nodes(&state, &read_in.account_id, &thread_id);
+                        let named = how_a_conversation_reads(
+                            &thread_cache,
+                            Some(&read_in),
+                            &thread_id,
+                            &subject,
+                        );
                         if nodes.len() < 2 {
                             // One message, so there is nothing to choose
                             // between. Straight into the reader, the same
@@ -3462,7 +3470,7 @@ impl WxMailApp {
                         );
                         return;
                     };
-                    let nodes = conversation_nodes(&state, &thread_id);
+                    let nodes = conversation_nodes(&state, &message.account_id, &thread_id);
                     if nodes.len() < 2 {
                         open_single_message(
                             &frame,
@@ -3494,8 +3502,25 @@ impl WxMailApp {
                     // are the account's rather than the loaded page's, so they
                     // say the same thing whichever folder somebody opened the
                     // conversation from (D-08, D-03).
-                    let named =
-                        how_a_conversation_reads(&state, &thread_cache, &thread_id, &subject);
+                    // A message row is read in the open folder, when one is:
+                    // in All Inboxes there is none, and the tree is named
+                    // without a count rather than with another folder's.
+                    let read_in = {
+                        let s = lock_state(&state);
+                        s.selected_folder
+                            .as_ref()
+                            .and_then(|which| the_id_of(&s, which))
+                            .map(|folder_id| crate::application::conversations::ReadIn {
+                                account_id: message.account_id.clone(),
+                                folder_id,
+                            })
+                    };
+                    let named = how_a_conversation_reads(
+                        &thread_cache,
+                        read_in.as_ref(),
+                        &thread_id,
+                        &subject,
+                    );
                     open_conversation_again(
                         &frame,
                         &reader,
@@ -4718,7 +4743,7 @@ impl WxMailApp {
                                 // columns are chosen by hand: somebody who saw
                                 // Thread ticked and pressed OK has said yes to
                                 // it as much as somebody who ticked it.
-                                if let Some(folder) = the_folder_being_looked_at(&state)
+                                if let Some(folder) = the_identity_whose_view_is_kept(&state)
                                     && let Some(cache) = message_cache.as_ref()
                                     && let Err(e) = cache.set_folder_thread_column(
                                         &folder,
@@ -7617,8 +7642,17 @@ fn load_messages_with_label(
 /// since the same day (#69): until then choosing a sort with All Inboxes open
 /// re-sorted the rows on screen and saved the choice, and every return to the
 /// row read the fixed newest-first order the query carried.
-fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
-    let Some(cache) = cache.as_ref() else {
+///
+/// And its conversations, when All Inboxes is showing them (#92, since
+/// 2026-09-20), for the reason the folder landing loads both: the rows come
+/// from the conversations and the tree a row opens into is built from the
+/// messages, so neither is optional (D-01).
+fn load_every_inbox(
+    storage: &Option<Arc<MessageCache>>,
+    showing: view_state::Showing,
+    tx: &Sender<UIUpdate>,
+) {
+    let Some(cache) = storage.as_ref() else {
         let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
         return;
     };
@@ -7637,6 +7671,52 @@ fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
             tracing::error!("Failed to read every inbox: {}", e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
                 "The inboxes could not be read: {e}"
+            )));
+        }
+    }
+    if showing.showing_conversations() {
+        load_every_inbox_conversations(
+            storage,
+            crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+            tx,
+        );
+    }
+}
+
+/// Read every inbox's conversations, one row per account and conversation
+/// (#92), for the landing and for the switch.
+///
+/// Beside [`load_folder_conversations`] rather than through it, because
+/// there is no one folder and no one account: the cache's
+/// `conversations_in_every_inbox` takes the reach alone and applies it per
+/// account, and each row says whose it is. The reach and the sort are read
+/// the way the folder's are, so a row's counts here and in the account's
+/// own inbox agree.
+fn load_every_inbox_conversations(
+    cache: &Option<Arc<MessageCache>>,
+    why: crate::presentation::ui_types::WhyTheRowsWereRead,
+    tx: &Sender<UIUpdate>,
+) {
+    let Some(cache) = cache.as_ref() else {
+        return;
+    };
+    let reach = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| {
+            crate::application::conversations::AConversationReaches::from_stored(
+                &stored.app_config().a_conversation_reaches,
+            )
+        })
+        .unwrap_or_default();
+    let order = the_sort_as(view_state::Showing::Conversations);
+
+    match cache.conversations_in_every_inbox(reach, order.as_deref()) {
+        Ok(rows) => {
+            let _ = tx.try_send(UIUpdate::ConversationsLoaded(rows, why));
+        }
+        Err(e) => {
+            tracing::error!("Failed to read every inbox's conversations: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The inboxes' conversations could not be read: {e}"
             )));
         }
     }
@@ -10575,17 +10655,6 @@ enum How {
     TheKey,
 }
 
-/// The folder on screen and the account it belongs to, for a read of a
-/// conversation row's messages; nothing when no folder of an account is
-/// open, which is where a saved search or All Inboxes leaves it.
-fn the_open_folder_and_its_account(s: &WxUIState) -> Option<(i64, String)> {
-    let account = match s.selected_folder.as_ref().and_then(|row| row.opens()) {
-        Some(crate::presentation::folder_tree::WhichRow::Folder { account, .. }) => account,
-        _ => return None,
-    };
-    Some((folder_on_screen(s)?, account))
-}
-
 /// What the selection holds, read from the control at the key (#30).
 ///
 /// The rows the list says are selected, or the cursor row when none is,
@@ -10632,16 +10701,18 @@ fn chosen_messages(
     let Some(cache) = cache.as_ref() else {
         return Err("No storage is open".to_string());
     };
-    let Some((folder_id, account_id)) = the_open_folder_and_its_account(&s) else {
-        return Err("Open a folder first. Conversations are shown a folder at a time.".to_string());
-    };
     let mut trouble = None;
+    // Each row's messages are read in the account and folder the row was
+    // read in, which the row carries (#92): under All Inboxes the rows are
+    // several accounts' at once, and a read against the open folder, which
+    // there is none of, or the active account, which is one of them, would
+    // act on the wrong mail or refuse (T-11-113).
     let chosen = what_the_selection_holds(&rows, |row| {
         let conversation = s.conversations.get(row)?;
         let ids = match cache.messages_in_conversation(
             &conversation.thread_id,
-            &account_id,
-            folder_id,
+            &conversation.read_in.account_id,
+            conversation.read_in.folder_id,
             reach,
         ) {
             Ok(ids) => ids,
@@ -13915,15 +13986,20 @@ fn conversation_parts(
 /// Built from what the list already holds rather than from a fresh query: the
 /// tree opens on a keystroke and must not wait on the database, and everything
 /// it needs is already in memory.
-fn conversation_nodes(
+///
+/// `account_id` is the row's own (#92): All Inboxes holds every account's
+/// messages at once, and the same thread id in two accounts is two
+/// conversations (T-01-47), so the tree a row opens is its own account's.
+pub fn conversation_nodes(
     state: &Arc<StdMutex<WxUIState>>,
+    account_id: &str,
     thread_id: &str,
 ) -> Vec<wx_thread_view::ThreadNode> {
     let s = lock_state(state);
     let members: Vec<&MessageItem> = s
         .messages
         .iter()
-        .filter(|m| m.thread_id.as_deref() == Some(thread_id))
+        .filter(|m| m.account_id == account_id && m.thread_id.as_deref() == Some(thread_id))
         .collect();
 
     // Oldest first, which is reading order for a conversation, and it also
@@ -15134,6 +15210,48 @@ fn what_a_folder_never_set_shows() -> view_state::Showing {
     view_state::Showing::when_nobody_set_one(show_conversations)
 }
 
+/// The view kept under an identity, for a landing (D-09, #92).
+///
+/// The stored view when one was set, and what Show conversations by default
+/// says when none was, through the one rule and the one reader of the
+/// setting, so a folder and All Inboxes come up by the same answer. Flat
+/// when no storage is open, which is the list before anything can be read.
+fn the_view_kept_under(cache: &Option<Arc<MessageCache>>, identity: &str) -> view_state::Showing {
+    match cache.as_ref() {
+        Some(cache) => view_state::Showing::from_stored(
+            cache.folder_view(identity).unwrap_or_default(),
+            what_a_folder_never_set_shows(),
+        ),
+        None => view_state::Showing::Messages,
+    }
+}
+
+/// Settle the list's view on arriving somewhere, before the mail is asked
+/// for.
+///
+/// Three things, in one place, for every landing and for a saved search's
+/// arrival: the view, because the count the control is told is decided by
+/// it; the conversation rows cleared, because the place before this one's
+/// are not this one's and a stale set would be drawn for as long as it took
+/// the new one to arrive; and the Thread View check mark, because it says
+/// the view of what is on screen and nothing else. One function rather than
+/// three arms doing the same three things, since until 2026-09-20 (#92) the
+/// All Inboxes arm did none of them and drew the last folder's conversation
+/// rows under its own title with the check mark saying that folder's view.
+fn settle_the_view_on_arrival(
+    state: &Arc<StdMutex<WxUIState>>,
+    frame: &Frame,
+    showing: view_state::Showing,
+) {
+    {
+        let mut s = lock_state(state);
+        s.showing = showing;
+        s.conversations.clear();
+        s.selection_before_the_switch = view_state::KeptSelection::default();
+    }
+    sync_menu_check(frame, ID_THREAD_VIEW, showing.showing_conversations());
+}
+
 /// The stored sort, expressed for whichever view is being drawn.
 ///
 /// The stored column layout carries the sort, so a folder opens in the order
@@ -15228,12 +15346,12 @@ fn switch_the_view(
     column_layout: &Rc<RefCell<ColumnLayout>>,
 ) {
     let AppHandles { state, tx, rt } = app;
-    let Some(folder) = the_folder_being_looked_at(state) else {
+    let Some(kept_under) = the_identity_whose_view_is_kept(state) else {
         sync_menu_check(frame, ID_THREAD_VIEW, false);
         send_refusal(
             tx,
             rt,
-            "Open a folder first. Conversations are shown a folder at a time.",
+            "Open a folder or All Inboxes first. A label and a saved search show one row per message.",
         );
         return;
     };
@@ -15271,7 +15389,7 @@ fn switch_the_view(
 
     sync_menu_check(frame, ID_THREAD_VIEW, now_showing.showing_conversations());
     if let Some(cache) = cache.as_ref()
-        && let Err(e) = cache.set_folder_view(&folder, now_showing)
+        && let Err(e) = cache.set_folder_view(&kept_under, now_showing)
     {
         // The view is already on screen, so saying it did not save while
         // somebody is looking at it is noise. The log is where it belongs, the
@@ -15279,17 +15397,30 @@ fn switch_the_view(
         tracing::warn!("The folder's view was not saved: {e}");
     }
 
-    let (folder_id, account_id) = {
+    let (on_all_inboxes, folder_id, account_id) = {
         let s = lock_state(state);
+        let on_all_inboxes = matches!(
+            s.selected_folder,
+            Some(crate::presentation::folder_tree::WhichRow::AllInboxes)
+        );
         let account = match s.selected_folder.as_ref().and_then(|row| row.opens()) {
             Some(crate::presentation::folder_tree::WhichRow::Folder { account, .. }) => {
                 Some(account)
             }
             _ => None,
         };
-        (folder_on_screen(&s), account)
+        (on_all_inboxes, folder_on_screen(&s), account)
     };
     match now_showing {
+        // Every inbox's conversations on All Inboxes, the folder's in a
+        // folder (#92); the messages are already loaded under both.
+        view_state::Showing::Conversations if on_all_inboxes => {
+            load_every_inbox_conversations(
+                cache,
+                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+                tx,
+            );
+        }
         view_state::Showing::Conversations => {
             load_folder_conversations(
                 cache,
@@ -15345,18 +15476,29 @@ fn put_the_selection_back(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl)
 }
 
 /// Select the conversation rows holding what was selected, D-11's other half.
+///
+/// A conversation is named by its account and its thread id together (#92),
+/// because under All Inboxes the same thread id in two accounts is two rows
+/// (T-01-47), and a message of the second must come back on the second.
 fn select_the_conversations_holding_it(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl) {
     let rows = {
         let s = lock_state(state);
-        let of_each: Vec<(i64, Option<String>)> = s
+        let of_each: Vec<(i64, Option<(String, String)>)> = s
             .messages
             .iter()
-            .map(|m| (m.message_id, m.thread_id.clone()))
+            .map(|m| {
+                (
+                    m.message_id,
+                    m.thread_id
+                        .clone()
+                        .map(|thread| (m.account_id.clone(), thread)),
+                )
+            })
             .collect();
-        let ids: Vec<String> = s
+        let ids: Vec<(String, String)> = s
             .conversations
             .iter()
-            .map(|c| c.thread_id.clone())
+            .map(|c| (c.read_in.account_id.clone(), c.thread_id.clone()))
             .collect();
         view_state::conversations_holding(&s.selection_before_the_switch, &of_each, &ids)
     };
@@ -15559,7 +15701,7 @@ fn show_the_thread_column_if_it_is_wanted(
     msg_list: &ListCtrl,
     column_layout: &Rc<RefCell<ColumnLayout>>,
 ) {
-    let chosen = match (the_folder_being_looked_at(state), cache.as_ref()) {
+    let chosen = match (the_identity_whose_view_is_kept(state), cache.as_ref()) {
         (Some(folder), Some(cache)) => view_state::ThreadColumn::from_stored(
             cache.folder_thread_column(&folder).unwrap_or_default(),
         ),
@@ -15585,21 +15727,30 @@ fn show_the_thread_column_if_it_is_wanted(
     apply_columns(msg_list, &column_layout.borrow());
 }
 
-/// The identity a folder's view and column choice are kept under.
+/// The identity a view and a Thread column choice are kept under.
 ///
 /// The folder a row opens rather than the row that was clicked, so a pinned
 /// copy and the folder it copies are one setting. They are two rows in the tree
 /// on purpose (D-30) and they are one folder, and this is about the folder.
 ///
-/// `None` for a row that opens no folder at all: All Inboxes, an account
-/// branch, a label, a saved search. None of those is a folder, so none of them
-/// has a view of its own to remember.
-fn the_folder_being_looked_at(state: &Arc<StdMutex<WxUIState>>) -> Option<String> {
-    lock_state(state)
-        .selected_folder
-        .as_ref()
-        .and_then(|row| row.opens())
-        .map(|folder| folder.stored())
+/// All Inboxes, under its own row identity, since 2026-09-20 (#92): the key
+/// the tree's collapsed state and the landing already use, in the same
+/// table as the folders' views with no schema change. Until then it had no
+/// identity here, so Ctrl+T refused on it and landing on it inherited
+/// whatever view the last folder left.
+///
+/// `None` for a row that opens no folder and is not All Inboxes: an account
+/// branch, a label, a saved search. A label and a saved search show one row
+/// per message, a label because it groups messages of many folders in one
+/// account and a search by its own comment, so neither has a view of its
+/// own to remember.
+fn the_identity_whose_view_is_kept(state: &Arc<StdMutex<WxUIState>>) -> Option<String> {
+    let s = lock_state(state);
+    let row = s.selected_folder.as_ref()?;
+    match row {
+        folder_tree::WhichRow::AllInboxes => Some(row.stored()),
+        _ => row.opens().map(|folder| folder.stored()),
+    }
 }
 
 /// Sort from the Sort Messages menu, keeping the column layout in step.
@@ -18574,39 +18725,39 @@ fn keep_the_search_that_ran(
 /// the inbox and from the archive has to give the same number. The loaded page
 /// cannot answer that, because it is one folder's worth.
 ///
-/// Falls back to the name alone when the count cannot be had: no cache, no
-/// folder open, or a query that failed. A name with no number is still a name;
-/// a number that might be wrong is worse than none.
+/// Falls back to the name alone when the count cannot be had: no cache,
+/// nowhere the row was read in, or a query that failed. A name with no
+/// number is still a name; a number that might be wrong is worse than none.
+///
+/// `read_in` is where the row was read (#92): a conversation row carries
+/// it, and a message row has it only where a folder is open, so a message
+/// row in All Inboxes is named without a count.
 fn how_a_conversation_reads(
-    state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
+    read_in: Option<&crate::application::conversations::ReadIn>,
     thread_id: &str,
     subject: &str,
 ) -> String {
     let named = crate::application::conversations::name_of(subject);
-    let Some(counted) = count_a_conversation(state, cache, thread_id) else {
+    let Some(counted) = read_in.and_then(|read_in| count_a_conversation(cache, read_in, thread_id))
+    else {
         return named;
     };
     format!("{named}, {counted}")
 }
 
-/// How many messages and how many unread, across the reach somebody chose.
+/// How many messages and how many unread, across the reach somebody chose,
+/// asked in the account and folder the row was read in.
 ///
 /// `None` where the question cannot be asked at all, which the caller reads as
 /// "say the name and nothing about the size".
 fn count_a_conversation(
-    state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
+    read_in: &crate::application::conversations::ReadIn,
     thread_id: &str,
 ) -> Option<String> {
     let cache = cache.as_ref()?;
-    let (folder_id, account_id) = {
-        let s = lock_state(state);
-        let which = s.selected_folder.as_ref()?;
-        let folder_id = the_id_of(&s, which)?;
-        let account_id = s.messages.first()?.account_id.clone();
-        (folder_id, account_id)
-    };
+    let (folder_id, account_id) = (read_in.folder_id, read_in.account_id.as_str());
     let reach = crate::data::config::ConfigManager::load_stored()
         .ok()
         .map(|stored| {
@@ -18616,7 +18767,7 @@ fn count_a_conversation(
         })
         .unwrap_or_default();
     let found = cache
-        .conversations_in(folder_id, &account_id, reach, None)
+        .conversations_in(folder_id, account_id, reach, None)
         .ok()?;
     let row = found.iter().find(|row| row.thread_id == thread_id)?;
     Some(crate::application::conversations::counts_read_as(
@@ -18876,14 +19027,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 // Back to the top of a fresh list. Left where it was, the
                 // cursor would be on a row from the folder that was open
                 // before and the list under it would be somebody else's.
-                // A saved search runs across folders, so its results are a list
-                // of messages and not of one folder's conversations. Back to
-                // the flat view rather than drawing the conversations of
-                // whichever folder was open before.
-                s.showing = view_state::Showing::Messages;
-                s.conversations.clear();
                 s.selected_message_index = None;
             }
+            // A saved search runs across folders, so its results are a list
+            // of messages and not of one folder's conversations. Back to
+            // the flat view rather than drawing the conversations of
+            // whichever folder was open before, and the check mark says so
+            // (#92): until 2026-09-20 it kept saying that folder's view.
+            settle_the_view_on_arrival(state, frame, view_state::Showing::Messages);
             tell_the_list_how_many(state, msg_list);
             frame.set_status_text(said, 0);
             // High, and never coalesced with the message counts. This is the
@@ -24271,25 +24422,37 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
 /// pause. A failure is logged with the account and the count, never a
 /// subject: this routine holds bodies in a row, and a log line built from
 /// them would put mail on the disk outside the cache.
-fn spawn_conversation_text_fetch(app: AppHandles<'_>, thread_id: String, first: i64) {
+fn spawn_conversation_text_fetch(
+    app: AppHandles<'_>,
+    read_in: crate::application::conversations::ReadIn,
+    thread_id: String,
+    first: i64,
+) {
     use crate::application::bringing_everything_down::{
         TextBudget, TextStillMissing, WhatToDoNext, what_to_do_next,
     };
     let AppHandles { state, rt, .. } = app;
     let handle = rt.handle().clone();
     let state = state.clone();
-    let (account, folder_id) = {
+    // The row's own account and folder (#92), so a conversation in All
+    // Inboxes is fetched over its own account's session and in the scope
+    // its row was counted with, never the open folder's, which there is
+    // none of there.
+    let folder_id = read_in.folder_id;
+    let account = {
         let mut s = lock_state(&state);
-        let Some((folder_id, account_id)) = the_open_folder_and_its_account(&s) else {
-            return;
-        };
-        let Some(account) = s.accounts.iter().find(|a| a.id == account_id).cloned() else {
+        let Some(account) = s
+            .accounts
+            .iter()
+            .find(|a| a.id == read_in.account_id)
+            .cloned()
+        else {
             return;
         };
         if !s.conversations_being_fetched.insert(thread_id.clone()) {
             return;
         }
-        (account, folder_id)
+        account
     };
     let reading = crate::application::allowed::allowed_for(&account.id).reading;
 
@@ -27929,7 +28092,7 @@ mod tests {
             safety_reasons: Vec::new(),
             receipt_to: None,
             list_unsubscribe: None,
-            account_id: String::new(),
+            account_id: "acc".to_string(),
             labels: Vec::new(),
             says_first: None,
         }
@@ -27946,7 +28109,7 @@ mod tests {
             threaded(2, 2, "2026-07-26 11:00", 1, "t1"),
         ];
 
-        let nodes = conversation_nodes(&state, "t1");
+        let nodes = conversation_nodes(&state, "acc", "t1");
         assert_eq!(
             nodes.iter().map(|n| n.message_id).collect::<Vec<_>>(),
             vec![1, 2, 3]
@@ -27963,7 +28126,7 @@ mod tests {
             threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
             threaded(2, 2, "2026-07-26 11:00", 0, "t2"),
         ];
-        let nodes = conversation_nodes(&state, "t1");
+        let nodes = conversation_nodes(&state, "acc", "t1");
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].message_id, 1);
     }
@@ -27978,7 +28141,7 @@ mod tests {
             threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
             threaded(2, 2, "2026-07-26 11:00", 4, "t1"),
         ];
-        let nodes = conversation_nodes(&state, "t1");
+        let nodes = conversation_nodes(&state, "acc", "t1");
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[1].parent, None);
     }

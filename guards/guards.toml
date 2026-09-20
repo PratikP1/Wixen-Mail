@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 223 records have arrived since and have not been through it.
+# 229 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12607,9 +12607,21 @@ file = "src/data/message_cache/messages.rs"
 # that only asked "did the named tests go red" would have reported the new test
 # as an unnamed failure and said nothing about the weakened one. A count check
 # would have flagged the record and neither.
+#
+# And a ninth time on 2026-09-20, after plan 11-11.1.3 added four tests to
+# this file and the count check flagged this record among twenty-five.
+# Forty-two became fifty, and only four of the eight are that plan's: the
+# every-inbox listing groups on this column, so All Inboxes shown as
+# conversations has no rows without the writer. The other four are 11-08.1's
+# of 2026-09-19, in `server_thread_ids` on both layers, a module no record
+# named, so no count check could fire for them: the hole the file's own
+# header describes, a test added to a file no record names, found by this
+# record being measured for a different reason a day later.
 before = """                    &conversation,"""
 after = """                    None::<String>,"""
 red = [
+    "application::server_thread_ids::tests::test_a_refusal_records_nothing_and_the_next_check_asks_for_what_is_still_missing",
+    "application::server_thread_ids::tests::test_a_server_that_names_no_conversation_is_not_asked_and_the_pass_is_recorded",
     "data::message_cache::messages::tests::test_a_chain_that_arrives_later_moves_the_message_into_its_conversation",
     "data::message_cache::messages::tests::test_a_conversation_archived_with_no_label_is_still_in_the_list",
     "data::message_cache::messages::tests::test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time",
@@ -12624,6 +12636,7 @@ red = [
     "data::message_cache::messages::tests::test_a_deleted_message_is_not_counted",
     "data::message_cache::messages::tests::test_a_filed_draft_and_a_synced_reply_naming_it_are_one_conversation",
     "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
+    "data::message_cache::messages::tests::test_a_folders_conversation_rows_say_the_folder_and_the_account_they_were_read_in",
     "data::message_cache::messages::tests::test_a_hostile_reference_chain_is_stored_and_read_back_unchanged",
     "data::message_cache::messages::tests::test_a_late_message_naming_two_conversations_merges_them_into_one",
     "data::message_cache::messages::tests::test_a_message_a_sync_stores_carries_its_conversation_id",
@@ -12633,6 +12646,9 @@ red = [
     "data::message_cache::messages::tests::test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy",
     "data::message_cache::messages::tests::test_a_second_sort_level_is_taken_over_the_conversation_too",
     "data::message_cache::messages::tests::test_a_stored_row_holding_the_bracketed_spelling_still_names_its_conversation",
+    "data::message_cache::messages::tests::test_all_inboxes_counts_a_message_filed_elsewhere_only_when_the_reach_is_the_whole_account",
+    "data::message_cache::messages::tests::test_all_inboxes_lists_a_conversation_held_in_two_accounts_as_two_rows",
+    "data::message_cache::messages::tests::test_an_account_whose_inbox_is_empty_contributes_no_row_to_all_inboxes",
     "data::message_cache::messages::tests::test_an_identifier_nothing_holds_names_no_conversation",
     "data::message_cache::messages::tests::test_an_older_message_arriving_renames_the_conversation",
     "data::message_cache::messages::tests::test_both_views_of_the_safety_column_rank_the_verdicts_the_same_way",
@@ -12651,10 +12667,14 @@ red = [
     "data::message_cache::messages::tests::test_two_accounts_do_not_share_a_conversation",
     "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
     "data::message_cache::messages::tests::test_with_the_reach_on_one_folder_a_conversation_counts_only_what_is_here",
+    "data::message_cache::server_thread_ids::tests::test_naming_a_reply_brings_its_header_named_conversation_under_the_word",
+    "data::message_cache::server_thread_ids::tests::test_naming_a_row_writes_the_word_and_files_the_row_under_it",
     "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/application/server_thread_ids.rs", tests = 7 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/server_thread_ids.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -12692,7 +12712,7 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -12724,7 +12744,7 @@ red = [
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -13140,17 +13160,28 @@ after = """        let was = self.uid_of(message_id)?;
         let _unused = match numbering {"""
 red = [
     "application::local_delete::tests::test_emptying_several_folders_does_them_all_and_names_them_in_order",
+    "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
+    "application::moves_waiting::tests::test_two_crossings_are_replayed_in_the_order_they_were_asked",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
     "data::message_cache::messages::tests::test_a_message_moved_into_a_folder_on_this_computer_still_counts_upward",
     "data::message_cache::messages::tests::test_two_messages_moved_into_one_folder_do_not_collide",
+    "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
     "data::message_cache::shared_folders::tests::test_afterwards_no_account_keeps_a_copy_of_a_folder_that_is_shared",
     "data::message_cache::shared_folders::tests::test_two_messages_numbered_the_same_both_survive_and_one_records_its_old_number",
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
+# Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
+# test added to `messages.rs`: three short, none of them that plan's. All
+# three are 11-07.1's and 11-07.2's of 2026-09-19, in `moves_waiting` on
+# both layers, new modules no record named, so no count check fired for
+# them; a move made here renumbers the row through this function and a
+# crossing does it twice.
 
 [[guard]]
 # D-32 says a rename keeps a pin and a real deletion takes it. A rename
@@ -13367,7 +13398,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -13465,7 +13496,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -13500,8 +13531,11 @@ tests_last_seen = [
 # guarded code changed between the two measurements.
 name = "a folder holding a copy of every message is left out of a conversation count"
 file = "src/data/message_cache/messages.rs"
+# The break's text moved on 2026-09-20 when 11-11.1.3 keyed a copy by its
+# account as well as its message, so the one scope could hold every inbox
+# at once; the break is the same, the exclusion taken out.
 before = """               AND (mf.holds_all_mail = 0
-                    OR {WHICH_MESSAGE_THIS_ROW_IS}
+                    OR mf.account_id || ':' || {WHICH_MESSAGE_THIS_ROW_IS}
                        NOT IN (SELECT message FROM elsewhere))"""
 after = """               AND (mf.holds_all_mail = 0 OR mf.holds_all_mail = 1)"""
 red = [
@@ -13514,7 +13548,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_holds_a_message_archived_with_no_label",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -13541,7 +13575,7 @@ red = [
     "presentation::view_state::tests::test_the_count_in_conversation_mode_is_the_conversation_count",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 
 [[guard]]
@@ -13575,7 +13609,7 @@ red = [
     "presentation::view_state::tests::test_two_of_a_conversation_s_five_messages_come_back_as_those_two",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 
 [[guard]]
@@ -13670,7 +13704,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
@@ -13699,7 +13733,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND ? IS NOT NULL\""""
@@ -13734,7 +13768,7 @@ red = [
     "presentation::view_state::tests::test_nothing_changing_repaints_nothing_and_leaves_the_count_alone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 before = """        rows: (0..now.len())
             .filter(|row| was.get(*row) != Some(&now[*row]))
@@ -14751,7 +14785,7 @@ red = [
     "presentation::message_columns::tests::test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/presentation/message_columns.rs", tests = 43 },
 ]
 
@@ -14784,7 +14818,7 @@ red = [
     "data::message_cache::messages::tests::test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -14817,7 +14851,7 @@ red = [
     "data::message_cache::messages::tests::test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -14841,7 +14875,7 @@ red = [
     "data::message_cache::messages::tests::test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -14879,7 +14913,7 @@ red = [
     "data::message_cache::messages::tests::test_a_root_arriving_after_the_message_that_names_it_joins_its_conversation",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 [[guard]]
@@ -14911,7 +14945,7 @@ red = [
     "data::message_cache::messages::tests::test_the_backfill_moves_conversations_and_not_mail",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -15312,7 +15346,7 @@ red = [
     "data::message_cache::messages::a_listing_reads_no_message_text::test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 # ── The migration moves every row it found ─────────────────────────────────
@@ -15511,16 +15545,29 @@ after = """        Ok(match path {
             Some(_) => WrittenDownAs::FiledHereCountingUp,"""
 red = [
     "application::importing_messages::end_to_end::test_a_message_imported_into_a_folder_the_server_fills_leaves_its_numbers_alone",
+    "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
+    "application::moves_waiting::tests::test_a_read_of_the_destination_neither_forgets_nor_doubles_what_a_waiting_move_holds",
+    "application::moves_waiting::tests::test_a_server_that_hung_up_answers_not_reached_and_the_row_goes_on_waiting",
+    "application::moves_waiting::tests::test_made_here_moves_the_row_and_keeps_the_move_waiting",
     "application::sent_copy::tests::test_a_copy_kept_here_takes_a_number_the_server_will_never_issue",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_is_marked_as_one_filed_here",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
     "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_a_folder_a_server_names_counts_down_from_the_top",
+    "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
 ]
+# Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
+# test added to `messages.rs`: six short, none of them that plan's, all
+# 11-07.1's and 11-07.2's of 2026-09-19 in `moves_waiting` on both layers,
+# new modules no record named. A move made here files the row under the
+# marker this decides, and a replay reads the marker back.
 
 # ── Nothing new asks for the counting-up numbering directly ────────────────
 #
@@ -15551,7 +15598,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 # ── Mail archived with no label counts toward its conversation ─────────────
@@ -15587,11 +15634,11 @@ tests_last_seen = [
 [[guard]]
 name = "mail archived with no label counts toward its conversation"
 file = "src/data/message_cache/messages.rs"
-before = """               AND (?3 = 1 OR id = ?2)
-         ),"""
-after = """               AND (?3 = 0 OR holds_all_mail = 0)
-               AND (?3 = 1 OR id = ?2)
-         ),"""
+# The break's text moved on 2026-09-20 when 11-11.1.3 made the reach's
+# clause one of the four parts a scope supplies; the break is the same,
+# the all-mail folder dropped from the reach under the whole account.
+before = """    reached: "account_id = ?1 AND (?3 = 1 OR id = ?2)","""
+after = """    reached: "account_id = ?1 AND (?3 = 0 OR holds_all_mail = 0) AND (?3 = 1 OR id = ?2)","""
 red = [
     "data::message_cache::messages::tests::test_a_conversation_archived_with_no_label_is_still_in_the_list",
     "data::message_cache::messages::tests::test_a_delete_reaches_the_message_archived_with_no_label",
@@ -15600,7 +15647,7 @@ red = [
     "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 # ── The two conversation queries decide which messages exist with one text ──
@@ -15663,7 +15710,7 @@ red = [
     "data::message_cache::messages::tests::test_the_row_and_the_action_agree_over_every_conversation_fixture_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 # ── A message with no identity of its own is only ever itself ───────────────
@@ -15691,7 +15738,7 @@ red = [
     "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 # ── A copy is recognised by the sender's message identifier when the server
@@ -15727,7 +15774,7 @@ red = [
     "data::message_cache::messages::tests::test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 # ── The send path reads the switch, rather than only calling the decision ───
@@ -24785,7 +24832,7 @@ red = [
     "test_the_sort_the_menu_stores_is_read_back_into_the_order_the_cache_takes",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
@@ -26559,7 +26606,7 @@ red = [
     "data::message_cache::messages::tests::test_a_copy_kept_here_survives_the_sync_that_finds_it_is_not_on_the_server",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
 # The line for a row that left spoken again, as the outcome was until
@@ -27111,17 +27158,20 @@ tests_last_seen = [
 name = "the conversation listing groups by the stored conversation, not by the subject"
 file = "src/data/message_cache/messages.rs"
 suite = "a_conversation_is_gmails_own_and_a_late_parent_joins_it"
-before = """         GROUP BY m.thread_id
-         ORDER BY {order}, m.thread_id ASC","""
-after = """         GROUP BY m.subject
-         ORDER BY {order}, m.thread_id ASC","""
+# The break's text moved on 2026-09-20 when 11-11.1.3 made the grouping an
+# argument of the one listing text; the break is the same, the folder's
+# listing grouped by subject.
+before = """        conversation_scope(),
+        "m.thread_id","""
+after = """        conversation_scope(),
+        "m.subject","""
 red = [
     "test_a_message_that_moves_to_another_conversation_changes_both_rows_messages_and_counts",
     "test_on_gmail_a_message_whose_word_differs_is_its_own_conversation",
     "test_two_messages_with_one_subject_and_no_chain_stay_two_conversations",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "tests/a_conversation_is_gmails_own_and_a_late_parent_joins_it.rs", tests = 14 },
 ]
 
@@ -28292,7 +28342,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/presentation/view_state.rs", tests = 56 },
+    { file = "src/presentation/view_state.rs", tests = 57 },
 ]
 
 # The setting is read where the folder opens and handed to the rule; a
@@ -28304,13 +28354,17 @@ tests_last_seen = [
 # which is a warning and compiles.
 #
 # Measured 2026-09-20 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. The break's text moved
+# later the same day, when 11-11.1.3 put the one `from_stored` call in
+# `the_view_kept_under` so a folder and All Inboxes land by the same
+# answer; the break is the same, the constant in place of the call, and
+# now reddens every landing at once.
 [[guard]]
 name = "the folder landing hands the rule what show conversations by default says, not a constant"
 file = "src/presentation/wx_app.rs"
 suite = "the_settings_dialog_opens_in"
-before = """                                what_a_folder_never_set_shows(),"""
-after = """                                view_state::Showing::Messages,"""
+before = """            what_a_folder_never_set_shows(),"""
+after = """            view_state::Showing::Messages,"""
 red = [
     "test_the_folder_landing_reads_show_conversations_by_default_where_the_folder_opens",
 ]
@@ -28363,4 +28417,146 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_settings_dialog_opens_in.rs", tests = 9 },
+]
+
+# ── All Inboxes shown as conversations, one row per account (#92, 11-11.1.3) ──
+#
+# A conversation is an account's, and the same identifier in two inboxes is
+# two conversations (T-01-47). The every-inbox listing groups by account and
+# conversation; the break groups by conversation alone, which folds the two
+# accounts' rows into one row that counts both and says one account's name
+# for the other's mail. Red in the cache test that writes the same
+# conversation into two inboxes and asks for two rows.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "all inboxes lists a conversation held in two accounts as two rows, one per account"
+file = "src/data/message_cache/messages.rs"
+before = """        "m.account_id, m.thread_id","""
+after = """        "m.thread_id","""
+red = [
+    "data::message_cache::messages::tests::test_all_inboxes_lists_a_conversation_held_in_two_accounts_as_two_rows",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+]
+
+# A row says where it was read so an act on it asks the scope its count
+# came from, and under All Inboxes that is its own account's inbox. The
+# break takes the account out of the lookup, so every row names the first
+# inbox of any account, and a delete of a conversation in the second
+# account would be counted against the first's inbox. Red in the same
+# two-rows test, which reads the folder on each row.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a row of all inboxes says its own account's inbox, not the first inbox of any account"
+file = "src/data/message_cache/messages.rs"
+before = """    read_in_folder: "(SELECT MIN(i.id) FROM inboxes i WHERE i.account_id = mf.account_id)","""
+after = """    read_in_folder: "(SELECT MIN(i.id) FROM inboxes i)","""
+red = [
+    "data::message_cache::messages::tests::test_all_inboxes_lists_a_conversation_held_in_two_accounts_as_two_rows",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+]
+
+# The message a row stands for is chosen among the rows of `here` in the
+# same conversation, and under All Inboxes `here` holds every account's
+# rows at once, so the choice has to stay inside the row's own account or
+# the second account's row previews, opens and fetches the first account's
+# message (T-11-113). The break drops the account from the macro every
+# stands-for expression is built from. Red in the two-rows test, which
+# reads each row's message id against the ids it wrote.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "the message a row of all inboxes stands for is its own account's"
+file = "src/presentation/message_columns.rs"
+before = """            " FROM here r WHERE r.thread_id = m.thread_id AND r.account_id = m.account_id \\"""
+after = """            " FROM here r WHERE r.thread_id = m.thread_id \\"""
+red = [
+    "data::message_cache::messages::tests::test_all_inboxes_lists_a_conversation_held_in_two_accounts_as_two_rows",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/presentation/message_columns.rs", tests = 43 },
+]
+
+# What the tester saw (#92): landing on All Inboxes left the view and the
+# conversation rows as the last folder had left them, so a folder in
+# Thread View put its own rows under the All Inboxes title. The break
+# takes the settle out of the All Inboxes arm and leaves the view, the
+# rows and the check mark untouched, which is the tree as it stood before
+# 2026-09-20. Red in the reading over the arm that the view is read,
+# settled and only then the mail asked for.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "landing on all inboxes settles its own view before the mail is asked for"
+file = "src/presentation/wx_app.rs"
+suite = "all_inboxes_keeps_a_view_of_its_own"
+before = """                                settle_the_view_on_arrival(&state, &frame, showing);"""
+after = """                                let _ = (&state, &frame, showing);"""
+red = [
+    "test_landing_on_all_inboxes_reads_its_own_view_settles_it_and_then_asks_for_the_mail",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 11 },
+]
+
+# All Inboxes holds every account's messages at once, and the same thread
+# id in two accounts is two conversations (T-01-47); the tree Enter opens
+# is built from the loaded rows filtered by the row's account as well as
+# its thread id. The break drops the account from the filter, so either
+# row would open a tree holding both accounts' mail (T-11-113). Red in the
+# case that builds a state with one thread id in two accounts and in the
+# reading over the function's text.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the tree a row of all inboxes opens holds its own account's messages alone"
+file = "src/presentation/wx_app.rs"
+suite = "all_inboxes_keeps_a_view_of_its_own"
+before = """        .filter(|m| m.account_id == account_id && m.thread_id.as_deref() == Some(thread_id))"""
+after = """        .filter(|m| !account_id.is_empty() && m.thread_id.as_deref() == Some(thread_id))"""
+red = [
+    "test_one_thread_id_in_two_accounts_opens_one_tree_per_account",
+    "test_the_set_the_fetch_and_the_tree_read_the_rows_own_account",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 11 },
+]
+
+# D-11's switch to conversations selects the rows holding what was
+# selected, and under All Inboxes a row is named by its account and its
+# thread id together, since the same thread id in two accounts is two rows
+# (T-01-47). The break keys a message by its thread id with no account, so
+# a message of the second account comes back selected on the first
+# account's row, and a command on that row would act on the other
+# account's mail (T-11-113). Red in the reading over the switch's keys.
+# Found on the branch before the merge, by reading the helper the switch
+# already used rather than by the plan.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "switching all inboxes to conversations selects the row's own account's conversation"
+file = "src/presentation/wx_app.rs"
+suite = "all_inboxes_keeps_a_view_of_its_own"
+before = """                        .map(|thread| (m.account_id.clone(), thread)),"""
+after = """                        .map(|thread| (String::new(), thread)),"""
+red = [
+    "test_switching_to_conversations_selects_the_rows_own_accounts_conversation",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 11 },
 ]

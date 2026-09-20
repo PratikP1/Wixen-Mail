@@ -314,21 +314,31 @@ impl KeptSelection {
 /// Which conversation rows to select, switching to conversations.
 ///
 /// Every conversation holding a selected message, once each, in row order.
-/// `thread_of_message` is the list's own rows, so a message the list does not
-/// hold selects nothing rather than guessing.
-pub fn conversations_holding(
+/// `conversation_of_message` is the list's own rows, so a message the list
+/// does not hold selects nothing rather than guessing.
+///
+/// The key that names a conversation is the caller's, since 2026-09-20
+/// (#92): a thread id in a folder, and the account with the thread id
+/// under All Inboxes, where the same thread id in two accounts is two rows
+/// (T-01-47) and a message of the second must not come back selected on
+/// the first.
+pub fn conversations_holding<Conversation: PartialEq>(
     kept: &KeptSelection,
-    thread_of_message: &[(i64, Option<String>)],
-    conversation_ids: &[String],
+    conversation_of_message: &[(i64, Option<Conversation>)],
+    conversation_rows: &[Conversation],
 ) -> Vec<usize> {
     let mut rows: Vec<usize> = Vec::new();
     for chosen in kept.messages() {
-        let Some((_, Some(thread))) = thread_of_message.iter().find(|(id, _)| id == chosen) else {
+        let Some((_, Some(conversation))) =
+            conversation_of_message.iter().find(|(id, _)| id == chosen)
+        else {
             // A message in no conversation, or one the list does not hold.
             // Neither is a row here, and neither is a reason to guess.
             continue;
         };
-        if let Some(row) = conversation_ids.iter().position(|held| held == thread)
+        if let Some(row) = conversation_rows
+            .iter()
+            .position(|held| held == conversation)
             && !rows.contains(&row)
         {
             rows.push(row);
@@ -472,6 +482,10 @@ mod tests {
     fn a_conversation(thread_id: &str, messages: i64) -> ConversationItem {
         ConversationItem {
             thread_id: thread_id.to_string(),
+            read_in: crate::application::conversations::ReadIn {
+                account_id: "acc".to_string(),
+                folder_id: 1,
+            },
             subject: "Quarterly report".to_string(),
             messages,
             unread: 0,
@@ -980,6 +994,20 @@ mod tests {
         let rows = vec![(1, None), (2, Some("a".to_string()))];
         let kept = KeptSelection::of(vec![1]);
         assert!(conversations_holding(&kept, &rows, &["a".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn test_under_all_inboxes_a_message_comes_back_on_its_own_accounts_row_not_the_first_with_the_thread_id()
+     {
+        // All Inboxes holds two rows for one thread id when two accounts
+        // hold it (#92, T-01-47), and the key the window hands in carries
+        // the account. A message of the second account comes back on the
+        // second row; keyed by thread id alone it would land on the first.
+        let quarterly = |account: &str| (account.to_string(), "quarterly".to_string());
+        let rows = vec![(1, Some(quarterly("acc"))), (2, Some(quarterly("other")))];
+        let conversations = vec![quarterly("acc"), quarterly("other")];
+        let kept = KeptSelection::of(vec![2]);
+        assert_eq!(conversations_holding(&kept, &rows, &conversations), vec![1]);
     }
 
     #[test]

@@ -67,7 +67,9 @@
 use std::fs;
 use std::path::Path;
 
-use wixen_mail::application::conversations::{AConversationReaches, ConversationItem, RowMessage};
+use wixen_mail::application::conversations::{
+    AConversationReaches, ConversationItem, ReadIn, RowMessage,
+};
 use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
@@ -447,6 +449,10 @@ fn test_sorting_by_correspondent_orders_conversations_by_their_row_messages_send
 fn a_conversation_row(thread_id: &str, messages: i64, stands_for: RowMessage) -> ConversationItem {
     ConversationItem {
         thread_id: thread_id.to_string(),
+        read_in: ReadIn {
+            account_id: "acc".to_string(),
+            folder_id: 1,
+        },
         subject: "Quarterly report".to_string(),
         messages,
         unread: 1,

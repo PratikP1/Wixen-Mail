@@ -54,6 +54,13 @@ macro_rules! how_bad_the_safety_word_is {
 /// none is, which is also the answer when every message is read. The
 /// tester's rule of 2026-09-16 (#31), phase 11's decision 9.
 ///
+/// The same conversation and the same account, since 2026-09-20 (#92):
+/// `here` holds every inbox's rows at once under All Inboxes, and the same
+/// identifier in two accounts is two conversations (T-01-47), so a row's
+/// message is chosen among its own account's rows and never the other's.
+/// Under one folder every row of `here` is one account's and the clause
+/// changes nothing.
+///
 /// A macro for the reason [`how_bad_the_safety_word_is`] is one: the column
 /// name goes inside a larger literal, and `concat!` joins literals while the
 /// compiler is running, so the result is still a fixed string chosen by
@@ -63,7 +70,7 @@ macro_rules! the_message_the_row_stands_for {
         concat!(
             "(SELECT r.",
             $column,
-            " FROM here r WHERE r.thread_id = m.thread_id \
+            " FROM here r WHERE r.thread_id = m.thread_id AND r.account_id = m.account_id \
              ORDER BY r.read ASC, r.received_at ASC, r.id ASC LIMIT 1)"
         )
     };
@@ -105,7 +112,8 @@ const THE_LABELS_ON_A_CONVERSATION: &str = "(SELECT GROUP_CONCAT(name, char(10))
      (SELECT DISTINCT t.name AS name FROM here r \
       INNER JOIN message_tags mt ON mt.message_id = r.id \
       INNER JOIN tags t ON t.id = mt.tag_id \
-      WHERE r.thread_id = m.thread_id ORDER BY t.name COLLATE NOCASE))";
+      WHERE r.thread_id = m.thread_id AND r.account_id = m.account_id \
+      ORDER BY t.name COLLATE NOCASE))";
 
 /// A column the message list can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -344,7 +352,8 @@ impl MessageColumn {
             // answer to the question of what a conversation is called.
             MessageColumn::Subject => {
                 "conversation_name(\
-                 (SELECT o.subject FROM here o WHERE o.thread_id = m.thread_id \
+                 (SELECT o.subject FROM here o \
+                  WHERE o.thread_id = m.thread_id AND o.account_id = m.account_id \
                   ORDER BY o.received_at ASC, o.id ASC LIMIT 1))"
             }
             // The sender the row says first, which is what sorting by

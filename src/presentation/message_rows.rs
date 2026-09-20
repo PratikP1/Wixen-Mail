@@ -1005,6 +1005,10 @@ mod tests {
     fn conversation() -> ConversationItem {
         ConversationItem {
             thread_id: "root@example.com".to_string(),
+            read_in: crate::application::conversations::ReadIn {
+                account_id: "acc".to_string(),
+                folder_id: 1,
+            },
             subject: "Quarterly report".to_string(),
             messages: 5,
             unread: 2,
