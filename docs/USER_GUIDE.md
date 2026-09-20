@@ -27,6 +27,24 @@ Wixen Mail is designed to work with screen readers (NVDA, JAWS, Windows Narrator
 ### First Launch
 When you first launch Wixen Mail, you'll need to configure an email account to get started.
 
+### When a setting applies
+
+Settings opens with `Ctrl+,`. A setting applies as soon as you press OK: the
+next check, the next message you read, the next row painted, all use what you
+just chose, with no restart. Two settings cannot do that, and each says so in a
+sentence under its control, which a screen reader reads after the control's
+name:
+
+- **Log level**, on the Advanced tab, is set up once when the program starts.
+  A change takes effect the next time Wixen Mail starts.
+- **Default sort order**, on the Reading tab, is read once when the program
+  starts, and only in folders whose columns you have not arranged. A folder
+  you arranged with `F8` keeps the sort that arrangement carries, as
+  [Choosing columns](#choosing-columns-and-what-is-remembered) explains.
+
+Until 2026-09-20 two more waited for a restart without saying so: Mark as read
+after, and how dates are written in the lists. Both apply on OK now.
+
 ## Account Setup
 
 ### Adding an account
@@ -366,7 +384,11 @@ on. Move off it before the delay runs and it stays unread. Choose Only when I
 say so and nothing is ever marked on its own; marking by hand still works as
 it did. Until 2026-09-18 the delay was counted from the moment a row was
 selected, so listening to a row was enough to mark it, and from the build of
-2026-09-18 until this one the first `Space` counted too.
+2026-09-18 until this one the first `Space` counted too. Changing the delay
+applies as soon as you save Settings: the next message you read is marked after
+the new wait, with no restart. Until 2026-09-20 the delay was read once when
+the program started, so a change made in Settings did nothing until the next
+start.
 
 ### Choosing columns, and what is remembered
 

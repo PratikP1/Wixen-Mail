@@ -510,6 +510,31 @@ pub struct WxUIState {
     /// In state rather than captured by the paint callback, so saving new
     /// hours in Settings changes what the rows say without a restart.
     pub working_day: crate::application::reading_habits::WorkingDay,
+    /// How long after reading began a message is marked read: the Mark as
+    /// read after setting.
+    ///
+    /// In state for the reason the working day is. Until 2026-09-20 (#91)
+    /// the main timer's closure captured a value read once where the window
+    /// was built, so the wait chosen in Settings governed the next start and
+    /// never the next tick, and the tester found the setting did nothing
+    /// however he set it. Written where the window is built and by the
+    /// [`UIUpdate::MarkReadAfterChanged`] arm; read by the timer's
+    /// `mark_what_was_read`.
+    pub marks_read: crate::application::reading_habits::MarkRead,
+    /// How a date is written and read aloud: the four date settings, as
+    /// one value.
+    ///
+    /// In state for the reason the working day is. Until 2026-09-20 (#91)
+    /// the row callback, the PIM cells and every read-aloud closure captured
+    /// a copy read once where the window was built, while the calendar
+    /// heading and the opened message read the stored file afresh, so a date
+    /// style saved in Settings changed the heading and not the rows until
+    /// the next start. Written where the window is built and by the
+    /// [`UIUpdate::DateSettingsChanged`] arm, which repaints the six lists
+    /// once; read by the closures under the lock they already take, never
+    /// from the file, because the paint callback must not touch
+    /// configuration.
+    pub dates: date_display::DateSettings,
     /// How many minutes before an event the due window raises it when its
     /// stored alerts say nothing: `default_reminder_minutes` in Settings.
     ///
@@ -659,6 +684,8 @@ impl Default for WxUIState {
             calendars: Vec::new(),
             selected_note_id: None,
             working_day: crate::application::reading_habits::WorkingDay::default(),
+            marks_read: crate::application::reading_habits::MarkRead::default(),
+            dates: date_display::DateSettings::default(),
             default_event_alert_lead: i64::from(
                 crate::data::config::AppConfig::default().default_reminder_minutes,
             ),
@@ -1254,10 +1281,20 @@ impl WxMailApp {
             //
             // Read once rather than per row: the paint callback runs for every
             // visible cell and must not touch configuration.
+            //
+            // And read once into the state, never into a local: a local is
+            // what a closure captures, and a captured value is one a save in
+            // Settings cannot reach (#91, 2026-09-20). Every setting read
+            // here either follows a save through an update the Settings-saved
+            // arm sends, or is next-start by nature and says so on its
+            // control, and `tests/a_setting_saved_applies_without_a_restart.rs`
+            // holds this block to that list.
             let stored_config = crate::data::config::ConfigManager::load_stored()
                 .map(|mgr| mgr.app_config().clone())
                 .ok();
-            let date_settings = stored_config
+            // How a date is written, into state so the rows, the cells and
+            // the readings follow a save the way the working day does.
+            lock_state(&state).dates = stored_config
                 .as_ref()
                 .map(date_settings_from)
                 .unwrap_or_default();
@@ -1291,7 +1328,12 @@ impl WxMailApp {
                     CalendarView::from_stored(&cfg.calendar_view)
                 });
             lock_state(&state).calendar_showing = CalendarShowing::now(opens_on);
-            let marks_read = stored_config
+            // How long after reading a message is marked read. Into state
+            // rather than into a local the timer's closure captures: that
+            // local is what made the setting do nothing until the next
+            // start (#91, 2026-09-20), and the Settings-saved arm writes the
+            // same field.
+            lock_state(&state).marks_read = stored_config
                 .as_ref()
                 .map(|cfg| {
                     crate::application::reading_habits::MarkRead::from_setting(&cfg.mark_read_after)
@@ -1416,7 +1458,7 @@ impl WxMailApp {
                         &columns,
                         row,
                         column,
-                        date_settings,
+                        state.dates,
                         chrono::Local::now(),
                     )
                 }
@@ -1719,21 +1761,22 @@ impl WxMailApp {
                             .contacts
                             .get(row)
                             .map(|c| pim_rows::contact_cell(c, column)),
-                        "calendar" => s.events.get(row).map(|e| {
-                            pim_rows::event_cell(e, column, date_settings, now, s.working_day)
-                        }),
+                        "calendar" => s
+                            .events
+                            .get(row)
+                            .map(|e| pim_rows::event_cell(e, column, s.dates, now, s.working_day)),
                         "reminders" => s
                             .reminders
                             .get(row)
-                            .map(|r| pim_rows::reminder_cell(r, column, date_settings, now)),
+                            .map(|r| pim_rows::reminder_cell(r, column, s.dates, now)),
                         "tasks" => s
                             .tasks
                             .get(row)
-                            .map(|t| pim_rows::task_cell(t, column, date_settings, now)),
+                            .map(|t| pim_rows::task_cell(t, column, s.dates, now)),
                         _ => s
                             .notes
                             .get(row)
-                            .map(|n| pim_rows::note_cell(n, column, date_settings, now)),
+                            .map(|n| pim_rows::note_cell(n, column, s.dates, now)),
                     }
                     .unwrap_or_else(|| pim_rows::PLACEHOLDER.to_string())
                 });
@@ -1808,7 +1851,7 @@ impl WxMailApp {
                         let s = lock_state(&state);
                         let item = s.contacts.get(index)?;
                         let out = read_aloud::Reading {
-                            dates: date_settings,
+                            dates: s.dates,
                             now: chrono::Local::now(),
                         };
                         Some((item.read_id(), item.read_short(out), item.read_full(out)))
@@ -1827,7 +1870,7 @@ impl WxMailApp {
                         let s = lock_state(&state);
                         let item = s.events.get(index)?;
                         let out = read_aloud::Reading {
-                            dates: date_settings,
+                            dates: s.dates,
                             now: chrono::Local::now(),
                         };
                         Some((item.read_id(), item.read_short(out), item.read_full(out)))
@@ -1846,7 +1889,7 @@ impl WxMailApp {
                         let s = lock_state(&state);
                         let item = s.reminders.get(index)?;
                         let out = read_aloud::Reading {
-                            dates: date_settings,
+                            dates: s.dates,
                             now: chrono::Local::now(),
                         };
                         Some((item.read_id(), item.read_short(out), item.read_full(out)))
@@ -1865,7 +1908,7 @@ impl WxMailApp {
                         let s = lock_state(&state);
                         let item = s.tasks.get(index)?;
                         let out = read_aloud::Reading {
-                            dates: date_settings,
+                            dates: s.dates,
                             now: chrono::Local::now(),
                         };
                         Some((item.read_id(), item.read_short(out), item.read_full(out)))
@@ -1884,7 +1927,7 @@ impl WxMailApp {
                         let s = lock_state(&state);
                         let item = s.notes.get(index)?;
                         let out = read_aloud::Reading {
-                            dates: date_settings,
+                            dates: s.dates,
                             now: chrono::Local::now(),
                         };
                         Some((item.read_id(), item.read_short(out), item.read_full(out)))
@@ -2641,9 +2684,13 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 move |event| {
                     let idx = event.get_item_index() as usize;
-                    let contact = state.lock().ok().and_then(|s| s.contacts.get(idx).cloned());
+                    let (contact, dates) = state
+                        .lock()
+                        .ok()
+                        .map(|s| (s.contacts.get(idx).cloned(), s.dates))
+                        .unwrap_or_default();
                     let text = match &contact {
-                        Some(c) => c.detail_text(date_settings),
+                        Some(c) => c.detail_text(dates),
                         None => ContactItem::no_selection_text().to_string(),
                     };
                     detail_label.set_label(&text);
@@ -3658,7 +3705,7 @@ impl WxMailApp {
                         // unread, read as a message of a conversation the
                         // row's own count sizes; under the flat view the
                         // row, sized by the rows around it.
-                        let (message, in_conversation) = {
+                        let (message, in_conversation, dates) = {
                             let s = lock_state(&state);
                             let message = s.the_loaded_message_the_row_stands_for(index)?.clone();
                             let in_conversation = if s.showing.showing_conversations() {
@@ -3669,10 +3716,10 @@ impl WxMailApp {
                             } else {
                                 message_rows::conversation_size(&s.messages, index)
                             };
-                            (message, in_conversation)
+                            (message, in_conversation, s.dates)
                         };
                         let out = read_aloud::Reading {
-                            dates: date_settings,
+                            dates,
                             now: chrono::Local::now(),
                         };
                         Some((
@@ -4029,11 +4076,12 @@ impl WxMailApp {
                             );
                         }
                         _ if id == ID_READ_ROW_COLUMNS => {
+                            let dates = lock_state(&state).dates;
                             read_the_row_with_its_headings(
                                 &msg_list,
                                 &state,
                                 &column_layout,
-                                date_settings,
+                                dates,
                                 &a11y,
                                 &ui_tx,
                                 &runtime,
@@ -4721,6 +4769,7 @@ impl WxMailApp {
                         // them on the menu, and Ctrl+A used to open a dialog.
                         _ if an_edit_command(id).is_some() => {
                             if let Some(command) = an_edit_command(id) {
+                                let dates = lock_state(&state).dates;
                                 do_an_edit_command(
                                     command,
                                     EditParts {
@@ -4740,7 +4789,7 @@ impl WxMailApp {
                                         ],
                                         trees: &[folder_tree, pim_refs.contacts_tree],
                                         state: &state,
-                                        dates: date_settings,
+                                        dates,
                                     },
                                     &a11y,
                                 );
@@ -6031,7 +6080,7 @@ impl WxMailApp {
                         tx: &ui_tx,
                         rt: &runtime,
                     };
-                    mark_what_was_read(app, marks_read);
+                    mark_what_was_read(app);
 
                     // Whether this computer still has a network. On this timer
                     // and on its own interval, for the same reason the
@@ -6126,13 +6175,14 @@ impl WxMailApp {
 
                     if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
                         looked_at.set(std::time::Instant::now());
+                        let dates = lock_state(&state).dates;
                         raise_what_is_due(
                             &frame,
                             app,
                             &message_cache,
                             &a11y,
                             &between_looks,
-                            date_settings,
+                            dates,
                             &somewhere_to_type,
                         );
                         // Mail, on the same look, for the accounts whose
@@ -10819,10 +10869,13 @@ fn refresh_mark_read_wording(
 /// The write is the one it always was: the row in state, the list told, the
 /// server told. Nothing is announced, because this is not something somebody
 /// did, and the count in the folder tree is where it shows.
-fn mark_what_was_read(
-    app: AppHandles<'_>,
-    marks_read: crate::application::reading_habits::MarkRead,
-) {
+///
+/// The wait is the state's, read under the lock this already takes, and not
+/// a parameter: a parameter is handed a value the caller read once, and
+/// until 2026-09-20 (#91) that value was captured where the window was
+/// built, so a wait changed in Settings governed the next start and never
+/// the next tick.
+fn mark_what_was_read(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
 
     let marked = {
@@ -10836,7 +10889,7 @@ fn mark_what_was_read(
             s.reading_began,
             selected_unread,
             std::time::Instant::now(),
-            marks_read,
+            s.marks_read,
         ) else {
             return;
         };
@@ -18304,6 +18357,20 @@ fn handle_settings(
             // in Settings that the calendar only takes up after a restart is a
             // setting that appears not to work.
             let opens_on = CalendarView::from_stored(&new_config.calendar_view);
+            // The wait before a message read aloud or opened is marked read.
+            // Sent to the window like the working day, because the main
+            // timer reads it from the state; until 2026-09-20 (#91) it was
+            // captured once at startup, and the tester found the setting did
+            // nothing however he set it.
+            let wait = crate::application::reading_habits::MarkRead::from_setting(
+                &new_config.mark_read_after,
+            );
+            // The four date settings, through the one mapping, sent the same
+            // way and for the same reason: the rows, the cells and the
+            // readings read them from the state, and until 2026-09-20 (#91)
+            // held a copy captured at startup while the calendar heading
+            // read the file afresh.
+            let dates = date_settings_from(&new_config);
             // Read before `new_config` moves into storage below, and kept
             // regardless of whether the save that follows succeeds: a save
             // failure is already reported through `send_status`, and should
@@ -18320,6 +18387,8 @@ fn handle_settings(
                     mgr.app_config().default_reminder_minutes,
                 )));
                 let _ = tx.try_send(UIUpdate::CalendarViewChanged(opens_on));
+                let _ = tx.try_send(UIUpdate::MarkReadAfterChanged(wait));
+                let _ = tx.try_send(UIUpdate::DateSettingsChanged(dates));
                 send_status(tx, rt, "Settings saved");
                 // The two levels a report reads the rest of the log by, and
                 // nothing else from the settings (#71): a person's choices
@@ -19494,6 +19563,30 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::DefaultEventAlertLeadChanged(minutes) => {
             lock_state(state).default_event_alert_lead = *minutes;
+        }
+        // Nothing announced and nothing repainted: the next tick of the main
+        // timer reads the new wait, and "Settings saved" was said already.
+        UIUpdate::MarkReadAfterChanged(wait) => {
+            lock_state(state).marks_read = *wait;
+        }
+        // Written once, then every list painted again once, the way the
+        // font's save path repaints them: a virtual list asks for its
+        // visible cells on a repaint, and the callback reads the state. Never
+        // per row, and never from the file; the update carries the answer.
+        // Nothing announced: the row text is the announcement, and "Settings
+        // saved" was said already.
+        UIUpdate::DateSettingsChanged(dates) => {
+            lock_state(state).dates = *dates;
+            for list in [
+                msg_list,
+                &pim.contact_list,
+                &pim.cal_event_list,
+                &pim.reminder_list,
+                &pim.task_list,
+                &pim.note_list,
+            ] {
+                list.refresh(true, None);
+            }
         }
         UIUpdate::CalendarViewChanged(view) => {
             // The day is kept, not reset to today. Somebody who was looking at

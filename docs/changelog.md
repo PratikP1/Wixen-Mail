@@ -280,6 +280,32 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Mark as read after applies the moment Settings is saved.** The tester on 2026-09-20, on
+  build `1.0.0-alpha.1` at `4a09bfc2` under NVDA (#91), confirmed after a restart: "Mark as
+  read after" was not applied, not after Enter opened a message, not after Space read the
+  whole message, not after Shift+Space, whichever of its values he chose. The shape of it: a
+  setting changed in Settings did not apply until the program was started again. The rule
+  was right; the wait it was asked with was read once, where the main window was built, and
+  kept by the timer that asks the rule, so saving Settings wrote the file and nothing the
+  timer held. Since 2026-09-20 the wait lives in the window's state, written when the window
+  is built and again when Settings is saved, and the timer reads it there on every tick, the
+  way the working-day hours already reached the calendar rows. The date settings had the same
+  fault, which the issue did not name: how a date is written and read aloud was captured the
+  same way into the list's rows, the calendar, reminder, task and note cells, every reading
+  with `Space`, the reading of a row's columns, the contact details and the due window's
+  look, while the calendar heading and an opened message read the saved answer afresh, so a
+  date style changed in Settings showed in the heading and not in the rows until the next
+  start. They travel the same way now, and every list is painted again once when Settings is
+  saved. Every other setting was read against the code: each applies on save already or is
+  read where it acts, except two that cannot follow a save, and those now say so under their
+  controls, on the screen and to a screen reader: the log level, "Takes effect the next time
+  Wixen Mail starts.", and the default sort order, which adds "and only in folders whose
+  columns you have not arranged", since a folder whose columns were arranged with `F8` keeps
+  the sort that arrangement carries. A reading now fails if a setting is ever again read once
+  where the window is built without one of those two dispositions. No version moves for it.
+  Known limitations: nobody has yet changed the wait, pressed Enter on an unread message, and
+  heard the count move after the new wait without a restart, or changed how dates are written
+  and heard the rows follow.
 - **Text a sender hid is not read, and a line at the top says when words were left out.**
   The tester on 2026-09-19, on build `1.0.0-alpha.1` at `39537d13` under NVDA (#90): reading
   an HTML message in the formatted view is verbose, groupings are announced and phrases repeat.

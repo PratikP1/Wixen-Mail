@@ -202,7 +202,9 @@ fn the_timer_asks_the_rule(app: &str) -> Result<(), String> {
             ));
         }
     }
-    if !app.contains("mark_what_was_read(app, ") {
+    // Called with the handles alone since 11-11.1.1 (#91): the wait is read
+    // from the state inside, not handed in from a value captured at startup.
+    if !app.contains("mark_what_was_read(app)") {
         return Err(
             "nothing calls mark_what_was_read, so the timer never marks anything".to_string(),
         );
@@ -314,8 +316,8 @@ fn a_window_as_it_should_be() -> String {
          {{\n        move |index| {{\n            lock_state(&state).reading_began = Some((message.message_id, now));\n        }}\n    }},\n{}\n\
          fn wire_read_aloud<F>(\n    match read_aloud::what_a_press_starts(depth) {{\n        read_aloud::WhatBegan::TheWholeReading => on_whole(selected),\n        read_aloud::WhatBegan::Nothing => {{}}\n    }}\n}}\n\
          fn open_single_message(\n    lock_state(state).reading_began = Some((message.message_id, now));\n}}\n\
-         fn mark_what_was_read(\n    let mark = whether_to_mark_read(began, selected_unread, now, marks_read);\n}}\n\
-         mark_what_was_read(app, marks_read);\n",
+         fn mark_what_was_read(\n    let mark = whether_to_mark_read(began, selected_unread, now, s.marks_read);\n}}\n\
+         mark_what_was_read(app);\n",
         THE_READ_ALOUD_WIRING.0, THE_READ_ALOUD_WIRING.1
     )
 }
@@ -389,7 +391,7 @@ fn test_the_reading_complains_when_opening_starts_no_clock() {
 #[test]
 fn test_the_reading_complains_when_the_timer_keeps_its_own_clock_or_skips_the_rule() {
     let app = a_window_as_it_should_be().replacen(
-        "let mark = whether_to_mark_read(began, selected_unread, now, marks_read);",
+        "let mark = whether_to_mark_read(began, selected_unread, now, s.marks_read);",
         "let mark = (since.elapsed() >= wait).then_some(row);",
         1,
     );
@@ -398,8 +400,8 @@ fn test_the_reading_complains_when_the_timer_keeps_its_own_clock_or_skips_the_ru
     assert!(why.contains("never asks whether_to_mark_read"), "{why}");
 
     let app = a_window_as_it_should_be().replacen(
-        "let mark = whether_to_mark_read(began, selected_unread, now, marks_read);",
-        "let mark = whether_to_mark_read(began, selected_unread, now, marks_read);\n    if since.elapsed() < wait { return; }",
+        "let mark = whether_to_mark_read(began, selected_unread, now, s.marks_read);",
+        "let mark = whether_to_mark_read(began, selected_unread, now, s.marks_read);\n    if since.elapsed() < wait { return; }",
         1,
     );
     let why = the_timer_asks_the_rule(&app)

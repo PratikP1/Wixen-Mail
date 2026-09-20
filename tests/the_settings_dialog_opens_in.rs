@@ -64,7 +64,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use wixen_mail::application::reading_habits::WHAT_MARK_READ_COUNTS_FROM;
+use wixen_mail::application::reading_habits::{
+    TAKES_EFFECT_AT_THE_NEXT_START, WHAT_MARK_READ_COUNTS_FROM,
+    WHERE_THE_DEFAULT_SORT_ORDER_APPLIES,
+};
 use wixen_mail::common::paths::AppPaths;
 use wixen_mail::common::started;
 use wixen_mail::data::config::AppConfig;
@@ -727,6 +730,7 @@ fn test_the_first_visits_line_carries_its_units_and_parses_back() {
 
 /// Which page of the notebook is which, by the order the dialog adds them.
 const THE_READING_PAGE: usize = 2;
+const THE_ADVANCED_PAGE: usize = 6;
 
 #[cfg(windows)]
 #[test]
@@ -788,12 +792,38 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
                     "the built Reading page holds no static text saying {WHAT_MARK_READ_COUNTS_FROM:?} under Mark as read after"
                 ));
             }
+            // The sentence under Default sort order (#91, 11-11.1.1): the
+            // order applies at the next start and only where no layout was
+            // saved, and the choice cannot say that on its own.
+            if !windows_of::child_texts(reading)
+                .iter()
+                .any(|text| text == WHERE_THE_DEFAULT_SORT_ORDER_APPLIES)
+            {
+                wrong.push(format!(
+                    "the built Reading page holds no static text saying {WHERE_THE_DEFAULT_SORT_ORDER_APPLIES:?} under Default sort order"
+                ));
+            }
             widgets.reading().sort_order.set_selection(0);
             let after_a_change = wx_settings::read_settings(&widgets, &config);
             if after_a_change.default_sort_order != "date_newest" {
                 wrong.push(format!(
                     "the sort order was changed on the shown Reading page and OK wrote {:?}",
                     after_a_change.default_sort_order
+                ));
+            }
+
+            // The sentence under Log level (#91, 11-11.1.1): the level is set
+            // up once when the program starts, so the control says a change
+            // waits for the next start rather than leaving somebody to find
+            // out.
+            let advanced = widgets.advanced_panel.get_handle() as isize;
+            widgets.notebook.set_selection(THE_ADVANCED_PAGE);
+            if !windows_of::child_texts(advanced)
+                .iter()
+                .any(|text| text == TAKES_EFFECT_AT_THE_NEXT_START)
+            {
+                wrong.push(format!(
+                    "the built Advanced page holds no static text saying {TAKES_EFFECT_AT_THE_NEXT_START:?} under Log level"
                 ));
             }
 
