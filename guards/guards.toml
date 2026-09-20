@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 226 records have arrived since and have not been through it.
+# 228 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -28354,13 +28354,17 @@ tests_last_seen = [
 # which is a warning and compiles.
 #
 # Measured 2026-09-20 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. The break's text moved
+# later the same day, when 11-11.1.3 put the one `from_stored` call in
+# `the_view_kept_under` so a folder and All Inboxes land by the same
+# answer; the break is the same, the constant in place of the call, and
+# now reddens every landing at once.
 [[guard]]
 name = "the folder landing hands the rule what show conversations by default says, not a constant"
 file = "src/presentation/wx_app.rs"
 suite = "the_settings_dialog_opens_in"
-before = """                                what_a_folder_never_set_shows(),"""
-after = """                                view_state::Showing::Messages,"""
+before = """            what_a_folder_never_set_shows(),"""
+after = """            view_state::Showing::Messages,"""
 red = [
     "test_the_folder_landing_reads_show_conversations_by_default_where_the_folder_opens",
 ]
@@ -28480,4 +28484,53 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/presentation/message_columns.rs", tests = 43 },
+]
+
+# What the tester saw (#92): landing on All Inboxes left the view and the
+# conversation rows as the last folder had left them, so a folder in
+# Thread View put its own rows under the All Inboxes title. The break
+# takes the settle out of the All Inboxes arm and leaves the view, the
+# rows and the check mark untouched, which is the tree as it stood before
+# 2026-09-20. Red in the reading over the arm that the view is read,
+# settled and only then the mail asked for.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "landing on all inboxes settles its own view before the mail is asked for"
+file = "src/presentation/wx_app.rs"
+suite = "all_inboxes_keeps_a_view_of_its_own"
+before = """                                settle_the_view_on_arrival(&state, &frame, showing);"""
+after = """                                let _ = (&state, &frame, showing);"""
+red = [
+    "test_landing_on_all_inboxes_reads_its_own_view_settles_it_and_then_asks_for_the_mail",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 10 },
+]
+
+# All Inboxes holds every account's messages at once, and the same thread
+# id in two accounts is two conversations (T-01-47); the tree Enter opens
+# is built from the loaded rows filtered by the row's account as well as
+# its thread id. The break drops the account from the filter, so either
+# row would open a tree holding both accounts' mail (T-11-113). Red in the
+# case that builds a state with one thread id in two accounts and in the
+# reading over the function's text.
+#
+# Measured 2026-09-20 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the tree a row of all inboxes opens holds its own account's messages alone"
+file = "src/presentation/wx_app.rs"
+suite = "all_inboxes_keeps_a_view_of_its_own"
+before = """        .filter(|m| m.account_id == account_id && m.thread_id.as_deref() == Some(thread_id))"""
+after = """        .filter(|m| !account_id.is_empty() && m.thread_id.as_deref() == Some(thread_id))"""
+red = [
+    "test_one_thread_id_in_two_accounts_opens_one_tree_per_account",
+    "test_the_set_the_fetch_and_the_tree_read_the_rows_own_account",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/all_inboxes_keeps_a_view_of_its_own.rs", tests = 10 },
 ]

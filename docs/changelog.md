@@ -280,6 +280,29 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **All Inboxes keeps a view of its own, and shows every inbox's conversations when it
+  shows conversations.** Pratik's decision of 2026-09-20 on build `1.0.0-alpha.1` at
+  `4a09bfc2` (#92), the second half. What the tester saw was worse than the issue said:
+  landing on All Inboxes left the view and the conversation rows as the last folder had left
+  them, so a folder in Thread View put its own conversation rows under the All Inboxes title,
+  with the Thread View check mark saying whichever that folder had been, and `Ctrl+T` there
+  refused with "Open a folder first". Since 2026-09-20 All Inboxes has a view of its own,
+  kept under its own key beside the folders' views, switched with `Ctrl+T` like a folder and
+  read when you land on it rather than inherited: until you choose, it follows Show
+  conversations by default under Settings, Reading. Showing conversations, it lists every
+  account's inbox as conversations, one row per account and conversation, because a
+  conversation belongs to an account: a conversation whose messages are in two of your
+  accounts is two rows, each counting its own account's messages, each standing for its own
+  account's message, and whatever you do to a row reaches that row's own account. The Thread
+  View check mark now says the view of what is on screen everywhere: a folder, All Inboxes, a
+  label and a saved search. A label and a saved search stay one row per message, and
+  `Ctrl+T` there says so and names All Inboxes. No version moves for it: the counter moves at
+  the first behaviour change after a cut, and none has been cut since `1.0.0-alpha.1` was
+  set. Known limitations: mail arriving while All Inboxes is open does not refresh the list,
+  in either view, which is older than this change and is recorded; and nobody has yet landed
+  on All Inboxes on a fresh profile and heard conversation rows, pressed `Ctrl+T` there and
+  come back to find the choice kept, or heard a conversation held in two accounts as two
+  rows.
 - **Mark as read after applies the moment Settings is saved.** The tester on 2026-09-20, on
   build `1.0.0-alpha.1` at `4a09bfc2` under NVDA (#91), confirmed after a restart: "Mark as
   read after" was not applied, not after Enter opened a message, not after Space read the
@@ -319,9 +342,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   conversations; turn the setting off to have them flat again, and the folders you did set
   are untouched. No version moves for it: the counter moves at the first behaviour change
   after a cut, and none has been cut since `1.0.0-alpha.1` was set. Known limitations: All
-  Inboxes still shows whatever the folder before it left, which is the second half of #92
-  and the next change; and nobody has yet opened a folder never set on a fresh profile and
-  heard conversations, or turned the setting off and heard the next folder flat.
+  Inboxes showed whatever the folder before it left until the entry above, later the same
+  day; and nobody has yet opened a folder never set on a fresh profile and heard
+  conversations, or turned the setting off and heard the next folder flat.
 - **Text a sender hid is not read, and a line at the top says when words were left out.**
   The tester on 2026-09-19, on build `1.0.0-alpha.1` at `39537d13` under NVDA (#90): reading
   an HTML message in the formatted view is verbose, groupings are announced and phrases repeat.
