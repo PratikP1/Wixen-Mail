@@ -3138,6 +3138,7 @@ impl WxMailApp {
                         ) {
                             (Some(cache), Some(folder)) => view_state::Showing::from_stored(
                                 cache.folder_view(&folder).unwrap_or_default(),
+                                view_state::Showing::Messages,
                             ),
                             _ => view_state::Showing::Messages,
                         };

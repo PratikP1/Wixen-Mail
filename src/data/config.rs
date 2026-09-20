@@ -429,6 +429,18 @@ pub struct AppConfig {
     /// Default sort order for message list
     #[serde(default = "default_sort_order")]
     pub default_sort_order: String,
+    /// What a folder nobody has set shows: one row per conversation when
+    /// this is on, one per message when it is off.
+    ///
+    /// On unless somebody turns it off, by Pratik's decision of 2026-09-20
+    /// on #92 and his amendment the same day. Until then a folder never set
+    /// was flat (D-09), so a person who wanted conversations set every
+    /// folder by hand. A folder's own choice through View, Thread View still
+    /// wins where one was made, and a folder chosen flat stays flat whatever
+    /// this says; the rule is `Showing::from_stored`, and the main window
+    /// reads this where a folder opens, never once at startup.
+    #[serde(default)]
+    pub show_conversations_by_default: bool,
     /// How dates are shown in lists: "absolute" or "relative".
     ///
     /// Relative says "2 days ago" within the last week, which is three
@@ -804,6 +816,7 @@ impl Default for AppConfig {
             told_about_the_alpha: false,
             check_spelling_as_you_type: default_true(),
             default_sort_order: default_sort_order(),
+            show_conversations_by_default: false,
             default_reminder_minutes: default_reminder_minutes(),
             calendar_view: default_calendar_view(),
         }
@@ -1760,6 +1773,7 @@ mod permission_tests {
             "announce_while_fetching",
             "feedback_channels",
             "open_links_in",
+            "show_conversations_by_default",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1813,6 +1827,24 @@ mod permission_tests {
         assert!(
             parsed.check_spelling_as_you_type,
             "spelling would stop being checked for everybody upgrading"
+        );
+        // On unless turned off, by the decision of 2026-09-20 on #92: a
+        // settings file written before the key existed reads as on, so an
+        // upgrade sees conversations in every folder it never set, which is
+        // what a fresh profile sees. A file that carries the key keeps its
+        // answer.
+        assert!(
+            parsed.show_conversations_by_default,
+            "an absent key answered no, so everybody upgrading would go on \
+             seeing every folder they never set as flat, which is the default \
+             #92 was filed about"
+        );
+        assert_eq!(
+            AppConfig::default().show_conversations_by_default,
+            parsed.show_conversations_by_default,
+            "the struct's default and the field's absent answer disagree, so a \
+             settings screen built over the defaults would show one answer and \
+             an older file would read the other"
         );
         assert!(
             parsed.announce_decorative_pictures,
