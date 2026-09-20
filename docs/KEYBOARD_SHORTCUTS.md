@@ -703,7 +703,7 @@ field's and P the pattern's. Since 2026-09-19.
 | Columns | `F8` | Choose which message list columns are shown and in what order |
 | Next Pane | `F6` | Move focus between the folder tree and the message list |
 | Mute Message Reading | `Ctrl+M` | Stop what is being read aloud |
-| Thread View | `Ctrl+T` | Collapse the list to one row per conversation, or go back to one row per message. Kept per folder. `Enter` on a conversation row opens the conversation window |
+| Thread View | `Ctrl+T` | Collapse the list to one row per conversation, or go back to one row per message. Kept per folder; a folder never set follows Show conversations by default under Settings, Reading, on unless you turn it off. `Enter` on a conversation row opens the conversation window |
 | Apply View To Other Folders | (no shortcut) | Give the view this folder is in to other folders. Asks first |
 | Sort Messages | (submenu) | Date, sender, subject, or unread first |
 | Offline Mode | (no shortcut) | Stop reaching the network |

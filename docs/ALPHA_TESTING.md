@@ -7,7 +7,13 @@ This page says which parts, so you can decide what to point it at.
 ## The short version
 
 **Reading your mail is the part that has been used.** Signing in, listing
-folders, fetching messages, reading them, searching, threading.
+folders, fetching messages, reading them, searching, threading. Since the
+build after 2026-09-20 a folder you have never set shows one row per
+conversation, on a new profile and on one from before that day; a folder you
+set yourself through View, Thread View keeps your choice. If you want a folder
+flat, `Ctrl+T` in that folder does it, and Show conversations by default under
+Settings, Reading turns the default off for every folder you never set. Nobody
+has yet heard a folder never set announce conversations on a fresh profile.
 
 **Since the build of 2026-09-18, your mail comes down whole and keeps coming,
 and none of that has met a real account yet.** After every check for mail,
