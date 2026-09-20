@@ -1654,6 +1654,37 @@ pub enum EditorMessage {
     FilesDroppedOnTheMessage {
         count: usize,
     },
+    /// The page met a block marker, `## ` and its kin, and refused to make
+    /// its structure, and says why.
+    ///
+    /// Written to the log and never announced: "each one says what it made"
+    /// on the shortcuts page is true of things made, and a refusal is not a
+    /// conversion. It is posted so the next report of typed Markdown making
+    /// nothing can say which path refused, which #79 could not: the refusal
+    /// used to return with no post, no announcement and no log line.
+    ///
+    /// Only a refusal that met a marker. An ordinary space, which is most
+    /// of them, still posts nothing.
+    BlockMarkerRefused(WhyAMarkerWasRefused),
+}
+
+/// Why the page refused a block marker it recognised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhyAMarkerWasRefused {
+    /// The marker was the whole of its text node and something inline stood
+    /// before that node on the same line, so it was not the start of the
+    /// line. The rule asks the line, since #79; it used to ask the node,
+    /// and refused every line after a line break.
+    NotAtTheStartOfItsLine,
+}
+
+impl WhyAMarkerWasRefused {
+    /// The words for the log line.
+    pub const fn said(self) -> &'static str {
+        match self {
+            Self::NotAtTheStartOfItsLine => "the marker was not at the start of its line",
+        }
+    }
 }
 
 /// Read one message posted by the page.
@@ -2381,6 +2412,27 @@ mod tests {
         ] {
             assert_eq!(parse_message(raw), None, "for {raw:?}");
         }
+    }
+
+    #[test]
+    fn test_a_refused_block_marker_is_read_with_why_it_was_refused() {
+        // #79: a marker the rule met and refused used to return with no
+        // post, no announcement and no log line, so the report could not say
+        // which path refused. The page says why on the wire, and the window
+        // writes it to the log. A why the page never posts is read as
+        // nothing, like a format index from nowhere.
+        assert_eq!(
+            parse_message(r#"{"kind":"refused","where":"line"}"#),
+            Some(EditorMessage::BlockMarkerRefused(
+                WhyAMarkerWasRefused::NotAtTheStartOfItsLine
+            ))
+        );
+        assert_eq!(
+            WhyAMarkerWasRefused::NotAtTheStartOfItsLine.said(),
+            "the marker was not at the start of its line"
+        );
+        assert_eq!(parse_message(r#"{"kind":"refused","where":"moon"}"#), None);
+        assert_eq!(parse_message(r#"{"kind":"refused"}"#), None);
     }
 
     #[test]

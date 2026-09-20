@@ -2356,6 +2356,13 @@ pub fn show_compose_dialog_full(
                     waiting.set(Some(Deferred::Toolbar));
                     later.start(1, true);
                 }
+                // A marker the page recognised and would not turn into
+                // structure. To the log and not to the ear: "each one says
+                // what it made" stays true of things made, and #79 was
+                // three days of not knowing which path had refused.
+                Some(editor_document::EditorMessage::BlockMarkerRefused(why)) => {
+                    tracing::debug!("The editor refused a block marker: {}", why.said());
+                }
                 // The page is ours, so an unknown message is a bug rather than
                 // an attack, and doing nothing beats guessing which command
                 // somebody meant when every one of them sends or discards.
