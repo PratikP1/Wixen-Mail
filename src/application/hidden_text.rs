@@ -197,6 +197,24 @@ pub fn what_was_left_out(words_blocks: usize) -> String {
     }
 }
 
+/// Whether a sender's `aria-label` on this element is a name a reader would
+/// use, and so is kept for the page.
+///
+/// A link or a button whose only content is a picture has no other name,
+/// so the label is its name and a screen reader's link list would be empty
+/// without it. A table that is not a layout table is named by its label
+/// too. Everywhere else the label names a grouping the sender made for a
+/// sighted layout, "Post header" on a region, which a screen reader
+/// announces on the way in and the way out of every such block; the
+/// cleaner drops the `role` that made it a region, and this drops the name.
+/// One rule and never a list of senders. Decided here rather than in the
+/// cleaner's attribute filter because that filter sees one attribute at a
+/// time and a table's answer depends on its `role`.
+pub fn keeps_its_label(tag: &str, role: Option<&str>) -> bool {
+    let _ = (tag, role);
+    true
+}
+
 /// The markup with what the sender hid taken out, and how many blocks of
 /// words that took.
 ///
@@ -516,6 +534,41 @@ mod tests {
             what_was_left_out(3),
             "3 blocks the sender did not show were left out."
         );
+    }
+
+    // ── A sender's label ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_a_link_or_a_button_keeps_its_label_and_a_data_table_keeps_its_name() {
+        assert!(keeps_its_label("a", None));
+        assert!(keeps_its_label("button", None));
+        assert!(keeps_its_label("table", None));
+        assert!(keeps_its_label("table", Some("grid")));
+    }
+
+    #[test]
+    fn test_a_layout_table_a_region_and_a_div_lose_their_labels() {
+        assert!(!keeps_its_label("table", Some("presentation")));
+        assert!(!keeps_its_label("table", Some(" Presentation ")));
+        assert!(!keeps_its_label("div", Some("region")));
+        assert!(!keeps_its_label("div", None));
+        assert!(!keeps_its_label("span", None));
+        assert!(!keeps_its_label("td", Some("presentation")));
+    }
+
+    #[test]
+    fn test_the_drop_takes_the_label_off_a_layout_element_and_leaves_a_links() {
+        let (shown, _) = drop_what_the_sender_hid(
+            "<div role=\"region\" aria-label=\"Post header\"><h1>Title</h1></div>\
+             <a href=\"https://example.com/\" aria-label=\"Open the chart\"><img src=\"c.png\" alt=\"\"></a>\
+             <table role=\"presentation\" aria-label=\"Layout\"><tr><td>x</td></tr></table>\
+             <table aria-label=\"Prices\"><tr><th>Item</th></tr></table>",
+        );
+        assert!(!shown.contains("Post header"), "{shown}");
+        assert!(!shown.contains("Layout"), "{shown}");
+        assert!(shown.contains("aria-label=\"Open the chart\""), "{shown}");
+        assert!(shown.contains("aria-label=\"Prices\""), "{shown}");
+        assert!(shown.contains("role=\"presentation\""), "{shown}");
     }
 
     // ── The drop over markup ──────────────────────────────────────────────

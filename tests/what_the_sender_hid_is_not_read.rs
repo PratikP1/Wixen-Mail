@@ -43,6 +43,7 @@ use std::time::Instant;
 use wixen_mail::application::pictures::Fetching;
 use wixen_mail::common::types::MessageBody;
 use wixen_mail::presentation::HtmlRenderer;
+use wixen_mail::presentation::html_renderer::ThreadPart;
 
 /// The tester's Substack message, with every address that named him
 /// replaced by hand. The comment at its head records Pratik's leave.
@@ -221,6 +222,154 @@ fn test_the_pictures_sentence_and_the_blocks_sentence_share_one_paragraph_at_the
     assert!(
         paragraph.find("tracking pixel") < paragraph.find("left out"),
         "{paragraph}"
+    );
+}
+
+// ── A layout table is not a table, a label only where it is a name, and
+// nothing of ours said twice ─────────────────────────────────────────────
+
+/// One message as the conversation window and the preview show it.
+fn a_message(sender: &str, subject: &str, body: &str) -> ThreadPart {
+    ThreadPart {
+        sender: sender.to_string(),
+        date: "19 Sep 2026".to_string(),
+        subject: subject.to_string(),
+        body: MessageBody::Html(body.to_string()),
+        before_the_body: None,
+        depth: 0,
+    }
+}
+
+/// The page for one message, under a security bar when one is given.
+fn the_page_under_a_bar(bar: Option<&str>, subject: &str, part: ThreadPart) -> String {
+    a_reader().render_thread_under_a_bar(bar, subject, &[part])
+}
+
+/// The `<main>` landmark's content: the page's own markup and the cleaned
+/// body, without the shell's style block and its button.
+fn the_main_of(page: &str) -> &str {
+    let start = page.find("<main>").expect("a main landmark") + "<main>".len();
+    let end = page.rfind("</main>").expect("its end");
+    &page[start..end]
+}
+
+#[test]
+fn test_the_newsletters_layout_tables_keep_their_role_and_its_region_loses_its_name() {
+    let page = the_page_under_a_bar(
+        Some("This message was not signed."),
+        "Top three ways",
+        a_message("Marcus on AI", "Top three ways", THE_NEWSLETTER),
+    );
+    let main = the_main_of(&page);
+
+    // Forty-eight of forty-nine tables keep the sender's own claim that they
+    // are layout, so NVDA announces no table, row or column around them.
+    assert_eq!(main.matches("role=\"presentation\"").count(), 48, "{main}");
+    // And no other role survives: not the region, not the button.
+    assert_eq!(main.matches("role=\"").count(), 48, "{main}");
+    // The one label in the body named a grouping, and it is gone; the one
+    // label left is the security section's, which is ours.
+    assert!(!main.contains("Post header"), "{main}");
+    assert_eq!(main.matches("aria-label=").count(), 1, "{main}");
+    assert!(
+        main.contains("<section aria-label=\"Security warning\">"),
+        "{main}"
+    );
+}
+
+#[test]
+fn test_a_label_is_kept_where_it_is_a_name_and_dropped_where_it_named_a_grouping() {
+    let page = the_page_for(
+        "<div role=\"region\" aria-label=\"Post header\"><p>Heading area</p></div>\
+         <a href=\"https://example.com/chart\" aria-label=\"Open the chart\"><img src=\"https://example.com/c.png\" alt=\"\"></a>\
+         <table role=\"presentation\" aria-label=\"Layout\"><tr><td>laid out</td></tr></table>\
+         <table aria-label=\"Prices\"><tr><th>Item</th><th>Cost</th></tr><tr><td>Tea</td><td>2</td></tr></table>",
+    );
+    let main = the_main_of(&page);
+
+    assert!(!main.contains("Post header"), "{main}");
+    assert!(!main.contains("aria-label=\"Layout\""), "{main}");
+    assert!(main.contains("aria-label=\"Open the chart\""), "{main}");
+    assert!(main.contains("<table aria-label=\"Prices\">"), "{main}");
+    assert!(main.contains("<table role=\"presentation\">"), "{main}");
+    assert!(!main.contains("role=\"region\""), "{main}");
+}
+
+#[test]
+fn test_no_role_but_presentation_survives_and_only_on_a_tables_four_tags() {
+    let page = the_page_for(
+        "<div role=\"presentation\">a div</div>\
+         <table role=\"grid\"><tr role=\"row\"><td role=\"gridcell\">grid</td></tr></table>\
+         <table role=\"presentation\"><tr role=\"presentation\"><th role=\"presentation\">h</th>\
+         <td role=\"presentation\">d</td></tr></table>\
+         <span role=\"button\">not a button</span>",
+    );
+    let main = the_main_of(&page);
+
+    assert_eq!(main.matches("role=\"presentation\"").count(), 4, "{main}");
+    assert_eq!(main.matches("role=\"").count(), 4, "{main}");
+    assert!(main.contains("<div>a div</div>"), "{main}");
+    assert!(
+        main.contains("<table role=\"presentation\"><tbody><tr role=\"presentation\">"),
+        "{main}"
+    );
+}
+
+#[test]
+fn test_the_pages_own_markup_says_the_subject_once_and_the_sender_once_for_one_message() {
+    let page = the_page_under_a_bar(
+        None,
+        "Quarterly report",
+        a_message(
+            "Ada Lovelace",
+            "Quarterly report",
+            "<p>The numbers are in.</p>",
+        ),
+    );
+    let main = the_main_of(&page);
+
+    assert_eq!(main.matches("Quarterly report").count(), 1, "{main}");
+    assert!(main.contains("<h1>Quarterly report</h1>"), "{main}");
+    assert_eq!(main.matches("Ada Lovelace").count(), 1, "{main}");
+    assert!(
+        main.contains("<h2>Message from Ada Lovelace</h2>"),
+        "{main}"
+    );
+    assert!(!main.contains("1. Message from"), "{main}");
+    assert!(!main.contains("messages in this conversation"), "{main}");
+}
+
+#[test]
+fn test_a_conversation_still_numbers_its_messages_and_counts_them_once() {
+    let page = a_reader().render_thread_under_a_bar(
+        None,
+        "Quarterly report",
+        &[
+            a_message(
+                "Ada Lovelace",
+                "Quarterly report",
+                "<p>The numbers are in.</p>",
+            ),
+            ThreadPart {
+                depth: 1,
+                ..a_message("Grace Hopper", "Re: Quarterly report", "<p>Thanks.</p>")
+            },
+        ],
+    );
+    let main = the_main_of(&page);
+
+    assert_eq!(
+        main.matches("2 messages in this conversation.").count(),
+        1,
+        "{main}"
+    );
+    assert!(
+        main.contains("<h2>1. Message from Ada Lovelace</h2>"),
+        "{main}"
+    );
+    assert!(
+        main.contains("<h3>2. Reply from Grace Hopper</h3>"),
+        "{main}"
     );
 }
 
