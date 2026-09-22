@@ -150,13 +150,20 @@ jobs:
         # the default way a message opens; 'reader' opens the plain-text
         # reader, so the default surface had never been scanned. The NVDA
         # workflow's case for #80 launches the same target.
+        #
+        # The page-window target, added 2026-09-22 (#80, 12-02), is the
+        # separate window a link opens in. In the shipped program that is a
+        # process of its own with a browser profile of its own; this target
+        # builds the same window inside the process the scan launched, on a
+        # document rather than a live page, because the scan walks the tree
+        # of the process it started and the runner has no network.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
           'which-days', 'send-later', 'add-address-book', 'about',
           'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
           'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
-          'page'
+          'page', 'page-window'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

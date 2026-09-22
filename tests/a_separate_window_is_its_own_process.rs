@@ -283,15 +283,36 @@ fn test_nothing_in_the_program_still_says_a_separate_window_is_coming() {
     //
     // Read with the newlines taken out, because both sentences are wrapped
     // and a line-at-a-time search finds neither.
+    //
+    // "next build" on its own is an ordinary phrase, and one file uses it
+    // about something else: `default_apps_registration.rs` says a registry
+    // key naming a test binary would point at an executable the next build
+    // replaces. What was promised was a separate window with the next build,
+    // so the two halves are asked together rather than one of them alone.
+    let mut files_about_a_separate_window = 0;
     for file in every_rust_file_under("src") {
         let joined = what_ships_in(&file).replace('\n', " ");
-        for promise in ["next build", "SEPARATE_WINDOWS_ARRIVE_LATER"] {
-            assert!(
-                !joined.contains(promise),
-                "{file} still says {promise:?}, and the window is here"
-            );
+        assert!(
+            !joined.contains("SEPARATE_WINDOWS_ARRIVE_LATER"),
+            "{file} still names the status line that said the window was coming"
+        );
+        if !joined.to_ascii_lowercase().contains("separate window") {
+            continue;
         }
+        files_about_a_separate_window += 1;
+        assert!(
+            !joined.contains("next build"),
+            "{file} still says the separate window arrives with the next build, and it is here"
+        );
     }
+
+    // Or the reading above walked past everything and said nothing, which is
+    // how a check that reads source really fails.
+    assert!(
+        files_about_a_separate_window >= 3,
+        "only {files_about_a_separate_window} shipped files mention a separate window, so this \
+         reading is looking at the wrong tree"
+    );
 }
 
 #[test]

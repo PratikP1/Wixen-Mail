@@ -13,9 +13,10 @@
 //! runs in the browser profile the message preview uses, so a cookie it sets
 //! is sent when a later message loads a picture from the same site, which the
 //! browser's own profile would keep to itself; `docs/privacy.md` says so under
-//! "Where a link opens". The separate window is 11-11.2's, a process of its
-//! own with a profile of its own; until it lands the third choice is offered,
-//! routed to the browser and said, never silent.
+//! "Where a link opens". The separate window, since 2026-09-22, is a process
+//! of its own with a browser profile of its own, which is the only isolation
+//! this toolkit can reach and is why it is a process at all; the window and
+//! the reasoning are in `presentation::page_window`.
 //!
 //! An address that is not a page, `mailto:` or `tel:`, is the system's
 //! whatever the setting or the item says: the message view cannot host a mail
@@ -29,7 +30,7 @@ pub enum Where {
     DefaultBrowser,
     /// The view that held the message, with Backspace bringing the message back.
     MessageView,
-    /// A separate Wixen Mail window, a process of its own (11-11.2).
+    /// A separate Wixen Mail window, which is a process of its own.
     SeparateWindow,
 }
 
@@ -166,23 +167,29 @@ pub const SETTING_NAME: &str = "Open links";
 /// What the Reading tab says under the choice, so the trade is on the screen.
 pub const WHAT_EACH_CHOICE_COSTS: &str = "In the default browser, a page shares nothing with the message preview. In the message \
      view, the page loads where the message was and shares the preview's browser profile; \
-     Backspace brings the message back. A separate Wixen Mail window arrives with the next \
-     build and opens the browser until then.";
-
-/// The status line when the separate window was asked for before it exists.
-pub const SEPARATE_WINDOWS_ARRIVE_LATER: &str =
-    "Separate windows arrive with the next build; opened in the browser";
+     Backspace brings the message back. A separate Wixen Mail window is a process of its own \
+     with a browser profile of its own, so it shares nothing with the message preview either, \
+     and it closes when you close the window.";
 
 /// What is said when a link opens in a separate Wixen Mail window.
+///
+/// The host, as every other opening sentence here says it, and then which
+/// of the three places this one went, because the setting and the two
+/// modifiers mean somebody can be surprised by the answer.
 pub fn opening_in_a_separate_window(address: &str) -> String {
-    let _ = address;
-    String::new()
+    format!(
+        "{} in a separate window",
+        what_is_said_when_opening(address)
+    )
 }
 
 /// What is said when the separate window could not be started.
+///
+/// At High, and the browser is used instead: somebody who chose a window
+/// and got a browser has to hear why rather than wonder. `why` is the
+/// operating system's own reason for not starting the process.
 pub fn the_separate_window_would_not_start(why: &str) -> String {
-    let _ = why;
-    String::new()
+    format!("The separate window could not be started: {why}; opened in the browser")
 }
 
 /// What is said when the message view starts loading a page: the host, not

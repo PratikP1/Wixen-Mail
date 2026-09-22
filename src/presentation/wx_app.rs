@@ -13249,12 +13249,30 @@ fn answer_what_the_page_posted(
     }
 }
 
+/// Start a page process for one address, and answer whether it started.
+///
+/// The first time this program starts itself. Four places read
+/// `current_exe` and none of them ran it until 12-02; this spawns it with
+/// `--show-page` and the sanitised address, and nothing else, so the child's
+/// command line carries no account, no token and no message.
+///
+/// Detached, one per link, and never waited for: waiting would stop the mail
+/// while somebody reads a page. A page process holds no lock and no mutex,
+/// so several cost several windows and nothing shared (T-12-07).
+fn a_window_of_its_own(address: &str) -> std::io::Result<()> {
+    let me = std::env::current_exe()?;
+    std::process::Command::new(me)
+        .arg(page_window::FLAG)
+        .arg(address)
+        .spawn()
+        .map(|_started| ())
+}
+
 /// A link the page posted, followed where the setting or the ask says (#80).
 ///
 /// The one place both surfaces and every menu item go through. The sanitiser
 /// runs before the route on every path (T-11-68), and a refused address is
-/// said as it always was. The separate window is 11-11.2's: until it lands,
-/// that route opens the browser and says so, never silently.
+/// said as it always was.
 fn follow_the_link_the_page_posted(
     host: &PageHost,
     href: &str,
@@ -13273,10 +13291,20 @@ fn follow_the_link_the_page_posted(
             let _ = open::that(&safe);
         }
         opening_links::Route::MessageView => host.show_the_page(&safe, &a11y),
-        opening_links::Route::SeparateWindow => {
-            let _ = open::that(&safe);
-            (host.tell)(opening_links::SEPARATE_WINDOWS_ARRIVE_LATER);
-        }
+        opening_links::Route::SeparateWindow => match a_window_of_its_own(&safe) {
+            Ok(()) => (host.tell)(&opening_links::opening_in_a_separate_window(&safe)),
+            // The browser rather than nothing, and said at High rather than
+            // on the status line, because somebody who chose a window and
+            // got a browser has to hear why.
+            Err(why) => {
+                tracing::warn!("{}: no separate window: {why}", host.surface);
+                let _ = open::that(&safe);
+                let _ = a11y.announce(
+                    &opening_links::the_separate_window_would_not_start(&why.to_string()),
+                    crate::presentation::accessibility::announcements::Priority::High,
+                );
+            }
+        },
     }
 }
 
@@ -22697,7 +22725,7 @@ fn ensure_local_folders(
 /// something it is not, and a screen reader would say the whole of it.
 fn say_the_link_was_refused(a11y: &Arc<Accessibility>) {
     let _ = a11y.announce(
-        "That link was not opened. It does not use a kind of address this program will open.",
+        opening_links::THAT_LINK_WAS_NOT_OPENED,
         crate::presentation::accessibility::announcements::Priority::High,
     );
 }
