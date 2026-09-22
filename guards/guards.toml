@@ -18196,6 +18196,24 @@ tests_last_seen = [
 # open. What catches it is the wiring check that reads this file for the
 # question being asked, and that check named six handlers and not this one until
 # 04.1-01, which is why nothing saw it.
+#
+# The test strengthened on 2026-09-22 by 12-02.1, after the break reddened
+# nothing. Run 35520204784 found this guard green on a runner, and a
+# measurement here on 2026-09-22 agreed: 1 of 1 named test stayed green with
+# the guard broken, rebuild 18 s and run 2 s. The cause was the test and not
+# the record. It asked whether `owner_of(` appears anywhere in
+# `move_or_copy_message`, and that function calls it twice: once for the
+# account the destinations are built from, which is what this record is about,
+# and once per message for the account each row is moving out of. Taking the
+# first away left the second, so the body still read as asking.
+#
+# `test_everything_aimed_at_a_message_asks_which_account_that_message_is_in`
+# now reads the `account` binding the folder list is built from rather than the
+# whole body. Taken red by hand under this break on 2026-09-22 before it was
+# made green, `cargo test --test wired`: 76 passed and exactly this one failed,
+# on the sentence about destinations chosen on one server and the command sent
+# to another. The red list is unchanged, because the test that notices is the
+# same test.
 name = "the move window builds its folder list from the account on screen"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
@@ -22214,17 +22232,53 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-14 against the target: 14 passed and exactly
 # these five failed, each naming `docs/architecture.md:400`.
+#
+# ── Re-anchored on 2026-09-22 by 12-02.1, after it reddened nothing ─────────
+#
+# Run 35520204784 found this break reddening nothing on a runner, and a
+# measurement here on 2026-09-22 agreed: 5 of 5 named tests stayed green with
+# the guard broken, rebuild 1 s and run 1 s.
+#
+# Why. `f15f4671`, 08-09's pass that judged each target against its row, gave
+# the paragraph around `docs/architecture.md:400` its own date and its own
+# backticked command. The reading excuses a figure twice over, by
+# `names_a_target` on its line and separately by (dated, sourced) on its
+# paragraph, so taking the word away left the second excuse standing. The
+# guard still read the rule; the site it was anchored on had stopped
+# discriminating.
+#
+# And no other document site is available. A scan of every page under `docs/`
+# and of `README.md` and `CLAUDE.md` on 2026-09-22, replaying the three figure
+# patterns and the date and source readings, found no line holding the word
+# and a figure of a matched kind whose paragraph carries neither. Two shapes
+# were tried by hand before this one and neither reddened anything:
+# `docs/wcag-coverage.md:29`'s "conformance target is 31 + 24 = 55 criteria",
+# because the count pattern matches a number before `tests`, `records`,
+# `mutants` or `lines` and not before `criteria`; and the original site again.
+#
+# So the break moves to where the rule lives, the reading's own excuse, on the
+# pattern of the sixteen records that already break a file under `tests/`. It
+# reddens exactly one test, the companion that plants a line saying `target`
+# and then the same line without the word.
+#
+# Measured by hand on 2026-09-22 against the target,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 24 passed
+# and exactly this one failed.
 [[guard]]
 name = "the word target is the only thing excusing a figure from its date"
-file = "docs/architecture.md"
+file = "tests/every_number_carries_its_command_and_its_date.rs"
 suite = "every_number_carries_its_command_and_its_date"
-before = """- High code coverage (target: 80%+)"""
-after = """- High code coverage (aim: 80%+)"""
+before = '''/// A line that says `target` is stating an aim, not a measurement, and an aim
+/// has no date of being taken.
+fn names_a_target(line: &str) -> bool {
+    line.to_lowercase().contains("target")
+}'''
+after = '''/// A line that says `target` is stating an aim, not a measurement, and an aim
+/// has no date of being taken.
+fn names_a_target(line: &str) -> bool {
+    line.to_lowercase().contains("no line on any page holds this")
+}'''
 red = [
-    "test_every_figure_on_a_page_carries_its_date_and_its_source",
-    "test_the_provenance_reading_can_see_a_count_without_a_date",
-    "test_the_provenance_reading_can_see_a_duration_without_a_source",
-    "test_the_provenance_reading_can_see_a_percentage_without_a_date",
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [

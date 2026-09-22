@@ -3556,6 +3556,33 @@ fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
              message was never on"
         );
     }
+
+    // The choosing half again, read where it is decided rather than anywhere
+    // in the function.
+    //
+    // The loop above asks whether the words appear in the body, and
+    // `move_or_copy_message` holds two calls: one for the account the
+    // destinations are built from, and one per message for the account each
+    // row is moving out of. So taking the first away leaves the second, the
+    // body still reads as asking, and the guard over this rule reddened
+    // nothing on a runner in run 35520204784 and nothing here either
+    // (12-02.1, 2026-09-22). The binding the folder list is built from is
+    // what the rule is about, so that is what is read.
+    let choosing = body_of(&ship, "fn move_or_copy_message(");
+    let binding = choosing
+        .split_once("let Some(account) = ")
+        .and_then(|(_, rest)| rest.split_once("}) else {"))
+        .map(|(binding, _)| binding)
+        .expect(
+            "the move window no longer binds `account` before its refusal, so the rule this \
+             reads cannot be read where it was decided",
+        );
+    assert!(
+        binding.contains("owner_of("),
+        "the move window works out for itself the account its folder list is built from, \
+         rather than asking which account the chosen message is in, so in All Inboxes the \
+         destinations are chosen on one server and the command is sent to another"
+    );
 }
 
 /// The "In" box on the search window reaches the search.
