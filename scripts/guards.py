@@ -146,8 +146,62 @@ class Measured:
         return not self.stayed_green and not self.also_went_red
 
 
+@dataclass(frozen=True)
+class Budget:
+    """One wall clock, set when a measurement starts and shared by its build
+    and its run.
+
+    A record that spends the whole of it building is stopped as surely as one
+    that spends the whole of it running, which is the point: run 35520204784
+    lost a shard to a record that printed a header and never a timing line, and
+    nothing in this file bounded either term. One value and one start, not a
+    clock per cargo call, because two clocks would hand each term the whole
+    budget and a record could take twice what it was given.
+
+    >>> budget = Budget(seconds=1800, started=1000.0)
+    >>> budget.left(at=1000.0)
+    1800.0
+    >>> budget.left(at=1740.5)
+    1059.5
+    >>> budget.spent(at=1740.5)
+    740.5
+
+    What is left of a spent budget is nothing and never less, because this
+    value is handed straight to a timeout:
+
+    >>> budget.left(at=2900.0)
+    0.0
+    """
+
+    seconds: int
+    started: float
+
+    def left(self, at: float | None = None) -> float:
+        raise NotImplementedError
+
+    def spent(self, at: float | None = None) -> float:
+        raise NotImplementedError
+
+    @staticmethod
+    def starting_now(seconds: int) -> "Budget":
+        raise NotImplementedError
+
+
 class Wrong(Exception):
     """A guard is not what the record says it is."""
+
+
+class GaveUp(Wrong):
+    """A record, or a suite's pre-read, that did not return inside its budget.
+
+    A `Wrong` and not a hierarchy of its own, because everything that puts a
+    guarded file back is already written around `Wrong`: `measure`'s `finally`
+    restores the bytes whatever leaves the `try`, and the loop prints the
+    message in one of the shapes `verdicts_in` reads. What the separate class
+    buys is that the loop can count these apart from the records it really
+    judged, so the closing line can say a run gave up on something and a run
+    that hit the limit cannot read as clean.
+    """
 
 
 def read_record() -> list[Guard]:
@@ -792,8 +846,137 @@ def run_the_whole_suite(
     return verdicts
 
 
-def cargo(*arguments: str) -> subprocess.CompletedProcess[str]:
-    """cargo with these arguments, its output captured and never missing."""
+def the_kill_that_takes_the_tree(pid: int) -> list[str]:
+    """The command that stops a process and everything it started.
+
+    `Popen.kill` is `TerminateProcess` on that one process. On Windows the
+    rustc children cargo spawned outlive it, and three things follow: they go
+    on building, they hold open the pipes this run is reading so the reap after
+    the kill never returns, and `--wait-until-quiet` then waits for a build
+    nothing will end. `taskkill /T` walks the tree.
+
+    >>> the_kill_that_takes_the_tree(1234)
+    ['taskkill', '/PID', '1234', '/T', '/F']
+    """
+    raise NotImplementedError
+
+
+def the_line_about_what_the_kill_left(alive: list[str]) -> str:
+    """What to say after a tree kill, so a run that left a build behind says so.
+
+    Four spaces and not three. `verdicts_in` reads the first three-space line
+    under a record as that record's verdict, and this line is part of a message
+    printed there, so at three spaces it would be read as one.
+
+    >>> print(the_line_about_what_the_kill_left([]))
+        the kill took the tree: no cargo or rustc is building now
+    >>> print(the_line_about_what_the_kill_left(["rustc.exe 1240"]))
+        still building after the kill, so --wait-until-quiet will wait for it: rustc.exe 1240
+    >>> print(the_line_about_what_the_kill_left(["cargo.exe 1234", "rustc.exe 1240"]))
+        still building after the kill, so --wait-until-quiet will wait for them: cargo.exe 1234, rustc.exe 1240
+    """
+    raise NotImplementedError
+
+
+# The opener of the line a record or a pre-read given up on at its time limit
+# prints. Two readings answer it differently on purpose. `the_verdict_on` reads
+# it as one more thing that could not be measured, so nothing that reads a log
+# line in isolation refuses a log holding one. `verdicts_in`, which is what
+# --resume uses, drops the name instead, so the next run measures that record
+# again rather than inheriting a verdict nobody took.
+GIVEN_UP_ON = ": it did not return within its budget of "
+
+
+def why_it_was_given_up_on(
+    budget: int, spent: float, doing: str, alive: list[str]
+) -> str:
+    """Why a record or a pre-read was given up on, in the shape the log
+    readings know.
+
+    The first line carries the opener above, because that is the line
+    `verdicts_in` judges a record by; what follows is for a person. The caller
+    puts the record's name, or the suite's, in front of it.
+
+    >>> print(why_it_was_given_up_on(1800, 1801.4, "building", []))
+    it did not return within its budget of 1800 s, and was still building when the budget ran out at 1801 s.
+        the kill took the tree: no cargo or rustc is building now
+    This was not measured, so it has no verdict and a resume takes it again.
+
+    >>> print(why_it_was_given_up_on(60, 63.2, "running", ["rustc.exe 1240"]))
+    it did not return within its budget of 60 s, and was still running when the budget ran out at 63 s.
+        still building after the kill, so --wait-until-quiet will wait for it: rustc.exe 1240
+    This was not measured, so it has no verdict and a resume takes it again.
+    """
+    raise NotImplementedError
+
+
+def stop_the_tree(process: "subprocess.Popen[str]") -> list[str]:
+    """Stop a process and everything it started, then say what is still
+    building.
+
+    Read rather than trusted: whether the kill took the tree is answered by a
+    listing and not by the kill's own exit status, and a survivor is what would
+    make `--wait-until-quiet` wait for a build nothing will end. What this
+    cannot do is tell this run's survivors from a hook's build, so it names
+    every cargo and rustc alive and leaves the reader to decide.
+    """
+    raise NotImplementedError
+
+
+def run_to_completion(
+    command: list[str], budget: Budget | None, doing: str
+) -> subprocess.CompletedProcess[str]:
+    """Run a command with its output captured, and stop it if the budget runs
+    out.
+
+    `subprocess.run(timeout=...)` would be shorter and would not do. On expiry
+    it kills the direct child and then calls `communicate()`, which waits for
+    the pipes to close, and on Windows cargo's rustc children inherit those
+    pipes and outlive the kill. So the wait after the kill is unbounded exactly
+    when the kill was needed. This spawns, waits for what the budget has left,
+    walks the tree, and only then reaps.
+
+    A command that will not finish, given what is left of a nearly spent
+    budget. The seconds it reached are cut off the line here because they are
+    a clock reading and this is an example:
+
+    >>> try:
+    ...     run_to_completion(
+    ...         [sys.executable, "-c", "import time; time.sleep(30)"],
+    ...         Budget(seconds=1, started=time.monotonic() - 0.8),
+    ...         "running",
+    ...     )
+    ... except GaveUp as ran_out:
+    ...     print(str(ran_out).splitlines()[0].split(" when the budget")[0])
+    it did not return within its budget of 1 s, and was still running
+
+    One that finishes inside its budget, and one with no budget at all, which
+    is what an ordinary run of this script asks for:
+
+    >>> run_to_completion([sys.executable, "-c", "print('done')"], Budget(seconds=60, started=time.monotonic()), "running").stdout.strip()
+    'done'
+    >>> run_to_completion([sys.executable, "-c", "print('done')"], None, "running").returncode
+    0
+    """
+    raise NotImplementedError
+
+
+def cargo(*arguments: str, budget: Budget | None = None) -> subprocess.CompletedProcess[str]:
+    """cargo with these arguments, its output captured and never missing.
+
+    The budget is the record's own, one wall clock across its build and its
+    run, and `--no-run` is what tells the two apart in the line a given-up
+    record prints. A budget already spent stops the call rather than letting it
+    run unbounded, and that is the example that reddens if the budget ever
+    stops being handed to this call:
+
+    >>> try:
+    ...     cargo("--version", budget=Budget(seconds=1, started=time.monotonic() - 100))
+    ...     print("cargo ran unbounded, so no budget reached this call")
+    ... except GaveUp:
+    ...     print("the budget reached the cargo call")
+    the budget reached the cargo call
+    """
     finished = subprocess.run(
         ["cargo", *arguments],
         cwd=ROOT,
@@ -1110,6 +1293,24 @@ def verdicts_in(log_text: str) -> dict[str, str]:
     {}
     >>> verdicts_in(block("timed and judged", "   timed: rebuild 44 s, run 47 s, 91 s in all", "   the one test named went red, and nothing else did"))
     {'timed and judged': 'agreed'}
+
+    A record, or a whole suite's pre-read, that the time limit stopped. It is
+    unmeasured rather than judged, so a resume takes it again, and the two
+    readings of that line answer differently on purpose: `the_verdict_on` reads
+    it, so nothing refuses a log that holds one, and this drops the name. The
+    kill's own line is indented four spaces and is not read as a verdict:
+
+    >>> given_up = "   a guard: it did not return within its budget of 1800 s, and was still building when the budget ran out at 1801 s."
+    >>> verdicts_in(block(
+    ...     "hung",
+    ...     given_up,
+    ...     "    the kill took the tree: no cargo or rustc is building now",
+    ...     "This was not measured, so it has no verdict and a resume takes it again.",
+    ...     "",
+    ... ))
+    {}
+    >>> the_verdict_on("hung", given_up)
+    'could not be measured'
 
     A record another cargo ran beside is unmeasured whatever it printed, so a
     resume takes it again; and the last block for a name is the one that
@@ -1546,6 +1747,18 @@ def the_closing_line(
 
     >>> print(the_closing_line(3, 0, 1, None))
     1 measured this run; 2 of 3 remain, and no --log was given, so nothing recorded this run for a resume.
+
+    A run that gave up on a record at its time limit says so before it says
+    what remains, because a given-up record is unmeasured and would otherwise
+    read as one the run simply never reached:
+
+    >>> print(the_closing_line(20, 0, 19, "scripts/guards.sh --log sweep.log --resume", gave_up=1))
+    1 record was given up on at its time limit, so this run is not a clean sweep.
+    19 measured this run; 1 of 20 remain. Resume with:
+        scripts/guards.sh --log sweep.log --resume
+    >>> print(the_closing_line(20, 0, 17, None, gave_up=3))
+    3 records were given up on at their time limit, so this run is not a clean sweep.
+    17 measured this run; 3 of 20 remain, and no --log was given, so nothing recorded this run for a resume.
     """
     remaining = total - from_log - this_run
     if remaining == 0:
