@@ -977,6 +977,37 @@ def why_it_was_given_up_on(
     )
 
 
+def the_line_for_a_record_whose_pre_read_expired(
+    suite: tuple[str, ...], ran_out: GaveUp
+) -> str:
+    """What is printed under each record of a suite whose pre-read expired.
+
+    One line per record and not one for the suite, because a resume measures
+    every record with no verdict and `verdicts_in` reads a `-- name` block: a
+    suite-shaped line would leave the records themselves saying nothing, and
+    the next run would inherit silence rather than a reason.
+
+    >>> print(the_line_for_a_record_whose_pre_read_expired(
+    ...     ("--lib",),
+    ...     GaveUp(why_it_was_given_up_on(1800, 1800.2, "running", [])),
+    ... ))
+       the pre-read of --lib: it did not return within its budget of 1800 s, and was still running when the budget ran out at 1800 s.
+        the kill took the tree: no cargo or rustc is building now
+    This was not measured, so it has no verdict and a resume takes it again.
+
+    And the wording tied to the reading that has to know it, over the two
+    records such a line would be written under:
+
+    >>> expired = the_line_for_a_record_whose_pre_read_expired(
+    ...     ("--test", "house_style"),
+    ...     GaveUp(why_it_was_given_up_on(1800, 1801.0, "building", [])),
+    ... )
+    >>> verdicts_in("-- first\\n" + expired + "\\n-- second\\n" + expired + "\\n")
+    {}
+    """
+    raise NotImplementedError
+
+
 def stop_the_tree(process: "subprocess.Popen[str]") -> list[str]:
     """Stop a process and everything it started, then say what is still
     building.
