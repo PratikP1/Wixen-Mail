@@ -22901,6 +22901,38 @@ tests_last_seen = [
 #
 # Measured on 2026-09-17 against the target: exactly this one failed and
 # nothing else did.
+#
+# ── And it does not return when broken, which is what ended shard 40 ────────
+#
+# This is the record that cost run 35520204784 a whole shard on 2026-09-20.
+# Shard 40 logged 2,637 s of measured work, printed this name, never printed a
+# timing line, and the job's 360-minute cap ended it 18,978 s later with nine
+# records unmeasured. It was re-dispatched on its own as run 35726150488 on
+# 2026-09-22 and died the same way: twelve headers, eleven verdicts, and six
+# hours inside this one.
+#
+# Measured here on 2026-09-22 by 12-02.1, under the per-record limit that plan
+# built: "it did not return within its budget of 1800 s, and was still running
+# when the budget ran out at 1800 s", the kill took the tree, and the run went
+# on to the next four records and measured all of them. So the record has no
+# verdict from either machine, and it is left without one rather than given a
+# guessed one.
+#
+# The hang is itself evidence about what this guard defends. The record is
+# about the dialog being frozen while its pages are built, and an unfrozen
+# build repaints per control: `wxChoice` resizes itself after every item it is
+# handed. The measurement of 2026-09-16 above put the typeface list alone at
+# about a second unfrozen against a tenth of that frozen, over one list; the
+# break takes the freeze off the whole dialog, and what happens then is not a
+# slower run, it is a run nothing has been seen to finish. That is a stronger
+# statement about the freeze than the reading that names it, and it is not a
+# verdict, because nobody has watched this break redden anything since
+# 2026-09-17.
+#
+# What it would take to measure it: a way to run that suite with the break in
+# place and a bound on the repainting, which nothing here has. It is in
+# `.planning/WINDOWS.md` as work rather than as a lowered record. Do not lower
+# the record and do not guess a verdict.
 
 [[guard]]
 name = "the settings dialog is frozen while its pages are built"
