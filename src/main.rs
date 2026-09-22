@@ -8,6 +8,7 @@ use wixen_mail::common::{started, version};
 use wixen_mail::presentation::WxMailApp;
 use wixen_mail::presentation::accessibility::platform_bridge;
 use wixen_mail::presentation::command_line::{self, Command};
+use wixen_mail::presentation::page_window;
 use wixen_mail::presentation::scan_target;
 
 fn main() {
@@ -32,6 +33,16 @@ fn main() {
             // opened inside the folder being removed, and an open file is
             // exactly what stops Windows removing it.
             std::process::exit(erase_all_data());
+        }
+        // One page, in a window of this process's own (#80). Here, beside
+        // erasing, rather than anywhere below: a page process must not
+        // prepare the data folder, open the log file, claim the single-copy
+        // marker or take part in the handover, because it opens no database
+        // and is not the copy a later start should hand its link to. The
+        // order of these arms is the whole of what makes that true, and
+        // `tests/a_separate_window_is_its_own_process.rs` reads it.
+        Command::ShowPage(address) => {
+            std::process::exit(page_window::show(&address));
         }
         Command::Help => return say(command_line::HELP),
         Command::Version => return say(&format!("Wixen Mail {}\n", version::current())),

@@ -35,6 +35,14 @@ pub enum Command {
     Run(Run),
     /// Erase the stored data and exit.
     EraseAllData,
+    /// Show one page in a window of this process's own, and exit with what
+    /// that window answers.
+    ///
+    /// Not a `Run`, and that is the whole shape of it: a page process opens
+    /// no database, prepares no data folder, opens no log file, claims no
+    /// single-copy marker and hands nothing over. It is answered beside
+    /// `Help` and `Version` for that reason (#80).
+    ShowPage(String),
     /// Say what the flags are, and exit.
     Help,
     /// Say which version this is, and exit.
@@ -246,6 +254,7 @@ fn allowance(what: &str) -> Option<Allowed> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presentation::page_window;
 
     fn run(args: &[&str]) -> Run {
         match parse(args) {
@@ -498,6 +507,64 @@ mod tests {
 
         assert_eq!(started.scan_target, Some("compose".to_string()));
         assert_eq!(started.open, None);
+    }
+
+    #[test]
+    fn test_show_page_is_answered_before_anything_is_opened() {
+        // The separate window a link can open in (#80). Answered where
+        // --help and --version are, because a page process must be decided
+        // before the data folder, the log file and the single-copy claim:
+        // it opens none of them and is not the copy a later start hands a
+        // link to.
+        assert_eq!(
+            parse([page_window::FLAG, "https://example.com/where-it-went"]),
+            Command::ShowPage("https://example.com/where-it-went".to_string())
+        );
+        // Whatever else is on the line. A page process narrows nothing and
+        // opens nothing, so there is no flag for it to carry.
+        assert_eq!(
+            parse(["--read-only", page_window::FLAG, "https://example.com/"]),
+            Command::ShowPage("https://example.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn test_show_page_with_no_address_is_refused_rather_than_opening_a_window() {
+        // The same rule every other flag with a value follows. A window on
+        // nothing would be a window somebody has to close.
+        let why = refusal(&[page_window::FLAG]);
+
+        assert!(why.contains("needs an address"), "{why}");
+    }
+
+    #[test]
+    fn test_erasing_and_help_still_win_over_showing_a_page() {
+        // A page process is a window, and the three that stop still stop. An
+        // uninstall that opened a browser window because a stale argument was
+        // in the command line would be a window over somebody's uninstaller.
+        assert_eq!(
+            parse([ERASE_FLAG, page_window::FLAG, "https://example.com/"]),
+            Command::EraseAllData
+        );
+        assert_eq!(
+            parse(["--help", page_window::FLAG, "https://example.com/"]),
+            Command::Help
+        );
+        assert_eq!(
+            parse(["--version", page_window::FLAG, "https://example.com/"]),
+            Command::Version
+        );
+    }
+
+    #[test]
+    fn test_the_help_says_the_page_flag_is_not_one_to_type() {
+        // It is on the list because a flag a person can see in Task Manager
+        // and cannot find in --help reads as something hidden. It says what
+        // it is for and that the program passes it to itself.
+        assert!(HELP.contains(page_window::FLAG), "{HELP}");
+        let help = help_unwrapped();
+        assert!(help.contains("separate window"), "{HELP}");
+        assert!(help.contains("not meant to be typed"), "{HELP}");
     }
 
     #[test]
