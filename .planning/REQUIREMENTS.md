@@ -3267,6 +3267,54 @@ seven groups.
     on both files and `jest --listTests` still finding the case.
   - [S] The run at the next push of `main` is Pratik's; ledger 567 names it, and it is the
     only thing FOUND-20 still waits on.
+- [ ] **FOUND-21**: A guard record says what its guard really does, and a sweep that finds
+  one that does not is closed before the next sweep is dispatched. A record that does not
+  return costs one record and not a shard. Added 2026-09-22 for phase 12's 12-02.1, under
+  this section beside FOUND-19 and FOUND-20 on the same reasoning: a defect in what a check
+  tells you rather than in the product, found by running the check.
+  - Evidence: run 35520204784 of `.github/workflows/guards.yml`, dispatched 2026-09-20 at
+    `0ad66e48` over the 1,029 records that day, 52 shards, 278,675 s of runner time by the
+    52 logs' own timing lines. Read back on 2026-09-22 with
+    `guards.verdicts_in` over the logs concatenated in shard order: 1,020 records seen, 994
+    agreed, 21 short, 5 could not be measured, against 1,021 `-- ` headers, so one record
+    has no verdict at all. Of the 21: 15 name too few tests, 6 name a test that stayed
+    green, and three of those six redden nothing whatever, so they read as covered and cover
+    nothing. Of the 5: three breaks no longer match `src/application/long_text.rs`, all three
+    moved by `d470a105`, and two no longer compile (`spawn_mail_sync` gained a fourth
+    argument; `take_it_off_the_server` moved to `TheAccountItIsLeaving`). The record with no
+    verdict is "the settings dialog is frozen while its pages are built": shard 40 logged
+    2,637 s of measured work and then spent about 5 h 16 min inside it before the job's
+    360-minute cap ended the shard, against 7,442 s for the longest shard that finished and
+    456 s for the longest single record anywhere in the sweep. `scripts/guards.py` bounded
+    no record, so one that did not return cost a whole shard whatever the shard count was.
+  - [D] `scripts/guards.py` holds every record, and every suite's pre-read, to one wall-clock
+    limit shared by a build and a run, kills the cargo that passes it along with the
+    processes cargo started, reports what it gave up on as unmeasured with the reason and the
+    seconds it reached so `the_verdict_on` reads it and `--resume` measures it again, and
+    goes on to the next record or suite; the closing line counts what a run gave up on, so a
+    run that hit the limit cannot read as clean. The default is a named constant taken from
+    the sweep's own longest record, the flag is one `the_flags_the_script_accepts` can see,
+    and the workflow passes it from a declared input. The guarded file is still restored when
+    a record is given up on, proved by hand on the build path and on the run path.
+  - [D] Every guard whose break reddened nothing on the runner has been measured here and
+    its cause written down, chosen between the recorded edit no longer expressing the rule
+    and the tests no longer covering it; where it is the second, a test that covers the rule
+    exists and was red before it was green.
+  - [D] A record a runner cannot judge says so on itself, naming what the runner cannot see
+    and the runs that found it green there.
+  - [D] No record names a break the tree cannot take: every `before` appears exactly once in
+    its file and the break builds, and each record that moved names the commit that moved it.
+  - [D] Every record the sweep found short names exactly the tests its break reddens,
+    measured on this machine and recorded by a run that agreed.
+  - [D] Every record in the shard the runner could not finish has a verdict from a machine
+    that could, or was given up on at the limit with the runner's own line quoted and a
+    comment on the record.
+  - [D] The sweep's cost and what it found are on `docs/development/measurements.md` with
+    their commands, their dates and their commit, on the pattern of the four rows the
+    2026-09-15 sweep left.
+  - [S] Only the next sweep settles the last of it: that it runs under the limit, that its
+    closing line says how many records it gave up on, and that nothing this plan corrected
+    has gone stale again. This plan claims nothing about the 994 records that agreed.
 
 ### All the mail, and what is said while it comes
 
@@ -5473,6 +5521,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
 | FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567 |
+| FOUND-21 | Phase 12 | Pending, 12-02.1 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
@@ -5526,9 +5575,14 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 **Coverage:**
 
-- v1 requirements: 119 total
-- Mapped to phases: 119
+- v1 requirements: 120 total
+- Mapped to phases: 120
 - Unmapped: 0
+
+**Re-taken 2026-09-22.** This block said 119 and 119 from 2026-09-20 until the phase 11
+guard sweep's remedy was planned as 12-02.1. Counted with the same command as below, which
+gives 120 at `a1e28127` plus this edit with `FOUND-21` in, and the traceability table above
+has 120 rows.
 
 **Re-taken 2026-09-20, later.** This block said 95 and 95 from the morning until phase 12
 was planned and phases 13 and 14 were written as entries. Counted with the same command as
@@ -5668,6 +5722,12 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-22.** `FOUND-21` traces to no issue: it comes from run 35520204784, the one
+sweep of the milestone, which found 26 records that do not say what their guards do and lost
+a shard to a record that never returned. Taken by the inserted 12-02.1 and placed under
+phase 9's section beside FOUND-19 and FOUND-20 as a defect in what a check tells you. The
+total is 120.
 
 **Added 2026-09-20.** `LIST-26` traces to #91, filed that day and taken by the inserted
 11-11.1.1 between 11-11.1 and 11-11.2; `LIST-27` traces to #92, Pratik's decisions of that
