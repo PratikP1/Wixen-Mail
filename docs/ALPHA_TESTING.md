@@ -367,9 +367,10 @@ Written down so you do not spend time reporting things already on the list.
   heard once, has not been heard.
 - **Where a link opens.** Enter on a link going to the browser, or to the
   message view with "Opening" and the site's name and the page's title said
-  once, and "Back to the message" on Backspace, have not been heard; the
-  separate Wixen Mail window is deferred to a later build, and until it lands
-  that choice opens the browser and says so.
+  once, and "Back to the message" on Backspace, have not been heard. Nor has
+  the separate Wixen Mail window, which arrived on 2026-09-22 and is a copy of
+  the program holding one page: its title, a link on the page opening in the
+  same window, and Escape closing it have been driven by nothing but a test.
 - **A setting saved applies at once.** Mark as read after changed in Settings
   and a message marked after the new wait without a restart, the dates in the
   list changing at once, and the two sentences under Log level and Default sort

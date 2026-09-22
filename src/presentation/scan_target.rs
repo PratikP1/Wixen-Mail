@@ -198,12 +198,20 @@ pub enum ScanTarget {
     /// link, so the NVDA case for #80 has a sender's link and a made one to
     /// press Enter on (11-11.1, 2026-09-20).
     Page,
+    /// The separate Wixen Mail window a link opens in, which in the shipped
+    /// program is a process of its own with a browser profile of its own
+    /// (#80, 12-02). Built here inside this process instead, on a document
+    /// of its own: the runner has no network, and what the scan walks is
+    /// this window's names and roles rather than a live page's. Starting the
+    /// real page process would also put the scan on the wrong process, since
+    /// it walks the tree of the one it launched.
+    PageWindow,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 36] = [
+    pub const ALL: [ScanTarget; 37] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -240,6 +248,7 @@ impl ScanTarget {
         ScanTarget::SignatureEditor,
         ScanTarget::AccountEditor,
         ScanTarget::Page,
+        ScanTarget::PageWindow,
     ];
 
     /// The name used on the command line.
@@ -281,6 +290,7 @@ impl ScanTarget {
             Self::SignatureEditor => "signature-editor",
             Self::AccountEditor => "account-editor",
             Self::Page => "page",
+            Self::PageWindow => "page-window",
         }
     }
 
@@ -404,7 +414,8 @@ mod tests {
         //
         // The page window arrived on 2026-09-20 (#80): the default way a
         // message opens, never scanned, because `reader` opens the other
-        // surface.
+        // surface. The separate window followed it on 2026-09-22, when the
+        // third place a link can open in stopped being a status line.
         for name in [
             "columns",
             "which-copy",
@@ -432,6 +443,7 @@ mod tests {
             "signature-editor",
             "account-editor",
             "page",
+            "page-window",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));

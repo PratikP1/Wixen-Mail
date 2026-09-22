@@ -13,9 +13,10 @@
 //! runs in the browser profile the message preview uses, so a cookie it sets
 //! is sent when a later message loads a picture from the same site, which the
 //! browser's own profile would keep to itself; `docs/privacy.md` says so under
-//! "Where a link opens". The separate window is 11-11.2's, a process of its
-//! own with a profile of its own; until it lands the third choice is offered,
-//! routed to the browser and said, never silent.
+//! "Where a link opens". The separate window, since 2026-09-22, is a process
+//! of its own with a browser profile of its own, which is the only isolation
+//! this toolkit can reach and is why it is a process at all; the window and
+//! the reasoning are in `presentation::page_window`.
 //!
 //! An address that is not a page, `mailto:` or `tel:`, is the system's
 //! whatever the setting or the item says: the message view cannot host a mail
@@ -29,7 +30,7 @@ pub enum Where {
     DefaultBrowser,
     /// The view that held the message, with Backspace bringing the message back.
     MessageView,
-    /// A separate Wixen Mail window, a process of its own (11-11.2).
+    /// A separate Wixen Mail window, which is a process of its own.
     SeparateWindow,
 }
 
@@ -166,12 +167,30 @@ pub const SETTING_NAME: &str = "Open links";
 /// What the Reading tab says under the choice, so the trade is on the screen.
 pub const WHAT_EACH_CHOICE_COSTS: &str = "In the default browser, a page shares nothing with the message preview. In the message \
      view, the page loads where the message was and shares the preview's browser profile; \
-     Backspace brings the message back. A separate Wixen Mail window arrives with the next \
-     build and opens the browser until then.";
+     Backspace brings the message back. A separate Wixen Mail window is a process of its own \
+     with a browser profile of its own, so it shares nothing with the message preview either, \
+     and it closes when you close the window.";
 
-/// The status line when the separate window was asked for before it exists.
-pub const SEPARATE_WINDOWS_ARRIVE_LATER: &str =
-    "Separate windows arrive with the next build; opened in the browser";
+/// What is said when a link opens in a separate Wixen Mail window.
+///
+/// The host, as every other opening sentence here says it, and then which
+/// of the three places this one went, because the setting and the two
+/// modifiers mean somebody can be surprised by the answer.
+pub fn opening_in_a_separate_window(address: &str) -> String {
+    format!(
+        "{} in a separate window",
+        what_is_said_when_opening(address)
+    )
+}
+
+/// What is said when the separate window could not be started.
+///
+/// At High, and the browser is used instead: somebody who chose a window
+/// and got a browser has to hear why rather than wonder. `why` is the
+/// operating system's own reason for not starting the process.
+pub fn the_separate_window_would_not_start(why: &str) -> String {
+    format!("The separate window could not be started: {why}; opened in the browser")
+}
 
 /// What is said when the message view starts loading a page: the host, not
 /// the whole address, which can be two hundred characters of token.
@@ -191,6 +210,15 @@ fn host_of(address: &str) -> Option<&str> {
 
 /// What is said when Backspace or Alt+Left brings the message back.
 pub const BACK_TO_THE_MESSAGE: &str = "Back to the message";
+
+/// What is said when a link's address is not one this program will open.
+///
+/// Here rather than beside either surface's handler, because three of them
+/// say it now: the message preview, the formatted message window, and the
+/// separate window, which sanitises again on its own side of a process
+/// boundary. One sentence for one thing, wherever somebody meets it.
+pub const THAT_LINK_WAS_NOT_OPENED: &str =
+    "That link was not opened. It does not use a kind of address this program will open.";
 
 /// What is said when a page in the message view will not load.
 ///
@@ -400,15 +428,38 @@ mod tests {
     }
 
     #[test]
-    fn test_the_words_on_the_reading_tab_name_the_trade_and_the_wait() {
+    fn test_the_words_on_the_reading_tab_name_the_trade() {
+        // What each choice costs, which is the only reason the sentence is
+        // under the control at all: the browser shares nothing, the message
+        // view shares the preview's profile, and the separate window is a
+        // process with a profile of its own.
         assert!(WHAT_EACH_CHOICE_COSTS.contains("profile"));
         assert!(WHAT_EACH_CHOICE_COSTS.contains("Backspace"));
-        assert!(WHAT_EACH_CHOICE_COSTS.contains("next build"));
-        assert!(SEPARATE_WINDOWS_ARRIVE_LATER.contains("browser"));
+        assert!(WHAT_EACH_CHOICE_COSTS.contains("process"));
+        // And it promises nothing. This sentence ended by saying a separate
+        // window arrived with the next build, which was true when it was
+        // written and stopped being true the day the plan that builds the
+        // window was put off; that was ledger 566 until 12-02 built it.
+        assert!(!WHAT_EACH_CHOICE_COSTS.contains("next build"));
         assert_eq!(
             SETTING_LABEL.replace('&', "").trim_end_matches(':'),
             SETTING_NAME
         );
         assert_eq!(BACK_TO_THE_MESSAGE, "Back to the message");
+    }
+
+    #[test]
+    fn test_the_separate_window_says_which_it_did() {
+        // Two outcomes and a sentence each, because a person who chose a
+        // separate window and got a browser has to hear why rather than
+        // wonder. The first names the site, as every other opening sentence
+        // here does; the second names what went wrong and what happened
+        // instead.
+        let opening = opening_in_a_separate_window("https://example.com/where-it-went?t=1");
+        assert_eq!(opening, "Opening example.com in a separate window");
+
+        let refused = the_separate_window_would_not_start("the file was not found");
+        assert!(refused.contains("the file was not found"), "{refused}");
+        assert!(refused.contains("opened in the browser"), "{refused}");
     }
 }

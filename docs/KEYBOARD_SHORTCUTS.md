@@ -415,7 +415,7 @@ and in the formatted message window a message opens into.
 |--------|----------|--------------|
 | Follow a link | `Enter` on the link | Where "Open links" says. Your screen reader's own Enter on a link does the same |
 | Open a link in the default browser, whatever the setting | `Ctrl+Enter`, or a Ctrl-click | The browser's own convention for a new tab |
-| Open a link in a separate window, whatever the setting | `Shift+Enter`, or a Shift-click | The browser's own convention for a new window. The separate window arrives with a later build, put off on 2026-09-20 from the next one to the phase after this; until it lands this opens the browser and says so |
+| Open a link in a separate window, whatever the setting | `Shift+Enter`, or a Shift-click | The browser's own convention for a new window. Since 2026-09-22 this opens a separate Wixen Mail window, which is a process of its own; if it will not start, the browser opens instead and you are told why |
 | The link's menu | `Applications` or `Shift+F10` on the link, or a right-click | Open in Message View, Open in Default Browser, Open in Separate Window, then Copy Link and Save Link As. The three places are offered whatever the setting says |
 | Back to the message from a page in the message view | `Backspace` or `Alt+Left` | The message is shown again and "Back to the message" is said |
 
@@ -428,6 +428,31 @@ are typing in on a page. Until 2026-09-20 every link
 opened inside the window whatever the code meant, because the check that was
 meant to hand it to the browser never saw an address; #80 has the finding.
 Nobody has heard any of this in a screen reader yet.
+
+### The separate window
+
+Since 2026-09-22, "Open links" set to a separate Wixen Mail window, and the
+link's own "Open in Separate Window", open one page in a window of its own.
+It is a second copy of Wixen Mail running with nothing in it but that page:
+no mail, no folders, and a browser profile of its own, so a cookie the page
+sets is never sent with a message's pictures. Closing the window ends it.
+
+| Action | Shortcut | What happens |
+|--------|----------|--------------|
+| Close the window | `Escape` or `F6` | The window closes and that copy of the program ends |
+| Go back | `Backspace` or `Alt+Left` | The page before this one. "This is the first page" is said when there is none |
+| Follow a link on the page | `Enter` on the link, or a click | It opens in this same window. There is nowhere else for it to go here, so `Ctrl` and `Shift` make no difference |
+
+The title bar says "Opening" and the site's name until the page arrives, then
+the page's own title, with "Wixen Mail" after it either way. The title is said
+once when the page arrives, and why it will not open is said when it will not,
+with the reason left on the screen to read again. A page that asks for another
+window with a script does not get one, and that is said too: the browser
+control does not tell this program where such a window would go, so there is
+no address to open instead.
+
+`Backspace` is left to a field you are typing in on a page, as it is on the
+other two surfaces. Nobody has heard any of this in a screen reader yet.
 
 ### Conversations
 

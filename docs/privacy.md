@@ -391,18 +391,33 @@ that cookie in its own profile, where a message shown here never reaches it. Tha
 opening a link inside the program tells a site that the browser would not, and it is why the
 browser is the default.
 
-The separate window, when it arrives, is a process of its own with a profile of its own, and
-shares nothing with the preview. Until then, choosing it opens the browser and the status bar
-says so. Whichever you choose, a link is handed on only when it is a web address, an email
-address or a telephone number, the same rule as before; an address of any other kind is
-refused and said to be.
+The separate window, since 2026-09-22, is a second copy of Wixen Mail running with nothing in
+it but that page, and it has a browser profile of its own. So a cookie the page sets there is
+never sent with a message's pictures: the joining the paragraph above describes cannot happen
+across the two, because they are two profiles in two processes. That profile lives beside the
+message preview's, at `pages\EBWebView` under the folder this program keeps its files in, and
+"Erase all data" removes it with everything else. Closing the window ends the copy.
 
-This was read out of the code rather than measured on the wire, on 2026-09-20:
-`src/application/opening_links.rs` holds the setting and `route`, the one decision from the
-setting and the way a link was asked for to where it goes, and `follow_the_link_the_page_posted`
-in `src/presentation/wx_app.rs` carries the answer out after `safe_external_url` has passed the
-address; `src/presentation/page_links.rs` says why the link is caught in the page rather than
-at the navigation.
+Two things the separate window does not hide, said here rather than left to be assumed. The
+page is still the live page, so the site knows you visited it, exactly as your own browser
+would; what changes is that it cannot tie the visit to the message. And the address is on
+that second copy's command line, which other programs running as you on this computer can
+read, the same as when a link is handed to your browser.
+
+Whichever you choose, a link is handed on only when it is a web address, an email address or
+a telephone number, the same rule as before; an address of any other kind is refused and said
+to be. The separate window is narrower still: it shows web addresses only, and refuses an
+email address or a telephone number, because a window is a page and those are for something
+else on your computer to answer.
+
+This was read out of the code rather than measured on the wire, on 2026-09-20 and again on
+2026-09-22: `src/application/opening_links.rs` holds the setting and `route`, the one decision
+from the setting and the way a link was asked for to where it goes, and
+`follow_the_link_the_page_posted` in `src/presentation/wx_app.rs` carries the answer out after
+`safe_external_url` has passed the address; `src/presentation/page_links.rs` says why the link
+is caught in the page rather than at the navigation, and
+`src/presentation/page_window.rs` holds the separate window, its profile's name and what it
+refuses.
 
 ## How a reader of mail can be tracked, and what this program does about each
 

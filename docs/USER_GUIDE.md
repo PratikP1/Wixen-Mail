@@ -290,13 +290,13 @@ under Settings, then Reading, then "Open links", and there are three:
   preview uses, so a cookie it sets is sent again when a later message loads a
   picture from the same site; [What Wixen Mail sends, and
   where](privacy.md#where-a-link-opens) says what that means.
-- In a separate Wixen Mail window. That window arrives with a later build:
-  it was to come with the next one, and on 2026-09-20 it was put off to the
-  phase after this one. Until it lands this choice opens your browser and the
-  status bar says so. Two sentences in the program itself, the one under the
-  setting and the status bar's line, still say "the next build"; they were
-  true when they were written on 2026-09-20 and are not now, and they change
-  when the window lands.
+- In a separate Wixen Mail window. Since 2026-09-22 this opens a window with
+  nothing in it but that page: no mail, no folders, and a browser profile of
+  its own, so a cookie the page sets is never sent with a message's pictures.
+  `Escape` or `F6` closes it, `Backspace` or `Alt+Left` goes back, and a link
+  on the page opens in the same window. It is a second copy of Wixen Mail,
+  and closing the window ends it. If it will not start, your browser opens
+  instead and you are told why.
 
 Whatever you chose, the link's menu offers all three. Press the `Applications`
 key or `Shift+F10` on a link, or right-click it, and choose Open in Message

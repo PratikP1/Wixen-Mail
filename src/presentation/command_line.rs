@@ -20,6 +20,7 @@
 
 use crate::application::allowed::Allowed;
 use crate::application::opening::{Opening, what_was_handed_over};
+use crate::presentation::page_window;
 
 /// Erase everything this installation stored, then exit.
 ///
@@ -35,6 +36,14 @@ pub enum Command {
     Run(Run),
     /// Erase the stored data and exit.
     EraseAllData,
+    /// Show one page in a window of this process's own, and exit with what
+    /// that window answers.
+    ///
+    /// Not a `Run`, and that is the whole shape of it: a page process opens
+    /// no database, prepares no data folder, opens no log file, claims no
+    /// single-copy marker and hands nothing over. It is answered beside
+    /// `Help` and `Version` for that reason (#80).
+    ShowPage(String),
     /// Say what the flags are, and exit.
     Help,
     /// Say which version this is, and exit.
@@ -109,6 +118,13 @@ Options:
   --scan-target <name>   Walk one window with the accessibility check and
                          exit. Used by the automated scan.
 
+  --show-page <address>  Open one web page in a separate window, and nothing
+                         else: no mail, no folders, and a browser profile of
+                         its own that shares nothing with the message
+                         preview. This is how Wixen Mail opens a link when
+                         Open links on the Reading tab says a separate
+                         window, and it is not meant to be typed.
+
   --help                 This.
   --version              Which version this is.
 
@@ -161,6 +177,18 @@ where
     }
     if args.iter().any(|arg| arg == "--version" || arg == "-V") {
         return Command::Version;
+    }
+    // Here, with the three that stop, rather than in the loop below: a page
+    // process is not a run, and every flag the loop reads narrows or arranges
+    // a run it will never have (#80). Answered after erasing, help and
+    // version, because those still win: an uninstall that opened a browser
+    // window because a stale argument was in the command line would be a
+    // window over somebody's uninstaller.
+    if let Some(at) = args.iter().position(|arg| arg == page_window::FLAG) {
+        let Some(address) = args.get(at + 1) else {
+            return Command::Refused(format!("{} needs an address", page_window::FLAG));
+        };
+        return Command::ShowPage(address.clone());
     }
 
     let mut run = Run::unrestricted();
@@ -498,6 +526,64 @@ mod tests {
 
         assert_eq!(started.scan_target, Some("compose".to_string()));
         assert_eq!(started.open, None);
+    }
+
+    #[test]
+    fn test_show_page_is_answered_before_anything_is_opened() {
+        // The separate window a link can open in (#80). Answered where
+        // --help and --version are, because a page process must be decided
+        // before the data folder, the log file and the single-copy claim:
+        // it opens none of them and is not the copy a later start hands a
+        // link to.
+        assert_eq!(
+            parse([page_window::FLAG, "https://example.com/where-it-went"]),
+            Command::ShowPage("https://example.com/where-it-went".to_string())
+        );
+        // Whatever else is on the line. A page process narrows nothing and
+        // opens nothing, so there is no flag for it to carry.
+        assert_eq!(
+            parse(["--read-only", page_window::FLAG, "https://example.com/"]),
+            Command::ShowPage("https://example.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn test_show_page_with_no_address_is_refused_rather_than_opening_a_window() {
+        // The same rule every other flag with a value follows. A window on
+        // nothing would be a window somebody has to close.
+        let why = refusal(&[page_window::FLAG]);
+
+        assert!(why.contains("needs an address"), "{why}");
+    }
+
+    #[test]
+    fn test_erasing_and_help_still_win_over_showing_a_page() {
+        // A page process is a window, and the three that stop still stop. An
+        // uninstall that opened a browser window because a stale argument was
+        // in the command line would be a window over somebody's uninstaller.
+        assert_eq!(
+            parse([ERASE_FLAG, page_window::FLAG, "https://example.com/"]),
+            Command::EraseAllData
+        );
+        assert_eq!(
+            parse(["--help", page_window::FLAG, "https://example.com/"]),
+            Command::Help
+        );
+        assert_eq!(
+            parse(["--version", page_window::FLAG, "https://example.com/"]),
+            Command::Version
+        );
+    }
+
+    #[test]
+    fn test_the_help_says_the_page_flag_is_not_one_to_type() {
+        // It is on the list because a flag a person can see in Task Manager
+        // and cannot find in --help reads as something hidden. It says what
+        // it is for and that the program passes it to itself.
+        assert!(HELP.contains(page_window::FLAG), "{HELP}");
+        let help = help_unwrapped();
+        assert!(help.contains("separate window"), "{HELP}");
+        assert!(help.contains("not meant to be typed"), "{HELP}");
     }
 
     #[test]

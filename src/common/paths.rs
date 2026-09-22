@@ -11,8 +11,28 @@
 //! cache\         message_cache.db and its SQLite sidecars
 //! logs\          the running log and crash.log
 //! sound_schemes\ imported sound-scheme packs, one subdirectory each
+//! updates\       an installer fetched for an update, while it waits
 //! security.key   the fallback key, used when the credential store refuses
 //! ```
+//!
+//! Two more sit beside those and are written by WebView2 rather than by this
+//! program, which is why they are named here rather than handed out by an
+//! accessor:
+//!
+//! ```text
+//! EBWebView\     the browser profile the message preview and the formatted
+//!                message window share, one per process and this is the one
+//! pages\EBWebView\
+//!                the browser profile a separate window uses, which is a
+//!                process of its own (#80)
+//! ```
+//!
+//! Both follow the Windows local data folder rather than this root, because
+//! wxWidgets reads it from the known-folder API and `WIXEN_MAIL_DATA` does
+//! not reach it. With the variable unset they are inside the root and the
+//! erase takes them with the rest; with it set they stay where they are, and
+//! [`page_profile_dir`] is what the erase asks so it can remove the second
+//! anyway.
 //!
 //! Earlier versions spread these across three profile folders and roamed the
 //! key that decrypts the mail while leaving the mail itself behind.
@@ -31,6 +51,10 @@ const DATA_DIR_ENV: &str = "WIXEN_MAIL_DATA";
 
 /// Folder created inside the platform's local application data directory.
 const FOLDER: &str = "wixen-mail";
+
+/// The folder inside the root that a page process keeps its browser profile
+/// in.
+const PAGE_PROFILE_FOLDER: &str = "pages";
 
 /// The cache database and every sidecar SQLite may have left beside it.
 ///
@@ -188,6 +212,40 @@ fn is_settings_file(name: &OsString) -> bool {
         return false;
     };
     name == "app_config.json" || (name.starts_with("account_") && name.ends_with(".json"))
+}
+
+/// The application name a page process runs under.
+///
+/// A separate Wixen Mail window is a process of its own (#80), and the one
+/// lever this toolkit gives for a browser profile is the application name:
+/// `wxStandardPathsBase::AppendAppInfo` appends it to the local data folder,
+/// and `wxWebViewConfigurationImplEdge` takes that folder as its data path.
+/// The name is appended as written, separator and all, so a name with one in
+/// it puts the page profile a level down, inside the root this module
+/// promises, where the erase and the uninstaller already reach.
+///
+/// A `String` rather than a constant because the separator is the platform's.
+pub fn page_profile_app_name() -> String {
+    format!("{FOLDER}{}{PAGE_PROFILE_FOLDER}", std::path::MAIN_SEPARATOR)
+}
+
+/// Where a page process's browser profile really goes on this computer.
+///
+/// Not under [`AppPaths::root`], and that is the point of its being here.
+/// WebView2's data path comes from wxWidgets, which reads the local data
+/// folder from the Windows known-folder API; `WIXEN_MAIL_DATA` moves
+/// everything this program writes for itself and moves nothing the browser
+/// writes. So with the variable unset this is inside the root and the erase
+/// reaches it with the rest, and with the variable set it is a second place
+/// the erase has to name. It names it.
+pub fn page_profile_dir() -> Option<PathBuf> {
+    page_profile_dir_in(dirs::data_local_dir())
+}
+
+/// The decision [`page_profile_dir`] makes, with its one input handed in so
+/// it can be tested without reading this machine's profile.
+fn page_profile_dir_in(local_data: Option<PathBuf>) -> Option<PathBuf> {
+    local_data.map(|dir| dir.join(FOLDER).join(PAGE_PROFILE_FOLDER))
 }
 
 /// Folders earlier versions wrote to.
@@ -709,6 +767,48 @@ mod tests {
                  compares against"
             );
         }
+    }
+
+    #[test]
+    fn test_a_page_processs_profile_sits_under_the_root_rather_than_beside_the_previews() {
+        // #80's third place is a process of its own so that a page it shows
+        // cannot read what the message preview's browser stored. Two
+        // processes with one profile folder would be two processes with one
+        // cookie jar, which is the thing that route exists to prevent.
+        let local = PathBuf::from("C:/Users/somebody/AppData/Local");
+        let profile = page_profile_dir_in(Some(local.clone())).expect("a local data folder");
+
+        assert_eq!(profile, local.join(FOLDER).join(PAGE_PROFILE_FOLDER));
+        // Under the root the rest of this module promises, so the erase and
+        // the uninstaller reach it without learning a second place.
+        assert!(profile.starts_with(AppPaths::under(local.join(FOLDER)).root()));
+        // And not the root itself, which is where the message preview's
+        // browser profile goes.
+        assert_ne!(profile, local.join(FOLDER));
+    }
+
+    #[test]
+    fn test_the_application_name_a_page_process_takes_is_the_folder_it_lands_in() {
+        // wxWidgets appends the application name to the local data folder as
+        // written, separator and all, so the name and the folder are one fact
+        // and are built from one pair of parts rather than written twice.
+        let local = PathBuf::from("C:/Users/somebody/AppData/Local");
+        let name = page_profile_app_name();
+
+        assert_eq!(
+            local.join(&name),
+            page_profile_dir_in(Some(local)).expect("a local data folder")
+        );
+        assert!(name.starts_with(FOLDER), "{name}");
+        assert!(name.ends_with(PAGE_PROFILE_FOLDER), "{name}");
+    }
+
+    #[test]
+    fn test_with_no_local_data_folder_there_is_no_page_profile_to_erase() {
+        // The erase asks this and removes what it names. Nothing named is not
+        // an error: a machine with no local data folder never had a page
+        // process either.
+        assert_eq!(page_profile_dir_in(None), None);
     }
 
     #[test]

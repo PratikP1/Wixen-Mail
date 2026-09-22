@@ -33,6 +33,7 @@ pub mod note_folder_tree;
 pub mod one_question_at_a_time;
 pub mod page_jumps;
 pub mod page_links;
+pub mod page_window;
 pub mod panes;
 pub mod pim_rows;
 pub mod read_aloud;

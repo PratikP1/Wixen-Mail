@@ -8,6 +8,7 @@ use wixen_mail::common::{started, version};
 use wixen_mail::presentation::WxMailApp;
 use wixen_mail::presentation::accessibility::platform_bridge;
 use wixen_mail::presentation::command_line::{self, Command};
+use wixen_mail::presentation::page_window;
 use wixen_mail::presentation::scan_target;
 
 fn main() {
@@ -32,6 +33,16 @@ fn main() {
             // opened inside the folder being removed, and an open file is
             // exactly what stops Windows removing it.
             std::process::exit(erase_all_data());
+        }
+        // One page, in a window of this process's own (#80). Here, beside
+        // erasing, rather than anywhere below: a page process must not
+        // prepare the data folder, open the log file, claim the single-copy
+        // marker or take part in the handover, because it opens no database
+        // and is not the copy a later start should hand its link to. The
+        // order of these arms is the whole of what makes that true, and
+        // `tests/a_separate_window_is_its_own_process.rs` reads it.
+        Command::ShowPage(address) => {
+            std::process::exit(page_window::show(&address));
         }
         Command::Help => return say(command_line::HELP),
         Command::Version => return say(&format!("Wixen Mail {}\n", version::current())),
@@ -307,6 +318,29 @@ fn finish_erasing(mut left_behind: Vec<String>) -> i32 {
         Err(e) => left_behind.push(format!(
             "Could not find the data folder, so none of it was removed: {e}"
         )),
+    }
+
+    // The browser profile a separate window uses (#80), which is the one
+    // folder this program causes to be written that `WIXEN_MAIL_DATA` does
+    // not move: WebView2 takes its data path from wxWidgets, which reads the
+    // local data folder from the Windows known-folder API. With the variable
+    // unset this is inside the root and has already gone with it, and
+    // removing a folder that is not there is not an error; with it set this
+    // is the only thing that reaches it, and without this an erase would
+    // leave a browser profile behind on a machine somebody had just wiped.
+    match wixen_mail::common::paths::page_profile_dir() {
+        Some(pages) => {
+            if pages.exists()
+                && let Err(e) = std::fs::remove_dir_all(&pages)
+            {
+                left_behind.push(format!("Could not remove {}: {e}", pages.display()));
+            }
+        }
+        None => left_behind.push(
+            "Could not find the local application data folder, so a separate window's \
+             browser profile may still be there"
+                .to_string(),
+        ),
     }
 
     // Written either way. A note only on failure makes silence ambiguous
