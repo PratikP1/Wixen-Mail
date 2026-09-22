@@ -28652,15 +28652,23 @@ tests_last_seen = [
     { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 2 },
 ]
 
-# A separate window shows a page and nothing else, and the scheme is where
-# that is decided (#80, 12-02, T-12-04). `--show-page` crosses a process
-# boundary, so the address arrives from something this program cannot vouch
-# for: it may have been typed, and the sanitiser it went through on the way
-# out was a different process's. The break drops the narrowing to http and
-# https and keeps the sanitiser, which is the shape somebody reaches for on
-# the day a `mailto:` link is wanted in this window; the process then loads
-# whatever it was handed and the window never closes, which the target kills
-# and reports.
+# A separate window shows a page and nothing else, and this is where that is
+# decided (#80, 12-02, T-12-04). `--show-page` crosses a process boundary, so
+# the address arrives from something this program cannot vouch for: it may
+# have been typed, and the sanitiser it went through on the way out was a
+# different process's. The break keeps the narrowing to http and https and
+# drops the sanitiser, which is the shape somebody reaches for on the day the
+# two checks look like one; the process then loads an address dressed to look
+# like it goes somewhere it does not, and the window never closes, which the
+# target kills and reports.
+#
+# The break used to be the other way round, keeping the sanitiser and dropping
+# the scheme. It reddened, and on the way there it let the target hand a
+# `mailto:` to the browser control, which is an address Windows gives to
+# whatever reads mail on the machine. Nothing launched, twice, and that was
+# luck. A break must not be able to start another program, so this one moves
+# the failure onto a web address and the target's list puts that address
+# first.
 #
 # The target rather than the library, because the module's own cases are
 # reached by `--lib presentation::page_window::` on any commit that changes
@@ -28668,7 +28676,8 @@ tests_last_seen = [
 # would run only when its own file changed, which is every commit except the
 # ones that could break it.
 #
-# Measured 2026-09-22 on the branch the record was written on.
+# Measured 2026-09-22 on the branch the record was written on, and again the
+# same day on the branch that corrected the break.
 [[guard]]
 name = "a separate window opens a page and refuses everything that is not one"
 file = "src/presentation/page_window.rs"
@@ -28676,8 +28685,9 @@ suite = "a_separate_window_is_its_own_process"
 before = """    let safe = HtmlRenderer::safe_external_url(address)?;
     let scheme = safe.to_ascii_lowercase();
     (scheme.starts_with("http://") || scheme.starts_with("https://")).then_some(safe)"""
-after = """    let safe = HtmlRenderer::safe_external_url(address)?;
-    Some(safe)"""
+after = """    let scheme = address.trim().to_ascii_lowercase();
+    (scheme.starts_with("http://") || scheme.starts_with("https://"))
+        .then(|| address.trim().to_string())"""
 red = [
     "test_an_address_that_is_not_a_page_opens_no_window",
 ]

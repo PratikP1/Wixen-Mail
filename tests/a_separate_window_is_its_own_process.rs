@@ -110,12 +110,25 @@ fn test_an_address_that_is_not_a_page_opens_no_window() {
     // opened, so the run finishes rather than waiting for somebody to close
     // a window.
     //
-    // `not-a-page` is first on purpose, and the order matters. A break that
-    // lets everything through loads whatever it was given, and this list is
-    // otherwise five addresses Windows hands to five other programs. The
-    // first assertion stops the loop, so the one that opens nothing is the
-    // one a broken tree tries.
+    // The order matters, and the first version of it was wrong in a way
+    // that only running it showed. A break that lets an address through
+    // hands it to the browser control, and four of these are addresses
+    // Windows gives to some other program: a `mailto:` opens whatever reads
+    // mail on this machine. The first assertion stops the loop, so whatever
+    // is first is the one a broken tree really tries, and it has to be an
+    // address that opens nothing but a page.
+    //
+    // `not-a-page` was first and is not that, because the sanitiser refuses
+    // it on its own and the break measured here keeps the sanitiser: the
+    // case passed and the loop went on to the `mailto:`. It did that twice,
+    // on 2026-09-22, and launched nothing, which was luck rather than
+    // design. The address with a user in front of the host is first now: it
+    // is a web address, so a broken tree navigates to a reserved domain and
+    // nothing else, and it is refused here for a reason of its own, since
+    // `https://somebody@example.com/` is how a link is dressed to look like
+    // it goes somewhere it does not.
     for refused in [
+        "https://somebody@example.com/",
         "not-a-page",
         "mailto:somebody@example.com",
         "javascript:alert(1)",
