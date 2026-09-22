@@ -14,17 +14,18 @@
 //! event loop and a window somebody has to close. Each refused run is
 //! measured on its exit code, on what it said, and on how long it took.
 //!
-//! What that cannot see, said plainly. A start that did open a window would
-//! not fail here, it would hang: the run waits for the process to finish, so
-//! the timing below catches a refusal that got slow and not a refusal that
-//! never came. A hang in this target is that, and reads as one.
+//! A start that did open a window is killed and reported, rather than
+//! waited for: the first draft waited for the process to finish, which turns
+//! the one failure this target exists to catch into a hang. A guard record
+//! breaks the scheme check on purpose, so that failure is a thing this file
+//! is really driven into.
 //!
 //! The rest is read from the source, and each reading says what it cannot
 //! see. That a page really appears in that window, with its title spoken and
 //! Escape closing it, is the tester's ear and is on the ledger.
 
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use wixen_mail::common::what_ships::what_ships;
@@ -38,13 +39,16 @@ const LONG_ENOUGH_TO_REFUSE: Duration = Duration::from_secs(5);
 
 /// What one run of the built executable answered.
 struct WhatItAnswered {
+    /// Whether it stopped by itself, rather than being killed for taking
+    /// too long. A start that opened a window stops by nothing.
+    stopped_by_itself: bool,
     code: Option<i32>,
     complaint: String,
     took: Duration,
 }
 
 /// Run the built executable with these arguments, against a throwaway data
-/// folder.
+/// folder, and kill it if it is still there after [`LONG_ENOUGH_TO_REFUSE`].
 ///
 /// `WIXEN_MAIL_DATA` is set because a refused start writes its reason to the
 /// crash file, and that file belongs to whoever is running this rather than
@@ -52,15 +56,39 @@ struct WhatItAnswered {
 fn start_and_wait(arguments: &[&str]) -> WhatItAnswered {
     let folder = tempfile::TempDir::new().expect("a throwaway data folder");
     let began = Instant::now();
-    let finished = Command::new(env!("CARGO_BIN_EXE_wixen-mail"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_wixen-mail"))
         .args(arguments)
         .env("WIXEN_MAIL_DATA", folder.path())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .expect("the built executable should run");
+
+    let mut stopped_by_itself = false;
+    while began.elapsed() < LONG_ENOUGH_TO_REFUSE {
+        if child
+            .try_wait()
+            .expect("the child should be askable")
+            .is_some()
+        {
+            stopped_by_itself = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let took = began.elapsed();
+    if !stopped_by_itself {
+        let _ = child.kill();
+    }
+    let answered = child
+        .wait_with_output()
+        .expect("the child should be waitable");
+
     WhatItAnswered {
-        code: finished.status.code(),
-        complaint: String::from_utf8_lossy(&finished.stderr).to_string(),
-        took: began.elapsed(),
+        stopped_by_itself,
+        code: answered.status.code(),
+        complaint: String::from_utf8_lossy(&answered.stderr).to_string(),
+        took,
     }
 }
 
@@ -81,6 +109,12 @@ fn test_an_address_that_is_not_a_page_opens_no_window() {
     // on the way in (T-12-04). Each of these is refused before anything is
     // opened, so the run finishes rather than waiting for somebody to close
     // a window.
+    //
+    // `not-a-page` is first on purpose, and the order matters. A break that
+    // lets everything through loads whatever it was given, and this list is
+    // otherwise five addresses Windows hands to five other programs. The
+    // first assertion stops the loop, so the one that opens nothing is the
+    // one a broken tree tries.
     for refused in [
         "not-a-page",
         "mailto:somebody@example.com",
@@ -90,12 +124,12 @@ fn test_an_address_that_is_not_a_page_opens_no_window() {
     ] {
         let answered = start_and_wait(&["--show-page", refused]);
 
-        assert_eq!(answered.code, Some(2), "{refused} did not stop the start");
         assert!(
-            answered.took < LONG_ENOUGH_TO_REFUSE,
-            "{refused} took {:?}, which is long enough to have opened something",
+            answered.stopped_by_itself,
+            "{refused} was still running after {:?}, so it opened something",
             answered.took
         );
+        assert_eq!(answered.code, Some(2), "{refused} did not stop the start");
     }
 }
 
@@ -107,6 +141,7 @@ fn test_the_page_flag_with_nothing_after_it_is_refused_and_says_what_it_wanted()
     // thing it can read.
     let answered = start_and_wait(&["--show-page"]);
 
+    assert!(answered.stopped_by_itself);
     assert_eq!(answered.code, Some(2));
     assert!(
         answered.complaint.contains("needs an address"),
@@ -148,24 +183,52 @@ fn test_a_page_process_is_answered_before_this_start_claims_or_prepares_anything
 }
 
 #[test]
-fn test_the_page_process_names_its_profile_before_it_builds_a_browser() {
-    // T-12-06. The application name decides where WebView2 puts the
-    // profile, and it is read when the environment is made, which is when
-    // the first browser control is built. Named afterwards it would name a
-    // folder nothing uses and the page would share the message preview's
-    // profile, which is the thing #80's third item is about.
-    let ships = what_ships_in("src/presentation/page_window.rs");
-    let names = ships
-        .find("set_app_name")
-        .expect("the page process names its profile");
-    let builds = ships
-        .find("WebView::builder")
-        .expect("the page process builds a browser");
+fn test_the_page_process_is_the_only_one_that_renames_itself() {
+    // T-12-06. The application name is what decides where WebView2 puts a
+    // profile, so the two processes are only apart for as long as exactly
+    // one of them changes it. The main process keeps the executable's name,
+    // which is where its profile has always been; the page process takes a
+    // name a level down. A second caller anywhere would move a profile
+    // somebody's cookies are already in, and the order of the calls inside
+    // the page process is held by that module's own reading.
+    //
+    // What this cannot see: whether the name it sets is the one the paths
+    // module builds the folder from. `page_window` reads that from
+    // `paths::page_profile_app_name`, and the paths module holds the two to
+    // each other.
+    let mut renames = Vec::new();
+    for file in every_rust_file_under("src") {
+        let ships = what_ships_in(&file);
+        if ships.contains("set_app_name") {
+            renames.push(file);
+        }
+    }
 
-    assert!(
-        names < builds,
-        "the profile is named after the browser is built, so the browser did not get it"
+    assert_eq!(
+        renames,
+        vec!["src/presentation/page_window.rs".to_string()],
+        "the application name is set somewhere other than the page process"
     );
+}
+
+/// Every `.rs` file under a directory, in a stable order.
+fn every_rust_file_under(directory: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut to_walk = vec![Path::new(directory).to_path_buf()];
+    while let Some(here) = to_walk.pop() {
+        let entries = std::fs::read_dir(&here)
+            .unwrap_or_else(|e| panic!("{} should be readable: {e}", here.display()));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                to_walk.push(path);
+            } else if path.extension().is_some_and(|kind| kind == "rs") {
+                found.push(path.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    found
 }
 
 #[test]

@@ -20,6 +20,7 @@
 
 use crate::application::allowed::Allowed;
 use crate::application::opening::{Opening, what_was_handed_over};
+use crate::presentation::page_window;
 
 /// Erase everything this installation stored, then exit.
 ///
@@ -117,6 +118,13 @@ Options:
   --scan-target <name>   Walk one window with the accessibility check and
                          exit. Used by the automated scan.
 
+  --show-page <address>  Open one web page in a separate window, and nothing
+                         else: no mail, no folders, and a browser profile of
+                         its own that shares nothing with the message
+                         preview. This is how Wixen Mail opens a link when
+                         Open links on the Reading tab says a separate
+                         window, and it is not meant to be typed.
+
   --help                 This.
   --version              Which version this is.
 
@@ -169,6 +177,18 @@ where
     }
     if args.iter().any(|arg| arg == "--version" || arg == "-V") {
         return Command::Version;
+    }
+    // Here, with the three that stop, rather than in the loop below: a page
+    // process is not a run, and every flag the loop reads narrows or arranges
+    // a run it will never have (#80). Answered after erasing, help and
+    // version, because those still win: an uninstall that opened a browser
+    // window because a stale argument was in the command line would be a
+    // window over somebody's uninstaller.
+    if let Some(at) = args.iter().position(|arg| arg == page_window::FLAG) {
+        let Some(address) = args.get(at + 1) else {
+            return Command::Refused(format!("{} needs an address", page_window::FLAG));
+        };
+        return Command::ShowPage(address.clone());
     }
 
     let mut run = Run::unrestricted();
@@ -254,7 +274,6 @@ fn allowance(what: &str) -> Option<Allowed> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::presentation::page_window;
 
     fn run(args: &[&str]) -> Run {
         match parse(args) {

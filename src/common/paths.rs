@@ -11,8 +11,28 @@
 //! cache\         message_cache.db and its SQLite sidecars
 //! logs\          the running log and crash.log
 //! sound_schemes\ imported sound-scheme packs, one subdirectory each
+//! updates\       an installer fetched for an update, while it waits
 //! security.key   the fallback key, used when the credential store refuses
 //! ```
+//!
+//! Two more sit beside those and are written by WebView2 rather than by this
+//! program, which is why they are named here rather than handed out by an
+//! accessor:
+//!
+//! ```text
+//! EBWebView\     the browser profile the message preview and the formatted
+//!                message window share, one per process and this is the one
+//! pages\EBWebView\
+//!                the browser profile a separate window uses, which is a
+//!                process of its own (#80)
+//! ```
+//!
+//! Both follow the Windows local data folder rather than this root, because
+//! wxWidgets reads it from the known-folder API and `WIXEN_MAIL_DATA` does
+//! not reach it. With the variable unset they are inside the root and the
+//! erase takes them with the rest; with it set they stay where they are, and
+//! [`page_profile_dir`] is what the erase asks so it can remove the second
+//! anyway.
 //!
 //! Earlier versions spread these across three profile folders and roamed the
 //! key that decrypts the mail while leaving the mail itself behind.
@@ -225,8 +245,7 @@ pub fn page_profile_dir() -> Option<PathBuf> {
 /// The decision [`page_profile_dir`] makes, with its one input handed in so
 /// it can be tested without reading this machine's profile.
 fn page_profile_dir_in(local_data: Option<PathBuf>) -> Option<PathBuf> {
-    let _ = local_data;
-    None
+    local_data.map(|dir| dir.join(FOLDER).join(PAGE_PROFILE_FOLDER))
 }
 
 /// Folders earlier versions wrote to.

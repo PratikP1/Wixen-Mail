@@ -12878,7 +12878,7 @@ fn how_many_on_the_server(count: usize) -> String {
 /// well, from `page_jumps`, by the same route and for the same reason: a key
 /// bound on the browser control itself never fires while the browser has
 /// focus, which is how the page window's F8 sat dead until #84 (2026-09-18).
-fn wire_the_way_out(view: &WebView, surface: &str, keys: PageKeys) -> bool {
+pub(crate) fn wire_the_way_out(view: &WebView, surface: &str, keys: PageKeys) -> bool {
     let channel = view.add_script_message_handler("contextMenu");
     if !channel {
         tracing::error!("{surface}: script channel refused, the Back button will do nothing");
@@ -13280,8 +13280,12 @@ fn follow_the_link_the_page_posted(
 }
 
 /// Which keys a page gives back to its window.
+///
+/// Visible to the crate because a third surface runs the same script now:
+/// `page_window`, the separate window a link can open in, which is a process
+/// of its own and therefore not built from here (#80).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PageKeys {
+pub(crate) enum PageKeys {
     /// Escape and F6, which every page needs. The preview takes only these:
     /// it has no list and no bar of its own to jump to, and a key posted to
     /// a window with nothing to do is a key that does nothing.

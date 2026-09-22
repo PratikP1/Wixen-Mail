@@ -192,6 +192,15 @@ fn host_of(address: &str) -> Option<&str> {
 /// What is said when Backspace or Alt+Left brings the message back.
 pub const BACK_TO_THE_MESSAGE: &str = "Back to the message";
 
+/// What is said when a link's address is not one this program will open.
+///
+/// Here rather than beside either surface's handler, because three of them
+/// say it now: the message preview, the formatted message window, and the
+/// separate window, which sanitises again on its own side of a process
+/// boundary. One sentence for one thing, wherever somebody meets it.
+pub const THAT_LINK_WAS_NOT_OPENED: &str =
+    "That link was not opened. It does not use a kind of address this program will open.";
+
 /// What is said when a page in the message view will not load.
 ///
 /// `kind` is the browser control's own code for what went wrong, as

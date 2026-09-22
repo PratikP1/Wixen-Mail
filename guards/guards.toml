@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 232 records have arrived since and have not been through it.
+# 235 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3543,7 +3543,7 @@ red = [
     "common::paths::tests::test_the_enumeration_reaches_every_accessor_this_module_has",
 ]
 tests_last_seen = [
-    { file = "src/common/paths.rs", tests = 19 },
+    { file = "src/common/paths.rs", tests = 22 },
 ]
 
 # ── A shipped page promising the Windows warning will go away ────────────────
@@ -13886,7 +13886,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/presentation/command_line.rs", tests = 24 },
+    { file = "src/presentation/command_line.rs", tests = 28 },
     { file = "src/presentation/first_run.rs", tests = 16 },
 ]
 
@@ -28650,4 +28650,98 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 2 },
+]
+
+# A separate window shows a page and nothing else, and the scheme is where
+# that is decided (#80, 12-02, T-12-04). `--show-page` crosses a process
+# boundary, so the address arrives from something this program cannot vouch
+# for: it may have been typed, and the sanitiser it went through on the way
+# out was a different process's. The break drops the narrowing to http and
+# https and keeps the sanitiser, which is the shape somebody reaches for on
+# the day a `mailto:` link is wanted in this window; the process then loads
+# whatever it was handed and the window never closes, which the target kills
+# and reports.
+#
+# The target rather than the library, because the module's own cases are
+# reached by `--lib presentation::page_window::` on any commit that changes
+# this file, and this reading is not: without a record naming this file it
+# would run only when its own file changed, which is every commit except the
+# ones that could break it.
+#
+# Measured 2026-09-22 on the branch the record was written on.
+[[guard]]
+name = "a separate window opens a page and refuses everything that is not one"
+file = "src/presentation/page_window.rs"
+suite = "a_separate_window_is_its_own_process"
+before = """    let safe = HtmlRenderer::safe_external_url(address)?;
+    let scheme = safe.to_ascii_lowercase();
+    (scheme.starts_with("http://") || scheme.starts_with("https://")).then_some(safe)"""
+after = """    let safe = HtmlRenderer::safe_external_url(address)?;
+    Some(safe)"""
+red = [
+    "test_an_address_that_is_not_a_page_opens_no_window",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_window.rs", tests = 4 },
+    { file = "tests/a_separate_window_is_its_own_process.rs", tests = 5 },
+]
+
+# A page process is decided before the loop that reads the flags of a run,
+# because it is not a run (#80, 12-02). The break leaves the early answer in
+# place and stops it answering, which is what moving it into the loop would
+# do: `--show-page` then falls through to the arm that refuses anything
+# beginning with a dash, and the window a person asked for never opens.
+#
+# Two cases red rather than one: the flag stops being read at all, so the
+# refusal for a missing address stops saying what it wanted as well.
+#
+# Measured 2026-09-22 on the branch the record was written on.
+[[guard]]
+name = "the flag that opens one page is answered before the flags of a run"
+file = "src/presentation/command_line.rs"
+before = """    if let Some(at) = args.iter().position(|arg| arg == page_window::FLAG) {
+        let Some(address) = args.get(at + 1) else {
+            return Command::Refused(format!("{} needs an address", page_window::FLAG));
+        };
+        return Command::ShowPage(address.clone());
+    }"""
+after = """    if let Some(at) = args.iter().position(|arg| arg == page_window::FLAG) {
+        let _ = at;
+    }"""
+red = [
+    "presentation::command_line::tests::test_show_page_is_answered_before_anything_is_opened",
+    "presentation::command_line::tests::test_show_page_with_no_address_is_refused_rather_than_opening_a_window",
+]
+tests_last_seen = [
+    { file = "src/presentation/command_line.rs", tests = 28 },
+]
+
+# T-12-05: a page process opens no database, prepares no data folder, opens
+# no log file and claims no single-copy marker, and the only thing that makes
+# that true is where its arm sits in `main` (#80, 12-02). The break leaves
+# the arm where it is and takes the window out of it, which is what somebody
+# does on the day they decide a page should open through the ordinary path;
+# `main` then names no page process at all and the reading that holds the
+# order has nothing to compare.
+#
+# `src/main.rs` maps to a `--lib` filter that matches nothing, so without
+# this record the reading runs on no commit that could break it.
+#
+# Measured 2026-09-22 on the branch the record was written on.
+[[guard]]
+name = "a page process is answered before this start claims or prepares anything"
+file = "src/main.rs"
+suite = "a_separate_window_is_its_own_process"
+before = """        Command::ShowPage(address) => {
+            std::process::exit(page_window::show(&address));
+        }"""
+after = """        Command::ShowPage(_address) => {
+            std::process::exit(page_window::NOT_A_PAGE);
+        }"""
+red = [
+    "test_a_page_process_is_answered_before_this_start_claims_or_prepares_anything",
+]
+tests_last_seen = [
+    { file = "src/main.rs", tests = 0 },
+    { file = "tests/a_separate_window_is_its_own_process.rs", tests = 5 },
 ]
