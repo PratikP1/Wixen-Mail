@@ -1073,6 +1073,29 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **The separate window a link can open in is here, and it is a copy of Wixen Mail with
+  nothing in it but that page.** #80's third place, from Pratik's ask of 2026-09-18, since
+  2026-09-22 on `1.0.0-alpha.1`. Settings, Reading, "Open links" set to a separate Wixen Mail
+  window, and the link's own Open in Separate Window, now open one: a window holding one page,
+  with no mail, no folders and a browser profile of its own, so a cookie that page sets is
+  never sent with a message's pictures. It is a second copy of the program, and it has to be,
+  because every browser control in one copy shares one profile and nothing in the toolkit this
+  is built on can move or clear it; a window in the same copy would have sat in the message
+  preview's cookie jar, which is the thing that choice exists to prevent. Its profile lives at
+  `pages\EBWebView` under the folder this program keeps its files in, and "Erase all data"
+  removes it with everything else. The title bar says "Opening" and the site's name until the
+  page arrives, then the page's own title, with "Wixen Mail" after it either way; the title is
+  said once when the page arrives, and why it will not open is said when it will not, with the
+  reason left on the screen. `Escape` or `F6` closes the window and ends that copy, `Backspace`
+  or `Alt+Left` goes back, and a link on the page opens in the same window. The window shows
+  web addresses only: an email address or a telephone number goes to whatever on your computer
+  answers those, as it did before. If the second copy will not start, your browser opens
+  instead and you are told why. Known limitations: a page that asks for another window with a
+  script does not get one, and is told so out loud, because the browser control does not tell
+  this program where that window would have gone, so there is no address to open instead;
+  `Ctrl` and `Shift` on a link inside this window make no difference, since there is nowhere
+  else for a link to go here; and nobody has driven the window with a screen reader yet, so
+  the title, the links and Escape are structure and not experience.
 - **Where a link opens is your choice, and a link followed in a message goes there.** Pratik's
   ask of 2026-09-18 (#80), and the tester's finding the same day under NVDA on
   `1.0.0-alpha.1+149.g744d05ef`: "Enter on a message and Enter on a link both open in the
@@ -1101,11 +1124,7 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   the default. A new scan target, `page`, opens the formatted message window for the
   accessibility scan and for an NVDA case that presses Enter on a link the way a person
   does. Save Link As is on S rather than A, which Select All already had on the same menu.
-  Known limitations: the separate window arrives with the next build, and until then
-  choosing it opens the browser and says so on the status line (corrected on 2026-09-20: a
-  later build, since the plan that builds it was put off that day to the phase after this
-  one; the sentence under the setting and the status line in the program still say the next
-  build until that plan lands); the check behind the page's
+  Known limitations: the check behind the page's
   listener still cannot read an address, so a navigation the listener does not catch, a live
   page's own script moving somewhere for instance, is stopped and logged rather than routed;
   the main window's title does not change for a page in the preview pane; nobody has heard

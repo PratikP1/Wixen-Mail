@@ -584,9 +584,11 @@ next phase on 2026-09-20.
     the default; the page in the message view with "Opening" and the site's
     name, the title said once when it arrives, and "Back to the message" on
     Backspace or Alt+Left; the link's menu on the Applications key offering the
-    three places on both surfaces; a page that will not load saying why; the
-    separate window choice opening the browser with its status line, since that
-    window is a later build's. **NVDA.** [ledger 560]
+    three places on both surfaces; a page that will not load saying why; and,
+    since 2026-09-22, the separate window choice opening a window of its own
+    with "Opening" and the site's name said, the page's title after it, a link
+    on the page staying in that window, Backspace going back and Escape closing
+    it. **NVDA.** [ledger 560, 568]
 79. **Change Mark as read after in Settings, press OK, and press Enter on an
     unread message.** The message marked after the new wait, without a restart;
     change how dates are written, OK, and the list's dates changing at once;
