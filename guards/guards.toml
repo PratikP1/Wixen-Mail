@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 236 records have arrived since and have not been through it.
+# 237 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -4084,6 +4084,45 @@ before = """    print(how_much_of_it_asked_a_question(run))"""
 after = """    pass"""
 red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 74 },
+]
+
+# ── A guard measurement that does not return, and the shard it used to cost ──
+#
+# Run 35520204784 of .github/workflows/guards.yml lost shard 40 on 2026-09-20.
+# The shard logged 2,637 s of measured work and then spent about 5 h 16 min
+# inside one record, "the settings dialog is frozen while its pages are built",
+# which printed a header and never a timing line, until the job's 360-minute
+# cap ended it with nine records unmeasured. The longest shard that finished
+# took 7,442 s, so the shard count was never the cause: nothing in
+# scripts/guards.py bounded a record or a suite's pre-read, and one that does
+# not return costs a whole shard whatever the shard count is.
+#
+# What covers that file is a worked example. There is no shell suite for the
+# guard runner, and test_the_guard_runner_still_obeys_its_own_examples is what
+# runs the examples on a commit. So the break takes the budget off the one
+# cargo call that every record's build and every record's run goes through, and
+# the example asserting that an already spent budget stops that call is what
+# reddens. Every other example still passes under the break, including the ones
+# over the timeout machinery itself, which pass their own budgets in: the only
+# thing this break removes is the budget reaching cargo.
+#
+# Measured by hand on 2026-09-22 before it was written down.
+
+[[guard]]
+name = "a record's own time limit reaches the cargo call it is supposed to bound"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """    finished = run_to_completion(
+        ["cargo", *arguments],
+        budget,"""
+after = """    finished = run_to_completion(
+        ["cargo", *arguments],
+        None,"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
     { file = "tests/house_style.rs", tests = 74 },
