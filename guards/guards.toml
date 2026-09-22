@@ -80,12 +80,17 @@
 #
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
-# 798 records were swept that day.
-# 236 records have arrived since and have not been through it.
+# 797 records were swept that day.
+# 238 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
 # with the function, and the comment where they stood says why.
+#
+# And 797 rather than 798 since 2026-09-22: "a page's body is taken out of
+# its divs before it is read" was retired by 12-02.1 after the sweep of
+# 2026-09-20 and a measurement here both found its break reddening nothing,
+# and the comment where it stood says why.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -646,10 +651,19 @@ red = [
     # the result line said once at the end of a check, "Work, 1 new message",
     # counts through `how_many` and reads "1 new messages" under this break.
     "application::mail_sync::tests::test_what_arrived_names_each_folder_that_received_something_with_its_count",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 1 and a
+    # measurement here that found the same four. The sentence a batch says
+    # about several messages counts through `how_many`, in a file this record
+    # had never named.
+    "application::choosing_messages::tests::test_a_batch_with_a_refusal_says_how_many_went_and_how_many_did_not",
+    "application::choosing_messages::tests::test_each_outcome_has_its_words",
+    "application::choosing_messages::tests::test_the_sentence_counts_the_messages_with_the_singular_right",
+    "application::choosing_messages::tests::test_the_sentence_names_the_conversations_when_one_was_in_the_set",
 ]
 tests_last_seen = [
     { file = "src/application/bringing_everything_down.rs", tests = 23 },
     { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/application/choosing_messages.rs", tests = 18 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/mail_sync.rs", tests = 149 },
@@ -2275,6 +2289,24 @@ tests_last_seen = [
 # it means an hour on this computer. Google's converter read it that way and
 # Graph's called it universal time, and the test named for the two agreeing
 # checked the shape of each and never compared them.
+#
+# ── A runner cannot judge this record, and that is written here rather than
+#    only at the top of the file, where the last two sweeps did not read it ──
+#
+# What a runner cannot see: its clock is UTC, so `chrono::Local` and
+# `chrono::Utc` are the same conversion there and the break changes nothing.
+# On a machine set to any other zone the two differ and the break reddens.
+#
+# Green on a runner twice, and reported as a finding both times: run
+# 34965790937 of 2026-09-15 and run 35520204784 of 2026-09-20, a build and a
+# run each.
+#
+# Red here on 2026-09-22, measured by 12-02.1 with
+# `scripts/guards.sh --wait-until-quiet`: "all 2 tests named went red, and
+# nothing else did", rebuild 44 s and run 49 s. The record is right and the
+# runner is what cannot read it. The sweep of 2026-09-15 said this would be
+# written on each of the two such records and it was written at the top of the
+# file instead, which is why the next sweep found them again.
 
 [[guard]]
 name = "an hour with no zone means an hour here, to Outlook as well as to Google"
@@ -3629,6 +3661,25 @@ tests_last_seen = [
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
+# ── A runner cannot judge this record, and that is written here rather than
+#    only at the top of the file, where the last two sweeps did not read it ──
+#
+# What a runner cannot see: GitHub's Windows images have no certificate chain
+# to walk, so the arm the break replaces is never reached there and taking its
+# call away changes nothing. On a machine with a chain the test reaches it and
+# the break reddens.
+#
+# Green on a runner twice, and reported as a finding both times: run
+# 34965790937 of 2026-09-15 and run 35520204784 of 2026-09-20, a build and a
+# run each.
+#
+# Red here on 2026-09-22, measured by 12-02.1 with
+# `scripts/guards.sh --wait-until-quiet`: "the one test named went red, and
+# nothing else did", rebuild 44 s and run 50 s. The record is right and the
+# runner is what cannot read it. The sweep of 2026-09-15 said this would be
+# written on each of the two such records and it was written at the top of the
+# file instead, which is why the next sweep found them again.
+
 [[guard]]
 name = "the walk into Windows own chain structures really happens"
 file = "src/service/signed_mail.rs"
@@ -4084,6 +4135,45 @@ before = """    print(how_much_of_it_asked_a_question(run))"""
 after = """    pass"""
 red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 74 },
+]
+
+# ── A guard measurement that does not return, and the shard it used to cost ──
+#
+# Run 35520204784 of .github/workflows/guards.yml lost shard 40 on 2026-09-20.
+# The shard logged 2,637 s of measured work and then spent about 5 h 16 min
+# inside one record, "the settings dialog is frozen while its pages are built",
+# which printed a header and never a timing line, until the job's 360-minute
+# cap ended it with nine records unmeasured. The longest shard that finished
+# took 7,442 s, so the shard count was never the cause: nothing in
+# scripts/guards.py bounded a record or a suite's pre-read, and one that does
+# not return costs a whole shard whatever the shard count is.
+#
+# What covers that file is a worked example. There is no shell suite for the
+# guard runner, and test_the_guard_runner_still_obeys_its_own_examples is what
+# runs the examples on a commit. So the break takes the budget off the one
+# cargo call that every record's build and every record's run goes through, and
+# the example asserting that an already spent budget stops that call is what
+# reddens. Every other example still passes under the break, including the ones
+# over the timeout machinery itself, which pass their own budgets in: the only
+# thing this break removes is the budget reaching cargo.
+#
+# Measured by hand on 2026-09-22 before it was written down.
+
+[[guard]]
+name = "a record's own time limit reaches the cargo call it is supposed to bound"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """    finished = run_to_completion(
+        ["cargo", *arguments],
+        budget,"""
+after = """    finished = run_to_completion(
+        ["cargo", *arguments],
+        None,"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
     { file = "tests/house_style.rs", tests = 74 },
@@ -5026,9 +5116,26 @@ red = [
     "application::mail_across_accounts::tests::test_the_message_is_already_on_the_disk_when_the_append_goes_out",
     "application::mail_across_accounts::tests::test_the_message_reaches_one_server_and_leaves_the_other",
     "application::mail_across_accounts::tests::test_the_message_the_destination_is_given_is_the_one_the_source_handed_over",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 9 and a
+    # measurement here that found the same ten. 11-07.2 made a crossing a
+    # waiting move with its bytes, so `moves_waiting` now fetches the message
+    # from the source too and every one of its crossing cases reads what the
+    # server handed over. A file this record had never named, which is the
+    # direction the count check cannot see.
+    "application::moves_waiting::tests::test_a_copy_across_accounts_lands_with_nothing_removed_at_the_source",
+    "application::moves_waiting::tests::test_a_crossing_is_replayed_at_a_check_of_the_destination_account",
+    "application::moves_waiting::tests::test_a_crossing_that_lands_answers_done_and_the_row_settles_in_the_other_account",
+    "application::moves_waiting::tests::test_a_destination_that_already_held_the_identifier_reads_only_a_new_number_as_the_arrival",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_does_not_hold_it_answers_refused",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_then_holds_it_answers_done_and_removes_at_the_source",
+    "application::moves_waiting::tests::test_a_destination_that_refuses_the_append_answers_refused_and_the_undo_puts_the_row_back",
+    "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+    "application::moves_waiting::tests::test_two_crossings_are_replayed_in_the_order_they_were_asked",
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -7825,16 +7932,37 @@ file = "src/application/long_text.rs"
 # call gained the `<title>` element and `words_of_markup` became a third
 # reading through it: the `before` is the body as it stands, and the words
 # test reddens with the rest.
+#
+# And again on 2026-09-22 by 12-02.1, after run 35520204784 could not apply
+# this break at all: the text appeared 0 times. `d470a105`, 11-11.0's
+# newsletter work for #90, gave `read_markup` the `Keeping` match over
+# `drop_what_the_sender_hid` and the `keep_the_layout_claim` call, so the
+# recorded body was three quarters of a function that had grown. The anchor is
+# the whole function again, which is what it was before and what it has to be:
+# the break replaces the whole of it.
 before = '''fn read_markup(html: &str, keeping: Keeping) -> String {
+    // What the sender hid is dropped before anything reads it (#90), so a
+    // hidden preheader and its padding reach neither a row's snippet nor a
+    // description read aloud. Only for speech: a note read back to be
+    // edited keeps everything typed, hidden or not, for the reason on
+    // [`from_markup_to_edit`].
+    let shown = match keeping {
+        Keeping::OnlyWhatIsSpoken => {
+            std::borrow::Cow::Owned(super::hidden_text::drop_what_the_sender_hid(html).0)
+        }
+        Keeping::EverythingTyped => std::borrow::Cow::Borrowed(html),
+    };
     // `ammonia`'s defaults drop a `<script>` or `<style>` element with its
     // content and strip every other disallowed tag around its content. A
     // `<title>` is the one element whose content is not part of what a reader
     // would say either: a whole message carries one in its head, and kept, it
-    // arrived at the front of every newsletter's snippet (#32).
-    let cleaned = ammonia::Builder::default()
-        .add_clean_content_tags(["title"])
-        .clean(html)
-        .to_string();
+    // arrived at the front of every newsletter's snippet (#32). A table's
+    // claim to be layout is kept, so the walk below can read one as its
+    // blocks rather than as a table with no columns to name.
+    let mut cleaner = ammonia::Builder::default();
+    cleaner.add_clean_content_tags(["title"]);
+    super::hidden_text::keep_the_layout_claim(&mut cleaner);
+    let cleaned = cleaner.clean(&shown).to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
@@ -9138,17 +9266,33 @@ tests_last_seen = [
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
+# ── One record split in two on 2026-09-22 by 12-02.1 ───────────────────────
+#
+# It was "blocks joins a p or div's inline content into one line", one break
+# over the shared `"p" | "div"` arm, and run 35520204784 could not apply it:
+# the text appeared 0 times. `d470a105`, 11-11.0's newsletter work for #90,
+# split the arm, because a newsletter's whole body is a `div` holding its
+# headings, its tables and its paragraphs and reading that as one line ran
+# every block's words into the next block's. A `p` still goes to
+# `push_paragraph` and a `div` now goes to `blocks_or_a_paragraph`.
+#
+# So the record named one fact about two decisions, and one break can only
+# exercise one of them. Split rather than narrowed, because the rule holds for
+# both arms and a record covering only the `p` would leave the `div` guarded
+# by nothing, which is the shape this file exists to stop. The second census
+# number moves by one with it.
+
 [[guard]]
-name = "blocks joins a p or div's inline content into one line"
+name = "blocks joins a paragraph's inline content into one line"
 file = "src/application/long_text.rs"
 # Re-measured 2026-09-11 for ledger 270, which put a nested list and a table
 # through this walk and moved the arms either side of this one. The break used
 # to be the deletion of this arm, written as the two lines it sits above; that
-# spelling broke the moment a neighbour changed. It now reads the p or div as a
-# container rather than as one line of inline text, which is the same mistake
+# spelling broke the moment a neighbour changed. It now reads the paragraph as
+# a container rather than as one line of inline text, which is the same mistake
 # and depends on nothing but the arm itself.
-before = '''                    "p" | "div" => push_paragraph("", child, out, keeping),'''
-after = '''                    "p" | "div" => blocks(child, out, keeping),'''
+before = '''                    "p" => push_paragraph("", child, out, keeping),'''
+after = '''                    "p" => blocks(child, out, keeping),'''
 # Re-measured 2026-09-11 after the second reading landed.
 # `test_a_picture_with_no_description_comes_back_as_a_picture_with_no_description`
 # was named here and stays green with the break applied, so it is taken out: a
@@ -9156,14 +9300,21 @@ after = '''                    "p" | "div" => blocks(child, out, keeping),'''
 # `p` as a container no longer changes what that test sees. A named test that
 # stays green is a test whose name still promises something it no longer
 # checks.
+#
+# Measured again on 2026-09-22 with the arm split, and the list below is that
+# run's answer rather than the old record's.
 red = [
     "application::long_text::markup::tests::test_a_paragraph_joins_its_inline_content_into_one_line",
-    "application::long_text::markup::tests::test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph",
     "application::long_text::tests::test_a_line_break_kept_for_editing_is_still_a_line_break",
     "application::long_text::tests::test_a_line_break_read_for_speaking_is_still_a_space",
     "application::long_text::tests::test_a_link_kept_for_editing_keeps_its_address",
     "application::long_text::tests::test_a_link_read_for_speaking_still_loses_its_address",
     "application::long_text::tests::test_an_address_holding_a_bracket_is_written_so_it_can_be_read_back",
+    # Unnamed until 2026-09-22, and in a file this record had never named, so
+    # the count check could not have seen it: a snippet of a body that is only
+    # markup is taken through this arm, and a paragraph read as a container
+    # leaves it with nothing to give.
+    "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
     "service::onenote_page::tests::test_a_line_break_comes_back_as_a_line_break",
     "service::onenote_page::tests::test_a_link_comes_back_with_its_address",
     "service::onenote_page::tests::test_bold_comes_back_as_plain_words",
@@ -9173,7 +9324,27 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/service/onenote_page.rs", tests = 48 },
+]
+
+[[guard]]
+name = "blocks joins a div's inline content into one line when the div holds no block"
+file = "src/application/long_text.rs"
+# The other half of the arm `d470a105` split, recorded on 2026-09-22 by
+# 12-02.1. A `div` holding a block child is walked as blocks, which is what
+# that commit is for; a `div` holding only a line of words is one paragraph,
+# and reading it as blocks cuts the line at every inline element inside it.
+# The break asks the walk to do the second to both kinds, which is the mistake
+# the shared arm used to make.
+before = '''                    "div" => blocks_or_a_paragraph(child, out, keeping),'''
+after = '''                    "div" => blocks(child, out, keeping),'''
+# Measured on 2026-09-22 rather than predicted; this list is that run's answer.
+red = [
+    "application::long_text::markup::tests::test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph",
+]
+tests_last_seen = [
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -9467,9 +9638,25 @@ name = "inline silently drops a script or style reaching it directly"
 file = "src/application/long_text.rs"
 # Re-measured 2026-09-11. Written as the deletion of one arm rather than as two
 # lines naming its neighbour, for the same reason as the records above.
+#
+# And re-anchored on 2026-09-22 by 12-02.1, after run 35520204784 could not
+# apply it: the text appeared 0 times. `d470a105`, 11-11.0's newsletter work
+# for #90, put the `tag if is_a_block(tag)` arm between this one and the
+# catch-all, so the two lines are no longer adjacent. Written as two adjacent
+# lines again anyway, because the arm's own text is four words that appear
+# twice in this file, once here and once in the block walk. The anchor is
+# therefore the arm plus the comment that follows it, which names one place.
 before = '''                    "script" | "style" => {}
-                    _ => inline(child, out, keeping),'''
-after = '''                    _ => inline(child, out, keeping),'''
+                    // A block met inside inline content, a paragraph inside
+                    // a table cell, is read with a space either side, or its
+                    // last word runs into the next block's first (ledger
+                    // 555: "seven daysActions speak louder than wordsGary").
+                    tag if is_a_block(tag) => {'''
+after = '''                    // A block met inside inline content, a paragraph inside
+                    // a table cell, is read with a space either side, or its
+                    // last word runs into the next block's first (ledger
+                    // 555: "seven daysActions speak louder than wordsGary").
+                    tag if is_a_block(tag) => {'''
 red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 60 },
@@ -11589,9 +11776,16 @@ red = [
     # reaches it too, so two of the resolver's tests redden under this break.
     "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
     "service::spellcheck::tests::test_a_stored_language_nothing_offers_resolves_to_nothing",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 23 and a
+    # measurement here that found the same two. The row the settings screen
+    # shows for a stored language is worked out through the same resolver, in
+    # a file this record had never named.
+    "presentation::which_language_row::tests::test_a_bare_tag_the_checker_cannot_place_stands_as_its_own_row_when_listed",
+    "presentation::which_language_row::tests::test_a_tag_nothing_offers_is_added_as_stored",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
+    { file = "src/presentation/which_language_row.rs", tests = 6 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
@@ -11612,9 +11806,16 @@ red = [
     "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
     "service::spellcheck::tests::test_a_stored_language_nothing_offers_resolves_to_nothing",
     "service::spellcheck::tests::test_the_machines_own_region_wins_only_when_it_is_available",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 24 and a
+    # measurement here that found the same two. The row the settings screen
+    # shows for a stored language is worked out through the same resolver, in
+    # a file this record had never named.
+    "presentation::which_language_row::tests::test_a_bare_tag_the_checker_cannot_place_stands_as_its_own_row_when_listed",
+    "presentation::which_language_row::tests::test_a_tag_nothing_offers_is_added_as_stored",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
+    { file = "src/presentation/which_language_row.rs", tests = 6 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
@@ -16030,9 +16231,18 @@ red = [
     "application::flag_changes_waiting::tests::test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked",
     "application::flag_changes_waiting::tests::test_a_sign_in_that_did_not_happen_leaves_the_change_worth_keeping",
     "application::flag_changes_waiting::tests::test_a_waiting_change_the_server_still_cannot_be_asked_about_goes_on_waiting",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 30 and a
+    # measurement here that found the same three. A waiting move asks the same
+    # question of the same answer, so a server that hung up has to be told
+    # apart from one that said no there too, in a file this record had never
+    # named.
+    "application::moves_waiting::tests::test_a_server_never_reached_leaves_the_move_waiting",
+    "application::moves_waiting::tests::test_a_server_that_hung_up_answers_not_reached_and_the_row_goes_on_waiting",
+    "application::moves_waiting::tests::test_a_server_that_hung_up_on_the_copy_leaves_it_waiting",
 ]
 tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 16 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
 ]
 
 [[guard]]
@@ -16053,14 +16263,33 @@ tests_last_seen = [
 #
 # Both were measured by putting the break in and watching the file stay green.
 # A test that cannot fail proves nothing, and this one could not fail twice.
+#
+# Re-written on 2026-09-22 by 12-02.1, after run 35520204784 could not build
+# it. The runner said, at `wx_app.rs:19635` as the file stood at `0ad66e48`,
+# `error[E0061] this function takes 4 arguments but 3 arguments were supplied`,
+# with `argument #2 of type Vec<account::Account> is missing`. The recorded
+# `after` is the wiring somebody writes, so it has to be the wiring this tree
+# would accept: `spawn_mail_sync` gained the accounts it is to check, and a
+# call that does not compile is a break nobody can judge rather than a break
+# that reddens nothing.
+#
+# The accounts are read the way the nearby `FolderHasChanged` arm reads them,
+# from the locked state, so the break is still a call that would really reach
+# a server rather than one that compiles and does nothing.
+#
+# The commit that moved it: `6ec0ec60`, 10-06's watch, schedule and startup
+# check, by `git log -S` over the signature's `accounts: Vec<Account>` line.
+# One commit, so it is both the introduction and the mover.
 name = "the network coming back starts nothing that reaches a server"
 file = "src/presentation/wx_app.rs"
 suite = "nothing_sends_a_flag_change_unasked"
 before = """        UIUpdate::TheNetworkIsBack => {
             back_online_offer.panel.show(true);"""
 after = """        UIUpdate::TheNetworkIsBack => {
+            let every: Vec<Account> = lock_state(state).accounts.to_vec();
             spawn_mail_sync(
                 AppHandles { state, tx, rt },
+                every,
                 None,
                 crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
             );
@@ -16953,9 +17182,24 @@ file = "src/presentation/html_renderer.rs"
 before = """        let mut builder = ammonia::Builder::default();"""
 after = """        let mut builder = ammonia::Builder::default();
         builder.rm_tag_attributes("img", ["alt"]);"""
+# One name taken out on 2026-09-22 by 12-02.1, after run 35520204784 found it
+# green on a runner and a measurement here found the same:
+# `test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence`
+# cannot see this break and never could.
+#
+# Measured by hand with the break in place rather than reasoned about. Under
+# `Announcing::Silently` that test asks whether the mark was rewritten, and it
+# compares the reading's answer with its own input. The break does not rewrite
+# the mark; it takes the mark's meaning away, and the answer under silence is
+# byte for byte the input either way,
+# `<img src="data:image/png;base64,iVBORwECAwQ=" alt="">`, because a
+# decorative picture and an undescribed one are both left alone there. Only a
+# reader who asked to be told can see the difference, and the sibling that
+# asks that, `test_a_decorative_picture_is_said_to_be_there_when_the_reader_asked_for_that`,
+# does redden and stays named. So the test is right about its own subject and
+# was never about this guard.
 red = [
     "data::message_cache::drafts::tests::test_a_picture_and_its_description_come_back_out_of_a_real_database",
-    "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
     "presentation::html_renderer::tests::test_a_decorative_picture_is_said_to_be_there_when_the_reader_asked_for_that",
     "presentation::html_renderer::tests::test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried",
     "presentation::html_renderer::tests::test_a_described_picture_is_untouched_whatever_the_reader_chose",
@@ -17246,8 +17490,14 @@ red = [
     "service::signed_mail::the_cheap_first_question::test_a_message_naming_a_p7m_file_and_nothing_else_still_claims_encryption",
     "service::signed_mail::the_cheap_first_question::test_an_enveloped_message_says_it_claims_encryption",
     "service::signed_mail::the_cheap_first_question::test_capitals_in_enveloped_data_still_claim_encryption",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 32 and a
+    # measurement here that found the same one. What a message in the cache is
+    # read as saying about its own form goes through the same claim, in a file
+    # this record had never named.
+    "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
 ]
 tests_last_seen = [
+    { file = "src/application/reading_a_message.rs", tests = 7 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
@@ -18152,6 +18402,24 @@ tests_last_seen = [
 # open. What catches it is the wiring check that reads this file for the
 # question being asked, and that check named six handlers and not this one until
 # 04.1-01, which is why nothing saw it.
+#
+# The test strengthened on 2026-09-22 by 12-02.1, after the break reddened
+# nothing. Run 35520204784 found this guard green on a runner, and a
+# measurement here on 2026-09-22 agreed: 1 of 1 named test stayed green with
+# the guard broken, rebuild 18 s and run 2 s. The cause was the test and not
+# the record. It asked whether `owner_of(` appears anywhere in
+# `move_or_copy_message`, and that function calls it twice: once for the
+# account the destinations are built from, which is what this record is about,
+# and once per message for the account each row is moving out of. Taking the
+# first away left the second, so the body still read as asking.
+#
+# `test_everything_aimed_at_a_message_asks_which_account_that_message_is_in`
+# now reads the `account` binding the folder list is built from rather than the
+# whole body. Taken red by hand under this break on 2026-09-22 before it was
+# made green, `cargo test --test wired`: 76 passed and exactly this one failed,
+# on the sentence about destinations chosen on one server and the command sent
+# to another. The red list is unchanged, because the test that notices is the
+# same test.
 name = "the move window builds its folder list from the account on screen"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
@@ -18337,15 +18605,49 @@ tests_last_seen = [
 # it looks like taking out a repetition.
 #
 # Measured 2026-09-08 against the whole library.
+#
+# Moved on 2026-09-22 by 12-02.1, after run 35520204784 could not build it. The
+# runner said `error[E0599] no method named take_it_off_the_server found for
+# reference &impl TheAccountItIsIn`, and suggested restricting the type
+# parameter with `+ TheAccountItIsLeaving`.
+#
+# That error is the safeguard working. `fetch_and_keep`, where the break used
+# to sit, takes only the reading trait, which has no write in it, so no body it
+# can be given can send a change to the source. Widening its bound to make the
+# break compile would edit a signature to make a guard applicable, which is a
+# larger change than the rule needs and the kind that goes stale first, and it
+# would also weaken the thing being guarded for the length of the run.
+#
+# So the break moves to where the order is decided and where the removal is
+# already reachable: `move_it_across` takes both traits and calls
+# `remove_at_the_source` after the append. Hoisting that call above the append
+# is the same mistake the paragraph above describes, written where somebody
+# tidying the branching would really write it.
+#
+# The commit that moved it: `e72a822c`, 11-07.2's failing cases for a crossing
+# as a waiting move with its bytes, by `git log -S` over `fetch_and_keep`'s own
+# signature. One commit, so it is both the introduction and the mover. Before
+# it, the two lines the break was anchored on sat in `the_crossing`, bounded by
+# `impl TheAccountItIsIn + TheAccountItIsLeaving`, and the break compiled;
+# 11-07.2 extracted them into a function bounded by the reading trait alone.
+#
+# Measured on 2026-09-22 rather than predicted, and the list below is that
+# run's answer.
 
 [[guard]]
 name = "the source is told to give the message up before the destination has it"
 file = "src/application/mail_across_accounts.rs"
-before = """    let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
-    let identifier = the_identifier_to_ask_about(filed.message_id.as_deref());"""
-after = """    let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
-    let identifier = the_identifier_to_ask_about(filed.message_id.as_deref());
-    let _ = the_account_it_is_in.take_it_off_the_server(from, uid).await;"""
+before = """        Ok(
+            match append_and_ask(the_account_it_is_going_to, &fetched.message).await {
+                Appended::ItLanded => {
+                    remove_at_the_source(the_account_it_is_in, &fetched.message).await
+                }"""
+after = """        let _ = remove_at_the_source(the_account_it_is_in, &fetched.message).await;
+        Ok(
+            match append_and_ask(the_account_it_is_going_to, &fetched.message).await {
+                Appended::ItLanded => {
+                    remove_at_the_source(the_account_it_is_in, &fetched.message).await
+                }"""
 red = [
     "application::mail_across_accounts::tests::test_nothing_is_said_to_the_source_that_changes_it_until_the_append_has_gone_out",
     "application::mail_across_accounts::tests::test_a_destination_that_refuses_the_append_leaves_the_source_untouched",
@@ -18412,9 +18714,18 @@ red = [
     "application::mail_across_accounts::tests::test_a_resumed_move_asks_the_destination_before_it_sends_anything",
     "application::mail_across_accounts::tests::test_a_resumed_move_the_destination_does_not_have_is_sent_again_then_removed",
     "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 34 and a
+    # measurement here that found the same four. 11-07.2 made a crossing a
+    # waiting move, so the same question about an unanswered append is asked
+    # again from `moves_waiting`, in a file this record had never named.
+    "application::moves_waiting::tests::test_a_crossing_resumed_from_held_bytes_fetches_nothing_from_the_source",
+    "application::moves_waiting::tests::test_a_destination_that_already_held_the_identifier_reads_only_a_new_number_as_the_arrival",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
+    "application::moves_waiting::tests::test_a_destination_that_hung_up_and_does_not_hold_it_answers_refused",
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/moves_waiting.rs", tests = 45 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -20344,29 +20655,43 @@ tests_last_seen = [
 # comparison passes a true row as readily as a strict one. 6,930 passed and
 # none failed. Written down rather than left out, because a candidate break
 # that reddens nothing is a finding about the break.
-[[guard]]
-name = "a page's body is taken out of its divs before it is read"
-file = "src/service/onenote_page.rs"
-before = '''    let mut everything_but_divs = ammonia::Builder::default();
-    everything_but_divs.rm_tags(["div"]);
-    everything_but_divs.clean(html).to_string()'''
-after = '''    ammonia::clean(html)'''
-red = [
-    "service::onenote_page::tests::test_a_heading_at_every_level_comes_back",
-    "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
-    "service::onenote_page::tests::test_a_horizontal_rule_does_not_come_back_at_all",
-    "service::onenote_page::tests::test_a_list_nested_three_deep_comes_back_at_all_three_depths",
-    "service::onenote_page::tests::test_a_nested_list_comes_back_nested",
-    "service::onenote_page::tests::test_a_page_written_in_capitals_reads_the_same_as_one_in_small_letters",
-    "service::onenote_page::tests::test_a_table_comes_back_as_a_table",
-    "service::onenote_page::tests::test_an_ordered_list_comes_back",
-    "service::onenote_page::tests::test_an_unordered_list_comes_back",
-    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
-    "service::onenote_page::tests::test_microsofts_own_page_comes_back_with_its_heading_as_a_heading",
-]
-tests_last_seen = [
-    { file = "src/service/onenote_page.rs", tests = 48 },
-]
+#
+# ── And the record itself retired on 2026-09-22, by 12-02.1 ─────────────────
+#
+# Run 35520204784 found this record's break reddening nothing on a runner, and
+# a measurement here on 2026-09-22 found the same: all 11 of 11 named tests
+# stayed green with the guard broken, rebuild 45 s and run 50 s. So the guard
+# had no bite on either machine.
+#
+# Why. `d470a105`, 11-11.0's newsletter work for #90, split the shared `p` and
+# `div` arm the paragraph above describes, and a `div` now goes to
+# `blocks_or_a_paragraph`, which walks a container holding a block child as
+# blocks. Every shape a OneNote page has is such a container, so the stripping
+# here no longer decides anything those 11 tests read.
+#
+# Measured rather than read off that, by putting each shape through
+# `long_text::from_markup_to_edit` twice, once with the divs stripped and once
+# with them kept:
+#
+#     <div><h1>H</h1><p>p</p></div>      both "# H\n\np"
+#     <div>words <p>a para</p></div>     both "words\n\na para"
+#     <div><div><h1>H</h1></div></div>   both "# H"
+#     <div>only words</div>              both "only words"
+#     <div>a <b>b</b> c</div>            stripped "a\n\nb\n\nc", kept "a b c"
+#     <div>a <a href="https://x">link</a> here</div>
+#                                        stripped "a\n\nlink\n\nhere",
+#                                        kept "a [link](https://x) here"
+#
+# So the stripping is redundant wherever a div holds a block, and where a div
+# holds only a line of words it now cuts that line at every inline element and
+# takes a link's address away with it. That is a loss on a round trip through
+# the editor, which is the one thing `from_markup_to_edit` exists to prevent.
+#
+# No break to this function can have bite while that is true, because the only
+# behaviour left to guard is the loss, and a test asserting it would write the
+# defect down as the rule. So the record is retired rather than rewritten, and
+# `.planning/WINDOWS.md` carries what the reading found, with the shapes above,
+# for whoever decides whether the stripping comes out.
 
 # A note a backend holds is copied into the new folder and the old container is
 # owed a removal, rather than having its row changed in place.
@@ -22156,17 +22481,53 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-14 against the target: 14 passed and exactly
 # these five failed, each naming `docs/architecture.md:400`.
+#
+# ── Re-anchored on 2026-09-22 by 12-02.1, after it reddened nothing ─────────
+#
+# Run 35520204784 found this break reddening nothing on a runner, and a
+# measurement here on 2026-09-22 agreed: 5 of 5 named tests stayed green with
+# the guard broken, rebuild 1 s and run 1 s.
+#
+# Why. `f15f4671`, 08-09's pass that judged each target against its row, gave
+# the paragraph around `docs/architecture.md:400` its own date and its own
+# backticked command. The reading excuses a figure twice over, by
+# `names_a_target` on its line and separately by (dated, sourced) on its
+# paragraph, so taking the word away left the second excuse standing. The
+# guard still read the rule; the site it was anchored on had stopped
+# discriminating.
+#
+# And no other document site is available. A scan of every page under `docs/`
+# and of `README.md` and `CLAUDE.md` on 2026-09-22, replaying the three figure
+# patterns and the date and source readings, found no line holding the word
+# and a figure of a matched kind whose paragraph carries neither. Two shapes
+# were tried by hand before this one and neither reddened anything:
+# `docs/wcag-coverage.md:29`'s "conformance target is 31 + 24 = 55 criteria",
+# because the count pattern matches a number before `tests`, `records`,
+# `mutants` or `lines` and not before `criteria`; and the original site again.
+#
+# So the break moves to where the rule lives, the reading's own excuse, on the
+# pattern of the sixteen records that already break a file under `tests/`. It
+# reddens exactly one test, the companion that plants a line saying `target`
+# and then the same line without the word.
+#
+# Measured by hand on 2026-09-22 against the target,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 24 passed
+# and exactly this one failed.
 [[guard]]
 name = "the word target is the only thing excusing a figure from its date"
-file = "docs/architecture.md"
+file = "tests/every_number_carries_its_command_and_its_date.rs"
 suite = "every_number_carries_its_command_and_its_date"
-before = """- High code coverage (target: 80%+)"""
-after = """- High code coverage (aim: 80%+)"""
+before = '''/// A line that says `target` is stating an aim, not a measurement, and an aim
+/// has no date of being taken.
+fn names_a_target(line: &str) -> bool {
+    line.to_lowercase().contains("target")
+}'''
+after = '''/// A line that says `target` is stating an aim, not a measurement, and an aim
+/// has no date of being taken.
+fn names_a_target(line: &str) -> bool {
+    line.to_lowercase().contains("no line on any page holds this")
+}'''
 red = [
-    "test_every_figure_on_a_page_carries_its_date_and_its_source",
-    "test_the_provenance_reading_can_see_a_count_without_a_date",
-    "test_the_provenance_reading_can_see_a_duration_without_a_source",
-    "test_the_provenance_reading_can_see_a_percentage_without_a_date",
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [
@@ -22540,6 +22901,38 @@ tests_last_seen = [
 #
 # Measured on 2026-09-17 against the target: exactly this one failed and
 # nothing else did.
+#
+# ── And it does not return when broken, which is what ended shard 40 ────────
+#
+# This is the record that cost run 35520204784 a whole shard on 2026-09-20.
+# Shard 40 logged 2,637 s of measured work, printed this name, never printed a
+# timing line, and the job's 360-minute cap ended it 18,978 s later with nine
+# records unmeasured. It was re-dispatched on its own as run 35726150488 on
+# 2026-09-22 and died the same way: twelve headers, eleven verdicts, and six
+# hours inside this one.
+#
+# Measured here on 2026-09-22 by 12-02.1, under the per-record limit that plan
+# built: "it did not return within its budget of 1800 s, and was still running
+# when the budget ran out at 1800 s", the kill took the tree, and the run went
+# on to the next four records and measured all of them. So the record has no
+# verdict from either machine, and it is left without one rather than given a
+# guessed one.
+#
+# The hang is itself evidence about what this guard defends. The record is
+# about the dialog being frozen while its pages are built, and an unfrozen
+# build repaints per control: `wxChoice` resizes itself after every item it is
+# handed. The measurement of 2026-09-16 above put the typeface list alone at
+# about a second unfrozen against a tenth of that frozen, over one list; the
+# break takes the freeze off the whole dialog, and what happens then is not a
+# slower run, it is a run nothing has been seen to finish. That is a stronger
+# statement about the freeze than the reading that names it, and it is not a
+# verdict, because nobody has watched this break redden anything since
+# 2026-09-17.
+#
+# What it would take to measure it: a way to run that suite with the break in
+# place and a bound on the repainting, which nothing here has. It is in
+# `.planning/WINDOWS.md` as work rather than as a lowered record. Do not lower
+# the record and do not guess a verdict.
 
 [[guard]]
 name = "the settings dialog is frozen while its pages are built"
@@ -23610,8 +24003,14 @@ red = [
     "service::spellcheck::tests::test_a_bare_stored_language_follows_the_machine_to_whichever_region_it_has",
     "service::spellcheck::tests::test_the_stored_tag_and_the_machines_tag_are_matched_without_regard_to_case",
     "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 42 and a
+    # measurement here that found the same one. The settings screen's row for
+    # a bare stored tag is the resolver's answer, in a file this record had
+    # never named.
+    "presentation::which_language_row::tests::test_a_bare_tag_is_resolved_to_the_row_the_checker_would_use",
 ]
 tests_last_seen = [
+    { file = "src/presentation/which_language_row.rs", tests = 6 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
@@ -27025,9 +27424,15 @@ red = [
     "application::thread_identity::tests::a_conversation_the_server_named_is_not_rewritten_onto_a_header_root",
     "application::thread_identity::tests::two_conversations_the_server_named_apart_stay_apart",
     "application::thread_identity::tests::a_header_root_between_two_of_the_servers_conversations_joins_the_first_found",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 48 and a
+    # measurement here that found the same one. The cache's own reading of a
+    # reply whose header names a conversation the server also named goes
+    # through this merge, in a file this record had never named.
+    "data::message_cache::server_thread_ids::tests::test_naming_a_reply_brings_its_header_named_conversation_under_the_word",
 ]
 tests_last_seen = [
     { file = "src/application/thread_identity.rs", tests = 39 },
+    { file = "src/data/message_cache/server_thread_ids.rs", tests = 5 },
 ]
 
 # The in-memory pass joining two conversations the store keeps apart by
@@ -27830,9 +28235,15 @@ after = """    Nothing,
     Image,"""
 red = [
     "application::describing_pictures::tests::test_the_default_is_nothing_so_an_undescribed_picture_is_passed_over",
+    # Added 2026-09-22 by 12-02.1, from run 35520204784's shard 50 and a
+    # measurement here that found the same one. The settings guard that reads
+    # a file written before these settings existed asserts this default among
+    # the others, in a file this record had never named.
+    "data::config::permission_tests::test_a_settings_file_written_before_these_existed_reads_the_way_it_should",
 ]
 tests_last_seen = [
     { file = "src/application/describing_pictures.rs", tests = 8 },
+    { file = "src/data/config.rs", tests = 68 },
 ]
 
 # A reader's word sent to a recipient. The undescribed rule moves into

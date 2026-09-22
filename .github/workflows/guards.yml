@@ -73,6 +73,10 @@ on:
         description: "the last shard this dispatch runs, inclusive, at most first + 255"
         type: string
         default: "40"
+      time_limit:
+        description: "seconds one record gets, its build and its run together, and one suite's pre-read the same; what passes it is given up on and the run goes on"
+        type: string
+        default: "1800"
 
 env:
   CARGO_TERM_COLOR: always
@@ -114,6 +118,12 @@ jobs:
     # The runner's own cap, written so a reader sees it: a shard that has not
     # finished by then is killed, its log holds the records it reached, and
     # the read-back names the rest as remaining.
+    #
+    # It is the backstop and no longer the only bound. Run 35520204784 lost
+    # shard 40 here, to one record that ran for about 5 h 16 min without
+    # returning while the longest shard that finished took 7,442 s; the
+    # per-record --time-limit above is what catches that now, and this stays
+    # for everything the limit cannot see.
     timeout-minutes: 360
     strategy:
       # Every shard is its own unit. One that fails says nothing about the
@@ -155,9 +165,14 @@ jobs:
     # One contiguous block of the record, by position in the file, the same
     # block for the same file and n on every machine. No --wait-until-quiet:
     # a runner is nobody's machine and nothing else builds on it.
+    #
+    # --time-limit is passed from the input rather than left to the script's
+    # default, so the value a dispatch used is in the dispatch's own record.
+    # The two spellings differ because each belongs to a different language:
+    # an input is time_limit and a flag is --time-limit.
     - name: One shard of the sweep
       shell: bash
-      run: bash scripts/guards.sh --shard ${{ matrix.k }}/${{ inputs.shards }} --log sweep-${{ matrix.k }}-of-${{ inputs.shards }}.log
+      run: bash scripts/guards.sh --shard ${{ matrix.k }}/${{ inputs.shards }} --log sweep-${{ matrix.k }}-of-${{ inputs.shards }}.log --time-limit ${{ inputs.time_limit }}
 
     # Whether or not the shard failed: a record found short exits 1, and its
     # log is exactly the one task 3 reads.

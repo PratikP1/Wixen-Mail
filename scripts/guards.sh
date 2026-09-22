@@ -69,6 +69,15 @@
 #                                  saying how many remain and how to resume;
 #                                  --stop-after 0 reports what remains and
 #                                  measures nothing
+#   scripts/guards.sh --time-limit 900 --log sweep.log
+#                                  the same, with each record and each suite's
+#                                  pre-read held to fifteen minutes rather
+#                                  than the script's default of thirty. What
+#                                  passes it is killed with the processes
+#                                  cargo started under it, reported unmeasured
+#                                  with the seconds it reached, and the run
+#                                  goes on; the closing line counts what a run
+#                                  gave up on
 #   scripts/guards.sh --shard 3/41 --log sweep-3-of-41.log
 #                                  shard 3 of 41, counting from 0: one
 #                                  contiguous block of the file's records, the
@@ -101,6 +110,10 @@
 # a guard nobody wrote down. A break that no longer matches the file means
 # somebody moved the code underneath it. All three are the moment to measure
 # that guard by hand again rather than to edit the record until it applies.
+#
+# And a fourth outcome that is not a failure of the record at all: a record, or
+# a suite's pre-read, given up on at `--time-limit`. That one learned nothing,
+# so it is unmeasured rather than judged and a resume takes it again.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
