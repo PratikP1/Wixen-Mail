@@ -29,6 +29,7 @@ use crate::presentation::mail_sort::sort_messages;
 use crate::presentation::one_question_at_a_time;
 use crate::presentation::page_jumps;
 use crate::presentation::page_links;
+use crate::presentation::page_window;
 use crate::presentation::sample_mailbox::{SAMPLE_MAILBOX_SIZE, sample_mailbox};
 use crate::presentation::ui_types::*;
 use crate::presentation::view_state;
@@ -17318,6 +17319,30 @@ fn open_for_scanning(
                 .collect();
             show_conversation_as_page(frame, &reader, a11y, "Scan target", &parts, None);
             std::mem::forget(reader);
+            OnReturn::WindowStillUp
+        }
+        ScanTarget::PageWindow => {
+            // The separate window a link opens in (#80, 12-02). In the
+            // shipped program it is a process of its own; built here inside
+            // this one, because the scan walks the tree of the process it
+            // launched and a second process is a tree it never sees. On a
+            // document rather than a live page for the same reason the
+            // other fixtures exist: the runner has no network, and what is
+            // being walked is this window's names and roles.
+            let (_, body) = scan_fixtures::page_conversation()
+                .into_iter()
+                .next()
+                .expect("the page fixture has a first message");
+            let document = HtmlRenderer::new().wrap_body(&body);
+            let built = page_window::build(
+                a11y,
+                page_window::What::ThisDocument {
+                    html: &document,
+                    as_if_from: "https://example.com/",
+                },
+                Rc::new(|| {}),
+            );
+            built.put_it_in_front();
             OnReturn::WindowStillUp
         }
         ScanTarget::Search => {

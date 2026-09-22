@@ -153,6 +153,21 @@ pub struct ThePageWindow {
     pub live_region: isize,
 }
 
+impl ThePageWindow {
+    /// Put the window in front of whoever asked for it.
+    ///
+    /// Un-minimised before it is shown, because a window this new is never
+    /// minimised and `raise` on a minimised window leaves it minimised.
+    /// Written here rather than at each call site so the three steps cannot
+    /// come apart: `tests/wired.rs` holds every `frame.raise()` in the main
+    /// window to the same shape, and found this one missing it.
+    pub fn put_it_in_front(&self) {
+        self.frame.iconize(false);
+        self.frame.show(true);
+        self.frame.raise();
+    }
+}
+
 /// Build the window on a wx application that is already running.
 ///
 /// Apart from `show` below, the accessibility scan calls this: the scan runs
@@ -412,8 +427,7 @@ pub fn show(address: &str) -> i32 {
             }),
         );
         a11y.register_live_region(built.live_region);
-        built.frame.show(true);
-        built.frame.raise();
+        built.put_it_in_front();
     });
 
     match ran {

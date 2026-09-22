@@ -173,6 +173,18 @@ pub const WHAT_EACH_CHOICE_COSTS: &str = "In the default browser, a page shares 
 pub const SEPARATE_WINDOWS_ARRIVE_LATER: &str =
     "Separate windows arrive with the next build; opened in the browser";
 
+/// What is said when a link opens in a separate Wixen Mail window.
+pub fn opening_in_a_separate_window(address: &str) -> String {
+    let _ = address;
+    String::new()
+}
+
+/// What is said when the separate window could not be started.
+pub fn the_separate_window_would_not_start(why: &str) -> String {
+    let _ = why;
+    String::new()
+}
+
 /// What is said when the message view starts loading a page: the host, not
 /// the whole address, which can be two hundred characters of token.
 pub fn what_is_said_when_opening(address: &str) -> String {
@@ -409,15 +421,38 @@ mod tests {
     }
 
     #[test]
-    fn test_the_words_on_the_reading_tab_name_the_trade_and_the_wait() {
+    fn test_the_words_on_the_reading_tab_name_the_trade() {
+        // What each choice costs, which is the only reason the sentence is
+        // under the control at all: the browser shares nothing, the message
+        // view shares the preview's profile, and the separate window is a
+        // process with a profile of its own.
         assert!(WHAT_EACH_CHOICE_COSTS.contains("profile"));
         assert!(WHAT_EACH_CHOICE_COSTS.contains("Backspace"));
-        assert!(WHAT_EACH_CHOICE_COSTS.contains("next build"));
-        assert!(SEPARATE_WINDOWS_ARRIVE_LATER.contains("browser"));
+        assert!(WHAT_EACH_CHOICE_COSTS.contains("process"));
+        // And it promises nothing. This sentence ended by saying a separate
+        // window arrived with the next build, which was true when it was
+        // written and stopped being true the day the plan that builds the
+        // window was put off; that was ledger 566 until 12-02 built it.
+        assert!(!WHAT_EACH_CHOICE_COSTS.contains("next build"));
         assert_eq!(
             SETTING_LABEL.replace('&', "").trim_end_matches(':'),
             SETTING_NAME
         );
         assert_eq!(BACK_TO_THE_MESSAGE, "Back to the message");
+    }
+
+    #[test]
+    fn test_the_separate_window_says_which_it_did() {
+        // Two outcomes and a sentence each, because a person who chose a
+        // separate window and got a browser has to hear why rather than
+        // wonder. The first names the site, as every other opening sentence
+        // here does; the second names what went wrong and what happened
+        // instead.
+        let opening = opening_in_a_separate_window("https://example.com/where-it-went?t=1");
+        assert_eq!(opening, "Opening example.com in a separate window");
+
+        let refused = the_separate_window_would_not_start("the file was not found");
+        assert!(refused.contains("the file was not found"), "{refused}");
+        assert!(refused.contains("opened in the browser"), "{refused}");
     }
 }

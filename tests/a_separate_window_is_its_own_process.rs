@@ -211,6 +211,17 @@ fn test_the_page_process_is_the_only_one_that_renames_itself() {
     );
 }
 
+/// The text of one function, as a release build sees it: from its signature
+/// to the first line that closes at the left margin.
+fn the_body_of(ships: &str, signature: &str) -> String {
+    let from = ships
+        .find(signature)
+        .unwrap_or_else(|| panic!("the tree should define {signature}"));
+    let rest = &ships[from..];
+    let to = rest.find("\n}").map(|at| at + 2).unwrap_or(rest.len());
+    rest[..to].to_string()
+}
+
 /// Every `.rs` file under a directory, in a stable order.
 fn every_rust_file_under(directory: &str) -> Vec<String> {
     let mut found = Vec::new();
@@ -229,6 +240,58 @@ fn every_rust_file_under(directory: &str) -> Vec<String> {
     }
     found.sort();
     found
+}
+
+#[test]
+fn test_the_route_starts_this_program_again_rather_than_opening_the_browser() {
+    // 11-11.1 left the third route calling `open::that` and telling a line
+    // that said separate windows arrive with the next build, because the
+    // window did not exist. It starts a page process now, and the browser is
+    // what it falls back to when that fails rather than what it does.
+    //
+    // What this cannot see: that the process really starts. Three of this
+    // target's cases run the built executable and are what say that.
+    let ships = what_ships_in("src/presentation/wx_app.rs");
+    let starting = the_body_of(&ships, "fn a_window_of_its_own(");
+
+    assert!(
+        starting.contains("current_exe"),
+        "the route starts something other than this program"
+    );
+    assert!(
+        starting.contains("page_window::FLAG"),
+        "the route names the flag by hand rather than reading the one spelling of it"
+    );
+    assert!(
+        starting.contains("spawn()"),
+        "the route waits for the window it started, which would stop the mail"
+    );
+    assert!(
+        ships.contains("a_window_of_its_own(&safe)"),
+        "nothing reaches the spawn with the sanitised address"
+    );
+}
+
+#[test]
+fn test_nothing_in_the_program_still_says_a_separate_window_is_coming() {
+    // Ledger 566: the sentence under Open links on the Reading tab said a
+    // separate Wixen Mail window arrives with the next build, and the status
+    // line when that choice was taken said it again. Both were true when
+    // they were written and stopped being true when the plan that builds the
+    // window was put off, so a build cut in between would have carried a
+    // promise the guide already said was wrong.
+    //
+    // Read with the newlines taken out, because both sentences are wrapped
+    // and a line-at-a-time search finds neither.
+    for file in every_rust_file_under("src") {
+        let joined = what_ships_in(&file).replace('\n', " ");
+        for promise in ["next build", "SEPARATE_WINDOWS_ARRIVE_LATER"] {
+            assert!(
+                !joined.contains(promise),
+                "{file} still says {promise:?}, and the window is here"
+            );
+        }
+    }
 }
 
 #[test]
