@@ -18,6 +18,14 @@ and measures only what has none, `--stop-after` makes a chunk a known size, and
 `--wait-until-quiet` holds each record until no other cargo is building. The
 `finally` that puts a broken file back runs on an interrupt and not on a
 process-tree kill, which is what `--resume`'s refusal exists for.
+
+Nothing that does not return costs more than itself. Every record, and every
+suite's pre-read, is held to one wall clock, `--time-limit`, shared by its
+build and its run; what passes it is killed with the processes cargo started
+under it, reported unmeasured with the seconds it reached, and the run goes on.
+The closing line counts what a run gave up on, so a run that hit the limit
+cannot read as clean. Before that existed, run 35520204784 lost a whole shard
+to one record.
 """
 
 from __future__ import annotations
@@ -91,6 +99,36 @@ TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "8")
 # divides by this number, so it is the one figure in this file worth re-taking
 # rather than inheriting: run one record and read the timing line.
 THE_COST_OF_ASKING_PROPERLY = "about 92 seconds a record against 47."
+
+# The wall clock one record gets, its build and its run together, and one
+# suite's pre-read the same.
+#
+# 1,800 seconds, just under four times the 456 s the longest record to finish
+# anywhere in run 35520204784 took (1800 / 456 is 3.95). Four times, because a
+# record at four times the worst measured record is not slow, it is stuck.
+#
+# What it costs when records do hit it: a twenty-record shard in which two hit
+# the limit is eighteen measured records at that sweep's 223 s mean plus two at
+# 1,800 s, which is 7,614 s, about 127 minutes against the workflow's
+# 360-minute cap.
+#
+# Why it exists. Run 35520204784, dispatched 2026-09-20 at `0ad66e48`, lost
+# shard 40: it logged 2,637 s of measured work and then spent about 5 h 16 min
+# inside one record, "the settings dialog is frozen while its pages are built",
+# which printed a header and never a timing line, until the job's 360-minute
+# cap ended the shard with nine records unmeasured. The longest shard that
+# finished was 7,442 s, so the shard count was never the cause: nothing here
+# bounded a record, and a record that does not return costs a whole shard
+# whatever the shard count is.
+#
+# Overridable with --time-limit, because a slower machine moves the whole curve
+# and the figures above belong to GitHub's Windows runners on one day.
+THE_LONGEST_A_RECORD_MAY_TAKE = 1800
+
+# How long the reap after a tree kill is given before this stops waiting for
+# it. A kill that took the tree closes the pipes at once, so this is the
+# reading that says it did not, rather than a wait that never ends.
+THE_LONGEST_A_KILL_IS_GIVEN = 60
 
 # `test <name> ... ok` or `... FAILED`, as the test harness writes it.
 VERDICT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED)$", re.M)
@@ -177,14 +215,16 @@ class Budget:
     started: float
 
     def left(self, at: float | None = None) -> float:
-        raise NotImplementedError
+        at = time.monotonic() if at is None else at
+        return max(0.0, self.started + self.seconds - at)
 
     def spent(self, at: float | None = None) -> float:
-        raise NotImplementedError
+        at = time.monotonic() if at is None else at
+        return at - self.started
 
     @staticmethod
     def starting_now(seconds: int) -> "Budget":
-        raise NotImplementedError
+        return Budget(seconds=seconds, started=time.monotonic())
 
 
 class Wrong(Exception):
@@ -772,7 +812,9 @@ def the_filters_for(red: tuple[str, ...]) -> list[str]:
 
 
 def run_the_whole_suite(
-    suite: tuple[str, ...], filters: list[str] | None = None
+    suite: tuple[str, ...],
+    filters: list[str] | None = None,
+    budget: Budget | None = None,
 ) -> dict[str, str]:
     """Every test in one suite, and whether it passed. One build, one run.
 
@@ -830,12 +872,18 @@ def run_the_whole_suite(
     # fingerprint check, under a second, and the alternative was reading
     # cargo's stderr as it streamed for its `Running` line, which needs a
     # thread per pipe and a second way for the capture to come back empty.
+    #
+    # The budget is the caller's, one wall clock across both, so a record that
+    # spends it all here in the rebuild is stopped as surely as one that spends
+    # it all in the run below.
     started = time.monotonic()
-    built = cargo("test", *suite, "--no-run")
+    built = cargo("test", *suite, "--no-run", budget=budget)
     rebuilt_at = time.monotonic()
     if built.returncode != 0:
         raise Wrong(why_no_test_was_named(built.returncode, built.stdout + built.stderr))
-    finished = cargo("test", *suite, "--", f"--test-threads={TEST_THREADS}", *filtered)
+    finished = cargo(
+        "test", *suite, "--", f"--test-threads={TEST_THREADS}", *filtered, budget=budget
+    )
     ran_at = time.monotonic()
     print(the_timing_line(rebuilt_at - started, ran_at - rebuilt_at), flush=True)
 
@@ -858,7 +906,7 @@ def the_kill_that_takes_the_tree(pid: int) -> list[str]:
     >>> the_kill_that_takes_the_tree(1234)
     ['taskkill', '/PID', '1234', '/T', '/F']
     """
-    raise NotImplementedError
+    return ["taskkill", "/PID", str(pid), "/T", "/F"]
 
 
 def the_line_about_what_the_kill_left(alive: list[str]) -> str:
@@ -875,7 +923,20 @@ def the_line_about_what_the_kill_left(alive: list[str]) -> str:
     >>> print(the_line_about_what_the_kill_left(["cargo.exe 1234", "rustc.exe 1240"]))
         still building after the kill, so --wait-until-quiet will wait for them: cargo.exe 1234, rustc.exe 1240
     """
-    raise NotImplementedError
+    # Both ways written out rather than one built from parts, for the reason
+    # `how_many` exists: this project has already read out "1 changes are
+    # waiting here" to somebody.
+    if not alive:
+        return "    the kill took the tree: no cargo or rustc is building now"
+    if len(alive) == 1:
+        return (
+            "    still building after the kill, so --wait-until-quiet will "
+            f"wait for it: {alive[0]}"
+        )
+    return (
+        "    still building after the kill, so --wait-until-quiet will wait "
+        f"for them: {', '.join(alive)}"
+    )
 
 
 # The opener of the line a record or a pre-read given up on at its time limit
@@ -907,7 +968,13 @@ def why_it_was_given_up_on(
         still building after the kill, so --wait-until-quiet will wait for it: rustc.exe 1240
     This was not measured, so it has no verdict and a resume takes it again.
     """
-    raise NotImplementedError
+    return (
+        f"it did not return within its budget of {budget} s, and was still "
+        f"{doing} when the budget ran out at {round(spent)} s.\n"
+        f"{the_line_about_what_the_kill_left(alive)}\n"
+        "This was not measured, so it has no verdict and a resume takes it "
+        "again."
+    )
 
 
 def stop_the_tree(process: "subprocess.Popen[str]") -> list[str]:
@@ -920,7 +987,29 @@ def stop_the_tree(process: "subprocess.Popen[str]") -> list[str]:
     cannot do is tell this run's survivors from a hook's build, so it names
     every cargo and rustc alive and leaves the reader to decide.
     """
-    raise NotImplementedError
+    try:
+        subprocess.run(
+            the_kill_that_takes_the_tree(process.pid),
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        # No taskkill, so not Windows, which is where the sweep runs. The
+        # direct child at least, rather than nothing.
+        process.kill()
+    # The output is not wanted, the reap is: until the pipes close this
+    # process holds handles on a tree it has given up on.
+    try:
+        process.communicate(timeout=THE_LONGEST_A_KILL_IS_GIVEN)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        return foreign_builds_in(what_is_running(), set())
+    except Wrong:
+        # `what_is_running` refuses a machine with no tasklist. That is a fact
+        # about the machine and not about the kill, and a record already given
+        # up on must not be turned into a run that ends.
+        return []
 
 
 def run_to_completion(
@@ -958,7 +1047,38 @@ def run_to_completion(
     >>> run_to_completion([sys.executable, "-c", "print('done')"], None, "running").returncode
     0
     """
-    raise NotImplementedError
+    started = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Both named, and neither is a preference.
+        #
+        # `text=True` alone decodes with the locale codec, which on this
+        # machine is cp1252. A test name or a panic message carrying a byte
+        # cp1252 cannot decode kills the reader thread, and `stdout` is then
+        # never assigned: that is the `NoneType + str` that ended a sweep on
+        # its 122nd record, and the decode traceback sits in that run's own log
+        # underneath the failure it caused.
+        #
+        # `errors="replace"` rather than strict, because a mangled character in
+        # a panic message must not cost an hour of measuring. What this reads
+        # out are test paths, and those are ASCII.
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        said, complained = started.communicate(
+            timeout=None if budget is None else budget.left()
+        )
+    except subprocess.TimeoutExpired:
+        raise GaveUp(
+            why_it_was_given_up_on(
+                budget.seconds, budget.spent(), doing, stop_the_tree(started)
+            )
+        ) from None
+    return subprocess.CompletedProcess(command, started.returncode, said, complained)
 
 
 def cargo(*arguments: str, budget: Budget | None = None) -> subprocess.CompletedProcess[str]:
@@ -977,28 +1097,17 @@ def cargo(*arguments: str, budget: Budget | None = None) -> subprocess.Completed
     ...     print("the budget reached the cargo call")
     the budget reached the cargo call
     """
-    finished = subprocess.run(
+    finished = run_to_completion(
         ["cargo", *arguments],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        # Both named, and neither is a preference.
-        #
-        # `text=True` alone decodes with the locale codec, which on this machine
-        # is cp1252. A test name or a panic message carrying a byte cp1252
-        # cannot decode kills the reader thread, and `stdout` is then never
-        # assigned: that is the `NoneType + str` that ended a sweep on its 122nd
-        # record, and the decode traceback sits in that run's own log underneath
-        # the failure it caused.
-        #
-        # `errors="replace"` rather than strict, because a mangled character in
-        # a panic message must not cost an hour of measuring. What this reads
-        # out are test paths, and those are ASCII.
-        encoding="utf-8",
-        errors="replace",
+        budget,
+        # Which term of the record's cost was running when the budget ran out,
+        # read from the call itself: `run_the_whole_suite` builds with
+        # `--no-run` and then runs, so this is the rebuild exactly when that
+        # flag is there.
+        "building" if "--no-run" in arguments else "running",
     )
     # Both halves can come back as None, which is not what the documentation
-    # for `capture_output` says and was seen anyway: a sweep of 208 records
+    # for a captured run says and was seen anyway: a sweep of 208 records
     # died on its 122nd with `NoneType + str` after about an hour of work.
     # Whatever causes it is not diagnosed, so it is reported rather than
     # smoothed into an empty string, for the same reason `scripts/mutants.sh`
@@ -1017,7 +1126,9 @@ def cargo(*arguments: str, budget: Budget | None = None) -> subprocess.Completed
     return finished
 
 
-def what_is_already_failing(suite: tuple[str, ...]) -> set[str]:
+def what_is_already_failing(
+    suite: tuple[str, ...], budget: Budget | None = None
+) -> set[str]:
     """What this suite fails without any break applied.
 
     Every failure a run reports gets blamed on the break, which is right only if
@@ -1037,8 +1148,14 @@ def what_is_already_failing(suite: tuple[str, ...]) -> set[str]:
     taken out of what each break is blamed for. They are printed rather than
     quietly subtracted: measuring against a tree that is not green is worth
     knowing about, even when the arithmetic is now right.
+
+    Bounded by the same budget a record gets, and that is the half that makes
+    the promise true rather than nearly true. This is a whole suite build and
+    run before any break, and shard 40 of run 35520204784 spent 809 s in its
+    first one; a pre-read that does not return would end a shard exactly as a
+    record that does not return did.
     """
-    verdicts = run_the_whole_suite(suite)
+    verdicts = run_the_whole_suite(suite, budget=budget)
     return {name for name, verdict in verdicts.items() if verdict == "FAILED"}
 
 
@@ -1047,8 +1164,15 @@ def measure(
     scratch: Path,
     already_failing: set[str] | None = None,
     named_only: bool = False,
+    budget: Budget | None = None,
 ) -> Measured:
-    """Apply the break, run the guard's own suite, put the file back."""
+    """Apply the break, run the guard's own suite, put the file back.
+
+    The budget is this record's, and a record that spends it is given up on
+    with a `GaveUp`, which is a `Wrong`. That is why it is one: the `finally`
+    below puts the guarded file back whatever leaves the `try`, so a record
+    stopped at its time limit leaves no break behind in the tree.
+    """
     found = guard.file.read_text(encoding="utf-8").count(guard.before)
     if found != 1:
         raise Wrong(
@@ -1071,7 +1195,9 @@ def measure(
         )
         guard.file.write_bytes(broken.encode("utf-8"))
         verdicts = run_the_whole_suite(
-            guard.suite, the_filters_for(guard.red) if named_only else None
+            guard.suite,
+            the_filters_for(guard.red) if named_only else None,
+            budget,
         )
     finally:
         # The bytes, not the timestamps: a restored file with its old
@@ -1394,6 +1520,14 @@ def verdicts_in(log_text: str) -> dict[str, str]:
         if judged or not line.startswith("   ") or line[3:4] in ("", " "):
             continue
         judged = True
+        if GIVEN_UP_ON in line:
+            # Unmeasured rather than judged, exactly as a contended record is:
+            # the run stopped it at its time limit and learned nothing about
+            # it, so a resume measures it again. `the_verdict_on` can still
+            # read the line, which is what stops a log holding one from being
+            # refused outright.
+            verdicts.pop(name, None)
+            continue
         verdicts[name] = the_verdict_on(name, line)
     return verdicts
 
@@ -1419,6 +1553,11 @@ COULD_NOT_BE_MEASURED = (
     "   the break did not build, so no test ran.",
     "   the break built and the run named no test.",
     "   cargo ran and this captured none of its output",
+    # And the line a record or a pre-read given up on at its time limit
+    # prints. Here so that a log holding one can be read at all; `verdicts_in`
+    # drops the name rather than keeping this as its verdict, for the reason
+    # written above `GIVEN_UP_ON`.
+    GIVEN_UP_ON,
 )
 
 
@@ -1726,7 +1865,7 @@ def the_resume_command(log: str, wait_until_quiet: bool) -> str:
 
 
 def the_closing_line(
-    total: int, from_log: int, this_run: int, resume: str | None
+    total: int, from_log: int, this_run: int, resume: str | None, gave_up: int = 0
 ) -> str:
     """The last line a run prints, which is how somebody who has been told not
     to read the verdicts knows whether the sweep is done.
@@ -1760,21 +1899,38 @@ def the_closing_line(
     3 records were given up on at their time limit, so this run is not a clean sweep.
     17 measured this run; 3 of 20 remain, and no --log was given, so nothing recorded this run for a resume.
     """
+    # Both ways written out rather than one built from parts, for the reason
+    # `how_many` exists: the verb has to agree with the count.
+    if gave_up == 1:
+        given_up_on = (
+            "1 record was given up on at its time limit, so this run is not a "
+            "clean sweep.\n"
+        )
+    elif gave_up:
+        given_up_on = (
+            f"{gave_up} records were given up on at their time limit, so this "
+            "run is not a clean sweep.\n"
+        )
+    else:
+        given_up_on = ""
+
     remaining = total - from_log - this_run
     if remaining == 0:
-        return (
+        rest = (
             f"Every record selected has a verdict: {total} of {total}, "
             f"{from_log} from the log and {this_run} from this run."
         )
-    if resume is None:
-        return (
+    elif resume is None:
+        rest = (
             f"{this_run} measured this run; {remaining} of {total} remain, and "
             "no --log was given, so nothing recorded this run for a resume."
         )
-    return (
-        f"{this_run} measured this run; {remaining} of {total} remain. "
-        f"Resume with:\n    {resume}"
-    )
+    else:
+        rest = (
+            f"{this_run} measured this run; {remaining} of {total} remain. "
+            f"Resume with:\n    {resume}"
+        )
+    return f"{given_up_on}{rest}"
 
 
 class Logged:
@@ -1807,17 +1963,30 @@ def measured_and_said(
     scratch: Path,
     already_failing: set[str] | None,
     named_only: bool,
-) -> bool:
-    """Measure one record and print what was found; whether it agreed.
+    budget: Budget | None = None,
+) -> str:
+    """Measure one record and print what was found: "agreed", "slipped", or
+    "given up on".
 
     A record that could not be measured is said so and counted as not
-    agreeing, in one of the shapes `verdicts_in` reads.
+    agreeing, in one of the shapes `verdicts_in` reads. One given up on at its
+    time limit is told apart from both, because the run learned nothing about
+    it either way and the closing line has to be able to say so.
     """
     try:
-        measured = measure(guard, scratch, already_failing, named_only=named_only)
+        measured = measure(
+            guard, scratch, already_failing, named_only=named_only, budget=budget
+        )
+    except GaveUp as ran_out:
+        # Named here rather than in the message, so the line under `-- name`
+        # carries the record it is about. `measure`'s `finally` has already put
+        # the guarded file back, which is the property this path must not
+        # break.
+        print(f"   {guard.name}: {ran_out}\n")
+        return "given up on"
     except Wrong as wrong:
         print(f"   {wrong}\n")
-        return False
+        return "slipped"
     except Exception as broke:
         # One record must not take the run down with it. A sweep of 208
         # records is hours of building and running, and losing all of it to
@@ -1831,9 +2000,9 @@ def measured_and_said(
         # KeyboardInterrupt and SystemExit are not `Exception`, so an
         # interrupt still stops the run and still restores the tree.
         print(f"   this record could not be measured: {broke!r}\n")
-        return False
+        return "slipped"
     say_what_it_found(guard, measured)
-    return measured.agrees_with_the_record()
+    return "agreed" if measured.agrees_with_the_record() else "slipped"
 
 
 def main() -> int:
@@ -1908,6 +2077,20 @@ def main() -> int:
         "remain and how to resume. 0 measures nothing and reports what remains",
     )
     parsing.add_argument(
+        "--time-limit",
+        type=int,
+        default=THE_LONGEST_A_RECORD_MAY_TAKE,
+        metavar="SECONDS",
+        help="the wall clock one record gets, its build and its run together, "
+        "and one suite's pre-read the same. What passes it is killed along "
+        "with the processes cargo started under it, reported unmeasured with "
+        "the seconds it reached, and the run goes on to the next record or "
+        "suite. A flag and not an environment variable, because "
+        "tests/the_guard_sweep_runs_on_runners.rs reads the flags this script "
+        "accepts off these calls and holds the workflow to them, and a "
+        "variable set in a workflow's env: would be a coupling nothing checks",
+    )
+    parsing.add_argument(
         "--wait-until-quiet",
         action="store_true",
         help="before the pre-read and before each record, wait until no "
@@ -1916,6 +2099,17 @@ def main() -> int:
         "measures it again",
     )
     asked = parsing.parse_args()
+
+    # Refused before anything is opened or built. A limit of nothing gives up
+    # on every record in turn, which reads like a broken tree rather than like
+    # a flag typed wrong.
+    if asked.time_limit <= 0:
+        print(
+            f"\n--time-limit {asked.time_limit} gives every record no time at "
+            "all, so each would be given up\non before its build started. It "
+            "is a number of seconds and it has to be one.\n"
+        )
+        return 1
 
     # Read before the log is opened for appending, because opening it creates
     # it, and a resume from a log that is not there then read as a resume from
@@ -2048,6 +2242,7 @@ def main() -> int:
     slipped: list[str] = []
     agreed: list[Guard] = []
     contended: list[str] = []
+    gave_up: list[str] = []
     # What the log already holds for the records selected, so this run measures
     # only the rest and the summary can count both.
     from_the_log: dict[str, str] = {}
@@ -2090,6 +2285,7 @@ def main() -> int:
     # blamed on every break in turn. See `what_is_already_failing`, and the
     # deadlock it describes, which is why this is not optional.
     already_failing: dict[tuple[str, ...], set[str]] = {}
+    given_up_suites: set[tuple[str, ...]] = set()
     try:
         if guards and asked.wait_until_quiet:
             wait_until_quiet()
@@ -2110,7 +2306,27 @@ def main() -> int:
             # Unfiltered even under --named-only: this reads what is already
             # broken before any break is applied, and a filtered reading of
             # that would miss the failures it exists to subtract.
-            already_failing[suite] = what_is_already_failing(suite)
+            already_failing[suite] = what_is_already_failing(
+                suite, Budget.starting_now(asked.time_limit)
+            )
+        except GaveUp as ran_out:
+            # A pre-read that does not return used to end the shard, because
+            # the branch below returns 1 for every `Wrong` and this is a whole
+            # suite build and run with nothing bounding it. Shard 40 of run
+            # 35520204784 spent 809 s in its first pre-read alone. So instead:
+            # every record of this suite is reported unmeasured, one line each
+            # so `the_verdict_on` reads each and a resume takes each again, and
+            # the next suite is read.
+            #
+            # The other `Wrong` cases stay fatal. A pre-read that fails to
+            # build is a different diagnosis, and widening this to cover it is
+            # a change nobody has argued for.
+            for waiting in (g for g in guards if g.suite == suite):
+                print(f"-- {waiting.name}", flush=True)
+                print(f"   the pre-read of {' '.join(suite)}: {ran_out}\n", flush=True)
+                gave_up.append(waiting.name)
+            given_up_suites.add(suite)
+            continue
         except Wrong as wrong:
             print(f"\nThe tree could not be read before breaking it: {wrong}\n")
             return 1
@@ -2127,6 +2343,12 @@ def main() -> int:
                 "the arithmetic corrected.\n"
             )
 
+    # The records of a suite whose pre-read expired are already reported above,
+    # so the loop does not reach them: there is nothing to subtract their
+    # already-failing set from.
+    guards = [guard for guard in guards if guard.suite not in given_up_suites]
+
+    judged_this_run = 0
     with tempfile.TemporaryDirectory(prefix="wixen-guards-") as made:
         scratch = Path(made)
         for guard in guards:
@@ -2144,7 +2366,11 @@ def main() -> int:
                 # watched is one somebody kills.
                 print(f"-- {guard.name}", flush=True)
                 held = measured_and_said(
-                    guard, scratch, already_failing.get(guard.suite), asked.named_only
+                    guard,
+                    scratch,
+                    already_failing.get(guard.suite),
+                    asked.named_only,
+                    Budget.starting_now(asked.time_limit),
                 )
                 # Polled once the run has returned. A cargo alive now either
                 # ran beside the suite or started as it ended, and this cannot
@@ -2164,10 +2390,14 @@ def main() -> int:
                 for process in foreign:
                     print(f"       {process}", flush=True)
                 contended.append(guard.name)
-            elif held:
+            elif held == "given up on":
+                gave_up.append(guard.name)
+            elif held == "agreed":
                 agreed.append(guard)
+                judged_this_run += 1
             else:
                 slipped.append(guard.name)
+                judged_this_run += 1
 
     # The tree a record agreed against, written down so a source read can
     # notice it moving. Only for the records that agreed, and that is the
@@ -2211,13 +2441,28 @@ def main() -> int:
         for name in contended:
             print(f"    {name}")
         print()
+    if gave_up:
+        print(
+            "1 record was given up on at its time limit, so it is unmeasured "
+            "and a resume takes it again:"
+            if len(gave_up) == 1
+            else f"{len(gave_up)} records were given up on at their time "
+            "limit, so they are unmeasured and a resume takes them again:"
+        )
+        for name in gave_up:
+            print(f"    {name}")
+        print()
     # The last line, which is how somebody told not to read the verdicts knows
     # whether the sweep is done. A stopped run exits 0 whatever it found so
     # far, because stopping was asked for and the chunk is reported as one;
-    # only a run that finished the selection answers with its exit status.
-    this_run = len(guards) - len(contended)
+    # only a run that finished the selection answers with its exit status. A
+    # run that gave up on something is neither: nobody asked for that, so it
+    # answers 1 wherever it would otherwise have answered 0.
+    this_run = judged_this_run
     remaining = selected - len(from_the_log) - this_run
-    closing = the_closing_line(selected, len(from_the_log), this_run, resume)
+    closing = the_closing_line(
+        selected, len(from_the_log), this_run, resume, len(gave_up)
+    )
     if slipped:
         print(
             "1 guard is not what the record says it is:"
@@ -2239,10 +2484,10 @@ def main() -> int:
             "way: measure it by hand and write down\nwhat it really does now."
             f"\n\n{closing}"
         )
-        return 0 if remaining else 1
+        return 0 if remaining and not gave_up else 1
     if remaining:
         print(closing)
-        return 0
+        return 1 if gave_up else 0
     if asked.named_only:
         # Never "and nothing else does", because this run did not ask. Said
         # every time rather than once at the top, since the last line is what
