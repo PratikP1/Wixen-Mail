@@ -4327,7 +4327,7 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
   - [S] Which of the two states he was in, a lower line or no space, is his ear's; the by-ear
     steps are in the ledger.
 
-- [ ] **LIST-19**: Where a link opens is a setting on the Reading tab, the default browser by
+- [x] **LIST-19**: Where a link opens is a setting on the Reading tab, the default browser by
   default, the message view, or a separate Wixen Mail window; the link's context menu offers
   all three whatever the setting; a link activated the way NVDA's Enter activates it goes
   where the setting says; every route passes the sanitiser; the separate window is a process
@@ -4362,6 +4362,25 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     (the file renamed with `git mv`, its premises re-taken against `0ad66e48`, the two
     sentences and ledger 566 added to its task 2); the box is 12-02's to tick, and the
     traceability row says phase 12.
+  - **Ticked 2026-09-22 by 12-02, merged at `70f5435a` with a correction at `cf58f9a4`.**
+    The separate window is a process of this program's own: `--show-page <address>` is
+    answered in `main` beside erasing, help and version, before the data folder, the log
+    file, the single-copy claim and the handover, and `page_window::show` sets the
+    application name, `wixen-mail\pages`, before the first browser control exists, which is
+    what decides where WebView2 puts the profile. Measured rather than argued: one start of
+    `target/debug/wixen-mail.exe --show-page https://nothing.invalid/` at 2026-09-22T14:16:48Z
+    put it at `%LOCALAPPDATA%\wixen-mail\pages\EBWebView`, beside the preview's `EBWebView`
+    and under the root, and the folder was removed again afterwards. The erase asks
+    `paths::page_profile_dir` and removes that folder as well as the root, because WebView2
+    follows the Windows local data folder and `WIXEN_MAIL_DATA` does not move it. The child
+    sanitises again at its own boundary and shows web addresses only, refusing anything else
+    with exit 2 and a line in the crash file. The third route spawns `current_exe` with the
+    flag and the sanitised address and says "Opening <host> in a separate window"; a start
+    that fails says why at High and opens the browser. The privacy page says the separate
+    window shares nothing with the preview, where its profile lives, and two things it does
+    not hide. Ledger 566 fixed: `WHAT_EACH_CHOICE_COSTS` says what the window is rather than
+    when it arrives, `SEPARATE_WINDOWS_ARRIVE_LATER` is gone with the arm that spoke it, and
+    a reading over every shipped file that mentions a separate window holds the tree to it.
   - [S] #80, Pratik on 2026-09-18: the setting, the three menu items, the in-app routes in a
     profile of their own, the privacy line; and the tester: "Enter on a message and Enter on
     a link both open in the same window; the link does not go to the default browser."
@@ -4372,8 +4391,18 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     target and an NVDA case as the probe and the regression (11-11.1); `--show-page` answered
     before the claim and the handover, `page_window::show` with the app name set before the
     WebView, the child sanitising again, the erase reaching the profile, the route spawning
-    the executable (11-11.2).
-  - [S] The three routes under NVDA are his ear's.
+    the executable (12-02, the plan 11-11.2 became). Each of the second group has a named
+    test or reading in 12-02's summary: `test_a_page_process_is_answered_before_this_start_claims_or_prepares_anything`
+    and `test_the_page_process_names_its_profile_before_it_builds_a_browser` for the order
+    and the name, both re-read as orders of calls rather than of names in a file;
+    `test_an_address_that_is_not_a_page_opens_no_window` over the built executable for the
+    second sanitising; `test_the_erase_removes_the_page_profile_as_well_as_the_root` with
+    three cases in `common::paths` for the erase; and
+    `test_the_route_starts_this_program_again_rather_than_opening_the_browser` for the
+    spawn, with a record on `wx_app.rs` breaking it back to the browser.
+  - [S] The three routes under NVDA are his ear's, and the separate window's title, its
+    links, its way back and Escape are ledger 568; the accessibility scan's `page-window`
+    target runs at the next push of `main`.
 
 **Added 2026-09-18, in the night: two more, from two issues filed after the evening's six,
 as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-07 and before
@@ -5462,7 +5491,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-16 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; the sounds heard again after a real device change, and what silenced them after hours, are the tester's machine's (ledger 553) |
 | LIST-17 | Phase 11 | Complete, 11-09.2 at `4d9a41d2`; whether the rows now say the message is the tester's ear (ledger 554) |
 | LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
-| LIST-19 | Phase 11, then phase 12 | In progress: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page; ledger 560 for the ear); 11-11.2, the separate window, deferred to the front of the next phase on Pratik's decision of 2026-09-20; the program's own "next build" sentences are ledger 566; moved later that day to phase 12 as 12-02, whose merge ticks it and fixes 566 |
+| LIST-19 | Phase 11, then phase 12 | Complete, 2026-09-22: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page) and 12-02 at `70f5435a`, corrected at `cf58f9a4` (the separate window as a process of its own with a browser profile of its own, the erase reaching it, the route spawning it, ledger 566 fixed). What only an ear settles is ledger 560 and 568, and the scan's `page-window` target runs at the next push of `main` |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
