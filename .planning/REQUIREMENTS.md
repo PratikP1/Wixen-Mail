@@ -3267,7 +3267,7 @@ seven groups.
     on both files and `jest --listTests` still finding the case.
   - [S] The run at the next push of `main` is Pratik's; ledger 567 names it, and it is the
     only thing FOUND-20 still waits on.
-- [ ] **FOUND-21**: A guard record says what its guard really does, and a sweep that finds
+- [x] **FOUND-21**: A guard record says what its guard really does, and a sweep that finds
   one that does not is closed before the next sweep is dispatched. A record that does not
   return costs one record and not a shard. Added 2026-09-22 for phase 12's 12-02.1, under
   this section beside FOUND-19 and FOUND-20 on the same reasoning: a defect in what a check
@@ -3296,22 +3296,74 @@ seven groups.
     the sweep's own longest record, the flag is one `the_flags_the_script_accepts` can see,
     and the workflow passes it from a declared input. The guarded file is still restored when
     a record is given up on, proved by hand on the build path and on the run path.
+    **Done 2026-09-22** by 12-02.1, merged at `a503ce77`: `Budget`, `GaveUp`,
+    `THE_LONGEST_A_RECORD_MAY_TAKE` at 1,800 s against the 456 s longest record of run
+    35520204784, `run_to_completion` with `the_kill_that_takes_the_tree` walking the tree,
+    `GIVEN_UP_ON` read one way by `the_verdict_on` and another by `verdicts_in`,
+    `the_line_for_a_record_whose_pre_read_expired`, `--time-limit` on a line of its own, the
+    `time_limit` input the shard step passes, and the closing line's gave-up count with the
+    exit status that goes with it. 136 worked examples against the floor of 40; the record
+    "a record's own time limit reaches the cargo call it is supposed to bound" reddens
+    `test_the_guard_runner_still_obeys_its_own_examples` and nothing else. Two by-hand
+    readings with `git status --porcelain` empty either side, one expiring in a build at 6 s
+    and one mid-suite at 70 s; the plan's own `--time-limit 1` reading expires in the
+    pre-read this task also bounded and proves that half instead, which the summary says.
   - [D] Every guard whose break reddened nothing on the runner has been measured here and
     its cause written down, chosen between the recorded edit no longer expressing the rule
     and the tests no longer covering it; where it is the second, a test that covers the rule
     exists and was red before it was green.
+    **Done 2026-09-22** by 12-02.1, three records and three different causes. The divs
+    record reddened 0 of 11 here and is retired, because six page shapes put through
+    `from_markup_to_edit` twice show the stripping is redundant wherever a div holds a block
+    and harmful where it does not, so no test of it could be written honestly. The
+    provenance record reddened 0 of 5 and its break moved onto the reading's own
+    `names_a_target`, which reddens one companion. The move window record reddened 0 of 1
+    because `move_or_copy_message` calls `owner_of` twice, and
+    `test_everything_aimed_at_a_message_asks_which_account_that_message_is_in` now reads the
+    binding rather than the body; it was taken red by hand under the break, 76 passed and
+    that one failed, before it was made green.
   - [D] A record a runner cannot judge says so on itself, naming what the runner cannot see
     and the runs that found it green there.
+    **Done 2026-09-22** by 12-02.1: both reddened here, `all 2 tests named went red` and
+    `the one test named went red`, and each carries a comment naming the UTC clock or the
+    missing certificate chain and both runs 34965790937 and 35520204784 that found it green
+    there. Ledger 570 says what a skip would take and that nothing does one yet.
   - [D] No record names a break the tree cannot take: every `before` appears exactly once in
     its file and the break builds, and each record that moved names the commit that moved it.
+    **Done 2026-09-22** by 12-02.1: no record's `before` appears other than exactly once,
+    checked across all 1,035; the five that could not be applied or built were rewritten and
+    every one re-measured to agreement; `d470a105` moved the three in `long_text.rs`, with
+    `f6cd2e16` beside it on one `git log -S` as the introduction rather than the mover,
+    `6ec0ec60` gave `spawn_mail_sync` its accounts, and `e72a822c` extracted `fetch_and_keep`
+    under the reading trait alone, which is the safeguard refusing the old break rather than
+    the record going stale.
   - [D] Every record the sweep found short names exactly the tests its break reddens,
     measured on this machine and recorded by a run that agreed.
+    **Done 2026-09-22** by 12-02.1 in four batches, every batch ending exit 0. Ten of the
+    fifteen were short and gained 29 names, every one of the ten in a file the record had
+    never named; five were never short, because one test that fails on GitHub's runners
+    under any break was the single unnamed red for all five, which is ledger 573. The
+    sixteenth named a test that cannot see its break, measured with the break in place, and
+    that name came out.
   - [D] Every record in the shard the runner could not finish has a verdict from a machine
     that could, or was given up on at the limit with the runner's own line quoted and a
     comment on the record.
+    **Done 2026-09-22** by 12-02.1: run 35726150488, dispatched on its own to finish that
+    shard, was read first and settled none of the nine, dying the same way. Eight of the
+    nine agree here; the ninth was given up on at 1,800 s, the kill took the tree, the
+    guarded file was put back and the run measured the four records after it, which is the
+    limit's first unsupervised use. The record carries the line, both runs it ended and why
+    the hang is itself evidence about the freeze; ledger 571 says what measuring it would
+    take.
   - [D] The sweep's cost and what it found are on `docs/development/measurements.md` with
     their commands, their dates and their commit, on the pattern of the four rows the
     2026-09-15 sweep left.
+    **Done 2026-09-22** by 12-02.1: four rows naming run 35520204784, with the record-count
+    row re-taken to 1,035 beside them. Every figure was taken again rather than copied, and
+    the rate row names its own method because reading the 52 logs concatenated gives 828 s
+    as the longest record, shard 40's unterminated header taking the next shard's pre-read.
+    `.planning/WINDOWS.md` carries 569 as fixed with the 7,442 s and 2,637 s behind the
+    claim and why about 70 shards is not the remedy, and 570 to 573 open.
   - [S] Only the next sweep settles the last of it: that it runs under the limit, that its
     closing line says how many records it gave up on, and that nothing this plan corrected
     has gone stale again. This plan claims nothing about the 994 records that agreed.
@@ -5521,7 +5573,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
 | FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567 |
-| FOUND-21 | Phase 12 | Pending, 12-02.1 |
+| FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
