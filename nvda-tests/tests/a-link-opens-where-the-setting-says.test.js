@@ -42,6 +42,40 @@
 // front and finding the second link with `K` where the message page has it.
 // A page that had navigated inside the window has no second link of that
 // name, and that is the tester's report, reproduced as a failure.
+//
+// **Coming back, and why this part was rewritten.** Run 35520201976 on
+// `main` at `0ad66e48` failed here, on the second `K`: NVDA said "main
+// landmark, Where it went, link", then "document", then one empty phrase,
+// and never `example.org/written-out`. The record that run wrote settles
+// the first half and not the second. It settles the route: the browser's
+// window ("Example Domain - Profile 1 - Microsoft Edge") appeared among the
+// windows this process does not own after the first Enter, and the page
+// window kept its title and its message, so the `expect` below passed. It
+// cannot settle the return, because the only evidence it kept about the
+// return was `AppActivate`'s own answer, `true`, which means a window was
+// found and asked for and not that it came to the front. Two causes fitted
+// and nothing could choose between them: the window never came back, so
+// `K` went to the browser's address bar, where a typed letter is spoken
+// only if NVDA is set to speak typed characters; or it came back and the
+// document did not take the keyboard, so `K` was not a next-link key.
+//
+// The second of those is answered:
+// `tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs`
+// activates the real page window on the same fixture and reads what Windows
+// says has the keyboard. Activated, deactivated and activated again, the
+// keyboard lands on the browser's own window inside it every time. So the
+// product gives the document back and the return is this case's to get
+// right.
+//
+// So the case comes back the way a person does, with Alt+Tab, and then
+// waits for Windows to say the page window is in front rather than for a
+// call to say it asked. Guidepup presses a chord on Windows through
+// `WScript.Shell.SendKeys`, which is not certain to reach the task
+// switcher, so `activateWindow` stays as a fallback and the record says
+// which of the two brought the window back. Whatever brought it back, the
+// foreground and the focused element are written down before any key is
+// pressed, so the next run that fails here says whose failure it is instead
+// of leaving it to be inferred from silence.
 
 "use strict";
 
@@ -52,6 +86,9 @@ const {
   waitForWindow,
   windowTitles,
   activateWindow,
+  foregroundWindow,
+  focusedElement,
+  waitForForeground,
   killApp,
   sleep,
 } = require("../helpers/launch-app");
@@ -73,6 +110,17 @@ const THE_ADDRESS_WRITTEN_OUT = "example.org/written-out";
 // be spoken before anything is read.
 const SETTLE_AFTER_ENTER_MS = 4000;
 
+// How long to wait for Windows to say the page window is in front after
+// being asked. Ten seconds is long for a window switch and short beside the
+// fifteen `waitToHearAll` gives a phrase, which is the point: a case that
+// waited the same either way could not say which of the two it was waiting
+// for.
+const WAIT_FOR_THE_FRONT_MS = 10000;
+
+// How long to leave after the window is in front before reading what has
+// the keyboard. The activation arrives first and the focus follows it.
+const SETTLE_AFTER_COMING_BACK_MS = 1000;
+
 let app;
 let pid;
 
@@ -83,7 +131,15 @@ const record = {
   otherWindowsBefore: [],
   otherWindowsAfterTheFirstEnter: [],
   ownWindowsAfterTheFirstEnter: [],
-  pageWindowPutBackInFront: null,
+  // Which of the two ways of coming back worked, what Windows said was in
+  // front once it had, and what had the keyboard there. Written for each of
+  // the two returns, before the key that follows it.
+  howTheFirstReturnWorked: null,
+  foregroundAfterTheFirstReturn: null,
+  focusAfterTheFirstReturn: null,
+  howTheSecondReturnWorked: null,
+  foregroundAfterTheSecondReturn: null,
+  focusAfterTheSecondReturn: null,
 };
 
 beforeAll(async () => {
@@ -116,6 +172,52 @@ async function saidSince(alreadySaid) {
   return log.slice(alreadySaid);
 }
 
+/**
+ * Come back to the page window and answer how it really came back.
+ *
+ * Alt+Tab first, which is what a person who heard the browser open does,
+ * and the page window is where Alt+Tab goes because it was in front until
+ * the browser took it. Then `activateWindow`, which asks Windows directly.
+ * Either way the answer is not the call's: it is `waitForForeground`, which
+ * polls until Windows says the window is in front and throws with what it
+ * saw instead when it never does.
+ *
+ * Throws only when neither worked, and then says what each one left in
+ * front, because a key pressed into the wrong window is the failure this
+ * whole function exists to stop.
+ */
+async function comeBackToThePageWindow() {
+  await nvda.press("Alt+Tab");
+  try {
+    await waitForForeground(pid, THE_PAGE_WINDOW, { timeoutMs: WAIT_FOR_THE_FRONT_MS });
+    return "Alt+Tab";
+  } catch (afterAltTab) {
+    const asked = await activateWindow(THE_PAGE_WINDOW);
+    try {
+      await waitForForeground(pid, THE_PAGE_WINDOW, { timeoutMs: WAIT_FOR_THE_FRONT_MS });
+      return `activateWindow, which AppActivate answered ${asked} to; Alt+Tab did not: ${afterAltTab.message}`;
+    } catch (afterActivateWindow) {
+      throw new Error(
+        "the page window never came back to the front, so no key after this could " +
+          `reach it.\nAlt+Tab: ${afterAltTab.message}\n` +
+          `activateWindow, which AppActivate answered ${asked} to: ${afterActivateWindow.message}`,
+      );
+    }
+  }
+}
+
+/**
+ * What Windows says is in front and what has the keyboard, once the window
+ * is back and the focus has followed the activation.
+ */
+async function whereTheNextKeyWillGo() {
+  await sleep(SETTLE_AFTER_COMING_BACK_MS);
+  return {
+    foreground: await foregroundWindow(),
+    focus: await focusedElement(),
+  };
+}
+
 test("Enter on a link in the formatted message window leaves the message where it is and goes where the setting says", async () => {
   // No wait for the window's opening speech: the harness captures none
   // (nvda-tests/README.md, "What the log holds"). The page window is the
@@ -140,12 +242,15 @@ test("Enter on a link in the formatted message window leaves the message where i
   // default route touches no title.
   expect(record.ownWindowsAfterTheFirstEnter).toContain(THE_PAGE_WINDOW);
 
-  // Back in front, in case the browser took the front, and the second link
-  // is where the message page has it. This is the assertion the tester's
-  // report fails: a window whose document had become the linked page has no
-  // link by this name.
-  record.pageWindowPutBackInFront = await activateWindow(THE_PAGE_WINDOW);
-  await sleep(1000);
+  // Back in front, because the browser took the front, and not one key
+  // until Windows says so and the record says where that key will go. Then
+  // the second link is where the message page has it. This is the assertion
+  // the tester's report fails: a window whose document had become the
+  // linked page has no link by this name.
+  record.howTheFirstReturnWorked = await comeBackToThePageWindow();
+  const afterTheFirstReturn = await whereTheNextKeyWillGo();
+  record.foregroundAfterTheFirstReturn = afterTheFirstReturn.foreground;
+  record.focusAfterTheFirstReturn = afterTheFirstReturn.focus;
   const beforeTheSecondKey = (await nvda.spokenPhraseLog()).length;
   await nvda.press("k");
   await waitToHearAll(nvda, [THE_ADDRESS_WRITTEN_OUT]);
@@ -156,4 +261,17 @@ test("Enter on a link in the formatted message window leaves the message where i
   await sleep(SETTLE_AFTER_ENTER_MS);
   record.spokenAfterTheSecondEnter = await saidSince(beforeTheSecondKey);
   expect(await windowTitles(pid, { owned: true })).toContain(THE_PAGE_WINDOW);
+
+  // The second return is written down and never asserted on. No key follows
+  // it, so a window that did not come back here says nothing about the
+  // product; what it does say is how well the way back works on this
+  // runner, which is worth having the next time the first return fails.
+  try {
+    record.howTheSecondReturnWorked = await comeBackToThePageWindow();
+    const afterTheSecondReturn = await whereTheNextKeyWillGo();
+    record.foregroundAfterTheSecondReturn = afterTheSecondReturn.foreground;
+    record.focusAfterTheSecondReturn = afterTheSecondReturn.focus;
+  } catch (why) {
+    record.howTheSecondReturnWorked = `neither way worked: ${why.message}`;
+  }
 });

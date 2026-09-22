@@ -115,6 +115,23 @@ announcement before pressing any key, and it timed out with an empty log. So a c
 what a key makes NVDA say, and never for an opening; it takes its mark after the dialog has
 settled and counts from the first key.
 
+An activation call's answer is not evidence that a window is in front. `AppActivate`, which
+`activateWindow` in `helpers/launch-app.js` uses, answers that it found a window and asked for
+it. Windows lets a process that is not itself in front find a window and flash its taskbar
+button instead of raising it, and the answer is the same either way. Run 35520201976 on `main`
+at `0ad66e48` is what that costs. The link case there pressed Enter on a link, the browser
+opened the page, the case called `AppActivate` on the page window, kept its `true` in the
+record and pressed its next key, and NVDA said one empty phrase. Two causes fitted and the
+record could choose neither: the window never came back, so the key went to the browser; or it
+came back and the keyboard was not in the document, so the key was not a browse-mode key.
+
+So a case that hands the front to another process and takes it back reads the front rather
+than trusting the call: `waitForForeground` polls `foregroundWindow` until Windows names the
+window it asked for, and throws with what it saw in front instead. Before the next key it
+writes down `foregroundWindow` and `focusedElement`, which say where that key went and what
+had the keyboard when it got there. A failure after that names its own cause instead of
+leaving it to be inferred from silence.
+
 A clean result here means the specific keystrokes and the specific sentences these cases
 check were really spoken. That is stronger than the structural scan, which never presses a key.
 It is still not a full manual walkthrough, and it says nothing about any control, any dialog,
