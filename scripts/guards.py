@@ -1005,7 +1005,7 @@ def the_line_for_a_record_whose_pre_read_expired(
     >>> verdicts_in("-- first\\n" + expired + "\\n-- second\\n" + expired + "\\n")
     {}
     """
-    raise NotImplementedError
+    return f"   the pre-read of {' '.join(suite)}: {ran_out}"
 
 
 def stop_the_tree(process: "subprocess.Popen[str]") -> list[str]:
@@ -2352,9 +2352,10 @@ def main() -> int:
             # The other `Wrong` cases stay fatal. A pre-read that fails to
             # build is a different diagnosis, and widening this to cover it is
             # a change nobody has argued for.
+            expired = the_line_for_a_record_whose_pre_read_expired(suite, ran_out)
             for waiting in (g for g in guards if g.suite == suite):
                 print(f"-- {waiting.name}", flush=True)
-                print(f"   the pre-read of {' '.join(suite)}: {ran_out}\n", flush=True)
+                print(f"{expired}\n", flush=True)
                 gave_up.append(waiting.name)
             given_up_suites.add(suite)
             continue
