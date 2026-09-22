@@ -2280,6 +2280,24 @@ tests_last_seen = [
 # it means an hour on this computer. Google's converter read it that way and
 # Graph's called it universal time, and the test named for the two agreeing
 # checked the shape of each and never compared them.
+#
+# ── A runner cannot judge this record, and that is written here rather than
+#    only at the top of the file, where the last two sweeps did not read it ──
+#
+# What a runner cannot see: its clock is UTC, so `chrono::Local` and
+# `chrono::Utc` are the same conversion there and the break changes nothing.
+# On a machine set to any other zone the two differ and the break reddens.
+#
+# Green on a runner twice, and reported as a finding both times: run
+# 34965790937 of 2026-09-15 and run 35520204784 of 2026-09-20, a build and a
+# run each.
+#
+# Red here on 2026-09-22, measured by 12-02.1 with
+# `scripts/guards.sh --wait-until-quiet`: "all 2 tests named went red, and
+# nothing else did", rebuild 44 s and run 49 s. The record is right and the
+# runner is what cannot read it. The sweep of 2026-09-15 said this would be
+# written on each of the two such records and it was written at the top of the
+# file instead, which is why the next sweep found them again.
 
 [[guard]]
 name = "an hour with no zone means an hour here, to Outlook as well as to Google"
@@ -3633,6 +3651,25 @@ tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
+
+# ── A runner cannot judge this record, and that is written here rather than
+#    only at the top of the file, where the last two sweeps did not read it ──
+#
+# What a runner cannot see: GitHub's Windows images have no certificate chain
+# to walk, so the arm the break replaces is never reached there and taking its
+# call away changes nothing. On a machine with a chain the test reaches it and
+# the break reddens.
+#
+# Green on a runner twice, and reported as a finding both times: run
+# 34965790937 of 2026-09-15 and run 35520204784 of 2026-09-20, a build and a
+# run each.
+#
+# Red here on 2026-09-22, measured by 12-02.1 with
+# `scripts/guards.sh --wait-until-quiet`: "the one test named went red, and
+# nothing else did", rebuild 44 s and run 50 s. The record is right and the
+# runner is what cannot read it. The sweep of 2026-09-15 said this would be
+# written on each of the two such records and it was written at the top of the
+# file instead, which is why the next sweep found them again.
 
 [[guard]]
 name = "the walk into Windows own chain structures really happens"
