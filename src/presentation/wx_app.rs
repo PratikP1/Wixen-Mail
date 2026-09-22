@@ -23514,7 +23514,13 @@ fn open_conversation_again(
 /// Two things this gets right that the preview pane got wrong: it does not take
 /// focus when it appears, and closing it works before anything else about it
 /// does.
-fn show_conversation_as_page(
+///
+/// Public for one reason: `tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs`
+/// builds this window in its own process and reads what Windows says has the
+/// keyboard after the window comes back to the front. The scan target's own
+/// route into it needs a whole running application, and the question the
+/// reading asks is about this window alone.
+pub fn show_conversation_as_page(
     parent: &Frame,
     reader: &Rc<wx_reader::ReaderWindow>,
     a11y: &Arc<Accessibility>,

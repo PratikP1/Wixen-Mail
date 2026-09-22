@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 231 records have arrived since and have not been through it.
+# 232 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -28614,4 +28614,40 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 83 },
     { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 1 },
+]
+
+# The browser is the first thing in the formatted message window that takes
+# the keyboard, so activating the window puts the keyboard in the message and
+# a screen reader's browse mode has a document to move through. wxWidgets
+# gives an activated window's keyboard to the child it saved, or failing that
+# to the first child that wants it (`wxSetFocusToChild`), and this window's
+# only such child is the page. The break puts a text control in front of it,
+# which is what somebody adding a control to this window does by accident;
+# the keyboard then lands on the control, `K` is not a next-link key, and
+# NVDA hears nothing. Red in the reading that activates the window, and not
+# in its companion over a window whose control really is a text control,
+# which is the pair that says the reading can tell them apart.
+#
+# Measured 2026-09-22 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the browser is the first thing in the page window that takes the keyboard"
+file = "src/presentation/wx_app.rs"
+suite = "the_page_window_keeps_the_document_focused_when_it_comes_back"
+before = """    let page = WebView::builder(&frame)
+        .with_backend(WebViewBackend::Edge)
+        .build();
+    set_accessible_name(&page, "Conversation");"""
+after = """    let in_front_of_the_page = TextCtrl::builder(&frame).build();
+    sizer.add(&in_front_of_the_page, 0, SizerFlag::Expand, 0);
+    let page = WebView::builder(&frame)
+        .with_backend(WebViewBackend::Edge)
+        .build();
+    set_accessible_name(&page, "Conversation");"""
+red = [
+    "test_the_document_keeps_focus_when_the_page_window_comes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 2 },
 ]

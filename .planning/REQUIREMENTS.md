@@ -3200,10 +3200,21 @@ seven groups.
   - [S] Nothing here is a person's to settle; the runs are quoted with the real repository's
     `HEAD`, config and reflog unchanged.
 
-- [ ] **FOUND-20**: The NVDA case for #80 is green at the next push of `main` for the reason
+- [x] **FOUND-20**: The NVDA case for #80 is green at the next push of `main` for the reason
   its second half was written, and its next failure names its own cause from the record it
   writes. Added 2026-09-20 for phase 12's 12-01, under this section beside FOUND-17 to
-  FOUND-19 on the same reasoning: a defect in what CI runs, found by a push.
+  FOUND-19 on the same reasoning: a defect in what CI runs, found by a push. **Ticked
+  2026-09-22 by 12-01 on its two `[D]` lines.** The product half is measured and clear:
+  `tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs` builds the real
+  page window on `scan_fixtures::page_conversation`, activates it, deactivates it in a way
+  that takes the keyboard away, and activates it again, and the keyboard is on
+  `Chrome_WidgetWin_1` inside the window every time, so no activation handler was added; the
+  reading was taken red by hand first, with a text control put in front of the browser, and
+  its companion over a window whose control really is a text control stayed green. The case
+  half is written and read, not run: it presses Alt+Tab, waits for `GetForegroundWindow` to
+  name the page window through `waitForForeground`, falls back to `activateWindow` once and
+  records which worked, and writes the foreground and the UI Automation focused element
+  before each K. The `[S]` line below is the runner's at the next push, ledger 567.
   - Evidence: `gh run view 35520201976 --json headSha,conclusion` on 2026-09-20: `0ad66e48`,
     failure, one job, the failed step "Run the NVDA tests";
     `tests/a-link-opens-where-the-setting-says.test.js` failed at its line 151, the second
@@ -3214,22 +3225,48 @@ seven groups.
     Wixen Mail", `pageWindowPutBackInFront` was `true`, so the route held and the second K
     is what failed. `grep -n 'async function activateWindow' -A 8 nvda-tests/helpers/launch-app.js`:
     `WScript.Shell.AppActivate(title)`, whose answer means found, not in front.
-    `grep -n 'page.set_focus()' src/presentation/wx_app.rs`: two sites when the window opens
-    and when the message comes back, no activation handler;
-    `target/debug/wxWidgets/src/msw/webview_edge.cpp:1171-1175`: `OnSetFocus` calls
-    `MoveFocus`, the chain that should put focus in the document on re-activation.
+    `grep -n 'page.set_focus()' src/presentation/wx_app.rs`: two sites, no activation
+    handler; `target/debug/wxWidgets/src/msw/webview_edge.cpp:1171-1175`: `OnSetFocus` calls
+    `MoveFocus`, the chain that should put focus in the document on re-activation. **The two
+    sites read again on 2026-09-22 by 12-01, and this line said what they were until then:
+    "when the window opens and when the message comes back". Neither is.** `:23640` is Alt+A
+    in the attachments list and `:23830` is the key back from the security warning bar, both
+    ways back to the message from a control beside it, and nothing gives the page focus when
+    the window opens. What does is wx: `frame.show(true)` activates the window and
+    `wxTopLevelWindowMSW::OnActivate` hands the keyboard to the first child that takes it
+    (`toplevel.cpp:1325-1361`, `wxSetFocusToChild`), which is the page. That is the chain the
+    reading measures and the reason it exists.
   - [S] The run's own words: "never heard all of ["example.org/written-out"] within 15000ms.
     Everything NVDA said: ["main landmark, Where it went, link","document",""]".
   - [D] A reading on a built page window in a test process raises a second frame over it,
     activates the page window again and asserts `GetFocus()` is Chromium's window inside the
     WebView; if red, the page window gains an activation handler that gives the WebView focus
     and the reading holds it; if green, the product is cleared by measurement (12-01, task 1).
+    **Done 2026-09-22, green, so no handler was added**, by
+    `test_the_document_keeps_focus_when_the_page_window_comes_back` and
+    `test_the_reading_sees_a_control_that_is_not_the_browser` in
+    `tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs`, with the guard
+    record "the browser is the first thing in the page window that takes the keyboard"
+    measured by the runner at 1 red. The reading raises no second frame and sends
+    `WM_ACTIVATE` instead: no process started from this machine's harness can move the
+    foreground, since `GetForegroundWindow` answers 0 on that desktop for PowerShell as well
+    as for a test, and taking the foreground on a machine somebody is using would be worse
+    than not measuring. The message is the one Windows sends and everything after it is wx's
+    code and this window's, which is the shape
+    `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    already uses for a key it cannot send.
   - [D] The case returns to the page window with Alt+Tab, waits until `GetForegroundWindow`
     is the page window (falling back to `AppActivate` once, recording which worked), records
     the UI Automation focused element and the foreground beside its spoken log after each
     return, and only then presses K; `nvda-tests/README.md` says an activation call's answer
-    is not evidence a window is in front (12-01, task 2).
-  - [S] The run at the next push of `main` is Pratik's; the ledger entry 12-01 writes names it.
+    is not evidence a window is in front (12-01, task 2). **Done 2026-09-22**, read and not
+    run: `foregroundWindow`, `focusedElement` and `waitForForeground` in
+    `nvda-tests/helpers/launch-app.js`, `comeBackToThePageWindow` and
+    `whereTheNextKeyWillGo` in the case with six fields in its record, the README's paragraph
+    naming the run, `activateWindow`'s doc no longer claiming Windows agreed, `node --check`
+    on both files and `jest --listTests` still finding the case.
+  - [S] The run at the next push of `main` is Pratik's; ledger 567 names it, and it is the
+    only thing FOUND-20 still waits on.
 
 ### All the mail, and what is said while it comes
 
@@ -5406,7 +5443,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
-| FOUND-20 | Phase 12 | Pending, 12-01; the run at the next push of `main` is Pratik's |
+| FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |

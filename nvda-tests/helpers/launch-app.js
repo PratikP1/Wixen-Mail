@@ -124,10 +124,18 @@ async function windowTitles(pid, { owned = true } = {}) {
 }
 
 /**
- * Bring the window whose title starts with `title` to the front, so keys
- * sent next reach it. A link that went to the default browser leaves the
- * browser in front; a case that then wants to read the page window has to
- * put it back. Answers whether Windows agreed.
+ * Ask Windows to bring the window whose title starts with `title` to the
+ * front, so keys sent next reach it. A link that went to the default browser
+ * leaves the browser in front; a case that then wants to read the page
+ * window has to put it back.
+ *
+ * Answers whether `AppActivate` found a window and asked for it. That is not
+ * whether the window came to the front, and reading it as though it were
+ * cost run 35520201976 its diagnosis: the record kept this `true` and
+ * nothing else, so the failure could not say whether the window had come
+ * back. Windows lets a process that is not in front find a window and flash
+ * its taskbar button rather than raise it, and answers the same either way.
+ * What is in front is `foregroundWindow` below, which reads it.
  */
 async function activateWindow(title) {
   const { stdout } = await execFileAsync("powershell", [
@@ -136,6 +144,109 @@ async function activateWindow(title) {
     `(New-Object -ComObject WScript.Shell).AppActivate(${JSON.stringify(title)})`,
   ]);
   return stdout.trim().toLowerCase() === "true";
+}
+
+/**
+ * The window Windows says is in front, as `{ title, pid }`, or
+ * `{ title: "", pid: 0 }` when there is none.
+ *
+ * Asked through PowerShell for the same reason `windowTitles` is, and built
+ * the same way, so the two read alike. This is the read an activation call
+ * cannot stand in for: a key goes to whatever is in front, so a case about
+ * to press one needs to know what that is, not what it asked for.
+ */
+async function foregroundWindow() {
+  const { stdout } = await execFileAsync("powershell", [
+    "-NoProfile",
+    "-Command",
+    [
+      "Add-Type -Namespace WixenNvda -Name Front -MemberDefinition @'",
+      '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+      '[DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);',
+      '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);',
+      "'@",
+      "$h = [WixenNvda.Front]::GetForegroundWindow()",
+      "$owner = 0",
+      "$sb = New-Object System.Text.StringBuilder 512",
+      "if ($h -ne [IntPtr]::Zero) {",
+      "  [void][WixenNvda.Front]::GetWindowThreadProcessId($h, [ref]$owner)",
+      "  [void][WixenNvda.Front]::GetWindowText($h, $sb, 512)",
+      "}",
+      '$sb.ToString() + "`n" + $owner',
+    ].join("\n"),
+  ]);
+  const [title = "", owner = "0"] = stdout.split(/\r?\n/);
+  return { title: title.trim(), pid: Number.parseInt(owner.trim(), 10) || 0 };
+}
+
+/**
+ * What Windows says has the keyboard, as
+ * `{ className, controlType, pid, name }`, or `null` with `why` set when UI
+ * Automation answers nothing.
+ *
+ * The second half of the read above, and the half that tells a window which
+ * came back with the keyboard on its document from one which came back with
+ * the keyboard somewhere else. A screen reader's browse mode needs a
+ * document; a case that presses a browse-mode key without knowing where the
+ * keyboard is cannot say, when it hears nothing, whether the key was wrong
+ * or the place was.
+ *
+ * Read-only: `FocusedElement` asks, it does not move anything.
+ */
+async function focusedElement() {
+  try {
+    const { stdout } = await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      [
+        "Add-Type -AssemblyName UIAutomationClient",
+        "Add-Type -AssemblyName UIAutomationTypes",
+        "$e = [System.Windows.Automation.AutomationElement]::FocusedElement",
+        "if ($e -eq $null) { 'none' } else {",
+        '  $e.Current.ClassName + "`n" + $e.Current.ControlType.ProgrammaticName + "`n" +',
+        '    $e.Current.ProcessId + "`n" + $e.Current.Name',
+        "}",
+      ].join("\n"),
+    ]);
+    const lines = stdout.split(/\r?\n/);
+    if (lines[0].trim() === "none") {
+      return null;
+    }
+    const [className = "", controlType = "", owner = "0", name = ""] = lines;
+    return {
+      className: className.trim(),
+      controlType: controlType.trim(),
+      pid: Number.parseInt(owner.trim(), 10) || 0,
+      name: name.trim(),
+    };
+  } catch (why) {
+    return { why: why.message };
+  }
+}
+
+/**
+ * Wait until the window in front belongs to `pid` and its title starts with
+ * `title`, and answer what was in front when it did.
+ *
+ * Throws with the last thing it saw rather than with "timed out", because a
+ * case that gave up here has to say what it was looking at instead: the
+ * browser still in front and the window never raised is one story, and some
+ * third window is another.
+ */
+async function waitForForeground(pid, title, { timeoutMs = 10000, intervalMs = 250 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let seen = { title: "", pid: 0 };
+  while (Date.now() < deadline) {
+    seen = await foregroundWindow();
+    if (seen.pid === pid && seen.title.startsWith(title)) {
+      return seen;
+    }
+    await sleep(intervalMs);
+  }
+  throw new Error(
+    `${JSON.stringify(title)} (pid ${pid}) was not in front within ${timeoutMs}ms. ` +
+      `In front instead: ${JSON.stringify(seen)}`,
+  );
 }
 
 /**
@@ -187,6 +298,9 @@ module.exports = {
   waitForWindow,
   windowTitles,
   activateWindow,
+  foregroundWindow,
+  focusedElement,
+  waitForForeground,
   killApp,
   sleep,
 };
