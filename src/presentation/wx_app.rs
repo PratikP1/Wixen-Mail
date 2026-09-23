@@ -16826,12 +16826,14 @@ fn save_as_draft(
 ) -> std::result::Result<(String, String), String> {
     let AppHandles { state, .. } = app;
     let Some(cache) = cache.as_ref() else {
-        return Err("No message store is available, so the draft cannot be saved".to_string());
+        return Err(
+            "The mail on this computer is not open, so the draft cannot be saved.".to_string(),
+        );
     };
     let account_id = lock_state(state)
         .active_account_id
         .clone()
-        .ok_or_else(|| "Select an account before saving a draft".to_string())?;
+        .ok_or_else(|| "Choose an account first, so the draft has somewhere to go.".to_string())?;
 
     let subject = if data.subject.trim().is_empty() {
         // Named rather than left blank, so the drafts list has something to
@@ -17110,12 +17112,14 @@ fn queue_for_sending(
     data: &wx_compose::ComposeData,
 ) -> std::result::Result<(String, crate::application::sending_later::GoAfter), String> {
     let Some(cache) = cache.as_ref() else {
-        return Err("No message store is available, so the message cannot be queued".to_string());
+        return Err(
+            "The mail on this computer is not open, so the message cannot be put in the Outbox."
+                .to_string(),
+        );
     };
-    let account_id = lock_state(state)
-        .active_account_id
-        .clone()
-        .ok_or_else(|| "Select an account before sending".to_string())?;
+    let account_id = lock_state(state).active_account_id.clone().ok_or_else(|| {
+        "Choose an account first, so the message has somewhere to go.".to_string()
+    })?;
 
     let recipient = data.to.trim();
     if recipient.is_empty() {
@@ -21473,7 +21477,7 @@ fn spawn_folder_move(
             let the_subject = subject.clone();
             let one_move = || -> std::result::Result<(WhatToDoNext, bool), String> {
                 let Some(account) = account else {
-                    return Err("no account is set up".to_string());
+                    return Err("No account is set up.".to_string());
                 };
                 let controller =
                     handle.block_on(crate::application::mail_session::the_session_at(&account))
@@ -23288,7 +23292,7 @@ fn spawn_server_change(
         };
 
         let Some(account) = account else {
-            refuse("no account is set up".to_string());
+            refuse("No account is set up.".to_string());
             return;
         };
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
@@ -24283,7 +24287,7 @@ fn bytes_of_the_attachment(
         Err(e) => tracing::warn!("The kept copy of an attachment could not be read: {e}"),
     }
 
-    let account = account.ok_or_else(|| Error::Other("No account is set up".into()))?;
+    let account = account.ok_or_else(|| Error::Other("No account is set up.".into()))?;
     let folder = cache
         .folder_path_for_message(attachment.message_row_id)?
         .ok_or_else(|| Error::Other("The message is no longer in the folder list".into()))?;
