@@ -687,6 +687,19 @@ pub fn paint(window: &(impl wxdragon::prelude::WxWidget + ?Sized), surface: Surf
     window.set_foreground_color(surface.text.wx());
 }
 
+/// Colour a link in the palette's accent, normal and visited alike.
+///
+/// A native link draws in the system's link blue unless told otherwise, and
+/// that blue on the dark surface is well under the 4.5:1 text needs. The
+/// accent is one of the text roles the contrast tests below hold to 4.5:1 on
+/// both surfaces of both palettes. Visited is set too, because wxWidgets
+/// otherwise draws a visited link in its own purple once custom colours are
+/// on. Not called in high contrast, where Windows' own link colour is right.
+pub fn paint_link(link: &wxdragon::prelude::HyperlinkCtrl, palette: Palette) {
+    link.set_normal_colour(palette.accent.wx());
+    link.set_visited_colour(palette.accent.wx());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

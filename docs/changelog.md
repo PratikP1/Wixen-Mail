@@ -8,6 +8,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **About says who holds the copyright, and links to the project's two pages.** The tester on
+  2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` (#78): About said "Copyright 2024-2026
+  Wixen Mail Contributors", a holder that does not exist, while `LICENSE` said "Copyright (c)
+  2026 Pratik Patel". Both now say "Copyright 2024-2026 Pratik Patel and the Wixen Project,
+  with other contributors", About adds "Released under the MIT licence.", and the program
+  file's properties in Windows carry the same line. About keeps the whole version, build
+  counter included. After the copyright it offers two links, wixen.app and wixen.app/support,
+  then OK. A screen reader names each link by its address, and Enter or a click on one opens
+  the page in your browser. OK has the focus when About opens, so Enter still closes it; Tab
+  reaches the links. On the light and dark themes the links are drawn in the theme's accent
+  colour, because Windows' own link blue is too dim on the dark background. Send Feedback is
+  not on About yet: it arrives together with the window it opens.
+  Known limitations: on 2026-09-23 neither page loaded. Both addresses answered 522, which is
+  Cloudflare saying the server behind it did not respond. Pratik has said both pages will be
+  up by the time public testing begins, so a build made before then carries two links to
+  pages that do not load. Nobody has heard the new dialog with a screen reader yet.
+
 - **Every sentence the status bar shows was read in one pass and rewritten to one shape.**
   The tester on 2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` (#75): the bar is read on
   its own now that a check's steps and the watch's state lines are written there, and read on

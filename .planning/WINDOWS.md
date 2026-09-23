@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 544
+open_count: 546
 waived_count: 0
 fixed_count: 42
-total_count: 586
-last_updated: 2026-09-23T16:58:00.000Z
+total_count: 588
+last_updated: 2026-09-23T18:32:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -601,6 +601,8 @@ last_updated: 2026-09-23T16:58:00.000Z
 | 584 | 12 | todo | tests/the_planning_files_agree_with_themselves.rs |  | 12-03.2: nothing checks that a phase's closing plan runs the full gate. CLAUDE.md's rule of 2026-09-23 under Premises a plan checks before execution says the plan in a phase's highest wave carries a task running scripts/check.sh all by hand before its merge, and the checker refuses a phase whose closing plan has none. A check in tests/the_planning_files_agree_with_themselves.rs that the highest-wave plan of every phase from 12 on names scripts/check.sh all is owed, beside the tick count the completion-marks paragraph already owes the same test. Not built by 12-03.2: on the real tree it is green on arrival, since 12-12 already carries the task, so its only red would be a planted companion | open |  | 2026-09-23T16:50:00.000Z |  |
 | 585 | 12 | unrun-verify | scripts/check.sh |  | 12-03.2: 12-12's full gate, scripts/check.sh all by hand on its branch before its merge, is the first under the rule of 2026-09-23 that moved the whole suite, the release build and the audit from every merge to the phase's closing plan. From 12-03.2's merge to 12-12's, a break only the whole suite sees can sit on main; nine merges in phase 12, 12-03.2 to 12-11, merged without it, and 12-03.2's own changes, the keyring opener above all, reach integration targets its merge did not run. If the run is red, the break is found by bisecting those merges, about four steps, and fixed on 12-12's own branch as a small red and green pair with the gate run again before its merge, on Pratik's answer of 2026-09-23 to decision for Pratik 2, not left for a plan of its own. 12-12's premise corrections name this entry | open |  | 2026-09-23T16:58:00.000Z |  |
 | 586 | 12 | deviation | scripts/check.test.sh |  | 12-03.2: the check suite that decides which suites run grew with the cases that decide it. By hand, one suite after another, check.test.sh took 9 s at 8eee380a and 31.8 s at c4798dba, from 49 cases to 89; which-checks.test.sh 11 s to 18.5 s. The fork-free rewrite at 13b42781 had brought an earlier 31 s down to 16 s, and the cases tasks 4, 5 and 7 added since each start a bash and parse check.sh. Since 12-03.2 a commit staging only guards/guards.toml runs this suite alone, so such a commit pays about what all four suites cost before, and a commit staging no suite input pays none. Written down so the stage lines the later plans print are read with it; a cheaper question for the cases, one bash answering several, is the obvious next step and is not built | open |  | 2026-09-23T16:58:00.000Z |  |
+| 587 | 12 | unrun-verify | src/presentation/wx_app.rs |  | 12-04: nobody has heard the About dialog under NVDA. What only the tester's ear settles: whether the copyright line and the licence sentence are read when About opens; whether each page is heard as a link with its address (over MSAA the link item answers role link and the address as its name, measured 2026-09-23; UI Automation is read by the pull request's scan only); whether focus lands on OK when About opens and Shift+Tab reaches the support link and then the home page; and what Enter on a link does, which should be to open the page once in the default browser and leave About open. No test exercises a link event reaching its handler and being consumed, because a test that pressed a link would open a browser | open |  | 2026-09-23T18:32:00.000Z |  |
+| 588 | 12 | todo | src/application/about.rs |  | 12-04: wixen.app and wixen.app/support, the two pages About links to, answered 522 on 2026-09-20, at b3cc380a on 2026-09-23, and again at 18:31Z on 2026-09-23 (Cloudflare answers and the server behind it does not). Pratik answered on 2026-09-23 that both pages are up by the time public testing begins, so neither the dialog nor the guide says the site is coming; the changelog's Known limitations says, dated, that neither page answered. His to close, when a fetch of each answers 200. What the support page says is his too | open |  | 2026-09-23T18:32:00.000Z |  |
 
 ````json
 [
@@ -7634,6 +7636,30 @@ last_updated: 2026-09-23T16:58:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T16:58:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 587,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "12-04: nobody has heard the About dialog under NVDA. What only the tester's ear settles: whether the copyright line and the licence sentence are read when About opens; whether each page is heard as a link with its address (over MSAA the link item answers role link and the address as its name, measured 2026-09-23; UI Automation is read by the pull request's scan only); whether focus lands on OK when About opens and Shift+Tab reaches the support link and then the home page; and what Enter on a link does, which should be to open the page once in the default browser and leave About open. No test exercises a link event reaching its handler and being consumed, because a test that pressed a link would open a browser",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T18:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 588,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/application/about.rs",
+    "line": null,
+    "description": "12-04: wixen.app and wixen.app/support, the two pages About links to, answered 522 on 2026-09-20, at b3cc380a on 2026-09-23, and again at 18:31Z on 2026-09-23 (Cloudflare answers and the server behind it does not). Pratik answered on 2026-09-23 that both pages are up by the time public testing begins, so neither the dialog nor the guide says the site is coming; the changelog's Known limitations says, dated, that neither page answered. His to close, when a fetch of each answers 200. What the support page says is his too",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T18:32:00.000Z",
     "resolved_at": null
   }
 ]

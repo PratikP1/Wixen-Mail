@@ -3,6 +3,7 @@
 //! Main application window using wxdragon (wxWidgets bindings).
 //! Native Windows UI with first-class accessibility support.
 
+use crate::application::about;
 use crate::application::conversations::RowMessage;
 use crate::application::destinations::Deleting;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
@@ -26284,24 +26285,21 @@ fn show_about_dialog(parent: &Frame) {
 /// splits Settings: a test can build the real dialog and read back the real
 /// colour a live control holds, and never call `.show_modal()` at all.
 ///
-/// Nothing is read back from this one: OK just closes it, and there is
-/// nothing else on the dialog to answer with.
+/// Nothing is read back from this one: OK closes it, and each page link
+/// opens its page. Its words come from [`crate::application::about`] and it
+/// writes none of its own (#78).
+///
+/// The two pages are native links rather than buttons, measured over MSAA on
+/// 2026-09-23 (`tests/the_about_dialog_names_its_owners_and_its_links.rs`):
+/// a link's item answers role link with the address as its name. They carry
+/// no `set_accessible_name`, because that object replaced the link item and
+/// left a bare client, so the name both channels read is the control's own
+/// text, which is the address.
 pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Dialog {
-    let dlg = Dialog::builder(parent, "About Wixen Mail")
-        .with_size(380, 260)
-        .build();
+    let dlg = Dialog::builder(parent, "About Wixen Mail").build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-    let version_text = format!("Version {}", crate::common::version::current());
-    for (text, top) in [
-        ("Wixen Mail".to_string(), 20),
-        (version_text, 4),
-        (
-            "A modern, accessible email client\nbuilt with Rust and wxWidgets.".to_string(),
-            8,
-        ),
-        ("Copyright 2024-2026 Wixen Mail Contributors".to_string(), 4),
-    ] {
+    for (text, top) in about::lines().into_iter().zip([20, 4, 8, 4]) {
         let label = StaticText::builder(&dlg).with_label(&text).build();
         sizer.add(
             &label,
@@ -26310,6 +26308,10 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
             top,
         );
     }
+
+    // After the copyright and before OK, which is the order Tab walks.
+    add_a_page_link(&dlg, &sizer, about::HOME_PAGE, palette);
+    add_a_page_link(&dlg, &sizer, about::SUPPORT_PAGE, palette);
 
     // What this build's accessibility layer does not do, beside the version,
     // which is the other fact on this dialog that is about this build rather
@@ -26331,15 +26333,9 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
         SizerFlag::AlignCenterHorizontal | SizerFlag::All,
         16,
     );
-    // Grown to its contents only when there is a disclosure to draw, so the
-    // fixed 380 by 260 above is still exactly what a build with a whole bridge
-    // gets. Whether the grown dialog lays out properly is unverified: no build
-    // without the bridge has ever been made, let alone opened.
-    if missing.is_some() {
-        dlg.set_sizer_and_fit(sizer, true);
-    } else {
-        dlg.set_sizer(sizer, true);
-    }
+    // Sized to its contents. Until 12-04 it was a fixed 380 by 260, which the
+    // copyright's two lines and the two links no longer fit in.
+    dlg.set_sizer_and_fit(sizer, true);
 
     ok.on_click({
         let d = dlg;
@@ -26347,10 +26343,15 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
             d.end_modal(ID_OK);
         }
     });
+    // Focus on OK, so Enter closes the dialog as it did when OK was all it
+    // held, rather than opening a page; Tab and Shift+Tab reach the links.
+    ok.set_default();
+    ok.set_focus();
 
     // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
-    // dialog (four `StaticText` and a button), so the dialog itself is the
-    // only site. `None` means high contrast is on, or the system is set up
+    // dialog (four `StaticText`, two links and a button), so the dialog
+    // itself is the only site besides the links, which `add_a_page_link`
+    // colours. `None` means high contrast is on, or the system is set up
     // in a way this application should not paint over, so nothing is set
     // here and Windows decides.
     if let Some(palette) = palette {
@@ -26358,6 +26359,57 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
     }
 
     dlg
+}
+
+/// One of the About dialog's pages: a native link showing the address,
+/// coloured in the accent, opening its page through the gate every link takes.
+fn add_a_page_link(
+    dlg: &Dialog,
+    sizer: &BoxSizer,
+    address: &'static str,
+    palette: Option<theme::Palette>,
+) {
+    let link = HyperlinkCtrl::builder(dlg)
+        .with_label(about::shown_as(address))
+        .with_url(address)
+        .build();
+    if let Some(palette) = palette {
+        theme::paint_link(&link, palette);
+    }
+    // Consumed here: wxWidgets launches the browser on the raw address itself
+    // for a link event nobody consumed, which would open the page twice and
+    // once around the gate.
+    let dialog = *dlg;
+    link.bind_internal(EventType::COMMAND_HYPERLINK, move |event| {
+        event.skip(false);
+        open_one_of_our_pages(&dialog, address);
+    });
+    sizer.add(
+        &link,
+        0,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::All,
+        4,
+    );
+}
+
+/// Open one of the project's own pages in the browser, through
+/// `HtmlRenderer::safe_external_url` like every link a message offers
+/// (T-12-13), and say so in a window over the dialog when it cannot open.
+fn open_one_of_our_pages(dialog: &Dialog, address: &str) {
+    let Some(safe) = HtmlRenderer::safe_external_url(address) else {
+        tracing::warn!("The About dialog's page {address} was refused by the link gate");
+        return;
+    };
+    if let Err(why) = open::that(&safe) {
+        tracing::warn!("The About dialog could not open {safe}: {why}");
+        MessageDialog::builder(
+            dialog,
+            &format!("Could not open a browser. The page is {safe}"),
+            "About Wixen Mail",
+        )
+        .build()
+        .show_modal();
+    }
 }
 
 /// What the search box's "In" list offers, and what each answer searches.

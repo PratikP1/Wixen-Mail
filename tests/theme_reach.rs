@@ -881,8 +881,9 @@ fn check_thread_view(parent: &Frame, palette: theme::Palette, into: &mut Vec<Sit
 }
 
 /// The About dialog. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in
-/// this dialog (four `StaticText` and a button), so the dialog itself is the
-/// only site.
+/// this dialog (four `StaticText`, two links and a button), so the dialog
+/// itself is the only site read here. The links' colour is read by
+/// `tests/the_about_dialog_names_its_owners_and_its_links.rs`.
 fn check_about(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
     let dialog = wx_app::build_about_dialog(parent, Some(palette));
     check("about dialog", &dialog, palette.main_surface(), into);

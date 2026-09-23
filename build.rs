@@ -44,9 +44,13 @@ fn main() {
         res.set("ProductName", PRODUCT);
         res.set("FileDescription", PRODUCT);
         res.set("CompanyName", "Pratik Patel");
+        // In step with LICENSE and the About dialog, which read it from
+        // `application::about::COPYRIGHT`; a build script cannot reach that
+        // constant, so `tests/the_about_dialog_names_its_owners_and_its_links.rs`
+        // holds this line to it instead.
         res.set(
             "LegalCopyright",
-            "Copyright (c) Pratik Patel. MIT licensed.",
+            "Copyright (c) 2024-2026 Pratik Patel and the Wixen Project, with other contributors. MIT licensed.",
         );
         res.set("OriginalFilename", "wixen-mail.exe");
         res.set("InternalName", "wixen-mail");
