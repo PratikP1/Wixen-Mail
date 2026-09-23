@@ -973,9 +973,13 @@ impl Page2Shell {
 const STEP_ONE_HEADING: &str = "Step 1 of 2: Account details";
 const STEP_TWO_HEADING: &str = "Step 2 of 2: Connection and sign-in";
 
-/// The minutes the Check Interval spin control holds, its own range since
-/// 12-06 (#73) rather than a clamp applied after it was typed.
-const CHECK_INTERVAL_MINUTES: (i32, i32) = (1, 60);
+/// The minutes the Check Interval spin control holds: the schedule's own
+/// bounds, the control's range since 12-06 (#73) rather than a clamp applied
+/// after it was typed.
+const CHECK_INTERVAL_MINUTES: (i32, i32) = (
+    crate::application::checking_on_a_schedule::SHORTEST_INTERVAL_MINUTES as i32,
+    crate::application::checking_on_a_schedule::LONGEST_INTERVAL_MINUTES as i32,
+);
 
 /// What the Check Interval field does, in the words under it and on it.
 ///

@@ -29754,10 +29754,11 @@ tests_last_seen = [
 name = "the check interval spin control holds 1 to 60 minutes as its own range"
 file = "src/presentation/wx_account_manager.rs"
 suite = "every_spin_control_names_the_field_a_person_types_in"
-before = '''/// 12-06 (#73) rather than a clamp applied after it was typed.
-const CHECK_INTERVAL_MINUTES: (i32, i32) = (1, 60);'''
-after = '''/// 12-06 (#73) rather than a clamp applied after it was typed.
-const CHECK_INTERVAL_MINUTES: (i32, i32) = (0, 3650);'''
+before = '''const CHECK_INTERVAL_MINUTES: (i32, i32) = (
+    crate::application::checking_on_a_schedule::SHORTEST_INTERVAL_MINUTES as i32,
+    crate::application::checking_on_a_schedule::LONGEST_INTERVAL_MINUTES as i32,
+);'''
+after = '''const CHECK_INTERVAL_MINUTES: (i32, i32) = (0, 3650);'''
 red = [
     "test_the_four_numbers_are_spin_controls_holding_their_own_ranges",
 ]
