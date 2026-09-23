@@ -1,6 +1,6 @@
 # Phase 12: The editors, and what the alpha still owes
 
-Fourteen plans, one per wave. Twelve at first, two moved in from phase 11 and ten written on
+Fifteen plans, one per wave. Twelve at first, two moved in from phase 11 and ten written on
 2026-09-20 against `main` at `0ad66e48`, version `1.0.0-alpha.1`,
 `guards/guards.toml` holding 1,029 records by the TOML reader (the census
 lines at `guards.toml:83-84` say 798 swept and 231 since), `.planning/WINDOWS.md`
@@ -24,6 +24,16 @@ window's frame, which reverses 12-01's reading, and two cases because
 they wait for sentences 12-03 reworded. It reopens FOUND-20's product
 half, carries FOUND-22, and moved 12-04 and every plan after it down one
 wave, 12-12 ending at wave 14.
+The fifteenth, 12-03.2, was inserted at wave 6 later on 2026-09-23
+against `481a7918`, after a measurement of nine executors (11-11.1.1 to
+12-03) found a plan takes 144 minutes on average and 28% of it is the
+commit hook. Pratik approved every gate change the measurement
+recommended and asked for the full gate once a phase rather than at
+every merge; 12-03.2 makes those changes test-first, fixes the keyring
+race of ledger 374, carries FOUND-23, and moved 12-04 and every plan
+after it down one wave, 12-12 ending at wave 15. From its merge on, a
+merge into `main` runs what the branch's diff earns, and 12-12 runs the
+whole suite once for the phase (its task 3).
 Phase 11 closed on 2026-09-20 with twenty-nine of its thirty-one plans
 merged and two deferred to the front of this phase on Pratik's decision
 under his token budget. This is the fifth of the seven groups he agreed on
@@ -104,15 +114,16 @@ carry `version 2` on his word and belong to no phase here.
 | 12-02.1 | 3 | none; sweep 35520204784 | none | closes the phase 11 sweep; FOUND-21 | the per-record wall-clock limit in `scripts/guards.py` first, so a record that does not return costs one record and not a shard; then the six weak records and the five unmeasurable ones measured by hand and diagnosed, sixteen red lists corrected and re-measured, shard 40's nine measured here, the sweep's four rows on the measurements page, the ledger recording what ended shard 40 as fixed |
 | 12-03 | 4 | 3 | #75 | closes | 11-13 moved: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after 12-02 so its two sentences are in the pass; LIST-11 ticked |
 | 12-03.1 | 5 | 1, reopened | none; NVDA runs 35839692317 and 35839954840 | reopens FOUND-20's product half and closes it on the tree's side; FOUND-22 | inserted 2026-09-23: why 12-01's sent activation gave the keyboard back and the runner's real one left it on the frame, read from wx's source (the frame saved as its own last focused child is the one path that ends there); the formatted window gives the keyboard to the page when it comes back with it on the frame or nowhere, red first on a built window by that path; the link case records the window's own thread and the fix's log line, so the next run says which path; a reading in the Rust gate over every word an NVDA case waits for, red on four stale strings, then the calendar and filter cases corrected |
-| 12-04 | 6 | 4 (but its Send Feedback clause) | #78 | advances to its last point | the copyright line naming Pratik Patel and the Wixen Project with other contributors under MIT, LICENSE in step and held by a reading; the full version kept; wixen.app and wixen.app/support as controls named by their address, the kind chosen by a reading over MSAA; no dead button |
-| 12-05 | 7 | 5, and 4's last clause | #64, #71 third point, #78 point 4 | closes all three | Help, Send Feedback: six categories, the questions that fit, the includes with the log excerpt ticked by default and redacted, the reply address, the exact payload shown before Send; an email from the default account to support@wixen.app through the one queued-row path and the one gate; no account or forbidden said with the clipboard and the GitHub page as doors; security to the private page only; About's button; the scan target; the privacy page's row |
-| 12-06 | 8 | 6 | #73, #35 | closes both; twelve ledger entries fixed | `name_the_spin_control` naming the typing field through the annotation service on every spin control in the tree, a reading over MSAA on four built dialogs; the check interval 1..=60, Font size 8..=72, Default reminder 0..=1440 as spin controls; Mark read after a three-way choice with a seconds spin |
-| 12-07 | 9 | 7 | #40 points 1 to 4 | closes | prefix, middle name and suffix as columns, fields and each provider's own field both ways; `contact_names::guess_parts` and `compose` with the Hopper and van der Berg cases; the fills each way that never overwrite a typed field; the birthday as the three-control date with a no-year position; an address checked by 11-10.1's rule, a number kept as typed with a country beside it; the Favourite box re-read over MSAA |
-| 12-08 | 10 | 8 | #41 | closes | `time_blocks` pure at every boundary; the setting on the Calendar and PIM tab, 30 by default, read on use; Up and Down by the block and Left and Right by a minute on the minute control in all three editors, measured first where the key arrives; a new item on the next boundary with its end one block later, the end following the start until edited |
-| 12-09 | 11 | 9 | #43 | closes | signatures as one set with an assignment table and a once-only pass that keeps every account's default; the manager over the set with a Used by column and one Default box; the choice on the account's own dialog; compose taking the From account's signature and swapping the block on a From change only when untouched |
-| 12-10 | 12 | 10 | #48 | closes | a position column with a pass numbering rows in the order they were shown; the submenu rebuilt from the account's labels with their keys and Edit Labels at its end; the manager with Move Up and Down through the reordering rule and a Key column; one word, Label; the disagreement between the menu and the keys fixed and named |
-| 12-11 | 13 | 11 | #65 | advances to the decisions | the design under `docs/plans/`: what exists, the free and pro line as a table, the offline key, the seam, the lapse, the prices as decided, the merchant table carried whole, the decisions table for Pratik; nothing in the product |
-| 12-12 | 14 | 12 | all eleven | closes the phase | the pages, the listening lines from item 84, the closing read over the coverage blocks in one pass, the four planning files told |
+| 12-03.2 | 6 | none; the executor-time measurement of 2026-09-23 | none | FOUND-23; ledger 374 fixed, 373 noted and left for decision 16 | inserted 2026-09-23: every hook run names its mode and prints each stage's seconds; the keyring race taken red in fresh processes and closed by one guarded opener; the shell suites only when what they read changes; the scoped integration targets in one cargo call; a file the program compiles in, Rust or not, reaching the tests of the code that compiles it, with no shell case reading the real `src/`; the guard runner's pre-read kept for a tree it has read; then a merge into `main` running what the branch's diff earns, the document-reading targets too when it holds a document, from one list held once in `check.sh` that the three targets asking about it read, and the whole suite once a phase, in 12-12, with `CLAUDE.md` saying what that risks and a rule that every phase's closing plan runs it |
+| 12-04 | 7 | 4 (but its Send Feedback clause) | #78 | advances to its last point | the copyright line naming Pratik Patel and the Wixen Project with other contributors under MIT, LICENSE in step and held by a reading; the full version kept; wixen.app and wixen.app/support as controls named by their address, the kind chosen by a reading over MSAA; no dead button |
+| 12-05 | 8 | 5, and 4's last clause | #64, #71 third point, #78 point 4 | closes all three | Help, Send Feedback: six categories, the questions that fit, the includes with the log excerpt ticked by default and redacted, the reply address, the exact payload shown before Send; an email from the default account to support@wixen.app through the one queued-row path and the one gate; no account or forbidden said with the clipboard and the GitHub page as doors; security to the private page only; About's button; the scan target; the privacy page's row |
+| 12-06 | 9 | 6 | #73, #35 | closes both; twelve ledger entries fixed | `name_the_spin_control` naming the typing field through the annotation service on every spin control in the tree, a reading over MSAA on four built dialogs; the check interval 1..=60, Font size 8..=72, Default reminder 0..=1440 as spin controls; Mark read after a three-way choice with a seconds spin |
+| 12-07 | 10 | 7 | #40 points 1 to 4 | closes | prefix, middle name and suffix as columns, fields and each provider's own field both ways; `contact_names::guess_parts` and `compose` with the Hopper and van der Berg cases; the fills each way that never overwrite a typed field; the birthday as the three-control date with a no-year position; an address checked by 11-10.1's rule, a number kept as typed with a country beside it; the Favourite box re-read over MSAA |
+| 12-08 | 11 | 8 | #41 | closes | `time_blocks` pure at every boundary; the setting on the Calendar and PIM tab, 30 by default, read on use; Up and Down by the block and Left and Right by a minute on the minute control in all three editors, measured first where the key arrives; a new item on the next boundary with its end one block later, the end following the start until edited |
+| 12-09 | 12 | 9 | #43 | closes | signatures as one set with an assignment table and a once-only pass that keeps every account's default; the manager over the set with a Used by column and one Default box; the choice on the account's own dialog; compose taking the From account's signature and swapping the block on a From change only when untouched |
+| 12-10 | 13 | 10 | #48 | closes | a position column with a pass numbering rows in the order they were shown; the submenu rebuilt from the account's labels with their keys and Edit Labels at its end; the manager with Move Up and Down through the reordering rule and a Key column; one word, Label; the disagreement between the menu and the keys fixed and named |
+| 12-11 | 14 | 11 | #65 | advances to the decisions | the design under `docs/plans/`: what exists, the free and pro line as a table, the offline key, the seam, the lapse, the prices as decided, the merchant table carried whole, the decisions table for Pratik; nothing in the product |
+| 12-12 | 15 | 12 | all eleven | closes the phase | the pages, the listening lines from item 84, the closing read over the coverage blocks in one pass, the four planning files told; since 2026-09-23 (12-03.2), the phase's full gate once, `scripts/check.sh all` by hand before its merge |
 
 Requirement coverage: FOUND-20 by 12-01; LIST-19 by 12-02 (with 11-11.1);
 LIST-11 by 12-03; ALPHA-01 by 12-04; ALPHA-02 by 12-05; EDIT-01 by 12-06;
@@ -121,7 +132,10 @@ ALPHA-03 by 12-11; 12-12 reads all eleven. Added 2026-09-23: FOUND-20
 again by 12-03.1, whose product half the runner reopened, and FOUND-22 by
 12-03.1. 12-12's own list names neither FOUND-21 nor FOUND-22; both are
 closed by their plans and their `[S]` lines are a sweep's and the
-runner's.
+runner's. Added later on 2026-09-23: FOUND-23 by 12-03.2, seven of its
+eight `[D]` lines; the eighth is 12-12's full gate (its task 3), so
+12-12's list names FOUND-23, and its `[S]` line is that run and the
+stage lines the plans after 12-03.2 print.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
@@ -161,6 +175,12 @@ with them added no two plans here are disjoint. The order:
   in front of About for the reason 12-01 went first: every later merge
   would land on a red NVDA run, and two of its three red cases were this
   phase's own doing.
+- **The gate, inserted later on 2026-09-23** (12-03.2), after the
+  runner's verdict and before the nine plans still to come, so each of
+  them pays the cheaper hook and prints where its time went, and the
+  full gate moves to 12-12 before any of them merges. It writes
+  `.planning/WINDOWS.md`, as every plan here does, so it takes a wave of
+  its own.
 - **About fourth** (12-04), small, before the public alpha, and the
   surface 12-05's button sits on.
 - **Send Feedback fifth** (12-05), the largest plan, closing #64, #71
@@ -518,6 +538,26 @@ Listed here rather than decided, each with what the plans do meanwhile.
     an outward push and runner time, his word each time. Meanwhile the
     executor merges on the local evidence and the verdict is the next
     push of `main`, also his.
+13. **Whether to push, or open a pull request, before a phase closes**
+    (added later on 2026-09-23 with 12-03.2). From 12-03.2's merge the
+    whole suite runs once a phase, in 12-12, so a break only it sees can
+    sit on `main` until then; CI's Test Suite on a push or a pull request
+    would find it sooner. Each is an outward push, his word each time.
+14. **What happens when 12-12's full gate is red**: a small fix on
+    12-12's branch or a plan of its own. 12-12 stops and asks rather
+    than closing the phase red.
+15. **Whether the shell suites are narrowed further, one suite per
+    input** (running only `check.test.sh` when `guards/guards.toml`
+    moves, which twelve of the last fourteen merges did; this read
+    "thirteen" until the checker re-took it the same day). Not what was
+    approved and not built; 12-03.2's summary says what it would buy.
+16. **Whether ledger 373 is closed, yes or no** (added later on
+    2026-09-23 with 12-03.2's second check). The approval named the
+    dictionary; 12-03.2 applies the same rule to every file the program
+    compiles in, the date catalogue among them, since it only adds
+    checks. Yes closes 373 as built. No keeps 373 open for version 2
+    and takes the files other than the dictionary out of the rule. 373
+    stays open with a dated note until he answers.
 
 ## Estimates, and the factor behind them
 
@@ -580,12 +620,13 @@ it down. **The next plan is 12-04**, the About dialog, and the waves after
 it are already renumbered for the 12-02.1 insert. **Corrected later on
 2026-09-23: the next plan is 12-03.1**, inserted at wave 5 after the push
 of `26beb051` and `6cb8f17c` came back red on three NVDA cases, and 12-04
-follows it at wave 6.
+follows it at wave 6. **Corrected again later on 2026-09-23: 12-03.2,
+the gate, follows 12-03.1 at wave 6, and 12-04 is at wave 7.**
 
 Four of the thirteen plans are merged. **Corrected later on 2026-09-23:
 four of the fourteen**, since 12-03.1 was inserted after that count was
 written; the four merged plans are the same, and 12-03.1 is not one of
-them.
+them. **And four of the fifteen** once 12-03.2 was inserted.
 
 | Plan | Merge | What it settled |
 |---|---|---|

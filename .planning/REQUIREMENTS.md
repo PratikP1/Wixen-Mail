@@ -3399,6 +3399,61 @@ seven groups.
     task 3).
   - [S] The two cases green on the runner at the next run of the NVDA workflow, whose
     dispatch or push is Pratik's.
+- [ ] **FOUND-23**: The commit gate spends only what a change earns and says where its time
+  went, and the whole suite runs once a phase: a merge into `main` runs what the branch's
+  whole diff earns, not the whole suite; the closing plan of each phase runs the whole
+  suite, the release build and the audit once; the risk of that is written where the gate
+  is described. Added 2026-09-23 for phase 12's 12-03.2, under this section beside FOUND-19
+  to FOUND-22 on the same reasoning: a change to what a check tells you, and when, which a
+  later reader needs to find by name because every phase from here must keep its last half.
+  - Evidence: nine executors, 11-11.1.1 to 12-03, measured on 2026-09-23 from their own
+    transcripts: 1,294 minutes, 144 a plan, of which the hook on 81 commits and merges was
+    360 (28%): code commits 4.2 minutes each, merges 6.9, red commits 4.25, documents-only
+    3.0, refused runs 37 minutes in all; the keyring race of ledger 374 refused three of 28
+    full gates; every guard invocation read the whole suite before breaking anything, 50 to
+    100 s for the library; and across the nine plans the full gate at the merge found
+    nothing the branch's scoped checks had missed. At `481a7918` the fourteen merges on
+    `main`'s first parent from `f497785f` each staged exactly their branch's diff, and
+    `which-checks.sh` treats `data/dictionary_en.txt`, which `spellcheck/mod.rs:1050`
+    compiles in, as a document.
+  - [S] Pratik approved every gate change the measurement recommended on 2026-09-23 and
+    asked for the full gate to run once a phase rather than at every merge.
+  - [D] Every run of `scripts/check.sh` that is not a question answered early names its
+    mode before its first stage and ends, pass or fail, with each stage's seconds and the
+    total, and the questions print only their answers (12-03.2, task 1).
+  - [D] Two threads reaching the credential store at once both find it ready: the first
+    entry is opened once under a lock at both sites, and a target that starts twenty fresh
+    processes of sixteen threads each was red three times by hand before the fix (12-03.2,
+    task 2; ledger 374).
+  - [D] The shell suites run when a staged path is under `scripts/` or `.githooks/` or is
+    `guards/guards.toml` or `.cargo/audit.toml`, in every `all` and `all_but_slow` run, and in
+    `red` when a shell case is named; otherwise the run says it did not run them and why;
+    CI runs them on every push and pull request; no case in them reads the repository's
+    `src/`, so that list is every input they read, taken again after tasks 5 and 7 (12-03.2,
+    tasks 3, 5 and 7).
+  - [D] Every integration target the scoped run reaches runs in one `cargo test
+    --no-fail-fast` call, each once, and a red is judged by the same lines (12-03.2, task 4).
+  - [D] A file the program compiles in, Rust or not, reaches the tests of every source that
+    compiles it, and a compiled-in `.md` or `.txt` is not a document (12-03.2, task 5;
+    ledger 373 left open with a dated note, since closing it is Pratik's yes or no, README
+    decision 16).
+  - [D] `scripts/guards.py` keeps a suite's pre-read for a tree it has already read, keyed
+    on the working tree without `guards/guards.toml`, that file's records without their
+    written counts, the suite, the run's settings and the compiler, for at most two hours,
+    and says when it used one (12-03.2, task 6).
+  - [D] A merge into `main` made with `git merge --no-ff` answers by the branch rules over
+    the branch's whole diff, and runs the document-reading targets when that diff holds a
+    document, from one list held once in `scripts/check.sh` that the three targets asking
+    whether they are on it read; a commit on `main` that is not a merge still earns everything for code;
+    `which-checks.sh` refuses an option it does not know; `CLAUDE.md` and the hook's comment
+    say where the whole suite runs and what that risks, and `CLAUDE.md`'s premises section
+    says every phase's closing plan runs it, with a ledger entry for the check that would
+    hold it (12-03.2, task 7).
+  - [D] The closing plan of phase 12 runs `scripts/check.sh all` once, by hand, before its
+    merge, and the phase is not called closed on a red one (12-12, task 3).
+  - [S] Whether moving the full gate to the phase's close lets a break through that the
+    merge would have caught is 12-12's full gate, and each phase's after it; what the
+    changes saved is read from the stage lines 12-03.2 and the plans after it print.
 
 ### All the mail, and what is said while it comes
 
@@ -5064,7 +5119,8 @@ way. The plans are in `.planning/phases/12-the-editors-and-what-the-alpha-still-
 The two plans moved from phase 11 keep their ids there: LIST-19 (12-02) and LIST-11 (12-03).
 FOUND-20 (12-01) sits under phase 9's section beside FOUND-19. Added 2026-09-23: FOUND-22
 (12-03.1) sits there too, and 12-03.1 also carries FOUND-20 again, whose product half the
-NVDA workflow reopened on the push of `26beb051` and `6cb8f17c`.
+NVDA workflow reopened on the push of `26beb051` and `6cb8f17c`. Added later the same day:
+FOUND-23 (12-03.2), the gate's changes, sits there beside them.
 
 Nothing here has met a real provider except through the tester's Gmail account. Each
 requirement's last `[S]` line says what only his ear, his reader, his account, the runner or
@@ -5638,6 +5694,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567 |
 | FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
 | FOUND-22 | Phase 12 | Pending, 12-03.1 planned 2026-09-23 against `6cb8f17c` from NVDA runs 35839692317 and 35839954840; the two cases green on the runner is the `[S]` line |
+| FOUND-23 | Phase 12 | Pending, 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
@@ -5691,9 +5748,14 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 **Coverage:**
 
-- v1 requirements: 121 total
-- Mapped to phases: 121
+- v1 requirements: 122 total
+- Mapped to phases: 122
 - Unmapped: 0
+
+**Re-taken later on 2026-09-23.** This block said 121 and 121 from the morning until the
+gate changes were planned as 12-03.2. Counted with the same command as below, which gives
+122 at `481a7918` plus this edit with `FOUND-23` in, and the traceability table above has
+122 rows.
 
 **Re-taken 2026-09-23.** This block said 120 and 120 from 2026-09-22 until the NVDA
 workflow's verdict on the push of `26beb051` and `6cb8f17c` was planned as 12-03.1. Counted
@@ -5858,6 +5920,15 @@ is a requirement of its own rather than a line under LIST-11 or FOUND-20: LIST-1
 shape for the status bar and was right, since NVDA heard the new sentences, and FOUND-20 is
 one case's return; the defect is that no check joins the two sides, which FOUND-19 to FOUND-21
 each record for a check of their own. The total is 121.
+
+**Added later on 2026-09-23.** `FOUND-23` traces to no issue: it comes from a measurement of
+nine executors' own transcripts that found 28% of a plan's time in the commit hook, and from
+Pratik's approval that day of every gate change it recommended, with the full gate once a
+phase. Taken by the inserted 12-03.2 and placed under phase 9's section beside FOUND-19 to
+FOUND-22. It earns a requirement rather than a sentence in `CLAUDE.md` alone for two reasons:
+it changes what the gate guarantees at every merge, which a later reader has to be able to
+find by name with its risk beside it; and its last `[D]` line binds the closing plan of this
+phase and of every phase after it, which a tick can be checked against. The total is 122.
 
 **Added 2026-09-20.** `LIST-26` traces to #91, filed that day and taken by the inserted
 11-11.1.1 between 11-11.1 and 11-11.2; `LIST-27` traces to #92, Pratik's decisions of that

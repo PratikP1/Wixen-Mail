@@ -11,7 +11,7 @@ state_head: 434cd972
 progress:
   total_phases: 17
   completed_phases: 0
-  total_plans: 170
+  total_plans: 171
   completed_plans: 160
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
@@ -29,8 +29,16 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 12 (The editors, and what the alpha still owes). Current plan 4 of 14: 12-01, 12-02,
-12-02.1 and 12-03 merged, **12-03.1 next**, then 12-04.
+Phase: 12 (The editors, and what the alpha still owes). Current plan 4 of 15: 12-01, 12-02,
+12-02.1 and 12-03 merged, **12-03.1 next**, then 12-03.2, then 12-04.
+
+**12-03.2 inserted at wave 6 later on 2026-09-23**, against `481a7918`. A measurement of nine
+executors, 11-11.1.1 to 12-03, found a plan takes 144 minutes on average and 28% of it is
+the commit hook on its commits and merges. Pratik approved every gate change it recommended
+and asked for the full gate once a phase rather than at every merge. The plan makes those
+changes test-first, fixes the keyring race of ledger 374, carries FOUND-23, moves the whole
+suite, the release build and the audit to 12-12's new task 3, and moved 12-04 to 12-12 down
+one wave. Four decisions it lists are Pratik's, in the phase README (13 to 16).
 
 **12-03.1 inserted at wave 5 later on 2026-09-23.** The push of `26beb051` and `6cb8f17c`
 came back with CI and Accessibility green and the NVDA workflow red on three cases, in both
@@ -3251,7 +3259,7 @@ counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
 Current Plan: 4
-Total Plans in Phase: 14
+Total Plans in Phase: 15
 
 ---
 
