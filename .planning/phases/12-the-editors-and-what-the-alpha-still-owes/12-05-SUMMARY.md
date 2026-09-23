@@ -122,7 +122,23 @@ Seven existing records re-measured, each exact: the three About records (their t
 | `7d57ba23` | red, task 2 (a first attempt was refused after 149 s, above) | red | 131: start 6, rustfmt 3, clippy 28, scripts 12, must fail 0, reach 82 |
 | `c8aec5f3` | green, task 2, the wiring, the pages the key needs, the changelog (a first attempt was refused after 367 s by the outbox census, below) | all, because the workflow changed | 441: start 5, rustfmt 3, clippy 27, scripts 69, security advisories 5, tests 249, release build 83 |
 
-The documents commit and the merge are added after the merge.
+| `d2f356f8` | the pages, the ledger, this summary, the four marks (a first attempt was refused after 83 s, deviation 11) | docs_only | 83: start 3, rustfmt 3, clippy 28, scripts 0, the targets that read documents 49 |
+| `6562e753` | the merge into `main`, `git merge --no-ff` | "mode all, a merge into main", because the diff holds the workflow | 436: start 1, rustfmt 3, clippy 27, scripts 69, security advisories 5, tests 249, release build 82 |
+
+The last row was added after the merge, by a commit on `main` touching only this file.
+
+## The pull request's runs
+
+Pull request #96, read before the merge:
+
+| Run | Verdict |
+|---|---|
+| CI | Rustfmt, Clippy, Security Audit, Build (debug), Build (release), Setup Executable passed; Test Suite passed in 19m48s, the whole suite over the branch on the runner |
+| NVDA screen reader tests | passed, 24m50s |
+| Accessibility scan | passed, 10m51s. Feedback: Axe.Windows "0 errors were found", "Walked 2 window(s): 'Send Feedback', 'Wixen Mail'", "MSAA walk: 2244 elements, 1320 of them operated, 0 without a name". About: "0 errors were found", "MSAA walk: 1914 elements, 1124 of them operated, 0 without a name" |
+| Tests that would notice | failed after 29m39s in the unmutated baseline, `test_the_share_of_history_before_red_green_is_computed_and_printed`, before any mutant was tested: ledger 458's shape, not this change's |
+
+What the scan's files say about the new controls, read from the downloaded artefact. Over UI Automation the dialog `Send Feedback` holds, in order: text and combo box "What is this about"; the two questions as text and document; text "What to include"; the five check boxes named by their sentences; text and edit "How to reach you"; text and document "What will be sent"; buttons Send, Copy to clipboard, Open the GitHub issue page, Cancel; then the text of the sentence under the buttons ("No account is set up to send from...", since the runner's profile has no account). The multi-line fields answer document rather than edit on this channel. One oddity: the resize grip answers `thumb` and takes the sentence above it as its name, which UI Automation borrowed from the nearest text; nothing reaches it by key. Over MSAA the same controls answer combo box, editable text, check box and push button with the same names. About over UI Automation: the four texts, `pane 'wixen.app'`, `pane 'wixen.app/support'`, `button 'Send Feedback...'`, `button 'OK'`; over MSAA, Send Feedback answers push button named "Send Feedback...". Whether NVDA reads the resize grip's borrowed name anywhere is part of ledger 589.
 
 ## Deviations from Plan
 
