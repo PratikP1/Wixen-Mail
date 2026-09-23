@@ -55,9 +55,16 @@ const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
 const VT_I4: u16 = 3;
 const CHILDID_SELF: i64 = 0;
 
-/// The up-down control's message asking for its buddy (commctrl.h):
-/// `WM_USER` is 0x400.
+/// The up-down control's messages asking for its buddy and its range
+/// (commctrl.h): `WM_USER` is 0x400.
 const UDM_GETBUDDY: u32 = 0x400 + 106;
+const UDM_GETRANGE32: u32 = 0x400 + 112;
+
+/// Typing over a field, and choosing in a list (winuser.h).
+const WM_SETTEXT: u32 = 0x000C;
+const WM_COMMAND: u32 = 0x0111;
+const CB_SETCURSEL: u32 = 0x014E;
+const CBN_SELCHANGE: usize = 1;
 
 /// What MSAA answers for an edit field (oleacc.h).
 const ROLE_SYSTEM_TEXT: i64 = 0x2a;
@@ -66,8 +73,8 @@ const ROLE_SYSTEM_TEXT: i64 = 0x2a;
 /// A window that loses one, or a reading that finds none, is a red here
 /// rather than a pass over nothing.
 const EXPECTED: [(&str, usize); 5] = [
-    ("the account editor", 1),
-    ("Settings", 2),
+    ("the account editor", 2),
+    ("Settings", 5),
     ("the event form", 12),
     ("the table asker", 2),
     ("Send Later", 4),
@@ -153,6 +160,9 @@ unsafe extern "system" {
     fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn GetParent(hwnd: isize) -> isize;
+    fn GetDlgCtrlID(hwnd: isize) -> i32;
+    fn IsWindowEnabled(hwnd: isize) -> i32;
+    fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
 }
 
 #[link(name = "oleacc")]
@@ -314,6 +324,7 @@ struct Spinner {
     field_class: String,
     field: Msaa,
     field_on_uia: Result<String, String>,
+    range: (i32, i32),
 }
 
 impl Spinner {
@@ -331,13 +342,73 @@ fn read_the_spinner(window: &'static str, arrows: isize) -> Result<Spinner, Stri
             "{window}: a spin control with no buddy, its parent a {parent}"
         ));
     }
+    let (mut least, mut most) = (0i32, 0i32);
+    send(
+        arrows,
+        UDM_GETRANGE32,
+        &mut least as *mut i32 as usize,
+        &mut most as *mut i32 as isize,
+    );
     Ok(Spinner {
         window,
         arrows: msaa_of(arrows).map_err(|why| format!("{window}, the arrows: {why}"))?,
         field_class: class_name(buddy),
         field: msaa_of(buddy).map_err(|why| format!("{window}, the field: {why}"))?,
         field_on_uia: uia_name_of(buddy),
+        range: (least, most),
     })
+}
+
+/// The arrows of the spin control under `root` whose arrows answer `name`
+/// over MSAA.
+fn the_spinner_named(root: isize, name: &str) -> Result<isize, String> {
+    descendants_of(root)
+        .into_iter()
+        .filter(|hwnd| class_name(*hwnd) == "msctls_updown32")
+        .find(|hwnd| msaa_of(*hwnd).is_ok_and(|read| read.name == name))
+        .ok_or_else(|| format!("no spin control named \"{name}\""))
+}
+
+/// The list under `root` that answers `name` over MSAA.
+fn the_list_named(root: isize, name: &str) -> Result<isize, String> {
+    descendants_of(root)
+        .into_iter()
+        .filter(|hwnd| class_name(*hwnd) == "ComboBox")
+        .find(|hwnd| msaa_of(*hwnd).is_ok_and(|read| read.name == name))
+        .ok_or_else(|| format!("no list named \"{name}\""))
+}
+
+/// The field a person types in beside `arrows`.
+fn the_field_of(arrows: isize) -> isize {
+    send(arrows, UDM_GETBUDDY, 0, 0)
+}
+
+/// Type `text` over the number in a spin control's field.
+fn type_into(arrows: isize, text: &str) {
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    send(the_field_of(arrows), WM_SETTEXT, 0, wide.as_ptr() as isize);
+}
+
+/// Choose entry `index` in `list` the way a person does: the selection moves
+/// and the list tells its parent, which is where wxWidgets hears a choice.
+fn choose(list: isize, index: usize) {
+    send(list, CB_SETCURSEL, index, 0);
+    // SAFETY: a live window handle.
+    let (parent, id) = unsafe { (GetParent(list), GetDlgCtrlID(list)) };
+    let wparam = (id as u16 as usize) | (CBN_SELCHANGE << 16);
+    send(parent, WM_COMMAND, wparam, list);
+}
+
+fn is_enabled(hwnd: isize) -> bool {
+    // SAFETY: a live window handle.
+    unsafe { IsWindowEnabled(hwnd) != 0 }
+}
+
+fn text_of(hwnd: isize) -> String {
+    let mut buffer = [0u16; 64];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
 }
 
 /// Every spin control under `root`, found by the arrows' class.
@@ -389,9 +460,139 @@ fn read_the_bare_ones(frame: &Frame) -> Result<Bare, String> {
     Ok(bare)
 }
 
+/// The four numbers the tester asked about (#73, #35), by the name their
+/// arrows answer, and the range each is to hold as its own.
+const THE_FOUR_NUMBERS: [(&str, &str, (i32, i32)); 4] = [
+    ("the account editor", "Check Interval (min),", (1, 60)),
+    ("Settings", FONT_SIZE, (8, 72)),
+    ("Settings", DEFAULT_REMINDER, (0, 1440)),
+    ("Settings", MARK_READ_SECONDS, (1, 600)),
+];
+const FONT_SIZE: &str = "Font size";
+const DEFAULT_REMINDER: &str = "Default reminder in minutes";
+const MARK_READ_SECONDS: &str = "Mark as read after, in seconds";
+const MARK_READ_AFTER: &str = "Mark as read after";
+
+/// What Settings writes back and offers, worked the way a person works it: a
+/// number typed over a field, an entry chosen in a list.
+struct SettingsAnswers {
+    /// Font size 20, Default reminder 45, and a wait of 45 seconds, typed
+    /// and chosen, and what OK wrote back for each.
+    saved_numbers: Result<(u32, u32, String), String>,
+    /// Immediately chosen, then Never chosen, and what OK wrote back.
+    saved_words: Result<(String, String), String>,
+    /// Whether the seconds can be reached, at each step, in order.
+    seconds_offered: Result<Vec<(&'static str, bool)>, String>,
+    /// What the seconds field shows in a dialog built over a stored 5.
+    seconds_shown_for_a_stored_five: Result<String, String>,
+}
+
+fn a_settings_dialog(
+    frame: &Frame,
+    config: &AppConfig,
+    a11y: &Arc<Accessibility>,
+) -> wx_settings::SettingsWidgets {
+    let settings = wx_settings::build_settings_dialog(frame, config, &[], false, a11y);
+    // The pages after General are built the first time their tab is reached,
+    // which is what `set_selection` does here without the dialog being shown.
+    for tab in 1..settings.notebook.get_page_count() {
+        settings.notebook.set_selection(tab);
+    }
+    settings
+}
+
+fn read_what_settings_saves(
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) -> Result<(u32, u32, String), String> {
+    let base = AppConfig::default();
+    let settings = a_settings_dialog(frame, &base, a11y);
+    let root = settings.dialog.get_handle() as isize;
+    let read = (|| {
+        type_into(the_spinner_named(root, FONT_SIZE)?, "20");
+        type_into(the_spinner_named(root, DEFAULT_REMINDER)?, "45");
+        choose(the_list_named(root, MARK_READ_AFTER)?, 1);
+        type_into(the_spinner_named(root, MARK_READ_SECONDS)?, "45");
+        let saved = wx_settings::read_settings(&settings, &base);
+        Ok((
+            saved.font_size,
+            saved.default_reminder_minutes,
+            saved.mark_read_after,
+        ))
+    })();
+    settings.dialog.destroy();
+    read
+}
+
+fn read_what_settings_saves_as_words(
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) -> Result<(String, String), String> {
+    let base = AppConfig::default();
+    let settings = a_settings_dialog(frame, &base, a11y);
+    let root = settings.dialog.get_handle() as isize;
+    let read = (|| {
+        let list = the_list_named(root, MARK_READ_AFTER)?;
+        choose(list, 0);
+        let immediately = wx_settings::read_settings(&settings, &base).mark_read_after;
+        choose(list, 2);
+        let never = wx_settings::read_settings(&settings, &base).mark_read_after;
+        Ok((immediately, never))
+    })();
+    settings.dialog.destroy();
+    read
+}
+
+fn read_when_the_seconds_are_offered(
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) -> Result<Vec<(&'static str, bool)>, String> {
+    let base = AppConfig {
+        mark_read_after: "never".to_string(),
+        ..AppConfig::default()
+    };
+    let settings = a_settings_dialog(frame, &base, a11y);
+    let root = settings.dialog.get_handle() as isize;
+    let read = (|| {
+        let seconds = the_field_of(the_spinner_named(root, MARK_READ_SECONDS)?);
+        let list = the_list_named(root, MARK_READ_AFTER)?;
+        let built = is_enabled(seconds);
+        choose(list, 1);
+        let a_wait = is_enabled(seconds);
+        choose(list, 0);
+        let immediately = is_enabled(seconds);
+        Ok(vec![
+            ("built over Never", built),
+            ("After a number of seconds chosen", a_wait),
+            ("Immediately chosen", immediately),
+        ])
+    })();
+    settings.dialog.destroy();
+    read
+}
+
+fn read_the_seconds_for_a_stored_five(
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) -> Result<String, String> {
+    let base = AppConfig {
+        mark_read_after: "5".to_string(),
+        ..AppConfig::default()
+    };
+    let settings = a_settings_dialog(frame, &base, a11y);
+    let root = settings.dialog.get_handle() as isize;
+    let read = the_spinner_named(root, MARK_READ_SECONDS).map(|arrows| {
+        let field = the_field_of(arrows);
+        format!("{}, enabled {}", text_of(field), is_enabled(field))
+    });
+    settings.dialog.destroy();
+    read
+}
+
 struct Harvest {
     spinners: Vec<Spinner>,
     bare: Bare,
+    settings: SettingsAnswers,
 }
 
 /// Every window, built hidden, read, and destroyed.
@@ -405,13 +606,7 @@ fn read_every_window(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest
     )?);
     editor.dialog.destroy();
 
-    let settings =
-        wx_settings::build_settings_dialog(frame, &AppConfig::default(), &[], false, a11y);
-    // The pages after General are built the first time their tab is reached,
-    // which is what `set_selection` does here without the dialog being shown.
-    for tab in 1..settings.notebook.get_page_count() {
-        settings.notebook.set_selection(tab);
-    }
+    let settings = a_settings_dialog(frame, &AppConfig::default(), a11y);
     spinners.extend(the_spinners_under(
         "Settings",
         settings.dialog.get_handle() as isize,
@@ -462,9 +657,17 @@ fn read_every_window(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest
     )?);
     send_later.destroy();
 
+    let settings = SettingsAnswers {
+        saved_numbers: read_what_settings_saves(frame, a11y),
+        saved_words: read_what_settings_saves_as_words(frame, a11y),
+        seconds_offered: read_when_the_seconds_are_offered(frame, a11y),
+        seconds_shown_for_a_stored_five: read_the_seconds_for_a_stored_five(frame, a11y),
+    };
+
     Ok(Harvest {
         spinners,
         bare: read_the_bare_ones(frame)?,
+        settings,
     })
 }
 
@@ -686,5 +889,65 @@ fn test_the_reading_sees_a_field_named_only_on_the_arrows_as_nameless() {
     assert_eq!(
         arrows_only.field.name, "",
         "the field of a spin control named on its arrows alone"
+    );
+}
+
+#[test]
+fn test_the_four_numbers_are_spin_controls_holding_their_own_ranges() {
+    // The check interval (#73) and the three numbers in Settings (#35): the
+    // bounds each save used to apply after the fact are the control's own,
+    // so Up and Down stop at them and a screen reader can say them.
+    let wrong: Vec<String> = THE_FOUR_NUMBERS
+        .iter()
+        .filter_map(|(window, name, range)| {
+            let found = spinners_in(window)
+                .into_iter()
+                .find(|spinner| spinner.arrows.name == *name);
+            match found {
+                None => Some(format!("{window}: no spin control named \"{name}\"")),
+                Some(spinner) if spinner.range != *range => Some(format!(
+                    "{}: holds {:?}, not {range:?}",
+                    spinner.called(),
+                    spinner.range
+                )),
+                Some(_) => None,
+            }
+        })
+        .collect();
+    complain("the four numbers the tester asked about", &wrong);
+}
+
+#[test]
+fn test_settings_saves_the_numbers_its_spin_controls_hold() {
+    assert_eq!(
+        the_harvest().settings.saved_numbers,
+        Ok((20, 45, "45".to_string())),
+        "Font size, Default reminder and a wait of 45 seconds, typed and saved"
+    );
+}
+
+#[test]
+fn test_mark_read_after_saves_immediately_and_never_as_the_words_it_always_stored() {
+    // The stored value keeps its shape, so a settings file written before
+    // the choice had three entries reads the same after.
+    assert_eq!(
+        the_harvest().settings.saved_words,
+        Ok(("immediately".to_string(), "never".to_string()))
+    );
+}
+
+#[test]
+fn test_the_seconds_are_offered_only_while_a_wait_is_chosen() {
+    assert_eq!(
+        the_harvest().settings.seconds_offered,
+        Ok(vec![
+            ("built over Never", false),
+            ("After a number of seconds chosen", true),
+            ("Immediately chosen", false),
+        ])
+    );
+    assert_eq!(
+        the_harvest().settings.seconds_shown_for_a_stored_five,
+        Ok("5, enabled true".to_string())
     );
 }

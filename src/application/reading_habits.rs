@@ -89,6 +89,45 @@ impl MarkRead {
     }
 }
 
+/// The three ways Mark as read after is offered: at once, after a number of
+/// seconds a spin control beside the choice holds, or never.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkReadWay {
+    Immediately,
+    AfterSeconds,
+    Never,
+}
+
+impl MarkReadWay {
+    /// The entries of the choice, in the order they are offered.
+    pub const ALL: [MarkReadWay; 3] = [
+        MarkReadWay::Immediately,
+        MarkReadWay::AfterSeconds,
+        MarkReadWay::Never,
+    ];
+
+    /// What the entry is called.
+    pub fn label(self) -> &'static str {
+        ""
+    }
+}
+
+impl MarkRead {
+    /// The longest wait the seconds spin control holds.
+    pub const LONGEST_WAIT_SECONDS: u32 = 600;
+
+    /// The entry of the choice and the seconds in the spin control that show
+    /// this answer.
+    pub fn parts(self) -> (MarkReadWay, u32) {
+        (MarkReadWay::Immediately, 0)
+    }
+
+    /// The answer the choice and the spin control give together.
+    pub fn from_parts(_way: MarkReadWay, _seconds: u32) -> Self {
+        MarkRead::default()
+    }
+}
+
 /// Which entry of the offered list a stored choice selects.
 ///
 /// A stored wait the list does not offer falls back to the default rather than
@@ -338,8 +377,20 @@ mod tests {
 
     #[test]
     fn test_the_stored_mark_read_choice_survives_the_trip() {
-        for choice in MarkRead::ALL {
+        // Through the settings file, and through the choice and the seconds
+        // spin control that show it, so the stored string keeps its shape:
+        // `immediately`, `never`, or the number.
+        for choice in [
+            MarkRead::Immediately,
+            MarkRead::After(1),
+            MarkRead::After(2),
+            MarkRead::After(45),
+            MarkRead::After(600),
+            MarkRead::Never,
+        ] {
             assert_eq!(MarkRead::from_setting(&choice.as_stored()), choice);
+            let (way, seconds) = choice.parts();
+            assert_eq!(MarkRead::from_parts(way, seconds), choice, "{choice:?}");
         }
     }
 
@@ -363,22 +414,30 @@ mod tests {
     }
 
     #[test]
-    fn test_a_stored_choice_the_list_does_not_offer_falls_back_to_the_safe_default() {
-        // A settings file can hold a wait the list does not offer. Landing on
-        // the first entry means somebody who asked to wait sees "Immediately",
-        // and saving writes that back, so every message they arrow past is
-        // marked read and the unread count empties itself.
-        assert_eq!(MarkRead::ALL[offered_index("1")], MarkRead::default());
-        assert_ne!(MarkRead::ALL[offered_index("1")], MarkRead::Immediately);
+    fn test_a_stored_wait_longer_than_the_spin_control_holds_shows_the_longest_wait() {
+        // A settings file can hold a wait the seconds spin control does not
+        // reach. Showing it as "Immediately" would have somebody who asked to
+        // wait save that back without choosing it, and every message they
+        // arrow past would be marked read. It shows as the longest wait.
+        assert_eq!(
+            MarkRead::from_setting("5000").parts(),
+            (MarkReadWay::AfterSeconds, 600)
+        );
     }
 
     #[test]
     fn test_a_stored_choice_the_list_does_offer_is_the_one_selected() {
-        assert_eq!(MarkRead::ALL[offered_index("30")], MarkRead::After(30));
-        assert_eq!(MarkRead::ALL[offered_index("never")], MarkRead::Never);
         assert_eq!(
-            MarkRead::ALL[offered_index("immediately")],
-            MarkRead::Immediately
+            MarkReadWay::ALL.get(offered_index("30")),
+            Some(&MarkReadWay::AfterSeconds)
+        );
+        assert_eq!(
+            MarkReadWay::ALL.get(offered_index("never")),
+            Some(&MarkReadWay::Never)
+        );
+        assert_eq!(
+            MarkReadWay::ALL.get(offered_index("immediately")),
+            Some(&MarkReadWay::Immediately)
         );
     }
 
@@ -396,24 +455,16 @@ mod tests {
         assert_eq!(MarkRead::Never.delay(), None);
         assert!(MarkRead::Immediately.marks_at_all());
         assert!(!MarkRead::Never.marks_at_all());
+        // Choosing a wait after either of these offers the default wait.
+        assert_eq!(MarkRead::Never.parts(), (MarkReadWay::Never, 2));
+        assert_eq!(MarkRead::Immediately.parts(), (MarkReadWay::Immediately, 2));
     }
 
     #[test]
     fn test_every_choice_reads_as_a_phrase() {
-        let said: Vec<String> = MarkRead::ALL.iter().map(|c| c.label()).collect();
+        let said: Vec<&str> = MarkReadWay::ALL.iter().map(|way| way.label()).collect();
 
-        assert_eq!(
-            said,
-            [
-                "Immediately",
-                "After 2 seconds",
-                "After 5 seconds",
-                "After 10 seconds",
-                "After 30 seconds",
-                "After a minute",
-                "Only when I say so",
-            ]
-        );
+        assert_eq!(said, ["Immediately", "After a number of seconds", "Never"]);
     }
 
     #[test]
