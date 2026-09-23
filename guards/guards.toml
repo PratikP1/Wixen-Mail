@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 244 records have arrived since and have not been through it.
+# 245 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29146,6 +29146,31 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/page_focus.rs", tests = 7 },
     { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
+]
+
+# Every text an NVDA case waits for is held to a place in shipped source that
+# says it (FOUND-22, 12-03.1). The break makes the predicate that decides
+# whether a literal says a text answer yes for every literal, which is the
+# reading taken out: every stale text is then held, and every companion that
+# plants a refusal sees it pass. The whole-tree list in `scripts/check.sh`
+# already runs this target on every code commit, so no second record keyed
+# on `status_sentences.rs` or any other file of `src` is written.
+#
+# Measured 2026-09-23 through `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a text an NVDA case waits for is held only by a place that says it"
+file = "tests/the_nvda_cases_wait_for_words_the_program_says.rs"
+suite = "the_nvda_cases_wait_for_words_the_program_says"
+before = """    let sentences = sentences_of(text);"""
+after = """    let sentences: Vec<String> = sentences_of(text).into_iter().take(0).collect();"""
+red = [
+    "test_every_sentence_an_nvda_case_waits_for_is_one_the_program_says",
+    "test_the_reading_refuses_a_sentence_the_program_no_longer_says",
+    "test_the_reading_refuses_a_short_name_whose_place_was_relabelled_while_others_still_hold_it",
+    "test_the_reading_does_not_take_a_sentence_from_a_comment_or_a_test_module",
+]
+tests_last_seen = [
+    { file = "tests/the_nvda_cases_wait_for_words_the_program_says.rs", tests = 8 },
 ]
 
 # A separate window shows a page and nothing else, and this is where that is
