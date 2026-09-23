@@ -1252,6 +1252,36 @@ fn the_documents_only_targets(script: &str) -> Vec<String> {
     found
 }
 
+/// A planted gate script whose document list is spelled only as the one-line
+/// array, above a `docs_only` block that runs it through a variable.
+fn a_gate_holding_the_documents_list_as_an_array() -> String {
+    format!(
+        "the_targets_that_read_documents=(house_style {ME} docs_links)\n\
+         if [ \"$mode\" = \"docs_only\" ]; then\n    \
+         cargo test --no-fail-fast \"${{arguments[@]}}\"\n\
+         fi\n"
+    )
+}
+
+#[test]
+fn test_the_planning_reading_is_found_in_the_documents_array() {
+    // Since 2026-09-23 (12-03.2) the document-reading list is held once in
+    // `scripts/check.sh`, as `the_targets_that_read_documents=(...)`, because a
+    // merge whose diff holds a document runs it too and a second copy of the
+    // list is one no reader watches. The `docs_only` block then runs the list
+    // through a variable and spells no `--test` of its own, so a reading of
+    // the block's `--test` tokens would find nothing there.
+    let planted = a_gate_holding_the_documents_list_as_an_array();
+    assert!(
+        the_documents_only_targets(&planted)
+            .iter()
+            .any(|target| target == ME),
+        "the documents reading found {:?} in a gate whose document list names \
+         {ME} in its array",
+        the_documents_only_targets(&planted)
+    );
+}
+
 /// The targets every scoped run ends with, read from the gate script.
 fn the_whole_tree_targets(script: &str) -> Vec<String> {
     script
