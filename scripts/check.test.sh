@@ -525,12 +525,19 @@ fi
 # `scripts/*.test.sh` comes before the first line that branches on the mode, so
 # no mode can skip it.
 #
-# One function since 2026-09-23 (12-03.2), taking the script it reads, so the
-# decoy case below can ask it about a planted script. It prints the loop's line
-# and the first mode branch's line, a `-` for either it did not find.
+# Since 2026-09-23 (12-03.2) the loop no longer runs every suite: the property
+# is now that which suites run is decided before any mode branch, and each is
+# run when owed. The ordering is still what holds it, since a decision made
+# inside one mode's branch would be skipped by every other.
+#
+# One function since the same day, taking the script it reads, so the decoy
+# case below can ask it about a planted script. It prints the loop's line and
+# the first mode branch's line, a `-` for either it did not find. The loop is
+# found by its own spelling, read as a fixed string, since a loop over
+# something else spelled `for suite in` sits in `check.sh` too.
 the_suite_loop_and_the_first_mode_branch() {
     local loop_at branch_at
-    loop_at="$(grep -n 'for suite in' "$1" | head -1 | cut -d: -f1)"
+    loop_at="$(grep -nF 'for suite in "$(dirname "$0")"/*.test.sh' "$1" | head -1 | cut -d: -f1)"
     branch_at="$(grep -n 'if \[ "\$mode" = ' "$1" | head -1 | cut -d: -f1)"
     echo "${loop_at:--} ${branch_at:--}"
 }

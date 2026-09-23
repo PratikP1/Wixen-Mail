@@ -426,6 +426,38 @@ mode, before anything else, and in CI. For one day these suites existed and
 nothing ran them, which is guardrail 4 exactly: a check nobody reads is worse
 than no check, because it reads as covered.
 
+**Since 2026-09-23 each suite runs only when a commit stages what it reads**,
+so "runs on every invocation of `check.sh`, in every mode" above was true until
+that day. Pratik answered then that each suite runs for its own inputs rather
+than the four together when any of them moves. `scripts/check.sh` holds a list
+per suite, `the_inputs_of_a_suite`, of the files the suite and every script it
+calls name, and a commit owes a suite when it stages a path on that suite's
+list. Every suite runs for `scripts/shell-suite.sh` and `.githooks/commit-msg`,
+the shared harness and the hook that runs them all; for a path under `scripts/`
+or `.githooks/` that no list places, the gate's answer to what it cannot place;
+in `all` and `all_but_slow`; and for a red commit naming one of its cases. None
+runs for the scripts no suite reaches, `scripts/guards.py` among them. Check's
+list holds every other suite's list, because the reading that holds the lists
+lives in `check.test.sh` and reads every suite, and `.cargo/audit.toml` is on
+audit's and check's lists because three of audit's cases read the accepted
+advisories. That reading, "every file a suite reads is on its list", follows
+every call from each suite and fails when a suite reads a file its list does
+not name, so the lists are data a pattern checks rather than a pattern the gate
+decides by. A suite not run prints a line saying so and why, and CI's Clippy
+job still runs every suite on every push and pull request, which is the net.
+
+What it saves, measured 2026-09-23 by 12-03.2's planner. The suites
+`which-checks`, `check`, `audit` and `red-commit` took 9, 7, 3.9 and 5.1
+seconds by hand one after another at `342b019f`, about 25 in all, and 11, 9, 4
+and 6 the same way at `8eee380a`. Over the 79 commits and merges from 11-11.1.1
+to 12-03, read with `git diff --name-only --no-renames` per commit, 36 would
+have owed the four together under the rule first approved, and under the lists
+32 owe the check suite alone, 31 of them because they stage
+`guards/guards.toml` and nothing else a suite reads, and 47 owe none. At that
+day's times that is about 224 seconds of suites over the 79, against about 900
+under the rule first approved and about 1,975 with every suite on every commit:
+about 3.2 minutes a plan saved over nine plans.
+
 **They cost 108 seconds, not the milliseconds this paragraph used to claim.**
 Measured 2026-09-10 at `eda2719`, running every `scripts/*.test.sh` in turn, the
 way `check.sh` does. That is paid on every commit in every mode, so it is the

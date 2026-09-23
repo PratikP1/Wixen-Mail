@@ -53,6 +53,44 @@ set -euo pipefail
 # the old ones until the NVDA runner timed out (FOUND-22).
 guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date the_guard_sweep_runs_on_runners the_nvda_cases_wait_for_words_the_program_says)
 
+# What each `scripts/*.test.sh` reads, so a suite runs on the commits that stage
+# one of its inputs and not on the others. Added 2026-09-23 by 12-03.2, on
+# Pratik's answer that day that each suite runs only for its own inputs: the
+# four cost about 25 seconds on every commit that day, and the file most commits
+# stage among their inputs, `guards/guards.toml`, is read by one suite.
+#
+# Data here rather than read out of the suites when the gate runs, because a
+# gate deciding by a pattern over text leaks wherever the text is spelled
+# another way. The pattern lives in `check.test.sh`, in "every file a suite
+# reads is on its list", and holds these lists to it on every commit that owes
+# that suite. Each list is what the suite and every script it reaches name,
+# followed through each call, so it reads wider than any one case reaches:
+#
+#   audit         its suite, `audit.sh`, the accepted advisories in
+#                 `.cargo/audit.toml`, and `Cargo.lock`, which `audit.sh` reads
+#                 in its real run and no case reaches
+#   check         its suite and this script, the guard records the coupling
+#                 reads, and what this script calls: `which-checks.sh`,
+#                 `red-commit.sh` and `audit.sh` with what `audit.sh` reads; and
+#                 every other suite, because the reading of the lists lives in
+#                 this suite and reads every suite
+#   red-commit    its suite and `red-commit.sh`
+#   which-checks  its suite, `which-checks.sh`, and `red-commit.sh`, which it
+#                 calls for every case handed a message file
+#
+# Every suite runs for the shared harness and for the hook, which no suite reads
+# and which runs them all with the commit's environment. A path under `scripts/`
+# or `.githooks/` on no list at all owes every suite, the gate's answer to what
+# it cannot place, the way `which-checks.sh` answers `all`. The scripts no suite
+# reaches owe none.
+declare -A the_inputs_of_a_suite
+the_inputs_of_a_suite[audit]="scripts/audit.test.sh scripts/audit.sh .cargo/audit.toml Cargo.lock"
+the_inputs_of_a_suite[check]="scripts/check.test.sh scripts/check.sh guards/guards.toml scripts/which-checks.sh scripts/red-commit.sh scripts/audit.sh .cargo/audit.toml Cargo.lock scripts/audit.test.sh scripts/red-commit.test.sh scripts/which-checks.test.sh"
+the_inputs_of_a_suite[red-commit]="scripts/red-commit.test.sh scripts/red-commit.sh"
+the_inputs_of_a_suite[which-checks]="scripts/which-checks.test.sh scripts/which-checks.sh scripts/red-commit.sh"
+what_every_suite_is_owed_for=(scripts/shell-suite.sh .githooks/commit-msg)
+what_no_suite_reads=(scripts/guards.py scripts/guards.sh scripts/mutants.sh scripts/mutants_report.py scripts/build-installer.sh scripts/make-brand.py scripts/make-icon.py scripts/render_svg.py scripts/msaa-names.ps1 scripts/uia-events.ps1)
+
 # Which integration targets guard a changed source file.
 #
 #     check.sh --suites-for <registry> [changed-file ...]
@@ -82,6 +120,8 @@ guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with
 # fix, so the limit is written down here rather than left to be found.
 #
 # Its suite is `scripts/check.test.sh`, which this script runs in every mode.
+# In every mode until 2026-09-23; since then, on the commits that stage one of
+# that suite's inputs, this file among them, and in `all` and `all_but_slow`.
 the_suites_that_guard_what_changed() {
     local registry="$1"
     shift
@@ -183,6 +223,134 @@ if [ "${1:-}" = "--suites-for" ]; then
     exit 0
 fi
 
+# What is about to be committed, read from the index of the repository this is
+# run in. With `--no-renames` since 2026-09-23 (12-03.2): without it git lists a
+# staged move by where it went alone, measured that day under git
+# 2.55.0.windows.3, so a move out of `scripts/` read as owing no suite and a
+# move from `src/` to `docs/` as documents only. The flag only adds the path a
+# move left, so it can only strengthen what a commit earns. A deleted file is
+# listed either way.
+the_staged_paths() {
+    git diff --cached --name-only --no-renames 2>/dev/null || true
+}
+
+# Whether a path is one of the words of a space-separated list.
+is_on_the_list() {
+    case " $2 " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
+# Whether any list above places a path at all, a suite's, the shared one or
+# the one no suite reads.
+is_placed_by_a_list() {
+    local path="$1" name
+    is_on_the_list "$path" "${what_every_suite_is_owed_for[*]} ${what_no_suite_reads[*]}" && return 0
+    for name in "${!the_inputs_of_a_suite[@]}"; do
+        is_on_the_list "$path" "${the_inputs_of_a_suite[$name]}" && return 0
+    done
+    return 1
+}
+
+# The first reason a suite is owed, or nothing when it is not.
+#
+#     the_reason_a_suite_is_owed <suite> <mode> <names failing, one a line> [changed-path ...]
+#
+# A suite added later with no list is read as holding an empty one, spelled
+# with a default because this script runs under `set -u` and a bare lookup
+# would stop the gate on every commit. The case "every file a suite reads is on
+# its list" is what names such a suite.
+the_reason_a_suite_is_owed() {
+    local suite="$1" the_mode="$2" failing="$3" path named
+    shift 3
+    case "$the_mode" in
+        all | all_but_slow)
+            echo "every suite runs in an $the_mode run"
+            return
+            ;;
+    esac
+    while IFS= read -r named; do
+        case "$named" in
+            "$suite::"*)
+                echo "the commit names $named as failing"
+                return
+                ;;
+        esac
+    done <<< "$failing"
+    for path in "$@"; do
+        is_on_the_list "$path" "${what_every_suite_is_owed_for[*]}" &&
+            { echo "$path is what every suite runs under"; return; }
+    done
+    for path in "$@"; do
+        is_on_the_list "$path" "${the_inputs_of_a_suite[$suite]-}" &&
+            { echo "$path is on its list"; return; }
+    done
+    for path in "$@"; do
+        case "$path" in
+            scripts/* | .githooks/*)
+                is_placed_by_a_list "$path" ||
+                    { echo "$path is a script no list places"; return; }
+                ;;
+        esac
+    done
+}
+
+# Which suites a commit owes, one line per suite in the order the suites' loop
+# finds them, `<suite> yes: <why>` or `<suite> no: <why>`.
+#
+#     the_shell_suites_owed <mode> <message-file or nothing> [changed-path ...]
+the_shell_suites_owed() {
+    local the_mode="$1" message_file="$2" candidate name why failing=""
+    shift 2
+    case "$the_mode" in
+        red)
+            [ -z "$message_file" ] ||
+                failing="$("$(dirname "$0")/red-commit.sh" names "$message_file")"
+            ;;
+    esac
+    for candidate in "$(dirname "$0")"/*.test.sh; do
+        [ -e "$candidate" ] || continue
+        name="$(basename "$candidate" .test.sh)"
+        why="$(the_reason_a_suite_is_owed "$name" "$the_mode" "$failing" "$@")"
+        if [ -n "$why" ]; then
+            echo "$name yes: $why"
+        else
+            echo "$name no: nothing it reads changed"
+        fi
+    done
+}
+
+# The rule on its own, so `scripts/check.test.sh` can ask it about a made-up
+# change and a repository of its own:
+#
+#     check.sh --shell-suites-owed <mode> [--message-file=F] [--staged | changed-path ...]
+#
+# `--staged` reads the paths from the index through the same function the run
+# fills its changed list from. Answered here, before anything with a side
+# effect and above the note about the hook, which prints wherever the hooks
+# directory holds no `commit-msg`, so the answer is only the answer.
+if [ "${1:-}" = "--shell-suites-owed" ]; then
+    shift
+    owed_mode="${1:-}"
+    shift || true
+    owed_message_file=""
+    case "${1:-}" in
+        --message-file=*)
+            owed_message_file="${1#--message-file=}"
+            shift
+            ;;
+    esac
+    owed_paths=()
+    if [ "${1:-}" = "--staged" ]; then
+        mapfile -t owed_paths < <(the_staged_paths)
+    else
+        owed_paths=("$@")
+    fi
+    the_shell_suites_owed "$owed_mode" "$owed_message_file" "${owed_paths[@]+"${owed_paths[@]}"}"
+    exit 0
+fi
+
 # Offer to run these on every commit, so the answer cannot be lost between
 # getting it and committing. It has been twice: a stale fingerprint reporting
 # clean, and this script's output piped somewhere so the pipeline's exit status
@@ -265,6 +433,8 @@ case "$mode" in
         echo "  Or no argument at all, and which-checks.sh decides." >&2
         echo "  Or --suites-for <registry> [changed-file ...] for the mapping" >&2
         echo "  from a changed source file to the guards that cover it." >&2
+        echo "  Or --shell-suites-owed <mode> [--message-file=F] [--staged | path ...]" >&2
+        echo "  for which scripts/*.test.sh a commit owes." >&2
         exit 64
         ;;
 esac
@@ -275,9 +445,7 @@ esac
 # `all_but_slow` for that rather than guessing at a narrower set.
 changed=()
 if [ -z "$mode" ]; then
-    while IFS= read -r line; do
-        [ -n "$line" ] && changed+=("$line")
-    done < <(git diff --cached --name-only 2>/dev/null || true)
+    mapfile -t changed < <(the_staged_paths)
     mode="$("$(dirname "$0")/which-checks.sh" \
         ${message_file:+"--message-file=$message_file"} \
         "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" \
@@ -361,6 +529,16 @@ cargo clippy --all-targets --all-features -- -D warnings
 # In every mode and before every other decision, because they cost milliseconds
 # and because the mode was chosen by the very script under test.
 #
+# **Corrected 2026-09-23 by 12-03.2.** The milliseconds were true once and had
+# not been for weeks: the four suites took 108 seconds on 2026-09-10, 43 and 47
+# on 2026-09-19, and 9, 7, 3.9 and 5.1 seconds one after another on 2026-09-23,
+# about 25 in all, on every commit. So since that day each suite runs only when
+# a commit stages a path on its own list above, or the shared harness, or the
+# hook, or a script no list places, and every suite runs in `all` and
+# `all_but_slow` and for a red commit naming one of its cases. It is decided
+# here, still before any mode branch, and a suite not run says so on its own
+# line. CI runs every suite on every push and pull request whatever this does.
+#
 # # Why the output is collected rather than left to abort the run
 #
 # This loop used to be `bash "$suite"` under `set -e`, so a failing suite stopped
@@ -383,11 +561,23 @@ run_log="$(mktemp)"
 files_to_remove+=("$run_log")
 
 begin_stage "the scripts that decide what runs"
+declare -A shell_suites_owed=()
+while IFS= read -r owed_line; do
+    shell_suites_owed["${owed_line%% *}"]="${owed_line#* }"
+done < <(the_shell_suites_owed "$mode" "$message_file" "${changed[@]+"${changed[@]}"}")
 shell_suites_failed=""
 shell_suites_run=()
 for suite in "$(dirname "$0")"/*.test.sh; do
     [ -e "$suite" ] || continue
     suite_name="$(basename "$suite" .test.sh)"
+    owed="${shell_suites_owed[$suite_name]-no: nothing answered for it}"
+    case "$owed" in
+        "yes: "*) ;;
+        *)
+            echo "-- $suite_name: not run, ${owed#no: }; CI runs it on every push"
+            continue
+            ;;
+    esac
     shell_suites_run+=("$suite_name")
     echo "-- $suite_name"
     bash "$suite" >> "$run_log" 2>&1 || shell_suites_failed=yes
