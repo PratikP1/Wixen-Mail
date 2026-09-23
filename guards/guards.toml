@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 238 records have arrived since and have not been through it.
+# 241 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29202,4 +29202,81 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_separate_window_is_its_own_process.rs", tests = 7 },
+]
+
+# One word dropped from the list a status sentence may not use, which is the
+# shape somebody reaches for on the day a sentence they wrote is refused and
+# the word looks harmless in isolation. #75's own example was "Flushing
+# outbox queue...", and the list is what keeps it from coming back.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the library.
+[[guard]]
+name = "a word from inside this program is refused in a sentence a person hears"
+file = "src/application/status_sentences.rs"
+before = """    NotAPersonsWord {
+        stem: "queu",
+        whole: "queue",
+        instead: "the Outbox, or waiting to be sent",
+    },
+"""
+after = ""
+red = [
+    "application::status_sentences::tests::test_no_sentence_uses_a_word_from_inside_this_program",
+    "application::status_sentences::tests::test_the_reading_knows_a_word_from_a_word_that_merely_contains_it",
+]
+tests_last_seen = [
+    { file = "src/application/status_sentences.rs", tests = 12 },
+]
+
+# A sixth wording for nothing chosen, put back at the Delete arm. Six
+# windows worded that one event six ways before #75, and the way it happened
+# is one arm at a time: somebody writing a refusal writes the sentence rather
+# than looking for the one that exists.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "no window words a refusal for nothing chosen of its own"
+file = "src/presentation/wx_app.rs"
+suite = "every_status_sentence_has_one_shape"
+before = """                                return send_refusal(
+                                    &ui_tx,
+                                    &runtime,
+                                    &at_least_one_chosen(Thing::MESSAGE),
+                                );"""
+after = """                                return send_refusal(
+                                    &ui_tx,
+                                    &runtime,
+                                    "No message selected to delete",
+                                );"""
+red = [
+    "test_no_status_call_words_a_refusal_for_nothing_chosen_of_its_own",
+    "test_every_sentence_written_at_a_status_call_reads_to_the_shape",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/every_status_sentence_has_one_shape.rs", tests = 10 },
+]
+
+# A word from inside a mail protocol, in a sentence built where no status
+# call can see it. The watch's three state lines are the case #75 was raised
+# about: phase 10 put them on the bar, so the bar is read on its own more
+# than it was, and a sentence built in the application layer reaches it
+# without passing a literal anywhere.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a sentence the application layer builds is held to the words a person uses"
+file = "src/application/checking_on_a_schedule.rs"
+suite = "every_status_sentence_has_one_shape"
+before = """    format!("{whose}{what_is_happening}Checking every {how_often}.")"""
+after = """    format!("{whose}{what_is_happening}Checking the endpoint every {how_often}.")"""
+red = [
+    "test_the_sentences_the_application_layer_builds_read_to_the_shape",
+]
+tests_last_seen = [
+    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+    { file = "tests/every_status_sentence_has_one_shape.rs", tests = 10 },
 ]
