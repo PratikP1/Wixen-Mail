@@ -108,7 +108,10 @@ pub fn ask_when_to_send<W: WxWidget>(
 /// by the Set handler rather than returned, because a handler cannot return
 /// anything to the modal loop that called it and reading the controls again
 /// afterwards would be reading them a second time.
-fn build_the_asking_dialog<W: WxWidget>(
+///
+/// `pub` so `tests/every_spin_control_names_the_field_a_person_types_in.rs`
+/// can read the built window over MSAA without opening it.
+pub fn build_the_asking_dialog<W: WxWidget>(
     parent: &W,
     now: DateTime<Local>,
     dates: DateSettings,

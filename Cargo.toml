@@ -353,9 +353,10 @@ fluent-langneg = "0.13"
 intl-memoizer = "0.5"
 unic-langid = "0.9"
 
-# Only for the platform spell checker, which is COM. Everything else this
-# project needs from Windows is a flat call behind a small `#[link]` block, and
-# stays that way. Windows-only so a future port does not pay for it.
+# For the platform spell checker and the annotation service that names a spin
+# control's typing field, both COM, and the few flat calls listed below. The
+# rest of what this project needs from Windows is a flat call behind a small
+# `#[link]` block. Windows-only so a future port does not pay for it.
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Globalization",
@@ -382,6 +383,17 @@ windows = { version = "0.62.2", features = [
     # answers whether this project signed it. WINTRUST_DATA is gated behind this
     # feature as well, so neither works without the other.
     "Win32_Security_Cryptography",
+    # Naming the field a person types in, in every spin control (#73, #35,
+    # ledger 408). A Windows spin control is two windows, and the keyboard lands
+    # in the one wxWidgets does not hand back: IAccPropServices::SetHwndPropStr
+    # with PROPID_ACC_NAME writes a name onto that field for MSAA and UI
+    # Automation both. It is the typed COM interface rather than a hand-written
+    # vtable, and it is the one COM call besides the spell checker.
+    "Win32_UI_Accessibility",
+    # UDM_GETBUDDY, which asks the arrows for the field beside them.
+    "Win32_UI_Controls",
+    # SendMessageW, OBJID_CLIENT and CHILDID_SELF for the same call.
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [target.'cfg(windows)'.build-dependencies]

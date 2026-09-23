@@ -242,6 +242,26 @@ pub fn name_from_label(label: &str) -> String {
     }
 }
 
+/// Which property of a spin control's typing field some words are written to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldProperty {
+    Name,
+    Description,
+}
+
+/// What the field a person types in carries, property by property: the
+/// arrows' name, and their description where they have one.
+///
+/// `pub` because nothing inside the crate calls it until the helper that
+/// writes these arrives, and a narrower visibility does not compile under the
+/// lint then.
+pub fn what_the_typing_field_carries<'a>(
+    name: &'a str,
+    _description: Option<&'a str>,
+) -> Vec<(FieldProperty, &'a str)> {
+    vec![(FieldProperty::Name, name)]
+}
+
 /// Hold one cell of a two-column grid open with nothing in it.
 ///
 /// A checkbox carries its own label, so in a grid of label and field pairs
@@ -263,8 +283,24 @@ pub fn leave_the_cell_empty(grid: &wxdragon::sizers::FlexGridSizer) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibleImpl, FixedName, name_from_label};
+    use super::{
+        AccessibleImpl, FieldProperty, FixedName, name_from_label, what_the_typing_field_carries,
+    };
     use wxdragon::ffi;
+
+    #[test]
+    fn test_a_spin_controls_description_travels_to_the_field_a_person_types_in() {
+        // Tab lands in the field, never on the arrows, so a sentence the
+        // arrows alone carry is one nobody tabbing through a form hears. The
+        // event form's Alert minutes before has one, "Nought for no alert".
+        assert_eq!(
+            what_the_typing_field_carries("Alert minutes before", Some("Nought for no alert")),
+            vec![
+                (FieldProperty::Name, "Alert minutes before"),
+                (FieldProperty::Description, "Nought for no alert"),
+            ]
+        );
+    }
 
     #[test]
     fn test_the_name_is_the_only_thing_replaced() {
