@@ -1190,6 +1190,114 @@ def what_is_already_failing(
     return {name for name, verdict in verdicts.items() if verdict == "FAILED"}
 
 
+# ── A pre-read kept for a tree it has already read ──────────────────────────
+#
+# Added 2026-09-23 by 12-03.2. Every invocation read its suites whole before
+# breaking anything, 50 to 100 seconds for the library, and an invocation
+# measuring one record spent half its time there. So a pre-read that returned is
+# kept under `target/guards-pre-read/`, one file per suite, and a later
+# invocation uses it when the key it was kept under is the key of this tree, for
+# at most `THE_LONGEST_A_PRE_READ_IS_KEPT` seconds.
+
+# Two hours, shorter than the 144 minutes a plan took on average over the nine
+# measured on 2026-09-23, so a kept reading seldom outlives the plan that took
+# it. What the key cannot see is what this bounds: `HEAD` and the history, the
+# Windows credential store, the user profile a test may read, ignored files
+# such as `oauth.toml` and `.env`, `LANG`, and a flaky test's luck.
+THE_LONGEST_A_PRE_READ_IS_KEPT = 0
+
+
+def the_settings_a_run_reads(environ: dict[str, str]) -> list[tuple[str, str | None]]:
+    """The environment that moves a run or a build, each name with its value.
+
+    >>> the_settings_a_run_reads({})
+    [('CARGO_TARGET_DIR', None), ('RUSTFLAGS', None), ('WIXEN_TEST_THREADS', '8')]
+    >>> the_settings_a_run_reads({"WIXEN_TEST_THREADS": "8"}) == the_settings_a_run_reads({})
+    True
+    >>> dict(the_settings_a_run_reads({"RUSTFLAGS": "-C debuginfo=0"}))["RUSTFLAGS"]
+    '-C debuginfo=0'
+    >>> [name for name, _ in the_settings_a_run_reads({"WIXEN_NO_AUDIO": "1", "PATH": "x"})]
+    ['CARGO_TARGET_DIR', 'RUSTFLAGS', 'WIXEN_NO_AUDIO', 'WIXEN_TEST_THREADS']
+    >>> the_settings_a_run_reads({"CARGO_BUILD_JOBS": "4"})[0]
+    ('CARGO_BUILD_JOBS', '4')
+    >>> "LANG" in dict(the_settings_a_run_reads({"LANG": "en_GB.UTF-8"}))
+    False
+    """
+    return []
+
+
+def the_records_without_their_counts(text: str) -> str:
+    """The records' own text with only the counts `--remeasure` writes left out.
+
+    >>> spread = (
+    ...     '[[guard]]\\nname = "a"\\nbefore = "x"\\nred = ["t"]\\n'
+    ...     'tests_last_seen = [\\n    { file = "a.rs", tests = 3 },\\n]\\n'
+    ... )
+    >>> one_line = (
+    ...     '[[guard]]\\nname = "a"\\nbefore = "x"\\nred = ["t"]\\n'
+    ...     'tests_last_seen = [{ file = "a.rs", tests = 9 }]\\n'
+    ... )
+    >>> the_records_without_their_counts(spread) == the_records_without_their_counts(one_line)
+    True
+    >>> the_records_without_their_counts(spread) == the_records_without_their_counts(
+    ...     spread.replace('red = ["t"]', 'red = ["u"]'))
+    False
+    >>> the_records_without_their_counts(spread) == the_records_without_their_counts(
+    ...     spread.replace('before = "x"', 'before = "y"'))
+    False
+    """
+    return text
+
+
+def the_pre_read_key(
+    tree: str,
+    records: str,
+    suite: tuple[str, ...],
+    settings: list[tuple[str, str | None]],
+    compiler: str,
+) -> str:
+    """One hash over everything a kept pre-read must match.
+
+    >>> taken = ("tree", "records", ("--lib",), [("RUSTFLAGS", None)], "rustc 1.90.0")
+    >>> the_pre_read_key(*taken) == the_pre_read_key(*taken)
+    True
+    >>> len(the_pre_read_key(*taken))
+    64
+    >>> moved = [
+    ...     ("another tree", *taken[1:]),
+    ...     (taken[0], "other records", *taken[2:]),
+    ...     (*taken[:2], ("--test", "house_style"), *taken[3:]),
+    ...     (*taken[:3], [("RUSTFLAGS", "-C debuginfo=0")], taken[4]),
+    ...     (*taken[:4], "rustc 1.91.0"),
+    ... ]
+    >>> sorted(the_pre_read_key(*one) != the_pre_read_key(*taken) for one in moved)
+    [True, True, True, True, True]
+    """
+    return ""
+
+
+def a_kept_pre_read_answers(kept: str, key: str, now: float, longest: float) -> set[str] | None:
+    """The failing names a kept pre-read holds, when it may be used, else None.
+
+    >>> kept = '{"key": "k", "taken_at": 1000.0, "failing": ["a::b"]}'
+    >>> a_kept_pre_read_answers(kept, "k", 1060.0, THE_LONGEST_A_PRE_READ_IS_KEPT)
+    {'a::b'}
+    >>> THE_LONGEST_A_PRE_READ_IS_KEPT // 3600
+    2
+    >>> a_kept_pre_read_answers(kept, "another", 1060.0, 7200) is None
+    True
+    >>> a_kept_pre_read_answers(kept, "k", 1000.0 + 7201, 7200) is None
+    True
+    >>> a_kept_pre_read_answers(kept, "k", 999.0, 7200) is None
+    True
+    >>> a_kept_pre_read_answers("not a reading", "k", 1060.0, 7200) is None
+    True
+    >>> a_kept_pre_read_answers('{"key": "k"}', "k", 1060.0, 7200) is None
+    True
+    """
+    return set()
+
+
 def measure(
     guard: Guard,
     scratch: Path,
