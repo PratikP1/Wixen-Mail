@@ -122,6 +122,22 @@ expect docs_only "several docs" gsd/plan-02-01 docs/changelog.md docs/roadmap.md
 expect docs_only "a summary and a context" gsd/x .planning/phases/01/01-SUMMARY.md .planning/phases/01/01-CONTEXT.md
 expect docs_only "a readme" gsd/x README.md
 
+# ── An option this script does not know ─────────────────────────────────────
+# Added 2026-09-23 by 12-03.2. The option loop took the two it knew and read
+# anything else as the branch name, so `--merge main src/lib.rs` answered as a
+# branch called `--merge` with `main` as a changed path. A misspelt option is
+# refused, naming it, rather than answered as a branch nobody has.
+unknown_option_said="$(cd "$run_from" && "$subject" --not-an-option gsd/x src/lib.rs 2>&1)"
+unknown_option_status=$?
+if [ "$unknown_option_status" -eq 64 ] &&
+    printf '%s\n' "$unknown_option_said" | grep -q -- "--not-an-option"; then
+    suite_case_passed "an option this script does not know is refused"
+else
+    suite_case_failed "an option this script does not know is refused" \
+        "exited $unknown_option_status, wanted 64 with the option named" \
+        "said: $unknown_option_said"
+fi
+
 # ── What changed: a file the program compiles in ────────────────────────────
 # Added 2026-09-23 by 12-03.2. `data/dictionary_en.txt` is compiled into the
 # spellchecker with `include_str!`, so it is a build input however it is spelled,
