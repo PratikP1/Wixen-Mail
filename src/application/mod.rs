@@ -113,6 +113,9 @@ pub mod sign_off;
 /// row read aloud on every arrow press is a hint about the message and not its first address.
 pub mod snippet;
 pub mod spell_session;
+/// The shape every sentence the status bar shows is written to: the one wording for a
+/// refusal when nothing was chosen, the words a status sentence may not use, and the endings.
+pub mod status_sentences;
 pub mod summing_up;
 pub mod sync_marker;
 pub mod tagging;
