@@ -143,7 +143,7 @@ mod store {
     use super::Removal;
 
     pub fn delete(service: &str, user: &str) -> Removal {
-        let entry = match keyring::Entry::new(service, user) {
+        let entry = match crate::service::secret_store::open_entry(service, user) {
             Ok(entry) => entry,
             Err(e) => return Removal::Refused(e.to_string()),
         };

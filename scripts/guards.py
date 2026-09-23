@@ -31,8 +31,11 @@ to one record.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -79,7 +82,8 @@ RECORD = ROOT / "guards" / "guards.toml"
 # Overridable rather than fixed, because the curve belongs to this machine: on a
 # two-core CI runner the default is already below the turning point and forcing
 # eight would be worse.
-TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "8")
+THE_DEFAULT_TEST_THREADS = "8"
+TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", THE_DEFAULT_TEST_THREADS)
 
 # What one record really costs, said once so the two places that quote it cannot
 # drift apart.
@@ -1188,6 +1192,263 @@ def what_is_already_failing(
     """
     verdicts = run_the_whole_suite(suite, budget=budget)
     return {name for name, verdict in verdicts.items() if verdict == "FAILED"}
+
+
+# ── A pre-read kept for a tree it has already read ──────────────────────────
+#
+# Added 2026-09-23 by 12-03.2. Every invocation read its suites whole before
+# breaking anything, 50 to 100 seconds for the library, and an invocation
+# measuring one record spent half its time there. So a pre-read that returned is
+# kept under `target/guards-pre-read/`, one file per suite, and a later
+# invocation uses it when the key it was kept under is the key of this tree, for
+# at most `THE_LONGEST_A_PRE_READ_IS_KEPT` seconds.
+
+# Two hours, shorter than the 144 minutes a plan took on average over the nine
+# measured on 2026-09-23, so a kept reading seldom outlives the plan that took
+# it. What the key cannot see is what this bounds: `HEAD` and the history, the
+# Windows credential store, the user profile a test may read, ignored files
+# such as `oauth.toml` and `.env`, `LANG`, and a flaky test's luck.
+THE_LONGEST_A_PRE_READ_IS_KEPT = 7200
+
+# Where kept readings live, one file per suite. Deleting one is how a reading is
+# thrown away before its two hours are up, by somebody who knows an input the
+# key cannot see has moved; the line printed at every use names the file.
+THE_KEPT_PRE_READS = ROOT / "target" / "guards-pre-read"
+
+# The settings that move a run or a build besides the `WIXEN_*` family, which
+# is taken by its prefix so a variable the program starts reading later is
+# covered without anybody remembering.
+THE_BUILD_SETTINGS = ("RUSTFLAGS", "CARGO_TARGET_DIR")
+
+
+def the_settings_a_run_reads(environ: dict[str, str]) -> list[tuple[str, str | None]]:
+    """The environment that moves a run or a build, each name with its value.
+
+    Every `WIXEN_*` variable, since the program reads the OAuth identities,
+    `WIXEN_SAFE_BROWSING_KEY`, `WIXEN_TRUSTED_DOMAINS`, `WIXEN_BUILD` and
+    `WIXEN_NO_AUDIO` (read 2026-09-23 with
+    `grep -rhoE 'env::var(_os)?\\("[A-Z_]+"' src tests build.rs`), and
+    `RUSTFLAGS`, `CARGO_TARGET_DIR` and every `CARGO_BUILD_*`, each with its
+    value or `None` when absent, sorted by name. `WIXEN_TEST_THREADS` is its
+    effective value, so setting it to its own default moves nothing. A value
+    reaches the key only through its hash and is never written out, since some
+    of these are secrets. `LANG` is left out: `system_language` reads it only in
+    a build that is not Windows (`spellcheck/mod.rs:427-433` at `481a7918`), and
+    every shell sets it.
+
+    >>> the_settings_a_run_reads({})
+    [('CARGO_TARGET_DIR', None), ('RUSTFLAGS', None), ('WIXEN_TEST_THREADS', '8')]
+    >>> the_settings_a_run_reads({"WIXEN_TEST_THREADS": "8"}) == the_settings_a_run_reads({})
+    True
+    >>> dict(the_settings_a_run_reads({"RUSTFLAGS": "-C debuginfo=0"}))["RUSTFLAGS"]
+    '-C debuginfo=0'
+    >>> [name for name, _ in the_settings_a_run_reads({"WIXEN_NO_AUDIO": "1", "PATH": "x"})]
+    ['CARGO_TARGET_DIR', 'RUSTFLAGS', 'WIXEN_NO_AUDIO', 'WIXEN_TEST_THREADS']
+    >>> the_settings_a_run_reads({"CARGO_BUILD_JOBS": "4"})[0]
+    ('CARGO_BUILD_JOBS', '4')
+    >>> "LANG" in dict(the_settings_a_run_reads({"LANG": "en_GB.UTF-8"}))
+    False
+    """
+    names = {
+        name
+        for name in environ
+        if name.startswith("WIXEN_") or name.startswith("CARGO_BUILD_")
+    }
+    names.update(THE_BUILD_SETTINGS)
+    names.add("WIXEN_TEST_THREADS")
+    effective = dict(environ)
+    effective.setdefault("WIXEN_TEST_THREADS", THE_DEFAULT_TEST_THREADS)
+    return [(name, effective.get(name)) for name in sorted(names)]
+
+
+def the_records_without_their_counts(text: str) -> str:
+    """The records' own text with only the counts `--remeasure` writes left out.
+
+    Read with the format's own parser, every record with its `tests_last_seen`
+    dropped, dumped with its keys sorted. `--remeasure` writes only that key,
+    in either spelling, so a re-measurement leaves the answer where it was, and
+    a hand edit to any other part of a record moves it.
+
+    >>> spread = (
+    ...     '[[guard]]\\nname = "a"\\nbefore = "x"\\nred = ["t"]\\n'
+    ...     'tests_last_seen = [\\n    { file = "a.rs", tests = 3 },\\n]\\n'
+    ... )
+    >>> one_line = (
+    ...     '[[guard]]\\nname = "a"\\nbefore = "x"\\nred = ["t"]\\n'
+    ...     'tests_last_seen = [{ file = "a.rs", tests = 9 }]\\n'
+    ... )
+    >>> the_records_without_their_counts(spread) == the_records_without_their_counts(one_line)
+    True
+    >>> the_records_without_their_counts(spread) == the_records_without_their_counts(
+    ...     spread.replace('red = ["t"]', 'red = ["u"]'))
+    False
+    >>> the_records_without_their_counts(spread) == the_records_without_their_counts(
+    ...     spread.replace('before = "x"', 'before = "y"'))
+    False
+    """
+    records = [
+        {key: value for key, value in record.items() if key != "tests_last_seen"}
+        for record in tomllib.loads(text).get("guard", [])
+    ]
+    return json.dumps(records, sort_keys=True)
+
+
+def the_pre_read_key(
+    tree: str,
+    records: str,
+    suite: tuple[str, ...],
+    settings: list[tuple[str, str | None]],
+    compiler: str,
+) -> str:
+    """One hash over everything a kept pre-read must match.
+
+    The tree is the working tree's content with `guards/guards.toml` left out,
+    and the records are that file's own text without its counts, so a count
+    `--remeasure` writes moves neither. What stays outside the key: `HEAD` and
+    the history, which `every_number_carries_its_command_and_its_date` and three
+    targets read through git and a commit moves without moving the tree; the
+    Windows credential store, which every integration target reaches because
+    the in-memory seam is `cfg(test)` (ledger 581); the user profile a test may
+    read; ignored files such as `oauth.toml` and `.env`; and `LANG`. Keying on
+    `HEAD` would throw the reading away at every commit, which is most of the
+    saving, so `THE_LONGEST_A_PRE_READ_IS_KEPT` bounds all of them, and deleting
+    the kept file throws a reading away sooner.
+
+    One more, accepted: three `house_style` tests read `guards/guards.toml`, and
+    a count `--remeasure` writes can turn the first of them,
+    `test_every_guard_record_says_how_many_tests_the_files_it_names_held`, from
+    red to green inside the two hours while a kept reading still excuses it. No
+    break reddens it, since a break changes source and not how many tests a file
+    holds, so the excuse hides no break's result.
+
+    >>> taken = ("tree", "records", ("--lib",), [("RUSTFLAGS", None)], "rustc 1.90.0")
+    >>> the_pre_read_key(*taken) == the_pre_read_key(*taken)
+    True
+    >>> len(the_pre_read_key(*taken))
+    64
+    >>> moved = [
+    ...     ("another tree", *taken[1:]),
+    ...     (taken[0], "other records", *taken[2:]),
+    ...     (*taken[:2], ("--test", "house_style"), *taken[3:]),
+    ...     (*taken[:3], [("RUSTFLAGS", "-C debuginfo=0")], taken[4]),
+    ...     (*taken[:4], "rustc 1.91.0"),
+    ... ]
+    >>> sorted(the_pre_read_key(*one) != the_pre_read_key(*taken) for one in moved)
+    [True, True, True, True, True]
+    """
+    everything = json.dumps([tree, records, list(suite), settings, compiler])
+    return hashlib.sha256(everything.encode("utf-8")).hexdigest()
+
+
+def a_kept_pre_read_answers(kept: str, key: str, now: float, longest: float) -> set[str] | None:
+    """The failing names a kept pre-read holds, when it may be used, else None.
+
+    >>> kept = '{"key": "k", "taken_at": 1000.0, "failing": ["a::b"]}'
+    >>> a_kept_pre_read_answers(kept, "k", 1060.0, THE_LONGEST_A_PRE_READ_IS_KEPT)
+    {'a::b'}
+    >>> THE_LONGEST_A_PRE_READ_IS_KEPT // 3600
+    2
+    >>> a_kept_pre_read_answers(kept, "another", 1060.0, 7200) is None
+    True
+    >>> a_kept_pre_read_answers(kept, "k", 1000.0 + 7201, 7200) is None
+    True
+    >>> a_kept_pre_read_answers(kept, "k", 999.0, 7200) is None
+    True
+    >>> a_kept_pre_read_answers("not a reading", "k", 1060.0, 7200) is None
+    True
+    >>> a_kept_pre_read_answers('{"key": "k"}', "k", 1060.0, 7200) is None
+    True
+    """
+    try:
+        reading = json.loads(kept)
+        kept_for = reading["key"]
+        taken_at = float(reading["taken_at"])
+        failing = set(reading["failing"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    if kept_for != key:
+        return None
+    if not 0 <= now - taken_at <= longest:
+        return None
+    return failing
+
+
+def the_working_tree_id() -> str:
+    """The id of a tree holding the working tree as it is, the records left out.
+
+    `git write-tree` over a copy of the real index into which the working tree
+    was added and from which `guards/guards.toml` was taken out, so it covers
+    tracked changes and untracked files that are not ignored. The copy is named
+    by `GIT_INDEX_FILE` in the environment of these git calls alone and never in
+    this process's own, so nothing else here, and nothing it starts, can write
+    to the copy or mistake it for the real index. The real index is read and
+    never written. `git add` stores the working tree's files as objects, which
+    git collects later like any other it does not need.
+    """
+    real_index = subprocess.run(
+        ["git", "rev-parse", "--git-path", "index"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    with tempfile.TemporaryDirectory(prefix="wixen-guards-index-") as scratch:
+        copy = Path(scratch) / "index"
+        shutil.copyfile(ROOT / real_index, copy)
+        its_own_index = dict(os.environ)
+        its_own_index["GIT_INDEX_FILE"] = str(copy)
+        for step in (
+            ["git", "add", "-A"],
+            ["git", "rm", "--cached", "--quiet", "--ignore-unmatch", "guards/guards.toml"],
+        ):
+            subprocess.run(step, cwd=ROOT, env=its_own_index, capture_output=True, check=True)
+        return subprocess.run(
+            ["git", "write-tree"],
+            cwd=ROOT, env=its_own_index, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+
+def the_key_for_this_tree(suite: tuple[str, ...]) -> str | None:
+    """The key a kept pre-read of `suite` must carry, or None when it cannot be
+    taken, in which case the suite is read as it always was and nothing is kept."""
+    try:
+        compiler = subprocess.run(
+            ["rustc", "-V"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        tree = the_working_tree_id()
+        records = the_records_without_their_counts(RECORD.read_text(encoding="utf-8"))
+    except (OSError, subprocess.CalledProcessError, tomllib.TOMLDecodeError):
+        return None
+    return the_pre_read_key(
+        tree, records, suite, the_settings_a_run_reads(dict(os.environ)), compiler
+    )
+
+
+def the_kept_pre_read_of(suite: tuple[str, ...]) -> Path:
+    """The file a pre-read of `suite` is kept in."""
+    return THE_KEPT_PRE_READS / "-".join(part.lstrip("-") for part in suite)
+
+
+def keep_the_pre_read(suite: tuple[str, ...], key: str, failing: set[str]) -> None:
+    """Keep a pre-read that returned, under its key and the time it was taken."""
+    kept = the_kept_pre_read_of(suite)
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    kept.write_text(
+        json.dumps({"key": key, "taken_at": time.time(), "failing": sorted(failing)}),
+        encoding="utf-8",
+    )
+
+
+def a_kept_pre_read_for(suite: tuple[str, ...], key: str) -> tuple[set[str], int] | None:
+    """The kept failing names of `suite` and how many seconds ago they were
+    taken, when a kept reading may be used for this key, else None."""
+    kept = the_kept_pre_read_of(suite)
+    try:
+        text = kept.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    now = time.time()
+    failing = a_kept_pre_read_answers(text, key, now, THE_LONGEST_A_PRE_READ_IS_KEPT)
+    if failing is None:
+        return None
+    return failing, int(now - float(json.loads(text)["taken_at"]))
 
 
 def measure(
@@ -2310,6 +2571,17 @@ def main() -> int:
     # from the log would blame or excuse the wrong failures. Nothing to measure
     # this invocation means nothing to pre-read: --stop-after 0 reports what
     # remains and a resume with nothing left says so, both without a build.
+    #
+    # **Corrected 2026-09-23 by 12-03.2.** A pre-read that returned is now kept,
+    # and a later invocation uses it when its key is this tree's: the working
+    # tree's content, the records' own text without their counts, the suite,
+    # the settings that move a run or a build, and the compiler. The tree moving
+    # between invocations is what the key answers. Blaming or excusing the
+    # wrong failures is what remains of the argument above for what the key
+    # cannot see, `HEAD`, the credential store, the profile, the ignored files,
+    # and that is what `THE_LONGEST_A_PRE_READ_IS_KEPT`, two hours, bounds. The
+    # reading is still never taken from the log, only from the kept file for a
+    # matching key, and every use says so and names the file to delete.
     if guards:
         print(f"{the_header_for(len(guards), shard)}\n", flush=True)
     # Once per suite, before anything is broken, so an unrelated failure is not
@@ -2324,22 +2596,38 @@ def main() -> int:
         print(f"\n{wrong}\n")
         return 1
     for suite in {guard.suite for guard in guards}:
-        # Announced, because this is a whole suite run per distinct suite before
-        # any break is applied, and it is the first two minutes of every run.
-        # Silence for two minutes reads as a hang, and a check that reads as
-        # hung is one somebody kills.
-        print(
-            f"Reading what already fails with {' '.join(suite)}, "
-            "before anything is broken.",
-            flush=True,
-        )
+        key = the_key_for_this_tree(suite)
+        kept = None if key is None else a_kept_pre_read_for(suite, key)
+        if kept is not None:
+            already_failing[suite], seconds_ago = kept
+            print(
+                f"Reading what already fails with {' '.join(suite)}: kept from "
+                f"{seconds_ago} s ago for this tree; delete "
+                f"{the_kept_pre_read_of(suite)} to read it again.",
+                flush=True,
+            )
+        else:
+            # Announced, because this is a whole suite run per distinct suite
+            # before any break is applied, and it is the first two minutes of
+            # every run. Silence for two minutes reads as a hang, and a check
+            # that reads as hung is one somebody kills.
+            print(
+                f"Reading what already fails with {' '.join(suite)}, "
+                "before anything is broken.",
+                flush=True,
+            )
         try:
             # Unfiltered even under --named-only: this reads what is already
             # broken before any break is applied, and a filtered reading of
             # that would miss the failures it exists to subtract.
-            already_failing[suite] = what_is_already_failing(
-                suite, Budget.starting_now(asked.time_limit)
-            )
+            if kept is None:
+                already_failing[suite] = what_is_already_failing(
+                    suite, Budget.starting_now(asked.time_limit)
+                )
+                # Only a pre-read that returned is kept; one given up on or
+                # refused raises before this line.
+                if key is not None:
+                    keep_the_pre_read(suite, key, already_failing[suite])
         except GaveUp as ran_out:
             # A pre-read that does not return used to end the shard, because
             # the branch below returns 1 for every `Wrong` and this is a whole

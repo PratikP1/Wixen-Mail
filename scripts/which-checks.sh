@@ -8,7 +8,10 @@
 # **Where you are** decides whether the slow checks can be deferred at all.
 # `main` is what CI builds and what ships, and every commit here lands on it, so
 # it always earns everything. A branch nobody builds can defer, because the full
-# gate runs once before the merge.
+# gate runs once before the merge. Since 2026-09-23 (12-03.2) it runs once a
+# phase instead, by hand in the phase's closing plan, and a merge into `main`
+# (`--merge`) answers what the branch's whole diff earns by the branch rules
+# below; a commit on `main` that is not a merge still earns everything for code.
 #
 # **What you changed** decides which tests can say anything. Running 5,819 tests
 # and a release build to commit four markdown files proves nothing about the
@@ -69,6 +72,140 @@ message_file=""
 # nothing and the index is read.
 manifest_diff_file=""
 
+# ── The files the program compiles in ───────────────────────────────────────
+# Added 2026-09-23 by 12-03.2. `data/dictionary_en.txt` is compiled into the
+# spellchecker with `include_str!`, so a commit changing only it answered
+# `docs_only` and ran no spellcheck test before CI. The same shape holds for the
+# date catalogue under `locales/`, the icon under `assets/`, and the Rust files
+# `src/application/sent_copy.rs` reads with `include_str!`. Pratik approved the
+# rule for the dictionary that day and answered the same day that it covers
+# every file the program compiles in (ledger 373).
+#
+# Read from `src/` relative to the directory this is run from, which is the top
+# of the work tree when the hook runs it. That is what lets a suite ask it of a
+# tree of its own.
+#
+# What it does not reach. A test in another module that depends on the file's
+# content, such as `tests/integration_tests.rs` using the spellchecker, which a
+# change to the compiling source does not reach either. A file read at test
+# time with `read_to_string` rather than compiled in, such as `docs/privacy.md`
+# read by `contact_groups.rs` and `update_check.rs`, which ledger 583 holds.
+# And an include this scan cannot read: it takes a string literal on the
+# macro's line or the line after it, which is how rustfmt wraps a long one, so
+# an argument built with `concat!(env!("CARGO_MANIFEST_DIR"), ...)` would be
+# missed and the file it names would read as a document again. Nothing holds
+# the real include lines to that shape after 12-03.2: the suites test the rule
+# over fixture copies, and the real tree's answers were read by hand once.
+# Ledger 582 is for a reading that runs on the commits that could break them.
+
+# Every file a source under `src/` compiles in, as `<file> <source>` lines,
+# each path from the top of the tree. Comment lines are skipped, since the
+# modules that compile a file in describe the macro in their doc comments.
+the_files_compiled_in() {
+    local -a sources
+    shopt -s globstar nullglob
+    sources=(src/**/*.rs)
+    shopt -u globstar nullglob
+    [ "${#sources[@]}" -gt 0 ] || return 0
+    awk '
+        function resolved(literal,    directory, parts, count, i, kept, result) {
+            directory = FILENAME
+            sub(/\/[^\/]*$/, "", directory)
+            count = split(directory "/" literal, parts, "/")
+            kept = 0
+            for (i = 1; i <= count; i++) {
+                if (parts[i] == "..") { if (kept > 0) kept-- }
+                else if (parts[i] != "." && parts[i] != "") stack[++kept] = parts[i]
+            }
+            result = stack[1]
+            for (i = 2; i <= kept; i++) result = result "/" stack[i]
+            return result
+        }
+        function the_literal(text) {
+            if (match(text, /"[^"]+"/)) return substr(text, RSTART + 1, RLENGTH - 2)
+            return ""
+        }
+        FNR == 1 { waiting = 0 }
+        waiting {
+            waiting = 0
+            literal = the_literal($0)
+            if (literal != "") print resolved(literal) " " FILENAME
+            next
+        }
+        /^[[:space:]]*\/\// { next }
+        match($0, /include_(str|bytes)!\(/) {
+            literal = the_literal(substr($0, RSTART + RLENGTH))
+            if (literal != "") print resolved(literal) " " FILENAME
+            else waiting = 1
+        }
+    ' "${sources[@]}"
+}
+
+# The sources compiling any of the given files in, each once.
+the_sources_compiling() {
+    local file source wanted
+    local -A seen=()
+    while read -r file source; do
+        for wanted in "$@"; do
+            [ "$file" = "$wanted" ] || continue
+            [ -n "${seen[$source]-}" ] && continue
+            seen[$source]=1
+            echo "$source"
+        done
+    done < <(the_files_compiled_in)
+}
+
+# Read once, when a document is first asked about.
+files_compiled_in=""
+files_compiled_in_read=""
+
+# A document is a `.md` or `.txt` file no source compiles in. One rule, asked
+# by `main`'s loop, by a branch's loop, and by `check.sh` through
+# `--documents-among`, so it has one spelling.
+is_a_document() {
+    case "$1" in
+        *.md | *.txt) ;;
+        *) return 1 ;;
+    esac
+    if [ -z "$files_compiled_in_read" ]; then
+        files_compiled_in="$(the_files_compiled_in | cut -d' ' -f1)"
+        files_compiled_in_read=yes
+    fi
+    case $'\n'"$files_compiled_in"$'\n' in
+        *$'\n'"$1"$'\n'*) return 1 ;;
+    esac
+    return 0
+}
+
+#   which-checks.sh --sources-compiling <file> [file ...]
+#
+# The sources that compile any of the given files in, one a line. `check.sh`
+# asks it for the paths a commit stages, and treats each source as changed too.
+if [ "${1-}" = "--sources-compiling" ]; then
+    shift
+    the_sources_compiling "$@"
+    exit 0
+fi
+
+#   which-checks.sh --documents-among <path> [path ...]
+#
+# Each given path that is a document by `is_a_document`, one a line, in the
+# order given. `check.sh` asks it whether a merge's diff holds a document, so
+# the rule for what a document is has one spelling. Added 2026-09-23 (12-03.2).
+if [ "${1-}" = "--documents-among" ]; then
+    shift
+    for path in "$@"; do
+        if is_a_document "$path"; then
+            echo "$path"
+        fi
+    done
+    exit 0
+fi
+
+# Whether the commit being judged is a merge, which `check.sh` knows by
+# `MERGE_HEAD` and says with `--merge`.
+is_a_merge=""
+
 while :; do
     case "${1-}" in
         --message-file=*)
@@ -78,6 +215,20 @@ while :; do
         --manifest-diff-file=*)
             manifest_diff_file="${1#--manifest-diff-file=}"
             shift
+            ;;
+        --merge)
+            is_a_merge=yes
+            shift
+            ;;
+        # Refused since 2026-09-23 (12-03.2). Until then anything this loop did
+        # not know was read as the branch name, so a misspelt option answered
+        # as a branch nobody has and a new flag's red case passed by accident.
+        --*)
+            echo "which-checks: '$1' is not an option this script knows." >&2
+            echo "  Options: --message-file=F, --manifest-diff-file=F, --merge," >&2
+            echo "  and on their own --sources-compiling <file> ... or" >&2
+            echo "  --documents-among <path> ..." >&2
+            exit 64
             ;;
         *)
             break
@@ -125,27 +276,40 @@ case "$branch" in
     # Matched exactly. `maintenance` and `mainline` are branches nobody builds
     # and must not inherit main's answer by sharing its first four letters.
     main | master)
-        # `main` cannot defer the slow half, because every commit here lands on
-        # it and it is what CI builds. That is a statement about the branch. It
-        # is not a statement about what a change can break, and those are
-        # separate questions: a document cannot fail a release build or a test
-        # that never reads one, wherever it is committed. So fall through to the
-        # what-changed question with the slow half still owed.
+        # A merge that says nothing about what it changed cannot be scoped, so
+        # it earns everything, as `main` does with no file list.
         if [ "$#" -eq 0 ]; then
             echo all
             exit 0
         fi
-        for path in "$@"; do
-            case "$path" in
-                *.md | *.txt) ;;
-                *)
+        # A merge into `main` answers what the branch's whole diff earns, by the
+        # rules below that a branch commit is judged by, since 2026-09-23
+        # (12-03.2), on Pratik's answer that day that the whole suite runs once
+        # a phase, in its closing plan, rather than at every merge. So a branch
+        # that changed a workflow, the installer or a dependency still earns
+        # everything at its merge, and one that changed code earns what reaches
+        # it. The diff is the merge commit's staged list, which equalled the
+        # branch's merge-base-to-tip diff on every one of the fourteen merges
+        # read that day.
+        if [ -z "$is_a_merge" ]; then
+            # `main` cannot defer the slow half, because every commit here lands
+            # on it and it is what CI builds. That is a statement about the
+            # branch. It is not a statement about what a change can break, and
+            # those are separate questions: a document cannot fail a release
+            # build or a test that never reads one, wherever it is committed. So
+            # fall through to the what-changed question with the slow half still
+            # owed. A commit on `main` that is not a merge and touches code
+            # still answers `all` after 2026-09-23: code reaches `main` only
+            # through a merge here, and one that does not pays the most.
+            for path in "$@"; do
+                if ! is_a_document "$path"; then
                     echo all
                     exit 0
-                    ;;
-            esac
-        done
-        echo docs_only
-        exit 0
+                fi
+            done
+            echo docs_only
+            exit 0
+        fi
         ;;
 esac
 
@@ -373,15 +537,13 @@ done
 # Everything else is a build input, however much it reads like prose:
 # `guards/guards.toml` names breaks the runner applies to source, `Cargo.toml`
 # and `Cargo.lock` reach every crate, and a change to this script or to the hook
-# changes what checking even means.
+# changes what checking even means. And since 2026-09-23 a `.md` or `.txt` the
+# program compiles in is a build input too, by `is_a_document` above.
 for path in "$@"; do
-    case "$path" in
-        *.md | *.txt) ;;
-        *)
-            echo affected
-            exit 0
-            ;;
-    esac
+    if ! is_a_document "$path"; then
+        echo affected
+        exit 0
+    fi
 done
 
 echo docs_only

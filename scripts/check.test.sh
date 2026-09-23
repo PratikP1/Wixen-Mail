@@ -29,12 +29,45 @@ registry="$root/guards/guards.toml"
 # shellcheck source=scripts/shell-suite.sh
 . "$root/scripts/shell-suite.sh"
 
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# A tree of its own, which every question about what a change reaches is asked
+# from. Since 2026-09-23 (12-03.2) the scoped run leaves out a changed test file
+# that is not there, and reads which sources compile a changed file in from
+# `src/` under the directory it is asked from, so a case asked from the
+# repository root would read this repository's tree and could go red on a
+# commit that owes this suite nothing. The tree holds an empty file for each
+# test file a case names as changed, and no `tests/gone.rs`.
+a_tree="$work/a-tree"
+mkdir -p "$a_tree/tests"
+for kept in house_style checkbox_labels wired; do
+    : > "$a_tree/tests/$kept.rs"
+done
+# Copies of three real include lines, from `src/service/spellcheck/mod.rs:1050`,
+# `src/common/catalogue.rs:153` and `src/application/sent_copy.rs:1133` on
+# 2026-09-23, each compared with its source by a read-only command before a
+# case used it. Nothing holds them to the real lines afterwards; ledger 582 is
+# for a reading that would.
+mkdir -p "$a_tree/src/service/spellcheck" "$a_tree/src/common" "$a_tree/src/application"
+printf '%s\n' 'const CORE_ENGLISH_WORDS: &str = include_str!("../../../data/dictionary_en.txt");' \
+    > "$a_tree/src/service/spellcheck/mod.rs"
+printf '%s\n' '    dates: include_str!("../../locales/en-US/dates.ftl"),' \
+    > "$a_tree/src/common/catalogue.rs"
+printf '%s\n' '        let controller = include_str!("mail_controller.rs")' \
+    > "$a_tree/src/application/sent_copy.rs"
+
+# The one way a case asks `check.sh` a question about what a change reaches.
+ask_from_the_tree() {
+    ( cd "$a_tree" && bash "$subject" "$@" )
+}
+
 # The mapping's answer as one line, so a case reads as a sentence.
 #
 # Sorted before comparing, because order is not part of the contract: a record
 # added to the registry above another must not redden a case here.
 answer() {
-    bash "$subject" --suites-for "$@" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ *$//'
+    ask_from_the_tree --suites-for "$@" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ *$//'
 }
 
 expect() {
@@ -89,9 +122,6 @@ expect_not_among() {
         *) suite_case_passed "$desc" ;;
     esac
 }
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
 
 # ── The registry as it really is ────────────────────────────────────────────
 # One record couples a source module to a target the gate would otherwise reach
@@ -369,6 +399,190 @@ expect "" "a registry that is not there answers nothing" \
 # Nothing changed at all.
 expect "" "no changed files answers nothing" "$registry"
 
+# ── Every integration target the scoped run reaches, in one cargo call ───────
+# Added 2026-09-23 by 12-03.2. The scoped run used to hand cargo each changed
+# test file and each coupled target on a call of its own, and a change to
+# `wx_app.rs` couples 25 to 29 targets, so one commit made that many cargo
+# calls, each paying cargo's own start. Now the builder answers one line per
+# library module and one line of `--test` pairs for every integration target,
+# and the run hands each line to cargo as it is. `--no-fail-fast` belongs to
+# the runner's line alone: cargo refuses the flag given twice, so no line the
+# builder answers holds it.
+#
+# Every case below also holds the answer to exactly one line naming `--test` as
+# a whole word, the way `house_style` counts it, so `--test-threads=4` on a
+# library line is not counted. Every scoped answer has that line, because the
+# targets that read the whole tree are always in it, so a case asserting only
+# an absence cannot be green on an empty answer.
+
+# The builder's answer, and the one line of it naming integration targets, or
+# `shape: <why>` when the answer does not hold exactly one.
+scoped_runs() {
+    ask_from_the_tree --scoped-runs-for "$registry" "$@" 2>/dev/null
+}
+
+the_one_target_line() {
+    local runs="$1" lines
+    lines="$(printf '%s\n' "$runs" | grep -E -- '(^| )--test( |$)')"
+    if [ "$(printf '%s\n' "$runs" | grep -cE -- '(^| )--test( |$)')" -ne 1 ]; then
+        echo "shape: not one --test line in: $runs"
+    else
+        echo "$lines"
+    fi
+}
+
+# The targets a `--test` line names, sorted, one space between.
+the_targets_named() {
+    printf '%s\n' "$1" | tr ' ' '\n' | grep -A1 -x -- '--test' | grep -vx -- '--test' |
+        grep -v '^--$' | sort | tr '\n' ' ' | sed 's/ *$//'
+}
+
+# The targets check.sh ends every scoped run with, read from its one-line array.
+whole_tree_targets="$(sed -n 's/^guards_that_read_the_whole_tree=(\(.*\))$/\1/p' "$subject")"
+
+runs="$(scoped_runs src/presentation/wx_managers.rs tests/checkbox_labels.rs)"
+target_line="$(the_one_target_line "$runs")"
+case "$target_line" in
+    shape:*)
+        suite_case_failed "the scoped integration targets are one cargo call" "$target_line"
+        ;;
+    *)
+        if printf '%s\n' "$runs" | grep -q -- '--no-fail-fast'; then
+            suite_case_failed "the scoped integration targets are one cargo call" \
+                "a line of the answer holds --no-fail-fast, which the runner's line owns: $runs"
+        else
+            suite_case_passed "the scoped integration targets are one cargo call"
+        fi
+        ;;
+esac
+
+# That one line names what the separate calls named: the changed test file's
+# target, every target the real registry couples the source to, and every
+# target that reads the whole tree, compared as sets.
+coupled="$(answer "$registry" src/presentation/wx_managers.rs)"
+wanted_targets="$(printf '%s\n' checkbox_labels $coupled $whole_tree_targets | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+case "$target_line" in
+    shape:*)
+        suite_case_failed "every target the scoped run reached before is still reached" "$target_line"
+        ;;
+    *)
+        named_targets="$(the_targets_named "$target_line" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+        if [ "$named_targets" = "$wanted_targets" ]; then
+            suite_case_passed "every target the scoped run reached before is still reached"
+        else
+            suite_case_failed "every target the scoped run reached before is still reached" \
+                "named '$named_targets'" "wanted '$wanted_targets'"
+        fi
+        ;;
+esac
+
+# A changed `tests/house_style.rs` is its own target and also one of the whole
+# tree's, and cargo is handed it once.
+target_line="$(the_one_target_line "$(scoped_runs tests/house_style.rs)")"
+case "$target_line" in
+    shape:*) suite_case_failed "a target named twice is run once" "$target_line" ;;
+    *)
+        times="$(the_targets_named "$target_line" | tr ' ' '\n' | grep -cx house_style)"
+        if [ "$times" -eq 1 ]; then
+            suite_case_passed "a target named twice is run once"
+        else
+            suite_case_failed "a target named twice is run once" \
+                "house_style named $times times: $target_line"
+        fi
+        ;;
+esac
+
+runs="$(scoped_runs src/presentation/wx_managers.rs)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a changed source module is still its own library run" "$target_line"
+elif printf '%s\n' "$runs" | grep -qxF -- '--lib presentation::wx_managers:: -- --test-threads=4'; then
+    suite_case_passed "a changed source module is still its own library run"
+else
+    suite_case_failed "a changed source module is still its own library run" \
+        "no line '--lib presentation::wx_managers:: -- --test-threads=4' in: $runs"
+fi
+
+runs="$(scoped_runs src/lib.rs)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a changed lib.rs is still no library run" "$target_line"
+elif printf '%s\n' "$runs" | grep -q -- '^--lib'; then
+    suite_case_failed "a changed lib.rs is still no library run" "answered: $runs"
+else
+    suite_case_passed "a changed lib.rs is still no library run"
+fi
+
+# A test file the commit deleted, or moved away, is in the staged list either
+# way. Handed to cargo in one call it would refuse the whole call before any
+# target ran, so it is left out; the tree holds no `tests/gone.rs`.
+runs="$(scoped_runs tests/gone.rs)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a deleted test file is not handed to cargo" "$target_line"
+elif printf '%s\n' "$target_line" | grep -qE -- '--test gone( |$)'; then
+    suite_case_failed "a deleted test file is not handed to cargo" "answered: $target_line"
+else
+    suite_case_passed "a deleted test file is not handed to cargo"
+fi
+
+# A file the program compiles in reaches the tests of the source that compiles
+# it, whatever it is. Added 2026-09-23 by 12-03.2: the dictionary reached no
+# spellcheck test, the date catalogue no catalogue test, and a commit changing
+# only `mail_controller.rs` never ran `sent_copy`'s readings of it, which the
+# merge's full gate had been what caught. Asked of the tree above, whose three
+# sources hold copies of the real include lines.
+expect_a_library_run() {
+    local module="$1" desc="$2" runs target_line
+    shift 2
+    runs="$(scoped_runs "$@")"
+    target_line="$(the_one_target_line "$runs")"
+    if [ "${target_line%%:*}" = shape ]; then
+        suite_case_failed "$desc" "$target_line"
+    elif printf '%s\n' "$runs" | grep -qxF -- "--lib $module -- --test-threads=4"; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "no line '--lib $module -- --test-threads=4' in: $runs"
+    fi
+}
+
+expect_a_library_run service::spellcheck:: "a compiled-in dictionary reaches the spellchecker's tests" \
+    data/dictionary_en.txt
+expect_a_library_run common::catalogue:: "a date catalogue reaches the catalogue's tests" \
+    locales/en-US/dates.ftl
+expect_a_library_run application::sent_copy:: \
+    "a Rust file another module compiles in reaches that module's tests" \
+    src/application/mail_controller.rs
+
+# Read out of `check.sh`: no line that is not a comment hands cargo one
+# integration target named by a variable, which is the shape the separate calls
+# had. The companion plants the near miss, a coupled target run on its own with
+# the flag spelled, and the reading must find it.
+single_target_calls() {
+    grep -nvE '^[[:space:]]*#' "$1" | grep -E 'cargo test.*--test "\$'
+}
+
+one_by_one="$(single_target_calls "$subject")"
+if [ -z "$one_by_one" ]; then
+    suite_case_passed "no integration target is run by a cargo call of its own"
+else
+    suite_case_failed "no integration target is run by a cargo call of its own" "$one_by_one"
+fi
+
+one_at_a_time="$work/one-at-a-time.sh"
+cat > "$one_at_a_time" <<'SH'
+# cargo test --test "$commented_out"
+for coupled in "${coupled_targets[@]}"; do
+    cargo test --no-fail-fast --test "$coupled" >> "$run_log" 2>&1 || status=1
+done
+SH
+if [ "$(single_target_calls "$one_at_a_time" | cut -d: -f1)" = 3 ]; then
+    suite_case_passed "a target run by a cargo call of its own is found"
+else
+    suite_case_failed "a target run by a cargo call of its own is found" \
+        "the reading answered '$(single_target_calls "$one_at_a_time")' over the planted script"
+fi
+
 # ── An argument check.sh does not know is refused, not run ──────────────────
 # This suite runs `check.sh`, and `check.sh` runs this suite. A typo in the
 # argument passed above used to be read as a mode, fall past every branch, and
@@ -424,13 +638,127 @@ for known_mode in all all_but_slow affected docs_only red; do
     esac
 done
 
+# ── Every run names its mode and says where its seconds went ─────────────────
+# Added 2026-09-23 by 12-03.2. A measurement of nine executors that day found
+# 28% of a plan's time in this hook, and one stage of it, rustfmt, the shell
+# suites and start-up together, took 25 to 35 seconds on one day and 95 to 145
+# on two others with nothing printed to say which part moved. So a run says its
+# mode before its first stage and ends, pass or fail, with one line giving each
+# stage's seconds.
+#
+# Asked from the same empty directory as the cases above, where the run gets
+# past the mode and stops at `touch src/lib.rs`, before its first stage. The
+# hooks-path note prints above the mode line there, so the mode is looked for as
+# a line of the output rather than as its first line.
+docs_only_output="$(ask_check_sh_for_a_mode docs_only)"
+if printf '%s\n' "$docs_only_output" | grep -qxF 'check.sh: mode docs_only'; then
+    suite_case_passed "a run names the mode it was given before it starts"
+else
+    suite_case_failed "a run names the mode it was given before it starts" \
+        "no line 'check.sh: mode docs_only' in: $docs_only_output"
+fi
+
+# The run above stops before rustfmt, so the one stage it spent anything in is
+# the start, and the line says that and that it did not pass.
+if printf '%s\n' "$docs_only_output" |
+    grep -qE '^check\.sh: docs_only stopped in start after [0-9]+ s: start [0-9]+ s$'; then
+    suite_case_passed "a run that stops before its first stage still says how long it ran"
+else
+    suite_case_failed "a run that stops before its first stage still says how long it ran" \
+        "no line 'check.sh: docs_only stopped in start after N s: start N s' in:" \
+        "$docs_only_output"
+fi
+
+# The other half. A question answered before the run is only its answer: a mode
+# line or a stage line in it would be read as part of the answer by every case
+# that compares a question's whole output.
+question_output="$(ask_from_the_tree --suites-for "$registry" src/presentation/wx_managers.rs 2>&1)"
+if printf '%s\n' "$question_output" | grep -qE '^check\.sh: mode|after [0-9]+ s:'; then
+    suite_case_failed "a question answered before the run prints no stage line" \
+        "printed: $question_output"
+else
+    suite_case_passed "a question answered before the run prints no stage line"
+fi
+
+# Read out of `check.sh` rather than run, because running it is minutes: every
+# header a stage prints goes through the one function that closes the previous
+# stage's clock, so no stage's seconds are folded silently into its neighbour's.
+# The function's own `echo` is the one header line allowed, and the reading
+# skips its body, from its opening line at column 0 to the first `}` at column
+# 0 after it.
+bare_stage_headers() {
+    awk '
+        /^begin_stage\(\) \{/ { inside = 1; next }
+        inside && /^}/ { inside = 0; next }
+        !inside && /^[[:space:]]*echo "== / { print FNR ": " $0 }
+    ' "$1"
+}
+
+timed_stages() {
+    grep -cE '^[[:space:]]*begin_stage "' "$1"
+}
+
+bare_in_check_sh="$(bare_stage_headers "$subject")"
+timed_in_check_sh="$(timed_stages "$subject")"
+if [ -n "$bare_in_check_sh" ]; then
+    suite_case_failed "every stage check.sh announces is timed" \
+        "these headers do not go through begin_stage:" "$bare_in_check_sh"
+elif [ "$timed_in_check_sh" -lt 8 ]; then
+    suite_case_failed "every stage check.sh announces is timed" \
+        "begin_stage is called $timed_in_check_sh times, and check.sh has at least eight stages"
+else
+    suite_case_passed "every stage check.sh announces is timed"
+fi
+
+# The companion, over a planted script whose timer is right and which holds
+# the near miss somebody really writes: a new mode branch announcing its stage
+# with a bare `echo`, below the timed ones. The reading must name that line and
+# only that line, or the case above could be passing because it reads nothing.
+planted_timer="$work/planted-timer.sh"
+cat > "$planted_timer" <<'SH'
+begin_stage() {
+    echo "== $1 =="
+}
+begin_stage "rustfmt"
+begin_stage "clippy"
+if [ "$mode" = "docs_only" ]; then
+    echo "== the targets that read documents =="
+fi
+SH
+planted_bare="$(bare_stage_headers "$planted_timer")"
+if [ "$planted_bare" = '7:     echo "== the targets that read documents =="' ]; then
+    suite_case_passed "a stage announced without the timer is found"
+else
+    suite_case_failed "a stage announced without the timer is found" \
+        "the reading answered '$planted_bare' over the planted script"
+fi
+
 # ── The gate runs this suite, in every mode, before it branches on one ───────
 # Asserted over the text of `check.sh` rather than by running it, because
 # running it is minutes and the property is an ordering: the loop over
 # `scripts/*.test.sh` comes before the first line that branches on the mode, so
 # no mode can skip it.
-suite_loop_at="$(grep -n 'for suite in' "$subject" | head -1 | cut -d: -f1)"
-first_mode_branch_at="$(grep -n 'if \[ "\$mode" = ' "$subject" | head -1 | cut -d: -f1)"
+#
+# Since 2026-09-23 (12-03.2) the loop no longer runs every suite: the property
+# is now that which suites run is decided before any mode branch, and each is
+# run when owed. The ordering is still what holds it, since a decision made
+# inside one mode's branch would be skipped by every other.
+#
+# One function since the same day, taking the script it reads, so the decoy
+# case below can ask it about a planted script. It prints the loop's line and
+# the first mode branch's line, a `-` for either it did not find. The loop is
+# found by its own spelling, read as a fixed string, since a loop over
+# something else spelled `for suite in` sits in `check.sh` too.
+the_suite_loop_and_the_first_mode_branch() {
+    local loop_at branch_at
+    loop_at="$(grep -nF 'for suite in "$(dirname "$0")"/*.test.sh' "$1" | head -1 | cut -d: -f1)"
+    branch_at="$(grep -n 'if \[ "\$mode" = ' "$1" | head -1 | cut -d: -f1)"
+    echo "${loop_at:--} ${branch_at:--}"
+}
+
+read -r suite_loop_at first_mode_branch_at < <(the_suite_loop_and_the_first_mode_branch "$subject")
+[ "$suite_loop_at" = - ] && suite_loop_at=""
+[ "$first_mode_branch_at" = - ] && first_mode_branch_at=""
 
 if [ -n "$suite_loop_at" ]; then
     suite_case_passed "check.sh runs every scripts/*.test.sh"
@@ -454,6 +782,35 @@ elif [ "$suite_loop_at" -ge "$first_mode_branch_at" ]; then
         "the loop is at line $suite_loop_at and the first mode branch at $first_mode_branch_at"
 else
     suite_case_passed "the suites run before any mode branch"
+fi
+
+# The reading has to find the suites' own loop and not another one. A second
+# `for suite in` already sits in `check.sh`, inside a function defined late, and
+# a helper defined above the loop that happened to spell its loop the same way
+# would be found first, so the ordering above would pass wherever the real loop
+# went. Asked of a planted script holding exactly that decoy above a mode
+# branch, with the loop over the suites below it: the ordering must be refused.
+decoy="$work/a-decoy-loop.sh"
+cat > "$decoy" <<'SH'
+targets_that_read_the_whole_tree() {
+    for suite in "${guards_that_read_the_whole_tree[@]}"; do
+        echo "$suite"
+    done
+}
+if [ "$mode" = "docs_only" ]; then
+    exit 0
+fi
+for suite in "$(dirname "$0")"/*.test.sh; do
+    bash "$suite" >> "$run_log" 2>&1 || shell_suites_failed=yes
+done
+SH
+read -r decoy_loop_at decoy_branch_at < <(the_suite_loop_and_the_first_mode_branch "$decoy")
+if [ "$decoy_loop_at" = 9 ] && [ "$decoy_branch_at" = 6 ]; then
+    suite_case_passed "the ordering reading finds the loop over the suites and not another loop"
+else
+    suite_case_failed "the ordering reading finds the loop over the suites and not another loop" \
+        "it read the loop at line $decoy_loop_at and the mode branch at line $decoy_branch_at" \
+        "in a script whose loop over the suites is at line 9, below the branch at line 6"
 fi
 
 # ── And a failing suite does not stop the gate before that branch ───────────
@@ -502,6 +859,428 @@ elif [ "$run_log_at" -ge "$suite_run_at" ]; then
         "the log is opened at line $run_log_at and a suite runs at line $suite_run_at"
 else
     suite_case_passed "the run log is opened before the suites run"
+fi
+
+# ── Each suite runs when what it reads has changed ───────────────────────────
+# Added 2026-09-23 by 12-03.2, on Pratik's answer that day that each suite runs
+# only for its own inputs. The four suites cost about 25 seconds on every commit
+# that day, and twelve of the fourteen merges read then staged
+# `guards/guards.toml`, which only this suite reads. So `check.sh` holds, for
+# each suite, the list of files it reads, and answers which suites a commit owes
+# before any mode branch.
+#
+# Asked through the question `--shell-suites-owed`, from the scratch directory,
+# so no case reaches this repository. The answer is one line per suite, in the
+# order the suites are found, each `<suite> yes: <why>` or `<suite> no: <why>`.
+# The helper holds the answer to that shape and then gives the names answered
+# yes, sorted, so a case asking for no suite is red on a broken answer rather
+# than green on an empty one.
+
+# Every suite this tree has, taken when the case runs rather than written down,
+# so a fifth suite is counted without anybody remembering. Spelled with `$root`
+# quoted, which the reading of each suite's reads below does not follow: this
+# suite's reach over every suite is the rule that check's list holds every
+# other list, not a read of one file.
+#
+# Written without a process per step, as are the two helpers below it, because
+# every case here runs them and a fork costs tens of milliseconds on Windows:
+# measured 2026-09-23, the first spelling, `basename`, `sort` and `sed` in a
+# pipeline, cost about a second a case and took this suite from 9 seconds to 31.
+every_suite=()
+for suite_file in "$root"/scripts/*.test.sh; do
+    suite_file="${suite_file##*/}"
+    every_suite+=("${suite_file%.test.sh}")
+done
+
+# The words given, empty ones dropped, sorted and joined by one space.
+sorted_words() {
+    local -a words=()
+    local word index
+    for word in "$@"; do
+        [ -n "$word" ] || continue
+        index=${#words[@]}
+        while [ "$index" -gt 0 ] && [[ "${words[$((index - 1))]}" > "$word" ]]; do
+            words[index]="${words[$((index - 1))]}"
+            index=$((index - 1))
+        done
+        words[index]="$word"
+    done
+    echo "${words[*]}"
+}
+
+# The question's answer, checked for its shape, then the names answered yes.
+# Prints `shape: <why>` instead when the answer is not one line per suite.
+suites_answered_yes() {
+    local answer line index=0 name
+    local -a suites=("${every_suite[@]}") lines=() yes=()
+    answer="$(bash "$subject" --shell-suites-owed "$@" 2>/dev/null)"
+    while IFS= read -r line; do
+        [ -n "$line" ] && lines+=("$line")
+    done <<< "$answer"
+    if [ "${#lines[@]}" -ne "${#suites[@]}" ]; then
+        echo "shape: ${#lines[@]} lines for ${#suites[@]} suites: $answer"
+        return
+    fi
+    for line in "${lines[@]}"; do
+        name="${suites[$index]}"
+        index=$((index + 1))
+        case "$line" in
+            "$name yes: "*) yes+=("$name") ;;
+            "$name no: "*) ;;
+            *)
+                echo "shape: line $index is '$line', wanted '$name yes: ' or '$name no: '"
+                return
+                ;;
+        esac
+    done
+    sorted_words "${yes[@]+"${yes[@]}"}"
+}
+
+expect_owed() {
+    local want desc="$2" got
+    want="$(sorted_words $1)"
+    shift 2
+    got="$(cd "$work" && suites_answered_yes "$@")"
+    if [ "$got" = "$want" ]; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "answered '$got', wanted '$want'" \
+            "args: --shell-suites-owed $*"
+    fi
+}
+
+every_suite_by_name="${every_suite[*]}"
+
+expect_owed "$every_suite_by_name" "every suite is owed in an all run" all
+expect_owed "$every_suite_by_name" "every suite is owed when nothing was said about the change" \
+    all_but_slow
+expect_owed "check" "the guard records owe the check suite alone" \
+    affected guards/guards.toml
+expect_owed "audit check" "the accepted advisories owe the audit suite and the check suite" \
+    affected .cargo/audit.toml
+expect_owed "check red-commit which-checks" "the red-commit reader owes the three suites that reach it" \
+    affected scripts/red-commit.sh
+expect_owed "check which-checks" "a suite's own file owes that suite and the check suite" \
+    affected scripts/which-checks.test.sh
+expect_owed "$every_suite_by_name" "the shared harness owes every suite" \
+    affected scripts/shell-suite.sh
+expect_owed "$every_suite_by_name" "the hook owes every suite" \
+    affected .githooks/commit-msg
+expect_owed "$every_suite_by_name" "a script no list places owes every suite" \
+    affected scripts/a-new-helper.sh
+expect_owed "" "a script no suite reads owes no suite" \
+    affected scripts/guards.py
+
+naming_a_shell_case="$work/naming-a-shell-case"
+cat > "$naming_a_shell_case" <<'MSG'
+test(02-02): failing case for a script
+
+Fails-until-green: which-checks::a case
+MSG
+naming_a_rust_test="$work/naming-a-rust-test"
+cat > "$naming_a_rust_test" <<'MSG'
+test(02-02): failing test for the library
+
+Fails-until-green: application::allowed::tests::test_a
+MSG
+expect_owed "which-checks" "a red commit naming a shell case owes that suite" \
+    red --message-file="$naming_a_shell_case" src/lib.rs
+expect_owed "" "a red commit naming only a rust test owes no suite" \
+    red --message-file="$naming_a_rust_test" src/lib.rs
+expect_owed "" "a source file alone owes no suite" affected src/lib.rs
+expect_owed "" "documents alone owe no suite" affected docs/changelog.md
+
+# A staged move, read from a repository of its own. Git lists a staged move by
+# where it went unless it is asked with `--no-renames`, and a move out of
+# `scripts/` then reads as a path outside every list, which owes nothing, while
+# the three suites that read the file it left have lost it. The repository is
+# built the way `which-checks.test.sh` builds one, hooks pinned to an empty
+# directory and identity set on it, under the harness that clears the git
+# variables a hook hands its children, and nothing here points at this one.
+a_repository_of_its_own() {
+    local repo="$1"
+    mkdir -p "$repo/no-hooks"
+    git -C "$repo" init --quiet -b main
+    git -C "$repo" config core.hooksPath "$repo/no-hooks"
+    git -C "$repo" config user.email "suite@example.invalid"
+    git -C "$repo" config user.name "the suite"
+}
+
+a_staged_move="$work/a-staged-move"
+a_repository_of_its_own "$a_staged_move"
+mkdir -p "$a_staged_move/scripts" "$a_staged_move/tools"
+printf 'any content\n' > "$a_staged_move/scripts/red-commit.sh"
+git -C "$a_staged_move" add scripts/red-commit.sh
+git -C "$a_staged_move" commit --quiet -m "a script to move"
+git -C "$a_staged_move" mv scripts/red-commit.sh tools/red-commit.sh
+want="$(sorted_words check red-commit which-checks)"
+got="$(cd "$a_staged_move" && suites_answered_yes affected --staged)"
+if [ "$got" = "$want" ]; then
+    suite_case_passed "a staged move out of the scripts folder owes the suites that read the file it left"
+else
+    suite_case_failed "a staged move out of the scripts folder owes the suites that read the file it left" \
+        "answered '$got', wanted '$want'"
+fi
+
+# ── A merge is told to which-checks as a merge ───────────────────────────────
+# Added 2026-09-23 by 12-03.2. From that day a merge into `main` answers what
+# the branch's whole diff earns rather than everything, and `check.sh` is what
+# knows a merge is in progress, by `MERGE_HEAD`. Asked through the question
+# `--mode-for-this-commit`, which makes the run's own decision without running
+# anything, from repositories of their own built the way the move above was.
+expect_the_mode() {
+    local want="$1" desc="$2" repo="$3" got
+    got="$(cd "$repo" && bash "$subject" --mode-for-this-commit 2>/dev/null)"
+    if [ "$got" = "$want" ]; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "answered '$got', wanted '$want'"
+    fi
+}
+
+a_merge_in_progress="$work/a-merge-in-progress"
+a_repository_of_its_own "$a_merge_in_progress"
+printf 'the start\n' > "$a_merge_in_progress/README.md"
+git -C "$a_merge_in_progress" add README.md
+git -C "$a_merge_in_progress" commit --quiet -m "the start"
+git -C "$a_merge_in_progress" checkout --quiet -b a-branch
+mkdir -p "$a_merge_in_progress/src"
+printf 'fn changed() {}\n' > "$a_merge_in_progress/src/changed.rs"
+git -C "$a_merge_in_progress" add src/changed.rs
+git -C "$a_merge_in_progress" commit --quiet -m "code on the branch"
+git -C "$a_merge_in_progress" checkout --quiet main
+git -C "$a_merge_in_progress" merge --quiet --no-ff --no-commit a-branch > /dev/null 2>&1
+expect_the_mode affected "a merge in progress is told to which-checks as a merge" "$a_merge_in_progress"
+
+a_commit_on_main="$work/a-commit-on-main"
+a_repository_of_its_own "$a_commit_on_main"
+printf 'the start\n' > "$a_commit_on_main/README.md"
+git -C "$a_commit_on_main" add README.md
+git -C "$a_commit_on_main" commit --quiet -m "the start"
+mkdir -p "$a_commit_on_main/src"
+printf 'fn changed() {}\n' > "$a_commit_on_main/src/changed.rs"
+git -C "$a_commit_on_main" add src/changed.rs
+expect_the_mode all "a commit on main that is not a merge earns everything" "$a_commit_on_main"
+
+# A merge whose diff holds a document runs the document-reading targets as well
+# as what its code earns, so a broken link in a branch that also changed code
+# is found at its merge. A branch commit does not: nearly every green commit
+# here carries a changelog line beside its code and would pay the list each
+# time. `docs_links` is on the document list and not on the whole tree's.
+runs="$(ask_from_the_tree --scoped-runs-for --merge "$registry" src/lib.rs docs/x.md 2>/dev/null)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a merge holding a document runs the document-reading targets" "$target_line"
+elif printf '%s\n' "$target_line" | grep -qE -- '--test docs_links( |$)'; then
+    suite_case_passed "a merge holding a document runs the document-reading targets"
+else
+    suite_case_failed "a merge holding a document runs the document-reading targets" \
+        "answered: $runs"
+fi
+
+target_line="$(the_one_target_line "$(scoped_runs src/lib.rs docs/x.md)")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a branch commit holding a document and code runs no document-reading target" \
+        "$target_line"
+elif printf '%s\n' "$target_line" | grep -qE -- '--test docs_links( |$)'; then
+    suite_case_failed "a branch commit holding a document and code runs no document-reading target" \
+        "answered: $target_line"
+else
+    suite_case_passed "a branch commit holding a document and code runs no document-reading target"
+fi
+
+# The run says so when it skips a suite. Read out of `check.sh`, because a run
+# from the scratch directory stops before the suites' stage and a run from here
+# would start the gate that runs this suite: inside the suites' own loop, before
+# its `bash "$suite"` line, a line prints `not run` with the suite's name.
+the_loop_says_when_it_skips_a_suite() {
+    awk '
+        index($0, "for suite in \"$(dirname \"$0\")\"/*.test.sh") { inside = 1; next }
+        inside && /^[[:space:]]*bash "\$suite"/ { exit }
+        inside && /echo/ && /not run/ && /\$suite_name/ { found = 1; exit }
+        END { exit found ? 0 : 1 }
+    ' "$1"
+}
+
+if the_loop_says_when_it_skips_a_suite "$subject"; then
+    suite_case_passed "when a suite is not owed the run says so"
+else
+    suite_case_failed "when a suite is not owed the run says so" \
+        "the loop over the suites in check.sh prints no line naming a suite it did not run"
+fi
+
+# The companion: the near miss is a loop that skips with a bare `continue`.
+silent_skip="$work/a-silent-skip.sh"
+cat > "$silent_skip" <<'SH'
+for suite in "$(dirname "$0")"/*.test.sh; do
+    suite_name="$(basename "$suite" .test.sh)"
+    case "${shell_suites_owed[$suite_name]-}" in
+        "yes: "*) ;;
+        *) continue ;;
+    esac
+    echo "-- $suite_name"
+    bash "$suite" >> "$run_log" 2>&1 || shell_suites_failed=yes
+done
+SH
+if the_loop_says_when_it_skips_a_suite "$silent_skip"; then
+    suite_case_failed "a script that skips a suite in silence is refused" \
+        "the reading found a skip line in a loop that has none"
+else
+    suite_case_passed "a script that skips a suite in silence is refused"
+fi
+
+# ── Each suite's list holds what that suite reads ────────────────────────────
+# The lists in `check.sh` are data rather than read out of the suites when the
+# gate runs, because a gate deciding by a pattern over text leaks wherever the
+# text is spelled another way. So the pattern holds the lists here instead of
+# making them. For each suite, the files it reaches: the suite itself, then in
+# every reached `scripts/*.sh`, on every line that is not a comment, every
+# `$root/<path>`, every `$repo_root/<path>` and every `"$(dirname "$0")/<path>"`
+# (resolved from `scripts/`), again for each file newly reached. It prints one
+# line per disagreement:
+#
+#   a suite with no list in the given `check.sh`
+#   a path a suite reaches that is on neither its list nor the shared one
+#   when a suite called `check` exists, a path on another suite's list that is
+#     not on check's, because check's reads of every suite are spelled with
+#     `$root` quoted, which the pattern does not follow
+#   a path on a suite's list and on the list no suite reads, at once
+#   a reach that is not one file, with where it was found
+#
+# It reads more than any case reaches, on purpose: `check.sh` calls `audit.sh`
+# only in `all`, and `audit.sh` names `Cargo.lock` only in its real run. A list
+# wider than the reads costs seconds on a commit that stages one of those; a
+# list narrower than the reads skips a suite that should have run.
+#
+# One `awk` over every script for all the reads, and the rest in bash, because
+# a process costs tens of milliseconds on Windows: the first spelling, three
+# processes per file read, took 2.7 seconds of this suite on 2026-09-23.
+
+# Every read each `scripts/*.sh` of a tree names, one `<file> <path> <reach>`
+# line each, from lines that are not comments. A script-relative reach is
+# resolved from `scripts/` and each `dir/..` is taken off. The pattern stops at
+# a quote, a space, a bracket or a semicolon, and is written so this file's own
+# text holds no read it would take.
+the_reads_every_script_names() {
+    ( cd "$1" && awk '
+        FNR == 1 { file = FILENAME }
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            while (match(line, /\$(root|repo_root)\/[^"\047 \t);]*|\$\(dirname "\$0"\)\/[^"\047 \t);]*/)) {
+                reach = substr(line, RSTART, RLENGTH)
+                line = substr(line, RSTART + RLENGTH)
+                if (substr(reach, 1, 2) == "$(") path = "scripts/" substr(reach, index(reach, ")/") + 2)
+                else path = substr(reach, index(reach, "/") + 1)
+                while (sub(/[^\/]+\/\.\.\//, "", path)) {}
+                print file " " path " " reach
+            }
+        }' scripts/*.sh )
+}
+
+the_reads_no_list_names() {
+    local tree="$1" script="$2" suite name path reach file line every_list="" no_list=""
+    local -A lists=() reads_of=()
+
+    while IFS= read -r line; do
+        case "$line" in
+            'the_inputs_of_a_suite['*']="'*'"')
+                name="${line#the_inputs_of_a_suite[}"
+                name="${name%%]*}"
+                reach="${line#*=\"}"
+                lists[$name]="${reach%\"}"
+                ;;
+            'what_every_suite_is_owed_for=('*')')
+                every_list="${line#*=(}"
+                every_list="${every_list%)}"
+                ;;
+            'what_no_suite_reads=('*')')
+                no_list="${line#*=(}"
+                no_list="${no_list%)}"
+                ;;
+        esac
+    done < "$script"
+
+    while read -r file path reach; do
+        reads_of[$file]+="$path $reach"$'\n'
+    done < <(the_reads_every_script_names "$tree")
+
+    for suite in "$tree"/scripts/*.test.sh; do
+        name="${suite##*/}"
+        name="${name%.test.sh}"
+        if [ -z "${lists[$name]+listed}" ]; then
+            echo "$name: no the_inputs_of_a_suite[$name] line in ${script##*/}"
+            continue
+        fi
+        local -A reached=(["scripts/$name.test.sh"]=1)
+        local -a to_read=("scripts/$name.test.sh")
+        while [ "${#to_read[@]}" -gt 0 ]; do
+            file="${to_read[0]}"
+            to_read=("${to_read[@]:1}")
+            while read -r path reach; do
+                [ -n "$path" ] || continue
+                case "$path" in
+                    */ | *'$'* | *'*'* | *..*)
+                        echo "$name: $file reaches $reach, which is not one file"
+                        continue
+                        ;;
+                esac
+                [ -n "${reached[$path]-}" ] && continue
+                reached[$path]=1
+                case "$path" in
+                    scripts/*.sh) to_read+=("$path") ;;
+                esac
+            done <<< "${reads_of[$file]-}"
+        done
+        for path in "${!reached[@]}"; do
+            case " ${lists[$name]} $every_list " in
+                *" $path "*) ;;
+                *) echo "$name: reads $path, which is on neither its list nor what_every_suite_is_owed_for" ;;
+            esac
+        done
+        for path in ${lists[$name]}; do
+            case " $no_list " in
+                *" $path "*) echo "$name: $path is on its list and on what_no_suite_reads" ;;
+            esac
+        done
+        unset reached
+    done
+    [ -n "${lists[check]+present}" ] || return 0
+    for name in "${!lists[@]}"; do
+        [ "$name" = check ] && continue
+        for path in ${lists[$name]}; do
+            case " ${lists[check]} " in
+                *" $path "*) ;;
+                *) echo "check: $path is on $name's list and not on check's" ;;
+            esac
+        done
+    done
+}
+
+unlisted_reads="$(the_reads_no_list_names "$root" "$subject" | sort)"
+if [ -z "$unlisted_reads" ]; then
+    suite_case_passed "every file a suite reads is on its list"
+else
+    suite_case_failed "every file a suite reads is on its list" "$unlisted_reads"
+fi
+
+# The companion, over a planted tree: a suite reading a data file its list does
+# not name. The planted suite's reads are written through `printf` with the
+# variable's name passed as an argument, so the text of this file holds no
+# `$root/` path the reading above would take as one of this suite's reads.
+planted_tree="$work/planted-tree"
+mkdir -p "$planted_tree/scripts" "$planted_tree/data"
+printf '. "%s/scripts/shell-suite.sh"\nbash "%s/scripts/planted.sh"\ncat "%s/data/planted.txt"\n' \
+    '$root' '$root' '$root' > "$planted_tree/scripts/planted.test.sh"
+printf 'echo planted\n' > "$planted_tree/scripts/planted.sh"
+printf 'the_inputs_of_a_suite[planted]="scripts/planted.test.sh scripts/planted.sh"\nwhat_every_suite_is_owed_for=(scripts/shell-suite.sh)\nwhat_no_suite_reads=(scripts/elsewhere.py)\n' \
+    > "$planted_tree/check.sh"
+planted_answer="$(the_reads_no_list_names "$planted_tree" "$planted_tree/check.sh")"
+if [ "$planted_answer" = "planted: reads data/planted.txt, which is on neither its list nor what_every_suite_is_owed_for" ]; then
+    suite_case_passed "a suite reading a file its list does not name is refused"
+else
+    suite_case_failed "a suite reading a file its list does not name is refused" \
+        "the reading answered '$planted_answer' over the planted tree"
 fi
 
 # ── What a suite prints, proved against a suite written here ────────────────

@@ -41,6 +41,13 @@
 # when a branch is merged into main with `git merge --no-ff`: the merge commit
 # runs this hook and it answers `all`. Do not run `scripts/check.sh all` by
 # hand before merging as well; it runs the same checks on the same tree.
+#
+# Since 2026-09-23 (12-03.2) the merge commit's run answers what the branch's
+# whole diff earns, with the document-reading targets when that diff holds a
+# document, and not `all`. The whole suite, the release build and the audit run
+# once a phase, `scripts/check.sh all` by hand in the phase's closing plan on
+# its branch before its merge. Merge with `git merge --no-ff` still, so the
+# merge commit runs this hook; a fast-forward makes no commit and runs nothing.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"

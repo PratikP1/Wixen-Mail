@@ -470,29 +470,48 @@ fn test_a_command_with_a_pipe_in_it_is_one_cell() {
 const ME: &str = "every_number_carries_its_command_and_its_date";
 
 /// The targets a documents-only commit earns, read from the gate script.
+///
+/// From the one-line array `the_targets_that_read_documents=(...)` since
+/// 2026-09-23 (12-03.2), which holds the list once for the documents-only
+/// block and for a merge whose diff holds a document. Until then this read
+/// the `--test` tokens of the `docs_only` block, which no longer spells any.
 fn the_documents_only_targets(script: &str) -> Vec<String> {
-    let mut inside = false;
-    let mut found = Vec::new();
-    for line in script.lines() {
-        if line.starts_with("if [ \"$mode\" = \"docs_only\" ]; then") {
-            inside = true;
-            continue;
-        }
-        if inside && line.starts_with("fi") {
-            break;
-        }
-        if !inside || line.trim_start().starts_with('#') {
-            continue;
-        }
-        let mut rest = line;
-        while let Some(at) = rest.find("--test ") {
-            rest = &rest[at + "--test ".len()..];
-            if let Some(name) = rest.split_whitespace().next() {
-                found.push(name.to_string());
-            }
-        }
-    }
-    found
+    script
+        .lines()
+        .find_map(|line| line.strip_prefix("the_targets_that_read_documents=("))
+        .and_then(|rest| rest.split(')').next())
+        .map(|inner| inner.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// A planted gate script whose document list is spelled only as the one-line
+/// array, above a `docs_only` block that runs it through a variable.
+fn a_gate_holding_the_documents_list_as_an_array() -> String {
+    format!(
+        "the_targets_that_read_documents=(house_style {ME} docs_links)\n\
+         if [ \"$mode\" = \"docs_only\" ]; then\n    \
+         cargo test --no-fail-fast \"${{arguments[@]}}\"\n\
+         fi\n"
+    )
+}
+
+#[test]
+fn test_the_measurements_reading_is_found_in_the_documents_array() {
+    // Since 2026-09-23 (12-03.2) the document-reading list is held once in
+    // `scripts/check.sh`, as `the_targets_that_read_documents=(...)`, because a
+    // merge whose diff holds a document runs it too and a second copy of the
+    // list is one no reader watches. The `docs_only` block then runs the list
+    // through a variable and spells no `--test` of its own, so a reading of
+    // the block's `--test` tokens would find nothing there.
+    let planted = a_gate_holding_the_documents_list_as_an_array();
+    assert!(
+        the_documents_only_targets(&planted)
+            .iter()
+            .any(|target| target == ME),
+        "the documents reading found {:?} in a gate whose document list names \
+         {ME} in its array",
+        the_documents_only_targets(&planted)
+    );
 }
 
 /// The targets every scoped run ends with, read from the gate script.
@@ -552,7 +571,10 @@ fn test_the_reading_of_what_the_gate_runs_can_see_a_target_that_is_missing() {
          list it is about"
     );
 
-    let without = script.replace(&format!("--test {ME}"), "--test something_else");
+    // Taken out of the documents array, where the list has been held since
+    // 2026-09-23 (12-03.2). Until then this took `--test {ME}` out of the
+    // `docs_only` block, which spells no target since.
+    let without = script.replace(&format!(" {ME}"), " something_else");
     assert!(
         !the_documents_only_targets(&without)
             .iter()

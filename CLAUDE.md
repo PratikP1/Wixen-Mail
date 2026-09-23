@@ -306,14 +306,19 @@ with the reasoning written into the script at the branch that decides it. The
 rule the sentence was reaching for is elsewhere in this file and is the true one:
 a document change still runs the document-reading targets, because
 `tests/house_style.rs` reads documents and its em-dash guard has caught two real
-breaks in markdown. On a branch nobody builds, the slow half waits for the merge,
+breaks in markdown. On a branch nobody builds, the slow half waits for the merge
+(until 2026-09-23; from then, for the phase's closing plan),
 and what runs is scoped to the change. A commit touching only
 documents runs formatting, clippy and the targets that read documents, which
 are listed in `scripts/check.sh`'s documents-only branch with the reason for
 each (three when this sentence was written on 2026-08-31, nine on 2026-09-14);
 a commit touching code runs those plus the tests reaching the modules it changed,
 plus the guards that read the whole tree. Measured 2026-08-31: a four-file
-markdown commit went from about 330 seconds to 36.
+markdown commit went from about 330 seconds to 36. **Since 2026-09-23, on
+`main`, a commit that is not a merge still earns everything for code, and a
+merge earns what the branch's whole diff earns by the branch rules**, with the
+document-reading targets as well when that diff holds a document; `check.sh`
+knows a merge by `MERGE_HEAD` and tells `which-checks.sh` with `--merge`.
 
 **A guard living in `tests/` also runs on the commits that could break it, and
 `guards/guards.toml` is what says which those are.** A unit test lives beside
@@ -350,7 +355,8 @@ seconds across the branches that recorded one on 2026-09-14, and the row for
 already built, which is the suite's term taken on its own rather than inside a
 gate run, so read the two against each other with that difference in mind. On
 a branch the slow two wait for the merge, where they run once rather than once
-per commit.
+per commit. From 2026-09-23 they wait for the phase's closing plan instead, and
+run once a phase.
 
 **The merge is the full gate, and it runs once.** Until 2026-09-23 this
 paragraph ended "Whoever merges runs `scripts/check.sh all` first, and that is
@@ -367,6 +373,45 @@ again; if the refusal is the keyring race of ledger 374, `git commit --no-edit`
 retries the merge commit. On a branch, the hook runs only what reaches the
 change, which is what a branch is for; the whole suite runs at the merge and
 nowhere before it.
+
+**Since 2026-09-23 the merge is no longer the full gate; the phase's closing
+plan is.** Pratik decided that day, from the same measurement, that the full
+gate runs once a phase rather than at every merge. A merge made with `git merge
+--no-ff` still runs the hook, and the hook runs formatting, clippy and what the
+branch's whole diff earns by the rules a branch commit is judged by, with the
+document-reading targets when that diff holds a document. So a branch that
+changed a workflow, the installer script or a dependency still earns everything
+at its merge. The whole suite, the release build and the security audit run
+once a phase: `scripts/check.sh all` by hand in the phase's closing plan, on its
+branch, after its last commit and before its merge, with `main` unmoved since
+the branch was cut, its output written to a file and its exit status read
+directly. A red one is fixed on that branch as a small red and green pair and
+the gate run again before the merge, not a plan of its own, on Pratik's answer
+of 2026-09-23.
+
+The risk, plainly. A break only the whole suite sees now waits on `main` until
+the phase closes: in phase 12 that is up to nine merges, 12-03.2 to 12-11,
+since 12-03.1 and every plan before it merged under the old full gate, and
+finding the commit that broke it is then a bisection of about four steps. The
+evidence for taking it, from the measurement of nine executors on 2026-09-23,
+11-11.1.1 to 12-03: the merge's full gate found nothing the branch's scoped
+checks had missed, and its only refusals were the keyring race of ledger 374.
+The limit of that evidence: nine plans is a small sample, and the scoped checks
+have known holes the merge used to cover and which now wait for the phase's
+close. The documents `src/` reads at test time with `read_to_string` are one,
+`docs/privacy.md` through `contact_groups.rs` and `update_check.rs` and
+`docs/development/the-notes-seam.md` through `onenote_page.rs` (ledger 583);
+`src/main.rs` and `src/presentation/wx_settings.rs` mapping to filters that
+match nothing is another; the rest are in phase 12's README. Two holes 12-03.2
+closed rather than named: a Rust file another module compiles in, and a merge
+mixing code and documents. What narrows the risk is CI's full Test Suite on
+the pushes and pull requests Pratik's standing OK of 2026-09-23 allows, under
+which plans that change what is spoken or shown push their branch and open a
+pull request and others do not. He chose that day to push nothing more,
+because a pull request waits for CI's runs: read with `gh run view` on
+2026-09-23, the Test Suite job took 20.7 minutes in run 35839954808 and 20.6 in
+run 35876075831, and the NVDA job 24.0 in run 35839954840 and 25.0 in run
+35876075636.
 
 `which-checks.sh` answers `all` for anything it cannot place, including an
 empty branch name and a detached `HEAD`. A check that cannot tell where it is
@@ -425,6 +470,38 @@ them.** `scripts/*.test.sh` runs on every invocation of `check.sh`, in every
 mode, before anything else, and in CI. For one day these suites existed and
 nothing ran them, which is guardrail 4 exactly: a check nobody reads is worse
 than no check, because it reads as covered.
+
+**Since 2026-09-23 each suite runs only when a commit stages what it reads**,
+so "runs on every invocation of `check.sh`, in every mode" above was true until
+that day. Pratik answered then that each suite runs for its own inputs rather
+than the four together when any of them moves. `scripts/check.sh` holds a list
+per suite, `the_inputs_of_a_suite`, of the files the suite and every script it
+calls name, and a commit owes a suite when it stages a path on that suite's
+list. Every suite runs for `scripts/shell-suite.sh` and `.githooks/commit-msg`,
+the shared harness and the hook that runs them all; for a path under `scripts/`
+or `.githooks/` that no list places, the gate's answer to what it cannot place;
+in `all` and `all_but_slow`; and for a red commit naming one of its cases. None
+runs for the scripts no suite reaches, `scripts/guards.py` among them. Check's
+list holds every other suite's list, because the reading that holds the lists
+lives in `check.test.sh` and reads every suite, and `.cargo/audit.toml` is on
+audit's and check's lists because three of audit's cases read the accepted
+advisories. That reading, "every file a suite reads is on its list", follows
+every call from each suite and fails when a suite reads a file its list does
+not name, so the lists are data a pattern checks rather than a pattern the gate
+decides by. A suite not run prints a line saying so and why, and CI's Clippy
+job still runs every suite on every push and pull request, which is the net.
+
+What it saves, measured 2026-09-23 by 12-03.2's planner. The suites
+`which-checks`, `check`, `audit` and `red-commit` took 9, 7, 3.9 and 5.1
+seconds by hand one after another at `342b019f`, about 25 in all, and 11, 9, 4
+and 6 the same way at `8eee380a`. Over the 79 commits and merges from 11-11.1.1
+to 12-03, read with `git diff --name-only --no-renames` per commit, 36 would
+have owed the four together under the rule first approved, and under the lists
+32 owe the check suite alone, 31 of them because they stage
+`guards/guards.toml` and nothing else a suite reads, and 47 owe none. At that
+day's times that is about 224 seconds of suites over the 79, against about 900
+under the rule first approved and about 1,975 with every suite on every commit:
+about 3.2 minutes a plan saved over nine plans.
 
 **They cost 108 seconds, not the milliseconds this paragraph used to claim.**
 Measured 2026-09-10 at `eda2719`, running every `scripts/*.test.sh` in turn, the
@@ -1012,6 +1089,20 @@ screen reader uses. A quiet capture on the other channel is not evidence that
 the producer is clean, and a plan branch that reads it that way is a premise to
 correct before execution. The case, 09-06 and #33 on 2026-09-16, is in the
 Accessibility section beside the two channels it is about.
+
+**A phase's closing plan runs the full gate once, by hand, before its merge.**
+Added 2026-09-23 with 12-03.2, which moved the full gate from every merge to
+once a phase. The plan in a phase's highest wave carries a task that runs
+`scripts/check.sh all` by hand once, on its branch after its last commit and
+before its merge, with `main` unmoved since the branch was cut, its output
+written to a file and its exit status read directly. A red one is fixed on that
+branch as a small red and green pair and the gate run again before the merge,
+on Pratik's answer of 2026-09-23. The checker refuses a phase whose closing plan
+has no such task. Nothing checks this yet, which makes it the kind of rule this
+file keeps saying is not enough on its own: ledger 584 is for a check in
+`tests/the_planning_files_agree_with_themselves.rs` that the highest-wave plan
+of every phase from 12 on names `scripts/check.sh all`, to be written beside
+the tick count that file's completion-marks paragraph already owes.
 
 ### Done means it runs
 

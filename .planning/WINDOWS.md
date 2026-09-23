@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 540
+open_count: 544
 waived_count: 0
-fixed_count: 40
-total_count: 580
-last_updated: 2026-09-23T15:30:00.000Z
+fixed_count: 42
+total_count: 586
+last_updated: 2026-09-23T16:58:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -387,8 +387,8 @@ last_updated: 2026-09-23T15:30:00.000Z
 | 370 | 06 | unrun-verify | src/application/occurrences.rs |  | The repeat-series sentence has never been heard in any language. every week on mardi and jeudi is what a French computer now hears, a French day inside an English frame, held by a test under a forced fr-FR; whether a French listener hears the day as a day, or hears the sentence as a fault, waits for the pass after phase 8 and for version 2's translation of the frame. | open |  | 2026-09-13T23:13:18.748Z |  |
 | 371 | 06 | unrun-verify | src/service/signed_mail.rs |  | The eight signature-outcome sentences have never been heard in any language. The date in them now follows the computer in the form a date puts a month in, held by a test under a forced fr-FR asserting 28 août 2026; whether the sentence reads as a date to a listener waits for the pass after phase 8. | open |  | 2026-09-13T23:13:19.744Z |  |
 | 372 | 06 | unmet-truth | src/application/repeating.rs |  | Four interface literals still carry English day and month names and are allowed by name in the source-reading guard with a reason beside each: Every weekday, Monday to Friday in repeating.rs and item_fields.rs, and Month first, July 26, Day first, 26 July and A word, July 26, 2026 in wx_settings.rs. They are labels on choices, interface text version 2 translates; a French day inside an English label is not better than an English one. The guard asserts each allowance is still in the tree so the list cannot outlive its subjects. | open |  | 2026-09-13T23:13:20.732Z |  |
-| 373 | 06 | deviation | locales/en-US/dates.ftl |  | locales/ maps to no target in the gate. scripts/check.sh scopes tests by src/*.rs and tests/*.rs, house_style's ours() does not walk locales/ and the plan says not to add it, so a commit touching only the catalogue runs formatting, clippy and the tree-reading guards and never common::catalogue::, whose parse and completeness checks read the file through include_str. The whole gate at the merge and CI are what cover it until a mapping is decided with the rest of version 2's questions. | open |  | 2026-09-13T23:13:21.714Z |  |
-| 374 | 06 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | Ledger 365's cause, found by keeping the failure text the second time it fired, on the build(06-03) commit: test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent panicked with No default store has been set from keyring. keyring 4.1.5's Entry::new races its own lazy initialisation: the thread that wins a compare_exchange on an AtomicBool sets the default store, and a thread that loses it goes straight to keyring_core::Entry::new before the winner has finished. Ten tests start in parallel on a fresh process, so it fires about one run in three. Not contention, and not this target's fault. A second finding: the in-memory seam in secret_store.rs is cfg(test), which an integration test never sees, so every run of this target reaches the real Windows credential store. Out of 06-03's scope; a Once around the first Entry::new in secret_store, or a seam the integration targets can see, is the fix. | open |  | 2026-09-13T23:13:22.733Z |  |
+| 373 | 06 | deviation | locales/en-US/dates.ftl |  | locales/ maps to no target in the gate. scripts/check.sh scopes tests by src/*.rs and tests/*.rs, house_style's ours() does not walk locales/ and the plan says not to add it, so a commit touching only the catalogue runs formatting, clippy and the tree-reading guards and never common::catalogue::, whose parse and completeness checks read the file through include_str. The whole gate at the merge and CI are what cover it until a mapping is decided with the rest of version 2's questions. | fixed | Fixed by 12-03.2 on 2026-09-23, as built, on Pratik's answer that day to decision for Pratik 4 (phase 12 README decision 16), in the green commit after 4dd77e13. His approval named the dictionary and his answer took the rule to every file the program compiles in, the date catalogue included: which-checks.sh --sources-compiling names the sources whose include_str! or include_bytes! resolves to a staged file, and check.sh's scoped run treats each as changed, so a change to locales/en-US/dates.ftl now reaches common::catalogue. If version 2 loads catalogues at run time rather than compiling them in, this rule stops reaching them | 2026-09-13T23:13:21.714Z | 2026-09-23T16:20:00.000Z |
+| 374 | 06 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | Ledger 365's cause, found by keeping the failure text the second time it fired, on the build(06-03) commit: test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent panicked with No default store has been set from keyring. keyring 4.1.5's Entry::new races its own lazy initialisation: the thread that wins a compare_exchange on an AtomicBool sets the default store, and a thread that loses it goes straight to keyring_core::Entry::new before the winner has finished. Ten tests start in parallel on a fresh process, so it fires about one run in three. Not contention, and not this target's fault. A second finding: the in-memory seam in secret_store.rs is cfg(test), which an integration test never sees, so every run of this target reaches the real Windows credential store. Out of 06-03's scope; a Once around the first Entry::new in secret_store, or a seam the integration targets can see, is the fix. | fixed | Fixed by 12-03.2 on 2026-09-23 for the race, in 72c27b6c: secret_store::open_entry opens the first credential entry of a process inside a OnceLock initialiser, so every other caller waits until keyring has set the store, and the seam and the uninstall sweep in application::forget both open through it. tests/the_credential_store_is_ready_for_every_thread.rs starts its own binary twenty times and releases sixteen threads together in each; taken red by hand three times at f3e4b8ee, 20 of 20 children failing each time, and green five times after the fix. The second finding, that an integration target reaches the real credential store, is ledger 581 | 2026-09-13T23:13:22.733Z | 2026-09-23T15:55:00.000Z |
 | 375 | 06 | unrun-verify | src/presentation/wx_account_manager.rs |  | The three Allow Changes for this account boxes, their section heading and the note beneath have not been heard with a screen reader. Each carries its label on the control itself so the name reaches UI Automation and MSAA both, and the disabled arm's label says why it is unavailable and names the heading in Settings; what only a listening pass can settle is whether a person tabbing through hears why the third box is missing, because Windows skips a disabled control in the tab order and the note beneath is not in it either. Waits for the pass after phase 8. | open |  | 2026-09-14T06:25:29.308Z |  |
 | 376 | 06 | unrun-verify | src/application/allowed.rs |  | None of the sending, deleting and syncing a per-account answer governs has ever run against a real account, so what unticking a box on the account dialog holds back has only ever been held back in tests. allowed_for is unchanged and narrows as it always did; the new writer set_allowed_for is covered by three unit tests and no live server. | open |  | 2026-09-14T06:25:29.729Z |  |
 | 377 | 06 | deviation | src/application/allowed.rs |  | The refusal a sync says when a per-account answer is holding a change still names Settings and not the account: turn_the_setting_on has one owner and no account in hand, so a person whose Settings box is on hears advice that sends them to a box that is already ticked. The account dialog's note and the testing page say so, and the wording is pinned literally in tests across contacts_sync.rs, calendar.rs, pim_command.rs and answering.rs, so naming both places is a plan of its own. The tree already says it both ways: carddav_sync.rs and address_book_source.rs say Allow Changes is off for this account, which pointed at nothing until 06-04. | open |  | 2026-09-14T06:25:41.365Z |  |
@@ -595,6 +595,12 @@ last_updated: 2026-09-23T15:30:00.000Z
 | 578 | 12 | unrun-verify | src/presentation/page_focus.rs |  | 12-03.1: the tester's ear. Switching away from the window that shows a conversation as headings and back, under NVDA, then pressing K or H at once: the keyboard should be in the message and the key should move. What is held here is a message a test sends to a built window, reproducing the one path in wxWidgets that leaves the keyboard on the frame; a real switch is read only by the NVDA workflow, and nobody has heard it. Also to hear: moving to the attachments list or the warning bar, switching away and back, and finding the keyboard still there | open |  | 2026-09-23T14:10:00.000Z |  |
 | 579 | 12 | todo | src/presentation/page_window.rs | 186 | 12-03.1: the separate window has no such handler. Its frame has no parent, so the wxWidgets path that restores a frame to itself, because it was saved as its own last focused child, cannot happen there: with no parent the saved frame is dropped and the first child that takes the keyboard gets it. The other two ways the keyboard could be lost on coming back, an activation wxWidgets drops because it arrives marked minimised, and the browser letting the keyboard go after a real foreground change, are unmeasured on it. Owed: the frame-saved reading's shape over the separate window, and presentation::page_focus bound there if it comes back red | open |  | 2026-09-23T14:10:00.000Z |  |
 | 580 | 12 | todo | tests/mark_as_read_says_which_way_it_will_go.rs |  | 12-03.1: test_reading_a_the_letter_reaches_its_handler_on_a_real_list_and_the_search_does_not_get_it failed once on 2026-09-23, inside the gate of a commit that changed nothing it reads, while the tester was using the machine with NVDA running: the handler wired on M was called with no rows where one was wanted. The same target passed three runs of three straight after, and the commit went through on its second attempt. Not diagnosed. The reading sends WM_KEYDOWN and WM_CHAR to a real list, and one candidate, unmeasured, is that the modifier state wxWidgets reads for the key comes from the keyboard of the person at the machine. Written down so the next intermittent failure of this test is met as the second and not the first | open |  | 2026-09-23T14:10:00.000Z |  |
+| 581 | 12 | todo | src/service/secret_store.rs |  | 12-03.2: ledger 374's second finding, carried on when 374 was fixed for its race. The in-memory seam in secret_store.rs is cfg(test), so an integration target never sees it and every target that reaches the credential store, a_move_says_what_has_not_been_sent and the_credential_store_is_ready_for_every_thread among them, reaches the real Windows Credential Manager of whoever runs it. The new target only reads an entry under a service name nothing stores under, and writes nothing. A seam the integration targets can see, or a store they are handed, is the fix; not built here because 12-03.2 fixed the race and left the seam's shape alone | open |  | 2026-09-23T15:55:00.000Z |  |
+| 582 | 12 | todo | scripts/which-checks.sh |  | 12-03.2: nothing holds the real include lines to the shape the compiled-in scan reads. which-checks.sh maps a staged file to the sources whose include_str! or include_bytes! argument, a string literal on the macro's line or the next, resolves to it. The suites test that rule over fixture copies of three real lines (spellcheck/mod.rs:1050, catalogue.rs:153, sent_copy.rs:1133 on 2026-09-23), and the real tree's answers were read by hand once. If the dictionary's include changed shape, for instance to concat!(env!("CARGO_MANIFEST_DIR"), ...), both suites would stay green and a change to the dictionary would silently read as a document again. A reading of the real include lines that runs on the commits that could break them is owed; a unit test beside the include was set aside because it would add a test to files that 32 and 6 guard records name, setting off the count check for every one | open |  | 2026-09-23T16:20:00.000Z |  |
+| 583 | 12 | todo | src/application/contact_groups.rs |  | 12-03.2: documents src reads at test time with read_to_string reach no scoped run. docs/privacy.md is read by src/application/contact_groups.rs and src/service/update_check.rs, docs/development/the-notes-seam.md by src/service/onenote_page.rs, and docs/ALPHA_TESTING.md by src/presentation/help_page.rs, which alone is on the document-reading list. A commit changing only docs/privacy.md or the notes seam page runs none of the tests that read it. Until 2026-09-23 the whole gate at the merge covered them; 12-03.2 moved that gate to once a phase, which widened this hole to the phase's close. A mapping from a document to the sources that read it at test time, the way which-checks.sh maps a compiled-in file to its source, is owed | open |  | 2026-09-23T16:50:00.000Z |  |
+| 584 | 12 | todo | tests/the_planning_files_agree_with_themselves.rs |  | 12-03.2: nothing checks that a phase's closing plan runs the full gate. CLAUDE.md's rule of 2026-09-23 under Premises a plan checks before execution says the plan in a phase's highest wave carries a task running scripts/check.sh all by hand before its merge, and the checker refuses a phase whose closing plan has none. A check in tests/the_planning_files_agree_with_themselves.rs that the highest-wave plan of every phase from 12 on names scripts/check.sh all is owed, beside the tick count the completion-marks paragraph already owes the same test. Not built by 12-03.2: on the real tree it is green on arrival, since 12-12 already carries the task, so its only red would be a planted companion | open |  | 2026-09-23T16:50:00.000Z |  |
+| 585 | 12 | unrun-verify | scripts/check.sh |  | 12-03.2: 12-12's full gate, scripts/check.sh all by hand on its branch before its merge, is the first under the rule of 2026-09-23 that moved the whole suite, the release build and the audit from every merge to the phase's closing plan. From 12-03.2's merge to 12-12's, a break only the whole suite sees can sit on main; nine merges in phase 12, 12-03.2 to 12-11, merged without it, and 12-03.2's own changes, the keyring opener above all, reach integration targets its merge did not run. If the run is red, the break is found by bisecting those merges, about four steps, and fixed on 12-12's own branch as a small red and green pair with the gate run again before its merge, on Pratik's answer of 2026-09-23 to decision for Pratik 2, not left for a plan of its own. 12-12's premise corrections name this entry | open |  | 2026-09-23T16:58:00.000Z |  |
+| 586 | 12 | deviation | scripts/check.test.sh |  | 12-03.2: the check suite that decides which suites run grew with the cases that decide it. By hand, one suite after another, check.test.sh took 9 s at 8eee380a and 31.8 s at c4798dba, from 49 cases to 89; which-checks.test.sh 11 s to 18.5 s. The fork-free rewrite at 13b42781 had brought an earlier 31 s down to 16 s, and the cases tasks 4, 5 and 7 added since each start a bash and parse check.sh. Since 12-03.2 a commit staging only guards/guards.toml runs this suite alone, so such a commit pays about what all four suites cost before, and a commit staging no suite input pays none. Written down so the stage lines the later plans print are read with it; a cheaper question for the cases, one bash answering several, is the obvious next step and is not built | open |  | 2026-09-23T16:58:00.000Z |  |
 
 ````json
 [
@@ -5069,10 +5075,10 @@ last_updated: 2026-09-23T15:30:00.000Z
     "file": "locales/en-US/dates.ftl",
     "line": null,
     "description": "locales/ maps to no target in the gate. scripts/check.sh scopes tests by src/*.rs and tests/*.rs, house_style's ours() does not walk locales/ and the plan says not to add it, so a commit touching only the catalogue runs formatting, clippy and the tree-reading guards and never common::catalogue::, whose parse and completeness checks read the file through include_str. The whole gate at the merge and CI are what cover it until a mapping is decided with the rest of version 2's questions.",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "Fixed by 12-03.2 on 2026-09-23, as built, on Pratik's answer that day to decision for Pratik 4 (phase 12 README decision 16), in the green commit after 4dd77e13. His approval named the dictionary and his answer took the rule to every file the program compiles in, the date catalogue included: which-checks.sh --sources-compiling names the sources whose include_str! or include_bytes! resolves to a staged file, and check.sh's scoped run treats each as changed, so a change to locales/en-US/dates.ftl now reaches common::catalogue. If version 2 loads catalogues at run time rather than compiling them in, this rule stops reaching them",
     "recorded_at": "2026-09-13T23:13:21.714Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-23T16:20:00.000Z"
   },
   {
     "id": 374,
@@ -5081,10 +5087,10 @@ last_updated: 2026-09-23T15:30:00.000Z
     "file": "tests/a_move_says_what_has_not_been_sent.rs",
     "line": null,
     "description": "Ledger 365's cause, found by keeping the failure text the second time it fired, on the build(06-03) commit: test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent panicked with No default store has been set from keyring. keyring 4.1.5's Entry::new races its own lazy initialisation: the thread that wins a compare_exchange on an AtomicBool sets the default store, and a thread that loses it goes straight to keyring_core::Entry::new before the winner has finished. Ten tests start in parallel on a fresh process, so it fires about one run in three. Not contention, and not this target's fault. A second finding: the in-memory seam in secret_store.rs is cfg(test), which an integration test never sees, so every run of this target reaches the real Windows credential store. Out of 06-03's scope; a Once around the first Entry::new in secret_store, or a seam the integration targets can see, is the fix.",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "Fixed by 12-03.2 on 2026-09-23 for the race, in 72c27b6c: secret_store::open_entry opens the first credential entry of a process inside a OnceLock initialiser, so every other caller waits until keyring has set the store, and the seam and the uninstall sweep in application::forget both open through it. tests/the_credential_store_is_ready_for_every_thread.rs starts its own binary twenty times and releases sixteen threads together in each; taken red by hand three times at f3e4b8ee, 20 of 20 children failing each time, and green five times after the fix. The second finding, that an integration target reaches the real credential store, is ledger 581",
     "recorded_at": "2026-09-13T23:13:22.733Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-23T15:55:00.000Z"
   },
   {
     "id": 375,
@@ -7556,6 +7562,78 @@ last_updated: 2026-09-23T15:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T14:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 581,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/service/secret_store.rs",
+    "line": null,
+    "description": "12-03.2: ledger 374's second finding, carried on when 374 was fixed for its race. The in-memory seam in secret_store.rs is cfg(test), so an integration target never sees it and every target that reaches the credential store, a_move_says_what_has_not_been_sent and the_credential_store_is_ready_for_every_thread among them, reaches the real Windows Credential Manager of whoever runs it. The new target only reads an entry under a service name nothing stores under, and writes nothing. A seam the integration targets can see, or a store they are handed, is the fix; not built here because 12-03.2 fixed the race and left the seam's shape alone",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T15:55:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 582,
+    "kind": "todo",
+    "phase": "12",
+    "file": "scripts/which-checks.sh",
+    "line": null,
+    "description": "12-03.2: nothing holds the real include lines to the shape the compiled-in scan reads. which-checks.sh maps a staged file to the sources whose include_str! or include_bytes! argument, a string literal on the macro's line or the next, resolves to it. The suites test that rule over fixture copies of three real lines (spellcheck/mod.rs:1050, catalogue.rs:153, sent_copy.rs:1133 on 2026-09-23), and the real tree's answers were read by hand once. If the dictionary's include changed shape, for instance to concat!(env!(\"CARGO_MANIFEST_DIR\"), ...), both suites would stay green and a change to the dictionary would silently read as a document again. A reading of the real include lines that runs on the commits that could break them is owed; a unit test beside the include was set aside because it would add a test to files that 32 and 6 guard records name, setting off the count check for every one",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T16:20:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 583,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/application/contact_groups.rs",
+    "line": null,
+    "description": "12-03.2: documents src reads at test time with read_to_string reach no scoped run. docs/privacy.md is read by src/application/contact_groups.rs and src/service/update_check.rs, docs/development/the-notes-seam.md by src/service/onenote_page.rs, and docs/ALPHA_TESTING.md by src/presentation/help_page.rs, which alone is on the document-reading list. A commit changing only docs/privacy.md or the notes seam page runs none of the tests that read it. Until 2026-09-23 the whole gate at the merge covered them; 12-03.2 moved that gate to once a phase, which widened this hole to the phase's close. A mapping from a document to the sources that read it at test time, the way which-checks.sh maps a compiled-in file to its source, is owed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T16:50:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 584,
+    "kind": "todo",
+    "phase": "12",
+    "file": "tests/the_planning_files_agree_with_themselves.rs",
+    "line": null,
+    "description": "12-03.2: nothing checks that a phase's closing plan runs the full gate. CLAUDE.md's rule of 2026-09-23 under Premises a plan checks before execution says the plan in a phase's highest wave carries a task running scripts/check.sh all by hand before its merge, and the checker refuses a phase whose closing plan has none. A check in tests/the_planning_files_agree_with_themselves.rs that the highest-wave plan of every phase from 12 on names scripts/check.sh all is owed, beside the tick count the completion-marks paragraph already owes the same test. Not built by 12-03.2: on the real tree it is green on arrival, since 12-12 already carries the task, so its only red would be a planted companion",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T16:50:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 585,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "12-03.2: 12-12's full gate, scripts/check.sh all by hand on its branch before its merge, is the first under the rule of 2026-09-23 that moved the whole suite, the release build and the audit from every merge to the phase's closing plan. From 12-03.2's merge to 12-12's, a break only the whole suite sees can sit on main; nine merges in phase 12, 12-03.2 to 12-11, merged without it, and 12-03.2's own changes, the keyring opener above all, reach integration targets its merge did not run. If the run is red, the break is found by bisecting those merges, about four steps, and fixed on 12-12's own branch as a small red and green pair with the gate run again before its merge, on Pratik's answer of 2026-09-23 to decision for Pratik 2, not left for a plan of its own. 12-12's premise corrections name this entry",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T16:58:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 586,
+    "kind": "deviation",
+    "phase": "12",
+    "file": "scripts/check.test.sh",
+    "line": null,
+    "description": "12-03.2: the check suite that decides which suites run grew with the cases that decide it. By hand, one suite after another, check.test.sh took 9 s at 8eee380a and 31.8 s at c4798dba, from 49 cases to 89; which-checks.test.sh 11 s to 18.5 s. The fork-free rewrite at 13b42781 had brought an earlier 31 s down to 16 s, and the cases tasks 4, 5 and 7 added since each start a bash and parse check.sh. Since 12-03.2 a commit staging only guards/guards.toml runs this suite alone, so such a commit pays about what all four suites cost before, and a commit staging no suite input pays none. Written down so the stage lines the later plans print are read with it; a cheaper question for the cases, one bash answering several, is the obvious next step and is not built",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T16:58:00.000Z",
     "resolved_at": null
   }
 ]
