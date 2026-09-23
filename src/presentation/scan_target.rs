@@ -416,6 +416,8 @@ mod tests {
         // message opens, never scanned, because `reader` opens the other
         // surface. The separate window followed it on 2026-09-22, when the
         // third place a link can open in stopped being a status line.
+        //
+        // Send Feedback arrived on 2026-09-23 (#64), with the dialog it names.
         for name in [
             "columns",
             "which-copy",
@@ -431,6 +433,7 @@ mod tests {
             "send-later",
             "add-address-book",
             "about",
+            "feedback",
             "mail-module",
             "calendar-module",
             "contacts-module",
