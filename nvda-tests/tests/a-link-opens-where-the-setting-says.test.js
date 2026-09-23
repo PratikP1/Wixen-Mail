@@ -67,6 +67,21 @@
 // product gives the document back and the return is this case's to get
 // right.
 //
+// **Corrected 2026-09-23: that paragraph was true of 12-01's reading and
+// false on the runner.** Runs 35839692317 (at `26beb051`) and 35839954840 (at
+// `6cb8f17c`) both failed here on the second `K`, and both records say the
+// page window came back, by `activateWindow`, with UI Automation's focused
+// element on the window's own frame (`wxWindowNR`, named by the window's
+// title) rather than in the page. Three paths fit and that one read cannot
+// choose: wx gave the keyboard back to the frame because the frame had been
+// saved as its own last focused child; wx gave nothing back because the
+// activation carried the minimised flag; or the browser got it and let it go
+// again. 12-03.1 added a handler that gives the keyboard to the page from the
+// frame or from nothing, and this case now writes down what the window's own
+// thread says has the keyboard from the moment it is in front, sampled over
+// three seconds, and any line the handler logged when it moved it, so the
+// next run says which path the runner took whether it is green or red.
+//
 // So the case comes back the way a person does, with Alt+Tab, and then
 // waits for Windows to say the page window is in front rather than for a
 // call to say it asked. Guidepup presses a chord on Windows through
@@ -76,9 +91,18 @@
 // foreground and the focused element are written down before any key is
 // pressed, so the next run that fails here says whose failure it is instead
 // of leaving it to be inferred from silence.
+//
+// What the runs of 2026-09-23 showed about Alt+Tab: when its ten seconds
+// ran out, the window in front was an untitled one of another process, pid
+// 2036, NVDA had called the Edge window "unavailable", and `activateWindow` then
+// brought the page window back. The likeliest reading is a first-run window
+// of Edge's disabling its main window; `foregroundWindow` now records the
+// class and the process's name as well, which will confirm that or not.
 
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
 const { nvda } = require("@guidepup/guidepup");
 const {
   freshProfileDir,
@@ -89,6 +113,7 @@ const {
   foregroundWindow,
   focusedElement,
   waitForForeground,
+  watchTheKeyboardOfTheWindow,
   killApp,
   sleep,
 } = require("../helpers/launch-app");
@@ -121,8 +146,23 @@ const WAIT_FOR_THE_FRONT_MS = 10000;
 // the keyboard. The activation arrives first and the focus follows it.
 const SETTLE_AFTER_COMING_BACK_MS = 1000;
 
+// How long the keyboard watcher waits for the window to come to the front.
+// It is started before Alt+Tab and has to outlast both ways back, Alt+Tab's
+// wait and then `activateWindow`'s, so it is more than twice one of them.
+const WATCH_FOR_THE_FRONT_MS = 2 * WAIT_FOR_THE_FRONT_MS + 5000;
+
+// What `presentation::page_focus` logs when it gives the keyboard to the
+// page, in `src/presentation/page_focus.rs`, after the surface's name and
+// where it found the keyboard. A rewording there leaves this list empty
+// rather than failing anything, which is why the record keeps every file's
+// matching lines and not a yes or no.
+const THE_LINE_THE_WINDOW_WRITES = "when the window came back, so it was given to the page";
+
 let app;
 let pid;
+let dataDir;
+// Watchers still running, stopped by `afterAll` if a return threw first.
+const watchers = new Set();
 
 /** Everything the case saw, written beside the spoken log. */
 const record = {
@@ -140,11 +180,22 @@ const record = {
   howTheSecondReturnWorked: null,
   foregroundAfterTheSecondReturn: null,
   focusAfterTheSecondReturn: null,
+  // What the page window's own thread said had the keyboard from the moment
+  // the window was in front, each sample with the offset it was planned for
+  // and the one it measured, and how far the watcher's sighting was from
+  // `waitForForeground`'s, both on the system clock.
+  keyboardAfterTheFirstReturn: null,
+  keyboardAfterTheSecondReturn: null,
+  // Every line under the data folder's `logs` holding what the window writes
+  // when it moves the keyboard: the only record of where the keyboard was
+  // before the fix acted, on a run the fix makes green. Empty when it never
+  // had to act.
+  whatTheWindowSaidWhenItCameBack: null,
 };
 
 beforeAll(async () => {
   await nvda.start();
-  const dataDir = freshProfileDir("page");
+  dataDir = freshProfileDir("page");
   app = launchForScanning("page", dataDir);
   pid = app.pid;
   // The page window is a second frame over the main one, and the browser
@@ -154,6 +205,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  watchers.forEach((watcher) => watcher.stop());
+  if (record.whatTheWindowSaidWhenItCameBack === null) {
+    record.whatTheWindowSaidWhenItCameBack = whatTheWindowSaid();
+  }
   // Best-effort: the assertions above already say whether it passed, and a
   // problem writing the record must not replace that result.
   try {
@@ -207,6 +262,57 @@ async function comeBackToThePageWindow() {
 }
 
 /**
+ * Come back to the page window with the keyboard watcher running, and
+ * answer how it came back and what the window's own thread said had the
+ * keyboard from the moment it was in front.
+ *
+ * The watcher is started and ready before Alt+Tab, so its sighting is the
+ * return and not something later. Its samples are awaited before anything
+ * else, so the last of them describes the return and not the key after it.
+ * If neither way back worked, the watcher is stopped before the error goes
+ * on.
+ */
+async function comeBackWatchingTheKeyboard() {
+  const watcher = watchTheKeyboardOfTheWindow(pid, THE_PAGE_WINDOW, {
+    waitForTheFrontMs: WATCH_FOR_THE_FRONT_MS,
+  });
+  watchers.add(watcher);
+  await watcher.ready;
+  let how;
+  try {
+    how = await comeBackToThePageWindow();
+  } catch (why) {
+    watcher.stop();
+    watchers.delete(watcher);
+    throw why;
+  }
+  const seenInFrontAt = Date.now();
+  const keyboard = await watcher.samples;
+  watchers.delete(watcher);
+  const fromTheWatchersSighting =
+    keyboard.sightedAt === null ? null : seenInFrontAt - keyboard.sightedAt;
+  return { how, keyboard: { ...keyboard, waitForForegroundSawItMsAfterTheWatcher: fromTheWatchersSighting } };
+}
+
+/**
+ * Every line in the data folder's logs that the window writes when it gives
+ * the keyboard to the page, or an empty list.
+ */
+function whatTheWindowSaid() {
+  if (!dataDir) {
+    return [];
+  }
+  const logs = path.join(dataDir, "logs");
+  if (!fs.existsSync(logs)) {
+    return [];
+  }
+  return fs
+    .readdirSync(logs)
+    .flatMap((name) => fs.readFileSync(path.join(logs, name), "utf8").split(/\r?\n/))
+    .filter((line) => line.includes(THE_LINE_THE_WINDOW_WRITES));
+}
+
+/**
  * What Windows says is in front and what has the keyboard, once the window
  * is back and the focus has followed the activation.
  */
@@ -247,7 +353,9 @@ test("Enter on a link in the formatted message window leaves the message where i
   // the second link is where the message page has it. This is the assertion
   // the tester's report fails: a window whose document had become the
   // linked page has no link by this name.
-  record.howTheFirstReturnWorked = await comeBackToThePageWindow();
+  const theFirstReturn = await comeBackWatchingTheKeyboard();
+  record.howTheFirstReturnWorked = theFirstReturn.how;
+  record.keyboardAfterTheFirstReturn = theFirstReturn.keyboard;
   const afterTheFirstReturn = await whereTheNextKeyWillGo();
   record.foregroundAfterTheFirstReturn = afterTheFirstReturn.foreground;
   record.focusAfterTheFirstReturn = afterTheFirstReturn.focus;
@@ -267,11 +375,14 @@ test("Enter on a link in the formatted message window leaves the message where i
   // product; what it does say is how well the way back works on this
   // runner, which is worth having the next time the first return fails.
   try {
-    record.howTheSecondReturnWorked = await comeBackToThePageWindow();
+    const theSecondReturn = await comeBackWatchingTheKeyboard();
+    record.howTheSecondReturnWorked = theSecondReturn.how;
+    record.keyboardAfterTheSecondReturn = theSecondReturn.keyboard;
     const afterTheSecondReturn = await whereTheNextKeyWillGo();
     record.foregroundAfterTheSecondReturn = afterTheSecondReturn.foreground;
     record.focusAfterTheSecondReturn = afterTheSecondReturn.focus;
   } catch (why) {
     record.howTheSecondReturnWorked = `neither way worked: ${why.message}`;
   }
+  record.whatTheWindowSaidWhenItCameBack = whatTheWindowSaid();
 });

@@ -132,6 +132,12 @@ writes down `foregroundWindow` and `focusedElement`, which say where that key we
 had the keyboard when it got there. A failure after that names its own cause instead of
 leaving it to be inferred from silence.
 
+The accessibility tree's focused element cannot tell a window's frame holding the keyboard from
+nothing holding it: runs 35839692317 and 35839954840 read the page window's frame there on
+2026-09-23 and could not say which of three paths had put it there. A case that needs to know
+reads the window's own thread through `watchTheKeyboardOfTheWindow`, which samples
+`GetGUIThreadInfo` from the moment the window is in front.
+
 A clean result here means the specific keystrokes and the specific sentences these cases
 check were really spoken. That is stronger than the structural scan, which never presses a key.
 It is still not a full manual walkthrough, and it says nothing about any control, any dialog,
