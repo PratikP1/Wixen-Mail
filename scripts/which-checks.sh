@@ -194,6 +194,15 @@ while :; do
             manifest_diff_file="${1#--manifest-diff-file=}"
             shift
             ;;
+        # Refused since 2026-09-23 (12-03.2). Until then anything this loop did
+        # not know was read as the branch name, so a misspelt option answered
+        # as a branch nobody has and a new flag's red case passed by accident.
+        --*)
+            echo "which-checks: '$1' is not an option this script knows." >&2
+            echo "  Options: --message-file=F, --manifest-diff-file=F, and" >&2
+            echo "  --sources-compiling <file> ... on its own." >&2
+            exit 64
+            ;;
         *)
             break
             ;;
