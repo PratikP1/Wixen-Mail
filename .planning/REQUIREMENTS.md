@@ -3367,6 +3367,38 @@ seven groups.
   - [S] Only the next sweep settles the last of it: that it runs under the limit, that its
     closing line says how many records it gave up on, and that nothing this plan corrected
     has gone stale again. This plan claims nothing about the 994 records that agreed.
+- [ ] **FOUND-22**: What an NVDA case waits to hear is something the program says, and a
+  commit that rewords a sentence a case waits for goes red in the Rust gate rather than on
+  the runner. Added 2026-09-23 for phase 12's 12-03.1, under this section beside FOUND-19 to
+  FOUND-21 on the same reasoning: a defect in what a check tells you, found by a push.
+  - Evidence: runs 35839692317 (at `26beb051`) and 35839954840 (at `6cb8f17c`) of the NVDA
+    workflow on 2026-09-23 both failed `calendar-immediate-actions` on "Select an event to
+    edit." with NVDA having said "Choose an event first.", and `filter-manager-delete` on
+    "Select a filter to delete" with NVDA having said "Choose a filter first.". 12-03
+    (`a9ce329d`) moved both refusals into `status_sentences::nothing_chosen` and rewrote the
+    six Rust targets that asserted the old words; its census read `src/` only. The calendar
+    case also waits for "Select an event to delete." (`:78-79`) and "Sync requested..."
+    (`:83-84`), which it never reached because its first wait threw, and 12-03 rewrote both
+    (`wx_calendar.rs:580`, `nothing_chosen(Thing::EVENT)`; `:502`, "Syncing the
+    calendar..."). At `6cb8f17c`, `grep -rln 'nvda-tests' tests src` answers one file, in a
+    comment, and `scripts/check.sh --suites-for guards/guards.toml` maps a change to a case
+    under `nvda-tests/` to no target.
+  - [S] The runs' own words: "never heard all of ["Select an event to edit."] within 15000ms.
+    Everything NVDA said: [..., "Edit Event, button, Alt plus, e","Choose an event first."]";
+    and "never heard all of ["Select a filter to delete"] ... "Choose a filter first."".
+  - [D] A target in the Rust gate reads every text each `nvda-tests/tests/*.test.js` case
+    passes to `waitToHearAll` or `tabUntilHeard` or asserts with `toContain`, and holds each
+    to a string literal the program ships, a sentence `status_sentences` builds, or an
+    exception carrying its reason; companions show it refuses a sentence nothing says and
+    reads neither a comment nor a test module as said; it is among the targets every scoped
+    run ends with, so a rewording anywhere under `src/` and a change to any case run it; it
+    was red on the four stale texts before the cases changed (12-03.1, task 3).
+  - [D] `calendar-immediate-actions` waits for "Choose an event first." at Edit Event and at
+    Delete Event and for "Syncing the calendar..." at Sync; `filter-manager-delete` waits for
+    "Choose a filter first."; each read off the source the target holds it to (12-03.1,
+    task 3).
+  - [S] The two cases green on the runner at the next run of the NVDA workflow, whose
+    dispatch or push is Pratik's.
 
 ### All the mail, and what is said while it comes
 
@@ -5030,7 +5062,9 @@ proposals in the sense the top of this file gives. Every evidence line was re-ta
 `main` at `0ad66e48` on 2026-09-20, and where a premise moved the evidence line says which
 way. The plans are in `.planning/phases/12-the-editors-and-what-the-alpha-still-owes/README.md`.
 The two plans moved from phase 11 keep their ids there: LIST-19 (12-02) and LIST-11 (12-03).
-FOUND-20 (12-01) sits under phase 9's section beside FOUND-19.
+FOUND-20 (12-01) sits under phase 9's section beside FOUND-19. Added 2026-09-23: FOUND-22
+(12-03.1) sits there too, and 12-03.1 also carries FOUND-20 again, whose product half the
+NVDA workflow reopened on the push of `26beb051` and `6cb8f17c`.
 
 Nothing here has met a real provider except through the tester's Gmail account. Each
 requirement's last `[S]` line says what only his ear, his reader, his account, the runner or
@@ -5603,6 +5637,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
 | FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567 |
 | FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
+| FOUND-22 | Phase 12 | Pending, 12-03.1 planned 2026-09-23 against `6cb8f17c` from NVDA runs 35839692317 and 35839954840; the two cases green on the runner is the `[S]` line |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
@@ -5656,9 +5691,14 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 **Coverage:**
 
-- v1 requirements: 120 total
-- Mapped to phases: 120
+- v1 requirements: 121 total
+- Mapped to phases: 121
 - Unmapped: 0
+
+**Re-taken 2026-09-23.** This block said 120 and 120 from 2026-09-22 until the NVDA
+workflow's verdict on the push of `26beb051` and `6cb8f17c` was planned as 12-03.1. Counted
+with the same command as below, which gives 121 at `6cb8f17c` plus this edit with `FOUND-22`
+in, and the traceability table above has 121 rows.
 
 **Re-taken 2026-09-22.** This block said 119 and 119 from 2026-09-20 until the phase 11
 guard sweep's remedy was planned as 12-02.1. Counted with the same command as below, which
@@ -5809,6 +5849,15 @@ sweep of the milestone, which found 26 records that do not say what their guards
 a shard to a record that never returned. Taken by the inserted 12-02.1 and placed under
 phase 9's section beside FOUND-19 and FOUND-20 as a defect in what a check tells you. The
 total is 120.
+
+**Added 2026-09-23.** `FOUND-22` traces to no issue: it comes from NVDA runs 35839692317 and
+35839954840, where two cases failed because they waited for sentences 12-03 had reworded and
+nothing in the Rust gate reads what a case waits for. Taken by the inserted 12-03.1 and placed
+under phase 9's section beside FOUND-19 to FOUND-21 as a defect in what a check tells you. It
+is a requirement of its own rather than a line under LIST-11 or FOUND-20: LIST-11 is #75's
+shape for the status bar and was right, since NVDA heard the new sentences, and FOUND-20 is
+one case's return; the defect is that no check joins the two sides, which FOUND-19 to FOUND-21
+each record for a check of their own. The total is 121.
 
 **Added 2026-09-20.** `LIST-26` traces to #91, filed that day and taken by the inserted
 11-11.1.1 between 11-11.1 and 11-11.2; `LIST-27` traces to #92, Pratik's decisions of that

@@ -11,7 +11,7 @@ state_head: 434cd972
 progress:
   total_phases: 17
   completed_phases: 0
-  total_plans: 169
+  total_plans: 170
   completed_plans: 160
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
@@ -29,8 +29,18 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 12 (The editors, and what the alpha still owes). Current plan 4 of 13: 12-01, 12-02,
-12-02.1 and 12-03 merged, **12-04 next**.
+Phase: 12 (The editors, and what the alpha still owes). Current plan 4 of 14: 12-01, 12-02,
+12-02.1 and 12-03 merged, **12-03.1 next**, then 12-04.
+
+**12-03.1 inserted at wave 5 later on 2026-09-23.** The push of `26beb051` and `6cb8f17c`
+came back with CI and Accessibility green and the NVDA workflow red on three cases, in both
+runs (35839692317 and 35839954840). The link case failed because a real activation left the
+keyboard on the formatted window's own frame, which reverses 12-01's reading, which could only
+send the activation message by hand; the calendar and filter cases failed because they wait
+for sentences 12-03 reworded, and nothing in the Rust gate reads `nvda-tests/`. The plan
+reopens FOUND-20's product half, carries FOUND-22, and moved 12-04 to 12-12 down one wave.
+Whether its fix is proven on the runner before it reaches `main` is Pratik's decision, listed
+in the phase README.
 
 **Work paused here on 2026-09-23 for a change of model.** The phase README's last section,
 "Where the work stopped on 2026-09-23, and what the next session needs", is written for
@@ -3241,7 +3251,7 @@ counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
 Current Plan: 4
-Total Plans in Phase: 13
+Total Plans in Phase: 14
 
 ---
 
