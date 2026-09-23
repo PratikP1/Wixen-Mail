@@ -44,6 +44,7 @@ pub mod encrypted_mail;
 pub mod event_alerts;
 pub mod export_tree;
 pub mod favourites;
+pub mod feedback_report;
 pub mod filing;
 pub mod filters;
 pub mod finding_what_was_deleted;

@@ -118,6 +118,11 @@ impl AppPaths {
         self.root.join("logs")
     }
 
+    /// The copy of each feedback report sent, and its log excerpt.
+    pub fn feedback_dir(&self) -> PathBuf {
+        self.logs_dir()
+    }
+
     /// Fallback encryption key, used only when the credential store refuses.
     pub fn security_key(&self) -> PathBuf {
         self.root.join("security.key")
@@ -397,6 +402,7 @@ mod tests {
         assert_eq!(paths.security_key(), root.join("security.key"));
         assert_eq!(paths.oauth_toml(), root.join("config").join("oauth.toml"));
         assert_eq!(paths.sound_schemes_dir(), root.join("sound_schemes"));
+        assert_eq!(paths.feedback_dir(), root.join("logs").join("feedback"));
     }
 
     #[test]
@@ -597,6 +603,7 @@ mod tests {
             ("config_dir", paths.config_dir()),
             ("cache_dir", paths.cache_dir()),
             ("logs_dir", paths.logs_dir()),
+            ("feedback_dir", paths.feedback_dir()),
             ("security_key", paths.security_key()),
             ("oauth_toml", paths.oauth_toml()),
             ("sound_schemes_dir", paths.sound_schemes_dir()),
