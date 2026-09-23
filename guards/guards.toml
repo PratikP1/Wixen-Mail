@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 246 records have arrived since and have not been through it.
+# 247 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29424,4 +29424,35 @@ red = [
 tests_last_seen = [
     { file = "src/service/secret_store.rs", tests = 6 },
     { file = "tests/the_credential_store_is_ready_for_every_thread.rs", tests = 1 },
+]
+
+# A kept pre-read that answers for any key, so a reading kept for one tree
+# excuses the failures of another. The guard runner's rules are worked examples
+# in the script, and test_the_guard_runner_still_obeys_its_own_examples is what
+# runs them on a commit, so the example asking for another key to be refused is
+# what reddens.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, three times one after another: the first
+# read the suite and kept it, the second used the kept reading, and the third
+# read the suite again after the kept file was deleted. Each broken run timed
+# rebuild 1 s, run 4 s, 3 s and 4 s, and each "the one test named went red,
+# and nothing else did".
+[[guard]]
+name = "a kept pre-read is used only for the tree it was kept for"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """    except (ValueError, KeyError, TypeError):
+        return None
+    if kept_for != key:
+        return None"""
+after = """    except (ValueError, KeyError, TypeError):
+        return None
+    if kept_for != key and False:
+        return None"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 74 },
 ]
