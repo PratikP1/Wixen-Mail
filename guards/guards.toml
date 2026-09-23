@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 257 records have arrived since and have not been through it.
+# 259 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29692,4 +29692,54 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_feedback_dialog_shows_what_it_sends_before_it_goes.rs", tests = 10 },
+]
+
+# ── A spin control's typing field carries the arrows' words (EDIT-01, #73) ──
+#
+# The break keeps the arrows named and writes nothing onto the field, which
+# is the shape every spin control had before 12-06: the loop that hands each
+# property to the annotation service runs over nothing. Every spin control
+# in the five windows the target builds goes back to a nameless field, or one
+# named from the static text before it, on both channels.
+[[guard]]
+name = "every spin control's typing field is named through the annotation service"
+file = "src/presentation/accessibility/names.rs"
+suite = "every_spin_control_names_the_field_a_person_types_in"
+before = '''            for (which, words) in carries {
+                // SAFETY: the field is a live window; the string outlives the call.'''
+after = '''            for (which, words) in carries.iter().take(0) {
+                // SAFETY: the field is a live window; the string outlives the call.'''
+red = [
+    "test_every_spin_control_in_the_account_editor_names_its_typing_field",
+    "test_every_spin_control_in_settings_names_its_typing_field",
+    "test_every_spin_control_in_the_event_form_names_its_typing_field",
+    "test_every_spin_control_in_the_table_asker_names_its_typing_field",
+    "test_every_spin_control_in_send_later_names_its_typing_field",
+    "test_every_typing_field_carries_the_same_name_on_ui_automation",
+    "test_a_description_on_the_arrows_is_carried_by_the_typing_field_too",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/names.rs", tests = 12 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 10 },
+]
+
+# ── One spin control named the old way is found (EDIT-01, ledger 410) ──────
+#
+# The break names the event form's minute spinners through
+# `set_accessible_name` alone, on the arrows, which is how ledger 410 and 414
+# found them. The reading finds the two fields nameless on MSAA and on UI
+# Automation among the twelve spin controls of the form.
+[[guard]]
+name = "the event form's minute spinner is named on its typing field too"
+file = "src/presentation/wx_item_form.rs"
+suite = "every_spin_control_names_the_field_a_person_types_in"
+before = '''            name_spin_control(&fields.minute, &format!("{name} Minute"), "");'''
+after = '''            set_accessible_name(&fields.minute, &format!("{name} Minute"));'''
+red = [
+    "test_every_spin_control_in_the_event_form_names_its_typing_field",
+    "test_every_typing_field_carries_the_same_name_on_ui_automation",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_item_form.rs", tests = 14 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 10 },
 ]

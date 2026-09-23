@@ -25,7 +25,8 @@ use crate::presentation::accessibility::Accessibility;
 // `wxdragon::prelude` brings its own `Event` and the two would shadow.
 use crate::presentation::accessibility::feedback::{self, Channel, FeedbackSettings, Switch};
 use crate::presentation::accessibility::names::{
-    name_from_label, set_accessible_name, set_accessible_name_and_description,
+    name_and_describe_the_spin_control, name_from_label, name_the_spin_control,
+    set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::accessibility::sound_scheme::SoundScheme;
 use crate::presentation::accessibility::sound_scheme_import;
@@ -1338,11 +1339,11 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> ComposeTabControls {
         .with_range(Hold::OFF.seconds() as i32, Hold::LONGEST.seconds() as i32)
         .build();
     let hold_now = Hold::of_seconds(config.undo_send_hold_seconds);
-    // `set_accessible_name_and_description` rather than `set_name`, which sets
-    // an internal wxWidgets identifier and never reaches the accessibility
-    // tree. Sixteen widgets were once named that way; it compiled and 324
-    // tests passed and no screen reader heard any of them.
-    set_accessible_name_and_description(
+    // Named through the spin control's own helper rather than `set_name`,
+    // which sets an internal wxWidgets identifier and never reaches the
+    // accessibility tree. Sixteen widgets were once named that way; it
+    // compiled and 324 tests passed and no screen reader heard any of them.
+    name_and_describe_the_spin_control(
         &hold_spin,
         "Hold a message before sending for, seconds, 0 for no hold",
         &what_send_does(hold_now),
@@ -1380,7 +1381,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> ComposeTabControls {
     let autosave_spin = SpinCtrl::builder(panel)
         .with_range(0, AutosaveInterval::MAX_MINUTES as i32)
         .build();
-    set_accessible_name(
+    name_the_spin_control(
         &autosave_spin,
         "Save drafts automatically every, minutes, 0 for never",
     );

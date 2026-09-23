@@ -21,7 +21,8 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::{
-    leave_the_cell_empty, name_from_label, set_accessible_name, set_accessible_name_and_description,
+    leave_the_cell_empty, name_from_label, name_the_spin_control, set_accessible_name,
+    set_accessible_name_and_description,
 };
 use crate::presentation::manager_words;
 use crate::presentation::theme;
@@ -1506,7 +1507,7 @@ pub fn build_account_edit_dialog(
             .with_max_value(3650)
             .with_initial_value(default)
             .build();
-        set_accessible_name(&c, &name_from_label(label));
+        name_the_spin_control(&c, &name_from_label(label));
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
         (l, c)
