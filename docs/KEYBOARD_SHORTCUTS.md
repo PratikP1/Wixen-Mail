@@ -494,6 +494,7 @@ can navigate. Making them real headings is being worked on.
 | Undo Send | `Ctrl+Shift+Z` | First on the Edit menu. Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
 | Open Settings | `Ctrl+,` | Open settings dialog |
 | Help for what you are looking at | `F1` | Opens the page about the module you are in. Every page is on the Help menu, which is the contents. |
+| Send Feedback | `Ctrl+Shift+F` | On the Help menu, and as a button on About. Tell the people who make Wixen Mail about a problem, an idea or a question, and read the whole message before it goes |
 | Close Dialog | `Esc` | Close the current dialog or window |
 
 ### Window and Pane Navigation
@@ -1140,6 +1141,22 @@ which case focus goes to Close.
 |--------|----------|-------------|
 | Unblock | `Alt+U` | Take off the block you have chosen in the list |
 | Close | `Alt+C` | Close Blocked Senders |
+
+### Send Feedback Dialog Accelerators
+
+The window opens on What is this about. Tab moves through the questions, the
+five boxes that say what goes with the report, the reply address and the
+message as it will be sent, then the buttons. Each letter is used once.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| What is this about | `Alt+W` | The kind of report. The questions change with it |
+| How to reach you | `Alt+R` | The address an answer goes to, if you want one |
+| What will be sent | `Alt+B` | The whole message and the attached log, to read before sending |
+| Send | `Alt+S` | Put the report in your Outbox, from your default account |
+| Copy to clipboard | `Alt+C` | Copy the whole message, to paste wherever you like |
+| Open the GitHub page | `Alt+G` | The public issue page, or for a security concern the private reporting page |
+| Cancel | `Esc` | Close without sending anything |
 
 ### Contact Edit Dialog Accelerators
 

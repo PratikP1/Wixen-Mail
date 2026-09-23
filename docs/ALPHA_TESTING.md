@@ -640,6 +640,24 @@ Written down so you do not spend time reporting things already on the list.
 
 ## How to report something
 
+The quickest way is **Help → Send Feedback**, `Ctrl+Shift+F`, or the Send
+Feedback button on About. Choose what it is about, answer the question or two
+it asks, and read the message in "What will be sent" before you press Send. The
+version and the end of the log go with it unless you untick them,
+with every address and subject in the log hidden. Send puts the report in your
+Outbox as a message from your default account, and a copy is kept in the
+`feedback` folder inside `logs`. A security concern goes to its own address,
+security@wixen.app, starts with the log unticked, and has GitHub's private
+reporting page offered beside Send.
+
+On 2026-09-23: until public testing begins, support@wixen.app and
+security@wixen.app may not exist yet. A report sent to either shows as sent in
+the Outbox and then comes back to your own inbox as undeliverable. Nothing is
+lost: the copy in the `feedback` folder holds the whole report, and Copy to
+clipboard and the GitHub page take it the rest of the way.
+
+To write a report yourself instead, the rest of this section still applies.
+
 Include what you did, what you expected, and what happened. If a screen reader
 was involved, say which one and what it said.
 

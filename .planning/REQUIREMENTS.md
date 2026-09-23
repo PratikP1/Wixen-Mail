@@ -5285,12 +5285,31 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     public testing begins (both still answered 522 that day), and neither the dialog nor the
     guide says the site is coming; the pages answering is still his to settle.
 
-- [ ] **ALPHA-02**: Feedback can be sent from the Help menu and from About: a category, the
+- [x] **ALPHA-02**: Feedback can be sent from the Help menu and from About: a category, the
   questions that fit it, a payload the person reads before it goes, the log excerpt attached
   by default and redacted, sent as an email from the person's default account to
   support@wixen.app through the program's own sending path and gate. Amended 2026-09-23 on
   Pratik's answer: a security concern goes the same way to an address of its own, with its
   log excerpt left unticked and GitHub's private reporting page beside Send.
+  **Ticked 2026-09-23 by 12-05, on its three `[D]` lines; the merge commit is in the report
+  that closes it:** `application::feedback_report`, 22 cases, holds the six categories and
+  their questions, `Include::for_category` (the version and the excerpt, the version alone
+  for a security concern), both addresses and both pages each way, the subject, the body's
+  order, the attachment's header and `redact` masking addresses and subjects;
+  `service::this_machine`, 6 cases, reads the Windows build, the language and the screen
+  reader on hand-declared `extern "system"` blocks with no crate added.
+  `presentation::wx_feedback`, 12 cases, holds the doors, the re-ticking rule, the account a
+  report goes from, the day's log, the payload text and the kept copy;
+  `tests/the_feedback_dialog_shows_what_it_sends_before_it_goes.rs`, 10 readings, builds the
+  window and reads its controls over MSAA in Tab order, the default ticks, the payload box
+  equal to `compose()`'s text as the fields are filled, the security category's untick,
+  address and private page, Send shut with its sentence when there is no account, and reads
+  `wx_app.rs` for one row function called by both sends and the Help item on
+  `Ctrl+Shift+F`, with two companions. About's button is held by
+  `tests/the_about_dialog_names_its_owners_and_its_links.rs`; `ScanTarget::Feedback` is in
+  the workflow; the privacy page's table names both addresses, and the shortcuts page, the
+  guide and the alpha page say how to send one. Seven guard records written and seven
+  existing ones re-measured, each exact. The `[S]` lines stay: ledger 589 for the ear, 590 for the two mailboxes.
   - Evidence: `sed -n 7514,7550p src/presentation/wx_app.rs` on 2026-09-20 at `0ad66e48`:
     Help holds Contents, the topics, Load Sample Mailbox, Check for Updates and About, and
     nothing sends anything; `grep -n 'Ctrl+Shift+F' docs/KEYBOARD_SHORTCUTS.md src/presentation/wx_app.rs`:
@@ -5870,7 +5889,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
 | LIST-27 | Phase 11 | Complete, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages) and 11-11.1.3 at `1e39650a` (All Inboxes' own view, the every-inbox listing, the row's own account, the sentence, the pages); a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept and a two-account conversation as two rows (ledger 563), are his ear's |
 | ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
-| ALPHA-02 | Phase 12 | Pending, 12-05 |
+| ALPHA-02 | Phase 12 | Complete, 12-05, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and a report arriving at each address, are ledger 589 and 590 |
 | ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
 | EDIT-01 | Phase 12 | Pending, 12-06 |
 | EDIT-02 | Phase 12 | Pending, 12-07 |

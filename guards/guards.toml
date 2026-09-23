@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 250 records have arrived since and have not been through it.
+# 257 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -21894,11 +21894,15 @@ tests_last_seen = [
 # Measured by hand on 2026-09-14 against the whole library at eight threads,
 # `cargo test --lib --no-fail-fast`: 7,183 passed, 1 ignored, and exactly
 # this one test failed, naming which-days.
+#
+# The anchor gained 'feedback' on 2026-09-23 (12-05), because the line it
+# quotes gained that target; re-measured the same day through
+# `scripts/guards.sh --remeasure`, the same one test red.
 [[guard]]
 name = "a window the program can open for the scan is one the workflow asks for"
 file = ".github/workflows/accessibility.yml"
-before = """          'which-days', 'send-later', 'add-address-book', 'about',"""
-after = """          'send-later', 'add-address-book', 'about',"""
+before = """          'which-days', 'send-later', 'add-address-book', 'about', 'feedback',"""
+after = """          'send-later', 'add-address-book', 'about', 'feedback',"""
 red = [
     "presentation::scan_target::tests::test_the_workflow_asks_for_every_target",
 ]
@@ -29531,4 +29535,161 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_about_dialog_names_its_owners_and_its_links.rs", tests = 8 },
+]
+
+# ── A feedback report ticks the log excerpt, except for a security concern ──
+#
+# Pratik's decision on #71: the redacted excerpt goes with a report by
+# default. For a security concern it starts unticked (12-05's premise 5),
+# because a log can hold what the concern is about and the redaction masks
+# addresses and subjects only. One record for each direction: the first
+# unticks it for a problem, the second ticks it for a security concern.
+#
+# Measured 2026-09-23 on the branch the records were written on, through
+# `scripts/guards.sh --remeasure`, against the whole library.
+[[guard]]
+name = "a report of a problem carries the log excerpt by default"
+file = "src/application/feedback_report.rs"
+before = '''            log_excerpt: category != Category::Security,'''
+after = '''            log_excerpt: category != Category::Security && category != Category::Problem,'''
+red = [
+    "application::feedback_report::tests::test_five_categories_tick_the_version_and_the_log_excerpt_and_nothing_else",
+    "application::feedback_report::tests::test_a_problem_carries_the_redacted_excerpt_under_a_line_naming_its_file_and_day",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+[[guard]]
+name = "a security concern leaves the log excerpt unticked"
+file = "src/application/feedback_report.rs"
+before = '''            log_excerpt: category != Category::Security,'''
+after = '''            log_excerpt: true,'''
+red = [
+    "application::feedback_report::tests::test_a_security_concern_ticks_the_version_alone_and_leaves_the_log_unticked",
+    "application::feedback_report::tests::test_a_security_concern_carries_no_excerpt_unless_it_is_ticked",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+# ── A security concern goes to an address of its own (Pratik, 2026-09-23) ──
+#
+# The break sends it to the support mailbox, which is the mixing T-12-18 is
+# about. Nothing sends: the break changes a constant a pure function answers.
+[[guard]]
+name = "a security concern goes to the security address and not to support"
+file = "src/application/feedback_report.rs"
+before = '''        Category::Security => SECURITY_ADDRESS,'''
+after = '''        Category::Security => SUPPORT_ADDRESS,'''
+red = [
+    "application::feedback_report::tests::test_a_security_concern_goes_to_its_own_address_and_the_rest_to_support",
+    "application::feedback_report::tests::test_the_report_goes_where_its_category_says_and_its_last_line_names_that_address",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+# ── The log excerpt leaves with every address masked (T-12-15) ──────────────
+#
+# `redact` is the boundary between the log and the outside. The break copies
+# the address through unmasked, so the excerpt a report carries would hold
+# it; the two masking cases and the composition case that reads the
+# attachment go red.
+[[guard]]
+name = "an address in the log excerpt is masked before it leaves"
+file = "src/application/feedback_report.rs"
+before = '''        masked.push_str(&mask_email(&line[start..end]));'''
+after = '''        masked.push_str(&line[start..end]);'''
+red = [
+    "application::feedback_report::tests::test_an_address_in_the_middle_of_a_line_is_masked",
+    "application::feedback_report::tests::test_two_addresses_on_one_line_are_both_masked",
+    "application::feedback_report::tests::test_a_problem_carries_the_redacted_excerpt_under_a_line_naming_its_file_and_day",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+# ── A screen reader is found by its process ─────────────────────────────────
+#
+# The break matches no process name, so a report would always say no screen
+# reader was running. The pure matching is broken rather than the snapshot,
+# which only this machine can answer.
+[[guard]]
+name = "a running screen reader is named by its process"
+file = "src/service/this_machine.rs"
+before = '''                .any(|name| name.eq_ignore_ascii_case(executable))'''
+after = '''                .any(|name| name.eq_ignore_ascii_case(executable) && false)'''
+red = [
+    "service::this_machine::tests::test_each_reader_is_found_by_its_process_whatever_case_it_is_written_in",
+    "service::this_machine::tests::test_no_reader_is_named_when_none_runs_and_nvda_is_named_before_narrator",
+]
+tests_last_seen = [
+    { file = "src/service/this_machine.rs", tests = 6 },
+]
+
+# ── A security concern is offered GitHub's private page, never the issues ───
+#
+# T-12-18: a concern posted to the public tracker is the disclosure the
+# private reporting page exists to prevent. The break hands the Send Feedback
+# window the public issue page for every category. Nothing is opened: the
+# case reads the answer of a pure function, and no button is pressed.
+# (Until 2026-09-23 the plan's break for this record enabled Send for a
+# security concern, which Pratik's answer of that day made the behaviour.)
+[[guard]]
+name = "a security concern is offered the private reporting page and not the issue page"
+file = "src/presentation/wx_feedback.rs"
+before = '''        github_page: github_page(category),'''
+after = '''        github_page: crate::application::feedback_report::ISSUE_PAGE,'''
+red = [
+    "presentation::wx_feedback::tests::test_a_security_concern_is_offered_the_private_page_whether_send_is_open_or_not",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_feedback.rs", tests = 12 },
+]
+
+# ── A feedback report takes the one path every message takes (T-12-17) ─────
+#
+# The break builds a second queued row inside `send_the_report` and queues it
+# there, instead of calling `put_in_the_outbox`, which is the shape of a
+# second sending path growing beside the first. The target's reading of
+# `wx_app.rs` counts the rows built and asks both senders for the call. The
+# break is compiled and never run: no test calls `send_the_report`, so nothing
+# is queued and nothing is sent. The companion judges its plant by the delta
+# and stays green under this break.
+[[guard]]
+name = "a feedback report is queued through the one function every message uses"
+file = "src/presentation/wx_app.rs"
+suite = "the_feedback_dialog_shows_what_it_sends_before_it_goes"
+before = '''    let (recipient, waiting_on) = put_in_the_outbox(cache, sender.account.id.clone(), &data)?;'''
+after = '''    let queued = crate::data::message_cache::QueuedOutboxMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        account_id: sender.account.id.clone(),
+        to_addr: data.to.clone(),
+        cc_addr: String::new(),
+        bcc_addr: String::new(),
+        subject: data.subject.clone(),
+        body: data.body_plain.clone(),
+        body_html: None,
+        attachments: crate::application::attaching::joined(&data.attachments),
+        in_reply_to: None,
+        references: None,
+        attempt_count: 0,
+        last_error: None,
+        created_at: chrono::Local::now().to_rfc3339(),
+    };
+    let waiting_on = crate::application::sending_later::GoAfter::held(
+        the_hold_in_force(),
+        chrono::Local::now(),
+    );
+    cache
+        .queue_outbox_message_to_go(&queued, &waiting_on)
+        .map_err(|e| e.to_string())?;
+    let recipient = data.to.clone();'''
+red = [
+    "test_one_function_builds_the_queued_row_and_both_sends_call_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_feedback_dialog_shows_what_it_sends_before_it_goes.rs", tests = 10 },
 ]

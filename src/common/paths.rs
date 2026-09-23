@@ -10,6 +10,7 @@
 //! config\        settings, one file per account, oauth.toml
 //! cache\         message_cache.db and its SQLite sidecars
 //! logs\          the running log and crash.log
+//! logs\feedback\ a copy of each feedback report sent, and its log excerpt
 //! sound_schemes\ imported sound-scheme packs, one subdirectory each
 //! updates\       an installer fetched for an update, while it waits
 //! security.key   the fallback key, used when the credential store refuses
@@ -116,6 +117,12 @@ impl AppPaths {
     /// The running log and the crash log.
     pub fn logs_dir(&self) -> PathBuf {
         self.root.join("logs")
+    }
+
+    /// The copy of each feedback report sent, and its log excerpt, kept so a
+    /// report that bounces can be sent again (#64).
+    pub fn feedback_dir(&self) -> PathBuf {
+        self.logs_dir().join("feedback")
     }
 
     /// Fallback encryption key, used only when the credential store refuses.
@@ -397,6 +404,7 @@ mod tests {
         assert_eq!(paths.security_key(), root.join("security.key"));
         assert_eq!(paths.oauth_toml(), root.join("config").join("oauth.toml"));
         assert_eq!(paths.sound_schemes_dir(), root.join("sound_schemes"));
+        assert_eq!(paths.feedback_dir(), root.join("logs").join("feedback"));
     }
 
     #[test]
@@ -597,6 +605,7 @@ mod tests {
             ("config_dir", paths.config_dir()),
             ("cache_dir", paths.cache_dir()),
             ("logs_dir", paths.logs_dir()),
+            ("feedback_dir", paths.feedback_dir()),
             ("security_key", paths.security_key()),
             ("oauth_toml", paths.oauth_toml()),
             ("sound_schemes_dir", paths.sound_schemes_dir()),

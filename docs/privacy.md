@@ -25,6 +25,7 @@ Everything Wixen Mail stores is in one folder on your computer:
     cache\            the mail that has been downloaded
     sound_schemes\    sound packs you have imported, if any
     logs\             the running log and crash.log
+    logs\feedback\    a copy of each feedback report you send, if any
     updates\          an installer being downloaded, while one is
     security.key      only on a machine upgraded from an older version
 ```
@@ -181,6 +182,8 @@ group changes nothing about their contact.
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
 | GitHub | Checking whether a newer version has been published, which you ask for or switch on, see below | The request, which carries nothing about you |
+| support@wixen.app | Only when you press Send in Send Feedback, for every kind of report except a security concern, see below | A message from your own account, through your own mail provider, carrying exactly what the window showed you: your answers, the facts you left ticked, and the end of the log with every address and subject hidden when you left that box ticked |
+| security@wixen.app | Only when you press Send in Send Feedback with Report a security concern chosen | The same kind of message, except that the log starts unticked and goes only if you tick it, and the subject names only the category, never the concern. GitHub's private reporting page is offered beside Send as the other way to report one |
 | OneNote | Never. Nothing here reads or writes a notebook, see below | Nothing |
 | Whoever a sender points a picture at | Showing a message in the preview pane or a conversation window, by default since 2026-09-19, except a tracking pixel and a decorative picture, and not at all with the switch on, see below | The request for the picture, which says the message was opened |
 
@@ -188,7 +191,11 @@ Nothing else is asked for by this program on its own account. There is no server
 to this project, so there is nowhere for anything of yours to go even by accident. The
 GitHub row is the one place this program asks anything for its own reasons rather than
 yours, and it carries no account and no identifier. The last row is the sender choosing,
-not this program, and the section below says what it means.
+not this program, and the section below says what it means. The two feedback rows, added on
+2026-09-23, are not this program asking anything either: each is a message you send, from
+your own account, when you press Send, after the window has shown you every word of it.
+Nothing goes to either address otherwise. `security@wixen.app` is the name we chose for the
+separate security address Pratik asked for on 2026-09-23, and it may change.
 
 ### A whole mailbox, a chunk at a time, and a connection held open all day
 
@@ -514,6 +521,11 @@ not web clients and are the first row of the table under
 connection outward, and if that sentence stops being true the way to find out is to run the
 command again, not to reread this page.
 
+A feedback report is not telemetry. Since 2026-09-23 Send Feedback, on the Help menu, can send
+a report, and it leaves only when you press Send, from your own account, over SMTP like any
+message you write, after the window has shown you the whole message and the attached log.
+Nothing gathers or sends a report on its own.
+
 ## Reading your messages to mark suspicious ones
 
 On by default, in Settings, then Advanced, under "Checking whether a message is what it says
@@ -707,6 +719,13 @@ holds each call to naming none of them.
 
 If you send a log to report a problem, it is worth reading first. Nothing in it should be
 sensitive, and if you find something that is, that is a bug worth reporting on its own.
+
+Send Feedback attaches the end of the log when its box is ticked, which it is to start with
+for every kind of report except a security concern: the last 200 lines, the number
+`feedback_report::EXCERPT_LINES` held on 2026-09-23, which is the one place it is set. Every address and everything
+after a subject on a line is hidden before the excerpt is written, and the window shows the
+excerpt before you send it. A copy of each report you send, and its excerpt, is kept in
+`logs\feedback`, so a report that bounces can be sent again; nothing else reads it.
 
 ## Uninstalling
 

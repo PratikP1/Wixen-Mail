@@ -42,8 +42,8 @@ const THE_LINE_NUMBER: &str = " //line ";
 
 /// Every place mail is handed to a server, and what asked for it.
 ///
-/// Five, as of 2026-09-16; four from 2026-09-06 until then. Each one has to
-/// be something a person did:
+/// Six, as of 2026-09-23; five from 2026-09-16 and four from 2026-09-06
+/// until then. Each one has to be something a person did:
 ///
 /// 1. Outbox then Send Queued Mail, the menu item.
 /// 2. The composer's Send, which queues and then flushes, and only when the
@@ -58,6 +58,11 @@ const THE_LINE_NUMBER: &str = " //line ";
 ///    pressed, and the same key it always was: the flush is new, the sending
 ///    is not. Until #56 an answer with the hold off was told "Sending to ..."
 ///    and handed to nothing, and sat until the next Send of anything.
+/// 6. Send in Send Feedback (12-05, #64), which queues the report through
+///    the same row function the composer uses and flushes on the same
+///    decision, only when `when_it_goes` says it goes now. A button somebody
+///    pressed after reading the whole message in the window, the same shape
+///    as the second.
 ///
 /// **The fourth is an event and not a key, and it is the first one here that
 /// is, so it is worth saying why it is allowed rather than only recording it.**
@@ -79,12 +84,13 @@ const THE_LINE_NUMBER: &str = " //line ";
 /// leaves, and there is no state of the queue that this reaches and a person
 /// pressing Send would not have reached already.
 ///
-/// A sixth appearing is not automatically wrong, and it is automatically worth
-/// reading: the question to ask of it is whether a person asked, or whether an
-/// event did, and if an event, whether it is completing something a person
-/// asked for or starting something nobody did. The fifth was read that way
-/// when this census refused it, which is the census doing its job.
-const PLACES_THAT_HAND_MAIL_TO_A_SERVER: usize = 5;
+/// A seventh appearing is not automatically wrong, and it is automatically
+/// worth reading: the question to ask of it is whether a person asked, or
+/// whether an event did, and if an event, whether it is completing something a
+/// person asked for or starting something nobody did. The fifth and the sixth
+/// were read that way when this census refused them, which is the census doing
+/// its job.
+const PLACES_THAT_HAND_MAIL_TO_A_SERVER: usize = 6;
 
 /// The declaration, which is not a call site.
 const WHERE_IT_IS_DECLARED: &str = "fn flush_outbox(";

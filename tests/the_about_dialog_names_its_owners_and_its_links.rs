@@ -1,5 +1,6 @@
 //! The About dialog names its owners, its licence and its two pages, and a
 //! screen reader hears each page as a link named by its address (#78, 12-04).
+//! Since 12-05 a Send Feedback button sits between the second page and OK.
 //!
 //! One window session builds the real dialog with `build_about_dialog` and
 //! reads it the way NVDA reads a native control: the children in the order
@@ -56,6 +57,11 @@ const PAGES: [(&str, &str); 2] = [
     ("wixen.app", "https://wixen.app"),
     ("wixen.app/support", "https://wixen.app/support"),
 ];
+
+/// The button that opens Send Feedback, as its window text holds it and as
+/// MSAA names it (12-05, #78's last point). F is the one letter About uses.
+const SEND_FEEDBACK: &str = "Send &Feedback...";
+const SEND_FEEDBACK_NAME: &str = "Send Feedback...";
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -276,6 +282,31 @@ fn link_item_of(hwnd: isize) -> Result<LinkItem, String> {
     }
 }
 
+/// What a window's own object names it over MSAA, which for a button is the
+/// name NVDA speaks.
+fn own_name_of(hwnd: isize) -> Result<String, String> {
+    let mut object: *mut c_void = std::ptr::null_mut();
+    // SAFETY: a live window handle; the object is released before returning.
+    let hr =
+        unsafe { AccessibleObjectFromWindow(hwnd, OBJID_CLIENT, &IID_IACCESSIBLE, &mut object) };
+    if hr < 0 || object.is_null() {
+        return Err(format!("AccessibleObjectFromWindow failed 0x{hr:x}"));
+    }
+    // SAFETY: `object` is a live IAccessible; the slot is IAccessible's.
+    unsafe {
+        let get_name: GetBstrFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_NAME));
+        let mut name: *mut u16 = std::ptr::null_mut();
+        let hr_name = get_name(object, Variant::child(0), &mut name);
+        let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));
+        release(object);
+        Ok(if hr_name >= 0 {
+            take_bstr(name)
+        } else {
+            String::new()
+        })
+    }
+}
+
 /// The colour a control's parent tells it to draw its text in, asked the way
 /// the control asks: `WM_CTLCOLORSTATIC` with a device context, then the text
 /// colour that context was given, as a COLORREF (0x00BBGGRR).
@@ -301,6 +332,8 @@ struct Child {
     class: String,
     text: String,
     link: Option<LinkItem>,
+    /// A button's own name over MSAA; empty for anything else.
+    button_name: String,
     text_colour: u32,
 }
 
@@ -325,11 +358,17 @@ fn read_the_dialog(frame: &Frame, palette: theme::Palette) -> Result<Vec<Child>,
         } else {
             None
         };
+        let button_name = if class == "Button" {
+            own_name_of(hwnd)?
+        } else {
+            String::new()
+        };
         children.push(Child {
             text: window_text(hwnd),
             text_colour: text_colour_for(parent, hwnd),
             class,
             link,
+            button_name,
         });
     }
     dialog.destroy();
@@ -407,6 +446,7 @@ fn what_is_wrong_with_the_order(children: &[Child]) -> Vec<String> {
         lines.iter().map(|line| ("Static", line.as_str())).collect();
     wanted.push(("SysLink", PAGES[0].0));
     wanted.push(("SysLink", PAGES[1].0));
+    wanted.push(("Button", SEND_FEEDBACK));
     wanted.push(("Button", "OK"));
     let mut wrong = Vec::new();
     if found.len() != wanted.len() {
@@ -515,20 +555,23 @@ fn test_each_page_is_drawn_in_the_palettes_accent_on_both_palettes() {
 }
 
 #[test]
-fn test_there_is_no_send_feedback_button_until_its_dialog_arrives() {
+fn test_send_feedback_sits_between_the_second_page_and_ok_named_on_msaa() {
     // Pratik's decision on #64 of 2026-09-18: Send Feedback arrives in the
-    // same commit as the dialog it opens, so nothing dead sits on About until
-    // then. 12-05 rewrites this reading in place to hold it present.
+    // same commit as the dialog it opens. Until 12-05 this reading held it
+    // absent; rewritten in place to hold it present, after the second page
+    // and before OK, and named without its access key.
     let children = &the_harvest().dark;
+    let at = |wanted: &dyn Fn(&Child) -> bool| children.iter().position(wanted);
+    let button = at(&|c| c.class == "Button" && c.text == SEND_FEEDBACK);
+    let last_page = children.iter().rposition(|c| c.class == "SysLink");
+    let ok = at(&|c| c.class == "Button" && c.text == "OK");
+
     assert!(
-        children.len() > 1,
-        "the reading found {} children, so it cannot say what is absent",
-        children.len()
+        matches!((last_page, button, ok), (Some(page), Some(send), Some(ok)) if page < send && send < ok),
+        "Send Feedback is at {button:?}, the second page at {last_page:?} and OK at {ok:?}: {children:?}"
     );
-    assert!(
-        !children.iter().any(|c| c.text.contains("Send Feedback")),
-        "the About dialog offers Send Feedback before its dialog exists: {children:?}"
-    );
+    let name = button.map(|send| children[send].button_name.as_str());
+    assert_eq!(name, Some(SEND_FEEDBACK_NAME));
 }
 
 // ── The copyright's other readers ──────────────────────────────────────────
@@ -565,6 +608,7 @@ fn a_correct_dialog() -> Vec<Child> {
             name: label.to_string(),
             value: address.to_string(),
         }),
+        button_name: String::new(),
         text_colour: 0,
     };
     let mut children: Vec<Child> = about::lines()
@@ -574,6 +618,7 @@ fn a_correct_dialog() -> Vec<Child> {
     for page in PAGES {
         children.push(child("SysLink", "<a>markup</a>", Some(page)));
     }
+    children.push(child("Button", SEND_FEEDBACK, None));
     children.push(child("Button", "OK", None));
     children
 }

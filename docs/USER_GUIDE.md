@@ -1121,6 +1121,8 @@ back on their own when a device can be opened again.
 - Open one topic directly from the Help menu: Getting started, Keyboard
   shortcuts, Using Wixen Mail, Setting up a provider, When something goes
   wrong, Accessibility, Privacy, and What changed.
+- **Help → Send Feedback**, or `Ctrl+Shift+F`, sends a report about a problem, an
+  idea or a question; see [Report Issues](#report-issues).
 - **Help → Check for Updates** asks whether a newer version has been published.
 - **Help → About** says which version you have and who makes Wixen Mail.
 
@@ -1135,9 +1137,11 @@ version with its build number, such as `1.0.0-alpha.1+114.g44bff634`: the
 version, then how many commits the build is past the point that version was
 set, then the commit it was made from. A later build has the larger number,
 so quote the whole string when you report something. After the copyright come
-two links, wixen.app and wixen.app/support, and then OK. OK has the focus when
-About opens, so Enter closes it. Press `Shift+Tab` to reach the links; Enter on
-a link opens that page in your browser.
+two links, wixen.app and wixen.app/support, then a Send Feedback button, and
+then OK. OK has the focus when About opens, so Enter closes it. Press
+`Shift+Tab` once to reach Send Feedback, which closes About and opens Send
+Feedback (`Alt+F` does the same), and again to reach the links; Enter on a link
+opens that page in your browser.
 
 ### Provider-Specific Help
 
@@ -1148,13 +1152,49 @@ Gmail, Outlook.com and Office 365, Yahoo, iCloud, and ProtonMail Bridge.
 
 ### Report Issues
 
-If you encounter issues not covered in this guide:
-1. Check the application logs for details
-2. Note any error messages you receive
-3. Report issues on the GitHub repository
+Use **Help → Send Feedback**, `Ctrl+Shift+F`, or the Send Feedback button on
+About. One window asks what you need, shows you the message, and sends it from
+your own account.
 
-On 2026-09-23 the program had no Send Feedback command yet. One is coming with
-a window of its own, and About will offer it when it arrives.
+1. Choose what it is about in the first box: Report a problem, Request a
+   feature, Something is hard to use with a screen reader, Ask a question,
+   Report a security concern, or Something else. The questions below change
+   with your choice.
+2. Answer the question. A problem asks two: what you were doing and what you
+   heard or saw, and what you expected instead. Only the first needs an answer.
+3. Choose what goes with it. Five boxes each say what they send: the version,
+   your Windows version and language, the screen reader running, the end of
+   the log, and the kinds of account you have. The version and the log
+   are ticked to start with. In the log, every address and every subject is
+   hidden.
+4. Check "How to reach you". It starts with your account's address and is used
+   only to answer you; leave it empty if you do not want an answer.
+5. Read "What will be sent" (`Alt+B`). It holds the whole message, who it goes
+   to and from, and the attached log, and it changes as you type.
+6. Press Send (`Alt+S`). The report goes into your Outbox as an ordinary message
+   from your default account, or from the account you are using when none is
+   marked as the default, and is held and sent like any message you write. It
+   goes to support@wixen.app.
+
+A copy of every report you send is kept in the `feedback` folder inside the
+`logs` folder where Wixen Mail keeps its files, with its log excerpt beside it.
+
+**A security concern works differently in three ways.** It goes to
+security@wixen.app rather than the support address. Its log starts unticked,
+because a log can hold the very thing the concern is about and the hiding
+covers addresses and subjects only; tick it if the concern needs it, and read
+it in the window first. And its subject says only "Report a security concern",
+because a subject shows in message lists and notifications. GitHub's private
+reporting page is offered beside Send, as the other way to report one.
+
+**When Send cannot be used**, because no account is set up or because sending is
+turned off under Settings, Allow Changes, the line under the buttons says which.
+Copy to clipboard (`Alt+C`) puts the whole message on the clipboard, and the
+GitHub button (`Alt+G`) opens the issue page, or for a security concern the
+private reporting page, where you can paste it.
+
+Until 2026-09-23 this section said the program had no Send Feedback command yet
+and that About would offer one when it arrived; both are here now.
 
 ## Tips for Best Experience
 

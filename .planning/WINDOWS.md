@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 546
+open_count: 549
 waived_count: 0
 fixed_count: 42
-total_count: 588
-last_updated: 2026-09-23T18:32:00.000Z
+total_count: 591
+last_updated: 2026-09-23T20:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -603,6 +603,9 @@ last_updated: 2026-09-23T18:32:00.000Z
 | 586 | 12 | deviation | scripts/check.test.sh |  | 12-03.2: the check suite that decides which suites run grew with the cases that decide it. By hand, one suite after another, check.test.sh took 9 s at 8eee380a and 31.8 s at c4798dba, from 49 cases to 89; which-checks.test.sh 11 s to 18.5 s. The fork-free rewrite at 13b42781 had brought an earlier 31 s down to 16 s, and the cases tasks 4, 5 and 7 added since each start a bash and parse check.sh. Since 12-03.2 a commit staging only guards/guards.toml runs this suite alone, so such a commit pays about what all four suites cost before, and a commit staging no suite input pays none. Written down so the stage lines the later plans print are read with it; a cheaper question for the cases, one bash answering several, is the obvious next step and is not built | open |  | 2026-09-23T16:58:00.000Z |  |
 | 587 | 12 | unrun-verify | src/presentation/wx_app.rs |  | 12-04: nobody has heard the About dialog under NVDA. What only the tester's ear settles: whether the copyright line and the licence sentence are read when About opens; whether each page is heard as a link with its address (over MSAA the link item answers role link and the address as its name, measured 2026-09-23; UI Automation is read by the pull request's scan only); whether focus lands on OK when About opens and Shift+Tab reaches the support link and then the home page; and what Enter on a link does, which should be to open the page once in the default browser and leave About open. No test exercises a link event reaching its handler and being consumed, because a test that pressed a link would open a browser | open |  | 2026-09-23T18:32:00.000Z |  |
 | 588 | 12 | todo | src/application/about.rs |  | 12-04: wixen.app and wixen.app/support, the two pages About links to, answered 522 on 2026-09-20, at b3cc380a on 2026-09-23, and again at 18:31Z on 2026-09-23 (Cloudflare answers and the server behind it does not). Pratik answered on 2026-09-23 that both pages are up by the time public testing begins, so neither the dialog nor the guide says the site is coming; the changelog's Known limitations says, dated, that neither page answered. His to close, when a fetch of each answers 200. What the support page says is his too | open |  | 2026-09-23T18:32:00.000Z |  |
+| 589 | 12 | unrun-verify | src/presentation/wx_feedback.rs |  | 12-05: nobody has heard Send Feedback under NVDA. What only the tester's ear settles: that the window opens on What is this about with its description read; that moving through the categories is heard and the questions below follow the choice; that each of the five boxes is read with its sentence and its state, the log excerpt ticked on opening; that choosing Report a security concern unticks the excerpt and that is noticed; that the What will be sent box can be moved through line by line and reads the same words Send queues; and what Send's sentence says when the report goes into the Outbox. Over MSAA the target reads every control's name, role and state in Tab order on the built window, and the pull request's scan reads UI Automation; neither is an ear | open |  | 2026-09-23T20:30:00.000Z |  |
+| 590 | 12 | unrun-verify | src/application/feedback_report.rs |  | 12-05: no report has reached either address. A report sent from a real account arriving at support@wixen.app, and one arriving at security@wixen.app or at the address Pratik names in its place, is his to see; the account and both mailboxes are his, and both mailboxes are due by public testing on his answer of 2026-09-23. Until then a report may come back to the sender as undeliverable, which docs/ALPHA_TESTING.md says, dated. The send path is tested up to the queued row by readings and by the one function the composer shares, and nothing here sends mail | open |  | 2026-09-23T20:30:00.000Z |  |
+| 591 | 12 | todo | src/presentation/wx_app.rs |  | 12-05: the Help menu holds two access keys twice each, read on 2026-09-23: C on Contents and on the What changed topic, U on the Using Wixen Mail topic and on Check for Updates. A key on a letter two items share moves between them rather than choosing, so a keyboard user cannot reach the second by its letter. 12-05 took F for Send Feedback, which was free, and moved neither, because the plan did not ask it to; the topics' letters live in application::help::TOPICS | open |  | 2026-09-23T20:30:00.000Z |  |
 
 ````json
 [
@@ -7660,6 +7663,42 @@ last_updated: 2026-09-23T18:32:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T18:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 589,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/presentation/wx_feedback.rs",
+    "line": null,
+    "description": "12-05: nobody has heard Send Feedback under NVDA. What only the tester's ear settles: that the window opens on What is this about with its description read; that moving through the categories is heard and the questions below follow the choice; that each of the five boxes is read with its sentence and its state, the log excerpt ticked on opening; that choosing Report a security concern unticks the excerpt and that is noticed; that the What will be sent box can be moved through line by line and reads the same words Send queues; and what Send's sentence says when the report goes into the Outbox. Over MSAA the target reads every control's name, role and state in Tab order on the built window, and the pull request's scan reads UI Automation; neither is an ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T20:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 590,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/application/feedback_report.rs",
+    "line": null,
+    "description": "12-05: no report has reached either address. A report sent from a real account arriving at support@wixen.app, and one arriving at security@wixen.app or at the address Pratik names in its place, is his to see; the account and both mailboxes are his, and both mailboxes are due by public testing on his answer of 2026-09-23. Until then a report may come back to the sender as undeliverable, which docs/ALPHA_TESTING.md says, dated. The send path is tested up to the queued row by readings and by the one function the composer shares, and nothing here sends mail",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T20:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 591,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "12-05: the Help menu holds two access keys twice each, read on 2026-09-23: C on Contents and on the What changed topic, U on the Using Wixen Mail topic and on Check for Updates. A key on a letter two items share moves between them rather than choosing, so a keyboard user cannot reach the second by its letter. 12-05 took F for Send Feedback, which was free, and moved neither, because the plan did not ask it to; the topics' letters live in application::help::TOPICS",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T20:30:00.000Z",
     "resolved_at": null
   }
 ]

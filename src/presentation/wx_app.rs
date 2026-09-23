@@ -42,6 +42,7 @@ use crate::presentation::virtual_rows;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
+use crate::presentation::wx_feedback;
 use crate::presentation::wx_reminder_alert;
 use crate::presentation::wx_settings;
 use crate::presentation::wx_thread_view;
@@ -154,6 +155,9 @@ menu_ids!(
     // somebody has to tell apart by reading, which is exactly what this program
     // exists not to make people do.
     ID_CHECK_FOR_UPDATES,
+    // Send Feedback, on the Help menu and behind About's button (#64, #78),
+    // on Ctrl+Shift+F by Pratik's answer of 2026-09-23.
+    ID_SEND_FEEDBACK,
     ID_THREAD_VIEW,
     ID_APPLY_VIEW_ELSEWHERE,
     ID_OFFLINE_MODE,
@@ -5861,7 +5865,16 @@ impl WxMailApp {
                                 &runtime,
                             );
                         }
-                        _ if id == ID_ABOUT => show_about_dialog(&frame),
+                        _ if id == ID_SEND_FEEDBACK => {
+                            open_send_feedback(app, &frame, &message_cache, &a11y);
+                        }
+                        // About's Send Feedback button closes About with its
+                        // own id, and the same dialog opens here (#78).
+                        _ if id == ID_ABOUT => {
+                            if show_about_dialog(&frame) == ID_SEND_FEEDBACK {
+                                open_send_feedback(app, &frame, &message_cache, &a11y);
+                            }
+                        }
                         _ => tracing::debug!("Unhandled menu ID: {:?}", id),
                     }
                 }
@@ -7545,6 +7558,16 @@ impl WxMailApp {
                 wxdragon::menus::ItemKind::Normal,
             );
         }
+        help.append_separator();
+        // F is the one letter free among the Help menu's items and topics
+        // on 2026-09-23; C and U are each held twice already, which is on the
+        // ledger rather than moved here.
+        help.append(
+            ID_SEND_FEEDBACK,
+            "Send &Feedback...\tCtrl+Shift+F",
+            "Tell the people who make Wixen Mail about a problem, an idea or a question",
+            wxdragon::menus::ItemKind::Normal,
+        );
         help.append_separator();
         help.append(
             ID_LOAD_SCALE_SAMPLE,
@@ -17121,7 +17144,21 @@ fn queue_for_sending(
     let account_id = lock_state(state).active_account_id.clone().ok_or_else(|| {
         "Choose an account first, so the message has somewhere to go.".to_string()
     })?;
+    put_in_the_outbox(cache, account_id, data)
+}
 
+/// Build the queued row for a message from one account and write it to the
+/// Outbox, answering who it is for and what the row waits for.
+///
+/// The one place a queued row is built. The composer's Send and Send
+/// Feedback both come through here (12-05), so a report takes the same path
+/// every message takes: the same hold, the same Outbox, and later the same
+/// `allowed_for(account).mail` gate when the Outbox is handed to a server.
+fn put_in_the_outbox(
+    cache: &Arc<MessageCache>,
+    account_id: String,
+    data: &wx_compose::ComposeData,
+) -> std::result::Result<(String, crate::application::sending_later::GoAfter), String> {
     let recipient = data.to.trim();
     if recipient.is_empty() {
         return Err("Add at least one recipient before sending".to_string());
@@ -17528,6 +17565,19 @@ fn open_for_scanning(
         }
         ScanTarget::About => {
             show_about_dialog(frame);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Feedback => {
+            // Made-up facts and no log, so the scan reads nothing about the
+            // runner and writes nothing. What is walked is the window.
+            let facts = crate::application::feedback_report::Facts {
+                version: crate::common::version::current(),
+                windows_build: "Windows 11, build 26200".to_string(),
+                display_language: "en-US".to_string(),
+                screen_reader: Some(("NVDA".to_string(), "2026.3.0.1".to_string())),
+                providers: vec!["IMAP".to_string()],
+            };
+            show_send_feedback(app, frame, cache, a11y, facts, None);
             OnReturn::WindowClosed
         }
         // The five editors, each opened on the frame with no manager behind
@@ -26273,9 +26323,14 @@ fn next_unread(messages: &[MessageItem], from: Option<usize>, direction: isize) 
 
 // ── Standalone Dialogs ──────────────────────────────────────────────────────
 
-fn show_about_dialog(parent: &Frame) {
+/// Show About, and answer how it closed: `ID_SEND_FEEDBACK` when its Send
+/// Feedback button was pressed, so the caller opens that dialog with
+/// everything a report needs, which About does not hold.
+fn show_about_dialog(parent: &Frame) -> i32 {
     let dlg = build_about_dialog(parent, theme::current_from_stored_config());
-    dlg.show_modal();
+    let answer = dlg.show_modal();
+    dlg.destroy();
+    answer
 }
 
 /// Build the About dialog without showing it.
@@ -26285,9 +26340,11 @@ fn show_about_dialog(parent: &Frame) {
 /// splits Settings: a test can build the real dialog and read back the real
 /// colour a live control holds, and never call `.show_modal()` at all.
 ///
-/// Nothing is read back from this one: OK closes it, and each page link
-/// opens its page. Its words come from [`crate::application::about`] and it
-/// writes none of its own (#78).
+/// Nothing is read back from this one: OK closes it, each page link opens
+/// its page, and Send Feedback closes it with `ID_SEND_FEEDBACK` for the
+/// caller to open that dialog (12-05). Its words come from
+/// [`crate::application::about`] and it writes none of its own (#78) but the
+/// button's label.
 ///
 /// The two pages are native links rather than buttons, measured over MSAA on
 /// 2026-09-23 (`tests/the_about_dialog_names_its_owners_and_its_links.rs`):
@@ -26323,6 +26380,25 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
         sizer.add(&label, 0, SizerFlag::All, 12);
     }
 
+    // After the pages and before OK (#78's last point, 12-05). F is the one
+    // letter About uses. It closes About with its own id, and the caller
+    // opens Send Feedback, which needs the accounts About does not hold.
+    let send_feedback = Button::builder(&dlg)
+        .with_label("Send &Feedback...")
+        .build();
+    sizer.add(
+        &send_feedback,
+        0,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::All,
+        8,
+    );
+    send_feedback.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_SEND_FEEDBACK);
+        }
+    });
+
     let ok = Button::builder(&dlg)
         .with_label("OK")
         .with_id(ID_OK)
@@ -26349,7 +26425,7 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
     ok.set_focus();
 
     // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
-    // dialog (four `StaticText`, two links and a button), so the dialog
+    // dialog (four `StaticText`, two links and two buttons), so the dialog
     // itself is the only site besides the links, which `add_a_page_link`
     // colours. `None` means high contrast is on, or the system is set up
     // in a way this application should not paint over, so nothing is set
@@ -26382,7 +26458,7 @@ fn add_a_page_link(
     let dialog = *dlg;
     link.bind_internal(EventType::COMMAND_HYPERLINK, move |event| {
         event.skip(false);
-        open_one_of_our_pages(&dialog, address);
+        open_one_of_our_pages(&dialog, "About Wixen Mail", address);
     });
     sizer.add(
         &link,
@@ -26395,21 +26471,210 @@ fn add_a_page_link(
 /// Open one of the project's own pages in the browser, through
 /// `HtmlRenderer::safe_external_url` like every link a message offers
 /// (T-12-13), and say so in a window over the dialog when it cannot open.
-fn open_one_of_our_pages(dialog: &Dialog, address: &str) {
+///
+/// About's two pages and Send Feedback's GitHub page come through here;
+/// `title` is the dialog's own, which the window saying so carries.
+fn open_one_of_our_pages(dialog: &Dialog, title: &str, address: &str) {
     let Some(safe) = HtmlRenderer::safe_external_url(address) else {
-        tracing::warn!("The About dialog's page {address} was refused by the link gate");
+        tracing::warn!("The page {address} offered by {title} was refused by the link gate");
         return;
     };
     if let Err(why) = open::that(&safe) {
-        tracing::warn!("The About dialog could not open {safe}: {why}");
+        tracing::warn!("{title} could not open {safe}: {why}");
         MessageDialog::builder(
             dialog,
             &format!("Could not open a browser. The page is {safe}"),
-            "About Wixen Mail",
+            title,
         )
         .build()
         .show_modal();
     }
+}
+
+// ── Send Feedback (#64, #71, #78, 12-05) ─────────────────────────────────────
+
+/// Open Send Feedback on what this machine says about itself.
+///
+/// The facts are read here, once, as the window opens: the version, the
+/// Windows build and language, the screen reader running, and the kinds of
+/// account, never their addresses. Nothing is sent until Send is pressed.
+fn open_send_feedback(
+    app: AppHandles<'_>,
+    frame: &Frame,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::service::this_machine;
+    let accounts = lock_state(app.state).accounts.clone();
+    let facts = crate::application::feedback_report::Facts {
+        version: crate::common::version::current(),
+        windows_build: this_machine::windows_build(),
+        display_language: this_machine::display_language(),
+        screen_reader: this_machine::screen_reader(),
+        providers: this_machine::providers(&accounts),
+    };
+    show_send_feedback(app, frame, cache, a11y, facts, the_log_to_excerpt());
+}
+
+/// Today's log, or yesterday's when today's has nothing in it yet.
+///
+/// Read from the folder and under the name the logger writes, taken from its
+/// own configuration so the two cannot disagree. The logger rolls a new file
+/// at midnight UTC, so the days asked for are UTC days.
+fn the_log_to_excerpt() -> Option<crate::application::feedback_report::LogFile> {
+    let logger = crate::common::logging::LoggerConfig::default();
+    let read = |day: chrono::NaiveDate| {
+        let file_name = wx_feedback::log_file_name(&logger.log_file_prefix, day);
+        std::fs::read_to_string(logger.log_dir.join(&file_name))
+            .ok()
+            .map(|text| crate::application::feedback_report::LogFile {
+                file_name,
+                date: day.format("%Y-%m-%d").to_string(),
+                text,
+            })
+    };
+    let today = chrono::Utc::now().date_naive();
+    wx_feedback::log_to_read(read(today), today.pred_opt().and_then(read))
+}
+
+/// Show Send Feedback over `frame`, and bind the three doors that reach past
+/// the window: Send, which takes the one sending path; Copy; and the GitHub
+/// page. The scan opens it through here on made-up facts.
+fn show_send_feedback(
+    app: AppHandles<'_>,
+    frame: &Frame,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    facts: crate::application::feedback_report::Facts,
+    log: Option<crate::application::feedback_report::LogFile>,
+) {
+    let AppHandles { state, tx, rt } = app;
+    let sender = {
+        let s = lock_state(state);
+        wx_feedback::sender_of(
+            s.default_account_id.as_deref(),
+            s.active_account_id.as_deref(),
+            &s.accounts,
+        )
+    }
+    .map(|(account, is_default)| wx_feedback::Sender {
+        allowed: crate::application::allowed::allowed_for(&account.id).mail,
+        account,
+        is_default,
+    });
+    let opening = wx_feedback::Opening {
+        facts,
+        log,
+        sender,
+        stamp: chrono::Local::now().format("%Y-%m-%d-%H%M%S").to_string(),
+    };
+    let feedback =
+        wx_feedback::build_feedback_dialog(frame, opening, theme::current_from_stored_config());
+
+    feedback.send.on_click({
+        let (feedback, cache, a11y) = (feedback.clone(), cache.clone(), a11y.clone());
+        let (state, tx, rt) = (state.clone(), tx.clone(), rt.clone());
+        move |_| match send_the_report(&cache, &feedback) {
+            Ok((recipient, waiting_on, kept_in)) => {
+                let app = AppHandles {
+                    state: &state,
+                    tx: &tx,
+                    rt: &rt,
+                };
+                let now = chrono::Local::now();
+                let goes = crate::application::sending_later::when_it_goes(
+                    reachability_of(&state),
+                    &waiting_on,
+                    now,
+                );
+                let said = format!(
+                    "{} A copy of the report is in {kept_in}.",
+                    crate::application::sending_later::what_send_did(
+                        goes,
+                        &waiting_on,
+                        now,
+                        &recipient
+                    )
+                );
+                feedback.dialog.end_modal(ID_OK);
+                match goes {
+                    crate::application::sending_later::WhenItGoes::Now => {
+                        send_status(&tx, &rt, &said);
+                        flush_outbox(app);
+                    }
+                    _ => send_answer(&tx, &rt, &said),
+                }
+            }
+            Err(why) => {
+                use crate::presentation::accessibility::announcements::Priority;
+                feedback.say_why(&why);
+                let _ = a11y.announce(&why, Priority::High);
+            }
+        }
+    });
+    feedback.copy.on_click({
+        let (feedback, a11y) = (feedback.clone(), a11y.clone());
+        move |_| put_on_the_clipboard(&feedback.payload_now(), &a11y)
+    });
+    feedback.github.on_click({
+        let feedback = feedback.clone();
+        move |_| {
+            open_one_of_our_pages(
+                &feedback.dialog,
+                wx_feedback::TITLE,
+                feedback.doors().github_page,
+            )
+        }
+    });
+
+    feedback.dialog.show_modal();
+    feedback.dialog.destroy();
+}
+
+/// Keep a copy of the report and put it in the Outbox from the account it
+/// goes from, through [`put_in_the_outbox`], the path every message takes.
+///
+/// Answers who it is for, what the row waits for, and the folder the copy is
+/// in. A failure leaves the window open with everything typed, and says why.
+fn send_the_report(
+    cache: &Option<Arc<MessageCache>>,
+    feedback: &wx_feedback::FeedbackDialog,
+) -> std::result::Result<(String, crate::application::sending_later::GoAfter, String), String> {
+    let Some(sender) = feedback.sender() else {
+        return Err("No account is set up to send from, so nothing was sent.".to_string());
+    };
+    let Some(cache) = cache.as_ref() else {
+        return Err(
+            "The mail on this computer is not open, so the report cannot be put in the Outbox."
+                .to_string(),
+        );
+    };
+    let composed = feedback.composed();
+    let kept_in = AppPaths::resolve()
+        .map_err(|why| format!("There is nowhere on this computer to keep the report: {why}"))?
+        .feedback_dir();
+    let attachments = wx_feedback::keep_a_copy(
+        &kept_in,
+        &feedback.report().stamp,
+        &composed,
+        &feedback.payload_now(),
+    )?;
+    let data = wx_compose::ComposeData {
+        to: composed.to.to_string(),
+        cc: String::new(),
+        bcc: String::new(),
+        subject: composed.subject,
+        // Plain text only: an empty HTML half is left out of the message.
+        body: String::new(),
+        body_plain: composed.body,
+        html_mode: false,
+        account_index: None,
+        attachments,
+        answering: None,
+        send_at: None,
+    };
+    let (recipient, waiting_on) = put_in_the_outbox(cache, sender.account.id.clone(), &data)?;
+    Ok((recipient, waiting_on, kept_in.display().to_string()))
 }
 
 /// What the search box's "In" list offers, and what each answer searches.

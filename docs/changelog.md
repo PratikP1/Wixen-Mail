@@ -18,8 +18,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   then OK. A screen reader names each link by its address, and Enter or a click on one opens
   the page in your browser. OK has the focus when About opens, so Enter still closes it; Tab
   reaches the links. On the light and dark themes the links are drawn in the theme's accent
-  colour, because Windows' own link blue is too dim on the dark background. Send Feedback is
-  not on About yet: it arrives together with the window it opens.
+  colour, because Windows' own link blue is too dim on the dark background. When this entry
+  was written Send Feedback was not on About yet; since later on 2026-09-23 it is, between
+  the links and OK, with the window it opens (see Send Feedback under Added).
   Known limitations: on 2026-09-23 neither page loaded. Both addresses answered 522, which is
   Cloudflare saying the server behind it did not respond. Pratik has said both pages will be
   up by the time public testing begins, so a build made before then carries two links to
@@ -1162,6 +1163,35 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   oldest. If you never chose a sort, All Inboxes reads as before.
 
 ### Added
+
+- **Send Feedback: tell the people who make Wixen Mail about a problem, and read every word
+  before it goes.** The tester on 2026-09-16 asked for "a direct way to provide feedback from
+  the app's help menu" that lets you pick a category and asks for the right information (#64).
+  Help, Send Feedback, or `Ctrl+Shift+F`, or the new Send Feedback button on About (#78),
+  opens one window. First you choose what it is about: Report a problem, Request a feature,
+  Something is hard to use with a screen reader, Ask a question, Report a security concern,
+  or Something else. The questions change with the choice; a problem asks what you were doing
+  and what you expected. Five boxes say what goes with the report: the version, your Windows
+  version and language, the screen reader running, the last 200 lines of the log with
+  addresses and subjects hidden, and the kinds of account you have without their addresses.
+  The version and the log are ticked to start with (#71). The box "What will be sent" holds
+  the exact message and the attached log, and changes as you type.
+  Send puts the report in your Outbox as an ordinary message from your default account (or
+  the account in use, when none is marked as the default), through the same path, the same
+  Undo Send hold and the same Allow Changes setting as every message you write. It goes to
+  support@wixen.app. A security concern goes to security@wixen.app instead, starts with the
+  log unticked, because a log can hold what the concern is about, and its subject says only
+  "Report a security concern". A copy of every report you send is kept under `logs`, in a
+  folder named `feedback`, in the folder Wixen Mail keeps its files in. With no account, or
+  with sending turned off, the window says so and offers Copy to clipboard and the GitHub
+  issue page; for a security concern it offers GitHub's private reporting page instead,
+  beside Send whether Send can be used or not.
+  Known limitations, on 2026-09-23: nobody has heard this window with a screen reader yet,
+  and neither address has received a report from a real account. Until public testing
+  begins, support@wixen.app and security@wixen.app may not exist yet, so a report can show
+  as sent and then come back to your own inbox as undeliverable; the copy under `feedback`
+  and Copy to clipboard mean nothing is lost. `security@wixen.app` is our assumption of the
+  address Pratik asked for, and may change.
 
 - **The separate window a link can open in is here, and it is a copy of Wixen Mail with
   nothing in it but that page.** #80's third place, from Pratik's ask of 2026-09-18, since
