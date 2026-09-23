@@ -360,7 +360,8 @@ fi
 if [ "$mode" = "all_but_slow" ]; then
     echo
     echo "Formatting and clippy passed. The test suite and the release build did"
-    echo "not run: this is not main. Run 'scripts/check.sh all' before merging."
+    echo "not run: this is not main. They run once, when the merge into main"
+    echo "(git merge --no-ff) runs this hook."
     exit 0
 fi
 
@@ -415,8 +416,8 @@ if [ "$mode" = "docs_only" ]; then
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
     echo "the suite and the release build did not run: nothing outside a document"
-    echo "changed, so they had nothing to say. Run 'scripts/check.sh all' before"
-    echo "merging."
+    echo "changed, so they had nothing to say. They run once, when the merge"
+    echo "into main (git merge --no-ff) runs this hook."
     exit 0
 fi
 
@@ -541,7 +542,8 @@ if [ "$mode" = "affected" ]; then
     echo
     echo "Formatting, clippy, the tests reaching what changed, and the"
     echo "tree-reading guards passed. The rest of the suite and the release"
-    echo "build did not run. Run 'scripts/check.sh all' before merging."
+    echo "build did not run. They run once, when the merge into main"
+    echo "(git merge --no-ff) runs this hook."
     exit 0
 fi
 

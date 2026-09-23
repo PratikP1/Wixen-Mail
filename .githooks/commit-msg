@@ -37,7 +37,10 @@
 # to exist for is now handled: a RED commit says so in its message and is held
 # to exactly the failures it names.
 #
-# Whoever merges a branch into main runs `scripts/check.sh all` first.
+# A branch runs only what reaches the change. The whole suite runs once, here,
+# when a branch is merged into main with `git merge --no-ff`: the merge commit
+# runs this hook and it answers `all`. Do not run `scripts/check.sh all` by
+# hand before merging as well; it runs the same checks on the same tree.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"

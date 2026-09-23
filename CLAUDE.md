@@ -350,8 +350,23 @@ seconds across the branches that recorded one on 2026-09-14, and the row for
 already built, which is the suite's term taken on its own rather than inside a
 gate run, so read the two against each other with that difference in mind. On
 a branch the slow two wait for the merge, where they run once rather than once
-per commit. Whoever merges runs `scripts/check.sh all` first, and that is the
-run they are paid for.
+per commit.
+
+**The merge is the full gate, and it runs once.** Until 2026-09-23 this
+paragraph ended "Whoever merges runs `scripts/check.sh all` first, and that is
+the run they are paid for", and executors did: they ran it by hand on the
+branch tip, then merged, and the merge commit's hook answered `all` on `main`
+and ran the same checks on the same tree again. Measured that day over eleven
+merges from 11-11.1.1 to 12-03: every merge landed exactly its branch tip's
+tree on a `main` that had not moved, so the second run found nothing the first
+had not, and it cost 8.7 minutes a plan. So merge with `git merge --no-ff`,
+which makes a merge commit and so runs the hook (a fast-forward makes no
+commit and runs nothing), never with `--no-verify`, and let that hook be the
+full gate. If it refuses, `git merge --abort`, fix on the branch, and merge
+again; if the refusal is the keyring race of ledger 374, `git commit --no-edit`
+retries the merge commit. On a branch, the hook runs only what reaches the
+change, which is what a branch is for; the whole suite runs at the merge and
+nowhere before it.
 
 `which-checks.sh` answers `all` for anything it cannot place, including an
 empty branch name and a detached `HEAD`. A check that cannot tell where it is
