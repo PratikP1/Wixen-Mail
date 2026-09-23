@@ -561,29 +561,18 @@ fn test_the_reading_of_the_other_walk_can_see_a_directory_go_missing() {
 const ME: &str = "the_words_that_say_nothing";
 
 /// The targets a documents-only commit earns, read from the gate script.
+///
+/// From the one-line array `the_targets_that_read_documents=(...)` since
+/// 2026-09-23 (12-03.2), which holds the list once for the documents-only
+/// block and for a merge whose diff holds a document. Until then this read
+/// the `--test` tokens of the `docs_only` block, which no longer spells any.
 fn the_documents_only_targets(script: &str) -> Vec<String> {
-    let mut inside = false;
-    let mut found = Vec::new();
-    for line in script.lines() {
-        if line.starts_with("if [ \"$mode\" = \"docs_only\" ]; then") {
-            inside = true;
-            continue;
-        }
-        if inside && line.starts_with("fi") {
-            break;
-        }
-        if !inside || line.trim_start().starts_with('#') {
-            continue;
-        }
-        let mut rest = line;
-        while let Some(at) = rest.find("--test ") {
-            rest = &rest[at + "--test ".len()..];
-            if let Some(name) = rest.split_whitespace().next() {
-                found.push(name.to_string());
-            }
-        }
-    }
-    found
+    script
+        .lines()
+        .find_map(|line| line.strip_prefix("the_targets_that_read_documents=("))
+        .and_then(|rest| rest.split(')').next())
+        .map(|inner| inner.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
 }
 
 /// A planted gate script whose document list is spelled only as the one-line
@@ -674,7 +663,10 @@ fn test_the_reading_of_what_the_gate_runs_can_see_this_target_missing() {
          list it is about"
     );
 
-    let without = script.replace(&format!("--test {ME}"), "--test something_else");
+    // Taken out of the documents array, where the list has been held since
+    // 2026-09-23 (12-03.2). Until then this took `--test {ME}` out of the
+    // `docs_only` block, which spells no target since.
+    let without = script.replace(&format!(" {ME}"), " something_else");
     assert!(
         !the_documents_only_targets(&without)
             .iter()

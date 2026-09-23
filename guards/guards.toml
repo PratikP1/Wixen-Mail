@@ -22449,7 +22449,7 @@ red = [
     "test_the_reading_can_see_a_row_whose_date_is_missing",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
 ]
 
 # ── Phase 8, plan 02: a figure on any page carries its date and its source ──
@@ -22479,7 +22479,7 @@ red = [
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
 ]
 
 # A line that says `target` is stating an aim and is excused from the date. The
@@ -22539,7 +22539,7 @@ red = [
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
 ]
 
 # The agreement reading holds a test count on the three pages that state one
@@ -22562,7 +22562,7 @@ red = [
     "test_the_three_pages_that_state_the_test_count_quote_one_row",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
 ]
 
 # The share of history before red/green is computed on every commit, and no
@@ -22590,7 +22590,7 @@ red = [
     "test_the_share_of_history_before_red_green_is_computed_and_printed",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
 ]
 
 # A figure in prose that restates a constant the code holds is held to it.
@@ -22614,7 +22614,7 @@ red = [
     "test_the_constants_reading_refuses_a_phrase_that_has_gone",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
 ]
 
 # The same rule from the other side: the constant moves and the page does not.
@@ -22646,7 +22646,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/attachment_content.rs", tests = 22 },
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
 ]
 
 # ── The usable line, and the harness that reads it ──────────────────────────

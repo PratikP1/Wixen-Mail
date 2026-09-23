@@ -53,6 +53,47 @@ set -euo pipefail
 # the old ones until the NVDA runner timed out (FOUND-22).
 guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date the_guard_sweep_runs_on_runners the_nvda_cases_wait_for_words_the_program_says)
 
+# The targets and library modules that read documents, which a documents-only
+# commit runs, and since 2026-09-23 a merge whose diff holds a document runs as
+# well. Held once, here, since that day (12-03.2): the list used to be spelled
+# out on the documents-only block's cargo lines, and a merge needing it too
+# would have made a second copy no reader watches. The three targets that ask
+# whether they are on it read `the_targets_that_read_documents` below.
+#
+# Seven, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
+# help pages from inside the library, so a documents-only run that skipped
+# `--lib` would miss the guard that catches a dead link in a help page. That
+# guard has already caught one this month. `checkbox_labels` and
+# `manager_delete_stays_open` read documents too.
+#
+# `the_planning_files_agree_with_themselves` is the sixth and it is the one
+# this mode exists for. A commit that pulls STATE.md's frontmatter apart
+# from its Current Position heading, or edits a ledger row and not its JSON
+# object, touches nothing but `.planning/*.md` and so earns this list and
+# nothing else. Without it here, the check written for that commit would be
+# the one thing that commit does not run.
+#
+# `the_words_that_say_nothing` is the seventh, and its case is the same: it
+# reads prose for the six words `CLAUDE.md` bans, and a commit that writes
+# prose and nothing else earns exactly this list.
+#
+# `what_the_scans_can_judge` is the eighth, and the `help_page` case again:
+# it reads `docs/wcag-coverage.md` from inside the library and holds the
+# page's table to the three criteria the code names. A commit that edits
+# only that page answers this mode, so without it the reading ran
+# on every commit except the ones that could break it, which is what
+# `CLAUDE.md` says about a guard under `tests/`, happening to a `--lib`
+# test instead. Added 2026-09-14 with the module.
+#
+# `every_number_carries_its_command_and_its_date` is the ninth, and its
+# case is `the_planning_files_agree_with_themselves`'s exactly: it reads
+# `docs/development/measurements.md` and refuses a row without its command,
+# its date or its commit. A commit that adds a row and nothing else
+# touches one page under `docs/` and so earns this list and nothing else.
+# Added 2026-09-14 with the page.
+the_targets_that_read_documents=(house_style docs_links wired checkbox_labels manager_delete_stays_open the_planning_files_agree_with_themselves the_words_that_say_nothing every_number_carries_its_command_and_its_date)
+the_modules_that_read_documents=(help_page:: presentation::what_the_scans_can_judge::)
+
 # What each `scripts/*.test.sh` reads, so a suite runs on the commits that stage
 # one of its inputs and not on the others. Added 2026-09-23 by 12-03.2, on
 # Pratik's answer that day that each suite runs only for its own inputs: the
@@ -708,49 +749,23 @@ fi
 # these run rather than being skipped as "not code".
 if [ "$mode" = "docs_only" ]; then
     begin_stage "the targets that read documents"
-    # Seven, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
-    # help pages from inside the library, so a documents-only run that skipped
-    # `--lib` would miss the guard that catches a dead link in a help page. That
-    # guard has already caught one this month. `checkbox_labels` and
-    # `manager_delete_stays_open` read documents too.
-    #
-    # `the_planning_files_agree_with_themselves` is the sixth and it is the one
-    # this mode exists for. A commit that pulls STATE.md's frontmatter apart
-    # from its Current Position heading, or edits a ledger row and not its JSON
-    # object, touches nothing but `.planning/*.md` and so earns this list and
-    # nothing else. Without it here, the check written for that commit would be
-    # the one thing that commit does not run.
-    #
-    # `the_words_that_say_nothing` is the seventh, and its case is the same: it
-    # reads prose for the six words `CLAUDE.md` bans, and a commit that writes
-    # prose and nothing else earns exactly this list.
-    cargo test --lib help_page::
-    # `what_the_scans_can_judge` is the eighth, and the `help_page` case again:
-    # it reads `docs/wcag-coverage.md` from inside the library and holds the
-    # page's table to the three criteria the code names. A commit that edits
-    # only that page answers this mode, so without this line the reading ran
-    # on every commit except the ones that could break it, which is what
-    # `CLAUDE.md` says about a guard under `tests/`, happening to a `--lib`
-    # test instead. Added 2026-09-14 with the module.
-    cargo test --lib presentation::what_the_scans_can_judge::
-    # `every_number_carries_its_command_and_its_date` is the ninth, and its
-    # case is `the_planning_files_agree_with_themselves`'s exactly: it reads
-    # `docs/development/measurements.md` and refuses a row without its command,
-    # its date or its commit. A commit that adds a row and nothing else
-    # touches one page under `docs/` and so earns this list and nothing else.
-    # Added 2026-09-14 with the page.
-    #
+    # What reads documents, and why each is on the list, is above
+    # `the_targets_that_read_documents`, where the list has been held once since
+    # 2026-09-23: a merge whose diff holds a document runs it too.
+    for module in "${the_modules_that_read_documents[@]}"; do
+        cargo test --lib "$module"
+    done
+    document_targets=()
+    for target in "${the_targets_that_read_documents[@]}"; do
+        document_targets+=(--test "$target")
+    done
     # --no-fail-fast because this names eight targets, and without it a red
     # `house_style` meant the others never started. Found on 2026-09-03 by
     # `test_one_failing_target_does_not_hide_the_rest`, the moment its exemption
     # was narrowed from "the line names a target" to "the line names exactly
     # one". This is the same defect that was fixed in the scoped run below, in
     # the same shape, on a line the wider exemption could not see.
-    cargo test --no-fail-fast --test house_style --test docs_links --test wired \
-        --test checkbox_labels --test manager_delete_stays_open \
-        --test the_planning_files_agree_with_themselves \
-        --test the_words_that_say_nothing \
-        --test every_number_carries_its_command_and_its_date
+    cargo test --no-fail-fast "${document_targets[@]}"
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
     echo "the suite and the release build did not run: nothing outside a document"
