@@ -1022,6 +1022,73 @@ else
         "answered '$got', wanted '$want'"
 fi
 
+# ── A merge is told to which-checks as a merge ───────────────────────────────
+# Added 2026-09-23 by 12-03.2. From that day a merge into `main` answers what
+# the branch's whole diff earns rather than everything, and `check.sh` is what
+# knows a merge is in progress, by `MERGE_HEAD`. Asked through the question
+# `--mode-for-this-commit`, which makes the run's own decision without running
+# anything, from repositories of their own built the way the move above was.
+expect_the_mode() {
+    local want="$1" desc="$2" repo="$3" got
+    got="$(cd "$repo" && bash "$subject" --mode-for-this-commit 2>/dev/null)"
+    if [ "$got" = "$want" ]; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "answered '$got', wanted '$want'"
+    fi
+}
+
+a_merge_in_progress="$work/a-merge-in-progress"
+a_repository_of_its_own "$a_merge_in_progress"
+printf 'the start\n' > "$a_merge_in_progress/README.md"
+git -C "$a_merge_in_progress" add README.md
+git -C "$a_merge_in_progress" commit --quiet -m "the start"
+git -C "$a_merge_in_progress" checkout --quiet -b a-branch
+mkdir -p "$a_merge_in_progress/src"
+printf 'fn changed() {}\n' > "$a_merge_in_progress/src/changed.rs"
+git -C "$a_merge_in_progress" add src/changed.rs
+git -C "$a_merge_in_progress" commit --quiet -m "code on the branch"
+git -C "$a_merge_in_progress" checkout --quiet main
+git -C "$a_merge_in_progress" merge --quiet --no-ff --no-commit a-branch > /dev/null 2>&1
+expect_the_mode affected "a merge in progress is told to which-checks as a merge" "$a_merge_in_progress"
+
+a_commit_on_main="$work/a-commit-on-main"
+a_repository_of_its_own "$a_commit_on_main"
+printf 'the start\n' > "$a_commit_on_main/README.md"
+git -C "$a_commit_on_main" add README.md
+git -C "$a_commit_on_main" commit --quiet -m "the start"
+mkdir -p "$a_commit_on_main/src"
+printf 'fn changed() {}\n' > "$a_commit_on_main/src/changed.rs"
+git -C "$a_commit_on_main" add src/changed.rs
+expect_the_mode all "a commit on main that is not a merge earns everything" "$a_commit_on_main"
+
+# A merge whose diff holds a document runs the document-reading targets as well
+# as what its code earns, so a broken link in a branch that also changed code
+# is found at its merge. A branch commit does not: nearly every green commit
+# here carries a changelog line beside its code and would pay the list each
+# time. `docs_links` is on the document list and not on the whole tree's.
+runs="$(ask_from_the_tree --scoped-runs-for --merge "$registry" src/lib.rs docs/x.md 2>/dev/null)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a merge holding a document runs the document-reading targets" "$target_line"
+elif printf '%s\n' "$target_line" | grep -qE -- '--test docs_links( |$)'; then
+    suite_case_passed "a merge holding a document runs the document-reading targets"
+else
+    suite_case_failed "a merge holding a document runs the document-reading targets" \
+        "answered: $runs"
+fi
+
+target_line="$(the_one_target_line "$(scoped_runs src/lib.rs docs/x.md)")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a branch commit holding a document and code runs no document-reading target" \
+        "$target_line"
+elif printf '%s\n' "$target_line" | grep -qE -- '--test docs_links( |$)'; then
+    suite_case_failed "a branch commit holding a document and code runs no document-reading target" \
+        "answered: $target_line"
+else
+    suite_case_passed "a branch commit holding a document and code runs no document-reading target"
+fi
+
 # The run says so when it skips a suite. Read out of `check.sh`, because a run
 # from the scratch directory stops before the suites' stage and a run from here
 # would start the gate that runs this suite: inside the suites' own loop, before

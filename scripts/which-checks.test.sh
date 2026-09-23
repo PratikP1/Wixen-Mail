@@ -551,4 +551,46 @@ expect_refused "a marker that names nothing" \
 expect_refused "a message file that is not there" \
     --message-file="$red_marker.absent" gsd/plan-02-02 src/application/saved_searches.rs
 
+# ── A merge into main ───────────────────────────────────────────────────────
+# Added 2026-09-23 by 12-03.2, on Pratik's answer that day that the whole suite
+# runs once a phase rather than at every merge. A merge into `main` answers what
+# the branch's whole diff earns, by the same rules a branch commit is judged by,
+# so a branch that changed a workflow, the installer or a dependency still runs
+# everything at its merge, and one that changed code runs what reaches it.
+# `check.sh` passes `--merge` when a merge is in progress.
+expect affected "a merge into main with code changed" --merge main src/lib.rs
+expect docs_only "a merge into main with only documents changed" --merge main docs/x.md
+expect all "a merge into main with a workflow changed" \
+    --merge main .github/workflows/ci.yml src/lib.rs
+expect affected "a merge into main with a version bump and code" \
+    --manifest-diff-file="$version_bump" --merge main Cargo.toml Cargo.lock src/lib.rs
+expect all "a merge into a detached HEAD earns everything" --merge HEAD src/lib.rs
+# A merge that says nothing about what it changed cannot be scoped, which is
+# what `main` answers with no file list.
+expect all "a merge into main that names no path earns everything" --merge main
+
+# The one rule for what a document is, asked by `check.sh` about a merge's
+# paths: each given path that is a document, in the order given. Compared
+# whole, so an empty answer is red.
+expect docs/x.md "only the documents among the paths are named" \
+    --documents-among docs/x.md src/lib.rs data/dictionary_en.txt
+
+# A red marker on a merge into main is refused as on any commit on main, by the
+# red refusal's own words: a refusal for another reason, such as an option this
+# script does not know, is not this one.
+expect_refused_saying() {
+    local words="$1" desc="$2" said status
+    shift 2
+    said="$(cd "$run_from" && "$subject" "$@" 2>&1 >/dev/null)"
+    status=$?
+    if [ "$status" -ne 0 ] && printf '%s\n' "$said" | grep -qF -- "$words"; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "exited $status saying: $said" \
+            "wanted a refusal saying '$words'"
+    fi
+}
+expect_refused_saying "cannot be made" "a red commit on a merge into main is refused" \
+    --message-file="$red_marker" --merge main src/application/saved_searches.rs
+
 suite_verdict
