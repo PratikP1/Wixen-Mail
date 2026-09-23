@@ -5239,9 +5239,25 @@ Nothing here has met a real provider except through the tester's Gmail account. 
 requirement's last `[S]` line says what only his ear, his reader, his account, the runner or
 the site can settle; the caveat at the top of this file binds every `[D]` line.
 
-- [ ] **ALPHA-01**: The About dialog names the copyright holders and the licence in words held
+- [x] **ALPHA-01**: The About dialog names the copyright holders and the licence in words held
   to LICENSE, keeps the full version with the build counter, and links to wixen.app and
   wixen.app/support as controls a screen reader names by their address.
+  **Ticked 2026-09-23 by 12-04, on its `[D]` line; the merge commit is in the report that
+  closes it:** `application::about` holds `COPYRIGHT`, `LICENCE_NAME`, `HOME_PAGE`,
+  `SUPPORT_PAGE`, `lines()` and `shown_as`, with five cases holding each to literals and the
+  two addresses to `safe_external_url` unchanged; `build_about_dialog` reads its four lines
+  from `lines()` and writes none; `LICENSE:3` and the copyright `build.rs` stamps on the
+  executable say the same; the two pages are native links (`SysLink`) after the copyright,
+  then OK, chosen by a reading over MSAA taken on 2026-09-23 before the dialog was written:
+  the link's item answered role link (0x1e) with the address as its name and the URL as its
+  value, a `Button` answered push button, and `set_accessible_name` on the link left no item
+  at all, so the links carry the control's own text as their name. Each is consumed in its
+  handler and opened through `safe_external_url`, and drawn in the palette's accent. No Send
+  Feedback button. `tests/the_about_dialog_names_its_owners_and_its_links.rs`, eight cases,
+  holds the order, the link items over MSAA, the colour, the absence of Send Feedback, LICENSE
+  and `build.rs`, with two companions that refuse a dialog missing a page and a stale licence
+  line; three guard records measured. The `[S]` lines stay: ledger 587 for the ear, 588 for
+  the site.
   - Evidence: `grep -n 'fn build_about_dialog' src/presentation/wx_app.rs` on 2026-09-20 at
     `0ad66e48`: `:26170`; the dialog holds four `StaticText` lines and OK, the copyright line
     "Copyright 2024-2026 Wixen Mail Contributors"; `sed -n 3p LICENSE`: "Copyright (c) 2026
@@ -5853,7 +5869,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
 | LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
 | LIST-27 | Phase 11 | Complete, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages) and 11-11.1.3 at `1e39650a` (All Inboxes' own view, the every-inbox listing, the row's own account, the sentence, the pages); a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept and a two-account conversation as two rows (ledger 563), are his ear's |
-| ALPHA-01 | Phase 12 | Pending, 12-04 |
+| ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
 | ALPHA-02 | Phase 12 | Pending, 12-05 |
 | ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
 | EDIT-01 | Phase 12 | Pending, 12-06 |

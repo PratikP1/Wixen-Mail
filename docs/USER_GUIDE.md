@@ -1116,9 +1116,28 @@ back on their own when a device can be opened again.
 
 ### In-App Help
 
-- Press `F1` to open documentation
-- Click **Help → Documentation** in the menu bar
-- View keyboard shortcuts: **Help → Keyboard Shortcuts**
+- Press `F1` to open the help page for whatever is open. **Help → Contents**
+  lists every topic.
+- Open one topic directly from the Help menu: Getting started, Keyboard
+  shortcuts, Using Wixen Mail, Setting up a provider, When something goes
+  wrong, Accessibility, Privacy, and What changed.
+- **Help → Check for Updates** asks whether a newer version has been published.
+- **Help → About** says which version you have and who makes Wixen Mail.
+
+Until 2026-09-23 this list named **Help → Documentation** and **Help → Keyboard Shortcuts**,
+which the menu does not carry by those names; they are Contents and the Keyboard shortcuts topic.
+
+### About Wixen Mail
+
+**Help → About** shows who holds the copyright: Pratik Patel and the Wixen
+Project, with other contributors, under the MIT licence. It shows the whole
+version with its build number, such as `1.0.0-alpha.1+114.g44bff634`: the
+version, then how many commits the build is past the point that version was
+set, then the commit it was made from. A later build has the larger number,
+so quote the whole string when you report something. After the copyright come
+two links, wixen.app and wixen.app/support, and then OK. OK has the focus when
+About opens, so Enter closes it. Press `Shift+Tab` to reach the links; Enter on
+a link opens that page in your browser.
 
 ### Provider-Specific Help
 
@@ -1133,6 +1152,9 @@ If you encounter issues not covered in this guide:
 1. Check the application logs for details
 2. Note any error messages you receive
 3. Report issues on the GitHub repository
+
+On 2026-09-23 the program had no Send Feedback command yet. One is coming with
+a window of its own, and About will offer it when it arrives.
 
 ## Tips for Best Experience
 
