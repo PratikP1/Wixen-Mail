@@ -223,6 +223,69 @@ if [ "${1:-}" = "--suites-for" ]; then
     exit 0
 fi
 
+# What the scoped run hands cargo, one invocation's arguments to a line.
+#
+#     the_scoped_runs <registry> [changed-path ...]
+#
+# One `--lib <module>:: -- --test-threads=4` line per changed source module,
+# since `cargo test` takes one `--lib` filter, and at most one line of `--test`
+# pairs naming every integration target the change reaches, each once: a
+# changed test file that is still there, every target the registry couples a
+# changed file to, and every target that reads the whole tree, which is why
+# the line is always there. Added 2026-09-23 by 12-03.2: the targets used to be
+# one cargo call each, and a change to `wx_app.rs` coupled to 25 to 29 of them.
+#
+# A changed test file that is not under the directory this is asked from is
+# left out. The staged list holds a deleted or moved-away test file either way,
+# and in one call cargo would refuse the whole line over it before any target
+# ran, so a branch that deleted a target could not be committed or merged.
+#
+# No line holds `--no-fail-fast`. The runner's line owns it, because cargo
+# refuses the flag given twice.
+the_scoped_runs() {
+    local registry="$1" path module target line=""
+    shift
+    local -a targets=()
+    local -A named=()
+    for path in "$@"; do
+        case "$path" in
+            src/*.rs)
+                module="${path#src/}"
+                module="${module%.rs}"
+                module="${module%/mod}"
+                module="${module//\//::}"
+                [ "$module" = "lib" ] && continue
+                echo "--lib ${module}:: -- --test-threads=4"
+                ;;
+            tests/*.rs)
+                [ -f "$path" ] || continue
+                target="${path##*/}"
+                targets+=("${target%.rs}")
+                ;;
+        esac
+    done
+    while IFS= read -r target; do
+        [ -n "$target" ] && targets+=("$target")
+    done < <(the_suites_that_guard_what_changed "$registry" "$@")
+    targets+=("${guards_that_read_the_whole_tree[@]}")
+    for target in "${targets[@]}"; do
+        [ -n "${named[$target]-}" ] && continue
+        named[$target]=1
+        line+="${line:+ }--test $target"
+    done
+    echo "$line"
+}
+
+# The builder on its own, so `scripts/check.test.sh` can ask it about a made-up
+# change from a tree of its own:
+#
+#     check.sh --scoped-runs-for <registry> [changed-path ...]
+if [ "${1:-}" = "--scoped-runs-for" ]; then
+    shift
+    the_scoped_runs "$@"
+    exit 0
+fi
+
 # What is about to be committed, read from the index of the repository this is
 # run in. With `--no-renames` since 2026-09-23 (12-03.2): without it git lists a
 # staged move by where it went alone, measured that day under git
@@ -694,18 +757,24 @@ fi
 # Returns non-zero if any scoped run did. Never aborts on one, so a failure in
 # the first module does not hide the rest, for the same reason the whole-suite
 # run passes `--no-fail-fast`.
+#
+# Runs exactly what `the_scoped_runs` answers, the lines read into an array
+# first so no test a cargo call runs can read the rest of them from standard
+# input. Since 2026-09-23 (12-03.2) the integration targets are one cargo call
+# rather than one each, so a change coupled to 25 targets pays cargo's start
+# once; `red-commit.sh` reads the same `test NAME ... ok|FAILED` lines from the
+# log either way.
 run_the_tests_that_reach_what_changed() {
-    local status=0 path module target suite
-    local -a tree_targets=()
-    for path in "${changed[@]+"${changed[@]}"}"; do
-        case "$path" in
-            src/*.rs)
-                module="${path#src/}"
-                module="${module%.rs}"
-                module="${module%/mod}"
-                module="${module//\//::}"
-                [ "$module" = "lib" ] && continue
-                echo "-- $module"
+    local status=0 line word
+    local -a runs arguments
+    mapfile -t runs < <(the_scoped_runs \
+        "$(dirname "$0")/../guards/guards.toml" \
+        "${changed[@]+"${changed[@]}"}")
+    for line in "${runs[@]+"${runs[@]}"}"; do
+        read -ra arguments <<< "$line"
+        case "${arguments[0]-}" in
+            --lib)
+                echo "-- ${arguments[1]%::}"
                 # A filter matching nothing exits zero, so a module with no
                 # tests of its own is not a pass, it is a run that said nothing.
                 #
@@ -721,31 +790,21 @@ run_the_tests_that_reach_what_changed() {
                 # The `--all-targets` run further down is deliberately left
                 # alone: the same setting was measured there and the gate did
                 # not move.
-                cargo test --lib "${module}::" -- --test-threads=4 >> "$run_log" 2>&1 || status=1
+                cargo test --lib "${arguments[1]}" -- --test-threads=4 >> "$run_log" 2>&1 || status=1
                 ;;
-            tests/*.rs)
-                target="$(basename "$path" .rs)"
-                echo "-- $target"
-                cargo test --test "$target" >> "$run_log" 2>&1 || status=1
+            --test)
+                for word in "${arguments[@]}"; do
+                    [ "$word" = --test ] || echo "-- $word"
+                done
+                run_the_integration_targets "${arguments[@]}" || status=1
                 ;;
         esac
     done
-    # The integration targets `guards/guards.toml` couples to a changed source
-    # module. Without these, a guard that lives under `tests/` and covers a
-    # `src/` module runs only on commits that change the test file, which is
-    # every commit except the ones that could break it.
-    while IFS= read -r suite; do
-        [ -n "$suite" ] || continue
-        echo "-- $suite (coupled to what changed by guards/guards.toml)"
-        cargo test --test "$suite" >> "$run_log" 2>&1 || status=1
-    done < <(the_suites_that_guard_what_changed \
-        "$(dirname "$0")/../guards/guards.toml" \
-        "${changed[@]+"${changed[@]}"}")
+    return $status
+}
 
-    echo "-- the guards that read the whole tree"
-    for suite in "${guards_that_read_the_whole_tree[@]}"; do
-        tree_targets+=(--test "$suite")
-    done
+# Every integration target the scoped run reaches, in one cargo call.
+run_the_integration_targets() {
     # --no-fail-fast because this is more than one target, and this line used to
     # be `cargo test --test house_style --test wired` without it: a failure in
     # house_style meant wired never started, not reported as skipped. That is
@@ -759,8 +818,12 @@ run_the_tests_that_reach_what_changed() {
     # the text and the guard spoke. The exemption now counts the targets and
     # covers only a line naming exactly one, which found the same defect on the
     # documents-only run above the moment it was narrowed.
-    cargo test --no-fail-fast "${tree_targets[@]}" >> "$run_log" 2>&1 || status=1
-    return $status
+    #
+    # This line owns the flag, and the builder's lines never hold it: cargo
+    # refuses `--no-fail-fast` given twice, before it selects a target,
+    # measured 2026-09-23 at `481a7918`, so a builder line carrying it too
+    # would make every scoped run fail.
+    cargo test --no-fail-fast "$@" >> "$run_log" 2>&1
 }
 
 # The RED half of red/green. The commit named the tests that must fail; the run
