@@ -3204,7 +3204,12 @@ seven groups.
   its second half was written, and its next failure names its own cause from the record it
   writes. Added 2026-09-20 for phase 12's 12-01, under this section beside FOUND-17 to
   FOUND-19 on the same reasoning: a defect in what CI runs, found by a push. **Ticked
-  2026-09-22 by 12-01 on its two `[D]` lines.** The product half is measured and clear:
+  2026-09-22 by 12-01 on its two `[D]` lines.** **Corrected 2026-09-23: NVDA runs
+  35839692317 (at `26beb051`) and 35839954840 (at `6cb8f17c`) read the keyboard on the page
+  window's own frame after a real activation, so the product half was not cleared, and
+  12-03.1 added a handler and a reading red first on the one wx path that ends on the frame;
+  the third `[D]` line below is that.** The text from here to the end of this paragraph is
+  2026-09-22's. The product half is measured and clear:
   `tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs` builds the real
   page window on `scan_fixtures::page_conversation`, activates it, deactivates it in a way
   that takes the keyboard away, and activates it again, and the keyboard is on
@@ -3254,7 +3259,14 @@ seven groups.
     than not measuring. The message is the one Windows sends and everything after it is wx's
     code and this window's, which is the shape
     `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
-    already uses for a key it cannot send.
+    already uses for a key it cannot send. **Corrected 2026-09-23 by 12-03.1, twice.** "Green,
+    so no handler was added" held for the message this reading sent and not for the runner:
+    runs 35839692317 and 35839954840 came back with a real activation and read the keyboard on
+    the frame, and the reading had set up the one state wx restores correctly, the browser
+    saved as the last focused child. And `GetForegroundWindow` answered 395246 on this machine
+    when 12-03.1 was planned and 264618 when it was carried out, with the tester using it and
+    NVDA running, so the foreground is not moved here because doing so would take the
+    tester's screen, not because it cannot be.
   - [D] The case returns to the page window with Alt+Tab, waits until `GetForegroundWindow`
     is the page window (falling back to `AppActivate` once, recording which worked), records
     the UI Automation focused element and the foreground beside its spoken log after each
@@ -3265,8 +3277,29 @@ seven groups.
     `whereTheNextKeyWillGo` in the case with six fields in its record, the README's paragraph
     naming the run, `activateWindow`'s doc no longer claiming Windows agreed, `node --check`
     on both files and `jest --listTests` still finding the case.
+  - [D] When wx answers an activation of the formatted window and the keyboard is then on the
+    window's frame or on nothing, the keyboard goes into the page; a control beside the page
+    keeps it, nothing moves while the window is inactive, and one activation moves it once. The
+    link case records what the window's own thread says has the keyboard after each return,
+    and any line the handler logs (12-03.1, tasks 1 and 2). **Done 2026-09-23** by
+    `presentation::page_focus`, `keep_the_keyboard_in_the_page` called from
+    `show_conversation_as_page`, its seven unit cases, and
+    `test_the_page_takes_the_keyboard_back_when_the_window_restored_it_to_itself` with its
+    companion `test_a_window_with_no_such_handler_is_left_with_the_keyboard_on_its_frame` in
+    `tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs`, red first; and
+    `watchTheKeyboardOfTheWindow` in `nvda-tests/helpers/launch-app.js`. What the tick rests
+    on, and no more: a `WM_ACTIVATE` the test sends to a built window, reproducing one path,
+    the frame saved as its own last focused child. An activation carrying the minimised flag
+    is dropped by wx before any handler (`msw/window.cpp:4380-4388`), so this cannot answer
+    it, and a browser that gives up the keyboard after a real foreground change is covered
+    only when it gives it up to the frame before the one move. Which path the runner took,
+    and whether the handler answers it, is the link case's record at the next run. 12-01
+    ticked this requirement on a sent message and the runner reversed it, which is why this
+    line says so rather than leaving it to the `[S]` line.
   - [S] The run at the next push of `main` is Pratik's; ledger 567 names it, and it is the
-    only thing FOUND-20 still waits on.
+    only thing FOUND-20 still waits on. Runs 35839692317 and 35839954840 of 2026-09-23 were
+    that run twice, both red; the next is ledger 567 still, and ledger 578 is the tester's
+    ear on the same return.
 - [x] **FOUND-21**: A guard record says what its guard really does, and a sweep that finds
   one that does not is closed before the next sweep is dispatched. A record that does not
   return costs one record and not a shard. Added 2026-09-22 for phase 12's 12-02.1, under
@@ -3367,7 +3400,7 @@ seven groups.
   - [S] Only the next sweep settles the last of it: that it runs under the limit, that its
     closing line says how many records it gave up on, and that nothing this plan corrected
     has gone stale again. This plan claims nothing about the 994 records that agreed.
-- [ ] **FOUND-22**: What an NVDA case waits to hear is something the program says, and a
+- [x] **FOUND-22**: What an NVDA case waits to hear is something the program says, and a
   commit that rewords a sentence a case waits for goes red in the Rust gate rather than on
   the runner. Added 2026-09-23 for phase 12's 12-03.1, under this section beside FOUND-19 to
   FOUND-21 on the same reasoning: a defect in what a check tells you, found by a push.
@@ -3393,10 +3426,23 @@ seven groups.
     reads neither a comment nor a test module as said; it is among the targets every scoped
     run ends with, so a rewording anywhere under `src/` and a change to any case run it; it
     was red on the four stale texts before the cases changed (12-03.1, task 3).
+    **Done 2026-09-23** by `tests/the_nvda_cases_wait_for_words_the_program_says.rs`, eight
+    tests: `test_every_sentence_an_nvda_case_waits_for_is_one_the_program_says`, red first on
+    the four texts, and seven companions, among them
+    `test_the_reading_refuses_a_short_name_whose_place_was_relabelled_while_others_still_hold_it`
+    for the rule that a text several places hold is tied to the one the case means;
+    `the_nvda_cases_wait_for_words_the_program_says` is the eighth entry of
+    `guards_that_read_the_whole_tree` in `scripts/check.sh`, held there by
+    `test_this_target_runs_on_the_commits_that_could_break_it`; the guard record "a text an
+    NVDA case waits for is held only by a place that says it" reddens four.
   - [D] `calendar-immediate-actions` waits for "Choose an event first." at Edit Event and at
     Delete Event and for "Syncing the calendar..." at Sync; `filter-manager-delete` waits for
     "Choose a filter first."; each read off the source the target holds it to (12-03.1,
-    task 3).
+    task 3). **Done 2026-09-23**: the reading holds the two refusals to
+    `status_sentences::nothing_chosen` for "event" and "filter", and the step to
+    `request_sync` in `wx_calendar.rs` by a tie; each of the calendar case's three waits
+    counts only what NVDA said after its own key, since Edit Event and Delete Event now say
+    the same sentence.
   - [S] The two cases green on the runner at the next run of the NVDA workflow, whose
     dispatch or push is Pratik's.
 - [ ] **FOUND-23**: The commit gate spends only what a change earns and says where its time
@@ -5691,9 +5737,9 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
-| FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567 |
+| FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567. Corrected 2026-09-23: runs 35839692317 and 35839954840 read the keyboard on the frame after a real activation, so the product half was not cleared by 12-01; 12-03.1 added the handler in `presentation::page_focus`, red first on wx's frame-saved path, and the case's record of the window's own thread, on a third `[D]` line; the run is still ledger 567 and the ear ledger 578 |
 | FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
-| FOUND-22 | Phase 12 | Pending, 12-03.1 planned 2026-09-23 against `6cb8f17c` from NVDA runs 35839692317 and 35839954840; the two cases green on the runner is the `[S]` line |
+| FOUND-22 | Phase 12 | Complete, 12-03.1 on 2026-09-23, on both `[D]` lines: `tests/the_nvda_cases_wait_for_words_the_program_says.rs` red on the four stale texts and then green, in the whole-tree list; the two cases corrected. The two cases green on the runner is the `[S]` line, ledger 576 |
 | FOUND-23 | Phase 12 | Pending, 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
