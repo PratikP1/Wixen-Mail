@@ -29,12 +29,33 @@ registry="$root/guards/guards.toml"
 # shellcheck source=scripts/shell-suite.sh
 . "$root/scripts/shell-suite.sh"
 
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# A tree of its own, which every question about what a change reaches is asked
+# from. Since 2026-09-23 (12-03.2) the scoped run leaves out a changed test file
+# that is not there, and reads which sources compile a changed file in from
+# `src/` under the directory it is asked from, so a case asked from the
+# repository root would read this repository's tree and could go red on a
+# commit that owes this suite nothing. The tree holds an empty file for each
+# test file a case names as changed, and no `tests/gone.rs`.
+a_tree="$work/a-tree"
+mkdir -p "$a_tree/tests"
+for kept in house_style checkbox_labels wired; do
+    : > "$a_tree/tests/$kept.rs"
+done
+
+# The one way a case asks `check.sh` a question about what a change reaches.
+ask_from_the_tree() {
+    ( cd "$a_tree" && bash "$subject" "$@" )
+}
+
 # The mapping's answer as one line, so a case reads as a sentence.
 #
 # Sorted before comparing, because order is not part of the contract: a record
 # added to the registry above another must not redden a case here.
 answer() {
-    bash "$subject" --suites-for "$@" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ *$//'
+    ask_from_the_tree --suites-for "$@" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ *$//'
 }
 
 expect() {
@@ -89,9 +110,6 @@ expect_not_among() {
         *) suite_case_passed "$desc" ;;
     esac
 }
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
 
 # ── The registry as it really is ────────────────────────────────────────────
 # One record couples a source module to a target the gate would otherwise reach
@@ -369,6 +387,162 @@ expect "" "a registry that is not there answers nothing" \
 # Nothing changed at all.
 expect "" "no changed files answers nothing" "$registry"
 
+# ── Every integration target the scoped run reaches, in one cargo call ───────
+# Added 2026-09-23 by 12-03.2. The scoped run used to hand cargo each changed
+# test file and each coupled target on a call of its own, and a change to
+# `wx_app.rs` couples 25 to 29 targets, so one commit made that many cargo
+# calls, each paying cargo's own start. Now the builder answers one line per
+# library module and one line of `--test` pairs for every integration target,
+# and the run hands each line to cargo as it is. `--no-fail-fast` belongs to
+# the runner's line alone: cargo refuses the flag given twice, so no line the
+# builder answers holds it.
+#
+# Every case below also holds the answer to exactly one line naming `--test` as
+# a whole word, the way `house_style` counts it, so `--test-threads=4` on a
+# library line is not counted. Every scoped answer has that line, because the
+# targets that read the whole tree are always in it, so a case asserting only
+# an absence cannot be green on an empty answer.
+
+# The builder's answer, and the one line of it naming integration targets, or
+# `shape: <why>` when the answer does not hold exactly one.
+scoped_runs() {
+    ask_from_the_tree --scoped-runs-for "$registry" "$@" 2>/dev/null
+}
+
+the_one_target_line() {
+    local runs="$1" lines
+    lines="$(printf '%s\n' "$runs" | grep -E -- '(^| )--test( |$)')"
+    if [ "$(printf '%s\n' "$runs" | grep -cE -- '(^| )--test( |$)')" -ne 1 ]; then
+        echo "shape: not one --test line in: $runs"
+    else
+        echo "$lines"
+    fi
+}
+
+# The targets a `--test` line names, sorted, one space between.
+the_targets_named() {
+    printf '%s\n' "$1" | tr ' ' '\n' | grep -A1 -x -- '--test' | grep -vx -- '--test' |
+        grep -v '^--$' | sort | tr '\n' ' ' | sed 's/ *$//'
+}
+
+# The targets check.sh ends every scoped run with, read from its one-line array.
+whole_tree_targets="$(sed -n 's/^guards_that_read_the_whole_tree=(\(.*\))$/\1/p' "$subject")"
+
+runs="$(scoped_runs src/presentation/wx_managers.rs tests/checkbox_labels.rs)"
+target_line="$(the_one_target_line "$runs")"
+case "$target_line" in
+    shape:*)
+        suite_case_failed "the scoped integration targets are one cargo call" "$target_line"
+        ;;
+    *)
+        if printf '%s\n' "$runs" | grep -q -- '--no-fail-fast'; then
+            suite_case_failed "the scoped integration targets are one cargo call" \
+                "a line of the answer holds --no-fail-fast, which the runner's line owns: $runs"
+        else
+            suite_case_passed "the scoped integration targets are one cargo call"
+        fi
+        ;;
+esac
+
+# That one line names what the separate calls named: the changed test file's
+# target, every target the real registry couples the source to, and every
+# target that reads the whole tree, compared as sets.
+coupled="$(answer "$registry" src/presentation/wx_managers.rs)"
+wanted_targets="$(printf '%s\n' checkbox_labels $coupled $whole_tree_targets | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+case "$target_line" in
+    shape:*)
+        suite_case_failed "every target the scoped run reached before is still reached" "$target_line"
+        ;;
+    *)
+        named_targets="$(the_targets_named "$target_line" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+        if [ "$named_targets" = "$wanted_targets" ]; then
+            suite_case_passed "every target the scoped run reached before is still reached"
+        else
+            suite_case_failed "every target the scoped run reached before is still reached" \
+                "named '$named_targets'" "wanted '$wanted_targets'"
+        fi
+        ;;
+esac
+
+# A changed `tests/house_style.rs` is its own target and also one of the whole
+# tree's, and cargo is handed it once.
+target_line="$(the_one_target_line "$(scoped_runs tests/house_style.rs)")"
+case "$target_line" in
+    shape:*) suite_case_failed "a target named twice is run once" "$target_line" ;;
+    *)
+        times="$(the_targets_named "$target_line" | tr ' ' '\n' | grep -cx house_style)"
+        if [ "$times" -eq 1 ]; then
+            suite_case_passed "a target named twice is run once"
+        else
+            suite_case_failed "a target named twice is run once" \
+                "house_style named $times times: $target_line"
+        fi
+        ;;
+esac
+
+runs="$(scoped_runs src/presentation/wx_managers.rs)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a changed source module is still its own library run" "$target_line"
+elif printf '%s\n' "$runs" | grep -qxF -- '--lib presentation::wx_managers:: -- --test-threads=4'; then
+    suite_case_passed "a changed source module is still its own library run"
+else
+    suite_case_failed "a changed source module is still its own library run" \
+        "no line '--lib presentation::wx_managers:: -- --test-threads=4' in: $runs"
+fi
+
+runs="$(scoped_runs src/lib.rs)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a changed lib.rs is still no library run" "$target_line"
+elif printf '%s\n' "$runs" | grep -q -- '^--lib'; then
+    suite_case_failed "a changed lib.rs is still no library run" "answered: $runs"
+else
+    suite_case_passed "a changed lib.rs is still no library run"
+fi
+
+# A test file the commit deleted, or moved away, is in the staged list either
+# way. Handed to cargo in one call it would refuse the whole call before any
+# target ran, so it is left out; the tree holds no `tests/gone.rs`.
+runs="$(scoped_runs tests/gone.rs)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a deleted test file is not handed to cargo" "$target_line"
+elif printf '%s\n' "$target_line" | grep -qE -- '--test gone( |$)'; then
+    suite_case_failed "a deleted test file is not handed to cargo" "answered: $target_line"
+else
+    suite_case_passed "a deleted test file is not handed to cargo"
+fi
+
+# Read out of `check.sh`: no line that is not a comment hands cargo one
+# integration target named by a variable, which is the shape the separate calls
+# had. The companion plants the near miss, a coupled target run on its own with
+# the flag spelled, and the reading must find it.
+single_target_calls() {
+    grep -nvE '^[[:space:]]*#' "$1" | grep -E 'cargo test.*--test "\$'
+}
+
+one_by_one="$(single_target_calls "$subject")"
+if [ -z "$one_by_one" ]; then
+    suite_case_passed "no integration target is run by a cargo call of its own"
+else
+    suite_case_failed "no integration target is run by a cargo call of its own" "$one_by_one"
+fi
+
+one_at_a_time="$work/one-at-a-time.sh"
+cat > "$one_at_a_time" <<'SH'
+# cargo test --test "$commented_out"
+for coupled in "${coupled_targets[@]}"; do
+    cargo test --no-fail-fast --test "$coupled" >> "$run_log" 2>&1 || status=1
+done
+SH
+if [ "$(single_target_calls "$one_at_a_time" | cut -d: -f1)" = 3 ]; then
+    suite_case_passed "a target run by a cargo call of its own is found"
+else
+    suite_case_failed "a target run by a cargo call of its own is found" \
+        "the reading answered '$(single_target_calls "$one_at_a_time")' over the planted script"
+fi
+
 # ── An argument check.sh does not know is refused, not run ──────────────────
 # This suite runs `check.sh`, and `check.sh` runs this suite. A typo in the
 # argument passed above used to be read as a mode, fall past every branch, and
@@ -458,7 +632,7 @@ fi
 # The other half. A question answered before the run is only its answer: a mode
 # line or a stage line in it would be read as part of the answer by every case
 # that compares a question's whole output.
-question_output="$(bash "$subject" --suites-for "$registry" src/presentation/wx_managers.rs 2>&1)"
+question_output="$(ask_from_the_tree --suites-for "$registry" src/presentation/wx_managers.rs 2>&1)"
 if printf '%s\n' "$question_output" | grep -qE '^check\.sh: mode|after [0-9]+ s:'; then
     suite_case_failed "a question answered before the run prints no stage line" \
         "printed: $question_output"
