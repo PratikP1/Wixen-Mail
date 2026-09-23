@@ -424,6 +424,101 @@ for known_mode in all all_but_slow affected docs_only red; do
     esac
 done
 
+# ── Every run names its mode and says where its seconds went ─────────────────
+# Added 2026-09-23 by 12-03.2. A measurement of nine executors that day found
+# 28% of a plan's time in this hook, and one stage of it, rustfmt, the shell
+# suites and start-up together, took 25 to 35 seconds on one day and 95 to 145
+# on two others with nothing printed to say which part moved. So a run says its
+# mode before its first stage and ends, pass or fail, with one line giving each
+# stage's seconds.
+#
+# Asked from the same empty directory as the cases above, where the run gets
+# past the mode and stops at `touch src/lib.rs`, before its first stage. The
+# hooks-path note prints above the mode line there, so the mode is looked for as
+# a line of the output rather than as its first line.
+docs_only_output="$(ask_check_sh_for_a_mode docs_only)"
+if printf '%s\n' "$docs_only_output" | grep -qxF 'check.sh: mode docs_only'; then
+    suite_case_passed "a run names the mode it was given before it starts"
+else
+    suite_case_failed "a run names the mode it was given before it starts" \
+        "no line 'check.sh: mode docs_only' in: $docs_only_output"
+fi
+
+# The run above stops before rustfmt, so the one stage it spent anything in is
+# the start, and the line says that and that it did not pass.
+if printf '%s\n' "$docs_only_output" |
+    grep -qE '^check\.sh: docs_only stopped in start after [0-9]+ s: start [0-9]+ s$'; then
+    suite_case_passed "a run that stops before its first stage still says how long it ran"
+else
+    suite_case_failed "a run that stops before its first stage still says how long it ran" \
+        "no line 'check.sh: docs_only stopped in start after N s: start N s' in:" \
+        "$docs_only_output"
+fi
+
+# The other half. A question answered before the run is only its answer: a mode
+# line or a stage line in it would be read as part of the answer by every case
+# that compares a question's whole output.
+question_output="$(bash "$subject" --suites-for "$registry" src/presentation/wx_managers.rs 2>&1)"
+if printf '%s\n' "$question_output" | grep -qE '^check\.sh: mode|after [0-9]+ s:'; then
+    suite_case_failed "a question answered before the run prints no stage line" \
+        "printed: $question_output"
+else
+    suite_case_passed "a question answered before the run prints no stage line"
+fi
+
+# Read out of `check.sh` rather than run, because running it is minutes: every
+# header a stage prints goes through the one function that closes the previous
+# stage's clock, so no stage's seconds are folded silently into its neighbour's.
+# The function's own `echo` is the one header line allowed, and the reading
+# skips its body, from its opening line at column 0 to the first `}` at column
+# 0 after it.
+bare_stage_headers() {
+    awk '
+        /^begin_stage\(\) \{/ { inside = 1; next }
+        inside && /^}/ { inside = 0; next }
+        !inside && /^[[:space:]]*echo "== / { print FNR ": " $0 }
+    ' "$1"
+}
+
+timed_stages() {
+    grep -cE '^[[:space:]]*begin_stage "' "$1"
+}
+
+bare_in_check_sh="$(bare_stage_headers "$subject")"
+timed_in_check_sh="$(timed_stages "$subject")"
+if [ -n "$bare_in_check_sh" ]; then
+    suite_case_failed "every stage check.sh announces is timed" \
+        "these headers do not go through begin_stage:" "$bare_in_check_sh"
+elif [ "$timed_in_check_sh" -lt 8 ]; then
+    suite_case_failed "every stage check.sh announces is timed" \
+        "begin_stage is called $timed_in_check_sh times, and check.sh has at least eight stages"
+else
+    suite_case_passed "every stage check.sh announces is timed"
+fi
+
+# The companion, over a planted script whose timer is right and which holds
+# the near miss somebody really writes: a new mode branch announcing its stage
+# with a bare `echo`, below the timed ones. The reading must name that line and
+# only that line, or the case above could be passing because it reads nothing.
+planted_timer="$work/planted-timer.sh"
+cat > "$planted_timer" <<'SH'
+begin_stage() {
+    echo "== $1 =="
+}
+begin_stage "rustfmt"
+begin_stage "clippy"
+if [ "$mode" = "docs_only" ]; then
+    echo "== the targets that read documents =="
+fi
+SH
+planted_bare="$(bare_stage_headers "$planted_timer")"
+if [ "$planted_bare" = '7:     echo "== the targets that read documents =="' ]; then
+    suite_case_passed "a stage announced without the timer is found"
+else
+    suite_case_failed "a stage announced without the timer is found" \
+        "the reading answered '$planted_bare' over the planted script"
+fi
+
 # ── The gate runs this suite, in every mode, before it branches on one ───────
 # Asserted over the text of `check.sh` rather than by running it, because
 # running it is minutes and the property is an ordering: the loop over
