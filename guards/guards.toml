@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 247 records have arrived since and have not been through it.
+# 250 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29455,4 +29455,80 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/house_style.rs", tests = 74 },
+]
+
+# ── The About dialog's copyright is the one LICENSE carries (#78) ──────────
+#
+# `application::about::COPYRIGHT` is one sentence with four readers: the
+# dialog, line 3 of `LICENSE`, and the copyright `build.rs` stamps on the
+# executable, which Windows shows in the file's properties. The break moves
+# the first year, so the dialog and the constant still agree with each other
+# and the two files do not; the two readings of the files go red and the
+# dialog's own order reading stays green, because it reads the dialog against
+# the constant it was built from.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the About dialog's copyright is the line LICENSE and the executable carry"
+file = "src/application/about.rs"
+suite = "the_about_dialog_names_its_owners_and_its_links"
+before = """    "Copyright 2024-2026 Pratik Patel and the Wixen Project, with other contributors";"""
+after = """    "Copyright 2025-2026 Pratik Patel and the Wixen Project, with other contributors";"""
+red = [
+    "test_the_licence_file_says_the_copyright_the_dialog_says",
+    "test_the_build_script_stamps_the_same_copyright_on_the_executable",
+]
+tests_last_seen = [
+    { file = "src/application/about.rs", tests = 5 },
+    { file = "tests/the_about_dialog_names_its_owners_and_its_links.rs", tests = 8 },
+]
+
+# ── The About dialog offers both pages, as links, before OK (#78) ───────────
+#
+# The break drops the support page's link. Nothing it does can start another
+# program: it removes a control and clicks nothing. The order reading goes red
+# on six children where seven are wanted, the MSAA reading on one link where
+# two are wanted, and the colour reading on the same count.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the About dialog offers the support page as a link after the home page"
+file = "src/presentation/wx_app.rs"
+suite = "the_about_dialog_names_its_owners_and_its_links"
+before = """    add_a_page_link(&dlg, &sizer, about::SUPPORT_PAGE, palette);"""
+after = """    let _ = about::SUPPORT_PAGE;"""
+red = [
+    "test_the_dialog_reads_its_lines_then_the_two_pages_then_ok",
+    "test_each_page_is_a_link_named_by_its_address_over_msaa",
+    "test_each_page_is_drawn_in_the_palettes_accent_on_both_palettes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_about_dialog_names_its_owners_and_its_links.rs", tests = 8 },
+]
+
+# ── The About dialog's links are drawn in the accent, not the system blue ───
+#
+# Left to itself the native link is told to draw in the system's link colour,
+# #0066CC, read over `WM_CTLCOLORSTATIC` on 2026-09-23, which on the dark
+# palette's surface #16130F is about 3.3:1 where text needs 4.5:1. The break
+# leaves the links unpainted; only the colour reading goes red, on both links
+# in both palettes.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the About dialog's links are drawn in the palette's accent"
+file = "src/presentation/wx_app.rs"
+suite = "the_about_dialog_names_its_owners_and_its_links"
+before = """        theme::paint_link(&link, palette);"""
+after = """        let _ = palette;"""
+red = [
+    "test_each_page_is_drawn_in_the_palettes_accent_on_both_palettes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_about_dialog_names_its_owners_and_its_links.rs", tests = 8 },
 ]

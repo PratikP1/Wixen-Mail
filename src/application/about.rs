@@ -7,27 +7,36 @@
 //! holds the three to each other.
 
 /// Who holds the copyright, in the words `LICENSE` uses after its "(c)".
-pub const COPYRIGHT: &str = "Copyright 2024-2026 Wixen Mail Contributors";
+pub const COPYRIGHT: &str =
+    "Copyright 2024-2026 Pratik Patel and the Wixen Project, with other contributors";
 
 /// The licence the program is released under, as a sentence names it.
-pub const LICENCE_NAME: &str = "";
+pub const LICENCE_NAME: &str = "MIT licence";
 
 /// The project's site.
-pub const HOME_PAGE: &str = "";
+pub const HOME_PAGE: &str = "https://wixen.app";
 
 /// Where somebody goes for help with the program.
-pub const SUPPORT_PAGE: &str = "";
+pub const SUPPORT_PAGE: &str = "https://wixen.app/support";
+
+/// What the program is, in the words the dialog has always used.
+const WHAT_IT_IS: &str = "A modern, accessible email client\nbuilt with Rust and wxWidgets.";
 
 /// The dialog's four lines of text, top to bottom: the name, the version with
 /// its build counter, what the program is, and who holds the copyright under
 /// which licence.
 pub fn lines() -> [String; 4] {
-    Default::default()
+    [
+        "Wixen Mail".to_string(),
+        format!("Version {}", crate::common::version::current()),
+        WHAT_IT_IS.to_string(),
+        format!("{COPYRIGHT}.\nReleased under the {LICENCE_NAME}."),
+    ]
 }
 
 /// What a link to `address` shows: the address without its scheme.
 pub fn shown_as(address: &str) -> &str {
-    address
+    address.strip_prefix("https://").unwrap_or(address)
 }
 
 #[cfg(test)]
