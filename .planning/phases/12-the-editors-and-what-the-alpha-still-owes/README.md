@@ -541,3 +541,45 @@ factor from their unchanged `raw_tokens`.
    settings owe on `docs/KEYBOARD_SHORTCUTS.md`, `docs/USER_GUIDE.md`,
    `docs/ALPHA_TESTING.md` and `docs/privacy.md` in its own commits;
    12-12 reads the four pages as one and writes the listening lines.
+
+## Where the work stopped on 2026-09-23, and what the next session needs
+
+Pratik paused here to change the model he works with, so this section is
+written for whoever picks the phase up rather than for the person who put
+it down. **The next plan is 12-04**, the About dialog, and the waves after
+it are already renumbered for the 12-02.1 insert.
+
+Four of the thirteen plans are merged.
+
+| Plan | Merge | What it settled |
+|---|---|---|
+| 12-01 | `e29c514b` | The NVDA case's failure was the case, not the product: the page window gives the keyboard back to the browser on every activation, measured on a built window, so no handler was added. The case now waits for the foreground and records what has focus |
+| 12-02 | `70f5435a`, corrected at `cf58f9a4` | The separate window is a second copy of the program holding one page, with a WebView2 profile of its own at `wixen-mail\pages`; #80 closed |
+| 12-02.1 | `a503ce77` | The phase 11 sweep's remedy, and the per-record wall-clock limit that keeps a stuck record from costing a shard; FOUND-21 |
+| 12-03 | `a9ce329d`, corrected at `434cd972` | 441 status calls read in one pass, 177 sentences rewritten to one shape, fifteen kinds of refusal each with one sentence; #75 closed |
+
+`main` was pushed at `26beb051` on 2026-09-23, on Pratik's word for that
+one push. Every push after it is his word again. That push is the first
+verdict on 12-01's rewritten NVDA case and on everything phase 12 has
+landed; read the runs before trusting the tree's own green.
+
+Three things are owed and none of them lives in the tree yet.
+
+**The decisions listed above under "Decisions for Pratik" are unmade**,
+and 12-04 and 12-05 are the first plans that need them: whether
+`wixen.app` answers at all (it returned 522 when the plan was written),
+whether the support mailbox exists and is read, whether a security
+address is wanted beside GitHub's private reporting, and the feedback
+key. Ask before building those two, not during.
+
+**Twelve staged skill updates** from the observation review of
+2026-09-20 sit uninstalled outside this repository, under the workspace's
+`skill-updates/2026-09-20/`, with `tdd` at 1,850 lines owing the split
+its own notes propose. They change how an agent works here, not what the
+product does, so nothing in this phase waits on them.
+
+**Three executors in a row kept a clean exception set through their plan
+and then broke the no-scripted-edits rule while probing**: a script
+applying a guard break, a copy restoring a file, a probe test written by
+script. 12-03's executor, told about the diagnostic detour by name, came
+back at zero. Keep that sentence in every brief.

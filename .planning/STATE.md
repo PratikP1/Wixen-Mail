@@ -29,8 +29,17 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 12 (The editors, and what the alpha still owes). Current plan 3 of 13: 12-01, 12-02
-and 12-02.1 merged, 12-03 next.
+Phase: 12 (The editors, and what the alpha still owes). Current plan 4 of 13: 12-01, 12-02,
+12-02.1 and 12-03 merged, **12-04 next**.
+
+**Work paused here on 2026-09-23 for a change of model.** The phase README's last section,
+"Where the work stopped on 2026-09-23, and what the next session needs", is written for
+whoever picks this up: what the four merged plans settled, what `main` carries, the
+decisions of Pratik's that 12-04 and 12-05 need before they are built, the twelve staged
+skill updates that sit outside this repository, and the rule three executors in a row broke
+in their diagnostic detours. `main` was pushed at `26beb051` on his word for that one push;
+every push after it is his word again, and the runs that push started are the first verdict
+on 12-01's rewritten NVDA case.
 
 **12-02.1 merged 2026-09-22 at `a503ce77`.** On branch `12-02.1-the-sweeps-remedy` from
 `main` at `6173498e`, thirteen commits and the merge, two of them red and green pairs over
