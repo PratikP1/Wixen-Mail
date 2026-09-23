@@ -71,12 +71,51 @@ impl Category {
 
     /// What the dialog calls it, in the words #64 gives.
     pub fn label(self) -> &'static str {
-        ""
+        match self {
+            Category::Problem => "Report a problem",
+            Category::Feature => "Request a feature",
+            Category::ScreenReaderBarrier => "Something is hard to use with a screen reader",
+            Category::Question => "Ask a question",
+            Category::Security => "Report a security concern",
+            Category::Other => "Something else",
+        }
     }
 
     /// The questions that fit it. Only the first needs an answer.
     pub fn questions(self) -> &'static [Question] {
-        &[]
+        match self {
+            Category::Problem => &[
+                Question {
+                    asked: "What were you doing, and what did you hear or see?",
+                    prompt: "The steps in order, and what your screen reader said, if anything.",
+                },
+                Question {
+                    asked: "What did you expect instead?",
+                    prompt: "What should have happened. You can leave this empty.",
+                },
+            ],
+            Category::Feature => &[Question {
+                asked: "What would you like Wixen Mail to do?",
+                prompt: "Say what you would use it for, so we can decide how it should work.",
+            }],
+            Category::ScreenReaderBarrier => &[Question {
+                asked: "What is hard to use, and what does your screen reader say?",
+                prompt: "Name the window or control, and the keys you pressed.",
+            }],
+            Category::Question => &[Question {
+                asked: "What would you like to know?",
+                prompt: "Ask in your own words.",
+            }],
+            Category::Security => &[Question {
+                asked: "What is the concern, and how could somebody see it happen?",
+                prompt: "This goes to the security address only. The subject line says \
+                         nothing about it.",
+            }],
+            Category::Other => &[Question {
+                asked: "What would you like to tell us?",
+                prompt: "Anything that did not fit the other choices.",
+            }],
+        }
     }
 }
 
@@ -103,7 +142,15 @@ impl Fact {
 
     /// What ticking this box sends, as the box's label says it.
     pub fn sends(self) -> &'static str {
-        ""
+        match self {
+            Fact::Version => "The version of Wixen Mail you are running",
+            Fact::Windows => "Your Windows version and display language",
+            Fact::ScreenReader => "Which screen reader is running, and its version",
+            Fact::LogExcerpt => {
+                "The last 200 lines of the program's log, with addresses and subjects hidden"
+            }
+            Fact::Providers => "Which kinds of mail account you have, without their addresses",
+        }
     }
 }
 
@@ -125,39 +172,54 @@ impl Include {
     /// excerpt for five categories (Pratik's decision on #71), the version
     /// alone for a security concern.
     pub fn for_category(category: Category) -> Include {
-        let _ = category;
         Include {
-            version: false,
+            version: true,
             windows: false,
             screen_reader: false,
-            log_excerpt: false,
+            log_excerpt: category != Category::Security,
             providers: false,
         }
     }
 
     /// Whether one fact is ticked.
     pub fn includes(&self, fact: Fact) -> bool {
-        let _ = fact;
-        false
+        match fact {
+            Fact::Version => self.version,
+            Fact::Windows => self.windows,
+            Fact::ScreenReader => self.screen_reader,
+            Fact::LogExcerpt => self.log_excerpt,
+            Fact::Providers => self.providers,
+        }
     }
 
     /// The same, with one fact ticked or not.
-    pub fn with(self, fact: Fact, ticked: bool) -> Include {
-        let _ = (fact, ticked);
+    pub fn with(mut self, fact: Fact, ticked: bool) -> Include {
+        let field = match fact {
+            Fact::Version => &mut self.version,
+            Fact::Windows => &mut self.windows,
+            Fact::ScreenReader => &mut self.screen_reader,
+            Fact::LogExcerpt => &mut self.log_excerpt,
+            Fact::Providers => &mut self.providers,
+        };
+        *field = ticked;
         self
     }
 }
 
 /// Where a report goes.
 pub fn where_it_goes(category: Category) -> &'static str {
-    let _ = category;
-    ""
+    match category {
+        Category::Security => SECURITY_ADDRESS,
+        _ => SUPPORT_ADDRESS,
+    }
 }
 
 /// Which GitHub page is offered beside Send.
 pub fn github_page(category: Category) -> &'static str {
-    let _ = category;
-    ""
+    match category {
+        Category::Security => PRIVATE_REPORTING_PAGE,
+        _ => ISSUE_PAGE,
+    }
 }
 
 /// What this machine says about itself, gathered before the dialog opens.
@@ -213,30 +275,211 @@ pub struct Composed {
     pub attachment: Option<Attachment>,
 }
 
+/// How many characters of the first answer a subject carries.
+const SUBJECT_CHARACTERS: usize = 80;
+
 /// The message a report becomes, with no I/O.
+///
+/// The body is the answers under their questions, then each ticked fact on a
+/// line of its own, then the reply line when one was given, then the line
+/// naming the attachment when there is one, then one closing line naming
+/// where the report went.
 pub fn compose(report: &Report, facts: &Facts) -> Composed {
-    let _ = (report, facts);
-    Composed {
-        to: "",
-        subject: String::new(),
-        body: String::new(),
-        attachment: None,
+    let to = where_it_goes(report.category);
+    let attachment = excerpt(report);
+    let mut parts = vec![answered(report)];
+    let carried = facts_carried(report.include, facts);
+    if !carried.is_empty() {
+        parts.push(carried.join("\n"));
     }
+    let reply_to = report.reply_to.trim();
+    if !reply_to.is_empty() {
+        parts.push(format!("Reply to: {reply_to}"));
+    }
+    if let (Some(attached), Some(log)) = (&attachment, &report.log) {
+        parts.push(format!(
+            "Attached: {}, the end of this computer's log for {}, with addresses and \
+             subjects hidden.",
+            attached.file_name, log.date
+        ));
+    }
+    parts.push(format!(
+        "Sent with Wixen Mail's Send Feedback to {to}. A copy of this report is kept on \
+         the sender's computer."
+    ));
+    Composed {
+        to,
+        subject: subject(report),
+        body: parts.join("\n\n") + "\n",
+        attachment,
+    }
+}
+
+/// The subject: the category, and for every category but a security concern
+/// the first line of the first answer.
+fn subject(report: &Report) -> String {
+    let label = report.category.label();
+    let first_line = report
+        .answers
+        .first()
+        .and_then(|answer| answer.lines().map(str::trim).find(|line| !line.is_empty()))
+        .unwrap_or_default();
+    match report.category {
+        // A subject is shown in message lists and notifications, where a
+        // body is read only when opened.
+        Category::Security => format!("[Wixen Mail] {label}"),
+        _ if first_line.is_empty() => format!("[Wixen Mail] {label}"),
+        _ => {
+            let bounded: String = first_line.chars().take(SUBJECT_CHARACTERS).collect();
+            format!("[Wixen Mail] {label}: {bounded}")
+        }
+    }
+}
+
+/// Each question with its answer under it.
+fn answered(report: &Report) -> String {
+    report
+        .category
+        .questions()
+        .iter()
+        .enumerate()
+        .map(|(at, question)| {
+            let answer = report
+                .answers
+                .get(at)
+                .map(|answer| answer.trim())
+                .filter(|answer| !answer.is_empty())
+                .unwrap_or("(no answer)");
+            format!("{}\n{answer}", question.asked)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// One line per ticked fact, the log excerpt aside, which is an attachment.
+fn facts_carried(include: Include, facts: &Facts) -> Vec<String> {
+    Fact::ALL
+        .into_iter()
+        .filter(|fact| include.includes(*fact))
+        .filter_map(|fact| match fact {
+            Fact::Version => Some(format!("Version: {}", facts.version)),
+            Fact::Windows => Some(format!(
+                "Windows: {}, display language {}",
+                facts.windows_build, facts.display_language
+            )),
+            Fact::ScreenReader => Some(match &facts.screen_reader {
+                Some((name, version)) => format!("Screen reader: {name} {version}"),
+                None => "Screen reader: none found running".to_string(),
+            }),
+            Fact::Providers => Some(match facts.providers.is_empty() {
+                true => "Mail accounts: none set up".to_string(),
+                false => format!("Mail accounts: {}", facts.providers.join(", ")),
+            }),
+            Fact::LogExcerpt => None,
+        })
+        .collect()
+}
+
+/// The end of the log, redacted, when the excerpt is ticked and there is a log.
+fn excerpt(report: &Report) -> Option<Attachment> {
+    if !report.include.log_excerpt {
+        return None;
+    }
+    let log = report.log.as_ref()?;
+    let lines = redact(&last_lines(&log.text, EXCERPT_LINES));
+    let header = format!(
+        "The last {} lines of {}, the log for {}, with addresses and subjects hidden.",
+        lines.len(),
+        log.file_name,
+        log.date
+    );
+    Some(Attachment {
+        file_name: format!("{}-log-excerpt.txt", report.stamp),
+        text: std::iter::once(header)
+            .chain(lines)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+    })
 }
 
 /// The lines of a log with every address masked and every subject removed.
 ///
 /// The boundary between the log and the outside, so it errs towards masking:
-/// anything shaped `local@host` is treated as an address.
+/// anything shaped `local@host` is treated as an address, and everything on a
+/// line after a subject marker goes, whatever else was written after it.
 pub fn redact(lines: &[String]) -> Vec<String> {
-    let _ = (lines, mask_email);
-    Vec::new()
+    lines
+        .iter()
+        .map(|line| without_addresses(&without_subject(line)))
+        .collect()
+}
+
+/// What a subject is replaced with.
+const SUBJECT_REDACTED: &str = "[subject redacted]";
+
+/// A line cut after the first subject marker, in any case.
+fn without_subject(line: &str) -> String {
+    // Lowercasing ASCII keeps every byte where it was, so a position found in
+    // the lowered line is a position in the line.
+    let lowered = line.to_ascii_lowercase();
+    let cut = [("subject:", " "), ("subject=", "")]
+        .into_iter()
+        .filter_map(|(marker, gap)| lowered.find(marker).map(|at| (at + marker.len(), gap)))
+        .min_by_key(|(end, _)| *end);
+    match cut {
+        Some((end, gap)) => format!("{}{gap}{SUBJECT_REDACTED}", &line[..end]),
+        None => line.to_string(),
+    }
+}
+
+fn is_local_part(c: char) -> bool {
+    c.is_alphanumeric() || "._%+-'".contains(c)
+}
+
+fn is_host_part(c: char) -> bool {
+    c.is_alphanumeric() || ".-".contains(c)
+}
+
+/// A line with every `local@host` masked by the rule the log already uses.
+fn without_addresses(line: &str) -> String {
+    let mut masked = String::with_capacity(line.len());
+    let mut copied_to = 0;
+    for (at, _) in line.match_indices('@') {
+        if at < copied_to {
+            continue;
+        }
+        let start = line[copied_to..at]
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| is_local_part(*c))
+            .last()
+            .map_or(at, |(offset, _)| copied_to + offset);
+        let after = &line[at + 1..];
+        let end = at
+            + 1
+            + after
+                .char_indices()
+                .find(|(_, c)| !is_host_part(*c))
+                .map_or(after.len(), |(offset, _)| offset);
+        if start == at || end == at + 1 {
+            continue;
+        }
+        masked.push_str(&line[copied_to..start]);
+        masked.push_str(&mask_email(&line[start..end]));
+        copied_to = end;
+    }
+    masked.push_str(&line[copied_to..]);
+    masked
 }
 
 /// The last `n` lines of a text.
 pub fn last_lines(text: &str, n: usize) -> Vec<String> {
-    let _ = (text, n);
-    Vec::new()
+    let all: Vec<&str> = text.lines().collect();
+    all[all.len().saturating_sub(n)..]
+        .iter()
+        .map(|line| line.to_string())
+        .collect()
 }
 
 #[cfg(test)]

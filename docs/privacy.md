@@ -25,6 +25,7 @@ Everything Wixen Mail stores is in one folder on your computer:
     cache\            the mail that has been downloaded
     sound_schemes\    sound packs you have imported, if any
     logs\             the running log and crash.log
+    logs\feedback\    a copy of each feedback report you send, if any
     updates\          an installer being downloaded, while one is
     security.key      only on a machine upgraded from an older version
 ```

@@ -10,6 +10,7 @@
 //! config\        settings, one file per account, oauth.toml
 //! cache\         message_cache.db and its SQLite sidecars
 //! logs\          the running log and crash.log
+//! logs\feedback\ a copy of each feedback report sent, and its log excerpt
 //! sound_schemes\ imported sound-scheme packs, one subdirectory each
 //! updates\       an installer fetched for an update, while it waits
 //! security.key   the fallback key, used when the credential store refuses
@@ -118,9 +119,10 @@ impl AppPaths {
         self.root.join("logs")
     }
 
-    /// The copy of each feedback report sent, and its log excerpt.
+    /// The copy of each feedback report sent, and its log excerpt, kept so a
+    /// report that bounces can be sent again (#64).
     pub fn feedback_dir(&self) -> PathBuf {
-        self.logs_dir()
+        self.logs_dir().join("feedback")
     }
 
     /// Fallback encryption key, used only when the credential store refuses.

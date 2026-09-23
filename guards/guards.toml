@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 250 records have arrived since and have not been through it.
+# 255 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29531,4 +29531,95 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_about_dialog_names_its_owners_and_its_links.rs", tests = 8 },
+]
+
+# ── A feedback report ticks the log excerpt, except for a security concern ──
+#
+# Pratik's decision on #71: the redacted excerpt goes with a report by
+# default. For a security concern it starts unticked (12-05's premise 5),
+# because a log can hold what the concern is about and the redaction masks
+# addresses and subjects only. One record for each direction: the first
+# unticks it for a problem, the second ticks it for a security concern.
+#
+# Measured 2026-09-23 on the branch the records were written on, through
+# `scripts/guards.sh --remeasure`, against the whole library.
+[[guard]]
+name = "a report of a problem carries the log excerpt by default"
+file = "src/application/feedback_report.rs"
+before = '''            log_excerpt: category != Category::Security,'''
+after = '''            log_excerpt: category != Category::Security && category != Category::Problem,'''
+red = [
+    "application::feedback_report::tests::test_five_categories_tick_the_version_and_the_log_excerpt_and_nothing_else",
+    "application::feedback_report::tests::test_a_problem_carries_the_redacted_excerpt_under_a_line_naming_its_file_and_day",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+[[guard]]
+name = "a security concern leaves the log excerpt unticked"
+file = "src/application/feedback_report.rs"
+before = '''            log_excerpt: category != Category::Security,'''
+after = '''            log_excerpt: true,'''
+red = [
+    "application::feedback_report::tests::test_a_security_concern_ticks_the_version_alone_and_leaves_the_log_unticked",
+    "application::feedback_report::tests::test_a_security_concern_carries_no_excerpt_unless_it_is_ticked",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+# ── A security concern goes to an address of its own (Pratik, 2026-09-23) ──
+#
+# The break sends it to the support mailbox, which is the mixing T-12-18 is
+# about. Nothing sends: the break changes a constant a pure function answers.
+[[guard]]
+name = "a security concern goes to the security address and not to support"
+file = "src/application/feedback_report.rs"
+before = '''        Category::Security => SECURITY_ADDRESS,'''
+after = '''        Category::Security => SUPPORT_ADDRESS,'''
+red = [
+    "application::feedback_report::tests::test_a_security_concern_goes_to_its_own_address_and_the_rest_to_support",
+    "application::feedback_report::tests::test_the_report_goes_where_its_category_says_and_its_last_line_names_that_address",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+# ── The log excerpt leaves with every address masked (T-12-15) ──────────────
+#
+# `redact` is the boundary between the log and the outside. The break copies
+# the address through unmasked, so the excerpt a report carries would hold
+# it; the two masking cases and the composition case that reads the
+# attachment go red.
+[[guard]]
+name = "an address in the log excerpt is masked before it leaves"
+file = "src/application/feedback_report.rs"
+before = '''        masked.push_str(&mask_email(&line[start..end]));'''
+after = '''        masked.push_str(&line[start..end]);'''
+red = [
+    "application::feedback_report::tests::test_an_address_in_the_middle_of_a_line_is_masked",
+    "application::feedback_report::tests::test_two_addresses_on_one_line_are_both_masked",
+    "application::feedback_report::tests::test_a_problem_carries_the_redacted_excerpt_under_a_line_naming_its_file_and_day",
+]
+tests_last_seen = [
+    { file = "src/application/feedback_report.rs", tests = 22 },
+]
+
+# ── A screen reader is found by its process ─────────────────────────────────
+#
+# The break matches no process name, so a report would always say no screen
+# reader was running. The pure matching is broken rather than the snapshot,
+# which only this machine can answer.
+[[guard]]
+name = "a running screen reader is named by its process"
+file = "src/service/this_machine.rs"
+before = '''                .any(|name| name.eq_ignore_ascii_case(executable))'''
+after = '''                .any(|name| name.eq_ignore_ascii_case(executable) && false)'''
+red = [
+    "service::this_machine::tests::test_each_reader_is_found_by_its_process_whatever_case_it_is_written_in",
+    "service::this_machine::tests::test_no_reader_is_named_when_none_runs_and_nvda_is_named_before_narrator",
+]
+tests_last_seen = [
+    { file = "src/service/this_machine.rs", tests = 6 },
 ]
