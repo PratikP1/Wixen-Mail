@@ -4151,8 +4151,37 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
 **Added 2026-09-18, later the same day: three more, from three issues filed that day after the
 phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
 
-- [ ] **LIST-11**: Every sentence the status bar shows reads to one shape in a person's words,
+- [x] **LIST-11**: Every sentence the status bar shows reads to one shape in a person's words,
   read in one pass, with a reading that holds new sentences to the shape where a reading can.
+  **Ticked 2026-09-23 by 12-03, merged at `a9ce329d`, on its `[D]` line:**
+  `application::status_sentences` holds `nothing_chosen(Thing)` with one wording for each of
+  fifteen kinds, `at_least_one_chosen` for a command over a set, the words a status sentence
+  may not use as stems with what to write instead, `a_noun_use_of_sync` refusing the noun and
+  allowing the verb by the word in front of it, and `reads_as_a_persons_sentence` holding the
+  endings and refusing a step of one word, with two exception tables each keyed on the
+  sentence and each holding a reason; twelve cases.
+  `tests/every_status_sentence_has_one_shape.rs` walks `src/presentation` and
+  `src/application` over `what_ships`, aligns every line back to the number it has in the file
+  as written, and prints the census on its passing path: 441 places that write to the bar,
+  205 writing a sentence where they stand and 236 handing over one built somewhere else, which
+  it lists with file and line rather than passing over. It refused 120 sentences on the nine
+  kinds of call #75 counted and 57 on a tenth it did not, `UIUpdate::ErrorOccurred`, whose arm
+  writes the bar and announces at High; all 177 are rewritten by hand in place. Eighteen
+  refusal sites in five wordings across six kinds go through `nothing_chosen`, with
+  `manager_words::nothing_selected` and `wx_blocked_senders::nothing_is_chosen` behind it, so
+  six wordings for one event are one. No test was added to `wx_app.rs`, which stays at 199,
+  or to `managers.rs`, which stays at 137; `manager_words.rs` lost one with the duplicate
+  `a_or_an` and the record naming it was re-measured. No line changed channel, 10-04's reading
+  is green at 15, and `PROGRESS_OPENINGS` went from six to five because "sync requested"
+  guards a shape the module now refuses. Three records measured: the `queue` entry dropped
+  from the word list, 2 red; a sixth wording put back at the Delete arm, 2 red; "Checking the
+  endpoint every ten minutes." in the watch's own line, 1 red. `scripts/check.sh all` on the
+  branch and again on `main`'s merge: exit 0, 8,693 passed. One deviation from the `[D]` line,
+  with its reason in the summary: the plan asked that an ellipsis be refused anywhere but on
+  the step channel, and nine answers that end in one are all still happening, so that rule
+  would have made nine sentences read as finished and caught nothing; a step that names
+  nothing it is doing is refused instead, which is #75's own last line.
+  **Its `[S]` line is untouched**: nobody has read the bar by ear, which is ledger 574.
   **Open at the phase's close, 2026-09-20.** 11-13, the plan that holds it, was deferred to
   the front of the next phase on Pratik's decision of 2026-09-20 under his token budget;
   nothing of it landed, and the `[D]` line below is still the plan's proposal. The closing
@@ -5584,7 +5613,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
 | LIST-09 | Phase 11 | Complete, 11-11 at `f497785f`; a shown picture, a passed-over one, the link's words and the sentence about tracking pixels are the tester's reader (ledger 558) |
 | LIST-10 | Phase 11 | Complete, 11-11 at `f497785f`; whether the page is clear to the person it is for is his |
-| LIST-11 | Phase 11, then phase 12 | Open, 11-13 deferred to the front of the next phase on Pratik's decision of 2026-09-20 under his token budget; nothing landed; the phase closed without it on 2026-09-20; moved later that day to phase 12 as 12-03, whose merge ticks it |
+| LIST-11 | Phase 11, then phase 12 | Complete, 12-03, 2026-09-23 at `a9ce329d`; deferred from phase 11 on Pratik's decision of 2026-09-20 under his token budget and moved that day to phase 12; the `[S]` line, the bar read by ear, is ledger 574 |
 | LIST-12 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether NVDA reads the landed row once after Delete and not again after the re-read is the tester's ear, ledger 541 |
 | LIST-13 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; whether the row is heard once with the tone, and the tone alone with the status bar off, is the tester's ear (ledger 552) |
 | LIST-14 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether "Delete" once and the landed row are enough by ear, and the refusal heard on a failure, are the tester's, ledger 542 |

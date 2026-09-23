@@ -37,7 +37,7 @@ fn manager_account(
     cache: &Option<Arc<MessageCache>>,
 ) -> Result<(Arc<MessageCache>, String), &'static str> {
     let Some(cache) = cache.clone() else {
-        return Err("No message store is available");
+        return Err("The mail on this computer is not open.");
     };
     // The account being looked at, or this computer. Never a refusal.
     //
