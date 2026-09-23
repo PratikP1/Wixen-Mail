@@ -3299,7 +3299,16 @@ seven groups.
   - [S] The run at the next push of `main` is Pratik's; ledger 567 names it, and it is the
     only thing FOUND-20 still waits on. Runs 35839692317 and 35839954840 of 2026-09-23 were
     that run twice, both red; the next is ledger 567 still, and ledger 578 is the tester's
-    ear on the same return.
+    ear on the same return. **Answered green later on 2026-09-23** by NVDA run 35876075636
+    on pull request #94 at `2b6efecf`, a pull request's run rather than a push of `main`,
+    pushed under Pratik's standing OK of that day: the link case passed, 5 passed and 1
+    skipped; the handler logged on both returns that the keyboard was on the frame when the
+    window came back, so it was given to the page; and the window's own thread held the
+    keyboard on `Chrome_WidgetWin_1` inside the window from 50 ms to 3,013 ms after the first
+    return. Run 35872797349 at `47864cc5` before it was red only because the case waited for
+    "example.org/written-out" where NVDA says "https: slash slash example dot org slash
+    written-out, link"; `2b6efecf` made it wait for "written-out". Ledger 567 is fixed;
+    ledger 578, the tester's ear, stays open.
 - [x] **FOUND-21**: A guard record says what its guard really does, and a sweep that finds
   one that does not is closed before the next sweep is dispatched. A record that does not
   return costs one record and not a shard. Added 2026-09-22 for phase 12's 12-02.1, under
@@ -3444,7 +3453,12 @@ seven groups.
     counts only what NVDA said after its own key, since Edit Event and Delete Event now say
     the same sentence.
   - [S] The two cases green on the runner at the next run of the NVDA workflow, whose
-    dispatch or push is Pratik's.
+    dispatch or push is Pratik's. **Answered green later on 2026-09-23**: NVDA runs
+    35872797349 at `47864cc5` and 35876075636 at `2b6efecf`, both on pull request #94, passed
+    `calendar-immediate-actions` and `filter-manager-delete`, and the second run's transcripts
+    hold "Choose an event first." after Edit Event and again after Delete Event, "Syncing the
+    calendar..." after Sync, and "Choose a filter first." after Delete in the filter manager.
+    Ledger 576 is fixed.
 - [ ] **FOUND-23**: The commit gate spends only what a change earns and says where its time
   went, and the whole suite runs once a phase: a merge into `main` runs what the branch's
   whole diff earns, not the whole suite; the closing plan of each phase runs the whole
@@ -3463,7 +3477,12 @@ seven groups.
     `which-checks.sh` treats `data/dictionary_en.txt`, which `spellcheck/mod.rs:1050`
     compiles in, as a document.
   - [S] Pratik approved every gate change the measurement recommended on 2026-09-23 and
-    asked for the full gate to run once a phase rather than at every merge.
+    asked for the full gate to run once a phase rather than at every merge. Later the same
+    day he answered the four decisions 12-03.2 listed: a red full gate at a phase's close is
+    fixed on the closing plan's branch as a small red and green pair; each shell suite runs
+    only for its own inputs; no pushes beyond his standing OK, under which plans that change
+    what is spoken or shown push their branch and open a pull request and others do not; and
+    ledger 373 is closed as built.
   - [D] Every run of `scripts/check.sh` that is not a question answered early names its
     mode before its first stage and ends, pass or fail, with each stage's seconds and the
     total, and the questions print only their answers (12-03.2, task 1).
@@ -3471,18 +3490,24 @@ seven groups.
     entry is opened once under a lock at both sites, and a target that starts twenty fresh
     processes of sixteen threads each was red three times by hand before the fix (12-03.2,
     task 2; ledger 374).
-  - [D] The shell suites run when a staged path is under `scripts/` or `.githooks/` or is
-    `guards/guards.toml` or `.cargo/audit.toml`, in every `all` and `all_but_slow` run, and in
-    `red` when a shell case is named; otherwise the run says it did not run them and why;
-    CI runs them on every push and pull request; no case in them reads the repository's
-    `src/`, so that list is every input they read, taken again after tasks 5 and 7 (12-03.2,
-    tasks 3, 5 and 7).
+  - [D] Each shell suite runs when a path on its own list in `scripts/check.sh` is staged;
+    every suite for `scripts/shell-suite.sh`, `.githooks/commit-msg` or a path under
+    `scripts/` or `.githooks/` that no list places, and in every `all` and `all_but_slow`
+    run; a suite in `red` when one of its cases is named; none for a script on the list no
+    suite reads; each suite not run is named with why; CI runs every suite on every push and
+    pull request; a case holds each list to what its suite and the scripts it reaches name,
+    and no case reads the repository's `src/`, so the lists are every input the suites read,
+    taken again after tasks 5 and 7 (12-03.2, tasks 3, 5 and 7). Until Pratik's answer of
+    2026-09-23 this line had the four suites run together when a staged path was under
+    `scripts/` or `.githooks/` or was `guards/guards.toml` or `.cargo/audit.toml`.
   - [D] Every integration target the scoped run reaches runs in one `cargo test
     --no-fail-fast` call, each once, and a red is judged by the same lines (12-03.2, task 4).
   - [D] A file the program compiles in, Rust or not, reaches the tests of every source that
     compiles it, and a compiled-in `.md` or `.txt` is not a document (12-03.2, task 5;
-    ledger 373 left open with a dated note, since closing it is Pratik's yes or no, README
-    decision 16).
+    ledger 373 closed as built with the task's green, on Pratik's answer of 2026-09-23 to
+    README decision 16 that the rule covers every file the program compiles in, the date
+    catalogue included; until that answer this line had 373 left open with a dated note,
+    since closing it was his yes or no).
   - [D] `scripts/guards.py` keeps a suite's pre-read for a tree it has already read, keyed
     on the working tree without `guards/guards.toml`, that file's records without their
     written counts, the suite, the run's settings and the compiler, for at most two hours,
@@ -3496,7 +3521,9 @@ seven groups.
     says every phase's closing plan runs it, with a ledger entry for the check that would
     hold it (12-03.2, task 7).
   - [D] The closing plan of phase 12 runs `scripts/check.sh all` once, by hand, before its
-    merge, and the phase is not called closed on a red one (12-12, task 3).
+    merge, and the phase is not called closed on a red one: a red one is fixed on 12-12's
+    own branch as a small red and green pair and the gate run again, not a plan of its own,
+    on Pratik's answer of 2026-09-23 (12-12, task 3).
   - [S] Whether moving the full gate to the phase's close lets a break through that the
     merge would have caught is 12-12's full gate, and each phase's after it; what the
     changes saved is read from the stage lines 12-03.2 and the plans after it print.

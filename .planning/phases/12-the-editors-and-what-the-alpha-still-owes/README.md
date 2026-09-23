@@ -114,7 +114,7 @@ carry `version 2` on his word and belong to no phase here.
 | 12-02.1 | 3 | none; sweep 35520204784 | none | closes the phase 11 sweep; FOUND-21 | the per-record wall-clock limit in `scripts/guards.py` first, so a record that does not return costs one record and not a shard; then the six weak records and the five unmeasurable ones measured by hand and diagnosed, sixteen red lists corrected and re-measured, shard 40's nine measured here, the sweep's four rows on the measurements page, the ledger recording what ended shard 40 as fixed |
 | 12-03 | 4 | 3 | #75 | closes | 11-13 moved: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after 12-02 so its two sentences are in the pass; LIST-11 ticked |
 | 12-03.1 | 5 | 1, reopened | none; NVDA runs 35839692317 and 35839954840 | reopens FOUND-20's product half and closes it on the tree's side; FOUND-22 | inserted 2026-09-23: why 12-01's sent activation gave the keyboard back and the runner's real one left it on the frame, read from wx's source (the frame saved as its own last focused child is the one path that ends there); the formatted window gives the keyboard to the page when it comes back with it on the frame or nowhere, red first on a built window by that path; the link case records the window's own thread and the fix's log line, so the next run says which path; a reading in the Rust gate over every word an NVDA case waits for, red on four stale strings, then the calendar and filter cases corrected |
-| 12-03.2 | 6 | none; the executor-time measurement of 2026-09-23 | none | FOUND-23; ledger 374 fixed, 373 noted and left for decision 16 | inserted 2026-09-23: every hook run names its mode and prints each stage's seconds; the keyring race taken red in fresh processes and closed by one guarded opener; the shell suites only when what they read changes; the scoped integration targets in one cargo call; a file the program compiles in, Rust or not, reaching the tests of the code that compiles it, with no shell case reading the real `src/`; the guard runner's pre-read kept for a tree it has read; then a merge into `main` running what the branch's diff earns, the document-reading targets too when it holds a document, from one list held once in `check.sh` that the three targets asking about it read, and the whole suite once a phase, in 12-12, with `CLAUDE.md` saying what that risks and a rule that every phase's closing plan runs it |
+| 12-03.2 | 6 | none; the executor-time measurement of 2026-09-23 | none | FOUND-23; ledger 374 fixed, 373 closed as built on Pratik's answer to decision 16 of 2026-09-23 (it read "noted and left for decision 16" until then) | inserted 2026-09-23: every hook run names its mode and prints each stage's seconds; the keyring race taken red in fresh processes and closed by one guarded opener; the shell suites only when what they read changes, each suite only for its own inputs on his answer to decision 15; the scoped integration targets in one cargo call; a file the program compiles in, Rust or not, reaching the tests of the code that compiles it, with no shell case reading the real `src/`; the guard runner's pre-read kept for a tree it has read; then a merge into `main` running what the branch's diff earns, the document-reading targets too when it holds a document, from one list held once in `check.sh` that the three targets asking about it read, and the whole suite once a phase, in 12-12, with `CLAUDE.md` saying what that risks and a rule that every phase's closing plan runs it |
 | 12-04 | 7 | 4 (but its Send Feedback clause) | #78 | advances to its last point | the copyright line naming Pratik Patel and the Wixen Project with other contributors under MIT, LICENSE in step and held by a reading; the full version kept; wixen.app and wixen.app/support as controls named by their address, the kind chosen by a reading over MSAA; no dead button |
 | 12-05 | 8 | 5, and 4's last clause | #64, #71 third point, #78 point 4 | closes all three | Help, Send Feedback: six categories, the questions that fit, the includes with the log excerpt ticked by default and redacted, the reply address, the exact payload shown before Send; an email from the default account to support@wixen.app through the one queued-row path and the one gate; no account or forbidden said with the clipboard and the GitHub page as doors; security to the private page only; About's button; the scan target; the privacy page's row |
 | 12-06 | 9 | 6 | #73, #35 | closes both; twelve ledger entries fixed | `name_the_spin_control` naming the typing field through the annotation service on every spin control in the tree, a reading over MSAA on four built dialogs; the check interval 1..=60, Font size 8..=72, Default reminder 0..=1440 as spin controls; Mark read after a three-way choice with a seconds spin |
@@ -123,7 +123,7 @@ carry `version 2` on his word and belong to no phase here.
 | 12-09 | 12 | 9 | #43 | closes | signatures as one set with an assignment table and a once-only pass that keeps every account's default; the manager over the set with a Used by column and one Default box; the choice on the account's own dialog; compose taking the From account's signature and swapping the block on a From change only when untouched |
 | 12-10 | 13 | 10 | #48 | closes | a position column with a pass numbering rows in the order they were shown; the submenu rebuilt from the account's labels with their keys and Edit Labels at its end; the manager with Move Up and Down through the reordering rule and a Key column; one word, Label; the disagreement between the menu and the keys fixed and named |
 | 12-11 | 14 | 11 | #65 | advances to the decisions | the design under `docs/plans/`: what exists, the free and pro line as a table, the offline key, the seam, the lapse, the prices as decided, the merchant table carried whole, the decisions table for Pratik; nothing in the product |
-| 12-12 | 15 | 12 | all eleven | closes the phase | the pages, the listening lines from item 84, the closing read over the coverage blocks in one pass, the four planning files told; since 2026-09-23 (12-03.2), the phase's full gate once, `scripts/check.sh all` by hand before its merge |
+| 12-12 | 15 | 12 | all eleven | closes the phase | the pages, the listening lines from item 84, the closing read over the coverage blocks in one pass, the four planning files told; since 2026-09-23 (12-03.2), the phase's full gate once, `scripts/check.sh all` by hand before its merge, a red one fixed on its branch as a red and green pair on Pratik's answer to decision 14 |
 
 Requirement coverage: FOUND-20 by 12-01; LIST-19 by 12-02 (with 11-11.1);
 LIST-11 by 12-03; ALPHA-01 by 12-04; ALPHA-02 by 12-05; EDIT-01 by 12-06;
@@ -537,27 +537,51 @@ Listed here rather than decided, each with what the plans do meanwhile.
     carries them, so a red does not land on `main` a third time. It is
     an outward push and runner time, his word each time. Meanwhile the
     executor merges on the local evidence and the verdict is the next
-    push of `main`, also his.
+    push of `main`, also his. **Corrected later on 2026-09-23:** his
+    standing OK of that day, which his answer to item 13 names, covers
+    this: plans that change what is spoken or shown push their branch
+    and open a pull request; others do not. 12-03.1 changes where the
+    keyboard lands when a window comes back, so it is one of them, and
+    its summary says whether its branch was pushed.
 13. **Whether to push, or open a pull request, before a phase closes**
     (added later on 2026-09-23 with 12-03.2). From 12-03.2's merge the
     whole suite runs once a phase, in 12-12, so a break only it sees can
     sit on `main` until then; CI's Test Suite on a push or a pull request
     would find it sooner. Each is an outward push, his word each time.
+    **Answered 2026-09-23: no pushes or pull requests beyond his
+    standing OK**: plans that change what is spoken or shown push their
+    branch and open a pull request; others do not. He chose the option
+    that saves time, since a pull request waits 20 to 24 minutes for
+    CI, so a break only the whole suite sees waits for 12-12's full
+    gate.
 14. **What happens when 12-12's full gate is red**: a small fix on
     12-12's branch or a plan of its own. 12-12 stops and asks rather
-    than closing the phase red.
+    than closing the phase red. **Answered 2026-09-23: fixed on 12-12's
+    own branch**, a small red and green pair, not a plan of its own;
+    12-12 no longer stops to ask, and runs the gate again after the fix
+    (its task 3).
 15. **Whether the shell suites are narrowed further, one suite per
     input** (running only `check.test.sh` when `guards/guards.toml`
     moves, which twelve of the last fourteen merges did; this read
     "thirteen" until the checker re-took it the same day). Not what was
     approved and not built; 12-03.2's summary says what it would buy.
+    **Answered 2026-09-23: yes, one suite per input**: only the
+    `scripts/*.test.sh` suite whose own inputs are staged runs, so it is
+    approved now and 12-03.2's task 3 builds it, with each suite's list
+    and what it saves in that plan's premise 4, about a minute and a
+    quarter a plan beyond the four suites together by the times of
+    2026-09-23.
 16. **Whether ledger 373 is closed, yes or no** (added later on
     2026-09-23 with 12-03.2's second check). The approval named the
     dictionary; 12-03.2 applies the same rule to every file the program
     compiles in, the date catalogue among them, since it only adds
     checks. Yes closes 373 as built. No keeps 373 open for version 2
     and takes the files other than the dictionary out of the rule. 373
-    stays open with a dated note until he answers.
+    stays open with a dated note until he answers. **Answered
+    2026-09-23: yes, closed as built**: the compiled-in-file rule
+    applies to every file the program compiles in, the date catalogue
+    included. 12-03.2's task 5 closes 373 in both halves with its green
+    commit.
 
 ## Estimates, and the factor behind them
 
@@ -639,7 +663,10 @@ them. **And four of the fifteen** once 12-03.2 was inserted.
 | 12-03 | `a9ce329d`, corrected at `434cd972` | 441 status calls read in one pass, 177 sentences rewritten to one shape, fifteen kinds of refusal each with one sentence; #75 closed |
 
 `main` was pushed at `26beb051` on 2026-09-23, on Pratik's word for that
-one push. Every push after it is his word again. That push is the first
+one push. Every push of `main` after it is his word again ("of `main`"
+added later on 2026-09-23: a plan's branch is pushed with a pull request
+under his standing OK of that day when the plan changes what is spoken
+or shown, and not otherwise, his answer to item 13). That push is the first
 verdict on 12-01's rewritten NVDA case and on everything phase 12 has
 landed; read the runs before trusting the tree's own green.
 
@@ -650,7 +677,10 @@ and 12-04 and 12-05 are the first plans that need them: whether
 `wixen.app` answers at all (it returned 522 when the plan was written),
 whether the support mailbox exists and is read, whether a security
 address is wanted beside GitHub's private reporting, and the feedback
-key. Ask before building those two, not during.
+key. Ask before building those two, not during. **Corrected later on
+2026-09-23:** Pratik answered items 13 to 16, the four 12-03.2 added,
+that day, and his standing OK of the same day answers item 12; the
+rest stand as written.
 
 **Twelve staged skill updates** from the observation review of
 2026-09-20 sit uninstalled outside this repository, under the workspace's
