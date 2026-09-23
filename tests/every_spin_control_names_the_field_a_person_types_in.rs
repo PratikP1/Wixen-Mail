@@ -60,11 +60,14 @@ const CHILDID_SELF: i64 = 0;
 const UDM_GETBUDDY: u32 = 0x400 + 106;
 const UDM_GETRANGE32: u32 = 0x400 + 112;
 
-/// Typing over a field, and choosing in a list (winuser.h).
+/// Typing over a field, and choosing in a list with the arrow keys
+/// (winuser.h).
 const WM_SETTEXT: u32 = 0x000C;
-const WM_COMMAND: u32 = 0x0111;
-const CB_SETCURSEL: u32 = 0x014E;
-const CBN_SELCHANGE: usize = 1;
+const WM_KEYDOWN: u32 = 0x0100;
+const WM_KEYUP: u32 = 0x0101;
+const CB_GETCURSEL: u32 = 0x0147;
+const VK_UP: usize = 0x26;
+const VK_DOWN: usize = 0x28;
 
 /// What MSAA answers for an edit field (oleacc.h).
 const ROLE_SYSTEM_TEXT: i64 = 0x2a;
@@ -160,7 +163,6 @@ unsafe extern "system" {
     fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn GetParent(hwnd: isize) -> isize;
-    fn GetDlgCtrlID(hwnd: isize) -> i32;
     fn IsWindowEnabled(hwnd: isize) -> i32;
     fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
 }
@@ -389,14 +391,22 @@ fn type_into(arrows: isize, text: &str) {
     send(the_field_of(arrows), WM_SETTEXT, 0, wide.as_ptr() as isize);
 }
 
-/// Choose entry `index` in `list` the way a person does: the selection moves
-/// and the list tells its parent, which is where wxWidgets hears a choice.
+/// Choose entry `index` in `list` the way a person does, with Up and Down on
+/// the closed list, so the list itself sends whatever it tells its parent and
+/// wxWidgets hears the choice as it would from a keyboard. Sending the
+/// selection message and a hand-made `CBN_SELCHANGE` moved the selection and
+/// reached no handler, measured here on 2026-09-23.
 fn choose(list: isize, index: usize) {
-    send(list, CB_SETCURSEL, index, 0);
-    // SAFETY: a live window handle.
-    let (parent, id) = unsafe { (GetParent(list), GetDlgCtrlID(list)) };
-    let wparam = (id as u16 as usize) | (CBN_SELCHANGE << 16);
-    send(parent, WM_COMMAND, wparam, list);
+    let now = send(list, CB_GETCURSEL, 0, 0);
+    let key = match (index as isize).cmp(&now) {
+        std::cmp::Ordering::Greater => VK_DOWN,
+        std::cmp::Ordering::Less => VK_UP,
+        std::cmp::Ordering::Equal => return,
+    };
+    for _ in 0..(index as isize - now).unsigned_abs() {
+        send(list, WM_KEYDOWN, key, 0);
+        send(list, WM_KEYUP, key, 0);
+    }
 }
 
 fn is_enabled(hwnd: isize) -> bool {

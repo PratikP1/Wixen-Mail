@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 259 records have arrived since and have not been through it.
+# 261 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29720,7 +29720,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/names.rs", tests = 12 },
-    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 10 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 14 },
 ]
 
 # ── One spin control named the old way is found (EDIT-01, ledger 410) ──────
@@ -29741,5 +29741,47 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 14 },
-    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 10 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 14 },
+]
+
+# ── The check interval holds its own bounds (EDIT-01, #73) ──────────────────
+#
+# The break widens the interval's range to the one the editor's spin builder
+# carried for every spin control before 12-06, 0 to 3650. Up and Down no
+# longer stop at 1 and 60, and the reading of the four numbers' ranges goes
+# red on the check interval alone.
+[[guard]]
+name = "the check interval spin control holds 1 to 60 minutes as its own range"
+file = "src/presentation/wx_account_manager.rs"
+suite = "every_spin_control_names_the_field_a_person_types_in"
+before = '''/// 12-06 (#73) rather than a clamp applied after it was typed.
+const CHECK_INTERVAL_MINUTES: (i32, i32) = (1, 60);'''
+after = '''/// 12-06 (#73) rather than a clamp applied after it was typed.
+const CHECK_INTERVAL_MINUTES: (i32, i32) = (0, 3650);'''
+red = [
+    "test_the_four_numbers_are_spin_controls_holding_their_own_ranges",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 14 },
+]
+
+# ── Never stays Never through the choice and its seconds (EDIT-01, T-12-21) ─
+#
+# The break shows a stored "never" as a wait of nought seconds, so the
+# choice opens on the wait and saving writes a number back where the file
+# said never. Measured on the library, which is the break's suite; the
+# target's reading of when the seconds are offered would also see it.
+[[guard]]
+name = "a stored never is shown as never, not as a wait"
+file = "src/application/reading_habits.rs"
+before = '''            MarkRead::Never => (MarkReadWay::Never, Self::DEFAULT_WAIT_SECONDS),'''
+after = '''            MarkRead::Never => (MarkReadWay::AfterSeconds, 0),'''
+red = [
+    "application::reading_habits::tests::test_the_stored_mark_read_choice_survives_the_trip",
+    "application::reading_habits::tests::test_a_stored_choice_the_list_does_offer_is_the_one_selected",
+    "application::reading_habits::tests::test_the_two_that_never_wait_have_no_delay",
+]
+tests_last_seen = [
+    { file = "src/application/reading_habits.rs", tests = 25 },
 ]

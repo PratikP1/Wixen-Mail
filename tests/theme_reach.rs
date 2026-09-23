@@ -451,10 +451,17 @@ fn check_account_manager(
         ("account edit smtp port field", &edit.smtp_port_f),
         ("account edit username field", &edit.user_f),
         ("account edit password field", &edit.pass_f),
-        ("account edit check interval field", &edit.interval_f),
     ] {
         check(name, field, palette.main_surface(), into);
     }
+    // A spin control since 12-06 (#73), painted by the editor's own spin
+    // builder like every text field above.
+    check(
+        "account edit check interval field",
+        &edit.interval_f,
+        palette.main_surface(),
+        into,
+    );
 }
 
 /// The calendar's New/Edit Event dialog: the item form dialog, opened

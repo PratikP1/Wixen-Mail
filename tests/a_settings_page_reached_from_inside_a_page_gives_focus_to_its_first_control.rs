@@ -60,6 +60,8 @@ const WS_TABSTOP: u32 = 0x0001_0000;
 const WM_KEYDOWN: u32 = 0x0100;
 const WM_KEYUP: u32 = 0x0101;
 const VK_RIGHT: usize = 0x27;
+/// The up-down message asking for the field beside the arrows (commctrl.h).
+const UDM_GETBUDDY: u32 = 0x400 + 106;
 
 #[link(name = "user32")]
 unsafe extern "system" {
@@ -277,7 +279,11 @@ fn read_the_dialog(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest, 
     // Reading A, first step: from a General control into Compose, which is
     // built by the page-changed handler as the selection moves.
     widgets.font_size.set_focus();
-    let font_size = widgets.font_size.get_handle() as isize;
+    // A spin control since 12-06 (#35): focus lands in the field a person
+    // types in, the arrows' buddy, and not on the arrows `get_handle` answers.
+    // SAFETY: a live window this file built; the message takes no pointer.
+    let font_size =
+        unsafe { SendMessageW(widgets.font_size.get_handle() as isize, UDM_GETBUDDY, 0, 0) };
     if focused_window() != font_size {
         return Err(format!(
             "set_focus on the font size field (0x{font_size:x}) left focus on {}",

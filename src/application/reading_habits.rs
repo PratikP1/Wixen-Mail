@@ -27,28 +27,6 @@ pub enum MarkRead {
 }
 
 impl MarkRead {
-    /// The choices offered, in the order they are offered.
-    pub const ALL: [MarkRead; 7] = [
-        MarkRead::Immediately,
-        MarkRead::After(2),
-        MarkRead::After(5),
-        MarkRead::After(10),
-        MarkRead::After(30),
-        MarkRead::After(60),
-        MarkRead::Never,
-    ];
-
-    /// What the choice is called.
-    pub fn label(self) -> String {
-        match self {
-            MarkRead::Immediately => "Immediately".to_string(),
-            MarkRead::After(1) => "After 1 second".to_string(),
-            MarkRead::After(60) => "After a minute".to_string(),
-            MarkRead::After(seconds) => format!("After {seconds} seconds"),
-            MarkRead::Never => "Only when I say so".to_string(),
-        }
-    }
-
     /// How it is written in the settings file.
     pub fn as_stored(self) -> String {
         match self {
@@ -91,6 +69,11 @@ impl MarkRead {
 
 /// The three ways Mark as read after is offered: at once, after a number of
 /// seconds a spin control beside the choice holds, or never.
+///
+/// Until 12-06 the choice was seven fixed answers, five of them waits. The
+/// tester asked for numbers to be spin controls (#35), and a wait is a
+/// number, so the choice says which kind of answer and the spin control says
+/// how long. The stored value keeps its shape either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkReadWay {
     Immediately,
@@ -108,43 +91,57 @@ impl MarkReadWay {
 
     /// What the entry is called.
     pub fn label(self) -> &'static str {
-        ""
+        match self {
+            MarkReadWay::Immediately => "Immediately",
+            MarkReadWay::AfterSeconds => "After a number of seconds",
+            MarkReadWay::Never => "Never",
+        }
     }
 }
 
 impl MarkRead {
+    /// The wait the default holds, and the one the seconds spin control
+    /// offers when the answer stored was not a wait.
+    pub const DEFAULT_WAIT_SECONDS: u32 = 2;
+
     /// The longest wait the seconds spin control holds.
     pub const LONGEST_WAIT_SECONDS: u32 = 600;
 
     /// The entry of the choice and the seconds in the spin control that show
     /// this answer.
+    ///
+    /// A stored wait longer than the spin control holds shows as the longest
+    /// it holds, still a wait. Showing it as anything else, and "Immediately"
+    /// above all, would have somebody who asked to wait open Settings, see no
+    /// wait, and save that back without ever having chosen it.
     pub fn parts(self) -> (MarkReadWay, u32) {
-        (MarkReadWay::Immediately, 0)
+        match self {
+            MarkRead::Immediately => (MarkReadWay::Immediately, Self::DEFAULT_WAIT_SECONDS),
+            MarkRead::After(seconds) => (MarkReadWay::AfterSeconds, Self::a_wait_offered(seconds)),
+            MarkRead::Never => (MarkReadWay::Never, Self::DEFAULT_WAIT_SECONDS),
+        }
     }
 
     /// The answer the choice and the spin control give together.
-    pub fn from_parts(_way: MarkReadWay, _seconds: u32) -> Self {
-        MarkRead::default()
+    pub fn from_parts(way: MarkReadWay, seconds: u32) -> Self {
+        match way {
+            MarkReadWay::Immediately => MarkRead::Immediately,
+            MarkReadWay::AfterSeconds => MarkRead::After(Self::a_wait_offered(seconds)),
+            MarkReadWay::Never => MarkRead::Never,
+        }
+    }
+
+    fn a_wait_offered(seconds: u32) -> u32 {
+        seconds.clamp(1, Self::LONGEST_WAIT_SECONDS)
     }
 }
 
-/// Which entry of the offered list a stored choice selects.
-///
-/// A stored wait the list does not offer falls back to the default rather than
-/// to the first entry. The first entry is "Immediately", which is the most
-/// aggressive of the seven and the wrong one to fail towards: somebody who
-/// asked to wait would open settings, see no wait at all, and save that back
-/// without ever having chosen it.
+/// Which entry of the choice a stored answer selects.
 pub fn offered_index(stored: &str) -> usize {
-    let wanted = MarkRead::from_setting(stored);
-    MarkRead::ALL
+    let (way, _) = MarkRead::from_setting(stored).parts();
+    MarkReadWay::ALL
         .iter()
-        .position(|choice| *choice == wanted)
-        .or_else(|| {
-            MarkRead::ALL
-                .iter()
-                .position(|choice| *choice == MarkRead::default())
-        })
+        .position(|offered| *offered == way)
         .unwrap_or(0)
 }
 
@@ -164,14 +161,14 @@ impl Default for MarkRead {
     /// that a Space pressed by mistake and left at once does not mark the
     /// message, and short enough that hearing it through does.
     fn default() -> Self {
-        MarkRead::After(2)
+        MarkRead::After(Self::DEFAULT_WAIT_SECONDS)
     }
 }
 
 /// The sentence under the Mark as read after choice in Settings: what the
 /// wait is counted from.
 ///
-/// Seven answers cannot say on their own when the counting starts, and until
+/// The choice and its seconds cannot say on their own when the counting starts, and until
 /// 2026-09-18 it started when a row was selected (#25). Said where somebody
 /// meets the choice, on both channels, so a person who has set a wait knows
 /// that moving through the list is not what the wait is measured from, and
@@ -571,7 +568,14 @@ mod a_message_is_marked_read_after_it_was_read_and_never_after_it_was_selected {
         // no reading begun is still unread. This is the whole of #25.
         let long_ago = Instant::now();
         let an_hour_on = long_ago + Duration::from_secs(3600);
-        for setting in MarkRead::ALL {
+        for setting in [
+            MarkRead::Immediately,
+            MarkRead::After(1),
+            MarkRead::After(2),
+            MarkRead::After(60),
+            MarkRead::After(MarkRead::LONGEST_WAIT_SECONDS),
+            MarkRead::Never,
+        ] {
             assert_eq!(
                 whether_to_mark_read(None, Some(THE_MESSAGE), an_hour_on, setting),
                 None,
