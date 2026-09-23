@@ -264,6 +264,17 @@ if [ "${1:-}" = "--suites-for" ]; then
     exit 0
 fi
 
+# What is about to be committed, read from the index of the repository this is
+# run in. With `--no-renames` since 2026-09-23 (12-03.2): without it git lists a
+# staged move by where it went alone, measured that day under git
+# 2.55.0.windows.3, so a move out of `scripts/` read as owing no suite and a
+# move from `src/` to `docs/` as documents only. The flag only adds the path a
+# move left, so it can only strengthen what a commit earns. A deleted file is
+# listed either way.
+the_staged_paths() {
+    git diff --cached --name-only --no-renames 2>/dev/null || true
+}
+
 # What the scoped run hands cargo, one invocation's arguments to a line.
 #
 #     the_scoped_runs <registry> [changed-path ...]
@@ -292,7 +303,22 @@ fi
 # answers which sources those are, from `src/` under the directory this runs
 # from. A source that compiles itself in adds nothing, and one counted twice
 # runs once. `--suites-for` above reads no source file; only this does.
+#
+# At a merge, `--merge` first, whose paths hold a document by
+# `which-checks.sh --documents-among`, the document-reading list joins as well:
+# each of `the_targets_that_read_documents` in the one `--test` line and each
+# of `the_modules_that_read_documents` as a library run of its own. Added
+# 2026-09-23 (12-03.2): the merge stopped being the whole gate that day, and a
+# branch mixing code and documents answers `affected`, which runs no
+# document-reading target. Only at a merge, because on a branch nearly every
+# green commit carries a changelog line beside its code and would pay the list
+# each time.
 the_scoped_runs() {
+    local merging=""
+    if [ "${1:-}" = "--merge" ]; then
+        merging=yes
+        shift
+    fi
     local registry="$1" path module target source line=""
     shift
     local -a paths=("$@") targets=()
@@ -301,6 +327,14 @@ the_scoped_runs() {
         while IFS= read -r source; do
             [ -n "$source" ] && paths+=("$source")
         done < <("$(dirname "$0")/which-checks.sh" --sources-compiling "$@")
+    fi
+    if [ -n "$merging" ] && [ "$#" -gt 0 ] &&
+        [ -n "$("$(dirname "$0")/which-checks.sh" --documents-among "$@")" ]; then
+        for module in "${the_modules_that_read_documents[@]}"; do
+            modules[${module%::}]=1
+            echo "--lib $module -- --test-threads=4"
+        done
+        targets+=("${the_targets_that_read_documents[@]}")
     fi
     for path in "${paths[@]+"${paths[@]}"}"; do
         case "$path" in
@@ -336,23 +370,55 @@ the_scoped_runs() {
 # The builder on its own, so `scripts/check.test.sh` can ask it about a made-up
 # change from a tree of its own:
 #
-#     check.sh --scoped-runs-for <registry> [changed-path ...]
+#     check.sh --scoped-runs-for [--merge] <registry> [changed-path ...]
 if [ "${1:-}" = "--scoped-runs-for" ]; then
     shift
     the_scoped_runs "$@"
     exit 0
 fi
 
-# What is about to be committed, read from the index of the repository this is
-# run in. With `--no-renames` since 2026-09-23 (12-03.2): without it git lists a
-# staged move by where it went alone, measured that day under git
-# 2.55.0.windows.3, so a move out of `scripts/` read as owing no suite and a
-# move from `src/` to `docs/` as documents only. The flag only adds the path a
-# move left, so it can only strengthen what a commit earns. A deleted file is
-# listed either way.
-the_staged_paths() {
-    git diff --cached --name-only --no-renames 2>/dev/null || true
+# The mode `which-checks.sh` gives the commit being made: from the staged
+# paths, the branch, the message, and since 2026-09-23 (12-03.2) whether the
+# commit is a merge, which git says by leaving `MERGE_HEAD` while one is in
+# progress, the hook's run included. A merge's staged list is the branch's
+# whole diff, which equalled the merge-base-to-tip diff on every one of the
+# fourteen merges read that day, so nothing new is computed for it.
+#
+# Leaves `mode`, `changed`, `merging` and `the_branch` for the run, which asks
+# this too, so the question below and the run decide one way.
+decide_the_mode_for_this_commit() {
+    local message_file="$1"
+    mapfile -t changed < <(the_staged_paths)
+    merging=""
+    if git rev-parse -q --verify MERGE_HEAD > /dev/null 2>&1; then
+        merging=yes
+    fi
+    the_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    mode="$("$(dirname "$0")/which-checks.sh" \
+        ${message_file:+"--message-file=$message_file"} \
+        ${merging:+--merge} \
+        "$the_branch" \
+        "${changed[@]+"${changed[@]}"}")"
 }
+
+# The run's own decision, made without running anything, so
+# `scripts/check.test.sh` can ask it of a repository of its own with a merge in
+# progress:
+#
+#     check.sh --mode-for-this-commit [--message-file=F]
+#
+# Answered here, above the note about the hook, which prints wherever the hooks
+# directory holds no `commit-msg`, so the answer is only the mode.
+if [ "${1:-}" = "--mode-for-this-commit" ]; then
+    shift
+    asked_message_file=""
+    case "${1:-}" in
+        --message-file=*) asked_message_file="${1#--message-file=}" ;;
+    esac
+    decide_the_mode_for_this_commit "$asked_message_file"
+    echo "$mode"
+    exit 0
+fi
 
 # Whether a path is one of the words of a space-separated list.
 is_on_the_list() {
@@ -507,7 +573,10 @@ fi
 # Which checks this run does. Given as an argument, or worked out by
 # `which-checks.sh` from where you are and what is staged, which is where that
 # decision lives and where it is tested. Pass `all` to force the whole gate
-# wherever you are, which is what merging a branch into main does first.
+# wherever you are, which is what merging a branch into main does first. Since
+# 2026-09-23 (12-03.2) the whole gate runs once a phase, `all` by hand in the
+# phase's closing plan on its branch before its merge, and not at or before
+# each merge: a merge runs what the branch's whole diff earns.
 #
 # Two questions, and they are separate. Whether the slow half can be deferred is
 # about the branch: main cannot defer, because every commit here lands on it.
@@ -559,7 +628,9 @@ case "$mode" in
         echo "  Or --suites-for <registry> [changed-file ...] for the mapping" >&2
         echo "  from a changed source file to the guards that cover it." >&2
         echo "  Or --shell-suites-owed <mode> [--message-file=F] [--staged | path ...]" >&2
-        echo "  for which scripts/*.test.sh a commit owes." >&2
+        echo "  for which scripts/*.test.sh a commit owes, --scoped-runs-for" >&2
+        echo "  [--merge] <registry> [path ...] for what the scoped run hands cargo," >&2
+        echo "  or --mode-for-this-commit [--message-file=F] for the mode it runs." >&2
         exit 64
         ;;
 esac
@@ -569,12 +640,10 @@ esac
 # about. Empty when run by hand outside a commit, and `which-checks.sh` answers
 # `all_but_slow` for that rather than guessing at a narrower set.
 changed=()
+merging=""
+the_branch=""
 if [ -z "$mode" ]; then
-    mapfile -t changed < <(the_staged_paths)
-    mode="$("$(dirname "$0")/which-checks.sh" \
-        ${message_file:+"--message-file=$message_file"} \
-        "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" \
-        "${changed[@]+"${changed[@]}"}")"
+    decide_the_mode_for_this_commit "$message_file"
 fi
 
 # Where a run's seconds went, one stage at a time.
@@ -631,7 +700,7 @@ the_run_ends() {
     return "$status"
 }
 
-echo "check.sh: mode $mode"
+echo "check.sh: mode $mode${merging:+, a merge into $the_branch}"
 trap the_run_ends EXIT
 
 touch src/lib.rs
@@ -739,8 +808,8 @@ fi
 if [ "$mode" = "all_but_slow" ]; then
     echo
     echo "Formatting and clippy passed. The test suite and the release build did"
-    echo "not run: this is not main. They run once, when the merge into main"
-    echo "(git merge --no-ff) runs this hook."
+    echo "not run: nothing was said about what changed. They run once a phase,"
+    echo "by hand in its closing plan (scripts/check.sh all)."
     exit 0
 fi
 
@@ -769,8 +838,8 @@ if [ "$mode" = "docs_only" ]; then
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
     echo "the suite and the release build did not run: nothing outside a document"
-    echo "changed, so they had nothing to say. They run once, when the merge"
-    echo "into main (git merge --no-ff) runs this hook."
+    echo "changed, so they had nothing to say. They run once a phase, by hand in"
+    echo "its closing plan (scripts/check.sh all)."
     exit 0
 fi
 
@@ -798,7 +867,7 @@ fi
 run_the_tests_that_reach_what_changed() {
     local status=0 line word
     local -a runs arguments
-    mapfile -t runs < <(the_scoped_runs \
+    mapfile -t runs < <(the_scoped_runs ${merging:+--merge} \
         "$(dirname "$0")/../guards/guards.toml" \
         "${changed[@]+"${changed[@]}"}")
     for line in "${runs[@]+"${runs[@]}"}"; do
@@ -895,8 +964,8 @@ if [ "$mode" = "affected" ]; then
     echo
     echo "Formatting, clippy, the tests reaching what changed, and the"
     echo "tree-reading guards passed. The rest of the suite and the release"
-    echo "build did not run. They run once, when the merge into main"
-    echo "(git merge --no-ff) runs this hook."
+    echo "build did not run. They run once a phase, by hand in its closing plan"
+    echo "(scripts/check.sh all)."
     exit 0
 fi
 
@@ -933,7 +1002,10 @@ fi
 #
 # Only in this mode. An advisory is not a consequence of a commit, so scoping it
 # to what changed makes no sense, and `all` is what every code commit on main and
-# every pre-merge run does. Six seconds of a run that is about 330.
+# every pre-merge run does. Six seconds of a run that is about 330. Since
+# 2026-09-23 (12-03.2) no merge runs `all`: the whole gate, this check with it,
+# runs once a phase, by hand in the phase's closing plan, and CI's Security
+# Audit job runs on every push.
 #
 # Before the suite rather than after it, because it is the cheapest thing here
 # and a finding should not wait four minutes to be said.

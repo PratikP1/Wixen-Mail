@@ -8,7 +8,10 @@
 # **Where you are** decides whether the slow checks can be deferred at all.
 # `main` is what CI builds and what ships, and every commit here lands on it, so
 # it always earns everything. A branch nobody builds can defer, because the full
-# gate runs once before the merge.
+# gate runs once before the merge. Since 2026-09-23 (12-03.2) it runs once a
+# phase instead, by hand in the phase's closing plan, and a merge into `main`
+# (`--merge`) answers what the branch's whole diff earns by the branch rules
+# below; a commit on `main` that is not a merge still earns everything for code.
 #
 # **What you changed** decides which tests can say anything. Running 5,819 tests
 # and a release build to commit four markdown files proves nothing about the
@@ -184,6 +187,25 @@ if [ "${1-}" = "--sources-compiling" ]; then
     exit 0
 fi
 
+#   which-checks.sh --documents-among <path> [path ...]
+#
+# Each given path that is a document by `is_a_document`, one a line, in the
+# order given. `check.sh` asks it whether a merge's diff holds a document, so
+# the rule for what a document is has one spelling. Added 2026-09-23 (12-03.2).
+if [ "${1-}" = "--documents-among" ]; then
+    shift
+    for path in "$@"; do
+        if is_a_document "$path"; then
+            echo "$path"
+        fi
+    done
+    exit 0
+fi
+
+# Whether the commit being judged is a merge, which `check.sh` knows by
+# `MERGE_HEAD` and says with `--merge`.
+is_a_merge=""
+
 while :; do
     case "${1-}" in
         --message-file=*)
@@ -194,13 +216,18 @@ while :; do
             manifest_diff_file="${1#--manifest-diff-file=}"
             shift
             ;;
+        --merge)
+            is_a_merge=yes
+            shift
+            ;;
         # Refused since 2026-09-23 (12-03.2). Until then anything this loop did
         # not know was read as the branch name, so a misspelt option answered
         # as a branch nobody has and a new flag's red case passed by accident.
         --*)
             echo "which-checks: '$1' is not an option this script knows." >&2
-            echo "  Options: --message-file=F, --manifest-diff-file=F, and" >&2
-            echo "  --sources-compiling <file> ... on its own." >&2
+            echo "  Options: --message-file=F, --manifest-diff-file=F, --merge," >&2
+            echo "  and on their own --sources-compiling <file> ... or" >&2
+            echo "  --documents-among <path> ..." >&2
             exit 64
             ;;
         *)
@@ -249,24 +276,40 @@ case "$branch" in
     # Matched exactly. `maintenance` and `mainline` are branches nobody builds
     # and must not inherit main's answer by sharing its first four letters.
     main | master)
-        # `main` cannot defer the slow half, because every commit here lands on
-        # it and it is what CI builds. That is a statement about the branch. It
-        # is not a statement about what a change can break, and those are
-        # separate questions: a document cannot fail a release build or a test
-        # that never reads one, wherever it is committed. So fall through to the
-        # what-changed question with the slow half still owed.
+        # A merge that says nothing about what it changed cannot be scoped, so
+        # it earns everything, as `main` does with no file list.
         if [ "$#" -eq 0 ]; then
             echo all
             exit 0
         fi
-        for path in "$@"; do
-            if ! is_a_document "$path"; then
-                echo all
-                exit 0
-            fi
-        done
-        echo docs_only
-        exit 0
+        # A merge into `main` answers what the branch's whole diff earns, by the
+        # rules below that a branch commit is judged by, since 2026-09-23
+        # (12-03.2), on Pratik's answer that day that the whole suite runs once
+        # a phase, in its closing plan, rather than at every merge. So a branch
+        # that changed a workflow, the installer or a dependency still earns
+        # everything at its merge, and one that changed code earns what reaches
+        # it. The diff is the merge commit's staged list, which equalled the
+        # branch's merge-base-to-tip diff on every one of the fourteen merges
+        # read that day.
+        if [ -z "$is_a_merge" ]; then
+            # `main` cannot defer the slow half, because every commit here lands
+            # on it and it is what CI builds. That is a statement about the
+            # branch. It is not a statement about what a change can break, and
+            # those are separate questions: a document cannot fail a release
+            # build or a test that never reads one, wherever it is committed. So
+            # fall through to the what-changed question with the slow half still
+            # owed. A commit on `main` that is not a merge and touches code
+            # still answers `all` after 2026-09-23: code reaches `main` only
+            # through a merge here, and one that does not pays the most.
+            for path in "$@"; do
+                if ! is_a_document "$path"; then
+                    echo all
+                    exit 0
+                fi
+            done
+            echo docs_only
+            exit 0
+        fi
         ;;
 esac
 

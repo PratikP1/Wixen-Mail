@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 540
+open_count: 542
 waived_count: 0
 fixed_count: 42
-total_count: 582
-last_updated: 2026-09-23T17:40:00.000Z
+total_count: 584
+last_updated: 2026-09-23T18:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -597,6 +597,8 @@ last_updated: 2026-09-23T17:40:00.000Z
 | 580 | 12 | todo | tests/mark_as_read_says_which_way_it_will_go.rs |  | 12-03.1: test_reading_a_the_letter_reaches_its_handler_on_a_real_list_and_the_search_does_not_get_it failed once on 2026-09-23, inside the gate of a commit that changed nothing it reads, while the tester was using the machine with NVDA running: the handler wired on M was called with no rows where one was wanted. The same target passed three runs of three straight after, and the commit went through on its second attempt. Not diagnosed. The reading sends WM_KEYDOWN and WM_CHAR to a real list, and one candidate, unmeasured, is that the modifier state wxWidgets reads for the key comes from the keyboard of the person at the machine. Written down so the next intermittent failure of this test is met as the second and not the first | open |  | 2026-09-23T14:10:00.000Z |  |
 | 581 | 12 | todo | src/service/secret_store.rs |  | 12-03.2: ledger 374's second finding, carried on when 374 was fixed for its race. The in-memory seam in secret_store.rs is cfg(test), so an integration target never sees it and every target that reaches the credential store, a_move_says_what_has_not_been_sent and the_credential_store_is_ready_for_every_thread among them, reaches the real Windows Credential Manager of whoever runs it. The new target only reads an entry under a service name nothing stores under, and writes nothing. A seam the integration targets can see, or a store they are handed, is the fix; not built here because 12-03.2 fixed the race and left the seam's shape alone | open |  | 2026-09-23T16:30:00.000Z |  |
 | 582 | 12 | todo | scripts/which-checks.sh |  | 12-03.2: nothing holds the real include lines to the shape the compiled-in scan reads. which-checks.sh maps a staged file to the sources whose include_str! or include_bytes! argument, a string literal on the macro's line or the next, resolves to it. The suites test that rule over fixture copies of three real lines (spellcheck/mod.rs:1050, catalogue.rs:153, sent_copy.rs:1133 on 2026-09-23), and the real tree's answers were read by hand once. If the dictionary's include changed shape, for instance to concat!(env!("CARGO_MANIFEST_DIR"), ...), both suites would stay green and a change to the dictionary would silently read as a document again. A reading of the real include lines that runs on the commits that could break them is owed; a unit test beside the include was set aside because it would add a test to files that 32 and 6 guard records name, setting off the count check for every one | open |  | 2026-09-23T17:40:00.000Z |  |
+| 583 | 12 | todo | src/application/contact_groups.rs |  | 12-03.2: documents src reads at test time with read_to_string reach no scoped run. docs/privacy.md is read by src/application/contact_groups.rs and src/service/update_check.rs, docs/development/the-notes-seam.md by src/service/onenote_page.rs, and docs/ALPHA_TESTING.md by src/presentation/help_page.rs, which alone is on the document-reading list. A commit changing only docs/privacy.md or the notes seam page runs none of the tests that read it. Until 2026-09-23 the whole gate at the merge covered them; 12-03.2 moved that gate to once a phase, which widened this hole to the phase's close. A mapping from a document to the sources that read it at test time, the way which-checks.sh maps a compiled-in file to its source, is owed | open |  | 2026-09-23T18:30:00.000Z |  |
+| 584 | 12 | todo | tests/the_planning_files_agree_with_themselves.rs |  | 12-03.2: nothing checks that a phase's closing plan runs the full gate. CLAUDE.md's rule of 2026-09-23 under Premises a plan checks before execution says the plan in a phase's highest wave carries a task running scripts/check.sh all by hand before its merge, and the checker refuses a phase whose closing plan has none. A check in tests/the_planning_files_agree_with_themselves.rs that the highest-wave plan of every phase from 12 on names scripts/check.sh all is owed, beside the tick count the completion-marks paragraph already owes the same test. Not built by 12-03.2: on the real tree it is green on arrival, since 12-12 already carries the task, so its only red would be a planted companion | open |  | 2026-09-23T18:30:00.000Z |  |
 
 ````json
 [
@@ -7582,6 +7584,30 @@ last_updated: 2026-09-23T17:40:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T17:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 583,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/application/contact_groups.rs",
+    "line": null,
+    "description": "12-03.2: documents src reads at test time with read_to_string reach no scoped run. docs/privacy.md is read by src/application/contact_groups.rs and src/service/update_check.rs, docs/development/the-notes-seam.md by src/service/onenote_page.rs, and docs/ALPHA_TESTING.md by src/presentation/help_page.rs, which alone is on the document-reading list. A commit changing only docs/privacy.md or the notes seam page runs none of the tests that read it. Until 2026-09-23 the whole gate at the merge covered them; 12-03.2 moved that gate to once a phase, which widened this hole to the phase's close. A mapping from a document to the sources that read it at test time, the way which-checks.sh maps a compiled-in file to its source, is owed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T18:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 584,
+    "kind": "todo",
+    "phase": "12",
+    "file": "tests/the_planning_files_agree_with_themselves.rs",
+    "line": null,
+    "description": "12-03.2: nothing checks that a phase's closing plan runs the full gate. CLAUDE.md's rule of 2026-09-23 under Premises a plan checks before execution says the plan in a phase's highest wave carries a task running scripts/check.sh all by hand before its merge, and the checker refuses a phase whose closing plan has none. A check in tests/the_planning_files_agree_with_themselves.rs that the highest-wave plan of every phase from 12 on names scripts/check.sh all is owed, beside the tick count the completion-marks paragraph already owes the same test. Not built by 12-03.2: on the real tree it is green on arrival, since 12-12 already carries the task, so its only red would be a planted companion",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T18:30:00.000Z",
     "resolved_at": null
   }
 ]
