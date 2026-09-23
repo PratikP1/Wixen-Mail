@@ -362,7 +362,11 @@ const THE_VISIBLE_LAYOUT: &str = ".visible()";
 const THE_CELL_THE_LIST_PAINTS: &str = "virtual_rows::text_for(";
 const COMPOSES_THE_ROW: &str = "the_row_with_its_headings(";
 const ANNOUNCES_AS_CONTENT: &str = "announce_content(";
-const REFUSES_WITH: &str = "\"Nothing is selected in the message list\"";
+/// The refusal, by the call rather than by the words. The wording moved into
+/// `application::status_sentences` with #75, where every window's refusal for
+/// nothing chosen is one sentence; what this reading is about is that the
+/// chord refuses at all rather than reading a row nobody is on.
+const REFUSES_WITH: &str = "nothing_chosen(Thing::MESSAGE)";
 /// The ways the window says something that are not content under the mute:
 /// interface chatter, and the status bar's channels.
 const SAYS_IT_ANY_OTHER_WAY: [&str; 3] = [".announce(", "send_status(", "send_shown("];
@@ -517,7 +521,7 @@ fn a_window_as_it_should_be() -> String {
     snippet.push_str(
         "list: &ListCtrl) {\n    let Some(row) = list\n        .has_focus()\n        \
          .then(|| lock_state(state).selected_message_index)\n        .flatten()\n    else {\n        \
-         send_refusal(tx, rt, \"Nothing is selected in the message list\");\n        return;\n    };\n    \
+         send_refusal(tx, rt, &nothing_chosen(Thing::MESSAGE));\n        return;\n    };\n    \
          let columns = layout.borrow().visible();\n    let cells = columns\n        .iter()\n        \
          .enumerate()\n        .map(|(at, column)| (*column, virtual_rows::text_for(listed, &columns, \
          row as i64, at as i32, dates, now)))\n        .collect::<Vec<_>>();\n    \

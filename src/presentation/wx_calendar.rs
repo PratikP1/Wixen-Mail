@@ -20,6 +20,9 @@ use crate::application::calendar::{
     EditMeans, WhatIsBeingDone, WhatTheCalendarAllows, WrittenDown, can_be_honoured,
     what_is_waiting,
 };
+// The one wording for a refusal when nothing was chosen (#75), so this
+// window says what the account manager and the message list say.
+use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
@@ -496,7 +499,7 @@ fn selected_event(
 /// without a human clicking a real button inside a real modal dialog.
 pub fn request_sync(state: &mut CalendarDialogState, status: &StaticText, a11y: &Accessibility) {
     state.actions.push(CalendarAction::SyncRequested);
-    said_and_shown(status, a11y, "Sync requested...", Priority::Normal);
+    said_and_shown(status, a11y, "Syncing the calendar...", Priority::Normal);
 }
 
 /// What the Edit Event button answers.
@@ -520,7 +523,7 @@ pub fn edit_selected_event(
     open_event_editor: &dyn Fn(&Dialog, Option<&CalendarEventItem>) -> Option<CalendarEventData>,
 ) {
     let Some((item, allows)) = selected_event(state, list) else {
-        said_and_shown(status, a11y, "Select an event to edit.", Priority::High);
+        said_and_shown(status, a11y, &nothing_chosen(Thing::EVENT), Priority::High);
         return;
     };
     // Both asked before the editor opens, so somebody who meant one day is
@@ -574,7 +577,7 @@ pub fn delete_selected_event(
     palette: Option<theme::Palette>,
 ) {
     let Some((item, allows)) = selected_event(state, list) else {
-        said_and_shown(status, a11y, "Select an event to delete.", Priority::High);
+        said_and_shown(status, a11y, &nothing_chosen(Thing::EVENT), Priority::High);
         return;
     };
     let (confirm, _yes_btn, _no_btn) = build_confirm_delete_dialog(dialog, &item.summary, palette);
@@ -989,7 +992,7 @@ mod tests {
     /// at its top cut away.
     ///
     /// Edit and Delete both open the same way: read the row and its
-    /// allowance back, or say "Select an event to ..." and return with
+    /// allowance back, or say `nothing_chosen(Thing::EVENT)` and return with
     /// nothing asked yet. That early return is a separate rule from the one
     /// `what_the_arm_gets_wrong` checks below, and leaving it in would have
     /// the guard's own `said_and_shown` read as something that happens
@@ -1324,9 +1327,18 @@ mod tests {
         ] {
             let function = the_function_for(&window, signature);
             let after = after_the_guard(&function);
+            // By the call, not by the words. #75 moved the wording into
+            // `application::status_sentences`, and an anchor on a sentence
+            // that has left the tree is a check that passes over anything.
             assert!(
-                !after.contains("Select an event to"),
+                !after.contains("nothing_chosen(Thing::EVENT)"),
                 "{signature} still carries its own guard clause after cutting"
+            );
+            assert!(
+                function.contains("nothing_chosen(Thing::EVENT)"),
+                "{signature} no longer refuses for nothing chosen at all, so the cutter \
+                 above is cutting away something that is not there and this reading \
+                 proves nothing"
             );
             assert!(
                 after.len() > 50,

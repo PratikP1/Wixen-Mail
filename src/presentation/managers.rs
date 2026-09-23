@@ -11,7 +11,10 @@
 
 use crate::application::calendar::EditMeans;
 use crate::application::collection_sync;
+// The one wording for a refusal when nothing was chosen (#75), so the four
+// places this layer refuses for that reason say what every other window says.
 use crate::application::new_item::LOCAL_ACCOUNT_ID;
+use crate::application::status_sentences::{Thing, nothing_chosen, nothing_chosen_named};
 use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
@@ -62,12 +65,12 @@ fn manager_account(
 /// about what to do next.
 fn report(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, what: &str, failures: Vec<String>) {
     if failures.is_empty() {
-        send_status(tx, rt, &format!("{} saved", what));
+        send_status(tx, rt, &format!("{} saved.", what));
         return;
     }
     tracing::error!("{} could not be saved: {:?}", what, failures);
     let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-        "Some {} could not be saved: {}",
+        "Some {} could not be saved: {}.",
         what,
         failures.join("; ")
     )));
@@ -114,7 +117,7 @@ pub fn manage_tags(
     };
     let stored = match cache.get_tags_for_account(&account) {
         Ok(items) => items,
-        Err(e) => return send_status(tx, rt, &format!("Tags could not be read: {}", e)),
+        Err(e) => return send_status(tx, rt, &format!("Tags could not be read: {}.", e)),
     };
     let rows: Vec<wx_managers::TagEntry> = stored
         .iter()
@@ -201,7 +204,7 @@ pub fn manage_signatures(
     };
     let stored = match cache.get_signatures_for_account(&account) {
         Ok(items) => items,
-        Err(e) => return send_status(tx, rt, &format!("Signatures could not be read: {}", e)),
+        Err(e) => return send_status(tx, rt, &format!("Signatures could not be read: {}.", e)),
     };
     let rows: Vec<wx_managers::SignatureEntry> = stored
         .iter()
@@ -281,7 +284,7 @@ pub fn manage_filters(
     };
     let stored = match cache.get_filter_rules_for_account(&account) {
         Ok(items) => items,
-        Err(e) => return send_status(tx, rt, &format!("Rules could not be read: {}", e)),
+        Err(e) => return send_status(tx, rt, &format!("Rules could not be read: {}.", e)),
     };
     let rows: Vec<wx_managers::FilterRule> = stored
         .iter()
@@ -425,7 +428,7 @@ pub fn add_calendar_by_address(
                 tx,
                 rt,
                 &format!(
-                    "Calendar \"{}\" added. It fills in on the next sync.",
+                    "Calendar \"{}\" added. Its events fill in the next time it syncs.",
                     calendar.name
                 ),
             );
@@ -561,7 +564,7 @@ pub fn add_address_book_by_address(
                 tx,
                 rt,
                 &format!(
-                    "Address book \"{}\" added. Its contacts fill in on the next sync.",
+                    "Address book \"{}\" added. Its contacts fill in the next time it syncs.",
                     book.name
                 ),
             );
@@ -2152,10 +2155,10 @@ pub fn search_messages(
                 }
             } else {
                 let count = if found == LIMIT {
-                    format!("First {} matches for {}", LIMIT, typed)
+                    format!("First {} matches for {}.", LIMIT, typed)
                 } else {
                     format!(
-                        "{} match{} for {}",
+                        "{} match{} for {}.",
                         found,
                         if found == 1 { "" } else { "es" },
                         typed
@@ -2176,8 +2179,11 @@ pub fn search_messages(
             }
         }
         Err(e) => {
-            tracing::error!("Search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            tracing::error!("The search could not be run: {}.", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 
@@ -2280,10 +2286,10 @@ fn report_what_was_found(
         tx,
         rt,
         &if found == SEARCH_LIMIT {
-            format!("First {SEARCH_LIMIT} {what} matching {query}")
+            format!("First {SEARCH_LIMIT} {what} matching {query}.")
         } else {
             format!(
-                "{found} {what}{} matching {query}",
+                "{found} {what}{} matching {query}.",
                 if found == 1 { "" } else { "s" }
             )
         },
@@ -2315,7 +2321,10 @@ pub fn search_contacts(
         }
         Err(e) => {
             tracing::error!("Contact search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2345,7 +2354,10 @@ pub fn search_reminders(
         }
         Err(e) => {
             tracing::error!("Reminder search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2375,7 +2387,10 @@ pub fn search_tasks(
         }
         Err(e) => {
             tracing::error!("Task search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2405,7 +2420,10 @@ pub fn search_notes(
         }
         Err(e) => {
             tracing::error!("Note search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2457,10 +2475,10 @@ pub fn search_calendar(
                     tx,
                     rt,
                     &if found == LIMIT {
-                        format!("First {LIMIT} events matching {query}")
+                        format!("First {LIMIT} events matching {query}.")
                     } else {
                         format!(
-                            "{found} event{} matching {query}",
+                            "{found} event{} matching {query}.",
                             if found == 1 { "" } else { "s" }
                         )
                     },
@@ -2469,7 +2487,10 @@ pub fn search_calendar(
         }
         Err(e) => {
             tracing::error!("Calendar search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2501,12 +2522,12 @@ pub fn new_contact(
     let contact = contact_convert::to_stored(&edited, &account, None);
     match cache.save_contact(&contact) {
         Ok(()) => {
-            send_status(tx, rt, &format!("Contact saved: {}", contact.name));
+            send_status(tx, rt, &format!("Contact saved: {}.", contact.name));
             reload_contacts(&cache, &account, tx);
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Contact could not be saved: {}",
+                "Contact could not be saved: {}.",
                 e
             )));
         }
@@ -2532,7 +2553,7 @@ pub fn manage_contacts(
     let stored = match cache.get_contacts_for_account(&account) {
         Ok(items) => items,
         Err(e) => {
-            send_status(tx, rt, &format!("Contacts could not be read: {}", e));
+            send_status(tx, rt, &format!("Contacts could not be read: {}.", e));
             return false;
         }
     };
@@ -2693,7 +2714,11 @@ pub fn new_pim_item(
     use crate::application::new_item;
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open, so nothing can be saved");
+        return send_refusal(
+            tx,
+            rt,
+            "The mail on this computer is not open, so nothing can be saved.",
+        );
     };
     let (accounts, default_id) = {
         let s = lock_state(state);
@@ -2711,7 +2736,7 @@ pub fn new_pim_item(
     let Some(destination) =
         new_item::destination(kind, &accounts, default_id.as_deref(), a_calendar_server)
     else {
-        return send_refusal(tx, rt, "Add an account before composing a message");
+        return send_refusal(tx, rt, "Add an account before composing a message.");
     };
 
     let account_id = destination.account_id().to_string();
@@ -2763,7 +2788,7 @@ pub fn new_pim_item(
                 tx,
                 rt,
                 &format!(
-                    "{} \"{}\" created in {}",
+                    "{} \"{}\" created in {}.",
                     kind.label(),
                     title,
                     destination.spoken(&accounts)
@@ -2779,7 +2804,7 @@ pub fn new_pim_item(
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be saved: {}",
+                "{} could not be saved: {}.",
                 kind.label(),
                 e
             )));
@@ -2813,13 +2838,16 @@ pub fn pim_command(
     let crate::application::pim_command::PimAction { command, kind, row } = action;
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let Some(row) = row else {
         // Said rather than done silently. A command that does nothing is
         // indistinguishable from a key that is broken, and the answer here is
-        // useful: choose something first.
-        return send_refusal(tx, rt, &format!("Choose a {} first", kind.label()));
+        // useful: choose something first. The kind's own word is its menu
+        // label in lower case, and every one of the six is a `Thing`, which
+        // `test_every_kind_a_new_command_makes_is_a_kind_that_can_be_chosen`
+        // holds.
+        return send_refusal(tx, rt, &nothing_chosen_named(&kind.label().to_lowercase()));
     };
     let Some((id, name, was_set)) = selected_item(state, kind, row) else {
         return send_status(tx, rt, &no_longer_there(kind, ""));
@@ -3094,7 +3122,11 @@ pub fn new_container(
     use crate::application::new_item;
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open, so nothing can be saved");
+        return send_refusal(
+            tx,
+            rt,
+            "The mail on this computer is not open, so nothing can be saved.",
+        );
     };
     let (accounts, default_id) = {
         let s = lock_state(state);
@@ -3125,7 +3157,7 @@ pub fn new_container(
     if name.is_empty() {
         // A container with no name is a row in a sidebar that reads as
         // nothing, and the only way to tell two apart would be their order.
-        return send_status(tx, rt, &format!("{} needs a name", kind.label()));
+        return send_status(tx, rt, &format!("{} needs a name.", kind.label()));
     }
 
     let account_id = destination.account_id().to_string();
@@ -3137,7 +3169,7 @@ pub fn new_container(
                 crate::application::contact_groups::made(&name)
             } else {
                 format!(
-                    "{} \"{}\" created in {}",
+                    "{} \"{}\" created in {}.",
                     kind.label(),
                     name,
                     destination.spoken(&accounts)
@@ -3159,7 +3191,7 @@ pub fn new_container(
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be saved: {}",
+                "{} could not be saved: {}.",
                 kind.label(),
                 e
             )));
@@ -3488,7 +3520,11 @@ pub fn copy_message_into(
     use crate::application::item_fields::{FieldName, Filled};
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open, so nothing can be saved");
+        return send_refusal(
+            tx,
+            rt,
+            "The mail on this computer is not open, so nothing can be saved.",
+        );
     };
     // The account being read, or this computer. Copying a message into a task
     // is somebody keeping a note of it, and that does not need a provider.
@@ -3514,7 +3550,7 @@ pub fn copy_message_into(
 
     match store_new_item(&cache, kind, &account_id, &filled, holder.as_deref()) {
         Ok(()) => {
-            send_status(tx, rt, &format!("Copied to {}: {}", kind.label(), title));
+            send_status(tx, rt, &format!("Copied to {}: {}.", kind.label(), title));
             crate::presentation::wx_app::load_module_data(
                 module_for(kind),
                 &Some(cache),
@@ -3523,7 +3559,7 @@ pub fn copy_message_into(
                 the_calendar_on_screen(state),
             );
         }
-        Err(e) => send_refusal(tx, rt, &format!("Could not copy it: {e}")),
+        Err(e) => send_refusal(tx, rt, &format!("It could not be copied: {e}.")),
     }
 }
 
@@ -3553,7 +3589,7 @@ pub fn open_draft(
         Ok(drafts) => drafts,
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Drafts could not be read: {e}"
+                "Drafts could not be read: {e}."
             )));
             return None;
         }
@@ -3561,7 +3597,7 @@ pub fn open_draft(
     if drafts.is_empty() {
         // Said, rather than opening an empty list. An empty dialog is a thing
         // to get out of; a sentence is an answer.
-        send_refusal(tx, rt, "No saved drafts");
+        send_refusal(tx, rt, "There are no saved drafts.");
         return None;
     }
 
@@ -6584,7 +6620,7 @@ pub fn delete_container(
     use crate::application::new_item;
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let account_id = {
         let s = lock_state(state);
@@ -6598,7 +6634,7 @@ pub fn delete_container(
         return send_status(
             tx,
             rt,
-            &format!("There are no {}s to delete", kind.label().to_lowercase()),
+            &format!("There are no {}s to delete.", kind.label().to_lowercase()),
         );
     }
 
@@ -6638,7 +6674,7 @@ pub fn delete_container(
 
     match remove_container(&cache, kind, &id) {
         Ok(()) => {
-            send_status(tx, rt, &format!("{} \"{}\" deleted", kind.label(), name));
+            send_status(tx, rt, &format!("{} \"{}\" deleted.", kind.label(), name));
             crate::presentation::wx_app::load_module_data(
                 module_for(kind.holds()),
                 &Some(cache),
@@ -6649,7 +6685,7 @@ pub fn delete_container(
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be deleted: {}",
+                "{} could not be deleted: {}.",
                 kind.label(),
                 e
             )));
@@ -7614,7 +7650,7 @@ pub fn rename_group(
     rt: &Arc<Runtime>,
 ) {
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let account_id = active_or_local(state);
 
@@ -7625,7 +7661,7 @@ pub fn rename_group(
         "Which group should be renamed?",
         "Rename Contact group",
     ) else {
-        return send_refusal(tx, rt, "There are no contact groups to rename");
+        return send_refusal(tx, rt, "There are no contact groups to rename.");
     };
 
     // The name it has now is already in the box, so changing one word does not
@@ -7644,7 +7680,7 @@ pub fn rename_group(
     };
     let name = name.trim().to_string();
     if name.is_empty() {
-        return send_refusal(tx, rt, "A group needs a name");
+        return send_refusal(tx, rt, "A group needs a name.");
     }
 
     match store_the_new_name(&cache, &id, &account_id, &name) {
@@ -7685,10 +7721,10 @@ pub fn move_a_contact_between_groups(
     use crate::data::message_cache::MovedBetweenGroups;
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, "Choose a contact first");
+        return send_refusal(tx, rt, &nothing_chosen(Thing::CONTACT));
     };
     let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
         return send_refusal(
@@ -7837,10 +7873,10 @@ pub fn move_a_reminder_to_another_account(
     use crate::data::message_cache::MovedToAnotherAccount;
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, "Choose a reminder first");
+        return send_refusal(tx, rt, &nothing_chosen(Thing::REMINDER));
     };
     let Some((id, name, _)) = selected_item(state, ItemKind::Reminder, row) else {
         return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, ""));
@@ -7986,10 +8022,10 @@ pub fn change_the_group_a_contact_is_in(
     use crate::application::new_item::ItemKind;
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, "Choose a contact first");
+        return send_refusal(tx, rt, &nothing_chosen(Thing::CONTACT));
     };
     let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
         return send_refusal(
@@ -8044,7 +8080,7 @@ pub fn write_to_group(
     let cache = match cache.clone() {
         Some(cache) => cache,
         None => {
-            send_refusal(tx, rt, "No storage is open");
+            send_refusal(tx, rt, "The mail on this computer is not open.");
             return None;
         }
     };

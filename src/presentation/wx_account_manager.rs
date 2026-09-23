@@ -11,6 +11,10 @@ use crate::application::allowed::{Allowed, READING_SECTION, SETTINGS_SECTION};
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
 use crate::application::mail_auth::no_sign_in_credentials;
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
+// The one wording for a refusal when nothing was chosen (#75). This window
+// said it five ways, one per button, and the button is not what somebody
+// needs to hear: the list is empty of a choice and that is the whole answer.
+use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::Accessibility;
@@ -401,7 +405,7 @@ fn run_account_manager_loop(
                                 said_and_shown(
                                     status,
                                     a11y,
-                                    &format!("Account added, authorized for {}", a.email),
+                                    &format!("Account added, authorized for {}.", a.email),
                                     Priority::Normal,
                                 );
                             }
@@ -428,13 +432,13 @@ fn run_account_manager_loop(
                                 said_and_shown(
                                     status,
                                     a11y,
-                                    &format!("Account added, but authorization failed: {}", msg),
+                                    &format!("Account added, but authorization failed: {}.", msg),
                                     Priority::High,
                                 );
                             }
                         }
                     } else {
-                        said_and_shown(status, a11y, "Account added", Priority::Normal);
+                        said_and_shown(status, a11y, "Account added.", Priority::Normal);
                     }
 
                     let mut s = state.borrow_mut();
@@ -459,7 +463,7 @@ fn run_account_manager_loop(
                                     said_and_shown(
                                         status,
                                         a11y,
-                                        "Account updated and authorized",
+                                        "Account updated and authorized.",
                                         Priority::Normal,
                                     );
                                 }
@@ -487,7 +491,7 @@ fn run_account_manager_loop(
                                         status,
                                         a11y,
                                         &format!(
-                                            "Account updated, but authorization failed: {}",
+                                            "Account updated, but authorization failed: {}.",
                                             msg
                                         ),
                                         Priority::High,
@@ -495,7 +499,7 @@ fn run_account_manager_loop(
                                 }
                             }
                         } else {
-                            said_and_shown(status, a11y, "Account updated", Priority::Normal);
+                            said_and_shown(status, a11y, "Account updated.", Priority::Normal);
                         }
                         let mut s = state.borrow_mut();
                         s.working[idx] = u;
@@ -508,7 +512,12 @@ fn run_account_manager_loop(
                         );
                     }
                 } else {
-                    said_and_shown(status, a11y, "Select an account to edit", Priority::High);
+                    said_and_shown(
+                        status,
+                        a11y,
+                        &nothing_chosen(Thing::ACCOUNT),
+                        Priority::High,
+                    );
                 }
             }
             _ => break,
@@ -554,7 +563,7 @@ pub fn reauthorize_selected(
                     said_and_shown(
                         status,
                         a11y,
-                        &format!("{name} is signed in again"),
+                        &format!("{name} is signed in again."),
                         Priority::Normal,
                     );
                 }
@@ -601,7 +610,7 @@ pub fn reauthorize_selected(
         None => said_and_shown(
             status,
             a11y,
-            "Select an account to sign in again",
+            &nothing_chosen(Thing::ACCOUNT),
             Priority::High,
         ),
     }
@@ -646,7 +655,12 @@ pub fn delete_selected(
             Priority::Normal,
         );
     } else {
-        said_and_shown(status, a11y, "Select an account to delete", Priority::High);
+        said_and_shown(
+            status,
+            a11y,
+            &nothing_chosen(Thing::ACCOUNT),
+            Priority::High,
+        );
     }
 }
 
@@ -676,7 +690,7 @@ pub fn set_default_selected(
             status,
             a11y,
             &format!(
-                "New contacts, events, tasks and notes go to {} from now on",
+                "New contacts, events, tasks and notes go to {} from now on.",
                 state.working[idx].name
             ),
             Priority::Normal,
@@ -685,7 +699,7 @@ pub fn set_default_selected(
         said_and_shown(
             status,
             a11y,
-            "Select an account to make it the default",
+            &nothing_chosen(Thing::ACCOUNT),
             Priority::High,
         );
     }
@@ -715,14 +729,14 @@ pub fn set_active_selected(
         said_and_shown(
             status,
             a11y,
-            &format!("Active: {}", state.working[idx].name),
+            &format!("Active: {}.", state.working[idx].name),
             Priority::Normal,
         );
     } else {
         said_and_shown(
             status,
             a11y,
-            "Select an account to make it active",
+            &nothing_chosen(Thing::ACCOUNT),
             Priority::High,
         );
     }
@@ -1919,7 +1933,7 @@ pub fn build_account_edit_dialog(
                     said_and_shown(
                         &auth_hint,
                         &a11y,
-                        &format!("Could not open a browser. The page is {url}"),
+                        &format!("A browser could not be opened. The page is {url}."),
                         Priority::High,
                     );
                 }
@@ -2525,7 +2539,7 @@ mod tests {
         // that cannot fetch mail, and both are the answer to the button just
         // pressed, so neither may queue behind the ordinary run of outcomes.
         let screen = the_account_manager();
-        let browser = "Could not open a browser.";
+        let browser = "A browser could not be opened.";
         let near = around(&screen, browser)
             .unwrap_or_else(|| panic!("this screen no longer says {browser:?} at all"));
         assert!(

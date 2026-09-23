@@ -148,7 +148,7 @@ fn test_the_three_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "sync: what is said",
                 &status.get_label(),
-                "Sync requested...",
+                "Syncing the calendar...",
                 &mut into,
             );
             if state.actions.len() != 1
@@ -178,7 +178,7 @@ fn test_the_three_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "edit, nothing selected: what is said",
                 &status.get_label(),
-                "Select an event to edit.",
+                "Choose an event first.",
                 &mut into,
             );
             if !state.actions.is_empty() {
@@ -201,7 +201,7 @@ fn test_the_three_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "delete, nothing selected: what is said",
                 &status.get_label(),
-                "Select an event to delete.",
+                "Choose an event first.",
                 &mut into,
             );
             if !state.actions.is_empty() {

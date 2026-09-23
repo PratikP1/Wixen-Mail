@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 238 records have arrived since and have not been through it.
+# 241 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -8490,7 +8490,7 @@ red = [
     "presentation::manager_words::tests::test_only_a_condition_list_counts_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/manager_words.rs", tests = 9 },
+    { file = "src/presentation/manager_words.rs", tests = 8 },
 ]
 
 # ── The app password hint attached to the password box's description ───────
@@ -12576,7 +12576,7 @@ before = """        if let Some(row) = s.messages.iter_mut().find(|m| m.message_
         }
     }
     let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-        "That change could not be saved on this computer, so it has been put back: {e}"
+        "That change could not be saved on this computer, so it has been put back: {e}."
     )));
     false"""
 after = """        let _ = (s.messages.len(), was);
@@ -12626,14 +12626,18 @@ tests_last_seen = [
 
 # Rewritten 2026-09-19 by 11-07: the line after the refusal reads the
 # selection off the control now; the break is the one it was, and it
-# reddened the same one test.
+# reddened the same one test. Re-anchored and re-measured 2026-09-23 by
+# 12-03, which reworded the sentence: "No message store is available" was
+# one of two wordings for the same fact and is now the one both say.
 [[guard]]
 name = "the reason a command did nothing does not go out as a status line"
 file = "src/presentation/wx_app.rs"
-before = """        return send_refusal(tx, rt, "No message store is available");
+before = """    let Some(cache_handle) = cache.as_ref() else {
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let chosen = match chosen_messages("""
-after = """        return send_status(tx, rt, "No message store is available");
+after = """    let Some(cache_handle) = cache.as_ref() else {
+        return send_status(tx, rt, "The mail on this computer is not open.");
     };
     let chosen = match chosen_messages("""
 red = [
@@ -20128,16 +20132,20 @@ tests_last_seen = [
 #
 # The line moved from `send_status` to `send_progress` on 2026-09-17 (#38),
 # when a sync request became a step; the same break, the call to the sync
-# taken out, on the new lines, measured again through `--remeasure`.
+# taken out, on the new lines, measured again through `--remeasure`. The
+# wording moved again on 2026-09-23 (12-03, #75): "Notes sync requested..."
+# used sync as a noun and said what had been asked for rather than what was
+# happening, and the step is "Syncing notes..." now. Re-anchored and
+# re-measured in the commit that moved it.
 [[guard]]
 name = "asking for a notes sync reaches the sync rather than reporting one"
 file = "src/presentation/wx_app.rs"
 before = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
                                     spawn_notes_sync(app);
                                 }'''
 after = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
                                 }'''
 red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
@@ -25443,10 +25451,10 @@ file = "src/presentation/wx_app.rs"
 suite = "how_much_message_text_stays_is_read_back_from_the_permissions_page"
 before = """                Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
                 Err(e) => {
-                    fail(format!("Cache error: {}", e));"""
+                    fail(format!("The mail on this computer could not be opened: {}.", e));"""
 after = """                Ok(cache) => cache,
                 Err(e) => {
-                    fail(format!("Cache error: {}", e));"""
+                    fail(format!("The mail on this computer could not be opened: {}.", e));"""
 red = [
     "test_the_two_workers_that_evict_are_handed_the_setting_and_nothing_else_evicts",
 ]
@@ -26891,7 +26899,10 @@ tests_last_seen = [
 # no longer reaches chosen_messages.
 #
 # Measured 2026-09-19 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. Re-anchored and
+# re-measured 2026-09-23 by 12-03, which rewrote the refusal this block ends
+# on onto `at_least_one_chosen(Thing::MESSAGE)`: the break is the same, and
+# the text it is applied to moved under it.
 [[guard]]
 name = "mark as read acts on every selected message, not the cursor row alone"
 file = "src/presentation/wx_app.rs"
@@ -26906,7 +26917,7 @@ before = """    let chosen = match chosen_messages(
         Err(why) => return send_refusal(tx, rt, &why),
     };
     if chosen.is_empty() {
-        return send_refusal(tx, rt, "No message selected");
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
     }"""
 after = """    let chosen = {
         use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
@@ -26925,7 +26936,7 @@ after = """    let chosen = {
         })
     };
     if chosen.is_empty() {
-        return send_refusal(tx, rt, "No message selected");
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
     }"""
 red = [
     "test_star_mark_as_read_and_the_labels_act_on_the_selection_with_one_sentence",
@@ -29191,4 +29202,81 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_separate_window_is_its_own_process.rs", tests = 7 },
+]
+
+# One word dropped from the list a status sentence may not use, which is the
+# shape somebody reaches for on the day a sentence they wrote is refused and
+# the word looks harmless in isolation. #75's own example was "Flushing
+# outbox queue...", and the list is what keeps it from coming back.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the library.
+[[guard]]
+name = "a word from inside this program is refused in a sentence a person hears"
+file = "src/application/status_sentences.rs"
+before = """    NotAPersonsWord {
+        stem: "queu",
+        whole: "queue",
+        instead: "the Outbox, or waiting to be sent",
+    },
+"""
+after = ""
+red = [
+    "application::status_sentences::tests::test_no_sentence_uses_a_word_from_inside_this_program",
+    "application::status_sentences::tests::test_the_reading_knows_a_word_from_a_word_that_merely_contains_it",
+]
+tests_last_seen = [
+    { file = "src/application/status_sentences.rs", tests = 12 },
+]
+
+# A sixth wording for nothing chosen, put back at the Delete arm. Six
+# windows worded that one event six ways before #75, and the way it happened
+# is one arm at a time: somebody writing a refusal writes the sentence rather
+# than looking for the one that exists.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "no window words a refusal for nothing chosen of its own"
+file = "src/presentation/wx_app.rs"
+suite = "every_status_sentence_has_one_shape"
+before = """                                return send_refusal(
+                                    &ui_tx,
+                                    &runtime,
+                                    &at_least_one_chosen(Thing::MESSAGE),
+                                );"""
+after = """                                return send_refusal(
+                                    &ui_tx,
+                                    &runtime,
+                                    "No message selected to delete",
+                                );"""
+red = [
+    "test_no_status_call_words_a_refusal_for_nothing_chosen_of_its_own",
+    "test_every_sentence_written_at_a_status_call_reads_to_the_shape",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/every_status_sentence_has_one_shape.rs", tests = 10 },
+]
+
+# A word from inside a mail protocol, in a sentence built where no status
+# call can see it. The watch's three state lines are the case #75 was raised
+# about: phase 10 put them on the bar, so the bar is read on its own more
+# than it was, and a sentence built in the application layer reaches it
+# without passing a literal anywhere.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a sentence the application layer builds is held to the words a person uses"
+file = "src/application/checking_on_a_schedule.rs"
+suite = "every_status_sentence_has_one_shape"
+before = """    format!("{whose}{what_is_happening}Checking every {how_often}.")"""
+after = """    format!("{whose}{what_is_happening}Checking the endpoint every {how_often}.")"""
+red = [
+    "test_the_sentences_the_application_layer_builds_read_to_the_shape",
+]
+tests_last_seen = [
+    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+    { file = "tests/every_status_sentence_has_one_shape.rs", tests = 10 },
 ]

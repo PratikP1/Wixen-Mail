@@ -8,6 +8,47 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Every sentence the status bar shows was read in one pass and rewritten to one shape.**
+  The tester on 2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` (#75): the bar is read on
+  its own now that a check's steps and the watch's state lines are written there, and read on
+  its own it was the same refusal worded four ways, trailing punctuation used and not used,
+  "Flushing outbox queue..." and "No cache available for export" where a person's word would
+  do, and steps that said something was happening and not to what. Since 2026-09-23 every
+  sentence on the bar is written to one shape: what happened, to what, and what to do next
+  when there is something to do, in a person's words, with one style of ending. A sentence
+  that has finished ends in a full stop or a question mark; a step that has not ends in an
+  ellipsis and names what it is happening to, so "Loading Inbox..." and never "Loading...".
+  The reading listed 441 places in the program that write to the bar. 205 of them write a
+  sentence where they stand, and of those it refused 120 on the nine kinds of call the issue
+  counted and 57 more on a tenth it did not; all 177 are rewritten.
+  Pressing a command with nothing chosen says one sentence, whatever the window and whatever
+  the button. It used to be six: "Choose a message first", "No message selected", "No message
+  selected to delete", "Nothing is selected in the message list", "Select an account to edit"
+  and "Choose the block you want to take off first, then press Unblock". It is "Choose a
+  message first." now, or "Choose an account first.", "Choose an event first.", "Choose a
+  contact first." and the same sentence for each of the fifteen kinds of thing the program
+  asks you to choose; a command that acts on every row you have chosen says "Choose at least
+  one message first." instead, because asking for one would be wrong where any number will
+  do.
+  The words from inside the program are gone. "Flushing outbox queue..." is "Sending the mail
+  in the Outbox...", "No cache available for export" is "The mail on this computer is not
+  open, so there is nothing to write out.", "Queued message sent" is "The message was sent
+  from the Outbox.", "Cache error: ..." is "The mail on this computer could not be opened:
+  ...", and "No storage is open" and "No message store is available", which were two wordings
+  for one fact, are both "The mail on this computer is not open." A sync is named by what is
+  happening rather than by what was asked for: "Contacts sync requested..." is "Syncing
+  contacts...", and "Calendar \"Work\" added. It fills in on the next sync." is "Its events
+  fill in the next time it syncs."
+  Nothing changed which channel a sentence goes out on, so what is spoken under each answer to
+  "While mail and the other modules are fetched, say:" is what it was.
+  A reading over the whole tree now holds every new sentence to the words and the endings it
+  can judge, and names the file and the line of any that misses. It reads a sentence written
+  where it is shown; a sentence built somewhere else and handed over by name is beyond it, and
+  it prints those with their file and line rather than passing over them.
+  Known limitations: nobody has heard the bar under the new wording, which is the thing this
+  was for; and 236 of the 441 places that write to it hand over a sentence built somewhere
+  else, which the reading cannot hold, so those keep whatever shape they had unless this pass
+  reached them by hand.
 - **Pictures a message points at are shown by default, except tracking pixels and the ones
   the sender marked decorative; a picture nobody described is passed over, or called what
   you choose.** The tester on 2026-09-15, on build `1.0.0-alpha.1` (#28): "none of the
@@ -226,7 +267,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   What each answer does. A step on the way, Connecting, Checking a folder, Loading a folder, a
   sync requested, a chunk downloaded, is shown on the status bar under every answer and spoken
   only under Say every step. What arrived is said once when a check ends, folder by folder with
-  its count, "Inbox, 3 new messages; Work, 1 new message", and never when nothing arrived; the
+  its count, "Inbox, 3 new messages; Work, 1 new message." since 2026-09-23 and without the
+  full stop before that, and never when nothing arrived; the
   contacts, calendar, tasks and notes syncs say their counts the same way, through the Sync
   finished event, so the tone for it follows its own row above. An error is said whatever you
   chose. Under Errors only a check that found mail still plays the sound for new mail and says
@@ -235,7 +277,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   server said a folder changed, which was before the folder was read and whether or not
   anything arrived; and Settings saved, Draft saved, Saved to, Refreshed and the other answers
   to a key are said above the run of a check rather than behind it, which is why "Settings
-  saved" could not be heard during one.
+  saved" could not be heard during one. Those four end in a full stop since 2026-09-23,
+  "Settings saved." and "Draft saved.", when every sentence on the bar was written to one
+  shape.
   Known limitations: nobody has heard any of this. Which sentence is a step and which a result
   is a judgement by ear, and a line sorted wrongly is silent under the default or spoken under
   it; the listening page asks for each of the three answers on a check of many folders. The
@@ -5480,7 +5524,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 - **When a key does nothing, the reason is no longer said as a progress note.**
   Twenty-eight of these went to the status line: "Choose a message first", "Add
   an account first", "No saved drafts", why a move was refused, why a copy
-  failed. Progress notes are read out below everything else and, more to the
+  failed. Those are the wordings of the day; the first two end in a full stop
+  since 2026-09-23 and the third is "There are no saved drafts.", when every
+  sentence on the bar was written to one shape. Progress notes are read out
+  below everything else and, more to the
   point, a newer one replaces an older one that has not been spoken yet, so
   during a sync the sentence explaining why nothing happened could be dropped
   before you heard it. They now go out the way every other refusal does: on
@@ -7973,7 +8020,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 - **Fixed: the Sync button in the Calendar window said a sync had started and
   started nothing.** It announced "Calendar sync requested" and that was the
-  whole of it. It now starts the same sync the Calendar menu entry starts.
+  whole of it. It now starts the same sync the Calendar menu entry starts, and
+  says "Syncing the calendar..." since 2026-09-23, when every sentence on the
+  bar was written to one shape.
 
   Known limitation, unchanged: calendar syncing has never run against a real
   account.

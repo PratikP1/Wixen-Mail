@@ -68,8 +68,16 @@ pub const UNBLOCK: &str = "&Unblock";
 pub const CLOSE_THE_LIST: &str = "&Close";
 
 /// What to say when Unblock is pressed with nothing chosen.
-pub const NOTHING_IS_CHOSEN: &str =
-    "Choose the block you want to take off first, then press Unblock.";
+///
+/// The sentence every window says now (#75). This one used to name the
+/// button as well, "Choose the block you want to take off first, then press
+/// Unblock", which is a second clause telling somebody to press the button
+/// they have just pressed, and it was one of six wordings for one event.
+pub fn nothing_is_chosen() -> String {
+    crate::application::status_sentences::nothing_chosen(
+        crate::application::status_sentences::Thing::BLOCKED_SENDER,
+    )
+}
 
 /// The words a label says, without the marker that makes a letter its key.
 ///
@@ -209,7 +217,7 @@ pub fn show_who_is_blocked(
             let chosen =
                 the_row_chosen(&showing.borrow(), list.get_first_selected_item().into()).cloned();
             let Some(chosen) = chosen else {
-                said_and_shown(&status, &a11y, NOTHING_IS_CHOSEN, Priority::High);
+                said_and_shown(&status, &a11y, &nothing_is_chosen(), Priority::High);
                 return;
             };
             // Asked against the rules as they are now rather than by the

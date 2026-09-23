@@ -203,7 +203,7 @@ pub fn delete_selected<T: Clone>(
         said_and_shown(
             status_text,
             a11y,
-            &manager_words::nothing_selected(kind, "delete"),
+            &manager_words::nothing_selected(kind),
             Priority::High,
         );
     }
@@ -384,7 +384,7 @@ fn run_manager_loop<T: Clone + 'static>(
                     said_and_shown(
                         status_text,
                         &a11y,
-                        &manager_words::nothing_selected(kind, "edit"),
+                        &manager_words::nothing_selected(kind),
                         Priority::High,
                     );
                 }
@@ -1027,7 +1027,7 @@ pub fn delete_selected_contact(
         said_and_shown(
             status,
             a11y,
-            &manager_words::nothing_selected(manager_words::CONTACT, "delete"),
+            &manager_words::nothing_selected(manager_words::CONTACT),
             Priority::High,
         );
     }
@@ -1105,7 +1105,7 @@ pub fn show_contact_manager_dialog(
                     said_and_shown(
                         &status,
                         a11y,
-                        &manager_words::nothing_selected(manager_words::CONTACT, "edit"),
+                        &manager_words::nothing_selected(manager_words::CONTACT),
                         Priority::High,
                     );
                 }
@@ -1834,7 +1834,7 @@ fn remove_from_a_contact_list<T: Clone>(
         said_and_shown(
             problem_line,
             a11y,
-            &manager_words::nothing_selected(what, "remove"),
+            &manager_words::nothing_selected(what),
             Priority::High,
         );
         return;

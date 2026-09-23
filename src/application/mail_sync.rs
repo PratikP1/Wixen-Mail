@@ -193,7 +193,10 @@ pub fn what_arrived(folders: &[(String, usize)]) -> Option<String> {
     if clauses.is_empty() {
         None
     } else {
-        Some(clauses.join("; "))
+        // The full stop is the shape every sentence on the status bar ends in
+        // (#75, 12-03). Without it this one line was the only result a check
+        // said that did not sound finished.
+        Some(format!("{}.", clauses.join("; ")))
     }
 }
 
@@ -2255,7 +2258,7 @@ pub(crate) mod tests {
                 ("Work".to_string(), 1),
             ])
             .as_deref(),
-            Some("Inbox, 3 new messages; Work, 1 new message")
+            Some("Inbox, 3 new messages; Work, 1 new message.")
         );
     }
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 536
+open_count: 538
 waived_count: 0
 fixed_count: 37
-total_count: 573
-last_updated: 2026-09-22T20:27:00.000Z
+total_count: 575
+last_updated: 2026-09-23T09:05:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -588,6 +588,8 @@ last_updated: 2026-09-22T20:27:00.000Z
 | 571 | 12 | unrun-verify | src/presentation/wx_settings.rs |  | 12-02.1: one guard record does not return when broken, and no machine has measured it since 2026-09-17. "the settings dialog is frozen while its pages are built" ended shard 40 of run 35520204784, ended run 35726150488 which was dispatched on its own to finish that shard, and was given up on here at 1,800 s on 2026-09-22 with the kill taking the tree and the guarded file put back. The hang is itself evidence about the freeze rather than a fault in the record: an unfrozen build repaints per control, and the measurement of 2026-09-16 put the typeface list alone at about a second unfrozen against a tenth of that frozen, over one list of the dialog. What it would take to measure it: a way to run tests/the_settings_dialog_opens_in with the break in place and a bound on the repainting, so the suite answers rather than never returning. Do not lower the record and do not guess a verdict | open |  | 2026-09-22T20:27:00.000Z |  |
 | 572 | 12 | deviation | src/service/onenote_page.rs | 226 | 12-02.1: without_the_wrapping_divs is redundant and in one shape harmful, and the guard over it was retired rather than rewritten because a test asserting what it now does would write a defect down as a rule. It strips every div from a OneNote page body before long_text reads it, which was load-bearing until d470a105 split the shared p and div arm: a div holding a block child is now walked as blocks. Measured on 2026-09-22 by putting six page shapes through from_markup_to_edit twice, once stripped and once kept. Identical for every shape holding a block. Where a div holds only a line of words the stripping cuts the line at every inline element and takes a link address with it: div a link here read "a" "link" "here" as three paragraphs stripped, against "a [link](https://x) here" kept. That is a loss on a round trip through the note editor, which is the one thing from_markup_to_edit exists to prevent. What is owed: somebody deciding whether the stripping comes out, and a test written for whichever answer | open |  | 2026-09-22T20:27:00.000Z |  |
 | 573 | 12 | deviation | .github/workflows/guards.yml |  | 12-02.1: one test fails on GitHub's runners under breaks that have nothing to do with it, and the guard sweep read that as five short records. service::spellcheck::tests::test_the_source_named_without_a_checker_is_the_one_a_checker_built_would_report appeared as the single unnamed red test for five records of run 35520204784, on shards 2, 19, 23, 27 and 44, under breaks about a task read writing back a deletion, an Outlook range carrying its start date, an unwanted-software hash being named, switching the view back, and a row size on a message with no text here. Nothing couples those to a spelling source. All five records were measured here on 2026-09-22 and all five agree with the tree exactly as they stand. What is owed: why that test fails on a runner and why the per-suite pre-read did not subtract it, since a failure the pre-read sees is taken off every record. Until that is known, a sweep's short records need reading against this name before any of them is believed | open |  | 2026-09-22T20:27:00.000Z |  |
+| 574 | 12 | unrun-verify | src/application/status_sentences.rs |  | 12-03: nobody has read the status bar by ear under the new wording, which is the whole of what #75 asked for. What a reading proves is the words and the endings of every sentence written where it is shown, that no window words a refusal for nothing chosen of its own, and that no line changed which channel it goes out on. What only the tester settles: the bar read on its own with NVDA and End; the watch's three state lines and the download's steps one after another, to hear whether a step and an answer are still told apart now that both may end in an ellipsis; a refusal heard as one sentence in two different windows, so that Choose an account first. in the account manager and Choose a message first. in the message list read as the same event; and whether The mail on this computer is not open. is clearer by ear than the two wordings it replaced, No storage is open and No message store is available | open |  | 2026-09-23T09:05:00.000Z |  |
+| 575 | 12 | todo | tests/every_status_sentence_has_one_shape.rs |  | 12-03: 236 of the 441 places that write to the status bar hand over a sentence built somewhere else and bound to a local name, and no reading over the call can see those. The census prints every one with its file and line on the passing path, so the list is a work list rather than a silence, and the 205 that write a sentence where they stand are held to the shape. What the pass did reach by hand beyond those: the four builders the plan named, manager_words, wx_blocked_senders, and every Err and ErrorOccurred string that said the same fact as a sentence it was changing. What is owed: either a reading that follows a binding to the function that built it, which is a second hop over source text and fallible, or the builders read one at a time over fixtures the way checking_on_a_schedule, mail_sync and trying_again already are. Until then a sentence added to one of those builders is held by nothing | open |  | 2026-09-23T09:05:00.000Z |  |
 
 ````json
 [
@@ -7465,6 +7467,30 @@ last_updated: 2026-09-22T20:27:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-22T20:27:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 574,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/application/status_sentences.rs",
+    "line": null,
+    "description": "12-03: nobody has read the status bar by ear under the new wording, which is the whole of what #75 asked for. What a reading proves is the words and the endings of every sentence written where it is shown, that no window words a refusal for nothing chosen of its own, and that no line changed which channel it goes out on. What only the tester settles: the bar read on its own with NVDA and End; the watch's three state lines and the download's steps one after another, to hear whether a step and an answer are still told apart now that both may end in an ellipsis; a refusal heard as one sentence in two different windows, so that Choose an account first. in the account manager and Choose a message first. in the message list read as the same event; and whether The mail on this computer is not open. is clearer by ear than the two wordings it replaced, No storage is open and No message store is available",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T09:05:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 575,
+    "kind": "todo",
+    "phase": "12",
+    "file": "tests/every_status_sentence_has_one_shape.rs",
+    "line": null,
+    "description": "12-03: 236 of the 441 places that write to the status bar hand over a sentence built somewhere else and bound to a local name, and no reading over the call can see those. The census prints every one with its file and line on the passing path, so the list is a work list rather than a silence, and the 205 that write a sentence where they stand are held to the shape. What the pass did reach by hand beyond those: the four builders the plan named, manager_words, wx_blocked_senders, and every Err and ErrorOccurred string that said the same fact as a sentence it was changing. What is owed: either a reading that follows a binding to the function that built it, which is a second hop over source text and fallible, or the builders read one at a time over fixtures the way checking_on_a_schedule, mail_sync and trying_again already are. Until then a sentence added to one of those builders is held by nothing",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T09:05:00.000Z",
     "resolved_at": null
   }
 ]

@@ -6238,7 +6238,7 @@ fn test_the_reading_of_what_the_windows_say_can_tell_the_two_apart() {
     );
     assert!(
         said.iter()
-            .any(|(_, _, literal)| literal == "No storage is open"),
+            .any(|(_, _, literal)| literal == "The mail on this computer is not open."),
         "a sentence the windows really do say was not read"
     );
     assert!(
