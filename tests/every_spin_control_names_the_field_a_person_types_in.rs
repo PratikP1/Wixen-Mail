@@ -18,7 +18,13 @@
 //! name, description and child count, the field's role, name, description and
 //! value. The field is read over UI Automation as well, through
 //! `IUIAutomation::ElementFromHandle`, because Narrator reads that channel and
-//! a name on one channel only is a name somebody does not hear.
+//! a name on one channel only is a name somebody does not hear. And every
+//! field is read a second time from another process, this binary started
+//! again as a child, because a screen reader reads from a process of its own
+//! and a name visible only inside the program is heard by nobody. That half
+//! was added on 2026-09-23 after the pull request's Accessibility scan, which
+//! reads from outside the program, found the fields named by their labels or
+//! not at all while every reading here was green.
 //!
 //! The whole object is read, not only the name. 12-04 measured a naming object
 //! that erased a native link's only child while the name check stayed green,
@@ -165,7 +171,14 @@ unsafe extern "system" {
     fn GetParent(hwnd: isize) -> isize;
     fn IsWindowEnabled(hwnd: isize) -> i32;
     fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn PeekMessageW(message: *mut [u8; 48], hwnd: isize, first: u32, last: u32, remove: u32)
+    -> i32;
+    fn TranslateMessage(message: *const [u8; 48]) -> i32;
+    fn DispatchMessageW(message: *const [u8; 48]) -> isize;
 }
+
+/// `PeekMessageW` takes the message off the queue (winuser.h).
+const PM_REMOVE: u32 = 1;
 
 #[link(name = "oleacc")]
 unsafe extern "system" {
@@ -327,6 +340,10 @@ struct Spinner {
     field: Msaa,
     field_on_uia: Result<String, String>,
     range: (i32, i32),
+    field_hwnd: isize,
+    /// The field's MSAA and UI Automation names as another process reads
+    /// them, which is where a screen reader reads from.
+    field_elsewhere: Result<(String, String), String>,
 }
 
 impl Spinner {
@@ -358,6 +375,8 @@ fn read_the_spinner(window: &'static str, arrows: isize) -> Result<Spinner, Stri
         field: msaa_of(buddy).map_err(|why| format!("{window}, the field: {why}"))?,
         field_on_uia: uia_name_of(buddy),
         range: (least, most),
+        field_hwnd: buddy,
+        field_elsewhere: Err("not read from another process".to_string()),
     })
 }
 
@@ -430,13 +449,142 @@ fn text_of(hwnd: isize) -> String {
 /// fault this reading reports. wxWidgets registers the tab control under a
 /// class of its own, `_wx_SysTabCtl32`, measured here on 2026-09-23.
 fn the_spinners_under(window: &'static str, root: isize) -> Result<Vec<Spinner>, String> {
-    descendants_of(root)
+    let mut spinners = descendants_of(root)
         .into_iter()
         .filter(|hwnd| class_name(*hwnd) == "msctls_updown32")
         // SAFETY: a live window handle.
         .filter(|hwnd| class_name(unsafe { GetParent(*hwnd) }) != "_wx_SysTabCtl32")
         .map(|arrows| read_the_spinner(window, arrows))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    let heard = read_from_another_process(spinners.iter().map(|spinner| spinner.field_hwnd));
+    for spinner in &mut spinners {
+        spinner.field_elsewhere = match &heard {
+            Ok(names) => names
+                .get(&spinner.field_hwnd)
+                .cloned()
+                .ok_or_else(|| "the other process printed nothing for this field".to_string()),
+            Err(why) => Err(why.clone()),
+        };
+    }
+    Ok(spinners)
+}
+
+// ── Reading from another process, the way a screen reader does ─────────────
+//
+// NVDA and Narrator read this program from a process of their own. A name the
+// program writes can be visible to a reader inside the program and to nobody
+// else, so the fields are read a second time by this same test binary started
+// again as a child, on the one test below that only a parent starts, while
+// the parent keeps the windows alive and answers their messages.
+
+/// The environment variable that hands the child the fields to read.
+const THE_FIELDS_TO_READ: &str = "WIXEN_SPIN_FIELDS_TO_READ";
+/// The child's one test, which reads and prints and asserts nothing.
+const THE_OTHER_PROCESS: &str = "the_other_process_reads_each_field_it_is_handed";
+/// The line the child prints per field: the handle, the MSAA name and the UI
+/// Automation name, separated by tabs.
+const A_FIELD_HEARD: &str = "FIELD\t";
+/// How long the parent answers messages before it gives up on the child.
+const AT_MOST_FOR_THE_OTHER_PROCESS: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The MSAA and UI Automation names another process reads for each field.
+fn read_from_another_process(
+    fields: impl Iterator<Item = isize>,
+) -> Result<std::collections::HashMap<isize, (String, String)>, String> {
+    let list: Vec<String> = fields.map(|field| field.to_string()).collect();
+    let me = std::env::current_exe().map_err(|why| format!("current_exe: {why}"))?;
+    let mut child = std::process::Command::new(me)
+        .args([
+            "--ignored",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+            THE_OTHER_PROCESS,
+        ])
+        .env(THE_FIELDS_TO_READ, list.join(","))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|why| format!("the other process could not start: {why}"))?;
+    // The child's reads are messages to these windows, so they are answered
+    // here while it runs; a parent that only waited would never let it finish.
+    let deadline = std::time::Instant::now() + AT_MOST_FOR_THE_OTHER_PROCESS;
+    let finished = loop {
+        answer_waiting_messages();
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if std::time::Instant::now() > deadline => {
+                let _ = child.kill();
+                break Err("the other process was still reading after a minute".to_string());
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(why) => break Err(format!("waiting for the other process: {why}")),
+        }
+    }?;
+    let mut printed = String::new();
+    if let Some(mut out) = child.stdout.take() {
+        use std::io::Read;
+        out.read_to_string(&mut printed)
+            .map_err(|why| format!("reading the other process: {why}"))?;
+    }
+    if !finished.success() || !printed.contains("test result: ok. 1 passed") {
+        return Err(format!(
+            "the other process ran no reading ({finished}):\n{printed}"
+        ));
+    }
+    Ok(printed
+        .lines()
+        .filter_map(|line| {
+            line.find(A_FIELD_HEARD)
+                .map(|at| &line[at + A_FIELD_HEARD.len()..])
+        })
+        .filter_map(|heard| {
+            let mut parts = heard.split('\t');
+            let field = parts.next()?.parse::<isize>().ok()?;
+            Some((
+                field,
+                (parts.next()?.to_string(), parts.next()?.to_string()),
+            ))
+        })
+        .collect())
+}
+
+/// Dispatch every message waiting for this thread's windows.
+fn answer_waiting_messages() {
+    let mut message = [0u8; 48];
+    // SAFETY: the buffer is at least as large as a MSG on 64-bit Windows.
+    unsafe {
+        while PeekMessageW(&mut message, 0, 0, 0, PM_REMOVE) != 0 {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+}
+
+/// The child's half: read each field it is handed, in its own process, and
+/// print what each channel answered. Started only by the parent above, which
+/// holds the windows; run on its own it is handed nothing and prints nothing.
+#[test]
+#[ignore = "started by the reading above, in a process of its own"]
+fn the_other_process_reads_each_field_it_is_handed() {
+    let Ok(list) = std::env::var(THE_FIELDS_TO_READ) else {
+        return;
+    };
+    // SAFETY: this thread is the child's own and nothing else uses COM on it.
+    unsafe {
+        let _ = windows::Win32::System::Com::CoInitializeEx(
+            None,
+            windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+        );
+    }
+    for field in list
+        .split(',')
+        .filter_map(|field| field.parse::<isize>().ok())
+    {
+        let on_msaa = msaa_of(field).map_or_else(|why| format!("({why})"), |read| read.name);
+        let on_uia = uia_name_of(field).unwrap_or_else(|why| format!("({why})"));
+        println!("{A_FIELD_HEARD}{field}\t{on_msaa}\t{on_uia}");
+    }
 }
 
 fn date_settings() -> DateSettings {
@@ -810,6 +958,28 @@ fn test_every_typing_field_carries_the_same_name_on_ui_automation() {
         })
         .collect();
     complain("the typing fields over UI Automation", &wrong);
+}
+
+#[test]
+fn test_every_typing_field_carries_its_name_to_a_reader_in_another_process() {
+    // NVDA and Narrator read from a process of their own. A name visible only
+    // inside the program is a name nobody hears.
+    let wrong: Vec<String> = the_harvest()
+        .spinners
+        .iter()
+        .filter(|spinner| {
+            spinner.field_elsewhere
+                != Ok((spinner.arrows.name.clone(), spinner.arrows.name.clone()))
+        })
+        .map(|spinner| {
+            format!(
+                "{}: another process reads MSAA and UI Automation as {:?}",
+                spinner.called(),
+                spinner.field_elsewhere
+            )
+        })
+        .collect();
+    complain("the typing fields read from another process", &wrong);
 }
 
 #[test]

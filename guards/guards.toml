@@ -29716,11 +29716,12 @@ red = [
     "test_every_spin_control_in_the_table_asker_names_its_typing_field",
     "test_every_spin_control_in_send_later_names_its_typing_field",
     "test_every_typing_field_carries_the_same_name_on_ui_automation",
+    "test_every_typing_field_carries_its_name_to_a_reader_in_another_process",
     "test_a_description_on_the_arrows_is_carried_by_the_typing_field_too",
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/names.rs", tests = 12 },
-    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 14 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 
 # ── One spin control named the old way is found (EDIT-01, ledger 410) ──────
@@ -29738,10 +29739,11 @@ after = '''            set_accessible_name(&fields.minute, &format!("{name} Minu
 red = [
     "test_every_spin_control_in_the_event_form_names_its_typing_field",
     "test_every_typing_field_carries_the_same_name_on_ui_automation",
+    "test_every_typing_field_carries_its_name_to_a_reader_in_another_process",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 14 },
-    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 14 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 
 # ── The check interval holds its own bounds (EDIT-01, #73) ──────────────────
@@ -29764,7 +29766,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
-    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 14 },
+    { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 
 # ── Never stays Never through the choice and its seconds (EDIT-01, T-12-21) ─
