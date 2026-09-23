@@ -1300,16 +1300,20 @@ a red NVDA run.
      address on both channels, the kind chosen by a reading over MSAA, each opening the
      browser through the sanitiser; carries a Send Feedback button only from the commit that
      adds the dialog it opens. (#78; ALPHA-01)
-  5. Help, Send Feedback opens one dialog: a category first with six choices, the questions
-     that fit it, what to include as check boxes each saying what it sends with the log
-     excerpt ticked by default and redacted, an optional reply address, and the exact
-     subject and body shown before Send; Send puts the report in the Outbox as a message from
-     the default account to support@wixen.app through the one queued-row path and the one
-     gate every message takes, with a copy kept; no account or sending forbidden is said with
-     the clipboard and the GitHub issue page offered instead; a security concern is never
-     sent from the program and the private reporting page is offered; the scan walks the
-     dialog; the privacy page's table gains the address. (#64, #71 third point, #78 point 4;
-     ALPHA-02)
+  5. Help, Send Feedback opens one dialog on `Ctrl+Shift+F`: a category first with six
+     choices, the questions that fit it, what to include as check boxes each saying what it
+     sends with the log excerpt ticked by default and redacted, but for a security concern,
+     an optional reply address, and the exact subject and body shown before Send; Send puts
+     the report in the Outbox as a message from the default account to support@wixen.app, or
+     for a security concern to an address of its own, through the one queued-row path and
+     the one gate every message takes, with a copy kept; no account or sending forbidden is
+     said with the clipboard and the GitHub issue page offered instead; the private
+     reporting page is offered beside Send for a security concern; the scan walks the
+     dialog; the privacy page's table gains both addresses. (#64, #71 third point, #78 point
+     4; ALPHA-02) Amended 2026-09-23 on Pratik's answers to the phase README's Decisions for
+     Pratik 3 and 4; until then this read "a security concern is never sent from the program
+     and the private reporting page is offered". He did not name the security address, and
+     `security@wixen.app` is the planner's assumption for him to correct (12-05, premise 5).
   6. Every number in the account editor and in Settings is a spin control with its range as
      the control's own, the check interval first at 1 to 60; every spin control's typing
      field has the same name as its arrows on both channels, through the annotation service,
@@ -1385,7 +1389,7 @@ is not a publish.
 - [x] 12-03.1-PLAN.md: The runner's verdict on the push of `26beb051` and `6cb8f17c`: the formatted window gives the keyboard to the page when it comes back with it on its frame or nowhere, red first by wx's own path to the frame; the link case records which path the runner took; a reading in the Rust gate over every word an NVDA case waits for, then the calendar and filter cases waiting for what the program says (runs 35839692317 and 35839954840; FOUND-20 reopened, FOUND-22)
 - [x] 12-03.2-PLAN.md: The commit gate cheaper and the full gate once a phase: every hook run names its mode and times its stages; the keyring race of ledger 374 closed, red first in fresh processes; the shell suites only when what they read changes; the scoped integration targets in one cargo call; a file the program compiles in reaching the tests of the code that compiles it; the guard runner's pre-read kept for a tree it has read; a merge into `main` running what the branch's diff earns and the whole suite once, in 12-12 (FOUND-23; ledger 373 and 374)
 - [ ] 12-04-PLAN.md: The About dialog names its owners and its licence in step with LICENSE, keeps the full version, and offers its two pages as named controls (#78, ALPHA-01)
-- [ ] 12-05-PLAN.md: Send Feedback from Help and from About: the categories, the questions, the includes with the redacted log excerpt ticked by default, the payload shown before Send, an email from the default account to the support address through the one path, the clipboard and GitHub doors, security private only (#64, #71, #78; ALPHA-02)
+- [ ] 12-05-PLAN.md: Send Feedback from Help and from About: the categories, the questions, the includes with the redacted log excerpt ticked by default, the payload shown before Send, an email from the default account to the support address through the one path, the clipboard and GitHub doors, security to an address of its own through the same path with the private reporting page beside it (#64, #71, #78; ALPHA-02)
 - [ ] 12-06-PLAN.md: Every spin control's typing field named through the annotation service on every site, the check interval and the three Settings numbers as spin controls, Mark read after as a choice and a seconds spin (#73, #35; EDIT-01)
 - [ ] 12-07-PLAN.md: The contact editor's prefix, middle name and suffix through the store and three providers, the fills each way, the birthday as a date with a no-year position, the address and number checks, the Favourite box re-read (#40; EDIT-02)
 - [ ] 12-08-PLAN.md: Event, task and reminder times in blocks from a setting, Up and Down by the block and Left and Right by a minute, a new item on the next boundary with its end following the start (#41; EDIT-03)

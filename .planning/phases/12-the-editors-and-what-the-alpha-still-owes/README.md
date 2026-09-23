@@ -115,8 +115,8 @@ carry `version 2` on his word and belong to no phase here.
 | 12-03 | 4 | 3 | #75 | closes | 11-13 moved: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after 12-02 so its two sentences are in the pass; LIST-11 ticked |
 | 12-03.1 | 5 | 1, reopened | none; NVDA runs 35839692317 and 35839954840 | reopens FOUND-20's product half and closes it on the tree's side; FOUND-22 | inserted 2026-09-23: why 12-01's sent activation gave the keyboard back and the runner's real one left it on the frame, read from wx's source (the frame saved as its own last focused child is the one path that ends there); the formatted window gives the keyboard to the page when it comes back with it on the frame or nowhere, red first on a built window by that path; the link case records the window's own thread and the fix's log line, so the next run says which path; a reading in the Rust gate over every word an NVDA case waits for, red on four stale strings, then the calendar and filter cases corrected |
 | 12-03.2 | 6 | none; the executor-time measurement of 2026-09-23 | none | FOUND-23; ledger 374 fixed, 373 closed as built on Pratik's answer to decision 16 of 2026-09-23 (it read "noted and left for decision 16" until then) | inserted 2026-09-23: every hook run names its mode and prints each stage's seconds; the keyring race taken red in fresh processes and closed by one guarded opener; the shell suites only when what they read changes, each suite only for its own inputs on his answer to decision 15; the scoped integration targets in one cargo call; a file the program compiles in, Rust or not, reaching the tests of the code that compiles it, with no shell case reading the real `src/`; the guard runner's pre-read kept for a tree it has read; then a merge into `main` running what the branch's diff earns, the document-reading targets too when it holds a document, from one list held once in `check.sh` that the three targets asking about it read, and the whole suite once a phase, in 12-12, with `CLAUDE.md` saying what that risks and a rule that every phase's closing plan runs it |
-| 12-04 | 7 | 4 (but its Send Feedback clause) | #78 | advances to its last point | the copyright line naming Pratik Patel and the Wixen Project with other contributors under MIT, LICENSE in step and held by a reading; the full version kept; wixen.app and wixen.app/support as controls named by their address, the kind chosen by a reading over MSAA; no dead button |
-| 12-05 | 8 | 5, and 4's last clause | #64, #71 third point, #78 point 4 | closes all three | Help, Send Feedback: six categories, the questions that fit, the includes with the log excerpt ticked by default and redacted, the reply address, the exact payload shown before Send; an email from the default account to support@wixen.app through the one queued-row path and the one gate; no account or forbidden said with the clipboard and the GitHub page as doors; security to the private page only; About's button; the scan target; the privacy page's row |
+| 12-04 | 7 | 4 (but its Send Feedback clause) | #78 | advances to its last point | the copyright line naming Pratik Patel and the Wixen Project with other contributors under MIT, LICENSE in step and held by a reading; the full version kept; wixen.app and wixen.app/support as controls named by their address, the kind chosen by a reading over MSAA; no dead button; neither the dialog nor the guide says whether the site is up (Pratik, 2026-09-23) |
+| 12-05 | 8 | 5, and 4's last clause | #64, #71 third point, #78 point 4 | closes all three | Help, Send Feedback on `Ctrl+Shift+F`: six categories, the questions that fit, the includes with the log excerpt ticked by default and redacted, the reply address, the exact payload shown before Send; an email from the default account to support@wixen.app through the one queued-row path and the one gate; no account or forbidden said with the clipboard and the GitHub page as doors; since 2026-09-23 security through the same path and gate to an address of its own, `security@wixen.app` (the planner's name for it, Pratik's to correct), its log excerpt unticked and its subject bare, with the private reporting page beside Send (it read "security to the private page only" until then); the alpha page saying a report bounces until public testing; About's button; the scan target; the privacy page's two rows |
 | 12-06 | 9 | 6 | #73, #35 | closes both; twelve ledger entries fixed | `name_the_spin_control` naming the typing field through the annotation service on every spin control in the tree, a reading over MSAA on four built dialogs; the check interval 1..=60, Font size 8..=72, Default reminder 0..=1440 as spin controls; Mark read after a three-way choice with a seconds spin |
 | 12-07 | 10 | 7 | #40 points 1 to 4 | closes | prefix, middle name and suffix as columns, fields and each provider's own field both ways; `contact_names::guess_parts` and `compose` with the Hopper and van der Berg cases; the fills each way that never overwrite a typed field; the birthday as the three-control date with a no-year position; an address checked by 11-10.1's rule, a number kept as typed with a country beside it; the Favourite box re-read over MSAA |
 | 12-08 | 11 | 8 | #41 | closes | `time_blocks` pure at every boundary; the setting on the Calendar and PIM tab, 30 by default, read on use; Up and Down by the block and Left and Right by a minute on the minute control in all three editors, measured first where the key arrives; a new item on the next boundary with its end one block later, the end following the start until edited |
@@ -229,11 +229,23 @@ with them added no two plans here are disjoint. The order:
    both call, so the gate every message passes is the gate a report
    passes; a second `QueuedOutboxMessage` literal in `wx_app.rs` is a red
    reading.
-6. **The security category sends nothing from the program** and offers
-   GitHub's private vulnerability reporting page, which the repository
-   has switched on (`gh api repos/PratikP1/Wixen-Mail/private-vulnerability-reporting`
-   answers enabled on 2026-09-20); no security address exists and none
-   is invented.
+6. **The security category is sent like every other category, to an
+   address of its own**, through the one queued-row path and the one
+   gate and shown first in the payload box, with GitHub's private
+   vulnerability reporting page offered beside Send (`gh api
+   repos/PratikP1/Wixen-Mail/private-vulnerability-reporting` answered
+   enabled on 2026-09-20 and 2026-09-23). This is Pratik's answer of
+   2026-09-23 to Decisions for Pratik 3, and it overrules the decision
+   as first written here, which read "The security category sends
+   nothing from the program and offers GitHub's private vulnerability
+   reporting page ...; no security address exists and none is
+   invented." He did not name the address: **`security@wixen.app` is the
+   planner's assumption, for him to correct**, written once in the tree
+   as `feedback_report::SECURITY_ADDRESS`. What the payload holds is
+   12-05's premise 5, decided by the planner and overrulable: the
+   version ticked, the log excerpt unticked because a log can hold what
+   the concern is about and the redaction masks addresses and subjects
+   only, and a subject carrying the category and none of the concern.
 7. **The spinner's typing field is named through the annotation service**
    (`IAccPropServices::SetHwndPropStr` on the buddy from `UDM_GETBUDDY`),
    the route ledger 408 wrote down, over the visible-label route, because
@@ -301,9 +313,9 @@ the issues were filed; the shapes held except these:
 | the tester on #80 (2026-09-18) | a link opens inside the window | under NVDA's Enter on the runner the route sent it to the browser; the earlier veto's failure was 11-11.1's finding and is fixed | the same record |
 | 11-11.2's premise 3 | `current_exe` appears nowhere | four sites read the path (help_page.rs:42, default_apps.rs:298, default_apps_registration.rs:80 and :1043); none starts the program | `grep -rn current_exe src --include=*.rs` |
 | 11-13's premise 2 | six refusal sites in two kinds | five sites in three wordings for one kind; the two "No conversation selected to delete" sites are gone since 11-07 | `grep -n 'No message selected\|Choose a message first\|No conversation selected' src/presentation/wx_app.rs` |
-| #78 | the two pages exist before the alpha | wixen.app and wixen.app/support answer 522 (Cloudflare up, the origin not) on 2026-09-20; the dialog names the addresses and the guide says the site is coming | `curl -s -o /dev/null -w '%{http_code}' -A Mozilla/5.0 --max-time 30 https://wixen.app/` |
+| #78 | the two pages exist before the alpha | wixen.app and wixen.app/support answer 522 (Cloudflare up, the origin not) on 2026-09-20, and again on 2026-09-23; the dialog names the addresses, and since Pratik's answer of 2026-09-23 that both pages are up by the time public testing begins neither the dialog nor the guide says the site is coming (until then the guide was to say so) | `curl -s -o /dev/null -w '%{http_code}' -A Mozilla/5.0 --max-time 30 https://wixen.app/` |
 | #78 | `build_about_dialog` at `wx_app.rs:23292` | at `:26170`; four static lines, a bridge disclosure, OK; "Copyright 2024-2026 Wixen Mail Contributors" against `LICENSE:3`'s "Copyright (c) 2026 Pratik Patel", so the two disagree in years and holders | `grep -n 'fn build_about_dialog' src/presentation/wx_app.rs`; `sed -n 3p LICENSE` |
-| #64 | a security address or GitHub's private reporting | private vulnerability reporting is enabled on the repository; no security address exists | `gh api repos/PratikP1/Wixen-Mail/private-vulnerability-reporting` |
+| #64 | a security address or GitHub's private reporting | private vulnerability reporting is enabled on the repository; no security address exists. Pratik answered on 2026-09-23 that security reports go to a separate address, which he did not name; the planner named it `security@wixen.app` for him to correct, and 12-05 offers both | `gh api repos/PratikP1/Wixen-Mail/private-vulnerability-reporting` |
 | #64 | the screen reader read from the running processes as the scan does | the scan finds NVDA on the runner in the workflow, not in this code; the tree knows no screen reader by name and reads no Windows build; both are new readers on the hand-declared `extern "system"` pattern | `grep -rn 'nvda.exe\|RtlGetVersion' src --include=*.rs` |
 | #35 | Font size at `wx_settings.rs:806`, Default reminder at `:1897`, Mark read after at `:88` and `:1334` | `:1109-1112`, `:2472-2473`, `:1511` and `:1834`; the saves clamp 8..=72 and 1440, which become the controls' ranges | `grep -n 'font_size\|default_reminder\|mark_read_after' src/presentation/wx_settings.rs` |
 | #73 | ledger 408 applies | it does, and eleven siblings with it: twelve spinner entries among 408 to 425, all closed by one helper applied to the item form's builders, which Send Later also uses | `awk -F'\|' '$2 >= 405 && $2 <= 426' .planning/WINDOWS.md` |
@@ -481,10 +493,13 @@ read after's three entries (12-06); the contact tab in order, the fill
 heard after a name, the no-year position (12-07); a time's value after Up
 and after Left, the end heard following (12-08); the manager's Used by
 column and the sentence on a From change (12-09); the submenu's items
-with their keys and a move said (12-10). The account and the mailbox: a
-report from a real account arriving at support@wixen.app (12-05); a
-contact with five name parts round-tripping through Google (12-07). The
-site: wixen.app and wixen.app/support answering (12-04). Everything a
+with their keys and a move said (12-10). The account and the mailboxes:
+a report from a real account arriving at support@wixen.app, and one at
+the security address, `security@wixen.app` unless he names another,
+both mailboxes his by public testing on his answer of 2026-09-23
+(12-05); a contact with five name parts round-tripping through Google
+(12-07). The site: wixen.app and wixen.app/support answering, both up by
+public testing on his answer of 2026-09-23 (12-04). Everything a
 built window, a fixture, a cache built in the test or a reading can
 prove, the plans prove: the focus class after re-activation, the child
 process refused for anything but a page, the words and endings, the
@@ -501,15 +516,44 @@ Listed here rather than decided, each with what the plans do meanwhile.
    2026-09-20. 12-04 names the addresses and the guide says the site is
    coming; whether both pages are up before the public alpha, and what
    the support page says, is his (a `todo` on the ledger).
+   **Answered 2026-09-23: both pages will be up by the time public
+   testing begins** (both still answered 522 that day). About shows both
+   links, and neither the dialog nor the guide says the site is coming;
+   12-04's truths, task 2 and T-12-14 say so, the changelog keeps a dated
+   note that the pages did not answer when it was written, which 12-04
+   names as his to overrule, and the ledger's `todo` stays his to close.
+   What the support page says is still his.
 2. **The support mailbox.** support@wixen.app must exist and be read;
    12-05 sends there on his decision of 2026-09-18 and the payload box
    names it, and the ledger carries "a report from a real account
    arriving" as his.
+   **Answered 2026-09-23: support@wixen.app will exist and be read by the
+   time public testing begins**, and Send Feedback sends there as
+   planned. Alpha testers will use the dialog before it exists, so 12-05
+   has `docs/ALPHA_TESTING.md` say that until public testing a report to
+   an address that does not exist yet bounces back to the sender's own
+   account (wixen.app's mail exchanger answered on 2026-09-23, so the
+   sender's provider hands the report on and the refusal comes back).
 3. **A security address.** None exists; 12-05 offers GitHub's private
    reporting page, which is switched on. Whether a security address is
    wanted beside it is his.
+   **Answered 2026-09-23: security reports go to a separate email
+   address, not support@wixen.app.** He did not name it, so 12-05 uses
+   **`security@wixen.app`, the planner's assumption for him to
+   correct**, written once as `feedback_report::SECURITY_ADDRESS`; a
+   correction is that line and the pages that name it. The security
+   category's report now goes, like every other category, through the
+   one sending path and the one gate, shown first in the payload box,
+   to that address, and GitHub's private reporting page stays offered
+   beside Send. Its payload is 12-05's premise 5: the version ticked,
+   the log excerpt unticked because a log can hold what the concern is
+   about, a subject carrying none of the concern. The privacy page lists
+   both addresses. Decision 6 above is rewritten to match.
 4. **The feedback key.** `Ctrl+Shift+F` is free and 12-05 takes it; a
    different key is a one-line change and the shortcuts row.
+   **Answered 2026-09-23: `Ctrl+Shift+F` opens Send Feedback.** Re-taken
+   the same day at `b3cc380a`, the key is still free in both spellings,
+   and F is free among the Help menu's letters (12-05's premise 1).
 5. **Priority for pro subscribers in a report** waits on #65's answers,
    by his own words on #64.
 6. **#40's point 4, the phone check.** 12-07 keeps a number as typed,
@@ -687,7 +731,11 @@ address is wanted beside GitHub's private reporting, and the feedback
 key. Ask before building those two, not during. **Corrected later on
 2026-09-23:** Pratik answered items 13 to 16, the four 12-03.2 added,
 that day, and his standing OK of the same day answers item 12; the
-rest stand as written.
+rest stand as written. **And later still on 2026-09-23:** he answered
+items 1 to 4, the four 12-04 and 12-05 needed, and both plans carry the
+answers, so neither asks before building; the one name he left open,
+the security address, is `security@wixen.app` until he corrects it.
+Items 5 to 11 stand as written.
 
 **Twelve staged skill updates** from the observation review of
 2026-09-20 sit uninstalled outside this repository, under the workspace's

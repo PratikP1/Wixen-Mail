@@ -5265,12 +5265,16 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     LICENSE agreement, the roles and names over MSAA and the absence of the button (12-04).
   - [S] The two controls heard under NVDA, and Enter on one opening his browser, are the
     tester's ear; whether both pages are up before the public alpha is Pratik's (they
-    answered 522 on 2026-09-20).
+    answered 522 on 2026-09-20). **Answered 2026-09-23:** both pages will be up by the time
+    public testing begins (both still answered 522 that day), and neither the dialog nor the
+    guide says the site is coming; the pages answering is still his to settle.
 
 - [ ] **ALPHA-02**: Feedback can be sent from the Help menu and from About: a category, the
   questions that fit it, a payload the person reads before it goes, the log excerpt attached
   by default and redacted, sent as an email from the person's default account to
-  support@wixen.app through the program's own sending path and gate.
+  support@wixen.app through the program's own sending path and gate. Amended 2026-09-23 on
+  Pratik's answer: a security concern goes the same way to an address of its own, with its
+  log excerpt left unticked and GitHub's private reporting page beside Send.
   - Evidence: `sed -n 7514,7550p src/presentation/wx_app.rs` on 2026-09-20 at `0ad66e48`:
     Help holds Contents, the topics, Load Sample Mailbox, Check for Updates and About, and
     nothing sends anything; `grep -n 'Ctrl+Shift+F' docs/KEYBOARD_SHORTCUTS.md src/presentation/wx_app.rs`:
@@ -5297,27 +5301,41 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     dialog says so and offers to copy the report to the clipboard and to open the GitHub
     issue page as the second door; the security category still goes to the private channel
     only. The privacy page's list of what is sent and where (#29) gains support@wixen.app."
+  - [S] Pratik on 2026-09-23, answering the phase 12 README's Decisions for Pratik 1 to 4, in
+    substance: wixen.app and wixen.app/support will be up and support@wixen.app will exist
+    and be read by the time public testing begins; security reports go to a separate email
+    address, not support@wixen.app, and the security category's report takes the one sending
+    path and the one gate like every other, shown first, with GitHub's private reporting page
+    still offered beside it; `Ctrl+Shift+F` opens Send Feedback. He did not name the security
+    address; `security@wixen.app` is the planner's assumption for him to correct (12-05,
+    premise 5, which also decides what a security report's payload holds).
   - [D] `application::feedback_report`: `Category` (Problem, Feature, ScreenReaderBarrier,
-    Question, Security, Other) with its questions, `Include` defaulting to the version and
-    the log excerpt, `Facts`, `compose`, `redact` masking every address and every subject,
-    `last_lines`, `where_it_goes`; `service::this_machine`: the Windows build, the display
+    Question, Security, Other) with its questions, `Include::for_category` ticking the version
+    and the log excerpt, the version alone for Security (it read "`Include` defaulting to the
+    version and the log excerpt" until 2026-09-23), `Facts`, `compose`, `redact` masking every
+    address and every subject, `last_lines`, `where_it_goes` answering `SUPPORT_ADDRESS` or
+    `SECURITY_ADDRESS`, `github_page`; `service::this_machine`: the Windows build, the display
     language, the screen reader by process name and file version, on the tree's
     `extern "system"` pattern with no new crate (12-05, task 1).
   - [D] `presentation::wx_feedback`: the dialog in Tab order with every control named on both
     channels, the category focused on open, the payload box holding `compose()`'s exact text
-    refreshed on every change, Send enabled by `what_the_doors_do` only for a non-security
-    category with an account whose `allowed_for(id).mail` is true, the clipboard and GitHub
-    doors always, the private reporting page for Security; Send through the queued-row
+    refreshed on every change, Send enabled by `what_the_doors_do` for any category with an
+    account whose `allowed_for(id).mail` is true (for a non-security category only, until
+    2026-09-23), the clipboard and GitHub doors always, the GitHub door the private reporting
+    page for Security; Send through the queued-row
     function extracted from `queue_for_sending` and called by both, the excerpt and the copy
     under `paths.feedback_dir()`; Help, Send Feedback on `Ctrl+Shift+F`; About's button;
     `ScanTarget::Feedback` in the workflow; a reading in
     `tests/the_feedback_dialog_shows_what_it_sends_before_it_goes.rs` (12-05, task 2).
-  - [D] `docs/privacy.md`'s table gains the address and what a report carries; the shortcuts
-    page, the guide and the alpha page say how to send one; #64, #71 and #78 closed from the
-    merge (12-05, task 3).
+  - [D] `docs/privacy.md`'s table gains both addresses and what a report to each carries (the
+    address, singular, until 2026-09-23); the shortcuts page, the guide and the alpha page say
+    how to send one, and the alpha page says that until public testing a report to an address
+    that does not exist yet bounces back to the sender's own account; #64, #71 and #78 closed
+    from the merge (12-05, task 3).
   - [S] The dialog under NVDA is the tester's ear; a report from a real account arriving at
-    support@wixen.app is his mailbox's, which must exist and be read; priority for pro
-    subscribers waits on #65, by his own words on #64.
+    support@wixen.app, and one arriving at the security address, are his mailboxes', which
+    exist and are read by the time public testing begins on his answer of 2026-09-23;
+    priority for pro subscribers waits on #65, by his own words on #64.
 
 - [ ] **ALPHA-03**: The pro licence is designed in a document the tree keeps as a design: what
   is gated, how a key is checked offline, what a lapse does, what the alpha carries, the
