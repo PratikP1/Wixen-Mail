@@ -143,6 +143,10 @@ pub enum ScanTarget {
     AddAddressBook,
     /// The About window.
     About,
+    /// Send Feedback, opened on made-up facts and no log, so the scan reads
+    /// nothing about the runner (#64, 12-05). A fresh profile has no account,
+    /// so it opens with Send shut and the sentence saying why.
+    Feedback,
     /// The main window on its own, showing mail. `main` is not that: with no
     /// target given the first-run question opens over the frame on a fresh
     /// profile, so `main` has always been the frame with a modal on top of
@@ -211,7 +215,7 @@ pub enum ScanTarget {
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 37] = [
+    pub const ALL: [ScanTarget; 38] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -236,6 +240,7 @@ impl ScanTarget {
         ScanTarget::SendLater,
         ScanTarget::AddAddressBook,
         ScanTarget::About,
+        ScanTarget::Feedback,
         ScanTarget::MailModule,
         ScanTarget::CalendarModule,
         ScanTarget::ContactsModule,
@@ -278,6 +283,7 @@ impl ScanTarget {
             Self::SendLater => "send-later",
             Self::AddAddressBook => "add-address-book",
             Self::About => "about",
+            Self::Feedback => "feedback",
             Self::MailModule => "mail-module",
             Self::CalendarModule => "calendar-module",
             Self::ContactsModule => "contacts-module",

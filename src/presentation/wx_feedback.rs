@@ -85,64 +85,140 @@ pub struct Doors {
 }
 
 /// What Send and the GitHub button do.
+///
+/// Send is open for any category, a security concern included (Pratik,
+/// 2026-09-23), when there is an account and it may send; otherwise it is
+/// shut with one sentence saying why, and Copy and the GitHub button stay.
+/// The GitHub button opens [`github_page`]'s answer, so a security concern is
+/// offered the private reporting page, beside Send whether Send is open or
+/// not, and never the public issue page.
 pub fn what_the_doors_do(category: Category, account: Option<&Account>, allowed: bool) -> Doors {
-    let _ = (category, account, allowed, SETTINGS_SECTION, github_page);
+    let send = match (account, allowed) {
+        (None, _) => SendDoor::Shut(
+            "No account is set up to send from. Copy the report to the clipboard, or open \
+             the page on GitHub."
+                .to_string(),
+        ),
+        (Some(_), false) => SendDoor::Shut(format!(
+            "Sending is turned off under Settings, {SETTINGS_SECTION}. Copy the report to \
+             the clipboard, or open the page on GitHub."
+        )),
+        (Some(_), true) => SendDoor::Open,
+    };
     Doors {
-        send: SendDoor::Shut(String::new()),
-        github_label: "",
-        github_page: "",
+        send,
+        github_label: match category {
+            Category::Security => PRIVATE_PAGE_LABEL,
+            _ => ISSUE_PAGE_LABEL,
+        },
+        github_page: github_page(category),
     }
 }
 
 /// What is ticked after the category changes.
+///
+/// A box the person changed stays as they left it; every other box follows
+/// the new category's defaults. The planner's choice, said so it can be
+/// overruled: somebody who moved to a security concern has not chosen to
+/// send a log, and somebody who ticked the box has.
 pub fn reticked(current: Include, touched: &[Fact], category: Category) -> Include {
-    let _ = (touched, category);
-    current
+    Fact::ALL.into_iter().fold(
+        Include::for_category(category),
+        |include, fact| match touched.contains(&fact) {
+            true => include.with(fact, current.includes(fact)),
+            false => include,
+        },
+    )
 }
 
-/// The account a report goes from.
+/// The account a report goes from: the default account, or the account in
+/// use when none is marked as the default.
 pub fn sender_of(
     default_id: Option<&str>,
     active_id: Option<&str>,
     accounts: &[Account],
 ) -> Option<(Account, bool)> {
-    let _ = (default_id, active_id, accounts);
-    None
+    crate::application::notes_backend::default_account(default_id, accounts)
+        .map(|account| (account.clone(), true))
+        .or_else(|| {
+            active_id
+                .and_then(|id| accounts.iter().find(|account| account.id == id))
+                .map(|account| (account.clone(), false))
+        })
 }
 
-/// Which day's log the excerpt is taken from.
+/// Which day's log the excerpt is taken from: today's, or yesterday's when
+/// today's is missing or empty, which is a program started today that has
+/// written nothing yet.
 pub fn log_to_read(today: Option<LogFile>, yesterday: Option<LogFile>) -> Option<LogFile> {
-    let _ = (today, yesterday);
-    None
+    let written = |log: &LogFile| !log.text.trim().is_empty();
+    today.filter(written).or(yesterday.filter(written))
 }
 
-/// The name the log gives a day's file.
+/// The name the log gives a day's file. The log rolls over by the date in
+/// UTC, so the day handed in is a UTC day.
 pub fn log_file_name(prefix: &str, day: chrono::NaiveDate) -> String {
-    let _ = (prefix, day);
-    String::new()
+    format!("{prefix}.{}.log", day.format("%Y-%m-%d"))
 }
 
 /// The From line of the payload box.
 pub fn from_line(sender: Option<&Sender>) -> String {
-    let _ = sender;
-    String::new()
+    match sender {
+        None => "no account, so Send cannot be used".to_string(),
+        Some(sender) if sender.is_default => {
+            format!("{}, your default account", sender.account.email)
+        }
+        Some(sender) => format!(
+            "{}, the account in use, since none is marked as the default",
+            sender.account.email
+        ),
+    }
 }
 
-/// What the payload box shows.
+/// What the payload box shows: exactly what Send queues, the attached file
+/// included.
 pub fn payload_text(composed: &Composed, from: &str) -> String {
-    let _ = (composed, from);
-    String::new()
+    let mut text = format!(
+        "To: {}\nFrom: {from}\nSubject: {}\n\n{}",
+        composed.to, composed.subject, composed.body
+    );
+    if let Some(attached) = &composed.attachment {
+        text.push_str(&format!(
+            "\nAttached file, {}:\n{}",
+            attached.file_name, attached.text
+        ));
+    }
+    text
 }
 
-/// Write the copy of a report, and its excerpt when it has one.
+/// Write the copy of a report, and its excerpt when it has one, and answer
+/// the files to attach.
+///
+/// The copy is written for every report, because it is what somebody sends
+/// again from if a report bounces. The excerpt is written only when the
+/// report carries one, which is only when its box is ticked.
 pub fn keep_a_copy(
     dir: &Path,
     stamp: &str,
     composed: &Composed,
     payload: &str,
 ) -> std::result::Result<Vec<PathBuf>, String> {
-    let _ = (dir, stamp, composed, payload);
-    Ok(Vec::new())
+    let could_not = |what: &Path, why: std::io::Error| {
+        format!(
+            "The report could not be kept in {}: {why}. Nothing was sent.",
+            what.display()
+        )
+    };
+    std::fs::create_dir_all(dir).map_err(|why| could_not(dir, why))?;
+    let copy = dir.join(format!("{stamp}-report.txt"));
+    std::fs::write(&copy, payload).map_err(|why| could_not(&copy, why))?;
+    let mut attachments = Vec::new();
+    if let Some(attached) = &composed.attachment {
+        let excerpt = dir.join(&attached.file_name);
+        std::fs::write(&excerpt, &attached.text).map_err(|why| could_not(&excerpt, why))?;
+        attachments.push(excerpt);
+    }
+    Ok(attachments)
 }
 
 /// The window, with its controls public so a test can read them.
@@ -150,7 +226,9 @@ pub fn keep_a_copy(
 pub struct FeedbackDialog {
     pub dialog: Dialog,
     pub category: Choice,
+    /// One label and one field per question the most-asking category asks.
     pub questions: Vec<(StaticText, TextCtrl)>,
+    /// One box per fact, in [`Fact::ALL`]'s order.
     pub includes: Vec<(Fact, CheckBox)>,
     pub reply_to: TextCtrl,
     pub payload: TextCtrl,
@@ -158,6 +236,7 @@ pub struct FeedbackDialog {
     pub copy: Button,
     pub github: Button,
     pub cancel: Button,
+    /// Under the buttons: why Send cannot be used, or why it did not work.
     pub why_not: StaticText,
     opening: Rc<Opening>,
     touched: Rc<RefCell<Vec<Fact>>>,
@@ -166,26 +245,83 @@ pub struct FeedbackDialog {
 impl FeedbackDialog {
     /// The category chosen.
     pub fn chosen(&self) -> Category {
-        Category::Problem
+        self.category
+            .get_selection()
+            .and_then(|at| Category::ALL.get(at as usize).copied())
+            .unwrap_or(Category::Problem)
     }
 
     /// Choose a category, as the choice does when somebody moves through it.
     pub fn choose(&self, category: Category) {
-        let _ = (category, &self.touched);
+        if let Some(at) = Category::ALL.iter().position(|each| *each == category) {
+            self.category.set_selection(at as u32);
+        }
+        self.follow_the_category();
     }
 
-    /// Tick or untick a box as the person does.
+    /// Everything that changes with the category: the questions, the boxes
+    /// nobody has changed, the doors and the payload.
+    pub fn follow_the_category(&self) {
+        let category = self.chosen();
+        let asked = category.questions();
+        for (at, (label, field)) in self.questions.iter().enumerate() {
+            match asked.get(at) {
+                Some(question) => {
+                    label.set_label(question.asked);
+                    set_accessible_name_and_description(field, question.asked, question.prompt);
+                    label.show(true);
+                    field.show(true);
+                }
+                None => {
+                    label.show(false);
+                    field.show(false);
+                }
+            }
+        }
+        let ticked = reticked(self.include(), &self.touched.borrow(), category);
+        for (fact, check) in &self.includes {
+            check.set_value(ticked.includes(*fact));
+        }
+        self.open_the_doors();
+        self.refresh();
+        self.dialog.layout();
+    }
+
+    /// Tick or untick a box as the person does, which the category then
+    /// leaves alone.
     pub fn tick(&self, fact: Fact, ticked: bool) {
-        let _ = (fact, ticked);
+        if let Some((_, check)) = self.includes.iter().find(|(each, _)| *each == fact) {
+            check.set_value(ticked);
+        }
+        let mut touched = self.touched.borrow_mut();
+        if !touched.contains(&fact) {
+            touched.push(fact);
+        }
+        drop(touched);
+        self.refresh();
+    }
+
+    /// What the boxes say now.
+    fn include(&self) -> Include {
+        self.includes.iter().fold(
+            Include::for_category(self.chosen()),
+            |include, (fact, check)| include.with(*fact, check.get_value()),
+        )
     }
 
     /// The report as the window holds it.
     pub fn report(&self) -> Report {
+        let category = self.chosen();
         Report {
-            category: self.chosen(),
-            answers: Vec::new(),
-            include: Include::for_category(self.chosen()),
-            reply_to: String::new(),
+            category,
+            answers: self
+                .questions
+                .iter()
+                .take(category.questions().len())
+                .map(|(_, field)| field.get_value())
+                .collect(),
+            include: self.include(),
+            reply_to: self.reply_to.get_value(),
             log: self.opening.log.clone(),
             stamp: self.opening.stamp.clone(),
         }
@@ -198,11 +334,13 @@ impl FeedbackDialog {
 
     /// What the payload box should hold now.
     pub fn payload_now(&self) -> String {
-        String::new()
+        payload_text(&self.composed(), &from_line(self.opening.sender.as_ref()))
     }
 
     /// Put the report as it stands in the payload box.
-    pub fn refresh(&self) {}
+    pub fn refresh(&self) {
+        self.payload.change_value(&self.payload_now());
+    }
 
     /// The account the report goes from.
     pub fn sender(&self) -> Option<&Sender> {
@@ -211,47 +349,213 @@ impl FeedbackDialog {
 
     /// What the doors do for the category chosen.
     pub fn doors(&self) -> Doors {
-        what_the_doors_do(self.chosen(), None, false)
+        let sender = self.opening.sender.as_ref();
+        what_the_doors_do(
+            self.chosen(),
+            sender.map(|sender| &sender.account),
+            sender.is_some_and(|sender| sender.allowed),
+        )
     }
 
-    /// Say under the buttons why Send did not work.
+    fn open_the_doors(&self) {
+        let doors = self.doors();
+        self.github.set_label(doors.github_label);
+        set_accessible_name(&self.github, &doors.github_label.replace('&', ""));
+        match doors.send {
+            SendDoor::Open => {
+                self.send.enable(true);
+                self.why_not.set_label("");
+            }
+            SendDoor::Shut(why) => {
+                self.send.enable(false);
+                self.why_not.set_label(&why);
+            }
+        }
+    }
+
+    /// Say under the buttons why Send did not work, keeping everything typed.
     pub fn say_why(&self, why: &str) {
-        let _ = why;
+        self.why_not.set_label(why);
+        self.dialog.layout();
     }
 }
 
-/// Build the window without showing it. Stubbed: every control is built bare,
-/// unnamed and unticked, and nothing is laid out or bound.
+/// Build the window without showing it.
+///
+/// Opens on the first category, with its boxes ticked by
+/// [`Include::for_category`], so the log excerpt is ticked on open, and with
+/// the focus on the category. The access keys are W, R, B, S, C and G, one
+/// each; the question fields and the boxes are reached by Tab.
 pub fn build_feedback_dialog<W: WxWidget>(
     parent: &W,
     opening: Opening,
     palette: Option<theme::Palette>,
 ) -> FeedbackDialog {
-    let _ = (
-        palette,
-        set_accessible_name,
-        set_accessible_name_and_description,
+    let dialog = Dialog::builder(parent, TITLE)
+        .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    let category_label = StaticText::builder(&dialog)
+        .with_label("&What is this about")
+        .build();
+    let labels: Vec<String> = Category::ALL
+        .iter()
+        .map(|category| category.label().to_string())
+        .collect();
+    let category = Choice::builder(&dialog)
+        .with_choices(labels)
+        .with_selection(Some(0))
+        .build();
+    set_accessible_name_and_description(
+        &category,
+        "What is this about",
+        "The questions below change with what you choose",
     );
-    let dialog = Dialog::builder(parent, TITLE).build();
-    let field = || TextCtrl::builder(&dialog).build();
-    FeedbackDialog {
-        category: Choice::builder(&dialog).build(),
-        questions: vec![(StaticText::builder(&dialog).with_label("").build(), field())],
-        includes: Vec::new(),
-        reply_to: field(),
-        payload: field(),
-        send: Button::builder(&dialog).with_label("&Send").build(),
-        copy: Button::builder(&dialog)
-            .with_label("&Copy to clipboard")
-            .build(),
-        github: Button::builder(&dialog)
-            .with_label(ISSUE_PAGE_LABEL)
-            .build(),
-        cancel: Button::builder(&dialog).with_label("Cancel").build(),
-        why_not: StaticText::builder(&dialog).with_label("").build(),
+    sizer.add(&category_label, 0, SizerFlag::All, 4);
+    sizer.add(&category, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let most_asked = Category::ALL
+        .iter()
+        .map(|category| category.questions().len())
+        .max()
+        .unwrap_or(1);
+    let questions: Vec<(StaticText, TextCtrl)> = (0..most_asked)
+        .map(|_| {
+            let label = StaticText::builder(&dialog).with_label("").build();
+            let field = TextCtrl::builder(&dialog)
+                .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
+                .with_size(Size::new(520, 90))
+                .build();
+            sizer.add(&label, 0, SizerFlag::All, 4);
+            sizer.add(&field, 0, SizerFlag::Expand | SizerFlag::All, 4);
+            (label, field)
+        })
+        .collect();
+
+    let include_heading = StaticText::builder(&dialog)
+        .with_label("What to include")
+        .build();
+    sizer.add(&include_heading, 0, SizerFlag::All, 4);
+    let includes: Vec<(Fact, CheckBox)> = Fact::ALL
+        .into_iter()
+        .map(|fact| {
+            let check = CheckBox::builder(&dialog).with_label(fact.sends()).build();
+            set_accessible_name(&check, fact.sends());
+            sizer.add(&check, 0, SizerFlag::All, 4);
+            (fact, check)
+        })
+        .collect();
+
+    let reply_label = StaticText::builder(&dialog)
+        .with_label("How to &reach you")
+        .build();
+    let reply_to = TextCtrl::builder(&dialog)
+        .with_value(
+            opening
+                .sender
+                .as_ref()
+                .map(|sender| sender.account.email.as_str())
+                .unwrap_or_default(),
+        )
+        .build();
+    set_accessible_name_and_description(
+        &reply_to,
+        "How to reach you",
+        "Used only to answer you. Leave it empty if you do not want an answer",
+    );
+    sizer.add(&reply_label, 0, SizerFlag::All, 4);
+    sizer.add(&reply_to, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let payload_label = StaticText::builder(&dialog)
+        .with_label("What will &be sent")
+        .build();
+    let payload = TextCtrl::builder(&dialog)
+        .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly | TextCtrlStyle::WordWrap)
+        .with_size(Size::new(520, 200))
+        .build();
+    set_accessible_name_and_description(
+        &payload,
+        "What will be sent",
+        "Exactly the message Send puts in your Outbox, and the file it attaches",
+    );
+    sizer.add(&payload_label, 0, SizerFlag::All, 4);
+    sizer.add(&payload, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let send = Button::builder(&dialog).with_label("&Send").build();
+    set_accessible_name(&send, "Send");
+    let copy = Button::builder(&dialog)
+        .with_label("&Copy to clipboard")
+        .build();
+    set_accessible_name(&copy, "Copy to clipboard");
+    let github = Button::builder(&dialog)
+        .with_label(ISSUE_PAGE_LABEL)
+        .build();
+    let cancel = Button::builder(&dialog)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    set_accessible_name(&cancel, "Cancel");
+    for button in [&send, &copy, &github, &cancel] {
+        buttons.add(button, 0, SizerFlag::All, 4);
+    }
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
+
+    let why_not = StaticText::builder(&dialog).with_label("").build();
+    sizer.add(&why_not, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        for (_, field) in &questions {
+            theme::paint(field, palette.second_surface());
+        }
+        theme::paint(&reply_to, palette.second_surface());
+        theme::paint(&payload, palette.second_surface());
+    }
+
+    let feedback = FeedbackDialog {
         dialog,
+        category,
+        questions,
+        includes,
+        reply_to,
+        payload,
+        send,
+        copy,
+        github,
+        cancel,
+        why_not,
         opening: Rc::new(opening),
         touched: Rc::new(RefCell::new(Vec::new())),
+    };
+    bind_the_refreshes(&feedback);
+    feedback.follow_the_category();
+
+    feedback.dialog.set_sizer_and_fit(sizer, true);
+    feedback.category.set_focus();
+    feedback
+}
+
+/// Each handler is one line calling a named method, so the method a test
+/// calls is the whole of what the event does.
+fn bind_the_refreshes(feedback: &FeedbackDialog) {
+    let following = feedback.clone();
+    feedback
+        .category
+        .on_selection_changed(move |_| following.follow_the_category());
+    for (fact, check) in &feedback.includes {
+        let (ticking, fact, box_read) = (feedback.clone(), *fact, *check);
+        check.on_toggled(move |_| ticking.tick(fact, box_read.get_value()));
+    }
+    let fields = feedback
+        .questions
+        .iter()
+        .map(|(_, field)| field)
+        .chain(std::iter::once(&feedback.reply_to));
+    for field in fields {
+        let refreshing = feedback.clone();
+        field.on_text_changed(move |_| refreshing.refresh());
     }
 }
 
@@ -409,11 +713,15 @@ mod tests {
 
         let shown = payload_text(&composed, "dana@example.org, your default account");
 
+        // The address through its constant, so the one line Pratik corrects
+        // is the only place in `src` that spells it.
         assert_eq!(
             shown,
-            "To: security@wixen.app\nFrom: dana@example.org, your default account\n\
-             Subject: [Wixen Mail] Report a security concern\n\nThe body.\n\
-             \nAttached file, 1-log-excerpt.txt:\nThe last 1 lines.\nINFO done\n"
+            format!(
+                "To: {SECURITY_ADDRESS}\nFrom: dana@example.org, your default account\n\
+                 Subject: [Wixen Mail] Report a security concern\n\nThe body.\n\
+                 \nAttached file, 1-log-excerpt.txt:\nThe last 1 lines.\nINFO done\n"
+            )
         );
     }
 

@@ -255,7 +255,7 @@ pub struct Report {
     pub reply_to: String,
     /// The log to take the excerpt from, when there is one.
     pub log: Option<LogFile>,
-    /// Names the files a send writes, such as `20260923-184512`.
+    /// Names the files a send writes, such as `2026-09-23-184512`.
     pub stamp: String,
 }
 

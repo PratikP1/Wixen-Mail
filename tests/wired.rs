@@ -2898,7 +2898,10 @@ const NOT_A_COMMAND: &[&str] = &[];
 #[test]
 fn test_the_composers_send_passes_the_hold_to_the_queue() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let body = body_of(&app, "fn queue_for_sending(");
+    // Since 12-05 the row is built in `put_in_the_outbox`, which
+    // `queue_for_sending` and Send Feedback both call; that both call it is
+    // held by tests/the_feedback_dialog_shows_what_it_sends_before_it_goes.rs.
+    let body = body_of(&app, "fn put_in_the_outbox(");
 
     assert!(
         body.contains("GoAfter::held("),
@@ -2961,7 +2964,8 @@ fn test_the_composers_send_passes_the_hold_to_the_queue() {
 #[test]
 fn test_the_composers_send_later_passes_the_chosen_time_to_the_queue() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let body = body_of(&app, "fn queue_for_sending(");
+    // The row is built in `put_in_the_outbox` since 12-05, as above.
+    let body = body_of(&app, "fn put_in_the_outbox(");
 
     assert!(
         body.contains("GoAfter::Chosen("),

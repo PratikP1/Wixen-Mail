@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 255 records have arrived since and have not been through it.
+# 257 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -21894,11 +21894,15 @@ tests_last_seen = [
 # Measured by hand on 2026-09-14 against the whole library at eight threads,
 # `cargo test --lib --no-fail-fast`: 7,183 passed, 1 ignored, and exactly
 # this one test failed, naming which-days.
+#
+# The anchor gained 'feedback' on 2026-09-23 (12-05), because the line it
+# quotes gained that target; re-measured the same day through
+# `scripts/guards.sh --remeasure`, the same one test red.
 [[guard]]
 name = "a window the program can open for the scan is one the workflow asks for"
 file = ".github/workflows/accessibility.yml"
-before = """          'which-days', 'send-later', 'add-address-book', 'about',"""
-after = """          'send-later', 'add-address-book', 'about',"""
+before = """          'which-days', 'send-later', 'add-address-book', 'about', 'feedback',"""
+after = """          'send-later', 'add-address-book', 'about', 'feedback',"""
 red = [
     "presentation::scan_target::tests::test_the_workflow_asks_for_every_target",
 ]
@@ -29622,4 +29626,70 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/this_machine.rs", tests = 6 },
+]
+
+# ── A security concern is offered GitHub's private page, never the issues ───
+#
+# T-12-18: a concern posted to the public tracker is the disclosure the
+# private reporting page exists to prevent. The break hands the Send Feedback
+# window the public issue page for every category. Nothing is opened: the
+# case reads the answer of a pure function, and no button is pressed.
+# (Until 2026-09-23 the plan's break for this record enabled Send for a
+# security concern, which Pratik's answer of that day made the behaviour.)
+[[guard]]
+name = "a security concern is offered the private reporting page and not the issue page"
+file = "src/presentation/wx_feedback.rs"
+before = '''        github_page: github_page(category),'''
+after = '''        github_page: crate::application::feedback_report::ISSUE_PAGE,'''
+red = [
+    "presentation::wx_feedback::tests::test_a_security_concern_is_offered_the_private_page_whether_send_is_open_or_not",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_feedback.rs", tests = 12 },
+]
+
+# ── A feedback report takes the one path every message takes (T-12-17) ─────
+#
+# The break builds a second queued row inside `send_the_report` and queues it
+# there, instead of calling `put_in_the_outbox`, which is the shape of a
+# second sending path growing beside the first. The target's reading of
+# `wx_app.rs` counts the rows built and asks both senders for the call. The
+# break is compiled and never run: no test calls `send_the_report`, so nothing
+# is queued and nothing is sent. The companion judges its plant by the delta
+# and stays green under this break.
+[[guard]]
+name = "a feedback report is queued through the one function every message uses"
+file = "src/presentation/wx_app.rs"
+suite = "the_feedback_dialog_shows_what_it_sends_before_it_goes"
+before = '''    let (recipient, waiting_on) = put_in_the_outbox(cache, sender.account.id.clone(), &data)?;'''
+after = '''    let queued = crate::data::message_cache::QueuedOutboxMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        account_id: sender.account.id.clone(),
+        to_addr: data.to.clone(),
+        cc_addr: String::new(),
+        bcc_addr: String::new(),
+        subject: data.subject.clone(),
+        body: data.body_plain.clone(),
+        body_html: None,
+        attachments: crate::application::attaching::joined(&data.attachments),
+        in_reply_to: None,
+        references: None,
+        attempt_count: 0,
+        last_error: None,
+        created_at: chrono::Local::now().to_rfc3339(),
+    };
+    let waiting_on = crate::application::sending_later::GoAfter::held(
+        the_hold_in_force(),
+        chrono::Local::now(),
+    );
+    cache
+        .queue_outbox_message_to_go(&queued, &waiting_on)
+        .map_err(|e| e.to_string())?;
+    let recipient = data.to.clone();'''
+red = [
+    "test_one_function_builds_the_queued_row_and_both_sends_call_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_feedback_dialog_shows_what_it_sends_before_it_goes.rs", tests = 10 },
 ]

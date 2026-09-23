@@ -54,6 +54,9 @@ const ROLE_SYSTEM_PUSHBUTTON: i64 = 0x2b;
 const ROLE_SYSTEM_CHECKBUTTON: i64 = 0x2c;
 const ROLE_SYSTEM_TEXT: i64 = 0x2a;
 const ROLE_SYSTEM_COMBOBOX: i64 = 0x2e;
+/// The resize grip a resizable dialog carries in its corner, which no key
+/// reaches and which the first run of this reading found at the end.
+const ROLE_SYSTEM_GRIP: i64 = 0x4;
 const STATE_SYSTEM_UNAVAILABLE: i64 = 0x1;
 const STATE_SYSTEM_CHECKED: i64 = 0x10;
 
@@ -427,7 +430,8 @@ fn complain(what: &str, wrong: &[String]) {
 fn focusable(controls: &[Control]) -> Vec<&Control> {
     controls
         .iter()
-        .filter(|control| control.class != "Static" && control.visible)
+        .filter(|control| control.visible && control.msaa.role != ROLE_SYSTEM_GRIP)
+        .filter(|control| control.class != "Static")
         .collect()
 }
 
@@ -734,23 +738,31 @@ fn test_help_offers_send_feedback_on_ctrl_shift_f() {
 
 #[test]
 fn test_the_one_path_reading_refuses_a_second_queued_row() {
+    // Judged by the delta, so a recorded break that plants a second row for
+    // real leaves this green: one more row than the tree holds, and the
+    // reading says how many.
     let source = the_main_window();
-    let already = what_is_wrong_with_the_one_path(&source).len();
     let Some(body) = body_of(&source, "fn send_the_report(") else {
         panic!("fn send_the_report( is not in {WX_APP}, so there is nowhere to plant");
     };
-    let planted_body = body.replacen(
-        "put_in_the_outbox(",
-        "crate::data::message_cache::QueuedOutboxMessage { planted: (",
-        1,
+    let Some(opens) = body.find("{\n") else {
+        panic!("send_the_report's body has no opening brace to plant after");
+    };
+    let mut planted_body = body.to_string();
+    planted_body.insert_str(
+        opens + 2,
+        "    let planted = crate::data::message_cache::QueuedOutboxMessage { planted };\n",
     );
-    assert_ne!(planted_body, body, "the plant changed nothing");
     let planted = source.replacen(body, &planted_body, 1);
+    let rows = rows_built(&planted);
+    assert_eq!(rows, rows_built(&source) + 1, "the plant added no row");
 
     let found = what_is_wrong_with_the_one_path(&planted);
 
     assert!(
-        found.len() > already && found.iter().any(|it| it.contains("built 2 times")),
+        found
+            .iter()
+            .any(|it| it.contains(&format!("built {rows} times"))),
         "the reading accepted a second queued row: {found:?}"
     );
 }
