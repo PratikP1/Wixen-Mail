@@ -29071,7 +29071,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 2 },
+    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
 ]
 
 # A separate window shows a page and nothing else, and this is where that is
