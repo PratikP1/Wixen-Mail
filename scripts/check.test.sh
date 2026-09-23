@@ -667,25 +667,42 @@ fi
 # quoted, which the reading of each suite's reads below does not follow: this
 # suite's reach over every suite is the rule that check's list holds every
 # other list, not a read of one file.
-every_suite() {
-    local suite
-    for suite in "$root"/scripts/*.test.sh; do
-        basename "$suite" .test.sh
-    done
-}
+#
+# Written without a process per step, as are the two helpers below it, because
+# every case here runs them and a fork costs tens of milliseconds on Windows:
+# measured 2026-09-23, the first spelling, `basename`, `sort` and `sed` in a
+# pipeline, cost about a second a case and took this suite from 9 seconds to 31.
+every_suite=()
+for suite_file in "$root"/scripts/*.test.sh; do
+    suite_file="${suite_file##*/}"
+    every_suite+=("${suite_file%.test.sh}")
+done
 
+# The words given, empty ones dropped, sorted and joined by one space.
 sorted_words() {
-    printf '%s\n' "$@" | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ *$//'
+    local -a words=()
+    local word index
+    for word in "$@"; do
+        [ -n "$word" ] || continue
+        index=${#words[@]}
+        while [ "$index" -gt 0 ] && [[ "${words[$((index - 1))]}" > "$word" ]]; do
+            words[index]="${words[$((index - 1))]}"
+            index=$((index - 1))
+        done
+        words[index]="$word"
+    done
+    echo "${words[*]}"
 }
 
 # The question's answer, checked for its shape, then the names answered yes.
 # Prints `shape: <why>` instead when the answer is not one line per suite.
 suites_answered_yes() {
     local answer line index=0 name
-    local -a suites lines yes=()
-    mapfile -t suites < <(every_suite)
+    local -a suites=("${every_suite[@]}") lines=() yes=()
     answer="$(bash "$subject" --shell-suites-owed "$@" 2>/dev/null)"
-    mapfile -t lines < <(printf '%s\n' "$answer" | sed '/^$/d')
+    while IFS= read -r line; do
+        [ -n "$line" ] && lines+=("$line")
+    done <<< "$answer"
     if [ "${#lines[@]}" -ne "${#suites[@]}" ]; then
         echo "shape: ${#lines[@]} lines for ${#suites[@]} suites: $answer"
         return
@@ -718,7 +735,7 @@ expect_owed() {
     fi
 }
 
-every_suite_by_name="$(every_suite | tr '\n' ' ')"
+every_suite_by_name="${every_suite[*]}"
 
 expect_owed "$every_suite_by_name" "every suite is owed in an all run" all
 expect_owed "$every_suite_by_name" "every suite is owed when nothing was said about the change" \
@@ -853,40 +870,65 @@ fi
 # only in `all`, and `audit.sh` names `Cargo.lock` only in its real run. A list
 # wider than the reads costs seconds on a commit that stages one of those; a
 # list narrower than the reads skips a suite that should have run.
-the_list_line() {
-    local script="$1" pattern="$2"
-    sed -n "s/^$pattern\$/\\1/p" "$script" | head -1
-}
+#
+# One `awk` over every script for all the reads, and the rest in bash, because
+# a process costs tens of milliseconds on Windows: the first spelling, three
+# processes per file read, took 2.7 seconds of this suite on 2026-09-23.
 
-# The script-relative prefix is built with its quotes escaped, so this file's
-# own text does not hold the spelling the reading takes as a read.
-the_reads_of_one_file() {
-    local tree="$1" file="$2" reach path beside_the_script
-    beside_the_script="\$(dirname \"\$0\")/"
-    grep -vE '^[[:space:]]*#' "$tree/$file" |
-        grep -oE '\$(root|repo_root)/[^"'"'"'[:space:])]*|\$\(dirname "\$0"\)/[^"'"'"'[:space:])]*' |
-        while IFS= read -r reach; do
-            case "$reach" in
-                "$beside_the_script"*) path="scripts/${reach#"$beside_the_script"}" ;;
-                *) path="${reach#*/}" ;;
-            esac
-            while [[ "$path" == *"/../"* ]]; do
-                path="$(printf '%s' "$path" | sed -E 's#[^/]+/\.\./##')"
-            done
-            printf '%s %s\n' "$path" "$reach"
-        done
+# Every read each `scripts/*.sh` of a tree names, one `<file> <path> <reach>`
+# line each, from lines that are not comments. A script-relative reach is
+# resolved from `scripts/` and each `dir/..` is taken off. The pattern stops at
+# a quote, a space, a bracket or a semicolon, and is written so this file's own
+# text holds no read it would take.
+the_reads_every_script_names() {
+    ( cd "$1" && awk '
+        FNR == 1 { file = FILENAME }
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            while (match(line, /\$(root|repo_root)\/[^"\047 \t);]*|\$\(dirname "\$0"\)\/[^"\047 \t);]*/)) {
+                reach = substr(line, RSTART, RLENGTH)
+                line = substr(line, RSTART + RLENGTH)
+                if (substr(reach, 1, 2) == "$(") path = "scripts/" substr(reach, index(reach, ")/") + 2)
+                else path = substr(reach, index(reach, "/") + 1)
+                while (sub(/[^\/]+\/\.\.\//, "", path)) {}
+                print file " " path " " reach
+            }
+        }' scripts/*.sh )
 }
 
 the_reads_no_list_names() {
-    local tree="$1" script="$2" suite name path reach file every_list no_list
-    local -A lists=()
-    every_list=" $(the_list_line "$script" 'what_every_suite_is_owed_for=(\(.*\))') "
-    no_list=" $(the_list_line "$script" 'what_no_suite_reads=(\(.*\))') "
+    local tree="$1" script="$2" suite name path reach file line every_list="" no_list=""
+    local -A lists=() reads_of=()
+
+    while IFS= read -r line; do
+        case "$line" in
+            'the_inputs_of_a_suite['*']="'*'"')
+                name="${line#the_inputs_of_a_suite[}"
+                name="${name%%]*}"
+                reach="${line#*=\"}"
+                lists[$name]="${reach%\"}"
+                ;;
+            'what_every_suite_is_owed_for=('*')')
+                every_list="${line#*=(}"
+                every_list="${every_list%)}"
+                ;;
+            'what_no_suite_reads=('*')')
+                no_list="${line#*=(}"
+                no_list="${no_list%)}"
+                ;;
+        esac
+    done < "$script"
+
+    while read -r file path reach; do
+        reads_of[$file]+="$path $reach"$'\n'
+    done < <(the_reads_every_script_names "$tree")
+
     for suite in "$tree"/scripts/*.test.sh; do
-        name="$(basename "$suite" .test.sh)"
-        lists[$name]="$(the_list_line "$script" "the_inputs_of_a_suite\\[$name\\]=\"\\(.*\\)\"")"
-        if ! grep -q "^the_inputs_of_a_suite\\[$name\\]=" "$script"; then
-            echo "$name: no the_inputs_of_a_suite[$name] line in $(basename "$script")"
+        name="${suite##*/}"
+        name="${name%.test.sh}"
+        if [ -z "${lists[$name]+listed}" ]; then
+            echo "$name: no the_inputs_of_a_suite[$name] line in ${script##*/}"
             continue
         fi
         local -A reached=(["scripts/$name.test.sh"]=1)
@@ -894,10 +936,10 @@ the_reads_no_list_names() {
         while [ "${#to_read[@]}" -gt 0 ]; do
             file="${to_read[0]}"
             to_read=("${to_read[@]:1}")
-            [ -f "$tree/$file" ] || continue
             while read -r path reach; do
+                [ -n "$path" ] || continue
                 case "$path" in
-                    '' | */ | *'$'* | *'*'* | *..*)
+                    */ | *'$'* | *'*'* | *..*)
                         echo "$name: $file reaches $reach, which is not one file"
                         continue
                         ;;
@@ -907,16 +949,16 @@ the_reads_no_list_names() {
                 case "$path" in
                     scripts/*.sh) to_read+=("$path") ;;
                 esac
-            done < <(the_reads_of_one_file "$tree" "$file")
+            done <<< "${reads_of[$file]-}"
         done
         for path in "${!reached[@]}"; do
-            case " ${lists[$name]} $every_list" in
+            case " ${lists[$name]} $every_list " in
                 *" $path "*) ;;
                 *) echo "$name: reads $path, which is on neither its list nor what_every_suite_is_owed_for" ;;
             esac
         done
         for path in ${lists[$name]}; do
-            case "$no_list" in
+            case " $no_list " in
                 *" $path "*) echo "$name: $path is on its list and on what_no_suite_reads" ;;
             esac
         done

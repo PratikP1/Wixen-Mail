@@ -253,7 +253,10 @@ is_placed_by_a_list() {
     return 1
 }
 
-# The first reason a suite is owed, or nothing when it is not.
+# The first reason a suite is owed, left in `owed_because`, which is empty when
+# it is not. A variable rather than a printed answer, because a command
+# substitution is a process, and a process costs tens of milliseconds on Windows
+# on every commit for every suite.
 #
 #     the_reason_a_suite_is_owed <suite> <mode> <names failing, one a line> [changed-path ...]
 #
@@ -264,33 +267,34 @@ is_placed_by_a_list() {
 the_reason_a_suite_is_owed() {
     local suite="$1" the_mode="$2" failing="$3" path named
     shift 3
+    owed_because=""
     case "$the_mode" in
         all | all_but_slow)
-            echo "every suite runs in an $the_mode run"
+            owed_because="every suite runs in an $the_mode run"
             return
             ;;
     esac
     while IFS= read -r named; do
         case "$named" in
             "$suite::"*)
-                echo "the commit names $named as failing"
+                owed_because="the commit names $named as failing"
                 return
                 ;;
         esac
     done <<< "$failing"
     for path in "$@"; do
         is_on_the_list "$path" "${what_every_suite_is_owed_for[*]}" &&
-            { echo "$path is what every suite runs under"; return; }
+            { owed_because="$path is what every suite runs under"; return; }
     done
     for path in "$@"; do
         is_on_the_list "$path" "${the_inputs_of_a_suite[$suite]-}" &&
-            { echo "$path is on its list"; return; }
+            { owed_because="$path is on its list"; return; }
     done
     for path in "$@"; do
         case "$path" in
             scripts/* | .githooks/*)
                 is_placed_by_a_list "$path" ||
-                    { echo "$path is a script no list places"; return; }
+                    { owed_because="$path is a script no list places"; return; }
                 ;;
         esac
     done
@@ -301,7 +305,7 @@ the_reason_a_suite_is_owed() {
 #
 #     the_shell_suites_owed <mode> <message-file or nothing> [changed-path ...]
 the_shell_suites_owed() {
-    local the_mode="$1" message_file="$2" candidate name why failing=""
+    local the_mode="$1" message_file="$2" candidate name owed_because failing=""
     shift 2
     case "$the_mode" in
         red)
@@ -311,10 +315,11 @@ the_shell_suites_owed() {
     esac
     for candidate in "$(dirname "$0")"/*.test.sh; do
         [ -e "$candidate" ] || continue
-        name="$(basename "$candidate" .test.sh)"
-        why="$(the_reason_a_suite_is_owed "$name" "$the_mode" "$failing" "$@")"
-        if [ -n "$why" ]; then
-            echo "$name yes: $why"
+        name="${candidate##*/}"
+        name="${name%.test.sh}"
+        the_reason_a_suite_is_owed "$name" "$the_mode" "$failing" "$@"
+        if [ -n "$owed_because" ]; then
+            echo "$name yes: $owed_because"
         else
             echo "$name no: nothing it reads changed"
         fi
