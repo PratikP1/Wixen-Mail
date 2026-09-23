@@ -25,11 +25,36 @@ subject="$root/scripts/which-checks.sh"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
-# Where the subject is run from. The repository root for every case but one:
-# the case that proves which-checks.sh really reads the index runs from a
-# repository of its own, so it cannot be answered by whatever happens to be
-# staged here and cannot touch it either.
-run_from="$root"
+# Where the subject is run from. The repository root for every case but one
+# until 2026-09-23: the case that proves which-checks.sh really reads the index
+# runs from a repository of its own, so it cannot be answered by whatever
+# happens to be staged here and cannot touch it either.
+#
+# Since that day (12-03.2) every other case answers from a tree of its own too.
+# The subject now reads `src/` under the directory it is run from, for the files
+# a source compiles in, so a case asked from the repository root would read this
+# repository's sources and could go red on a commit that owes this suite
+# nothing. The tree holds copies of the include lines the cases need, each
+# compared with the real one when it was written, and the files they name.
+a_tree="$scratch/a-tree"
+mkdir -p "$a_tree/src/service/spellcheck" "$a_tree/src/common" "$a_tree/src/presentation" \
+    "$a_tree/data" "$a_tree/locales/en-US"
+# Copied from `src/service/spellcheck/mod.rs:1050` and `src/common/catalogue.rs:153`
+# on 2026-09-23, each compared with its source by a read-only command before a
+# case used it. The third is not a copy: it is the shape rustfmt gives an
+# include whose argument does not fit on the line with the macro.
+printf '%s\n' 'const CORE_ENGLISH_WORDS: &str = include_str!("../../../data/dictionary_en.txt");' \
+    > "$a_tree/src/service/spellcheck/mod.rs"
+printf '%s\n' '    dates: include_str!("../../locales/en-US/dates.ftl"),' \
+    > "$a_tree/src/common/catalogue.rs"
+printf '%s\n' 'const THE_WORDS_A_LONG_NAME_NEEDS: &str = include_str!(' \
+    '    "../../data/the_words_somebody_gave_a_long_name_to.txt"' \
+    ');' > "$a_tree/src/presentation/wrapped.rs"
+for named in data/dictionary_en.txt locales/en-US/dates.ftl \
+    data/the_words_somebody_gave_a_long_name_to.txt data/nothing_compiles_this.txt; do
+    : > "$a_tree/$named"
+done
+run_from="$a_tree"
 
 expect() {
     local want="$1" desc="$2"
@@ -96,6 +121,36 @@ expect docs_only "one planning file" gsd/plan-02-01 .planning/ROADMAP.md
 expect docs_only "several docs" gsd/plan-02-01 docs/changelog.md docs/roadmap.md
 expect docs_only "a summary and a context" gsd/x .planning/phases/01/01-SUMMARY.md .planning/phases/01/01-CONTEXT.md
 expect docs_only "a readme" gsd/x README.md
+
+# ── What changed: a file the program compiles in ────────────────────────────
+# Added 2026-09-23 by 12-03.2. `data/dictionary_en.txt` is compiled into the
+# spellchecker with `include_str!`, so it is a build input however it is spelled,
+# and a commit changing only it answered `docs_only` and ran no spellcheck test
+# before CI. Pratik approved the rule for the dictionary that day and answered
+# the same day that it covers every file the program compiles in, the date
+# catalogue included (ledger 373).
+expect affected "a dictionary the program compiles in is not a document" \
+    gsd/x data/dictionary_en.txt
+expect all "a compiled-in dictionary on main earns everything" \
+    main data/dictionary_en.txt
+expect src/service/spellcheck/mod.rs "the sources compiling the dictionary are named" \
+    --sources-compiling data/dictionary_en.txt
+expect src/common/catalogue.rs "the sources compiling the date catalogue are named" \
+    --sources-compiling locales/en-US/dates.ftl
+expect affected "a file compiled in by a macro rustfmt wrapped is not a document" \
+    gsd/x data/the_words_somebody_gave_a_long_name_to.txt
+
+# The other half: a text file no source compiles in is still a document.
+expect docs_only "a text file nothing compiles in is still a document" \
+    gsd/x data/nothing_compiles_this.txt
+
+# And these cases answer from the tree above, not from this repository.
+if [ "$run_from" != "$root" ] && [ -f "$run_from/src/service/spellcheck/mod.rs" ]; then
+    suite_case_passed "the cases here answer from a tree of their own"
+else
+    suite_case_failed "the cases here answer from a tree of their own" \
+        "run from '$run_from', which is the repository or holds no fixture source"
+fi
 
 # ── What changed: anything the compiler sees ────────────────────────────────
 expect affected "one rust file" gsd/x src/application/threading.rs

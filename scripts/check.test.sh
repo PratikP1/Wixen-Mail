@@ -44,6 +44,18 @@ mkdir -p "$a_tree/tests"
 for kept in house_style checkbox_labels wired; do
     : > "$a_tree/tests/$kept.rs"
 done
+# Copies of three real include lines, from `src/service/spellcheck/mod.rs:1050`,
+# `src/common/catalogue.rs:153` and `src/application/sent_copy.rs:1133` on
+# 2026-09-23, each compared with its source by a read-only command before a
+# case used it. Nothing holds them to the real lines afterwards; ledger 582 is
+# for a reading that would.
+mkdir -p "$a_tree/src/service/spellcheck" "$a_tree/src/common" "$a_tree/src/application"
+printf '%s\n' 'const CORE_ENGLISH_WORDS: &str = include_str!("../../../data/dictionary_en.txt");' \
+    > "$a_tree/src/service/spellcheck/mod.rs"
+printf '%s\n' '    dates: include_str!("../../locales/en-US/dates.ftl"),' \
+    > "$a_tree/src/common/catalogue.rs"
+printf '%s\n' '        let controller = include_str!("mail_controller.rs")' \
+    > "$a_tree/src/application/sent_copy.rs"
 
 # The one way a case asks `check.sh` a question about what a change reaches.
 ask_from_the_tree() {
@@ -513,6 +525,34 @@ elif printf '%s\n' "$target_line" | grep -qE -- '--test gone( |$)'; then
 else
     suite_case_passed "a deleted test file is not handed to cargo"
 fi
+
+# A file the program compiles in reaches the tests of the source that compiles
+# it, whatever it is. Added 2026-09-23 by 12-03.2: the dictionary reached no
+# spellcheck test, the date catalogue no catalogue test, and a commit changing
+# only `mail_controller.rs` never ran `sent_copy`'s readings of it, which the
+# merge's full gate had been what caught. Asked of the tree above, whose three
+# sources hold copies of the real include lines.
+expect_a_library_run() {
+    local module="$1" desc="$2" runs target_line
+    shift 2
+    runs="$(scoped_runs "$@")"
+    target_line="$(the_one_target_line "$runs")"
+    if [ "${target_line%%:*}" = shape ]; then
+        suite_case_failed "$desc" "$target_line"
+    elif printf '%s\n' "$runs" | grep -qxF -- "--lib $module -- --test-threads=4"; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "no line '--lib $module -- --test-threads=4' in: $runs"
+    fi
+}
+
+expect_a_library_run service::spellcheck:: "a compiled-in dictionary reaches the spellchecker's tests" \
+    data/dictionary_en.txt
+expect_a_library_run common::catalogue:: "a date catalogue reaches the catalogue's tests" \
+    locales/en-US/dates.ftl
+expect_a_library_run application::sent_copy:: \
+    "a Rust file another module compiles in reaches that module's tests" \
+    src/application/mail_controller.rs
 
 # Read out of `check.sh`: no line that is not a comment hands cargo one
 # integration target named by a variable, which is the shape the separate calls
