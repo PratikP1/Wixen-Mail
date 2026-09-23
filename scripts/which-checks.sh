@@ -69,6 +69,121 @@ message_file=""
 # nothing and the index is read.
 manifest_diff_file=""
 
+# ── The files the program compiles in ───────────────────────────────────────
+# Added 2026-09-23 by 12-03.2. `data/dictionary_en.txt` is compiled into the
+# spellchecker with `include_str!`, so a commit changing only it answered
+# `docs_only` and ran no spellcheck test before CI. The same shape holds for the
+# date catalogue under `locales/`, the icon under `assets/`, and the Rust files
+# `src/application/sent_copy.rs` reads with `include_str!`. Pratik approved the
+# rule for the dictionary that day and answered the same day that it covers
+# every file the program compiles in (ledger 373).
+#
+# Read from `src/` relative to the directory this is run from, which is the top
+# of the work tree when the hook runs it. That is what lets a suite ask it of a
+# tree of its own.
+#
+# What it does not reach. A test in another module that depends on the file's
+# content, such as `tests/integration_tests.rs` using the spellchecker, which a
+# change to the compiling source does not reach either. A file read at test
+# time with `read_to_string` rather than compiled in, such as `docs/privacy.md`
+# read by `contact_groups.rs` and `update_check.rs`, which ledger 583 holds.
+# And an include this scan cannot read: it takes a string literal on the
+# macro's line or the line after it, which is how rustfmt wraps a long one, so
+# an argument built with `concat!(env!("CARGO_MANIFEST_DIR"), ...)` would be
+# missed and the file it names would read as a document again. Nothing holds
+# the real include lines to that shape after 12-03.2: the suites test the rule
+# over fixture copies, and the real tree's answers were read by hand once.
+# Ledger 582 is for a reading that runs on the commits that could break them.
+
+# Every file a source under `src/` compiles in, as `<file> <source>` lines,
+# each path from the top of the tree. Comment lines are skipped, since the
+# modules that compile a file in describe the macro in their doc comments.
+the_files_compiled_in() {
+    local -a sources
+    shopt -s globstar nullglob
+    sources=(src/**/*.rs)
+    shopt -u globstar nullglob
+    [ "${#sources[@]}" -gt 0 ] || return 0
+    awk '
+        function resolved(literal,    directory, parts, count, i, kept, result) {
+            directory = FILENAME
+            sub(/\/[^\/]*$/, "", directory)
+            count = split(directory "/" literal, parts, "/")
+            kept = 0
+            for (i = 1; i <= count; i++) {
+                if (parts[i] == "..") { if (kept > 0) kept-- }
+                else if (parts[i] != "." && parts[i] != "") stack[++kept] = parts[i]
+            }
+            result = stack[1]
+            for (i = 2; i <= kept; i++) result = result "/" stack[i]
+            return result
+        }
+        function the_literal(text) {
+            if (match(text, /"[^"]+"/)) return substr(text, RSTART + 1, RLENGTH - 2)
+            return ""
+        }
+        FNR == 1 { waiting = 0 }
+        waiting {
+            waiting = 0
+            literal = the_literal($0)
+            if (literal != "") print resolved(literal) " " FILENAME
+            next
+        }
+        /^[[:space:]]*\/\// { next }
+        match($0, /include_(str|bytes)!\(/) {
+            literal = the_literal(substr($0, RSTART + RLENGTH))
+            if (literal != "") print resolved(literal) " " FILENAME
+            else waiting = 1
+        }
+    ' "${sources[@]}"
+}
+
+# The sources compiling any of the given files in, each once.
+the_sources_compiling() {
+    local file source wanted
+    local -A seen=()
+    while read -r file source; do
+        for wanted in "$@"; do
+            [ "$file" = "$wanted" ] || continue
+            [ -n "${seen[$source]-}" ] && continue
+            seen[$source]=1
+            echo "$source"
+        done
+    done < <(the_files_compiled_in)
+}
+
+# Read once, when a document is first asked about.
+files_compiled_in=""
+files_compiled_in_read=""
+
+# A document is a `.md` or `.txt` file no source compiles in. One rule, asked
+# by `main`'s loop, by a branch's loop, and by `check.sh` through
+# `--documents-among`, so it has one spelling.
+is_a_document() {
+    case "$1" in
+        *.md | *.txt) ;;
+        *) return 1 ;;
+    esac
+    if [ -z "$files_compiled_in_read" ]; then
+        files_compiled_in="$(the_files_compiled_in | cut -d' ' -f1)"
+        files_compiled_in_read=yes
+    fi
+    case $'\n'"$files_compiled_in"$'\n' in
+        *$'\n'"$1"$'\n'*) return 1 ;;
+    esac
+    return 0
+}
+
+#   which-checks.sh --sources-compiling <file> [file ...]
+#
+# The sources that compile any of the given files in, one a line. `check.sh`
+# asks it for the paths a commit stages, and treats each source as changed too.
+if [ "${1-}" = "--sources-compiling" ]; then
+    shift
+    the_sources_compiling "$@"
+    exit 0
+fi
+
 while :; do
     case "${1-}" in
         --message-file=*)
@@ -136,13 +251,10 @@ case "$branch" in
             exit 0
         fi
         for path in "$@"; do
-            case "$path" in
-                *.md | *.txt) ;;
-                *)
-                    echo all
-                    exit 0
-                    ;;
-            esac
+            if ! is_a_document "$path"; then
+                echo all
+                exit 0
+            fi
         done
         echo docs_only
         exit 0
@@ -373,15 +485,13 @@ done
 # Everything else is a build input, however much it reads like prose:
 # `guards/guards.toml` names breaks the runner applies to source, `Cargo.toml`
 # and `Cargo.lock` reach every crate, and a change to this script or to the hook
-# changes what checking even means.
+# changes what checking even means. And since 2026-09-23 a `.md` or `.txt` the
+# program compiles in is a build input too, by `is_a_document` above.
 for path in "$@"; do
-    case "$path" in
-        *.md | *.txt) ;;
-        *)
-            echo affected
-            exit 0
-            ;;
-    esac
+    if ! is_a_document "$path"; then
+        echo affected
+        exit 0
+    fi
 done
 
 echo docs_only

@@ -373,6 +373,13 @@ through its coupled targets); `src/application/mod.rs`,
 whole layer; `cargo test` takes one `--lib`, and several module paths
 are several invocations joined with `&&`, which every `<verify>` here
 does; a `<verify>` never ends in `| wc -l`, `|| true` or `| cat`.
+Since 12-03.2 on 2026-09-23, a file the program compiles in reaches the
+tests of the source that compiles it: `locales/en-US/dates.ftl` reaches
+`common::catalogue`, `data/dictionary_en.txt` reaches `service::spellcheck`
+and is no longer a document, and the Rust files `sent_copy.rs` reads with
+`include_str!`, `mail_controller.rs`, `mail_session.rs` and
+`service/protocols/imap.rs`, reach `application::sent_copy` (ledger 373,
+closed; ledger 582 for the real include lines).
 
 **Tools that are broken, and what to do instead.** `gsd-tools roadmap
 update-plan-progress` counts a README as a plan: edit `ROADMAP.md` by

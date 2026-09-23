@@ -242,12 +242,26 @@ fi
 #
 # No line holds `--no-fail-fast`. The runner's line owns it, because cargo
 # refuses the flag given twice.
+#
+# Each source that compiles a changed file in, by `include_str!` or
+# `include_bytes!`, counts as changed too, for its own library run and for the
+# targets the registry couples to it, since 2026-09-23 (12-03.2): a commit
+# changing only the dictionary ran no spellcheck test, and one changing only
+# `mail_controller.rs` never ran `sent_copy`'s readings of it. `which-checks.sh`
+# answers which sources those are, from `src/` under the directory this runs
+# from. A source that compiles itself in adds nothing, and one counted twice
+# runs once. `--suites-for` above reads no source file; only this does.
 the_scoped_runs() {
-    local registry="$1" path module target line=""
+    local registry="$1" path module target source line=""
     shift
-    local -a targets=()
-    local -A named=()
-    for path in "$@"; do
+    local -a paths=("$@") targets=()
+    local -A named=() modules=()
+    if [ "$#" -gt 0 ]; then
+        while IFS= read -r source; do
+            [ -n "$source" ] && paths+=("$source")
+        done < <("$(dirname "$0")/which-checks.sh" --sources-compiling "$@")
+    fi
+    for path in "${paths[@]+"${paths[@]}"}"; do
         case "$path" in
             src/*.rs)
                 module="${path#src/}"
@@ -255,6 +269,8 @@ the_scoped_runs() {
                 module="${module%/mod}"
                 module="${module//\//::}"
                 [ "$module" = "lib" ] && continue
+                [ -n "${modules[$module]-}" ] && continue
+                modules[$module]=1
                 echo "--lib ${module}:: -- --test-threads=4"
                 ;;
             tests/*.rs)
@@ -266,7 +282,7 @@ the_scoped_runs() {
     done
     while IFS= read -r target; do
         [ -n "$target" ] && targets+=("$target")
-    done < <(the_suites_that_guard_what_changed "$registry" "$@")
+    done < <(the_suites_that_guard_what_changed "$registry" "${paths[@]+"${paths[@]}"}")
     targets+=("${guards_that_read_the_whole_tree[@]}")
     for target in "${targets[@]}"; do
         [ -n "${named[$target]-}" ] && continue
