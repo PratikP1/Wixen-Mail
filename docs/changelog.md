@@ -324,6 +324,17 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **An account signing in with Google or Microsoft no longer fails at start with "Could not
+  reach the credential store".** When the program starts it checks every account for mail and
+  starts watching each inbox at the same moment, and both read the saved sign-in from the
+  Windows credential store. The library that reaches the store sets it up the first time it
+  is asked, and a second question arriving while the first was still setting it up was told
+  the store was not there. So an account could fail its first check or its watch, and say
+  the credential store could not be reached, when nothing was wrong with the store. Nobody
+  reported this: the tests found it, three times among twenty-eight runs of the whole gate
+  measured on 2026-09-23, and a test that starts sixteen threads at once in a fresh program
+  found it every time. Now the first question finishes setting the store up before any other
+  is asked.
 - **Coming back to the window that shows a conversation as headings puts the keyboard in the
   message again.** Since that window arrived on 2026-07-28, at `0.1.0-alpha.15`, and in every
   build through `1.0.0-alpha.1`, nothing in it answered the window becoming active again.

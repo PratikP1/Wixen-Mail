@@ -15,12 +15,40 @@
 
 use crate::common::Result;
 
+/// Whether the first credential entry of this process has been opened, which
+/// is what sets the platform's store up.
+#[cfg(not(test))]
+static THE_STORE_IS_SET_UP: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// Open a credential entry, the first of the process before any other.
+///
+/// `keyring` 4.1.5 sets up the platform's store inside the first
+/// `keyring::Entry::new` of a process, and a thread that loses the race to do
+/// it goes straight on to ask the store before the winner has set it, which
+/// answers "No default store has been set" (`keyring-4.1.5/src/v1.rs:47-55`,
+/// ledger 374, read 2026-09-23). So the first entry is opened inside a
+/// `OnceLock` initialiser and every other caller waits for it to return, by
+/// which time the store is set. The two places that open an entry, this
+/// module's backing and the uninstall sweep in `application::forget`, both open
+/// through here, because two threads reaching one each would race the same
+/// flag.
+///
+/// `pub(crate)` and outside the test build, because both callers are: a test
+/// build holding it would hold an item nothing calls.
+#[cfg(not(test))]
+pub(crate) fn open_entry(service: &str, user: &str) -> keyring::Result<keyring::Entry> {
+    let open = || keyring::Entry::new(service, user);
+    let mut the_first = None;
+    THE_STORE_IS_SET_UP.get_or_init(|| the_first = Some(open()));
+    the_first.unwrap_or_else(open)
+}
+
 #[cfg(not(test))]
 mod backing {
     use crate::common::{Error, Result};
 
     fn entry(service: &str, user: &str) -> Result<keyring::Entry> {
-        keyring::Entry::new(service, user)
+        super::open_entry(service, user)
             .map_err(|e| Error::Security(format!("Could not reach the credential store: {e}")))
     }
 
