@@ -70,7 +70,7 @@ fn report(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, what: &str, failures: Vec<St
     }
     tracing::error!("{} could not be saved: {:?}", what, failures);
     let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-        "Some {} could not be saved: {}",
+        "Some {} could not be saved: {}.",
         what,
         failures.join("; ")
     )));
@@ -2179,8 +2179,11 @@ pub fn search_messages(
             }
         }
         Err(e) => {
-            tracing::error!("Search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            tracing::error!("The search could not be run: {}.", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 
@@ -2318,7 +2321,10 @@ pub fn search_contacts(
         }
         Err(e) => {
             tracing::error!("Contact search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2348,7 +2354,10 @@ pub fn search_reminders(
         }
         Err(e) => {
             tracing::error!("Reminder search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2378,7 +2387,10 @@ pub fn search_tasks(
         }
         Err(e) => {
             tracing::error!("Task search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2408,7 +2420,10 @@ pub fn search_notes(
         }
         Err(e) => {
             tracing::error!("Note search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2472,7 +2487,10 @@ pub fn search_calendar(
         }
         Err(e) => {
             tracing::error!("Calendar search failed: {}", e);
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The search could not be run: {}.",
+                e
+            )));
         }
     }
 }
@@ -2509,7 +2527,7 @@ pub fn new_contact(
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Contact could not be saved: {}",
+                "Contact could not be saved: {}.",
                 e
             )));
         }
@@ -2786,7 +2804,7 @@ pub fn new_pim_item(
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be saved: {}",
+                "{} could not be saved: {}.",
                 kind.label(),
                 e
             )));
@@ -3173,7 +3191,7 @@ pub fn new_container(
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be saved: {}",
+                "{} could not be saved: {}.",
                 kind.label(),
                 e
             )));
@@ -3571,7 +3589,7 @@ pub fn open_draft(
         Ok(drafts) => drafts,
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Drafts could not be read: {e}"
+                "Drafts could not be read: {e}."
             )));
             return None;
         }
@@ -6667,7 +6685,7 @@ pub fn delete_container(
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be deleted: {}",
+                "{} could not be deleted: {}.",
                 kind.label(),
                 e
             )));

@@ -12576,7 +12576,7 @@ before = """        if let Some(row) = s.messages.iter_mut().find(|m| m.message_
         }
     }
     let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-        "That change could not be saved on this computer, so it has been put back: {e}"
+        "That change could not be saved on this computer, so it has been put back: {e}."
     )));
     false"""
 after = """        let _ = (s.messages.len(), was);
@@ -25451,10 +25451,10 @@ file = "src/presentation/wx_app.rs"
 suite = "how_much_message_text_stays_is_read_back_from_the_permissions_page"
 before = """                Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
                 Err(e) => {
-                    fail(format!("Cache error: {}", e));"""
+                    fail(format!("The mail on this computer could not be opened: {}.", e));"""
 after = """                Ok(cache) => cache,
                 Err(e) => {
-                    fail(format!("Cache error: {}", e));"""
+                    fail(format!("The mail on this computer could not be opened: {}.", e));"""
 red = [
     "test_the_two_workers_that_evict_are_handed_the_setting_and_nothing_else_evicts",
 ]

@@ -3661,7 +3661,7 @@ impl WxMailApp {
                         };
                         if let Err(e) = cache.set_calendar_visibility(&id, !was_showing) {
                             let _ = ui_tx.try_send(UIUpdate::ErrorOccurred(format!(
-                                "Could not change whether {name} is showing: {e}"
+                                "Whether {name} is showing could not be changed: {e}."
                             )));
                             return;
                         }
@@ -7640,7 +7640,7 @@ fn load_messages_with_label(
             // reassuring to be told wrongly.
             tracing::error!("Failed to read the mail carrying a label: {}", e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "The mail with that label could not be read: {e}"
+                "The mail with that label could not be read: {e}."
             )));
         }
     }
@@ -7691,7 +7691,7 @@ fn load_every_inbox(
             // more reassuring of the two to be told wrongly.
             tracing::error!("Failed to read every inbox: {}", e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "The inboxes could not be read: {e}"
+                "The inboxes could not be read: {e}."
             )));
         }
     }
@@ -7737,7 +7737,7 @@ fn load_every_inbox_conversations(
         Err(e) => {
             tracing::error!("Failed to read every inbox's conversations: {}", e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "The inboxes' conversations could not be read: {e}"
+                "The inboxes' conversations could not be read: {e}."
             )));
         }
     }
@@ -8017,7 +8017,7 @@ fn run_a_saved_search(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, chosen: ChosenSe
                 // reassuring to be told wrongly.
                 tracing::error!("The mail a saved search reads could not be gathered: {e}");
                 return say(UIUpdate::ErrorOccurred(format!(
-                    "This saved search could not be run: {e}"
+                    "This saved search could not be run: {e}."
                 )));
             }
         };
@@ -8044,7 +8044,7 @@ fn run_a_saved_search(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, chosen: ChosenSe
             Err(e) => {
                 tracing::error!("What a saved search found could not be listed: {e}");
                 return say(UIUpdate::ErrorOccurred(format!(
-                    "What this saved search found could not be listed: {e}"
+                    "What this saved search found could not be listed: {e}."
                 )));
             }
         };
@@ -8108,7 +8108,7 @@ fn read_the_tree_back(
         Err(e) => {
             tracing::error!("The folder tree could not be read back: {e}");
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "The folder tree could not be read again, so it may be out of date: {e}"
+                "The folder tree could not be read again, so it may be out of date: {e}."
             )));
         }
     }
@@ -8278,7 +8278,7 @@ fn save_this_search(
     if let Err(e) = cache.create_saved_search(&account_id, &search) {
         tracing::error!("A saved search could not be kept: {e}");
         let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-            "That search could not be saved: {e}"
+            "That search could not be saved: {e}."
         )));
         return;
     }
@@ -8445,7 +8445,7 @@ fn edit_the_chosen_searchs_conditions(
         Err(e) => {
             tracing::error!("A saved search's conditions could not be written: {e}");
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Those conditions could not be saved: {e}"
+                "Those conditions could not be saved: {e}."
             )));
         }
     }
@@ -8512,7 +8512,7 @@ fn rename_the_chosen_search(
         Err(e) => {
             tracing::error!("A saved search could not be renamed: {e}");
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "That search could not be renamed: {e}"
+                "That search could not be renamed: {e}."
             )));
         }
     }
@@ -8579,7 +8579,7 @@ fn delete_the_chosen_search(
         Err(e) => {
             tracing::error!("A saved search could not be removed: {e}");
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "That search could not be removed: {e}"
+                "That search could not be removed: {e}."
             )));
         }
     }
@@ -10483,7 +10483,7 @@ fn open_help(topic: &crate::application::help::Topic, tx: &Sender<UIUpdate>, rt:
         Err(e) => {
             tracing::error!("Help page {} could not be opened: {}", topic.file, e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be opened: {e}",
+                "{} could not be opened: {e}.",
                 plain(topic.title)
             )));
         }
@@ -13743,7 +13743,7 @@ pub(crate) fn load_module_data(
     }
     if !failures.is_empty() {
         let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-            "Could not load {}: {}",
+            "{} could not be loaded: {}.",
             module.label().replace('&', ""),
             failures.join("; ")
         )));
@@ -14815,7 +14815,7 @@ fn save_the_message_as(
             Err(why) => {
                 say(UIUpdate::ErrorOccurred(format!(
                     "The mail on this computer could not be opened, so the message was not \
-                     saved. {why}"
+                     saved. {why}."
                 )));
                 return;
             }
@@ -14826,7 +14826,7 @@ fn save_the_message_as(
                 // Through ErrorOccurred rather than the status line: a save that
                 // did not happen has to interrupt, because the next thing
                 // somebody does is go looking for a file that is not there.
-                Err(why) => UIUpdate::ErrorOccurred(format!("The message was not saved. {why}")),
+                Err(why) => UIUpdate::ErrorOccurred(format!("The message was not saved. {why}.")),
             },
         );
     });
@@ -15217,7 +15217,7 @@ fn load_folder_messages(
             }
             Err(e) => {
                 let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                    "Could not read the outbox: {e}"
+                    "The Outbox could not be read: {e}."
                 )));
             }
         }
@@ -15236,7 +15236,7 @@ fn load_folder_messages(
         Err(e) => {
             tracing::error!("Failed to read folder {}: {}", folder_id, e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Could not read this folder: {}",
+                "This folder could not be read: {}.",
                 e
             )));
         }
@@ -15372,7 +15372,7 @@ fn load_folder_conversations(
         Err(e) => {
             tracing::error!("Failed to read the conversations in {}: {}", folder_id, e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Could not read this folder's conversations: {e}"
+                "This folder's conversations could not be read: {e}."
             )));
         }
     }
@@ -18957,7 +18957,7 @@ fn write_flags_or_put_the_row_back(
         }
     }
     let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-        "That change could not be saved on this computer, so it has been put back: {e}"
+        "That change could not be saved on this computer, so it has been put back: {e}."
     )));
     false
 }
@@ -20519,7 +20519,7 @@ fn flush_outbox(app: AppHandles<'_>) {
         let Some(dir) = cache_dir else {
             let _ = tx
                 .send(UIUpdate::ErrorOccurred(
-                    "No cache directory available".into(),
+                    "There is nowhere on this computer to keep the mail.".into(),
                 ))
                 .await;
             return;
@@ -20528,7 +20528,10 @@ fn flush_outbox(app: AppHandles<'_>) {
             Ok(c) => c,
             Err(e) => {
                 let _ = tx
-                    .send(UIUpdate::ErrorOccurred(format!("Cache error: {}", e)))
+                    .send(UIUpdate::ErrorOccurred(format!(
+                        "The mail on this computer could not be opened: {}.",
+                        e
+                    )))
                     .await;
                 return;
             }
@@ -20538,7 +20541,10 @@ fn flush_outbox(app: AppHandles<'_>) {
         let Some(account) = account else {
             let _ = tx
                 .send(UIUpdate::ErrorOccurred(
-                    "No account is selected, so there is nothing to send from".into(),
+                    // Not the refusal for nothing chosen: there is no list to
+                    // send somebody back to. The active account is the one the
+                    // Outbox sends from, and this says which fact is missing.
+                    "There is no active account, so there is nothing to send from.".into(),
                 ))
                 .await;
             return;
@@ -20557,7 +20563,10 @@ fn flush_outbox(app: AppHandles<'_>) {
             Ok(msgs) => msgs,
             Err(e) => {
                 let _ = tx
-                    .send(UIUpdate::ErrorOccurred(format!("Outbox load error: {}", e)))
+                    .send(UIUpdate::ErrorOccurred(format!(
+                        "The Outbox could not be read: {}.",
+                        e
+                    )))
                     .await;
                 return;
             }
@@ -21688,7 +21697,7 @@ fn spawn_folder_move(
         let summed = what_was_done(&chosen, &outcome);
         match first_reason {
             // Nothing went: a refusal, spoken as one, with the first reason.
-            Some(reason) if went == 0 => say(UIUpdate::ErrorOccurred(format!("{summed}: {reason}"))),
+            Some(reason) if went == 0 => say(UIUpdate::ErrorOccurred(format!("{summed}: {reason}."))),
             _ => say(UIUpdate::StatusUpdated(summed)),
         }
     });
@@ -22430,7 +22439,7 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
         let Some(account) = account else { return };
         let Ok(port) = account.smtp_port.trim().parse::<u16>() else {
             return say(UIUpdate::ErrorOccurred(format!(
-                "No read receipt was sent: {} has no usable SMTP port",
+                "No read receipt was sent: {} has no usable SMTP port.",
                 account.name
             )));
         };
@@ -22438,7 +22447,7 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
             Ok(auth) => auth,
             Err(e) => {
                 return say(UIUpdate::ErrorOccurred(format!(
-                    "No read receipt was sent: {e}"
+                    "No read receipt was sent: {e}."
                 )));
             }
         };
@@ -22457,7 +22466,7 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
         };
         let Ok(client) = client else {
             return say(UIUpdate::ErrorOccurred(
-                "No read receipt was sent: the mail settings are unusable".to_string(),
+                "No read receipt was sent: the mail settings are unusable.".to_string(),
             ));
         };
 
@@ -22483,7 +22492,7 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
                 "Read receipt sent to {notify}."
             ))),
             Err(e) => say(UIUpdate::ErrorOccurred(format!(
-                "No read receipt was sent: {e}"
+                "No read receipt was sent: {e}."
             ))),
         }
     });
@@ -22531,11 +22540,16 @@ fn check_pop_mail(
         ));
     };
     let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
-        return fail("No cache directory available".to_string());
+        return fail("There is nowhere on this computer to keep the mail.".to_string());
     };
     let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
         Ok(cache) => cache,
-        Err(e) => return fail(format!("Cache error: {}", e)),
+        Err(e) => {
+            return fail(format!(
+                "The mail on this computer could not be opened: {}.",
+                e
+            ));
+        }
     };
 
     let inbox = match ensure_local_folders(&cache, account) {
@@ -24074,7 +24088,7 @@ fn read_attachment(
             // and a person who asked for two is told nothing by that. The
             // producer's own sentence follows it and says what went wrong.
             Err(e) => tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "{} could not be opened: {e}",
+                "{} could not be opened: {e}.",
                 attachment.suggested_file_name()
             ))),
         };
@@ -24188,7 +24202,7 @@ fn save_attachment(
             // did not happen has to interrupt, because the next thing somebody
             // does is go looking for a file that is not there.
             Err(e) => tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Could not save the attachment: {e}"
+                "The attachment could not be saved: {e}."
             ))),
         };
     });
@@ -24750,7 +24764,7 @@ fn start_the_download(app: AppHandles<'_>) {
         let worked = || lock_state(&state).downloading.wait.tell_it_worked();
 
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
-            say(UIUpdate::ErrorOccurred("No cache directory available".to_string()));
+            say(UIUpdate::ErrorOccurred("There is nowhere on this computer to keep the mail.".to_string()));
             lock_state(&state).downloading.running = false;
             return;
         };
@@ -24762,7 +24776,7 @@ fn start_the_download(app: AppHandles<'_>) {
         let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
             Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
             Err(e) => {
-                say(UIUpdate::ErrorOccurred(format!("Cache error: {e}")));
+                say(UIUpdate::ErrorOccurred(format!("The mail on this computer could not be opened: {e}.")));
                 lock_state(&state).downloading.running = false;
                 return;
             }
@@ -24812,7 +24826,7 @@ fn start_the_download(app: AppHandles<'_>) {
                 Ok(stored) => stored,
                 Err(e) => {
                     say(UIUpdate::ErrorOccurred(format!(
-                        "Could not store the folder list: {e}"
+                        "The folder list could not be kept: {e}."
                     )));
                     continue;
                 }
@@ -24840,7 +24854,7 @@ fn start_the_download(app: AppHandles<'_>) {
                     Ok(missing) => missing,
                     Err(e) => {
                         say(UIUpdate::ErrorOccurred(format!(
-                            "The messages with no text here could not be listed: {e}"
+                            "The messages with no text here could not be listed: {e}."
                         )));
                         break;
                     }
@@ -25321,7 +25335,7 @@ fn spawn_mail_sync(
                 continue;
             }
             let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
-                fail("No cache directory available".to_string());
+                fail("There is nowhere on this computer to keep the mail.".to_string());
                 continue;
             };
             // This worker's cache evicts at the end of every folder's sync, so
@@ -25330,7 +25344,7 @@ fn spawn_mail_sync(
             let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
                 Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
                 Err(e) => {
-                    fail(format!("Cache error: {}", e));
+                    fail(format!("The mail on this computer could not be opened: {}.", e));
                     continue;
                 }
             };
@@ -25602,7 +25616,7 @@ fn spawn_mail_sync(
 
             if !problems.is_empty() {
                 say(UIUpdate::ErrorOccurred(format!(
-                    "Some folders could not be read. {}",
+                    "Some folders could not be read. {}.",
                     problems.join("; ")
                 )));
             }
@@ -25669,7 +25683,7 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
             handle.block_on(async {
                 let _ = tx
                     .send(UIUpdate::ErrorOccurred(
-                        "No cache directory available".into(),
+                        "There is nowhere on this computer to keep the mail.".into(),
                     ))
                     .await;
             });
@@ -25680,7 +25694,10 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
             Err(e) => {
                 handle.block_on(async {
                     let _ = tx
-                        .send(UIUpdate::ErrorOccurred(format!("Cache error: {}", e)))
+                        .send(UIUpdate::ErrorOccurred(format!(
+                            "The mail on this computer could not be opened: {}.",
+                            e
+                        )))
                         .await;
                 });
                 return;
@@ -25807,7 +25824,7 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
         let aid = account_id.as_deref().unwrap_or("default");
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(
-                "Tasks could not be synced: there is nowhere to keep them".into(),
+                "Tasks could not be synced: there is nowhere to keep them.".into(),
             ));
             return;
         };
@@ -25815,7 +25832,7 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
             Ok(cache) => cache,
             Err(e) => {
                 let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                    "Tasks could not be synced: {e}"
+                    "Tasks could not be synced: {e}."
                 )));
                 return;
             }
@@ -25909,13 +25926,13 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
         let aid = account_id.as_deref().unwrap_or("default");
         let Some(account) = accounts.iter().find(|account| account.id == aid).cloned() else {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(
-                "Notes could not be synced: no account is open".into(),
+                "Notes could not be synced: no account is open.".into(),
             ));
             return;
         };
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(
-                "Notes could not be synced: there is nowhere to keep them".into(),
+                "Notes could not be synced: there is nowhere to keep them.".into(),
             ));
             return;
         };
@@ -25923,7 +25940,7 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
             Ok(cache) => cache,
             Err(e) => {
                 let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                    "Notes could not be synced: {e}"
+                    "Notes could not be synced: {e}."
                 )));
                 return;
             }
@@ -25933,7 +25950,7 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
             Ok(said) => said,
             Err(e) => {
                 let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
-                    "Notes could not be synced: {e}"
+                    "Notes could not be synced: {e}."
                 )));
                 return;
             }
@@ -25987,7 +26004,7 @@ pub(crate) fn spawn_calendar_sync(
             handle.block_on(async {
                 let _ = tx
                     .send(UIUpdate::ErrorOccurred(
-                        "No cache directory available".into(),
+                        "There is nowhere on this computer to keep the mail.".into(),
                     ))
                     .await;
             });
@@ -25998,7 +26015,10 @@ pub(crate) fn spawn_calendar_sync(
             Err(e) => {
                 handle.block_on(async {
                     let _ = tx
-                        .send(UIUpdate::ErrorOccurred(format!("Cache error: {}", e)))
+                        .send(UIUpdate::ErrorOccurred(format!(
+                            "The mail on this computer could not be opened: {}.",
+                            e
+                        )))
                         .await;
                 });
                 return;

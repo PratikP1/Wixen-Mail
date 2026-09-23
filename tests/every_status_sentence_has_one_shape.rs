@@ -42,17 +42,26 @@ const THE_LAYERS: [&str; 2] = ["src/presentation", "src/application"];
 
 /// The calls that put a line on the status bar, and the voice each gives it.
 ///
-/// The seven #75 counted, and the two 11-06.1 added for a line the eye may
-/// want and the ear has already had. `send_shown` and `UIUpdate::Shown` are
-/// here because they write to the status bar, which is what this reading is
-/// about; that they are spoken by nothing is 10-04's question and not this
-/// one's.
-const THE_CALLS: [(&str, Voice); 9] = [
+/// The seven #75 counted, the two 11-06.1 added for a line the eye may want
+/// and the ear has already had, and the one #75 did not count.
+/// `send_shown` and `UIUpdate::Shown` are here because they write to the
+/// status bar, which is what this reading is about; that they are spoken by
+/// nothing is 10-04's question and not this one's.
+///
+/// `UIUpdate::ErrorOccurred` is the tenth and was found by following the
+/// handler rather than by counting calls: its arm writes
+/// `set_status_text(&format!("Error: {error}"), 0)` and announces it at High,
+/// so its seventy-five sentences are on the bar like every other, and they
+/// carried the same defects. The "Error: " in front of them stays: it says
+/// which kind of thing arrived, and a person working by ear meets that
+/// before the sentence rather than after it.
+const THE_CALLS: [(&str, Voice); 10] = [
     ("send_status(", Voice::Answer),
     ("send_refusal(", Voice::Answer),
     ("said_and_shown(", Voice::Answer),
     ("set_status_text(", Voice::Answer),
     ("UIUpdate::StatusUpdated(", Voice::Answer),
+    ("UIUpdate::ErrorOccurred(", Voice::Answer),
     ("send_shown(", Voice::Answer),
     ("UIUpdate::Shown(", Voice::Answer),
     ("send_progress(", Voice::Step),
