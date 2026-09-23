@@ -127,9 +127,17 @@ const RESULT_NAME = "a-link-opens-where-the-setting-says";
 const THE_PAGE_WINDOW = "Scan target - headings - Wixen Mail";
 
 // The two links on the page, by the text NVDA reads for each: the sender's
-// link by its words, the made link by its address.
+// link by its words, the made link by the end of its address.
+//
+// The end and not the whole, since 2026-09-23. The made link's name is its
+// address, and NVDA reads the punctuation in an address as words: the pull
+// request run 35872797349, the first in which the second K reached the link,
+// heard "https: slash slash example dot org slash written-out, link" while
+// this case waited for "example.org/written-out" and timed out. The last
+// part of the path has no punctuation NVDA speaks, so it reads the same in
+// the source and in the speech.
 const THE_SENDERS_LINK = "Where it went";
-const THE_ADDRESS_WRITTEN_OUT = "example.org/written-out";
+const THE_END_OF_THE_ADDRESS_WRITTEN_OUT = "written-out";
 
 // How long to leave after Enter for the browser, or the page, to arrive and
 // be spoken before anything is read.
@@ -361,7 +369,7 @@ test("Enter on a link in the formatted message window leaves the message where i
   record.focusAfterTheFirstReturn = afterTheFirstReturn.focus;
   const beforeTheSecondKey = (await nvda.spokenPhraseLog()).length;
   await nvda.press("k");
-  await waitToHearAll(nvda, [THE_ADDRESS_WRITTEN_OUT]);
+  await waitToHearAll(nvda, [THE_END_OF_THE_ADDRESS_WRITTEN_OUT]);
 
   // Enter on the made link, the same way, so #89's link is shown to take
   // the same route as the sender's.
