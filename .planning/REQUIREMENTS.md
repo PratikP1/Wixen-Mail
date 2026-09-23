@@ -3486,10 +3486,21 @@ seven groups.
   - [D] Every run of `scripts/check.sh` that is not a question answered early names its
     mode before its first stage and ends, pass or fail, with each stage's seconds and the
     total, and the questions print only their answers (12-03.2, task 1).
+    **Done 2026-09-23** by `begin_stage` and the exit trap `the_run_ends` in
+    `scripts/check.sh`, held by the `check.test.sh` cases "a run names the mode it was given
+    before it starts", "a run that stops before its first stage still says how long it
+    ran", "every stage check.sh announces is timed" with its planted companion, and "a
+    question answered before the run prints no stage line".
   - [D] Two threads reaching the credential store at once both find it ready: the first
     entry is opened once under a lock at both sites, and a target that starts twenty fresh
     processes of sixteen threads each was red three times by hand before the fix (12-03.2,
-    task 2; ledger 374).
+    task 2; ledger 374). **Done 2026-09-23** by `secret_store::open_entry`, which both
+    `secret_store`'s backing and `application::forget` open through, held by
+    `test_threads_reaching_the_credential_store_at_once_all_find_it_ready` in
+    `tests/the_credential_store_is_ready_for_every_thread.rs`, 20 of 20 children failing
+    on each of three hand reds, and by the record "the first credential entry of a process
+    sets the store up before any other is opened"; ledger 374 fixed, 581 carries its
+    second finding.
   - [D] Each shell suite runs when a path on its own list in `scripts/check.sh` is staged;
     every suite for `scripts/shell-suite.sh`, `.githooks/commit-msg` or a path under
     `scripts/` or `.githooks/` that no list places, and in every `all` and `all_but_slow`
@@ -3500,18 +3511,39 @@ seven groups.
     taken again after tasks 5 and 7 (12-03.2, tasks 3, 5 and 7). Until Pratik's answer of
     2026-09-23 this line had the four suites run together when a staged path was under
     `scripts/` or `.githooks/` or was `guards/guards.toml` or `.cargo/audit.toml`.
+    **Done 2026-09-23** by `the_inputs_of_a_suite`, `what_every_suite_is_owed_for`,
+    `what_no_suite_reads`, `the_shell_suites_owed` and `the_staged_paths` in
+    `scripts/check.sh`, held by eighteen `check.test.sh` cases from "every suite is owed in
+    an all run" to "a staged move out of the scripts folder owes the suites that read the
+    file it left" and "every file a suite reads is on its list", with two planted
+    companions.
   - [D] Every integration target the scoped run reaches runs in one `cargo test
     --no-fail-fast` call, each once, and a red is judged by the same lines (12-03.2, task 4).
+    **Done 2026-09-23** by `the_scoped_runs` and `run_the_integration_targets` in
+    `scripts/check.sh`, held by seven `check.test.sh` cases from "the scoped integration
+    targets are one cargo call" to "no integration target is run by a cargo call of its
+    own", and by `test_one_failing_target_does_not_hide_the_rest` in `house_style`.
   - [D] A file the program compiles in, Rust or not, reaches the tests of every source that
     compiles it, and a compiled-in `.md` or `.txt` is not a document (12-03.2, task 5;
     ledger 373 closed as built with the task's green, on Pratik's answer of 2026-09-23 to
     README decision 16 that the rule covers every file the program compiles in, the date
     catalogue included; until that answer this line had 373 left open with a dated note,
-    since closing it was his yes or no).
+    since closing it was his yes or no). **Done 2026-09-23** by `which-checks.sh
+    --sources-compiling` and `is_a_document`, and the compiling sources in
+    `the_scoped_runs`, held by five `which-checks.test.sh` cases from "a dictionary the
+    program compiles in is not a document" to "a file compiled in by a macro rustfmt
+    wrapped is not a document" and three `check.test.sh` cases from "a compiled-in
+    dictionary reaches the spellchecker's tests"; ledger 582 is the reading of the real
+    include lines nothing holds.
   - [D] `scripts/guards.py` keeps a suite's pre-read for a tree it has already read, keyed
     on the working tree without `guards/guards.toml`, that file's records without their
     written counts, the suite, the run's settings and the compiler, for at most two hours,
-    and says when it used one (12-03.2, task 6).
+    and says when it used one (12-03.2, task 6). **Done 2026-09-23** by
+    `the_settings_a_run_reads`, `the_records_without_their_counts`, `the_pre_read_key`,
+    `a_kept_pre_read_answers` and `THE_LONGEST_A_PRE_READ_IS_KEPT` in `scripts/guards.py`,
+    their worked examples run by `test_the_guard_runner_still_obeys_its_own_examples`,
+    160 examples, and the record "a kept pre-read is used only for the tree it was kept
+    for".
   - [D] A merge into `main` made with `git merge --no-ff` answers by the branch rules over
     the branch's whole diff, and runs the document-reading targets when that diff holds a
     document, from one list held once in `scripts/check.sh` that the three targets asking
@@ -3519,7 +3551,15 @@ seven groups.
     `which-checks.sh` refuses an option it does not know; `CLAUDE.md` and the hook's comment
     say where the whole suite runs and what that risks, and `CLAUDE.md`'s premises section
     says every phase's closing plan runs it, with a ledger entry for the check that would
-    hold it (12-03.2, task 7).
+    hold it (12-03.2, task 7). **Done 2026-09-23** by `--merge` and `--documents-among` in
+    `which-checks.sh`, `decide_the_mode_for_this_commit` and `--mode-for-this-commit` in
+    `check.sh`, and `the_targets_that_read_documents` and
+    `the_modules_that_read_documents` read by the three
+    `test_this_target_runs_on_the_commits_that_could_break_it`, held by "an option this
+    script does not know is refused", eight `which-checks.test.sh` merge cases, three
+    `check.test.sh` cases and `test_the_measurements_reading_is_found_in_the_documents_array`
+    with its two siblings; ledger 584 is the check the premise rule lacks. This plan's own
+    merge is the first under the new path; its mode line is in the report that closed it.
   - [D] The closing plan of phase 12 runs `scripts/check.sh all` once, by hand, before its
     merge, and the phase is not called closed on a red one: a red one is fixed on 12-12's
     own branch as a small red and green pair and the gate run again, not a plan of its own,
@@ -5767,7 +5807,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567. Corrected 2026-09-23: runs 35839692317 and 35839954840 read the keyboard on the frame after a real activation, so the product half was not cleared by 12-01; 12-03.1 added the handler in `presentation::page_focus`, red first on wx's frame-saved path, and the case's record of the window's own thread, on a third `[D]` line; the run is still ledger 567 and the ear ledger 578 |
 | FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
 | FOUND-22 | Phase 12 | Complete, 12-03.1 on 2026-09-23, on both `[D]` lines: `tests/the_nvda_cases_wait_for_words_the_program_says.rs` red on the four stale texts and then green, in the whole-tree list; the two cases corrected. The two cases green on the runner is the `[S]` line, ledger 576 |
-| FOUND-23 | Phase 12 | Pending, 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print |
+| FOUND-23 | Phase 12 | Pending, 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
