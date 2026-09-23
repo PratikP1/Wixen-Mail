@@ -11,7 +11,10 @@
 
 use crate::application::calendar::EditMeans;
 use crate::application::collection_sync;
+// The one wording for a refusal when nothing was chosen (#75), so the four
+// places this layer refuses for that reason say what every other window says.
 use crate::application::new_item::LOCAL_ACCOUNT_ID;
+use crate::application::status_sentences::{Thing, nothing_chosen, nothing_chosen_named};
 use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
@@ -2818,8 +2821,11 @@ pub fn pim_command(
     let Some(row) = row else {
         // Said rather than done silently. A command that does nothing is
         // indistinguishable from a key that is broken, and the answer here is
-        // useful: choose something first.
-        return send_refusal(tx, rt, &format!("Choose a {} first", kind.label()));
+        // useful: choose something first. The kind's own word is its menu
+        // label in lower case, and every one of the six is a `Thing`, which
+        // `test_every_kind_a_new_command_makes_is_a_kind_that_can_be_chosen`
+        // holds.
+        return send_refusal(tx, rt, &nothing_chosen_named(&kind.label().to_lowercase()));
     };
     let Some((id, name, was_set)) = selected_item(state, kind, row) else {
         return send_status(tx, rt, &no_longer_there(kind, ""));
@@ -7688,7 +7694,7 @@ pub fn move_a_contact_between_groups(
         return send_refusal(tx, rt, "No storage is open");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, "Choose a contact first");
+        return send_refusal(tx, rt, &nothing_chosen(Thing::CONTACT));
     };
     let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
         return send_refusal(
@@ -7840,7 +7846,7 @@ pub fn move_a_reminder_to_another_account(
         return send_refusal(tx, rt, "No storage is open");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, "Choose a reminder first");
+        return send_refusal(tx, rt, &nothing_chosen(Thing::REMINDER));
     };
     let Some((id, name, _)) = selected_item(state, ItemKind::Reminder, row) else {
         return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, ""));
@@ -7989,7 +7995,7 @@ pub fn change_the_group_a_contact_is_in(
         return send_refusal(tx, rt, "No storage is open");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, "Choose a contact first");
+        return send_refusal(tx, rt, &nothing_chosen(Thing::CONTACT));
     };
     let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
         return send_refusal(

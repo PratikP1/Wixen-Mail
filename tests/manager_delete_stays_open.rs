@@ -402,7 +402,7 @@ fn check_delete_selected_with_nothing_selected_changes_nothing(
     record(
         into,
         "delete_selected with nothing selected asks for a selection",
-        status.get_label() == "Select a tag to delete",
+        status.get_label() == "Choose a tag first.",
         format!("line of text: {:?}", status.get_label()),
     );
 }
@@ -505,7 +505,7 @@ fn check_delete_selected_contact_with_nothing_selected_changes_nothing(
     record(
         into,
         "delete_selected_contact with nothing selected asks for a selection",
-        status.get_label() == "Select a contact to delete",
+        status.get_label() == "Choose a contact first.",
         format!("line of text: {:?}", status.get_label()),
     );
 }

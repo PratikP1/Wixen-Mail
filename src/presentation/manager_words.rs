@@ -20,14 +20,6 @@ pub(crate) const SIGNATURE: &str = "signature";
 /// part of the answer; see [`this_kind_is_counted_out_loud`].
 pub(crate) const CONDITION: &str = "condition";
 
-/// "a" or "an", whichever belongs in front of `kind`.
-pub(crate) fn a_or_an(kind: &str) -> &'static str {
-    match kind.chars().next() {
-        Some(first) if "aeiouAEIOU".contains(first) => "an",
-        _ => "a",
-    }
-}
-
 /// Whether a window over things of this kind says how many are left after
 /// every change.
 ///
@@ -93,8 +85,17 @@ pub(crate) fn deleted(kind: &str, name: &str, left: usize) -> String {
 }
 
 /// What to say when a button was pressed with nothing selected.
-pub(crate) fn nothing_selected(kind: &str, to_do: &str) -> String {
-    format!("Select {} {kind} to {to_do}", a_or_an(kind))
+///
+/// One wording for every kind of thing and every button, since #75. This
+/// used to name the button as well, "Select an account to edit", and five
+/// other windows said the same event five other ways. What somebody needs to
+/// hear is that nothing is chosen; they know which button they pressed.
+///
+/// The sentence is built in `application::status_sentences` rather than here,
+/// because the message list and the calendar refuse for the same reason and
+/// neither goes through a manager window.
+pub(crate) fn nothing_selected(kind: &str) -> String {
+    crate::application::status_sentences::nothing_chosen_named(kind)
 }
 
 #[cfg(test)]
@@ -177,14 +178,6 @@ mod tests {
     }
 
     #[test]
-    fn test_the_word_before_a_kind_is_the_right_one() {
-        assert_eq!(a_or_an(ACCOUNT), "an", "an account starts with a vowel");
-        for kind in [CONTACT, FILTER, TAG, SIGNATURE, CONDITION] {
-            assert_eq!(a_or_an(kind), "a", "{kind}");
-        }
-    }
-
-    #[test]
     fn test_every_change_to_a_condition_list_says_how_many_are_left() {
         // Adding, editing and removing alike. A count said after only some of
         // the three is a number somebody has to notice the absence of, and
@@ -262,17 +255,18 @@ mod tests {
 
     #[test]
     fn test_nothing_selected_names_the_kind_and_the_article_agrees() {
-        assert_eq!(
-            nothing_selected(ACCOUNT, "edit"),
-            "Select an account to edit"
-        );
-        assert_eq!(
-            nothing_selected(CONTACT, "edit"),
-            "Select a contact to edit"
-        );
-        assert_eq!(
-            nothing_selected(FILTER, "delete"),
-            "Select a filter to delete"
-        );
+        assert_eq!(nothing_selected(ACCOUNT), "Choose an account first.");
+        assert_eq!(nothing_selected(CONTACT), "Choose a contact first.");
+        assert_eq!(nothing_selected(FILTER), "Choose a filter first.");
+        // The same sentence whatever the button was, which is the whole of
+        // #75's first complaint: six wordings for one event, one per window
+        // and one per button.
+        for kind in EVERY_KIND {
+            assert_eq!(
+                nothing_selected(kind),
+                crate::application::status_sentences::nothing_chosen_named(kind),
+                "a manager window words this event for itself again"
+            );
+        }
     }
 }

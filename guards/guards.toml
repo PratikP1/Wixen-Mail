@@ -8490,7 +8490,7 @@ red = [
     "presentation::manager_words::tests::test_only_a_condition_list_counts_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/manager_words.rs", tests = 9 },
+    { file = "src/presentation/manager_words.rs", tests = 8 },
 ]
 
 # ── The app password hint attached to the password box's description ───────
@@ -26891,7 +26891,10 @@ tests_last_seen = [
 # no longer reaches chosen_messages.
 #
 # Measured 2026-09-19 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the target named.
+# `scripts/guards.sh --remeasure`, the target named. Re-anchored and
+# re-measured 2026-09-23 by 12-03, which rewrote the refusal this block ends
+# on onto `at_least_one_chosen(Thing::MESSAGE)`: the break is the same, and
+# the text it is applied to moved under it.
 [[guard]]
 name = "mark as read acts on every selected message, not the cursor row alone"
 file = "src/presentation/wx_app.rs"
@@ -26906,7 +26909,7 @@ before = """    let chosen = match chosen_messages(
         Err(why) => return send_refusal(tx, rt, &why),
     };
     if chosen.is_empty() {
-        return send_refusal(tx, rt, "No message selected");
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
     }"""
 after = """    let chosen = {
         use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
@@ -26925,7 +26928,7 @@ after = """    let chosen = {
         })
     };
     if chosen.is_empty() {
-        return send_refusal(tx, rt, "No message selected");
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
     }"""
 red = [
     "test_star_mark_as_read_and_the_labels_act_on_the_selection_with_one_sentence",

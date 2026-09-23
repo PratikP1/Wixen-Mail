@@ -271,19 +271,41 @@ impl std::fmt::Display for Complaint {
 /// Whether `sentence` reads as one a person would hear, said as a complaint
 /// naming what is wrong when it does not.
 ///
-/// Three rules, and each is one of #75's own observations:
+/// Four rules, and each is one of #75's own observations:
 ///
-/// 1. An answer ends in a full stop or a question mark, and a step ends in an
-///    ellipsis or in a full stop. "Trailing punctuation used and not used" is
-///    the issue's second line, and the tree had 84 sentences ending in a
-///    letter beside 29 ending in a full stop.
-/// 2. No sentence uses a word from inside this program or inside a mail
+/// 1. One style of ending: an ellipsis for something still happening, a full
+///    stop for something that has, a question mark for a question. "Trailing
+///    punctuation used and not used" is the issue's second line, and the tree
+///    had 84 sentences ending in a letter beside 29 ending in a full stop.
+/// 2. A step says what it is happening to, not only that something is: two
+///    words at least, so "Loading Inbox..." and never "Loading...". That is
+///    the issue's last line.
+/// 3. No sentence uses a word from inside this program or inside a mail
 ///    protocol.
-/// 3. A sentence whose last characters are a value the caller fills in is one
+/// 4. A sentence whose last characters are a value the caller fills in is one
 ///    this reading cannot judge: the ending it will really have is inside the
 ///    value. Those are refused here and excused one at a time by
 ///    [`THE_VALUE_ENDS_THE_SENTENCE`], which is the exception table, so that
 ///    a new one arrives as a refusal rather than as silence.
+///
+/// # What this deliberately does not hold, and why
+///
+/// Which channel a line goes out on. 12-03's plan asked that an ellipsis be
+/// refused anywhere but on the step channel, and the tree says that rule
+/// would cost more than it catches. Nine sentences go out as answers and end
+/// in an ellipsis, and every one of them is true: "Moving {name}...",
+/// "Deleting {name}...", "Saving {suggested}..." and their siblings are the
+/// answer to a key somebody just pressed, said at once because a step would
+/// be silent under the default level, and each really is still happening.
+/// Written to a full stop they would read as finished, and the result
+/// arriving afterwards would be the second sentence saying so. Not one
+/// answer-channel ellipsis in the tree was a finished sentence wearing one,
+/// so the rule would have made nine sentences worse and caught nothing.
+///
+/// Which channel a line belongs on is 10-04's question and
+/// `tests/progress_is_shown_and_results_are_said.rs` holds it, by the
+/// openings a step may not ride the answer channel with. Two readings over
+/// one property is how the two come to disagree.
 pub fn reads_as_a_persons_sentence(sentence: &str, voice: Voice) -> Result<(), Complaint> {
     let complaint = |why: String| {
         Err(Complaint {
@@ -312,14 +334,16 @@ pub fn reads_as_a_persons_sentence(sentence: &str, voice: Voice) -> Result<(), C
         );
     }
     if trimmed.ends_with("...") {
-        return match voice {
-            Voice::Step => Ok(()),
-            Voice::Answer => complaint(
-                "an answer ends in an ellipsis, so it reads as something still happening. \
-                 Either it is a step and belongs on the step channel, or the ellipsis goes"
+        let what_is_happening = trimmed.trim_end_matches('.');
+        if voice == Voice::Step && !what_is_happening.trim().contains(' ') {
+            return complaint(
+                "a step says that something is happening and not what it is happening to, \
+                 so somebody hearing it learns nothing they can act on. Name the folder, \
+                 the account or the count: Loading Inbox... and not Loading..."
                     .to_string(),
-            ),
-        };
+            );
+        }
+        return Ok(());
     }
     if trimmed.ends_with('}') {
         return match THE_VALUE_ENDS_THE_SENTENCE
@@ -457,6 +481,23 @@ mod tests {
     }
 
     #[test]
+    fn test_every_kind_a_new_command_makes_is_a_kind_that_can_be_chosen() {
+        // `managers::pim_command` refuses with the kind's menu label in lower
+        // case, because it is generic over `ItemKind` and has no `Thing` at
+        // the call. That is only the same sentence while every one of the six
+        // labels really is a kind's own word, and nothing else would say if a
+        // seventh arrived or a label were reworded.
+        for kind in crate::application::new_item::ItemKind::ALL {
+            let word = kind.label().to_lowercase();
+            assert!(
+                Thing::named(&word).is_some(),
+                "a new command makes {word:?} and no kind has that word, so its refusal is \
+                 built from a word nothing here knows"
+            );
+        }
+    }
+
+    #[test]
     fn test_a_command_over_a_set_asks_for_at_least_one() {
         // "Choose a message first." is wrong for a command that takes every
         // chosen row: it asks for one where any number will do.
@@ -469,15 +510,21 @@ mod tests {
     }
 
     #[test]
-    fn test_an_answer_may_not_end_in_an_ellipsis_and_a_step_may() {
-        // #75's own example: "Flushing outbox queue..." went out as an answer
-        // and read as something still happening.
-        assert!(
-            reads_as_a_persons_sentence("Sending the mail in the Outbox...", Voice::Step).is_ok()
-        );
-        let why = reads_as_a_persons_sentence("Sending the mail in the Outbox...", Voice::Answer)
-            .expect_err("an answer ending in an ellipsis was passed over");
-        assert!(why.why.contains("still happening"), "{why}");
+    fn test_a_step_says_what_it_is_happening_to_and_not_only_that_it_is() {
+        // #75's last line. "Loading..." is a sentence somebody can do nothing
+        // with; "Loading Inbox..." is the same sentence with the answer in it.
+        let why = reads_as_a_persons_sentence("Loading...", Voice::Step)
+            .expect_err("a step that names nothing was passed over");
+        assert!(why.why.contains("happening to"), "{why}");
+        for names_it in ["Loading Inbox...", "Loading {}...", "Syncing tasks..."] {
+            reads_as_a_persons_sentence(names_it, Voice::Step)
+                .unwrap_or_else(|why| panic!("{names_it:?} names what it is doing: {why}"));
+        }
+        // An ellipsis is allowed on either channel, and the module doc says
+        // at length why: nine answers in this tree end in one and every one of
+        // them really is still happening.
+        reads_as_a_persons_sentence("Moving Invoice...", Voice::Answer)
+            .unwrap_or_else(|why| panic!("an answer that has not finished was refused: {why}"));
     }
 
     #[test]

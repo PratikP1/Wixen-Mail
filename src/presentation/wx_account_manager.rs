@@ -11,6 +11,10 @@ use crate::application::allowed::{Allowed, READING_SECTION, SETTINGS_SECTION};
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
 use crate::application::mail_auth::no_sign_in_credentials;
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
+// The one wording for a refusal when nothing was chosen (#75). This window
+// said it five ways, one per button, and the button is not what somebody
+// needs to hear: the list is empty of a choice and that is the whole answer.
+use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::Accessibility;
@@ -508,7 +512,12 @@ fn run_account_manager_loop(
                         );
                     }
                 } else {
-                    said_and_shown(status, a11y, "Select an account to edit", Priority::High);
+                    said_and_shown(
+                        status,
+                        a11y,
+                        &nothing_chosen(Thing::ACCOUNT),
+                        Priority::High,
+                    );
                 }
             }
             _ => break,
@@ -601,7 +610,7 @@ pub fn reauthorize_selected(
         None => said_and_shown(
             status,
             a11y,
-            "Select an account to sign in again",
+            &nothing_chosen(Thing::ACCOUNT),
             Priority::High,
         ),
     }
@@ -646,7 +655,12 @@ pub fn delete_selected(
             Priority::Normal,
         );
     } else {
-        said_and_shown(status, a11y, "Select an account to delete", Priority::High);
+        said_and_shown(
+            status,
+            a11y,
+            &nothing_chosen(Thing::ACCOUNT),
+            Priority::High,
+        );
     }
 }
 
@@ -685,7 +699,7 @@ pub fn set_default_selected(
         said_and_shown(
             status,
             a11y,
-            "Select an account to make it the default",
+            &nothing_chosen(Thing::ACCOUNT),
             Priority::High,
         );
     }
@@ -722,7 +736,7 @@ pub fn set_active_selected(
         said_and_shown(
             status,
             a11y,
-            "Select an account to make it active",
+            &nothing_chosen(Thing::ACCOUNT),
             Priority::High,
         );
     }

@@ -98,7 +98,7 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "sign in again, nothing selected: what is said",
                 &status.get_label(),
-                "Select an account to sign in again",
+                "Choose an account first.",
                 &mut into,
             );
             if state.changed {
@@ -136,7 +136,7 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "delete, nothing selected: what is said",
                 &status.get_label(),
-                "Select an account to delete",
+                "Choose an account first.",
                 &mut into,
             );
 
@@ -182,7 +182,7 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "set default, nothing selected: what is said",
                 &status.get_label(),
-                "Select an account to make it the default",
+                "Choose an account first.",
                 &mut into,
             );
 
@@ -221,7 +221,7 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "set active, nothing selected: what is said",
                 &status.get_label(),
-                "Select an account to make it active",
+                "Choose an account first.",
                 &mut into,
             );
 

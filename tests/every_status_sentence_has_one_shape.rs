@@ -223,14 +223,14 @@ fn literals_in(text: &str) -> Vec<String> {
 /// A literal that is not a sentence: a format argument's name, a key, a word
 /// the caller joins into one.
 ///
-/// Two rules, both about what a sentence looks like rather than about a list
-/// of exceptions. A sentence has a space in it, and a sentence is not a bare
-/// name with an underscore in it. Without these the census reports the
-/// argument names in `format!("{a}{b}", a = ..)` and the single words a
-/// sentence is assembled from, and a list with those in it is a list nobody
-/// reads to the end.
+/// Three rules, all about what a sentence looks like rather than about a
+/// list of exceptions. A sentence has a space in it, has a letter in it, and
+/// is not a bare name with an underscore. Without these the census reports
+/// the argument names in `format!("{a}{b}", a = ..)`, the single words a
+/// sentence is assembled from, and the `", "` a list of names is joined
+/// with, and a list with those in it is a list nobody reads to the end.
 fn is_a_sentence(literal: &str) -> bool {
-    literal.contains(' ') && !literal.contains('_')
+    literal.contains(' ') && literal.chars().any(char::is_alphabetic) && !literal.contains('_')
 }
 
 // ── The census, printed ──────────────────────────────────────────────────────
@@ -432,19 +432,21 @@ fn test_the_sentences_the_application_layer_builds_read_to_the_shape() {
 // ── The companions, each planting the opposite ───────────────────────────────
 
 #[test]
-fn test_the_reading_sees_an_answer_that_ends_in_an_ellipsis() {
+fn test_the_reading_sees_a_step_that_says_nothing_about_what_it_is_doing() {
     let why = reads_as_a_persons_sentence("Flushing outbox queue...", Voice::Answer)
         .expect_err("#75's own example was passed over");
-    // Three things are wrong with that one sentence and it is reported for
-    // the first: two words from inside this program, in the order the list
-    // names them, and then the ending, which this sentence never reaches.
-    // One complaint per sentence rather than a list, because the person
-    // fixing it rewrites the sentence and meets the next complaint on the
-    // next run.
+    // Two words from inside this program are wrong with that one sentence,
+    // and it is reported for the first the list names. One complaint per
+    // sentence rather than a list, because whoever fixes it rewrites the
+    // sentence and meets the next complaint on the next run.
     assert!(why.why.contains("queue"), "{why}");
-    let why = reads_as_a_persons_sentence("Sending the mail in the Outbox...", Voice::Answer)
-        .expect_err("an answer ending in an ellipsis was passed over");
-    assert!(why.why.contains("still happening"), "{why}");
+    let why = reads_as_a_persons_sentence("Loading...", Voice::Step)
+        .expect_err("a step that names nothing it is doing was passed over");
+    assert!(why.why.contains("happening to"), "{why}");
+    // And the same step with its object in it, which is the fix rather than
+    // a second sentence.
+    reads_as_a_persons_sentence("Loading Inbox...", Voice::Step)
+        .unwrap_or_else(|why| panic!("a step that names its folder was refused: {why}"));
 }
 
 #[test]

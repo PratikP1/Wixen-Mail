@@ -8,6 +8,10 @@ use crate::application::destinations::Deleting;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
 use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun};
+// The one wording for a refusal when nothing was chosen (#75). Named here so
+// that the seven places this window refuses a command for that reason are
+// visibly one sentence rather than five spellings of it.
+use crate::application::status_sentences::{Thing, at_least_one_chosen, nothing_chosen};
 // Named here rather than written out at each of its two uses, so the label and
 // the accessible name are visibly the same binding rather than two spellings a
 // reader has to compare character by character.
@@ -4579,7 +4583,7 @@ impl WxMailApp {
                                     .cloned()
                             };
                             let Some(message) = chosen else {
-                                send_refusal(&ui_tx, &runtime, "Choose a message first");
+                                send_refusal(&ui_tx, &runtime, &nothing_chosen(Thing::MESSAGE));
                                 return;
                             };
 
@@ -5070,7 +5074,9 @@ impl WxMailApp {
                                 // is a branch or a label. There is nothing on a
                                 // server to select and nothing older to fetch.
                                 Some(_) => refuse_a_command(&ui_tx, NOT_A_FOLDER),
-                                None => send_refusal(&ui_tx, &runtime, "Choose a folder first"),
+                                None => {
+                                    send_refusal(&ui_tx, &runtime, &nothing_chosen(Thing::FOLDER))
+                                }
                             }
                         }
                         _ if id == ID_OPEN_DRAFT => {
@@ -5291,7 +5297,7 @@ impl WxMailApp {
                                 return send_refusal(
                                     &ui_tx,
                                     &runtime,
-                                    "No message selected to delete",
+                                    &at_least_one_chosen(Thing::MESSAGE),
                                 );
                             }
                             if let Some(why) = too_many(chosen.messages.len()) {
@@ -10799,7 +10805,7 @@ fn toggle_read_state(
         Err(why) => return send_refusal(tx, rt, &why),
     };
     if chosen.is_empty() {
-        return send_refusal(tx, rt, "No message selected");
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
     }
     if let Some(why) = too_many(chosen.messages.len()) {
         return send_refusal(tx, rt, &why);
@@ -11254,7 +11260,7 @@ fn label_the_message(
     if chosen.is_empty() {
         // Said rather than done silently. A key that appears to do nothing
         // is indistinguishable from one that is broken.
-        return send_refusal(tx, rt, "Choose a message first");
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
     }
     if let Some(why) = too_many(chosen.messages.len()) {
         return send_refusal(tx, rt, &why);
@@ -17941,7 +17947,7 @@ fn read_the_row_with_its_headings(
         .then(|| lock_state(state).selected_message_index)
         .flatten()
     else {
-        send_refusal(tx, rt, "Nothing is selected in the message list");
+        send_refusal(tx, rt, &nothing_chosen(Thing::MESSAGE));
         return;
     };
     let columns = layout.borrow().visible();
@@ -20757,7 +20763,7 @@ fn move_or_copy_message(
         Err(why) => return send_refusal(tx, rt, &why),
     };
     let Some(first) = chosen.messages.first() else {
-        return send_refusal(tx, rt, "Choose a message first");
+        return send_refusal(tx, rt, &nothing_chosen(Thing::MESSAGE));
     };
     if let Some(why) = too_many(chosen.messages.len()) {
         return send_refusal(tx, rt, &why);
