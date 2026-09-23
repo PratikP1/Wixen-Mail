@@ -419,6 +419,13 @@ pub const THE_VALUE_ENDS_THE_SENTENCE: &[(&str, &str)] = &[
         "Account updated. {msg}",
         "msg is the provider's own sentence about what is still needed",
     ),
+    (
+        "{count} {covered}",
+        "covered is what_the_search_box_covers, a whole sentence about how much \
+         of the mailbox this computer holds the text of; count carries its own \
+         ending, and the two are one line because both would ride the status \
+         topic and the second would be spoken over the first",
+    ),
 ];
 
 /// The sentences that name something a person can see, spelled the way the

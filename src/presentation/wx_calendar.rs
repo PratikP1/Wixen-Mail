@@ -499,7 +499,7 @@ fn selected_event(
 /// without a human clicking a real button inside a real modal dialog.
 pub fn request_sync(state: &mut CalendarDialogState, status: &StaticText, a11y: &Accessibility) {
     state.actions.push(CalendarAction::SyncRequested);
-    said_and_shown(status, a11y, "Sync requested...", Priority::Normal);
+    said_and_shown(status, a11y, "Syncing the calendar...", Priority::Normal);
 }
 
 /// What the Edit Event button answers.

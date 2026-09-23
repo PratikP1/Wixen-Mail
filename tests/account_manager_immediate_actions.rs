@@ -198,7 +198,7 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "set default, an account is selected: what is said",
                 &status.get_label(),
-                "New contacts, events, tasks and notes go to Personal from now on",
+                "New contacts, events, tasks and notes go to Personal from now on.",
                 &mut into,
             );
             if state.default_id.as_deref() != Some(candidate_id.as_str()) {
@@ -237,7 +237,7 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "set active, an account is selected: what is said",
                 &status.get_label(),
-                "Active: Personal",
+                "Active: Personal.",
                 &mut into,
             );
             if state.active_id.as_deref() != Some(candidate_id.as_str()) {

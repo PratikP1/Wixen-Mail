@@ -148,7 +148,7 @@ fn test_the_three_immediate_actions_mutate_state_and_report_correctly() {
             expect(
                 "sync: what is said",
                 &status.get_label(),
-                "Sync requested...",
+                "Syncing the calendar...",
                 &mut into,
             );
             if state.actions.len() != 1
