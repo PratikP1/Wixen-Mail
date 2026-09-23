@@ -497,6 +497,8 @@ can navigate. Making them real headings is being worked on.
 | Send Feedback | `Ctrl+Shift+F` | On the Help menu, and as a button on About. Tell the people who make Wixen Mail about a problem, an idea or a question, and read the whole message before it goes |
 | Close Dialog | `Esc` | Close the current dialog or window |
 
+In Settings, every number is a spin control: `Up` adds one and `Down` takes one away, it stops at the ends of its range, and you can also type a number over the one shown. `Page Up` and `Page Down` do nothing in a spin control yet.
+
 ### Window and Pane Navigation
 
 `Tab`, `F6` or a click into the message list lands on a row: the row you were
@@ -670,6 +672,8 @@ Five submenus hold the rest:
 | Open Account Manager | `Ctrl+Shift+A` | Open multiple account management dialog |
 | Pause Downloading | (Tools menu, `Alt+P` on the menu) | A check item. Ticked, it holds the download of everything that runs on its own after every check for mail: the chunk in flight finishes and no new one starts. Unticked, the download carries on from where the mail on this computer says it was. Mail already here stays readable either way. Its description is the sentence saying the download has never met a real provider. The pause lasts for the session. Fetch Missing Message Text sat on the File menu until 2026-09-17; the download is what it did |
 | Folders to Keep Up to Date | (Tools menu, `Alt+L` on the menu) | Which of this account's folders are downloaded, as a tree nested the way the folder tree is, with a check box beside each folder. Space ticks or unticks the folder you are on; Right arrow opens a folder that holds others; the title names the account. On Tools since 2026-09-18; it sat on Action, under This Folder, from 2026-08-26, and on File before that |
+
+In the account editor, Check Interval and the days before POP mail is removed are spin controls, worked with `Up` and `Down` or by typing; the server ports are typed.
 
 ### Contact Management
 
