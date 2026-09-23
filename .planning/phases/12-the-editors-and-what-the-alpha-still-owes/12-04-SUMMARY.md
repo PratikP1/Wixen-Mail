@@ -98,9 +98,23 @@ Button named=true class="Button": children n=0;
 |---|---|---|---|
 | `ff5b80f9` | red: the module's five cases and the target's five readings | red | 107 in all: start 4, rustfmt 3, clippy 28, the scripts that decide what runs 7, the tests this commit says must fail 0, the tests that reach what changed 65 |
 | `c724168f` | green: the module, the dialog, `paint_link`, `LICENSE`, `build.rs`, the doc sentence, three records, the changelog | affected | 183 in all: start 3, rustfmt 3, clippy 38, the scripts that decide what runs 33, the tests that reach what changed 106 |
-| this commit | the guide, the ledger, this summary, the four marks | | |
+| `82649701` | the guide, the ledger, this summary, the four marks | docs_only | 86 in all: start 3, rustfmt 3, clippy 30, the scripts that decide what runs 1, the targets that read documents 49 |
+| `2e00c42b` | the merge into `main`, `git merge --no-ff` | "mode affected, a merge into main" | 196 in all: start 1, rustfmt 3, clippy 27, the scripts that decide what runs 33, the tests that reach what changed 132 |
 
-The merge commit, its mode line and its stage line cannot be in this file; the commit on `main` after the merge adds them, and the report that closes the plan carries them with the pull request's runs.
+The last row was added after the merge, by a commit on `main` touching only this file.
+
+## The pull request's runs
+
+Pull request #95, pushed under Pratik's standing OK of 2026-09-23, read before the merge:
+
+| Run | Verdict |
+|---|---|
+| CI | Rustfmt, Clippy, Security Audit, Build (debug), Build (release), Setup Executable passed; Test Suite passed in 19m41s, which is the whole suite over this branch on the runner |
+| NVDA screen reader tests | passed, 24m20s |
+| Accessibility scan | passed, 8m01s; About: Axe.Windows "0 errors were found", "Walked 2 window(s): 'About Wixen Mail', 'Wixen Mail'", "MSAA walk: 1891 elements, 1110 of them operated, 0 without a name" |
+| Tests that would notice | failed after 28m13s in `every_number_carries_its_command_and_its_date`, "18a02454 is not in this history", before any mutant was tested: ledger 458's shape, not this change's |
+
+What the scan's two files say about the new controls, read from the downloaded artefact. Over UI Automation, in the order the dialog holds them: four texts carrying the four lines, then `pane 'wixen.app'` (class `SysLink`) holding `link 'wixen.app'` with value `https://wixen.app`, then `pane 'wixen.app/support'` holding `link 'wixen.app/support'` with value `https://wixen.app/support`, then `button 'OK'`; both the pane and the link answer focusable. Over MSAA, each link window answers role 10 (client) named by its address with one child of role 30 (link) named by its address, then OK as push button. So the running release build answers on both channels what the test binary answered, and the one open question the tree cannot settle is how NVDA and Narrator speak a focusable pane that holds a focusable link (ledger 587).
 
 ## The red half
 
