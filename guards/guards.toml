@@ -12626,14 +12626,18 @@ tests_last_seen = [
 
 # Rewritten 2026-09-19 by 11-07: the line after the refusal reads the
 # selection off the control now; the break is the one it was, and it
-# reddened the same one test.
+# reddened the same one test. Re-anchored and re-measured 2026-09-23 by
+# 12-03, which reworded the sentence: "No message store is available" was
+# one of two wordings for the same fact and is now the one both say.
 [[guard]]
 name = "the reason a command did nothing does not go out as a status line"
 file = "src/presentation/wx_app.rs"
-before = """        return send_refusal(tx, rt, "No message store is available");
+before = """    let Some(cache_handle) = cache.as_ref() else {
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let chosen = match chosen_messages("""
-after = """        return send_status(tx, rt, "No message store is available");
+after = """    let Some(cache_handle) = cache.as_ref() else {
+        return send_status(tx, rt, "The mail on this computer is not open.");
     };
     let chosen = match chosen_messages("""
 red = [
@@ -20128,16 +20132,20 @@ tests_last_seen = [
 #
 # The line moved from `send_status` to `send_progress` on 2026-09-17 (#38),
 # when a sync request became a step; the same break, the call to the sync
-# taken out, on the new lines, measured again through `--remeasure`.
+# taken out, on the new lines, measured again through `--remeasure`. The
+# wording moved again on 2026-09-23 (12-03, #75): "Notes sync requested..."
+# used sync as a noun and said what had been asked for rather than what was
+# happening, and the step is "Syncing notes..." now. Re-anchored and
+# re-measured in the commit that moved it.
 [[guard]]
 name = "asking for a notes sync reaches the sync rather than reporting one"
 file = "src/presentation/wx_app.rs"
 before = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
                                     spawn_notes_sync(app);
                                 }'''
 after = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
                                 }'''
 red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",

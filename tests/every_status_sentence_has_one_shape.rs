@@ -233,6 +233,19 @@ fn is_a_sentence(literal: &str) -> bool {
     literal.contains(' ') && literal.chars().any(char::is_alphabetic) && !literal.contains('_')
 }
 
+/// Whether a call writes a sentence that arrives, or a standing label the bar
+/// keeps.
+///
+/// The status bar has three fields. Field 0 is the line a command answers on
+/// and is what #75 is about. Fields 1 and 2 carry a label that stays there:
+/// which account, whether the program is connected, how many are waiting.
+/// "Account: you@example.com." is not a sentence and a full stop after it
+/// would be read out every time somebody passed over the field. Six calls in
+/// the tree write those two fields, and they are labels.
+fn writes_a_sentence_rather_than_a_standing_label(call: &Call) -> bool {
+    call.call != "set_status_text(" || call.text.ends_with(", 0)")
+}
+
 // ── The census, printed ──────────────────────────────────────────────────────
 
 /// The census as the summary quotes it: how many calls per call name, how
@@ -292,6 +305,9 @@ fn test_every_sentence_written_at_a_status_call_reads_to_the_shape() {
     );
     let mut wrong = Vec::new();
     for call in &calls {
+        if !writes_a_sentence_rather_than_a_standing_label(call) {
+            continue;
+        }
         for literal in literals_in(&call.text) {
             if !is_a_sentence(&literal) {
                 continue;
@@ -514,6 +530,28 @@ fn test_the_census_reads_a_call_over_several_lines_and_names_the_line_it_starts_
     assert_eq!(
         calls[1].line, 13,
         "the line number is counted in what ships rather than in the file: {:?}",
+        calls[1]
+    );
+}
+
+#[test]
+fn test_the_census_tells_the_line_a_command_answers_on_from_the_standing_labels() {
+    // The status bar has three fields and only the first carries sentences.
+    // Without this the reading asks a full stop of "Account: {}", which is a
+    // label somebody passes over rather than a sentence that arrives.
+    let source = "fn one() {\n    \
+                  frame.set_status_text(&format!(\"Account: {}\", a.email), 1);\n    \
+                  frame.set_status_text(\"Draft saved.\", 0);\n}\n";
+    let calls = status_calls_in("a.rs", source);
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert!(
+        !writes_a_sentence_rather_than_a_standing_label(&calls[0]),
+        "the account field was read as a sentence: {:?}",
+        calls[0]
+    );
+    assert!(
+        writes_a_sentence_rather_than_a_standing_label(&calls[1]),
+        "the line a command answers on was read as a standing label: {:?}",
         calls[1]
     );
 }

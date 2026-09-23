@@ -2496,7 +2496,12 @@ impl WxMailApp {
                                 CalendarShowing::agenda_now(),
                             );
                         } else {
-                            send_refusal(&ui_tx, &runtime, "No cache available for import");
+                            send_refusal(
+                                &ui_tx,
+                                &runtime,
+                                "The mail on this computer is not open, so there is nothing \
+                                 to read into.",
+                            );
                         }
                     }
                 }
@@ -2535,17 +2540,22 @@ impl WxMailApp {
                                                 let _ = a11y.announce(&msg, crate::presentation::accessibility::announcements::Priority::Normal);
                                             }
                                             Err(e) => {
-                                                send_status(&ui_tx, &runtime, &format!("Export failed: {}", e));
+                                                send_status(&ui_tx, &runtime, &format!("The mail could not be written out: {}.", e));
                                             }
                                         }
                                     }
                             }
                             Err(e) => {
-                                send_status(&ui_tx, &runtime, &format!("Export failed: {}", e));
+                                send_status(&ui_tx, &runtime, &format!("The mail could not be written out: {}.", e));
                             }
                         }
                     } else {
-                        send_refusal(&ui_tx, &runtime, "No cache available for export");
+                        send_refusal(
+                            &ui_tx,
+                            &runtime,
+                            "The mail on this computer is not open, so there is nothing to \
+                             write out.",
+                        );
                     }
                 }
             });
@@ -4436,7 +4446,7 @@ impl WxMailApp {
                                     send_status(
                                         &ui_tx,
                                         &runtime,
-                                        "Removing a mail folder is not built yet",
+                                        "Removing a mail folder is not built yet.",
                                     );
                                 }
                                 return;
@@ -4479,7 +4489,7 @@ impl WxMailApp {
                                 _ => send_refusal(
                                     &ui_tx,
                                     &runtime,
-                                    "Only a contact group can be renamed here",
+                                    "Only a contact group can be renamed here.",
                                 ),
                             }
                         }
@@ -4637,19 +4647,19 @@ impl WxMailApp {
                                 // every step (#38). The sync's own finish
                                 // is what is said by default.
                                 PimModule::Contacts => {
-                                    send_progress(&ui_tx, &runtime, "Contacts sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing contacts...");
                                     spawn_contacts_sync(app);
                                 }
                                 PimModule::Calendar => {
-                                    send_progress(&ui_tx, &runtime, "Calendar sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing the calendar...");
                                     spawn_calendar_sync(&state, &ui_tx, &runtime);
                                 }
                                 PimModule::Tasks => {
-                                    send_progress(&ui_tx, &runtime, "Tasks sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing tasks...");
                                     spawn_tasks_sync(app);
                                 }
                                 PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
                                     spawn_notes_sync(app);
                                 }
                                 // Mail has its own Check Mail, and a reminder
@@ -4660,7 +4670,7 @@ impl WxMailApp {
                                     send_status(
                                         &ui_tx,
                                         &runtime,
-                                        "This module does not sync anywhere yet",
+                                        "This module does not sync anywhere yet.",
                                     );
                                 }
                             }
@@ -5205,9 +5215,9 @@ impl WxMailApp {
                                     &runtime,
                                     match command {
                                         PimCommand::ToggleComplete => {
-                                            "Marking done works in Tasks and Reminders"
+                                            "Marking done works in Tasks and Reminders."
                                         }
-                                        _ => "Pinning works in Notes",
+                                        _ => "Pinning works in Notes.",
                                     },
                                 );
                             } else {
@@ -5363,7 +5373,7 @@ impl WxMailApp {
                                 return send_refusal(
                                     &ui_tx,
                                     &runtime,
-                                    "No message store is available",
+                                    "The mail on this computer is not open.",
                                 );
                             };
                             let asked_at = chrono::Utc::now().to_rfc3339();
@@ -5545,7 +5555,7 @@ impl WxMailApp {
                             handle_account_mgr(&frame, &state, &message_cache, &a11y, &runtime)
                         }
                         _ if id == ID_SAVE => {
-                            send_refusal(&ui_tx, &runtime, "No active draft to save")
+                            send_refusal(&ui_tx, &runtime, "There is no draft open to save.")
                         }
                         _ if id == ID_SAVE_AS => {
                             save_the_message_as(
@@ -5575,7 +5585,7 @@ impl WxMailApp {
                                 &runtime,
                                 &a11y,
                             ) {
-                                send_progress(&ui_tx, &runtime, "Contacts sync requested...");
+                                send_progress(&ui_tx, &runtime, "Syncing contacts...");
                                 spawn_contacts_sync(app);
                             }
                         }
@@ -5636,11 +5646,11 @@ impl WxMailApp {
                         // Steps, as the module's own Sync command sends
                         // them (#38): the finish is what is said by default.
                         _ if id == ID_SYNC_CONTACTS => {
-                            send_progress(&ui_tx, &runtime, "Contacts sync requested...");
+                            send_progress(&ui_tx, &runtime, "Syncing contacts...");
                             spawn_contacts_sync(app);
                         }
                         _ if id == ID_SYNC_CALENDAR => {
-                            send_progress(&ui_tx, &runtime, "Calendar sync requested...");
+                            send_progress(&ui_tx, &runtime, "Syncing the calendar...");
                             spawn_calendar_sync(&state, &ui_tx, &runtime);
                         }
                         _ if id == ID_SYNC_TASKS => {
@@ -5769,7 +5779,7 @@ impl WxMailApp {
                             undo_send(app, &frame, &message_cache, &a11y);
                         }
                         _ if id == ID_FLUSH_OUTBOX => {
-                            send_status(&ui_tx, &runtime, "Flushing outbox queue...");
+                            send_status(&ui_tx, &runtime, "Sending the mail in the Outbox...");
                             flush_outbox(app);
                         }
                         // Each of these also moves the column layout, so the
@@ -7607,7 +7617,9 @@ fn load_messages_with_label(
     tx: &Sender<UIUpdate>,
 ) {
     let Some(cache) = cache.as_ref() else {
-        let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
+        let _ = tx.try_send(UIUpdate::ErrorOccurred(
+            "The mail on this computer is not open.".to_string(),
+        ));
         return;
     };
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
@@ -7660,7 +7672,9 @@ fn load_every_inbox(
     tx: &Sender<UIUpdate>,
 ) {
     let Some(cache) = storage.as_ref() else {
-        let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
+        let _ = tx.try_send(UIUpdate::ErrorOccurred(
+            "The mail on this computer is not open.".to_string(),
+        ));
         return;
     };
     let order = the_sort_as(view_state::Showing::Messages);
@@ -10465,7 +10479,7 @@ fn ask_whether_there_is_a_newer_version(
 fn open_help(topic: &crate::application::help::Topic, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
     use crate::application::help::plain;
     match crate::presentation::help_page::open(topic.file) {
-        Ok(_) => send_status(tx, rt, &format!("Opened {}", plain(topic.title))),
+        Ok(_) => send_status(tx, rt, &format!("Opened {}.", plain(topic.title))),
         Err(e) => {
             tracing::error!("Help page {} could not be opened: {}", topic.file, e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
@@ -10706,7 +10720,7 @@ fn chosen_messages(
         }));
     }
     let Some(cache) = cache.as_ref() else {
-        return Err("No storage is open".to_string());
+        return Err("The mail on this computer is not open.".to_string());
     };
     let mut trouble = None;
     // Each row's messages are read in the account and folder the row was
@@ -11246,7 +11260,7 @@ fn label_the_message(
     use crate::presentation::accessibility::announcements::Priority;
 
     let Some(cache_handle) = cache.as_ref() else {
-        return send_refusal(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let chosen = match chosen_messages(
         state,
@@ -11266,14 +11280,14 @@ fn label_the_message(
         return send_refusal(tx, rt, &why);
     }
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
-        return send_refusal(tx, rt, "No account is open");
+        return send_refusal(tx, rt, "No account is open.");
     };
 
     let labels = match labels_for(cache_handle, &account_id) {
         Ok(labels) => labels,
         // Not swallowed: no labels and labels that could not be read look the
         // same from the outside and are different problems.
-        Err(e) => return send_status(tx, rt, &format!("The labels could not be read: {e}")),
+        Err(e) => return send_status(tx, rt, &format!("The labels could not be read: {e}.")),
     };
     let on_each: Vec<Vec<String>> = chosen
         .messages
@@ -11339,7 +11353,7 @@ fn label_the_message(
                     cache_handle.remove_tag_from_message(message.row_id, &label.id)
                 };
                 if let Err(e) = written {
-                    return send_status(tx, rt, &format!("The label did not stick: {e}"));
+                    return send_status(tx, rt, &format!("The label did not stick: {e}."));
                 }
                 // And the server, so the label is there on another device
                 // and in whatever client somebody opens next. A label with
@@ -14374,7 +14388,7 @@ fn mail_brought_in_from(
             Err(why) => {
                 say(UIUpdate::StatusUpdated(format!(
                     "The mail already on this computer could not be opened, so \
-                     nothing was imported. {why}"
+                     nothing was imported. {why}."
                 )));
                 return;
             }
@@ -14808,7 +14822,7 @@ fn save_the_message_as(
         };
         say(
             match one_message_saved_to(&cache, row_id, std::path::Path::new(&destination)) {
-                Ok(()) => UIUpdate::StatusUpdated(format!("Saved {named} to {destination}")),
+                Ok(()) => UIUpdate::StatusUpdated(format!("Saved {named} to {destination}.")),
                 // Through ErrorOccurred rather than the status line: a save that
                 // did not happen has to interrupt, because the next thing
                 // somebody does is go looking for a file that is not there.
@@ -14946,7 +14960,7 @@ fn export_a_mailbox(
             Err(why) => {
                 say(UIUpdate::StatusUpdated(format!(
                     "The mail on this computer could not be opened, so nothing \
-                     was written out. {why}"
+                     was written out. {why}."
                 )));
                 return;
             }
@@ -15600,7 +15614,7 @@ fn apply_the_view_elsewhere(
     let reaches = match folders_a_scope_reaches(cache, scope, &account, &path) {
         Ok(reaches) => reaches,
         Err(e) => {
-            send_refusal(tx, rt, &format!("The folders could not be read: {e}"));
+            send_refusal(tx, rt, &format!("The folders could not be read: {e}."));
             return;
         }
     };
@@ -16123,7 +16137,7 @@ fn choose_which_copy_to_keep(
     rt: &Arc<Runtime>,
 ) {
     let Some(cache) = cache.clone() else {
-        send_refusal(tx, rt, "No message store is available");
+        send_refusal(tx, rt, "The mail on this computer is not open.");
         return;
     };
     let account = lock_state(state)
@@ -16136,7 +16150,7 @@ fn choose_which_copy_to_keep(
             send_refusal(
                 tx,
                 rt,
-                &format!("The waiting choices could not be read: {why}"),
+                &format!("The waiting choices could not be read: {why}."),
             );
             return;
         }
@@ -16163,7 +16177,7 @@ fn choose_which_copy_to_keep(
                 send_answer(tx, rt, &held.copies.what_was_chosen(chosen));
             }
             Err(why) => {
-                send_refusal(tx, rt, &format!("That choice could not be saved: {why}"));
+                send_refusal(tx, rt, &format!("That choice could not be saved: {why}."));
                 break;
             }
         }
@@ -16673,7 +16687,7 @@ fn open_compose(
                     // Said, not silent. Somebody who relies on this needs to
                     // know it is happening, and the status line is where it
                     // belongs rather than interrupting typing with speech.
-                    send_status(&tx, &rt, "Draft saved");
+                    send_status(&tx, &rt, "Draft saved.");
                 }
                 // Logged rather than announced. An automatic save failing
                 // mid-sentence is not something to interrupt writing with, and
@@ -16776,7 +16790,7 @@ fn open_compose(
             match save_as_draft(app, cache, &data, draft_id.borrow().clone()) {
                 Ok((id, subject)) => {
                     *draft_id.borrow_mut() = Some(id);
-                    send_status(tx, rt, &format!("Draft saved: {}", subject))
+                    send_status(tx, rt, &format!("Draft saved: {}.", subject))
                 }
                 Err(reason) => {
                     let tx = tx.clone();
@@ -16911,7 +16925,7 @@ fn file_draft_copy(
             send_status(
                 tx,
                 rt,
-                &format!("The draft is saved, but it could not be put in the Drafts folder: {e}"),
+                &format!("The draft is saved, but it could not be put in the Drafts folder: {e}."),
             );
         }
         return;
@@ -17974,7 +17988,7 @@ fn read_the_row_with_its_headings(
         // Every visible cell empty: a read message with nothing to say under
         // a layout showing flag columns alone. Said as a refusal rather than
         // as silence, so the key is not mistaken for a dead one.
-        send_refusal(tx, rt, "This row's columns are all empty");
+        send_refusal(tx, rt, "This row's columns are all empty.");
         return;
     }
     let _ = a11y.announce_content(&text);
@@ -18532,7 +18546,7 @@ fn handle_settings(
         }
         Err(e) => {
             tracing::error!("Settings folder unavailable: {}", e);
-            send_status(tx, rt, &format!("Cannot open settings: {}", e));
+            send_status(tx, rt, &format!("Settings could not be opened: {}.", e));
             return None;
         }
     };
@@ -18619,7 +18633,7 @@ fn handle_settings(
             *mgr.app_config_mut() = *new_config;
             if let Err(e) = mgr.save() {
                 tracing::error!("Failed to save settings: {}", e);
-                send_status(tx, rt, &format!("Settings save error: {}", e));
+                send_status(tx, rt, &format!("Settings could not be saved: {}.", e));
             } else {
                 let _ = tx.try_send(UIUpdate::WorkingDayChanged(working_day));
                 let _ = tx.try_send(UIUpdate::DefaultEventAlertLeadChanged(i64::from(
@@ -18628,7 +18642,7 @@ fn handle_settings(
                 let _ = tx.try_send(UIUpdate::CalendarViewChanged(opens_on));
                 let _ = tx.try_send(UIUpdate::MarkReadAfterChanged(wait));
                 let _ = tx.try_send(UIUpdate::DateSettingsChanged(dates));
-                send_status(tx, rt, "Settings saved");
+                send_status(tx, rt, "Settings saved.");
                 // The two levels a report reads the rest of the log by, and
                 // nothing else from the settings (#71): a person's choices
                 // are theirs, and the two named change what the log holds.
@@ -19582,12 +19596,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             error,
         } => {
             if *success {
-                frame.set_status_text("Queued message sent", 0);
+                frame.set_status_text("The message was sent from the Outbox.", 0);
                 let _ = a11y.signal(FeedbackEvent::MessageSent, "from the outbox");
             } else {
                 let err = error.as_deref().unwrap_or("Unknown error");
                 tracing::error!("Outbox {} failed: {}", queue_id, err);
-                frame.set_status_text(&format!("Send failed: {}", err), 0);
+                frame.set_status_text(&format!("The message could not be sent: {}.", err), 0);
                 let _ = a11y.signal(FeedbackEvent::SendFailed, err);
             }
         }
@@ -19747,11 +19761,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 s.outbox_count = *count;
             }
             if *count > 0 {
-                frame.set_status_text(&format!("{} queued", count), 0);
+                frame.set_status_text(&format!("{} waiting in the Outbox.", count), 0);
             }
         }
         UIUpdate::OutboxFlushComplete(sent, failed) => {
-            let msg = format!("Outbox flush: {} sent, {} failed", sent, failed);
+            let msg = format!("The Outbox is done: {} sent, {} not sent.", sent, failed);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce(&msg, Priority::Normal);
             // Read the folder again if it is the one on screen. Without this,
@@ -20551,7 +20565,7 @@ fn flush_outbox(app: AppHandles<'_>) {
 
         if queued.is_empty() {
             let _ = tx
-                .send(UIUpdate::StatusUpdated("Outbox is empty".into()))
+                .send(UIUpdate::StatusUpdated("The Outbox is empty.".into()))
                 .await;
             return;
         }
@@ -20559,7 +20573,7 @@ fn flush_outbox(app: AppHandles<'_>) {
         let total = queued.len();
         let _ = tx
             .send(UIUpdate::StatusUpdated(format!(
-                "Sending {} queued messages...",
+                "Sending {} messages from the Outbox...",
                 total
             )))
             .await;
@@ -20751,7 +20765,7 @@ fn move_or_copy_message(
     };
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No message store is available");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     let chosen = match chosen_messages(
         state,
@@ -20881,7 +20895,11 @@ fn move_or_copy_message(
         }
     }
     let Some(from) = from else {
-        return send_status(tx, rt, "The message is not in a folder we know about");
+        return send_status(
+            tx,
+            rt,
+            "The message is not in a folder this program knows about.",
+        );
     };
 
     // Every chosen message with the folder it is in, the account that holds
@@ -21131,7 +21149,7 @@ fn move_or_copy_here_first(
             tx,
             rt,
             &format!(
-                "{} {}: larger than 25 MB, so it goes now and the row leaves when {} has taken it",
+                "{} {}: larger than 25 MB, so it goes now and the row leaves when {} has taken it.",
                 if copying { "Copying" } else { "Moving" },
                 message.subject,
                 destination_account.name
@@ -21718,7 +21736,7 @@ fn choose_folders(
     use crate::presentation::wx_folder_choice::{FolderRow, ask, is_a_gmail_account};
 
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "No message store is available");
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
     };
     // The account row, not only its identifier: the title says what the
     // account manager calls it, and whether it is Gmail decides whether a
@@ -21730,7 +21748,7 @@ fn choose_folders(
             .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
     };
     let Some(account) = account else {
-        return send_refusal(tx, rt, "Add an account first");
+        return send_refusal(tx, rt, "Add an account first.");
     };
     let account_id = account.id.clone();
 
@@ -21741,7 +21759,7 @@ fn choose_folders(
         return send_status(
             tx,
             rt,
-            "Check mail first, so there is a folder list to choose from",
+            "Check mail first, so there is a folder list to choose from.",
         );
     }
     let chosen = cache.folder_choices(&account_id).unwrap_or_default();
@@ -21790,12 +21808,12 @@ fn choose_folders(
         return;
     };
     if changed.is_empty() {
-        return send_refusal(tx, rt, "Nothing changed");
+        return send_refusal(tx, rt, "Nothing changed.");
     }
 
     for (path, sync) in &changed {
         if let Err(e) = cache.set_folder_choice(&account_id, path, *sync) {
-            return send_refusal(tx, rt, &format!("Could not record the choice: {e}"));
+            return send_refusal(tx, rt, &format!("The choice could not be recorded: {e}."));
         }
     }
     send_status(
@@ -21900,8 +21918,8 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
                 tx,
             );
         }
-        Ok(false) => send_refusal(tx, rt, "That message is no longer in the outbox"),
-        Err(e) => send_refusal(tx, rt, &format!("Could not cancel it: {e}")),
+        Ok(false) => send_refusal(tx, rt, "That message is no longer in the Outbox."),
+        Err(e) => send_refusal(tx, rt, &format!("It could not be cancelled: {e}.")),
     }
     true
 }
@@ -22138,7 +22156,7 @@ fn delete_if_local(
                 });
                 // Shown and not said (#83): the row the cursor lands on is
                 // what is heard, the same as when a server agreed.
-                send_shown(tx, rt, &format!("{}: {subject}", outcome.said));
+                send_shown(tx, rt, &format!("{}: {subject}.", outcome.said));
             } else {
                 // Its own topic and above the ordinary run of status: this is
                 // the answer to a key somebody just pressed, and a message that
@@ -22155,7 +22173,7 @@ fn delete_if_local(
             // A refusal, not a status line: the row stays, and a set that
             // was leaving is landed after the rows that left rather than
             // waiting for one that will not (a deferred item of 11-07).
-            send_refusal(tx, rt, &format!("{subject} was not deleted: {e}"));
+            send_refusal(tx, rt, &format!("{subject} was not deleted: {e}."));
             true
         }
     }
@@ -22188,7 +22206,7 @@ fn where_a_delete_goes_here(
     };
     use crate::data::message_cache::moves_waiting::WhatAWaitingMoveDoes;
     let Some(cache) = cache.as_ref() else {
-        return Err("No message store is available".to_string());
+        return Err("The mail on this computer is not open.".to_string());
     };
     let account = {
         let s = lock_state(state);
@@ -22209,7 +22227,7 @@ fn where_a_delete_goes_here(
         .folder_path_for_message(row_id)
         .ok()
         .flatten()
-        .ok_or_else(|| "The message is not in a folder we know about".to_string())?;
+        .ok_or_else(|| "The message is not in a folder this program knows about.".to_string())?;
     let folders = cache
         .get_folders_for_account(&account.id)
         .unwrap_or_default();
@@ -22356,7 +22374,7 @@ fn send_receipt_for_the_open_message(app: AppHandles<'_>) {
         return send_status(
             tx,
             rt,
-            "This message did not ask for a read receipt, so there is none to send",
+            "This message did not ask for a read receipt, so there is none to send.",
         );
     };
     send_status(tx, rt, &format!("Sending a read receipt to {notify}..."));
@@ -22462,7 +22480,7 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
         let envelope = crate::application::receipts::address_of(&notify);
         match handle.block_on(client.send_raw(&account.email, &envelope, &raw, &auth)) {
             Ok(()) => say(UIUpdate::StatusUpdated(format!(
-                "Read receipt sent to {notify}"
+                "Read receipt sent to {notify}."
             ))),
             Err(e) => say(UIUpdate::ErrorOccurred(format!(
                 "No read receipt was sent: {e}"
@@ -24165,7 +24183,7 @@ fn save_attachment(
     rt.spawn_blocking(move || {
         let outcome = fetch_and_write_attachment(&handle, account, &attachment, &destination);
         let _ = match outcome {
-            Ok(()) => tx.try_send(UIUpdate::StatusUpdated(format!("Saved to {destination}"))),
+            Ok(()) => tx.try_send(UIUpdate::StatusUpdated(format!("Saved to {destination}."))),
             // Through ErrorOccurred rather than the status line: a save that
             // did not happen has to interrupt, because the next thing somebody
             // does is go looking for a file that is not there.
@@ -25929,11 +25947,11 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
         let update = match said {
             WhatTheNotesSyncDid::TheyStayHere => UIUpdate::StatusUpdated(
                 "This account's notes are kept on this computer, so there is \
-                 nothing to sync"
+                 nothing to sync."
                     .to_string(),
             ),
             WhatTheNotesSyncDid::NobodyIsSignedIn => UIUpdate::StatusUpdated(
-                "Nobody is signed in to the server this account's notes go to".to_string(),
+                "Nobody is signed in to the server this account's notes go to.".to_string(),
             ),
             WhatTheNotesSyncDid::ItRan(result) => {
                 // The messages go to the log and the count goes on screen,
@@ -29959,13 +29977,24 @@ mod what_the_status_line_says {
         // like refusals, "No new mail" and "Nothing to send". Neither rides
         // this channel any more, and an allowance for a line nobody sends is
         // a hole waiting for a line somebody does, so there is none.
-        const REFUSALS: [&str; 6] = [
+        //
+        // Eight since 2026-09-23, and the two that arrived are why a reading
+        // over opening words has to be re-read whenever the words move.
+        // 12-03 (#75) reworded "No storage is open", "No message store is
+        // available" and "No active draft to save" into "The mail on this
+        // computer is not open." and "There is no draft open to save.", and
+        // three families of refusal walked straight out of a list that
+        // started at "No ". The guard record's own break stopped reddening
+        // this, which is what said so.
+        const REFUSALS: [&str; 8] = [
             "\"No ",
             "\"Nothing ",
             "\"Choose ",
             "\"Add ",
             "\"That ",
             "\"Could not ",
+            "\"The mail on this computer is not open",
+            "\"There is no ",
         ];
 
         let mut found = Vec::new();

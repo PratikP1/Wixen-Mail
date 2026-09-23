@@ -399,7 +399,7 @@ fn the_settings_save_is_written_at_info(app: &str) -> Result<(), String> {
     let body = body_of(app, "fn handle_settings(")?;
     let after_the_send = between(
         &body,
-        "send_status(tx, rt, \"Settings saved\");",
+        "send_status(tx, rt, \"Settings saved.\");",
         "\n            }",
     )?;
     let call = the_first_log_call(after_the_send).ok_or(
@@ -660,7 +660,7 @@ fn test_the_reading_complains_when_the_settings_save_line_is_missing_or_says_mor
     let body = body_of(&app, "fn handle_settings(").expect("the handler");
     let (call, arguments) = the_call_between(
         &body,
-        "send_status(tx, rt, \"Settings saved\");",
+        "send_status(tx, rt, \"Settings saved.\");",
         "\n            }",
     );
     let why = the_settings_save_is_written_at_info(&with(&app, &call, ""))

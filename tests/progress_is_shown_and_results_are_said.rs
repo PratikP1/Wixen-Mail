@@ -35,13 +35,21 @@ use wixen_mail::common::what_ships::what_ships;
 const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 
 /// The openings of a step, none of which may ride the answer channel.
-const PROGRESS_OPENINGS: [&str; 6] = [
+///
+/// Five since 2026-09-23. The sixth was "sync requested", and the four steps
+/// that said it are "Syncing contacts...", "Syncing the calendar...",
+/// "Syncing tasks..." and "Syncing notes..." now (12-03, #75): the old
+/// wording used sync as a noun and said what had been asked for rather than
+/// what was happening. Nothing in the tree says it, and
+/// `application::status_sentences` refuses a noun use of the word, so the
+/// entry guarded a shape that can no longer be written; the new wording is
+/// covered by "Syncing " above, which was already here.
+const PROGRESS_OPENINGS: [&str; 5] = [
     "\"Checking ",
     "\"Connecting ",
     "\"Loading ",
     "\"Syncing ",
     "\"Fetching ",
-    "sync requested",
 ];
 
 /// The five lines a mail check says on the way, by their opening words or
