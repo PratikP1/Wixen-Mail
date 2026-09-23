@@ -435,9 +435,13 @@ fn test_the_sentences_the_application_layer_builds_read_to_the_shape() {
 fn test_the_reading_sees_an_answer_that_ends_in_an_ellipsis() {
     let why = reads_as_a_persons_sentence("Flushing outbox queue...", Voice::Answer)
         .expect_err("#75's own example was passed over");
-    // The word is found before the ending is, which is right: both are
-    // wrong with that sentence and the first complaint is the one to fix.
-    assert!(why.why.contains("flush"), "{why}");
+    // Three things are wrong with that one sentence and it is reported for
+    // the first: two words from inside this program, in the order the list
+    // names them, and then the ending, which this sentence never reaches.
+    // One complaint per sentence rather than a list, because the person
+    // fixing it rewrites the sentence and meets the next complaint on the
+    // next run.
+    assert!(why.why.contains("queue"), "{why}");
     let why = reads_as_a_persons_sentence("Sending the mail in the Outbox...", Voice::Answer)
         .expect_err("an answer ending in an ellipsis was passed over");
     assert!(why.why.contains("still happening"), "{why}");

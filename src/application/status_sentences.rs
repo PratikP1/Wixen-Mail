@@ -29,6 +29,20 @@
 //! commit anywhere earns it, and adding it to a file that guard records count
 //! tests in would put a re-measurement run on the critical path.
 
+/// "a" or "an", whichever belongs in front of `word`.
+///
+/// The same rule `presentation::manager_words::a_or_an` applies to a manager
+/// window's sentences. Written again rather than shared because that one is
+/// `pub(crate)` inside the presentation layer and this one is read by an
+/// integration target, and a sentence built here must not need a window to
+/// exist before it can be asked what it says.
+fn a_or_an(word: &str) -> &'static str {
+    match word.chars().next() {
+        Some(first) if "aeiouAEIOU".contains(first) => "an",
+        _ => "a",
+    }
+}
+
 /// A kind of thing somebody can be asked to choose.
 ///
 /// A newtype over the word rather than an enum of its own, because the
@@ -79,8 +93,8 @@ impl Thing {
     ];
 
     /// The kind whose word this is, or nothing when no kind has it.
-    pub fn named(_word: &str) -> Option<Thing> {
-        None
+    pub fn named(word: &str) -> Option<Thing> {
+        Thing::ALL.into_iter().find(|thing| thing.0 == word)
     }
 
     /// What a person calls one of these.
@@ -110,8 +124,8 @@ pub fn nothing_chosen(thing: Thing) -> String {
 /// so they cannot name a [`Thing`] at the call. They come in here instead,
 /// and get the same sentence a typed caller gets; [`Thing::named`] is what a
 /// reading uses to check that the word they pass is one of the kinds.
-pub fn nothing_chosen_named(_kind: &str) -> String {
-    String::new()
+pub fn nothing_chosen_named(kind: &str) -> String {
+    format!("Choose {} {kind} first.", a_or_an(kind))
 }
 
 /// What to say when a command works on every chosen row and none was chosen.
@@ -120,8 +134,8 @@ pub fn nothing_chosen_named(_kind: &str) -> String {
 /// wrong for a command that takes a set: it asks for one thing where any
 /// number will do, and somebody who has chosen a block of twenty and lost the
 /// selection needs to hear that a selection is what is missing.
-pub fn at_least_one_chosen(_thing: Thing) -> String {
-    String::new()
+pub fn at_least_one_chosen(thing: Thing) -> String {
+    format!("Choose at least one {} first.", thing.word())
 }
 
 /// Whether a status sentence is one that has finished.
@@ -196,12 +210,46 @@ pub const WORDS_A_PERSON_DOES_NOT_USE: &[NotAPersonsWord] = &[
     },
 ];
 
+/// The words that may come before `sync` and leave it a verb.
+///
+/// `sync` is a noun in "Contacts sync requested" and "on the next sync", and
+/// a verb in "there is nothing to sync" and "this module does not sync
+/// anywhere yet". The first two are this program's own word for what it does,
+/// arriving in a sentence a person did not ask for; the second two are plain
+/// English. Telling them apart by the word in front is what a reading can do,
+/// and an allow-list of verb contexts is the direction that fails safe: an
+/// unlisted context is refused, and whoever wrote the sentence either rewords
+/// it or adds the context here with a reason.
+const A_VERB_CAN_FOLLOW: &[&str] = &[
+    "to", "not", "cannot", "can", "will", "would", "does", "do", "it", "they", "we", "and",
+];
+
 /// Where `sentence` uses `sync` as a noun, if it does.
 ///
 /// The token exactly, so "syncs" and "syncing" are not this complaint: both
 /// are verbs wherever this tree writes them, and "Syncing contacts..." is the
 /// step the menu item "Sync Contacts" leads to.
-pub fn a_noun_use_of_sync(_sentence: &str) -> Option<usize> {
+pub fn a_noun_use_of_sync(sentence: &str) -> Option<usize> {
+    let lowered = sentence.to_lowercase();
+    let mut before: Option<String> = None;
+    let mut at = 0;
+    for piece in lowered.split_inclusive(|letter: char| !letter.is_alphanumeric()) {
+        let word: String = piece
+            .chars()
+            .filter(|letter| letter.is_alphanumeric())
+            .collect();
+        if !word.is_empty() {
+            if word == "sync"
+                && !before
+                    .as_deref()
+                    .is_some_and(|last| A_VERB_CAN_FOLLOW.contains(&last))
+            {
+                return Some(at);
+            }
+            before = Some(word);
+        }
+        at += piece.len();
+    }
     None
 }
 
@@ -236,8 +284,91 @@ impl std::fmt::Display for Complaint {
 ///    value. Those are refused here and excused one at a time by
 ///    [`THE_VALUE_ENDS_THE_SENTENCE`], which is the exception table, so that
 ///    a new one arrives as a refusal rather than as silence.
-pub fn reads_as_a_persons_sentence(_sentence: &str, _voice: Voice) -> Result<(), Complaint> {
-    Ok(())
+pub fn reads_as_a_persons_sentence(sentence: &str, voice: Voice) -> Result<(), Complaint> {
+    let complaint = |why: String| {
+        Err(Complaint {
+            sentence: sentence.to_string(),
+            why,
+        })
+    };
+    let trimmed = sentence.trim_end();
+    if trimmed.trim().is_empty() {
+        return complaint("it says nothing at all".to_string());
+    }
+    for word in WORDS_A_PERSON_DOES_NOT_USE {
+        if a_word_beginning_with(trimmed, word.stem).is_some() {
+            return complaint(format!(
+                "{} is a word from inside this program. Write {} instead",
+                word.whole, word.instead
+            ));
+        }
+    }
+    if a_noun_use_of_sync(trimmed).is_some() && !THE_NAME_OF_SOMETHING.contains(&trimmed) {
+        return complaint(
+            "sync is a noun here, and it is this program's word rather than a person's. \
+             Name what is happening, or name the menu item and list the sentence in \
+             THE_NAME_OF_SOMETHING"
+                .to_string(),
+        );
+    }
+    if trimmed.ends_with("...") {
+        return match voice {
+            Voice::Step => Ok(()),
+            Voice::Answer => complaint(
+                "an answer ends in an ellipsis, so it reads as something still happening. \
+                 Either it is a step and belongs on the step channel, or the ellipsis goes"
+                    .to_string(),
+            ),
+        };
+    }
+    if trimmed.ends_with('}') {
+        return match THE_VALUE_ENDS_THE_SENTENCE
+            .iter()
+            .any(|(excused, _)| *excused == trimmed)
+        {
+            true => Ok(()),
+            false => complaint(
+                "it ends in a value, so what a person hears at the end of it is whatever \
+                 was filled in. Put the ending after the value, or say in \
+                 THE_VALUE_ENDS_THE_SENTENCE why the value carries it"
+                    .to_string(),
+            ),
+        };
+    }
+    match trimmed.ends_with('.') || trimmed.ends_with('?') {
+        true => Ok(()),
+        false => complaint(
+            "it ends in neither a full stop nor a question mark, so the bar reads in two \
+             styles depending on which sentence is on it"
+                .to_string(),
+        ),
+    }
+}
+
+/// Whether a word in this text begins with `stem`, and where.
+///
+/// A word begins where the character before it is not a letter, so "cachet"
+/// answers to the stem and "squid" does not answer to `uid`. The reading
+/// `tests/the_words_that_say_nothing.rs` arrived at, for the reason it gives:
+/// a substring search reports every word that merely contains one of these.
+fn a_word_beginning_with(text: &str, stem: &str) -> Option<usize> {
+    let lowered = text.to_lowercase();
+    let mut at = 0;
+    while let Some(found) = lowered[at..].find(stem) {
+        let start = at + found;
+        let before_is_a_letter = lowered[..start]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphabetic);
+        if !before_is_a_letter {
+            return Some(lowered[..start].chars().count());
+        }
+        at = start + 1;
+        if at >= lowered.len() {
+            break;
+        }
+    }
+    None
 }
 
 /// The sentences whose last word is a value, and why the value ends them.
@@ -247,7 +378,24 @@ pub fn reads_as_a_persons_sentence(_sentence: &str, _voice: Voice) -> Result<(),
 /// after it would be a second one. Keyed on the sentence rather than on a
 /// file and a line, because a line number moves whenever anything above it
 /// changes and the sentence does not.
-pub const THE_VALUE_ENDS_THE_SENTENCE: &[(&str, &str)] = &[];
+pub const THE_VALUE_ENDS_THE_SENTENCE: &[(&str, &str)] = &[
+    (
+        "Account added. {}",
+        "no_sign_in_credentials answers a whole sentence about what is still needed",
+    ),
+    (
+        "Account added. {msg}",
+        "msg is the provider's own sentence about what is still needed",
+    ),
+    (
+        "Account updated. {}",
+        "no_sign_in_credentials answers a whole sentence about what is still needed",
+    ),
+    (
+        "Account updated. {msg}",
+        "msg is the provider's own sentence about what is still needed",
+    ),
+];
 
 /// The sentences that name something a person can see, spelled the way the
 /// page spells it, and why each is allowed to carry a word from this list.
