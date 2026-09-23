@@ -68,18 +68,35 @@ test("NVDA hears Edit Event's, Delete Event's and Sync's own answers when presse
   // order (Edit Event, Delete Event, Sync all sit after New Event and
   // before Close in `build_calendar_dialog`), so each search only ever
   // moves forward through the dialog's own Tab order.
+  //
+  // The three sentences moved on 2026-09-23. 12-03 gave every "nothing
+  // chosen" refusal one wording, built by `status_sentences::nothing_chosen`,
+  // so Edit Event and Delete Event both say "Choose an event first.", and
+  // Sync's step says what it is happening to, "Syncing the calendar...". NVDA
+  // runs 35839692317 and 35839954840 heard the new sentences and this case
+  // went on waiting for the old ones. `tests/the_nvda_cases_wait_for_words_the_program_says.rs`
+  // now holds every text here to the place in `src` that says it.
+  //
+  // Each wait counts only what NVDA said after its own key, because Edit
+  // Event and Delete Event say the same sentence and the second wait would
+  // otherwise be answered by the first key's.
   await tabUntilHeard(nvda, "Edit Event");
+  const beforeEdit = (await nvda.spokenPhraseLog()).length;
   await nvda.press("Enter");
-  const editHeard = await waitToHearAll(nvda, ["Select an event to edit."]);
-  expect(editHeard).toContain("Select an event to edit.");
+  const editHeard = await waitToHearAll(nvda, ["Choose an event first."], { after: beforeEdit });
+  expect(editHeard).toContain("Choose an event first.");
 
   await tabUntilHeard(nvda, "Delete Event");
+  const beforeDelete = (await nvda.spokenPhraseLog()).length;
   await nvda.press("Enter");
-  const deleteHeard = await waitToHearAll(nvda, ["Select an event to delete."]);
-  expect(deleteHeard).toContain("Select an event to delete.");
+  const deleteHeard = await waitToHearAll(nvda, ["Choose an event first."], {
+    after: beforeDelete,
+  });
+  expect(deleteHeard).toContain("Choose an event first.");
 
   await tabUntilHeard(nvda, "Sync");
+  const beforeSync = (await nvda.spokenPhraseLog()).length;
   await nvda.press("Enter");
-  const syncHeard = await waitToHearAll(nvda, ["Sync requested..."]);
-  expect(syncHeard).toContain("Sync requested...");
+  const syncHeard = await waitToHearAll(nvda, ["Syncing the calendar..."], { after: beforeSync });
+  expect(syncHeard).toContain("Syncing the calendar...");
 });

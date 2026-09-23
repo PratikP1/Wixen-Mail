@@ -62,9 +62,15 @@ afterAll(async () => {
 test("NVDA announces the same sentence Delete would show when nothing is selected", async () => {
   // Found by name rather than by counting Tab presses, so this does not
   // depend on guessing the dialog's exact control order.
+  //
+  // The sentence moved on 2026-09-23: 12-03 gave every "nothing chosen"
+  // refusal one wording, built by `status_sentences::nothing_chosen`, and
+  // NVDA runs 35839692317 and 35839954840 heard it while this case waited for
+  // the old one. `tests/the_nvda_cases_wait_for_words_the_program_says.rs`
+  // now holds it to the place in `src` that says it.
   await tabUntilHeard(nvda, "Delete");
   await nvda.press("Enter");
 
-  const heard = await waitToHearAll(nvda, ["Select a filter to delete"]);
-  expect(heard).toContain("Select a filter to delete");
+  const heard = await waitToHearAll(nvda, ["Choose a filter first."]);
+  expect(heard).toContain("Choose a filter first.");
 });

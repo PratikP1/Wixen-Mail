@@ -23941,6 +23941,15 @@ pub fn show_conversation_as_page(
         });
     }
 
+    // Coming back with the keyboard on the frame or on nothing gives it to the
+    // page, so K and H work again after switching away (FOUND-20, reopened by
+    // NVDA runs 35839692317 and 35839954840 on 2026-09-23).
+    crate::presentation::page_focus::keep_the_keyboard_in_the_page(
+        &frame,
+        &page,
+        "conversation window",
+    );
+
     frame.set_sizer(sizer, true);
     // A window this new is never minimised. Written the same way as the other
     // two so all three read alike and none of them is the one somebody has to

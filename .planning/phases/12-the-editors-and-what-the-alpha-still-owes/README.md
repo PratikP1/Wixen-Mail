@@ -621,7 +621,10 @@ it are already renumbered for the 12-02.1 insert. **Corrected later on
 2026-09-23: the next plan is 12-03.1**, inserted at wave 5 after the push
 of `26beb051` and `6cb8f17c` came back red on three NVDA cases, and 12-04
 follows it at wave 6. **Corrected again later on 2026-09-23: 12-03.2,
-the gate, follows 12-03.1 at wave 6, and 12-04 is at wave 7.**
+the gate, follows 12-03.1 at wave 6, and 12-04 is at wave 7.** **And later
+still on 2026-09-23: 12-03.1 is complete, its summary says what it settled,
+the report that closed it gives its merge commit and its pull request's
+runs, and 12-03.2 is next.**
 
 Four of the thirteen plans are merged. **Corrected later on 2026-09-23:
 four of the fourteen**, since 12-03.1 was inserted after that count was

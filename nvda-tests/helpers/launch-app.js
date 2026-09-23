@@ -147,13 +147,18 @@ async function activateWindow(title) {
 }
 
 /**
- * The window Windows says is in front, as `{ title, pid }`, or
- * `{ title: "", pid: 0 }` when there is none.
+ * The window Windows says is in front, as
+ * `{ title, pid, className, processName }`, or empty strings and pid 0 when
+ * there is none.
  *
  * Asked through PowerShell for the same reason `windowTitles` is, and built
  * the same way, so the two read alike. This is the read an activation call
  * cannot stand in for: a key goes to whatever is in front, so a case about
  * to press one needs to know what that is, not what it asked for.
+ *
+ * The class and the process's name since 2026-09-23. Runs 35839692317 and
+ * 35839954840 found an untitled window of another process in front after
+ * Alt+Tab, pid 2036, and a title and a pid could not say whose it was.
  */
 async function foregroundWindow() {
   const { stdout } = await execFileAsync("powershell", [
@@ -163,20 +168,225 @@ async function foregroundWindow() {
       "Add-Type -Namespace WixenNvda -Name Front -MemberDefinition @'",
       '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
       '[DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);',
+      '[DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);',
       '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);',
       "'@",
       "$h = [WixenNvda.Front]::GetForegroundWindow()",
       "$owner = 0",
       "$sb = New-Object System.Text.StringBuilder 512",
+      "$cls = New-Object System.Text.StringBuilder 256",
+      "$name = ''",
       "if ($h -ne [IntPtr]::Zero) {",
       "  [void][WixenNvda.Front]::GetWindowThreadProcessId($h, [ref]$owner)",
       "  [void][WixenNvda.Front]::GetWindowText($h, $sb, 512)",
+      "  [void][WixenNvda.Front]::GetClassName($h, $cls, 256)",
+      "  $name = (Get-Process -Id $owner -ErrorAction SilentlyContinue).ProcessName",
       "}",
-      '$sb.ToString() + "`n" + $owner',
+      '$sb.ToString() + "`n" + $owner + "`n" + $cls.ToString() + "`n" + $name',
     ].join("\n"),
   ]);
-  const [title = "", owner = "0"] = stdout.split(/\r?\n/);
-  return { title: title.trim(), pid: Number.parseInt(owner.trim(), 10) || 0 };
+  const [title = "", owner = "0", className = "", processName = ""] = stdout.split(/\r?\n/);
+  return {
+    title: title.trim(),
+    pid: Number.parseInt(owner.trim(), 10) || 0,
+    className: className.trim(),
+    processName: processName.trim(),
+  };
+}
+
+/**
+ * The PowerShell body `watchTheKeyboardOfTheWindow` runs, one process for
+ * every sample. Kept apart from the function so the body can be run by hand
+ * and read as it is.
+ *
+ * The process id is compared before any title is read, so a window of some
+ * other process, on a machine somebody is using, is never read beyond whose
+ * it is. What it writes, a line at a time:
+ *   `ready`, once the `Add-Type` block has compiled;
+ *   `not-in-front <pid of whatever was in front>`, when the window never came;
+ *   `sighted <system time in ms>`, when it did;
+ *   `sample <planned ms> <measured ms> <focus handle> <focus is the window>
+ *     <focus is inside it> <the window is its thread's active one> <focus class>`;
+ *   `unanswered <planned ms> <measured ms>`, when `GetGUIThreadInfo` failed;
+ *   `done`.
+ */
+function theWatchersScript(pid, title, atMs, waitForTheFrontMs) {
+  return [
+    `$pidWanted = ${Number(pid)}`,
+    // A single-quoted literal with its quotes doubled, in which PowerShell
+    // expands nothing. `JSON.stringify` makes a double-quoted one, in which
+    // `$(...)` in a title would run.
+    `$title = '${String(title).replace(/'/g, "''")}'`,
+    `$atMs = @(${atMs.map((at) => Number(at)).join(",")})`,
+    `$waitMs = ${Number(waitForTheFrontMs)}`,
+    "Add-Type -Namespace WixenNvda -Name Keyboard -MemberDefinition @'",
+    "[StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }",
+    "[StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {",
+    "  public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus;",
+    "  public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize;",
+    "  public IntPtr hwndCaret; public RECT rcCaret; }",
+    '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+    '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);',
+    '[DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);',
+    '[DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);',
+    '[DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);',
+    '[DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);',
+    "'@",
+    "[Console]::WriteLine('ready')",
+    "$waiting = [System.Diagnostics.Stopwatch]::StartNew()",
+    "$h = [IntPtr]::Zero; $thread = 0; $owner = 0; $found = $false",
+    "while ($waiting.ElapsedMilliseconds -lt $waitMs) {",
+    "  $h = [WixenNvda.Keyboard]::GetForegroundWindow()",
+    "  $owner = 0",
+    "  $thread = [WixenNvda.Keyboard]::GetWindowThreadProcessId($h, [ref]$owner)",
+    "  if ($h -ne [IntPtr]::Zero -and $owner -eq $pidWanted) {",
+    "    $sb = New-Object System.Text.StringBuilder 512",
+    "    [void][WixenNvda.Keyboard]::GetWindowText($h, $sb, 512)",
+    "    if ($sb.ToString().StartsWith($title)) { $found = $true; break }",
+    "  }",
+    "  Start-Sleep -Milliseconds 20",
+    "}",
+    "if (-not $found) { [Console]::WriteLine('not-in-front ' + $owner); exit 0 }",
+    "[Console]::WriteLine('sighted ' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())",
+    "$since = [System.Diagnostics.Stopwatch]::StartNew()",
+    "foreach ($at in $atMs) {",
+    "  while ($since.ElapsedMilliseconds -lt $at) { Start-Sleep -Milliseconds 5 }",
+    "  $info = New-Object WixenNvda.Keyboard+GUITHREADINFO",
+    "  $info.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($info)",
+    "  $answered = [WixenNvda.Keyboard]::GetGUIThreadInfo($thread, [ref]$info)",
+    "  $measured = $since.ElapsedMilliseconds",
+    "  if (-not $answered) { [Console]::WriteLine('unanswered ' + $at + ' ' + $measured); continue }",
+    "  $focus = $info.hwndFocus",
+    "  $cls = New-Object System.Text.StringBuilder 256",
+    "  if ($focus -ne [IntPtr]::Zero) { [void][WixenNvda.Keyboard]::GetClassName($focus, $cls, 256) }",
+    "  $isTheWindow = $focus -eq $h",
+    "  $isInside = ($focus -ne [IntPtr]::Zero) -and [WixenNvda.Keyboard]::IsChild($h, $focus)",
+    "  $activeIsTheWindow = $info.hwndActive -eq $h",
+    "  [Console]::WriteLine('sample ' + $at + ' ' + $measured + ' ' + $focus.ToInt64() + ' ' + $isTheWindow + ' ' + $isInside + ' ' + $activeIsTheWindow + ' ' + $cls.ToString())",
+    "}",
+    "[Console]::WriteLine('done')",
+  ].join("\n");
+}
+
+/** One `sample` line of the watcher's, as the record keeps it. */
+function aSampleFrom(words) {
+  const [, planned, measured, focus, isTheWindow, isInside, activeIsTheWindow, ...cls] = words;
+  return {
+    plannedMs: Number(planned),
+    measuredMs: Number(measured),
+    focus: Number(focus),
+    focusClass: cls.join(" "),
+    focusIsTheWindow: isTheWindow === "True",
+    focusIsInsideIt: isInside === "True",
+    activeIsTheWindow: activeIsTheWindow === "True",
+  };
+}
+
+/**
+ * Watch what the window's own thread says has the keyboard, from the moment
+ * the window comes to the front, at each offset in `atMs`.
+ *
+ * Answers `{ ready, samples, pid, stop }`. `ready` resolves `true` once the
+ * watcher can see the window arrive, so a case starts it and awaits `ready`
+ * before it does anything that could bring the window back. `samples`
+ * resolves `{ sightedAt, samples }`, `sightedAt` in system milliseconds and
+ * every sample with the offset it was planned for and the one its own
+ * stopwatch measured, or `{ why, samples }` when the window never came to
+ * the front, a sample went unanswered, or the process ended without its last
+ * line.
+ *
+ * **Why the thread and not UI Automation.** `focusedElement` reads UI
+ * Automation's focused element, which cannot tell a frame holding the
+ * keyboard from nothing holding it, and runs 35839692317 and 35839954840
+ * could not say which of three things had happened to the page window's
+ * keyboard. `GetGUIThreadInfo` answers for the window's own thread.
+ *
+ * **Why one process and not a call per sample.** Every other helper here
+ * starts its own PowerShell and compiles its own `Add-Type` block. Measured
+ * on 2026-09-23 on the machine 12-03.1 was planned on, a start with one
+ * compile took 478, 361 and 343 ms, and a cold runner is slower, so calls
+ * made one after another cannot put a sample at 0 ms and another at 250 ms,
+ * and those two are what tell a keyboard that was in the page and then left
+ * it from one that was never there. One process started before the return
+ * pays the compile before the window comes back and records the offset it
+ * measured beside the one it planned, so a late sample says it was late.
+ *
+ * Read-only: nothing is moved, nothing is pressed, and only the window's
+ * own process has its title read.
+ */
+function watchTheKeyboardOfTheWindow(
+  pid,
+  title,
+  { atMs = [0, 250, 1000, 3000], waitForTheFrontMs = 25000 } = {},
+) {
+  const child = spawn(
+    "powershell",
+    ["-NoProfile", "-Command", theWatchersScript(pid, title, atMs, waitForTheFrontMs)],
+    { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+  );
+  let sayReady;
+  let saySamples;
+  const ready = new Promise((resolve) => {
+    sayReady = resolve;
+  });
+  const samples = new Promise((resolve) => {
+    saySamples = resolve;
+  });
+  const seen = { sightedAt: null, samples: [] };
+  let stderr = "";
+  let pending = "";
+
+  const readLine = (line) => {
+    const words = line.trim().split(" ");
+    switch (words[0]) {
+      case "ready":
+        sayReady(true);
+        break;
+      case "not-in-front":
+        saySamples({ why: `the window never came to the front; process ${words[1]} was in front`, ...seen });
+        break;
+      case "sighted":
+        seen.sightedAt = Number(words[1]);
+        break;
+      case "sample":
+        seen.samples.push(aSampleFrom(words));
+        break;
+      case "unanswered":
+        saySamples({ why: `GetGUIThreadInfo answered nothing at ${words[1]} ms (measured ${words[2]})`, ...seen });
+        break;
+      case "done":
+        saySamples(seen);
+        break;
+      default:
+        break;
+    }
+  };
+
+  child.stdout.on("data", (chunk) => {
+    pending += chunk.toString();
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop();
+    lines.filter((line) => line.trim().length > 0).forEach(readLine);
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+  child.on("close", (code) => {
+    const why = `the watcher ended (code ${code}) without its last line${stderr ? `: ${stderr.trim()}` : ""}`;
+    sayReady({ why });
+    saySamples({ why, ...seen });
+  });
+
+  return {
+    ready,
+    samples,
+    pid: child.pid,
+    stop: () => {
+      if (child.exitCode === null && !child.killed) {
+        child.kill();
+      }
+    },
+  };
 }
 
 /**
@@ -301,6 +511,7 @@ module.exports = {
   foregroundWindow,
   focusedElement,
   waitForForeground,
+  watchTheKeyboardOfTheWindow,
   killApp,
   sleep,
 };

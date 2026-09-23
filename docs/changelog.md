@@ -324,6 +324,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Coming back to the window that shows a conversation as headings puts the keyboard in the
+  message again.** Since that window arrived on 2026-07-28, at `0.1.0-alpha.15`, and in every
+  build through `1.0.0-alpha.1`, nothing in it answered the window becoming active again.
+  wxWidgets gave the keyboard back to whatever had it last, and when that was the window
+  itself rather than the message, switching away and back left the keyboard on the window. A
+  screen reader's browse mode then had no document, so K, H and the other browse-mode keys
+  did nothing until you clicked or tabbed into the message. The NVDA workflow found it on
+  2026-09-23, in runs 35839692317 and 35839954840, and that reversed an earlier reading of
+  2026-09-22 which had found the window giving the keyboard back correctly. Now, when the
+  window becomes active with the keyboard on itself or on nothing, the message takes it. If
+  you had moved to the attachments list or the warning above the message, the keyboard stays
+  there. Known limitations: this is proved here by a message a test sends to a built window,
+  not by a real switch between windows, and a real switch is read only by the NVDA workflow's
+  next run; an activation Windows marks as arriving while the window is minimised reaches
+  none of the window's handlers, because wxWidgets drops it, so this cannot answer that
+  case; and nobody has heard it yet. No version
+  moves for it: the counter moves at the first behaviour change after a cut, and none has
+  been cut since `1.0.0-alpha.1` was set.
 - **A Markdown marker typed with its space counts at the start of any line of the message,
   not only the first.** The tester on 2026-09-18, on build `1.0.0-alpha.1` at `744d05ef`
   (#79): "The compose dialog does not allow for markdown writing", and "I'm expecting the

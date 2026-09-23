@@ -44,7 +44,14 @@ set -euo pipefail
 # A workflow commit answers `all` on its own, so this is here for the other
 # half of that coupling, a change to the script's flags, which maps to no
 # target and would otherwise run every guard except the one that reads it.
-guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date the_guard_sweep_runs_on_runners)
+#
+# The eighth reads every case under `nvda-tests/tests` for the words it waits
+# to hear, and holds each to the one place in `src` that says it. A waited
+# sentence can live in any file under `src` and a case in any file under
+# `nvda-tests`, so no guard record's `file` can route the commits that break
+# it: 12-03 reworded four sentences across two files and two cases waited for
+# the old ones until the NVDA runner timed out (FOUND-22).
+guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date the_guard_sweep_runs_on_runners the_nvda_cases_wait_for_words_the_program_says)
 
 # Which integration targets guard a changed source file.
 #

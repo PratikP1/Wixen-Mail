@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 241 records have arrived since and have not been through it.
+# 245 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29071,7 +29071,106 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 2 },
+    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
+]
+
+# The formatted message window gives the keyboard to the page when it comes
+# back with the keyboard on its frame, which is where NVDA runs 35839692317
+# and 35839954840 found it on 2026-09-23 (FOUND-20, 12-03.1). The break takes
+# the call out of `show_conversation_as_page`, which is what somebody tidying
+# the window's setup would do, and the window is then left on its frame by
+# wx's own restore. Red in the reading's frame-saved steps.
+#
+# Measured 2026-09-23 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the formatted window hands the keyboard to the page when it comes back on its frame"
+file = "src/presentation/wx_app.rs"
+suite = "the_page_window_keeps_the_document_focused_when_it_comes_back"
+before = """    crate::presentation::page_focus::keep_the_keyboard_in_the_page(
+        &frame,
+        &page,
+        "conversation window",
+    );"""
+after = """    // Nothing gives the keyboard back to the page here."""
+red = [
+    "test_the_page_takes_the_keyboard_back_when_the_window_restored_it_to_itself",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
+]
+
+# The decision the window asks when it comes back: the keyboard on the frame
+# is one of the two places nobody chose, so the page takes it. The break
+# leaves the frame out, so only "nowhere" moves; the unit case for the frame
+# is in the library and this record names the reading, because the reading is
+# the one place the whole route from a real activation is read.
+#
+# Measured 2026-09-23 through `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the keyboard on the frame is one the page takes back"
+file = "src/presentation/page_focus.rs"
+suite = "the_page_window_keeps_the_document_focused_when_it_comes_back"
+before = """    let nobody_chose_where_it_is = matches!(
+        where_it_is,
+        WhereTheKeyboardIs::OnTheFrame | WhereTheKeyboardIs::Nowhere
+    );"""
+after = """    let nobody_chose_where_it_is = matches!(where_it_is, WhereTheKeyboardIs::Nowhere);"""
+red = [
+    "test_the_page_takes_the_keyboard_back_when_the_window_restored_it_to_itself",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_focus.rs", tests = 7 },
+    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
+]
+
+# The check's timer belongs to the page. The frame owns the window's way back,
+# and a timer event reaches every tick handler bound on its owner, so a timer
+# on the frame runs the way back on its first tick and opens the conversation
+# again over a window still showing. The break gives the timer to the frame;
+# the reading's way-back count is what goes red, which is what says that
+# assertion can fail. The way back in the reading is a counter, so the break
+# opens nothing.
+#
+# Measured 2026-09-23 through `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the keyboard check's timer is the page's and never runs the window's way back"
+file = "src/presentation/page_focus.rs"
+suite = "the_page_window_keeps_the_document_focused_when_it_comes_back"
+before = """    let check = std::rc::Rc::new(Timer::new(page));"""
+after = """    let check = std::rc::Rc::new(Timer::new(frame));"""
+red = [
+    "test_the_page_takes_the_keyboard_back_when_the_window_restored_it_to_itself",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_focus.rs", tests = 7 },
+    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
+]
+
+# Every text an NVDA case waits for is held to a place in shipped source that
+# says it (FOUND-22, 12-03.1). The break makes the predicate that decides
+# whether a literal says a text answer yes for every literal, which is the
+# reading taken out: every stale text is then held, and every companion that
+# plants a refusal sees it pass. The whole-tree list in `scripts/check.sh`
+# already runs this target on every code commit, so no second record keyed
+# on `status_sentences.rs` or any other file of `src` is written.
+#
+# Measured 2026-09-23 through `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a text an NVDA case waits for is held only by a place that says it"
+file = "tests/the_nvda_cases_wait_for_words_the_program_says.rs"
+suite = "the_nvda_cases_wait_for_words_the_program_says"
+before = """    let sentences = sentences_of(text);"""
+after = """    let sentences: Vec<String> = sentences_of(text).into_iter().take(0).collect();"""
+red = [
+    "test_every_sentence_an_nvda_case_waits_for_is_one_the_program_says",
+    "test_the_reading_refuses_a_sentence_the_program_no_longer_says",
+    "test_the_reading_refuses_a_short_name_whose_place_was_relabelled_while_others_still_hold_it",
+    "test_the_reading_does_not_take_a_sentence_from_a_comment_or_a_test_module",
+]
+tests_last_seen = [
+    { file = "tests/the_nvda_cases_wait_for_words_the_program_says.rs", tests = 8 },
 ]
 
 # A separate window shows a page and nothing else, and this is where that is

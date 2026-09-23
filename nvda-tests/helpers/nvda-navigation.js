@@ -43,12 +43,22 @@ async function tabUntilHeard(nvda, substring, { maxAttempts = 15, backwards = fa
  * a moment after the call that raises it returns, which is why this polls
  * instead of reading the log once right after the action that should have
  * caused it.
+ *
+ * `after` skips the first `after` entries of the log, so a case that expects
+ * the same sentence from two keys can require the second key's own. Without
+ * it the second wait is answered by the first key's sentence, which is what
+ * happened to the calendar case on 2026-09-23 once 12-03 gave Edit Event and
+ * Delete Event one refusal between them.
  */
-async function waitToHearAll(nvda, substrings, { timeoutMs = 15000, intervalMs = 500 } = {}) {
+async function waitToHearAll(
+  nvda,
+  substrings,
+  { timeoutMs = 15000, intervalMs = 500, after = 0 } = {},
+) {
   const deadline = Date.now() + timeoutMs;
   let log = [];
   while (Date.now() < deadline) {
-    log = await nvda.spokenPhraseLog();
+    log = (await nvda.spokenPhraseLog()).slice(after);
     const whole = log.join(" ");
     if (substrings.every((s) => whole.includes(s))) {
       return whole;
@@ -57,7 +67,7 @@ async function waitToHearAll(nvda, substrings, { timeoutMs = 15000, intervalMs =
   }
   throw new Error(
     `never heard all of ${JSON.stringify(substrings)} within ${timeoutMs}ms. ` +
-      `Everything NVDA said: ${JSON.stringify(log)}`,
+      `Everything NVDA said${after > 0 ? ` after its first ${after} phrases` : ""}: ${JSON.stringify(log)}`,
   );
 }
 
