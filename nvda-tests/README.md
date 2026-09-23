@@ -138,6 +138,15 @@ nothing holding it: runs 35839692317 and 35839954840 read the page window's fram
 reads the window's own thread through `watchTheKeyboardOfTheWindow`, which samples
 `GetGUIThreadInfo` from the moment the window is in front.
 
+The words a case waits for are checked on every code commit, not only here.
+`tests/the_nvda_cases_wait_for_words_the_program_says.rs` reads each text a case waits to hear,
+tabs to or asserts it contains, and holds it to the one place in `src` that says it, so a
+sentence reworded or a button relabelled goes red on the commit that does it rather than on this
+runner. It was written after 12-03 reworded four sentences two cases waited for, and runs
+35839692317 and 35839954840 timed out on them. What it cannot see is anything NVDA says that no
+case waits for, and whether NVDA really speaks what the source says, which is what this package is
+for.
+
 A clean result here means the specific keystrokes and the specific sentences these cases
 check were really spoken. That is stronger than the structural scan, which never presses a key.
 It is still not a full manual walkthrough, and it says nothing about any control, any dialog,

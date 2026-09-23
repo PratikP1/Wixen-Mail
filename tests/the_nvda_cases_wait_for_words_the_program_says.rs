@@ -196,6 +196,15 @@ const THE_ONE_PLACE_A_SHARED_TEXT_MEANS: &[Tie] = &[
               sentences.",
     },
     Tie {
+        case: "calendar-immediate-actions.test.js",
+        text: "Syncing the calendar...",
+        file: "src/presentation/wx_calendar.rs",
+        function: "request_sync",
+        literal: "Syncing the calendar...",
+        why: "What the Calendar window says when its Sync button is pressed. The main \
+              window's two calendar syncs send the same step from wx_app.rs.",
+    },
+    Tie {
         case: "filter-manager-delete.test.js",
         text: "Delete",
         file: "src/presentation/wx_managers.rs",
