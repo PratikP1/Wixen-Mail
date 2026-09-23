@@ -284,12 +284,69 @@ if [ -z "$mode" ]; then
         "${changed[@]+"${changed[@]}"}")"
 fi
 
+# Where a run's seconds went, one stage at a time.
+#
+# Added 2026-09-23 by 12-03.2. A measurement of nine executors that day put 28%
+# of a plan's time in this hook, and one stage nothing printed, rustfmt, the
+# shell suites and start-up together, took 25 to 35 seconds on one day and 95
+# to 145 on two others, with no way to say which part moved. So every header a
+# stage prints goes through `begin_stage`, which closes the previous stage's
+# clock, and the run ends, pass or fail, with one line naming each stage and its
+# seconds. Whole seconds from bash's `SECONDS`, because the question is minutes.
+#
+# The first stage is `start`, from the script's first line to rustfmt, so what
+# the run spent before it checked anything is a stage of its own and not folded
+# into the first one that did.
+stage_names=()
+stage_seconds=()
+current_stage="start"
+current_stage_began=0
+
+# The files a run makes and must remove, whichever way it ends. One list and one
+# trap, because two traps on EXIT are one trap: the second replaces the first,
+# and red mode used to set a second one that dropped this one's clean-up.
+files_to_remove=()
+
+close_the_current_stage() {
+    stage_names+=("$current_stage")
+    stage_seconds+=("$(( SECONDS - current_stage_began ))")
+}
+
+begin_stage() {
+    close_the_current_stage
+    current_stage="$1"
+    current_stage_began=$SECONDS
+    echo "== $1 =="
+}
+
+# On every exit once the mode is settled. A run refused before that, an unknown
+# mode or `which-checks.sh` refusing, never arms it, so a refusal cannot claim
+# to have run a stage.
+the_run_ends() {
+    local status=$? outcome stages="" index
+    rm -f "${files_to_remove[@]+"${files_to_remove[@]}"}"
+    close_the_current_stage
+    if [ "$status" -eq 0 ]; then
+        outcome=passed
+    else
+        outcome="stopped in $current_stage"
+    fi
+    for index in "${!stage_names[@]}"; do
+        stages+="${stages:+, }${stage_names[$index]} ${stage_seconds[$index]} s"
+    done
+    echo "check.sh: $mode $outcome after $SECONDS s: $stages" >&2
+    return "$status"
+}
+
+echo "check.sh: mode $mode"
+trap the_run_ends EXIT
+
 touch src/lib.rs
 
-echo "== rustfmt =="
+begin_stage "rustfmt"
 cargo fmt --all -- --check
 
-echo "== clippy =="
+begin_stage "clippy"
 cargo clippy --all-targets --all-features -- -D warnings
 
 # The scripts that decide what this gate does, checked by the gate itself.
@@ -323,9 +380,9 @@ cargo clippy --all-targets --all-features -- -D warnings
 # The whole output of every run below is kept for the same reason, so the log is
 # opened here rather than after the mode branches.
 run_log="$(mktemp)"
-trap 'rm -f "$run_log"' EXIT
+files_to_remove+=("$run_log")
 
-echo "== the scripts that decide what runs =="
+begin_stage "the scripts that decide what runs"
 shell_suites_failed=""
 shell_suites_run=()
 for suite in "$(dirname "$0")"/*.test.sh; do
@@ -376,7 +433,7 @@ fi
 # can: house_style's em-dash guard has caught two real breaks in markdown, so
 # these run rather than being skipped as "not code".
 if [ "$mode" = "docs_only" ]; then
-    echo "== the targets that read documents =="
+    begin_stage "the targets that read documents"
     # Seven, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
     # help pages from inside the library, so a documents-only run that skipped
     # `--lib` would miss the guard that catches a dead link in a help page. That
@@ -515,13 +572,13 @@ run_the_tests_that_reach_what_changed() {
 # is held to exactly that, in all three directions, by `red-commit.sh`.
 if [ "$mode" = "red" ]; then
     named="$(mktemp)"
-    trap 'rm -f "$run_log" "$named"' EXIT
+    files_to_remove+=("$named")
     "$(dirname "$0")/red-commit.sh" names "$message_file" > "$named"
 
-    echo "== the tests this commit says must fail =="
+    begin_stage "the tests this commit says must fail"
     sed 's/^/   /' "$named"
     echo
-    echo "== the tests that reach what changed =="
+    begin_stage "the tests that reach what changed"
     run_the_tests_that_reach_what_changed || true
 
     echo
@@ -539,7 +596,7 @@ fi
 
 # Scope the suite to the modules the change reaches.
 if [ "$mode" = "affected" ]; then
-    echo "== the tests that reach what changed =="
+    begin_stage "the tests that reach what changed"
     if ! run_the_tests_that_reach_what_changed; then
         echo
         echo "Failed. What went red, with its output:" >&2
@@ -595,10 +652,10 @@ fi
 # What it is allowed not to block on, and why that is not a silencing, is in
 # scripts/audit.sh. The short version: an advisory nobody has decided yet is set
 # aside here by name, on this machine only, so CI stays red on it.
-echo "== security advisories =="
+begin_stage "security advisories"
 "$(dirname "$0")/audit.sh"
 
-echo "== tests =="
+begin_stage "tests"
 # --no-fail-fast because without it cargo stops at the first target that fails,
 # and the library is the first target. One failing test there means none of the
 # fourteen files under tests/ run at all: not reported as skipped, never
@@ -607,7 +664,7 @@ echo "== tests =="
 # that is wrong rather than the first thing.
 cargo test --all-targets --no-fail-fast
 
-echo "== release build =="
+begin_stage "release build"
 cargo build --release
 
 # Five of CI's seven jobs, not four, and not all seven.
