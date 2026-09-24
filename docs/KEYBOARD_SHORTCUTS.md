@@ -676,7 +676,7 @@ Five submenus hold the rest:
 | Submenu | What is on it |
 |--------|----------|
 | Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
-| Label | The ten labels, and Remove every label. Each acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation |
+| Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
@@ -804,13 +804,28 @@ moves the menu, and sorting from the menu moves the headers.
 ### Labels
 
 Ctrl and a number puts a label on the message you are on, and the same keys take
-it off again. Nine labels have a key; a tenth is reached from the Label menu.
-Over more than one selected message the label goes on when any of them lacks
-it, else comes off, and one sentence says how many: "3 messages labelled
-Important", "Important removed from 3 messages".
+it off again. `Ctrl+1` to `Ctrl+9` apply the first nine labels in the order the
+Label Manager shows, and the Label menu says the same: each label with its key
+beside it. A tenth label and any after it are reached from the Label menu,
+which shows up to fifty. Over more than one selected message the label goes on
+when any of them lacks it, else comes off, and one sentence says how many: "3
+messages labelled Important", "Important removed from 3 messages".
 
 An account starts with the five Thunderbird uses, in the same order, so the
 numbers you already know still work: Important, Work, Personal, To Do, Later.
+Labels from a build before 2026-09-24 keep the order their keys applied them
+in, which was by name: Important, Later, Personal, To Do, Work.
+
+Edit Labels, at the end of the Label menu, and Labels on the Tools menu
+(`Alt+E` on the menu) open the Label Manager. It adds a label, renames or
+recolours one, deletes one, and moves one up or down the order. Its Key column
+says which key each label has.
+
+| In the Label Manager | Shortcut | Description |
+|--------|----------|-------------|
+| Move a label up | `Alt+Shift+Up` | Also the Move Up button (`Alt+U`). Says where the label is now, "Later, 2 of 5.", and the key it had goes to the label it swapped with |
+| Move a label down | `Alt+Shift+Down` | Also the Move Down button (`Alt+W`) |
+| Add, Edit, Delete, Close | `Alt+A`, `Alt+E`, `Alt+D`, `Alt+C` | The buttons every manager window has. The order is written when the window closes |
 
 Labels travel as IMAP keywords, so a message you label here is labelled in
 Thunderbird too, and a label you set on your phone arrives here on the next
@@ -823,12 +838,8 @@ and go no further.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Important | `Ctrl+1` | Put the first label on, or take it off |
-| Work | `Ctrl+2` | The second label |
-| Personal | `Ctrl+3` | The third |
-| To Do | `Ctrl+4` | The fourth |
-| Later | `Ctrl+5` | The fifth |
-| The sixth to ninth labels | `Ctrl+6` to `Ctrl+9` | Nothing is there until you make a sixth label, and pressing one says so |
+| The first label | `Ctrl+1` | Put the first label in the account's order on, or take it off |
+| The second to ninth labels | `Ctrl+2` to `Ctrl+9` | The label at that place in the order. A number past the last label says there is no such label |
 | Remove every label | `Ctrl+0` | Takes them all off every selected message, and says how many labels came off how many messages |
 
 Thunderbird uses the bare number keys for this. Wixen Mail uses Ctrl and the

@@ -102,7 +102,7 @@ fn id_or_new(existing: &str, prefix: &str) -> String {
     }
 }
 
-/// Tags: read, edit, write back the difference.
+/// Labels: read, edit, move, write back the difference and the order.
 pub fn manage_tags(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -117,7 +117,7 @@ pub fn manage_tags(
     };
     let stored = match cache.get_tags_for_account(&account) {
         Ok(items) => items,
-        Err(e) => return send_status(tx, rt, &format!("Tags could not be read: {}.", e)),
+        Err(e) => return send_status(tx, rt, &format!("Labels could not be read: {}.", e)),
     };
     let rows: Vec<wx_managers::TagEntry> = stored
         .iter()
@@ -135,7 +135,7 @@ pub fn manage_tags(
     };
 
     let failures = save_what_the_tag_manager_returned(&cache, &account, &stored, updated);
-    report(tx, rt, "tags", failures);
+    report(tx, rt, "labels", failures);
 }
 
 /// Write back what the label manager returned, and name anything that would
@@ -146,7 +146,33 @@ pub fn manage_tags(
 /// touched is written with the values it already has. `created_at` and the
 /// keyword a label travels under are left alone by the update, which is what
 /// keeps a whole-list write from quietly rewriting them.
+///
+/// Then the order the rows came back in, the whole of it, which is the order
+/// the Label menu shows and the keys apply (#48). A row the manager added is
+/// given its identifier before anything is written, so it has its place too.
 pub fn save_what_the_tag_manager_returned(
+    cache: &MessageCache,
+    account: &str,
+    stored: &[crate::data::message_cache::Tag],
+    updated: Vec<wx_managers::TagEntry>,
+) -> Vec<String> {
+    let updated: Vec<wx_managers::TagEntry> = updated
+        .into_iter()
+        .map(|row| wx_managers::TagEntry {
+            id: id_or_new(&row.id, "tag"),
+            ..row
+        })
+        .collect();
+    let order: Vec<String> = updated.iter().map(|row| row.id.clone()).collect();
+    let mut failures = write_the_labels(cache, account, stored, updated);
+    if let Err(e) = cache.put_labels_in_order(account, &order) {
+        failures.push(format!("the order: {}", e));
+    }
+    failures
+}
+
+/// Delete, update and create the manager's rows, and name any that failed.
+fn write_the_labels(
     cache: &MessageCache,
     account: &str,
     stored: &[crate::data::message_cache::Tag],

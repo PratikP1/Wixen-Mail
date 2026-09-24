@@ -12,7 +12,8 @@
 pub(crate) const ACCOUNT: &str = "account";
 pub(crate) const CONTACT: &str = "contact";
 pub(crate) const FILTER: &str = "filter";
-pub(crate) const TAG: &str = "tag";
+/// "Label", the word the Label menu and the sidebar use; "tag" until 12-10.
+pub(crate) const LABEL: &str = "label";
 pub(crate) const SIGNATURE: &str = "signature";
 /// One thing a saved search asks about a message.
 ///
@@ -106,7 +107,7 @@ mod tests {
     };
     use crate::service::protocols::imap::{Deletion, Moved, StillHere};
 
-    const EVERY_KIND: [&str; 6] = [ACCOUNT, CONTACT, FILTER, TAG, SIGNATURE, CONDITION];
+    const EVERY_KIND: [&str; 6] = [ACCOUNT, CONTACT, FILTER, LABEL, SIGNATURE, CONDITION];
 
     /// The three sentences a manager window says about one change, over a list
     /// that has `left` rows in it afterwards.
@@ -237,7 +238,7 @@ mod tests {
         // filter or a tag list is a clause with no answer in it, because
         // nothing refuses an empty one, and it would arrive in five windows
         // that did not ask for it.
-        for kind in [ACCOUNT, CONTACT, FILTER, TAG, SIGNATURE] {
+        for kind in [ACCOUNT, CONTACT, FILTER, LABEL, SIGNATURE] {
             assert_eq!(
                 added(kind, "Invoice", 4),
                 format!("Added the {kind}: Invoice")

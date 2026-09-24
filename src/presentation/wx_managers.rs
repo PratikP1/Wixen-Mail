@@ -16,7 +16,7 @@ use crate::application::filters::{
     the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
 use crate::application::phone_numbers::{self, Reading, Region};
-use crate::application::reordering::Move;
+use crate::application::reordering::{Move, Moved};
 use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
@@ -39,6 +39,13 @@ const ID_MGR_ADD: Id = ID_HIGHEST + 300;
 const ID_MGR_EDIT: Id = ID_HIGHEST + 301;
 const ID_MGR_DELETE: Id = ID_HIGHEST + 302;
 const ID_MGR_SYNC: Id = ID_HIGHEST + 303;
+const ID_MGR_MOVE_UP: Id = ID_HIGHEST + 304;
+const ID_MGR_MOVE_DOWN: Id = ID_HIGHEST + 305;
+
+/// wxWidgets' own numbers for the arrow keys, `WXK_UP` and `WXK_DOWN`: not the
+/// Windows virtual key codes, which wxWidgets renumbers.
+const WXK_UP: i32 = 315;
+const WXK_DOWN: i32 = 317;
 
 // ── Shared Helpers ─────────────────────────────────────────────────────────
 
@@ -230,15 +237,34 @@ pub trait ManagedRow: Clone + 'static {
     /// Called once the row at `edited` has been added or changed. Most rows
     /// stand alone, so by default nothing happens to the others.
     fn settle(_rows: &mut [Self], _edited: usize) {}
+
+    /// For rows kept in an order the person chooses, where moving the row
+    /// `which` leaves the order and what that says; `rows` is every row as
+    /// `(id, name)` in the order it sits in now. `None` for rows in no order
+    /// of anybody's choosing, whose windows offer no Move Up or Move Down.
+    fn moved(_rows: &[(String, String)], _which: &str, _direction: Move) -> Option<Moved> {
+        None
+    }
+}
+
+/// Whether a window over these rows offers Move Up and Move Down.
+fn is_kept_in_order<T: ManagedRow>() -> bool {
+    T::moved(&[], "", Move::Up).is_some()
 }
 
 impl ManagedRow for FilterRule {}
 impl ManagedRow for Question {}
-impl ManagedRow for TagEntry {}
+impl ManagedRow for TagEntry {
+    /// A label's place is the number its key carries, so the person decides
+    /// it (#48), with the gesture accounts and pinned folders use.
+    fn moved(rows: &[(String, String)], which: &str, direction: Move) -> Option<Moved> {
+        Some(crate::application::tagging::moved(rows, which, direction))
+    }
+}
 
 /// Run the standard Add/Edit/Delete modal loop shared by all manager dialogs.
 ///
-/// `kind` is the word this window's rows are, "filter", "tag" or
+/// `kind` is the word this window's rows are, "filter", "label" or
 /// "signature", asked of [`manager_words`] for what to say about a row
 /// somebody just changed. Without it, "Deleted: Jane Smith" never said
 /// whether a contact, a filter, a tag or a signature had gone, and read
@@ -296,6 +322,21 @@ fn run_manager_loop<T: ManagedRow>(
         .with_label("&Delete")
         .with_id(ID_MGR_DELETE)
         .build();
+    // Only where the rows are kept in an order somebody chooses. The letters
+    // are the main window's for the same gesture; a, e, d and c are this
+    // row's own.
+    let move_btns = is_kept_in_order::<T>().then(|| {
+        (
+            Button::builder(dialog)
+                .with_label("Move &Up")
+                .with_id(ID_MGR_MOVE_UP)
+                .build(),
+            Button::builder(dialog)
+                .with_label("Move Do&wn")
+                .with_id(ID_MGR_MOVE_DOWN)
+                .build(),
+        )
+    });
     let close_btn = Button::builder(dialog)
         .with_label("&Close")
         .with_id(ID_OK)
@@ -305,6 +346,10 @@ fn run_manager_loop<T: ManagedRow>(
     btn_sizer.add(&add_btn, 0, SizerFlag::All, 4);
     btn_sizer.add(&edit_btn, 0, SizerFlag::All, 4);
     btn_sizer.add(&del_btn, 0, SizerFlag::All, 4);
+    if let Some((up_btn, down_btn)) = &move_btns {
+        btn_sizer.add(up_btn, 0, SizerFlag::All, 4);
+        btn_sizer.add(down_btn, 0, SizerFlag::All, 4);
+    }
     btn_sizer.add_spacer(16);
     btn_sizer.add(&close_btn, 0, SizerFlag::All, 4);
 
@@ -360,6 +405,47 @@ fn run_manager_loop<T: ManagedRow>(
             d.end_modal(ID_OK);
         }
     });
+    if let Some((up_btn, down_btn)) = move_btns {
+        let move_it = {
+            let list = *list;
+            let status_text = *status_text;
+            let a11y = a11y.clone();
+            let state = state.clone();
+            Rc::new(move |direction: Move| {
+                move_the_chosen_row(
+                    &state,
+                    &list,
+                    &status_text,
+                    &a11y,
+                    populate,
+                    name_fn,
+                    direction,
+                );
+            })
+        };
+        up_btn.on_click({
+            let move_it = move_it.clone();
+            move |_| move_it(Move::Up)
+        });
+        down_btn.on_click({
+            let move_it = move_it.clone();
+            move |_| move_it(Move::Down)
+        });
+        // Alt+Shift+Up and Alt+Shift+Down from the list itself, the keys the
+        // main window gives the same gesture, so moving a row does not mean
+        // leaving the list for a button and coming back.
+        list.bind_internal(EventType::KEY_DOWN, move |event| {
+            let direction = match event.get_key_code() {
+                Some(WXK_UP) => Some(Move::Up),
+                Some(WXK_DOWN) => Some(Move::Down),
+                _ => None,
+            };
+            match direction {
+                Some(direction) if event.alt_down() && event.shift_down() => move_it(direction),
+                _ => event.skip(true),
+            }
+        });
+    }
 
     populate(list, &state.borrow().working);
 
@@ -4112,7 +4198,7 @@ pub fn show_tag_manager_dialog(
             status_text: &status,
             a11y: a11y.clone(),
         },
-        manager_words::TAG,
+        manager_words::LABEL,
         &mut working,
         populate_tags,
         |d, existing, _| show_tag_edit(d, existing, palette),
@@ -4144,10 +4230,11 @@ pub fn build_tag_manager(
     palette: Option<theme::Palette>,
 ) -> TagManagerWidgets {
     let (dialog, sizer, list, status) =
-        make_shell(parent, "Tag Manager", "Tags", 450, 400, palette);
+        make_shell(parent, "Label Manager", "Labels", 520, 400, palette);
 
-    list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
-    list.insert_column(1, "Color", ListColumnFormat::Left, 100);
+    list.insert_column(0, "Label", ListColumnFormat::Left, 200);
+    list.insert_column(1, "Key", ListColumnFormat::Left, 90);
+    list.insert_column(2, "Color", ListColumnFormat::Left, 100);
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
     populate_tags(&list, tags);
 
@@ -4161,15 +4248,52 @@ pub fn build_tag_manager(
 
 /// Move the row the cursor is on one place up or down, in a window whose rows
 /// are kept in an order the person chooses, and say where it went.
+///
+/// The rows are named by their place in the list, since a row added in this
+/// window has no stored identifier yet. The cursor goes with the row, so a
+/// second press moves it again. Runs from Move Up and Move Down and from
+/// Alt+Shift+Up and Alt+Shift+Down on the list, never through `end_modal`,
+/// for the reason [`delete_selected`] gives.
 pub fn move_the_chosen_row<T: ManagedRow>(
-    _state: &Rc<RefCell<ManagerState<T>>>,
-    _list: &ListCtrl,
-    _status_text: &StaticText,
-    _a11y: &Accessibility,
-    _populate: impl Fn(&ListCtrl, &[T]),
-    _name_fn: impl Fn(&T) -> String,
-    _direction: Move,
+    state: &Rc<RefCell<ManagerState<T>>>,
+    list: &ListCtrl,
+    status_text: &StaticText,
+    a11y: &Accessibility,
+    populate: impl Fn(&ListCtrl, &[T]),
+    name_fn: impl Fn(&T) -> String,
+    direction: Move,
 ) {
+    let rows: Vec<(String, String)> = state
+        .borrow()
+        .working
+        .iter()
+        .enumerate()
+        .map(|(at, row)| (at.to_string(), name_fn(row)))
+        .collect();
+    let which = get_selected(list)
+        .map(|at| at.to_string())
+        .unwrap_or_default();
+    let Some(moved) = T::moved(&rows, &which, direction) else {
+        return;
+    };
+    if moved.moved {
+        let mut s = state.borrow_mut();
+        let before = std::mem::take(&mut s.working);
+        s.working = moved
+            .order
+            .iter()
+            .filter_map(|at| before.get(at.parse::<usize>().ok()?).cloned())
+            .collect();
+        s.changed = true;
+        drop(s);
+        populate(list, &state.borrow().working);
+        land_the_row_cursor(list, moved.order.iter().position(|at| *at == which));
+    }
+    let priority = match which.is_empty() {
+        true => Priority::High,
+        false => Priority::Normal,
+    };
+    said_and_shown(status_text, a11y, &moved.say, priority);
 }
 
 /// Fill the Label Manager's list, one row per label in its order.
@@ -4178,12 +4302,16 @@ pub fn populate_tags(list: &ListCtrl, tags: &[TagEntry]) {
     for (i, t) in tags.iter().enumerate() {
         let idx = i as i64;
         list.insert_item(idx, &t.name, None);
+        // The key the Label menu writes beside this label, from the same
+        // answer; empty past the ninth, which is reached from the menu.
+        let key = crate::application::tagging::key_for(i + 1).unwrap_or_default();
+        list.set_item_text_by_column(idx, 1, &key);
         let color_name = TAG_COLORS
             .iter()
             .find(|(_, hex)| *hex == t.color)
             .map(|(name, _)| *name)
             .unwrap_or(&t.color);
-        list.set_item_text_by_column(idx, 1, color_name);
+        list.set_item_text_by_column(idx, 2, color_name);
     }
 }
 
@@ -4203,9 +4331,9 @@ pub fn build_tag_edit_dialog(
     palette: Option<theme::Palette>,
 ) -> (Dialog, TextCtrl, Choice) {
     let title = if existing.is_some() {
-        "Edit Tag"
+        "Edit Label"
     } else {
-        "Add Tag"
+        "Add Label"
     };
     let dlg = Dialog::builder(parent, title).with_size(350, 250).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -4216,7 +4344,7 @@ pub fn build_tag_edit_dialog(
     fields.add_growable_col(1, 1);
 
     // Accelerators are first letters, no conflicts: N(Name), C(Color)
-    let name_f = add_field(&dlg, &fields, "Tag &Name:");
+    let name_f = add_field(&dlg, &fields, "Label &Name:");
 
     let color_label = StaticText::builder(&dlg).with_label("&Color:").build();
     let color_choices: Vec<String> = TAG_COLORS
@@ -5167,7 +5295,7 @@ mod tests {
         let windows = the_manager_windows();
         for (function, kind) in [
             ("fn show_filter_manager_dialog", "manager_words::FILTER"),
-            ("fn show_tag_manager_dialog", "manager_words::TAG"),
+            ("fn show_tag_manager_dialog", "manager_words::LABEL"),
             (
                 "fn show_signature_manager_dialog",
                 "manager_words::SIGNATURE",

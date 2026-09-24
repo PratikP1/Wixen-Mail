@@ -251,6 +251,31 @@ fn read_the_menus(frame: &Frame, cache: &MessageCache, harvest: &mut Harvest) {
 
     let fresh = the_labels(cache, FRESH);
     put_the_labels_on_the_menu(frame, &as_the_window_loads_them(&fresh));
+    // The sidebar is read again on a timer, among other times, and the same
+    // labels put on the menu again must leave its items where they are: a
+    // menu somebody has open is not emptied and refilled under them.
+    // The first item is marked through its description, which a menu filled
+    // again would give back as the one every label item carries.
+    const MARK: &str = "marked before the same labels were put on again";
+    let the_first_items_description = |frame: &Frame, mark: Option<&str>| {
+        let menu = frame
+            .get_menu_bar()
+            .and_then(|bar| the_label_submenu(&bar))?;
+        let id = menu.find_item_by_position(0)?.get_item_id();
+        if let Some(mark) = mark {
+            menu.set_help_string(id, mark);
+        }
+        Some(menu.get_help_string(id))
+    };
+    let _ = the_first_items_description(frame, Some(MARK));
+    put_the_labels_on_the_menu(frame, &as_the_window_loads_them(&fresh));
+    harvest.insert(
+        "the same labels put on the menu again",
+        match the_first_items_description(frame, None).as_deref() == Some(MARK) {
+            true => "left as they were".to_string(),
+            false => "emptied and filled again".to_string(),
+        },
+    );
     harvest.insert("the fresh account's menu", the_label_menu_now(frame));
     if let Some(bar) = frame.get_menu_bar() {
         harvest.insert(
@@ -538,6 +563,14 @@ fn test_a_tenth_label_is_on_the_menu_without_a_key() {
     let names: Vec<String> = (1..=11).map(|n| format!("Label {n}")).collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     the_menu_offers(reading("eleven labels' menu"), &names).unwrap();
+}
+
+#[test]
+fn test_the_same_labels_put_on_the_menu_again_leave_it_as_it_was() {
+    assert_eq!(
+        reading("the same labels put on the menu again"),
+        "left as they were"
+    );
 }
 
 #[test]

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 286 records have arrived since and have not been through it.
+# 288 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30297,4 +30297,50 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tagging.rs", tests = 19 },
+]
+
+# ── The Label menu is rebuilt from the labels that load (#48, T-12-34) ─────
+#
+# Until 12-10 the submenu was built once from the five an account starts
+# with and never rebuilt, while its comment said it was. The break rebuilds
+# it only for an account with no labels, which is the old menu for every
+# account that has some. Measured through `scripts/guards.sh --remeasure`
+# against the target that reads the real menu bar.
+[[guard]]
+name = "the Label menu is rebuilt from the labels an account has when they load"
+file = "src/presentation/wx_app.rs"
+suite = "the_label_menu_says_the_labels_an_account_has"
+before = '''    if shown != wanted {'''
+after = '''    if shown != wanted && names.is_empty() {'''
+red = [
+    "test_labels_from_before_keep_the_order_their_keys_applied",
+    "test_the_second_key_applies_the_label_the_menu_shows_second",
+    "test_a_renamed_and_moved_label_is_what_the_menu_says_next",
+    "test_the_key_follows_a_move",
+    "test_a_tenth_label_is_on_the_menu_without_a_key",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 15 },
+]
+
+# ── The Label Manager says which key each label has (#48) ───────────────────
+#
+# A label's place is the number its key carries, so the manager shows it in
+# a Key column beside the name. The break leaves the column empty, as a
+# manager with no Key column would read. Measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "the Label Manager says the key beside each label"
+file = "src/presentation/wx_managers.rs"
+suite = "the_label_menu_says_the_labels_an_account_has"
+before = '''        list.set_item_text_by_column(idx, 1, &key);'''
+after = '''        list.set_item_text_by_column(idx, 1, "");'''
+red = [
+    "test_the_manager_is_the_label_manager_and_says_each_labels_key",
+    "test_moving_a_label_in_the_manager_says_where_it_went",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 15 },
 ]
