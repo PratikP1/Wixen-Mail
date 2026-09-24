@@ -194,6 +194,13 @@ pub enum ScanTarget {
     /// every checkbox it has is. `Accounts` reached the Account Manager and
     /// stopped at Edit.
     AccountEditor,
+    /// The Add Phone Number dialog, which opens from inside the contact
+    /// editor and which `ContactEditor` never reached. Added on 2026-09-24
+    /// (#40, 12-07) for its Country list, so the list's name and entries are
+    /// read in the running program rather than only in a test process. Opened
+    /// over a stand-in for the contact editor, which is its parent in the
+    /// program.
+    PhoneNumber,
     /// The formatted message window, which a message opens into under the
     /// default reading style and which `Reader` never reached: that target
     /// opens the plain-text reader. Opened on a made-up conversation of two
@@ -215,7 +222,7 @@ pub enum ScanTarget {
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 38] = [
+    pub const ALL: [ScanTarget; 39] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -252,6 +259,7 @@ impl ScanTarget {
         ScanTarget::FilterEditor,
         ScanTarget::SignatureEditor,
         ScanTarget::AccountEditor,
+        ScanTarget::PhoneNumber,
         ScanTarget::Page,
         ScanTarget::PageWindow,
     ];
@@ -295,6 +303,7 @@ impl ScanTarget {
             Self::FilterEditor => "filter-editor",
             Self::SignatureEditor => "signature-editor",
             Self::AccountEditor => "account-editor",
+            Self::PhoneNumber => "phone-number",
             Self::Page => "page",
             Self::PageWindow => "page-window",
         }

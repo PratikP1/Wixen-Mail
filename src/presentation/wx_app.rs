@@ -17683,6 +17683,20 @@ fn open_for_scanning(
             switch_module(PimModule::Notes);
             OnReturn::WindowStillUp
         }
+        // The Add Phone Number dialog opens from inside the contact editor,
+        // so it is opened over a stand-in dialog of that name, built and not
+        // shown, the way the other editors' sub-dialogs sit over a parent.
+        ScanTarget::PhoneNumber => {
+            let stand_in = Dialog::builder(frame, "Edit Contact").build();
+            let phone = crate::presentation::wx_managers::build_phone_sub_dialog(
+                &stand_in,
+                theme::current_from_stored_config(),
+            );
+            phone.dialog.show_modal();
+            phone.dialog.destroy();
+            stand_in.destroy();
+            OnReturn::WindowClosed
+        }
     }
 }
 
