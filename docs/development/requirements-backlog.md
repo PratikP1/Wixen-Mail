@@ -90,6 +90,7 @@ still listed as outstanding; each now says so and where it lives.
 | Auto-update mechanism | Check for and apply updates | Medium |
 | ~~Theme customization~~ | Built. `presentation/theme.rs`; every module and dialog is painted | Done |
 | Linux/macOS validation | Verify cross-platform builds | Low |
+| Pro licence | Designed on 2026-09-24 and not built: [the pro licence design](../plans/20260924-pro-licence.md) says what a licence gates, how a key is checked offline and what a lapse does. Nothing is gated until Pratik answers its section 9, Decisions for Pratik (#65) | Waits on Pratik's decisions |
 
 ### Future Protocols & Integrations
 

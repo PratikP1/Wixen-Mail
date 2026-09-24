@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 549
+open_count: 550
 waived_count: 0
 fixed_count: 58
-total_count: 607
-last_updated: 2026-09-24T21:00:00.000Z
+total_count: 608
+last_updated: 2026-09-24T22:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -622,6 +622,7 @@ last_updated: 2026-09-24T21:00:00.000Z
 | 605 | 12 | unrun-verify | src/presentation/wx_managers.rs |  | 12-09: #43 under NVDA. What only the tester's ear settles: the Signature Manager's Used by column read row by row, the account dialog's Signature for this account choice and its first entry naming the default, the check boxes under Use for these accounts in a signature's editor with their which-uses-now wording, and the Signature changed to sentence on a From change in the composer. tests/a_signature_follows_the_from_account.rs reads the controls and the page and cannot hear any of it | open |  | 2026-09-24T20:00:00.000Z |  |
 | 606 | 12 | todo | src/presentation/wx_account_manager.rs |  | 12-09 premise 4: in the account editor seven Alt letters are claimed by more than one label, some on different pages: B (Back, Enable this account, the browser sign-in), I (IMAP Server, Check Interval), M (the name people see, the mail permission), N (Account Name, Next), P (IMAP Port, POP Server), S (SMTP Server, and the Use TLS boxes for SMTP and for POP) and T (SMTP Port, and the Use TLS box for IMAP). 12-09 added none of them; whoever reads that dialog page by page settles which collide on one page and gives each a free letter | fixed | 12-10: read page by page, five collided on one page (N on the first; B, I, S and T on the second) and M and P never meet. tests/account_edit_protocol_fields.rs reads the showing windows' letters on the first page and on the second for IMAP, POP and the browser sign-in, red at 8b2eca5c and green at 92b7d1f0: Account Name A, Check Interval V, the Use TLS boxes L for IMAP, E for SMTP and F for POP, the browser sign-in N, Enable this account A, Directory address Y | 2026-09-24T20:00:00.000Z | 2026-09-24T21:00:00.000Z |
 | 607 | 12 | unrun-verify | src/presentation/wx_app.rs |  | 12-10: #48 under NVDA. What only the tester's ear settles: the Label submenu's items heard with their keys after the labels load and after a rename and a move, Edit Labels at its end, the Label Manager's Key column read row by row, a move said as Later, 2 of 5. after Alt+Shift+Up or Down, the cursor staying on the moved row, and Ctrl+6 with five labels saying there is no label 6 from the message list. tests/the_label_menu_says_the_labels_an_account_has.rs reads the real menu bar and the live manager and cannot hear any of it | open |  | 2026-09-24T21:00:00.000Z |  |
+| 608 | 12 | todo | docs/plans/20260924-pro-licence.md |  | 12-11: the pro licence (#65, ALPHA-03) is a design and nothing in the program is gated. The ten rows of its section 9, Decisions for Pratik, are his: the free and pro line, whether several accounts are gated, the merchant, online revocation, how long a perpetual licence carries updates, a trial with no card, whether the supporter tier delivers a real licence, how priority support is carried, when gating starts and the grace period after a lapse. The answer column is empty. Closed when a phase is planned from his answers | open |  | 2026-09-24T22:00:00.000Z |  |
 
 ````json
 [
@@ -7907,6 +7908,18 @@ last_updated: 2026-09-24T21:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T21:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 608,
+    "kind": "todo",
+    "phase": "12",
+    "file": "docs/plans/20260924-pro-licence.md",
+    "line": null,
+    "description": "12-11: the pro licence (#65, ALPHA-03) is a design and nothing in the program is gated. The ten rows of its section 9, Decisions for Pratik, are his: the free and pro line, whether several accounts are gated, the merchant, online revocation, how long a perpetual licence carries updates, a trial with no card, whether the supporter tier delivers a real licence, how priority support is carried, when gating starts and the grace period after a lapse. The answer column is empty. Closed when a phase is planned from his answers",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T22:00:00.000Z",
     "resolved_at": null
   }
 ]
