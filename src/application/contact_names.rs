@@ -37,12 +37,96 @@ pub const SUFFIXES: [&str; 14] = [
     "Jr", "Sr", "II", "III", "IV", "PhD", "MD", "Esq", "Jr.", "Sr.", "Ph.D.", "M.D.", "Esq.", "V",
 ];
 
-pub fn guess_parts(_full: &str) -> NameParts {
-    NameParts::default()
+/// The words that join the family name when they come before its last word,
+/// in whatever case they are written: "Anna van der Berg", "De La Cruz".
+/// A word written in lower case joins it too, on the list or not.
+pub const PARTICLES: [&str; 26] = [
+    "van", "der", "den", "ter", "ten", "de", "del", "della", "dei", "di", "da", "das", "dos", "do",
+    "du", "des", "von", "zu", "la", "le", "bin", "ibn", "al", "el", "mac", "mc",
+];
+
+/// The suffixes a comma is written before when a name is composed, because
+/// they are a qualification rather than part of the name.
+const DEGREES: [&str; 6] = ["PhD", "Ph.D.", "MD", "M.D.", "Esq", "Esq."];
+
+/// A first guess at the five parts of a whole name, for the person to
+/// correct: a leading title is the prefix, a trailing suffix the suffix, the
+/// first word left the given name, the last word with the particles before it
+/// the family name, and anything between them the middle name.
+pub fn guess_parts(full: &str) -> NameParts {
+    let mut words: Vec<&str> = full.split_whitespace().collect();
+    let suffix = take_last_if(&mut words, |word| is_one_of(&SUFFIXES, word));
+    if let Some(last) = words.last_mut() {
+        *last = last.trim_end_matches(',');
+    }
+    let prefix = match words.first() {
+        Some(first) if words.len() > 1 && is_one_of(&TITLES, first) => Some(words.remove(0)),
+        _ => None,
+    };
+    let given = (!words.is_empty()).then(|| words.remove(0));
+    let family_starts = where_the_family_name_starts(&words);
+    NameParts {
+        prefix: prefix.map(str::to_string),
+        given: given.map(str::to_string),
+        middle: joined(&words[..family_starts]),
+        family: joined(&words[family_starts..]),
+        suffix: suffix.map(|word| word.trim_end_matches(',').to_string()),
+    }
 }
 
-pub fn compose(_parts: &NameParts) -> String {
-    String::new()
+/// The whole name the parts make, with single spaces and a comma before a
+/// suffix that is a degree.
+pub fn compose(parts: &NameParts) -> String {
+    let name = [&parts.prefix, &parts.given, &parts.middle, &parts.family]
+        .into_iter()
+        .filter_map(filled)
+        .collect::<Vec<_>>()
+        .join(" ");
+    match filled(&parts.suffix) {
+        None => name,
+        Some(suffix) if name.is_empty() => suffix.to_string(),
+        Some(suffix) if is_one_of(&DEGREES, suffix) => format!("{name}, {suffix}"),
+        Some(suffix) => format!("{name} {suffix}"),
+    }
+}
+
+fn is_one_of(list: &[&str], word: &str) -> bool {
+    let word = word.trim_end_matches(',');
+    list.iter().any(|entry| entry.eq_ignore_ascii_case(word))
+}
+
+/// Takes the last word off when there is more than one and it matches.
+fn take_last_if<'a>(words: &mut Vec<&'a str>, matches: impl Fn(&str) -> bool) -> Option<&'a str> {
+    match words.last() {
+        Some(last) if words.len() > 1 && matches(last) => words.pop(),
+        _ => None,
+    }
+}
+
+/// Where the family name begins among the words after the given name: its
+/// last word, and every particle or lower-case word right before it.
+fn where_the_family_name_starts(words: &[&str]) -> usize {
+    let Some(last) = words.len().checked_sub(1) else {
+        return 0;
+    };
+    let joins = |word: &str| {
+        is_one_of(&PARTICLES, word) || word.chars().next().is_some_and(char::is_lowercase)
+    };
+    last - words[..last]
+        .iter()
+        .rev()
+        .take_while(|word| joins(word))
+        .count()
+}
+
+fn joined(words: &[&str]) -> Option<String> {
+    (!words.is_empty()).then(|| words.join(" "))
+}
+
+fn filled(part: &Option<String>) -> Option<&str> {
+    part.as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
 }
 
 #[cfg(test)]

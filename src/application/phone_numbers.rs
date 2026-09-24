@@ -5,26 +5,68 @@
 //! planned and anything chosen now is the first piece of version 2's
 //! system. This module is the reading, and it is the one file that names
 //! the library, so nothing else in the tree grows uses of it.
+//!
+//! The library is `phonenumber` 0.3.10, a port of Google's libphonenumber,
+//! confirmed by Pratik on 2026-09-24 with "Use phonenumber. See if you can
+//! get around the bug." Four defects were measured that day against a second
+//! port, `rlibphonenumber` 2.2.12, over 102 numbers; its plain calls agreed on
+//! 46 and the reading below on 101 (12-07's plan, "The defects, measured").
+//! Every number goes through all four routes, and each can come out, with
+//! its cases kept, when upstream ships the fix:
+//!
+//! 1. Digits in any script become ASCII digits first, because the library's
+//!    parser matches ASCII digits only. Windows does the folding.
+//! 2. The chosen country is never the reference for a number that carries
+//!    its own code. The library strips the chosen country's trunk digits from
+//!    such a number (upstream pull request 110), so a number whose code came
+//!    from a `+` is read again with no country, and one whose code came after
+//!    the chosen country's international prefix has that prefix turned into
+//!    a `+` first.
+//! 3. When the library took the chosen country's own code out of a national
+//!    number's digits (upstream issue 68), the whole number is read as well
+//!    and kept when it is the valid one, which is Google's own preference.
+//! 4. The region is read here with the significant number's leading zeros
+//!    kept, because the library's own lookup drops them and loses every
+//!    Italian number's region. This module never asks the library for a
+//!    number's region or type.
+//!
+//! A number the library doubts is never refused. Its numbering data is
+//! Google's of 2026-06-17 and trails the world's, so the editor stops a
+//! doubted number once and keeps it exactly as typed on a second OK. Only
+//! text with no digit in it is refused.
+
+use crate::service::this_machine;
+use phonenumber::country::{Id, Source};
+use phonenumber::metadata::DATABASE;
+use phonenumber::{Metadata, Mode, ParseError, PhoneNumber, Type};
+use std::str::FromStr;
 
 /// A region, as the two-letter ISO 3166 code a stored number's country is
 /// kept as. Only a region the numbering data knows can be made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Region([u8; 2]);
+pub struct Region(&'static str);
 
 impl Region {
-    /// The region a two-letter code names.
+    /// The region a two-letter code names, when the numbering data knows it.
     pub fn from_code(code: &str) -> Option<Region> {
-        match code.as_bytes() {
-            [first, second] if first.is_ascii_uppercase() && second.is_ascii_uppercase() => {
-                Some(Region([*first, *second]))
-            }
-            _ => None,
+        let is_two_capitals = code.len() == 2 && code.chars().all(|c| c.is_ascii_uppercase());
+        if !is_two_capitals || Id::from_str(code).is_err() {
+            return None;
         }
+        DATABASE.by_id(code).map(|metadata| Region(metadata.id()))
     }
 
     /// The two-letter code, such as "GB".
-    pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0).unwrap_or("??")
+    pub fn as_str(&self) -> &'static str {
+        self.0
+    }
+
+    fn id(self) -> Option<Id> {
+        Id::from_str(self.0).ok()
+    }
+
+    fn metadata(self) -> Option<&'static Metadata> {
+        DATABASE.by_id(self.0)
     }
 }
 
@@ -64,23 +106,240 @@ pub enum Reading {
     NoDigit,
 }
 
-pub fn read(_typed: &str, _chosen: Option<Region>) -> Reading {
-    Reading::Doubtful {
-        doubt: Doubt::Unreadable,
-        region: None,
+/// Reads what somebody typed as a phone number, against the country chosen
+/// beside it when the number does not carry its own code.
+pub fn read(typed: &str, chosen: Option<Region>) -> Reading {
+    if !typed.chars().any(char::is_numeric) {
+        return Reading::NoDigit;
+    }
+    let text = this_machine::fold_digits(typed);
+    match parse_around_the_defects(&text, chosen) {
+        Ok(number) => judge(&number, &text),
+        Err(refused) => {
+            let doubt = doubt_for_a_refusal(&refused, &text, chosen);
+            let region = match doubt {
+                Doubt::NoCountry | Doubt::UnknownCallingCode => None,
+                _ => chosen,
+            };
+            Reading::Doubtful { doubt, region }
+        }
     }
 }
 
+/// Every region the numbering data knows, with its calling code, in the
+/// order of their codes. The country list beside a number is built from
+/// this, so no table of countries lives in the tree.
 pub fn every_region() -> Vec<(Region, u16)> {
-    Vec::new()
+    let mut regions: Vec<(Region, u16)> = DATABASE
+        .iter()
+        .filter_map(|metadata| {
+            Region::from_code(metadata.id()).map(|region| (region, metadata.country_code()))
+        })
+        .collect();
+    regions.sort_unstable();
+    regions
 }
 
-pub fn sentence(_typed: &str, _doubt: Doubt, _country: Option<&str>) -> String {
-    String::new()
+/// The sentence said for a doubted number: the number, what is wrong with
+/// it, and how to keep it anyway. `country` is the name of the country it
+/// was judged against, in the language the person reads.
+///
+/// Composed here and nowhere else, which is the seam version 2's catalogue
+/// replaces. The library's own messages are English and never shown.
+pub fn sentence(typed: &str, doubt: Doubt, country: Option<&str>) -> String {
+    let country = country.unwrap_or("its country");
+    let what = match doubt {
+        Doubt::NoCountry => format!(
+            "{typed} has no country code and no country is chosen, so it cannot be checked. \
+             Choose its country, or type it with + and its country code."
+        ),
+        Doubt::UnknownCallingCode => {
+            format!("{typed} begins with a country code that no country uses.")
+        }
+        Doubt::TooShort => format!("{typed} is too short for a phone number in {country}."),
+        Doubt::TooLong => format!("{typed} is too long for a phone number in {country}."),
+        Doubt::NotInItsPlan => format!(
+            "{typed} is not a phone number used in {country}. \
+             A number from another country is typed with + and its country code."
+        ),
+        Doubt::Unreadable => format!("{typed} could not be read as a phone number."),
+    };
+    format!("{what} Press OK again to keep it exactly as typed.")
 }
 
-pub fn no_digit_sentence(_typed: &str) -> String {
-    String::new()
+/// The one refusal: text with no digit in it.
+pub fn no_digit_sentence(typed: &str) -> String {
+    format!("{typed} has no digits in it, so it cannot be a phone number.")
+}
+
+/// The library's reading, routed around defects 2 and 3 of the module
+/// comment.
+fn parse_around_the_defects(text: &str, chosen: Option<Region>) -> Result<PhoneNumber, ParseError> {
+    let Some(chosen) = chosen.and_then(Region::id) else {
+        return phonenumber::parse(None, text);
+    };
+    match phonenumber::parse(Some(chosen), text) {
+        Ok(number) => match number.code().source() {
+            Source::Plus => phonenumber::parse(None, text),
+            Source::Idd => match after_the_international_prefix(text, chosen) {
+                Some(with_a_plus) => phonenumber::parse(None, with_a_plus),
+                None => Ok(number),
+            },
+            Source::Number => Ok(the_whole_number_when_it_is_valid(text, number)),
+            Source::Default => Ok(number),
+        },
+        Err(refused) if begins_with_a_plus(text) => {
+            phonenumber::parse(None, text).map_err(|_| refused)
+        }
+        Err(refused) => Err(refused),
+    }
+}
+
+/// The number after the chosen country's international prefix, with a `+`
+/// in the prefix's place, when the number begins with that prefix.
+fn after_the_international_prefix(text: &str, chosen: Id) -> Option<String> {
+    let prefix = DATABASE.by_id(chosen.as_ref())?.international_prefix()?;
+    let digits: String = text.chars().filter(char::is_ascii_digit).collect();
+    let found = prefix.find(&digits).filter(|found| found.start() == 0)?;
+    let (at, _) = text
+        .char_indices()
+        .filter(|(_, letter)| letter.is_ascii_digit())
+        .nth(found.end())?;
+    Some(format!("+{}", &text[at..]))
+}
+
+/// When the library took the chosen country's code out of the digits, the
+/// digits read whole as a national number of that country, if that is the
+/// valid reading.
+fn the_whole_number_when_it_is_valid(text: &str, stripped: PhoneNumber) -> PhoneNumber {
+    match phonenumber::parse(None, format!("+{} {text}", stripped.code().value())) {
+        Ok(whole) if phonenumber::is_valid(&whole) => whole,
+        _ => stripped,
+    }
+}
+
+fn begins_with_a_plus(text: &str) -> bool {
+    text.trim_start().starts_with(['+', '\u{FF0B}'])
+}
+
+fn judge(number: &PhoneNumber, text: &str) -> Reading {
+    let region = region_of(number);
+    if phonenumber::is_valid(number) {
+        return Reading::Valid {
+            stored: number.format().mode(Mode::International).to_string(),
+            region,
+        };
+    }
+    let judged_by = region.or_else(|| main_region(number.code().value()));
+    Reading::Doubtful {
+        doubt: why_it_is_not_valid(number, text, judged_by),
+        region: judged_by,
+    }
+}
+
+/// A foreign number typed with its code and no `+` first, because that one
+/// has an answer the person can act on; then the length against the
+/// lengths its country's numbers have.
+fn why_it_is_not_valid(number: &PhoneNumber, text: &str, judged_by: Option<Region>) -> Doubt {
+    let typed_its_code_without_a_plus = number.code().source() == Source::Default
+        && phonenumber::parse(None, format!("+{}", text.trim()))
+            .is_ok_and(|with_a_plus| phonenumber::is_valid(&with_a_plus));
+    if typed_its_code_without_a_plus {
+        return Doubt::NotInItsPlan;
+    }
+    let length = number.national().to_string().len();
+    let lengths = judged_by
+        .and_then(Region::metadata)
+        .map(possible_lengths)
+        .unwrap_or_default();
+    match (lengths.iter().min(), lengths.iter().max()) {
+        (Some(&shortest), _) if length < usize::from(shortest) => Doubt::TooShort,
+        (_, Some(&longest)) if length > usize::from(longest) => Doubt::TooLong,
+        _ => Doubt::NotInItsPlan,
+    }
+}
+
+/// The lengths a region's numbers have. The library leaves the general
+/// description's list empty (measured on 2026-09-24: GB's is `[]`), and
+/// Google defines it as every kind's lengths together, so they are gathered
+/// here.
+fn possible_lengths(metadata: &Metadata) -> Vec<u16> {
+    let descriptors = metadata.descriptors();
+    std::iter::once(descriptors.general())
+        .chain(KINDS.iter().filter_map(|kind| descriptors.get(*kind)))
+        .flat_map(|descriptor| descriptor.possible_length().iter().copied())
+        .collect()
+}
+
+fn doubt_for_a_refusal(refused: &ParseError, text: &str, chosen: Option<Region>) -> Doubt {
+    match refused {
+        ParseError::InvalidCountryCode if chosen.is_none() && !begins_with_a_plus(text) => {
+            Doubt::NoCountry
+        }
+        ParseError::InvalidCountryCode => Doubt::UnknownCallingCode,
+        ParseError::TooShortAfterIdd | ParseError::TooShortNsn => Doubt::TooShort,
+        ParseError::TooLong => Doubt::TooLong,
+        ParseError::NoNumber | ParseError::MalformedInteger(_) => Doubt::Unreadable,
+    }
+}
+
+/// The kinds of number a region's plan describes, any of which makes the
+/// significant number one of that region's.
+const KINDS: [Type; 10] = [
+    Type::FixedLine,
+    Type::Mobile,
+    Type::TollFree,
+    Type::PremiumRate,
+    Type::SharedCost,
+    Type::Voip,
+    Type::PersonalNumber,
+    Type::Pager,
+    Type::Uan,
+    Type::Voicemail,
+];
+
+/// The region a number belongs to, read with its significant number's
+/// leading zeros kept (defect 4). Among the regions sharing a code, a
+/// region's leading digits decide where it has them, and otherwise a kind of
+/// number its plan holds, in the order the library and Google both use.
+fn region_of(number: &PhoneNumber) -> Option<Region> {
+    let significant = number.national().to_string();
+    let regions = DATABASE.region(&number.code().value())?;
+    let shared = regions.len() > 1;
+    regions
+        .into_iter()
+        .filter_map(Region::from_code)
+        .find(|region| {
+            let Some(metadata) = region.metadata() else {
+                return false;
+            };
+            match metadata.leading_digits() {
+                Some(leading) if shared => leading
+                    .find(&significant)
+                    .is_some_and(|found| found.start() == 0),
+                _ => !shared || is_a_kind_its_plan_holds(metadata, &significant),
+            }
+        })
+}
+
+fn is_a_kind_its_plan_holds(metadata: &Metadata, significant: &str) -> bool {
+    let descriptors = metadata.descriptors();
+    descriptors.general().is_match(significant)
+        && KINDS.iter().any(|kind| {
+            descriptors
+                .get(*kind)
+                .is_some_and(|descriptor| descriptor.is_match(significant))
+        })
+}
+
+/// The region a calling code belongs to first, such as GB for 44.
+fn main_region(code: u16) -> Option<Region> {
+    let sharing = DATABASE.by_code(&code)?;
+    sharing
+        .iter()
+        .find(|metadata| metadata.is_main_country_for_code())
+        .or_else(|| sharing.first())
+        .and_then(|metadata| Region::from_code(metadata.id()))
 }
 
 #[cfg(test)]

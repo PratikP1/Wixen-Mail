@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 262 records have arrived since and have not been through it.
+# 267 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29625,7 +29625,7 @@ red = [
     "service::this_machine::tests::test_no_reader_is_named_when_none_runs_and_nvda_is_named_before_narrator",
 ]
 tests_last_seen = [
-    { file = "src/service/this_machine.rs", tests = 6 },
+    { file = "src/service/this_machine.rs", tests = 7 },
 ]
 
 # ── A security concern is offered GitHub's private page, never the issues ───
@@ -29815,4 +29815,122 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reading_habits.rs", tests = 25 },
+]
+
+# ── A guessed name keeps its middle names (#40, 12-07) ──────────────────────
+#
+# The break drops everything between the given name and the family name, so
+# "Grace Brewster Murray Hopper" loses both middle names, the case the sync
+# got wrong when it split names at the last space.
+[[guard]]
+name = "a guessed name keeps the words between the given and the family name as its middle name"
+file = "src/application/contact_names.rs"
+before = '''        middle: joined(&words[..family_starts]),'''
+after = '''        middle: None,'''
+red = [
+    "application::contact_names::tests::test_composing_the_guess_gives_back_the_name_that_was_typed",
+    "application::contact_names::tests::test_a_lower_case_word_before_the_last_joins_the_family_name",
+    "application::contact_names::tests::test_a_particle_written_with_a_capital_still_joins_the_family_name",
+    "application::contact_names::tests::test_a_title_and_a_degree_become_the_prefix_and_the_suffix",
+    "application::contact_names::tests::test_a_suffix_after_a_comma_is_still_the_suffix",
+    "application::contact_names::tests::test_hopper_keeps_both_middle_names_and_her_family_name",
+]
+tests_last_seen = [
+    { file = "src/application/contact_names.rs", tests = 13 },
+]
+
+# ── A guessed family name keeps its particles (#40, 12-07) ──────────────────
+#
+# The break stops any word joining the family name, so "van der Berg" comes
+# back as "Berg" with "van der" as a middle name: the second name the sync
+# broke when it split at the last space.
+[[guard]]
+name = "a guessed family name keeps the particles before its last word"
+file = "src/application/contact_names.rs"
+before = '''        .take_while(|word| joins(word))'''
+after = '''        .take_while(|word| joins(word) && false)'''
+red = [
+    "application::contact_names::tests::test_a_particle_written_with_a_capital_still_joins_the_family_name",
+    "application::contact_names::tests::test_a_lower_case_word_before_the_last_joins_the_family_name",
+    "application::contact_names::tests::test_van_der_berg_stays_one_family_name",
+]
+tests_last_seen = [
+    { file = "src/application/contact_names.rs", tests = 13 },
+]
+
+# ── A number with its code is read with no chosen country (T-12-45) ─────────
+#
+# Route 2 of `phone_numbers`, around upstream pull request 110. The break
+# keeps the library's reading under the chosen country for a number whose
+# code came from a `+`, so the chosen country's trunk digits are stripped
+# from it: row 25 of the audit, "+44 121 234 5678" with the US chosen, reads
+# as a number that is not valid, and ten more rows go with it.
+[[guard]]
+name = "a number typed with a plus is read again with no chosen country"
+file = "src/application/phone_numbers.rs"
+before = '''            Source::Plus => phonenumber::parse(None, text),'''
+after = '''            Source::Plus => Ok(number),'''
+red = [
+    "application::phone_numbers::tests::test_row_14_an_italian_number_with_its_code_and_britain_chosen",
+    "application::phone_numbers::tests::test_row_22_an_italian_number_with_its_code_and_hungary_chosen",
+    "application::phone_numbers::tests::test_row_24_a_vatican_number_is_found_by_its_leading_digits",
+    "application::phone_numbers::tests::test_row_25_a_british_number_with_its_code_and_the_us_chosen",
+    "application::phone_numbers::tests::test_row_28_a_jersey_number_shares_britains_code",
+    "application::phone_numbers::tests::test_row_30_a_german_mobile_is_not_made_into_another_german_number",
+    "application::phone_numbers::tests::test_row_31_a_japanese_free_number_with_the_us_chosen",
+    "application::phone_numbers::tests::test_row_47_a_trunk_zero_in_brackets_after_the_code",
+    "application::phone_numbers::tests::test_row_66_a_tel_address_with_a_plus",
+    "application::phone_numbers::tests::test_row_68_a_tel_address_with_its_country_as_context",
+    "application::phone_numbers::tests::test_row_71_an_extension_is_kept_in_its_countrys_style",
+]
+tests_last_seen = [
+    { file = "src/application/phone_numbers.rs", tests = 46 },
+]
+
+# ── A number's region is read with its leading zeros kept (T-12-45) ─────────
+#
+# Route 4 of `phone_numbers`. The library's own region lookup drops the
+# significant number's leading zeros; the break does the same here, so row 8,
+# "06 3551 1397" with Italy chosen, loses its region, and every Italian and
+# Vatican row with it.
+[[guard]]
+name = "a number's region is read from its significant number with the leading zeros kept"
+file = "src/application/phone_numbers.rs"
+before = '''    let significant = number.national().to_string();'''
+after = '''    let significant = number.national().value().to_string();'''
+red = [
+    "application::phone_numbers::tests::test_row_8_an_italian_number_keeps_its_leading_zero_and_its_region",
+    "application::phone_numbers::tests::test_row_14_an_italian_number_with_its_code_and_britain_chosen",
+    "application::phone_numbers::tests::test_row_22_an_italian_number_with_its_code_and_hungary_chosen",
+    "application::phone_numbers::tests::test_row_24_a_vatican_number_is_found_by_its_leading_digits",
+    "application::phone_numbers::tests::test_row_49_britains_international_prefix_before_an_italian_number",
+    "application::phone_numbers::tests::test_row_56_japans_international_prefix",
+    "application::phone_numbers::tests::test_row_57_russias_international_prefix",
+    "application::phone_numbers::tests::test_row_58_new_zealands_longer_international_prefix",
+    "application::phone_numbers::tests::test_row_66_a_tel_address_with_a_plus",
+    "application::phone_numbers::tests::test_row_68_a_tel_address_with_its_country_as_context",
+    "application::phone_numbers::tests::test_row_74_an_extension_after_an_international_prefix",
+    "application::phone_numbers::tests::test_row_102_a_full_width_international_prefix",
+]
+tests_last_seen = [
+    { file = "src/application/phone_numbers.rs", tests = 46 },
+]
+
+# ── A national number beginning with its country's code is read whole ──────
+#
+# Route 3 of `phone_numbers`, around upstream issue 68. The break keeps the
+# library's reading with the chosen country's code taken out of the digits,
+# so row 90, "391 231 2312" with Italy chosen, an Italian mobile, is doubted,
+# and row 93, a number in Emden, becomes a number in Dusseldorf.
+[[guard]]
+name = "a national number that begins with its country's code is read whole when that is valid"
+file = "src/application/phone_numbers.rs"
+before = '''            Source::Number => Ok(the_whole_number_when_it_is_valid(text, number)),'''
+after = '''            Source::Number => Ok(number),'''
+red = [
+    "application::phone_numbers::tests::test_row_90_an_italian_mobile_that_begins_with_italys_code",
+    "application::phone_numbers::tests::test_row_93_a_german_number_that_begins_with_germanys_code",
+]
+tests_last_seen = [
+    { file = "src/application/phone_numbers.rs", tests = 46 },
 ]

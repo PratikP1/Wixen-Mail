@@ -1,7 +1,15 @@
-//! What this machine says about itself, for a feedback report (#64).
+//! What this machine says about itself, for a feedback report (#64) and for
+//! the phone numbers in the contact editor (#40).
 //!
-//! Three questions asked of Windows: which build it is, which language it
-//! shows, and which screen reader is running. Each has a pure half that
+//! Three questions asked of Windows for the report: which build it is, which
+//! language it shows, and which screen reader is running. Three more for the
+//! phone numbers, since 12-07: which country the person says they are in,
+//! what a region is called in the language Windows shows, and what a digit
+//! written in another script is as an ASCII digit. They come from Windows so
+//! that no table of country names lives in the tree and the names are
+//! already in the person's language before version 2 translates anything.
+//!
+//! Each of the report's three has a pure half that
 //! decides the answer from plain values, which the cases below drive, and a
 //! Win32 half that fetches those values, declared by hand on the tree's
 //! `extern "system"` pattern so no crate and no feature is added. On other
@@ -37,20 +45,31 @@ pub fn display_language() -> String {
 
 /// The region this person says they are in, the setting Windows calls
 /// Country or region, as a two-letter code such as "GB".
+/// `None` when the setting is not a single country, such as "world".
 pub fn home_region() -> Option<String> {
-    None
+    win32::home_region().filter(|code| is_a_region_code(code))
 }
 
 /// A region's name in the language Windows shows, such as "United Kingdom"
 /// for "GB". `None` for a code Windows has no name for.
-pub fn region_name(_code: &str) -> Option<String> {
-    None
+pub fn region_name(code: &str) -> Option<String> {
+    if !is_a_region_code(code) {
+        return None;
+    }
+    win32::region_name(code).filter(|name| !name.trim().is_empty())
 }
 
 /// The text with every decimal digit, in any script, written as its ASCII
-/// digit. Anything that is not a digit is left as it was.
+/// digit. Anything that is not a digit is left as it was, and so is the
+/// whole text where Windows cannot be asked.
 pub fn fold_digits(text: &str) -> String {
-    text.to_string()
+    win32::fold_digits(text).unwrap_or_else(|| text.to_string())
+}
+
+/// Two capital letters, the shape of an ISO 3166 region code. Windows also
+/// answers "001" for the world and numeric codes for other areas.
+fn is_a_region_code(code: &str) -> bool {
+    code.len() == 2 && code.chars().all(|c| c.is_ascii_uppercase())
 }
 
 /// The screen reader running and its version, when one is.
@@ -136,6 +155,12 @@ mod win32 {
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     const LOCALE_NAME_MAX_LENGTH: usize = 85;
     const MAX_PATH: usize = 260;
+    /// `GEO_FRIENDLYNAME`, a region's name in the display language.
+    const GEO_FRIENDLYNAME: u32 = 8;
+    /// `MAP_FOLDDIGITS`, every decimal digit mapped to its ASCII digit.
+    const MAP_FOLDDIGITS: u32 = 0x80;
+    /// Longer than any region name or code Windows gives.
+    const GEO_TEXT_LENGTH: usize = 256;
 
     #[repr(C)]
     struct OsVersionInfoW {
@@ -169,6 +194,15 @@ mod win32 {
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn GetUserDefaultLocaleName(name: *mut u16, length: i32) -> i32;
+        fn GetUserDefaultGeoName(name: *mut u16, length: i32) -> i32;
+        fn GetGeoInfoEx(location: *const u16, kind: u32, data: *mut u16, length: i32) -> i32;
+        fn FoldStringW(
+            flags: u32,
+            source: *const u16,
+            source_length: i32,
+            destination: *mut u16,
+            destination_length: i32,
+        ) -> i32;
         fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> isize;
         fn Process32FirstW(snapshot: isize, entry: *mut ProcessEntry32W) -> i32;
         fn Process32NextW(snapshot: isize, entry: *mut ProcessEntry32W) -> i32;
@@ -225,6 +259,62 @@ mod win32 {
         // SAFETY: the buffer is as long as the count says.
         let written = unsafe { GetUserDefaultLocaleName(name.as_mut_ptr(), name.len() as i32) };
         (written > 0).then(|| until_nul(&name))
+    }
+
+    pub(super) fn home_region() -> Option<String> {
+        let mut name = [0u16; GEO_TEXT_LENGTH];
+        // SAFETY: the buffer is as long as the count says.
+        let written = unsafe { GetUserDefaultGeoName(name.as_mut_ptr(), name.len() as i32) };
+        (written > 0).then(|| until_nul(&name))
+    }
+
+    pub(super) fn region_name(code: &str) -> Option<String> {
+        let location: Vec<u16> = code.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut name = [0u16; GEO_TEXT_LENGTH];
+        // SAFETY: a terminated code, and a buffer as long as the count says.
+        let written = unsafe {
+            GetGeoInfoEx(
+                location.as_ptr(),
+                GEO_FRIENDLYNAME,
+                name.as_mut_ptr(),
+                name.len() as i32,
+            )
+        };
+        (written > 0).then(|| until_nul(&name))
+    }
+
+    pub(super) fn fold_digits(text: &str) -> Option<String> {
+        let wide: Vec<u16> = text.encode_utf16().collect();
+        if wide.is_empty() {
+            return Some(String::new());
+        }
+        let length = i32::try_from(wide.len()).ok()?;
+        // SAFETY: asked with no destination, the call only answers the length
+        // the folded text needs.
+        let needed = unsafe {
+            FoldStringW(
+                MAP_FOLDDIGITS,
+                wide.as_ptr(),
+                length,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if needed <= 0 {
+            return None;
+        }
+        let mut folded = vec![0u16; needed as usize];
+        // SAFETY: the destination is as long as the call said it needs.
+        let written = unsafe {
+            FoldStringW(
+                MAP_FOLDDIGITS,
+                wide.as_ptr(),
+                length,
+                folded.as_mut_ptr(),
+                needed,
+            )
+        };
+        (written > 0).then(|| String::from_utf16_lossy(&folded[..written as usize]))
     }
 
     /// Every running process's executable name and id. Empty when the list
@@ -331,6 +421,18 @@ mod win32 {
     }
 
     pub(super) fn locale_name() -> Option<String> {
+        None
+    }
+
+    pub(super) fn home_region() -> Option<String> {
+        None
+    }
+
+    pub(super) fn region_name(_code: &str) -> Option<String> {
+        None
+    }
+
+    pub(super) fn fold_digits(_text: &str) -> Option<String> {
         None
     }
 
