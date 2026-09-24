@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 280 records have arrived since and have not been through it.
+# 281 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30178,4 +30178,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/signatures.rs", tests = 11 },
+]
+
+# ── A new item is headed New, whatever it opens with (ledger 604) ─────────
+#
+# New hands the form Settings' alert as answers filled in ahead. The break
+# heads any form with answers "Edit" again, which is what every new event
+# and reminder said while a default reminder was set.
+[[guard]]
+name = "a new event opened with the default reminder is headed New Event"
+file = "src/presentation/wx_item_form.rs"
+suite = "a_new_item_is_headed_new"
+before = '''    let heading = match prefill.as_ref().is_some_and(|p| !p.is_new) {'''
+after = '''    let heading = match prefill.as_ref().is_some() {'''
+red = [
+    "test_a_new_event_opened_with_the_default_reminder_is_headed_new_event",
+    "test_a_new_reminder_opened_with_the_default_reminder_is_headed_new_reminder",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_item_form.rs", tests = 16 },
+    { file = "tests/a_new_item_is_headed_new.rs", tests = 3 },
 ]

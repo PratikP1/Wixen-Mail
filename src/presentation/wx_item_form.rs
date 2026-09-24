@@ -527,9 +527,11 @@ pub fn build_item_form_dialog<W: WxWidget>(
         existing_container: prefill.as_ref().and_then(|p| p.container),
     };
 
-    let heading = match prefill {
-        Some(_) => format!("Edit {}", kind.label()),
-        None => format!("New {}", kind.label()),
+    // New unless it is something already made. A new event opened with
+    // Settings' alert filled in is still new (ledger 604).
+    let heading = match prefill.as_ref().is_some_and(|p| !p.is_new) {
+        true => format!("Edit {}", kind.label()),
+        false => format!("New {}", kind.label()),
     };
     // No height here. It is worked out from what goes in the window, by
     // `set_sizer_and_fit` at the bottom of this function.
