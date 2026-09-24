@@ -69,7 +69,7 @@ completed: 2026-09-23
 
 **The check interval, Font size, Default reminder and Mark as read after's seconds are spin controls holding their own ranges. The typing field's name, which the plan was mostly about, does not work in the running program: it reads correctly in tests and the pull request's scan of the real app found the fields as before. The cause is unknown and is split out to 12-06.1.**
 
-Started 2026-09-23T21:07Z; seven commits on branch `12-06-spin-controls` from `main` at `b00be9c0`, then this documents commit after Pratik chose on 2026-09-23 to split the naming out.
+Started 2026-09-23T21:07Z; seven commits on branch `12-06-spin-controls` from `main` at `b00be9c0`, then this documents commit after Pratik chose on 2026-09-24 to split the naming out.
 
 ## What does not work: the typing field's name
 
@@ -82,7 +82,7 @@ On 2026-09-23 the Accessibility scan on pull request #97 launched the real progr
 | Account editor | fields named by the label before them, `Check Interval (min):` and `Then remove it after this many days (0 for never):` | 0 |
 | Settings | `Font size:`, the label with its colon | 0 |
 
-Every test here says the opposite, and so does every probe taken to reproduce the app's conditions: in the test process, from a second process the test starts (the way a screen reader reads), on this machine and in CI's Test Suite, in debug and release, with the program's manifest activated, hidden and shown, and five seconds later. The annotation is written, and it is visible everywhere except the running program. What the app has that a test process lacks is not found. Pratik chose on 2026-09-23 to split this out as 12-06.1 and to add no diagnostics on this branch. The code that writes the name stays, because it is right in every place anything can read it and 12-06.1 starts from it; its doc comment says it does not reach the app.
+Every test here says the opposite, and so does every probe taken to reproduce the app's conditions: in the test process, from a second process the test starts (the way a screen reader reads), on this machine and in CI's Test Suite, in debug and release, with the program's manifest activated, hidden and shown, and five seconds later. The annotation is written, and it is visible everywhere except the running program. What the app has that a test process lacks is not found. Pratik chose on 2026-09-24 to split this out as 12-06.1 and to add no diagnostics on this branch. The code that writes the name stays, because it is right in every place anything can read it and 12-06.1 starts from it; its doc comment says it does not reach the app.
 
 So the rest of this section's first draft, which said "every field answers its arrows' name on both channels", describes a test process. Read on the built windows in the test process before the change (the red run of `6fe17bff`), 19 spin controls in five windows:
 
@@ -166,7 +166,7 @@ The documents commit that splits the naming out was pushed without waiting for C
 
 **7. Page Up and Page Down.** Measured doing nothing; not built and not claimed (above).
 
-**8. The naming did not reach the running program, and the plan is split.** The plan's second truth, its first `[D]` line and its twelve ledger closures rest on the typing field being named. The pull request's scan found it not named in the app; the tests found it named. Pratik chose on 2026-09-23 to merge the spin controls and move the naming to 12-06.1. The reopened ledger entries and the unticked EDIT-01 say so. A seventh commit, `83f394d8`, added the cross-process reading while looking for the cause; it passes, did not reproduce the fault, and is kept as a reading 12-06.1's fix must still pass (ledger 593).
+**8. The naming did not reach the running program, and the plan is split.** The plan's second truth, its first `[D]` line and its twelve ledger closures rest on the typing field being named. The pull request's scan found it not named in the app; the tests found it named. Pratik chose on 2026-09-24 to merge the spin controls and move the naming to 12-06.1. The reopened ledger entries and the unticked EDIT-01 say so. A seventh commit, `83f394d8`, added the cross-process reading while looking for the cause; it passes, did not reproduce the fault, and is kept as a reading 12-06.1's fix must still pass (ledger 593).
 
 **9. `read_the_calendar_and_pim_page` lost its `base` parameter**, which only the removed parse fallback read.
 

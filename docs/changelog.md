@@ -18,12 +18,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   after is a choice of Immediately, After a number of seconds, and Never, with a seconds spin
   control beside it holding 1 to 600 that can be reached only while a wait is chosen; a wait
   chosen from the old list of seven is kept. The server ports stay typed.
-  Known limitations: the field a person types in, inside every spin control, still has no
-  name of its own in the running program. The arrows beside it are named, and the code now
-  writes the same name onto the field, which tests read correctly; but the accessibility
-  scan of the real program on 2026-09-23 found the fields as before, some with no name at
-  all and the rest named by the label before them, colon included. Why is not known yet
-  (ledger 408 to 425). `Page Up` and `Page Down` do nothing in a spin control.
+  Known limitations: until 2026-09-24 the field a person types in, inside every spin
+  control, had no name of its own in the running program. The arrows beside it were named,
+  and the code wrote the same name onto the field, which tests read correctly; but the
+  accessibility scan of the real program on 2026-09-23 found the fields as before, some with
+  no name at all and the rest named by the label before them, colon included (ledger 408 to
+  425). Fixed on 2026-09-24; see the field's name under Fixed. `Page Up` and `Page Down` do
+  nothing in a spin control.
 
 - **About says who holds the copyright, and links to the project's two pages.** The tester on
   2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` (#78): About said "Copyright 2024-2026
@@ -358,6 +359,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   resource with the build. No build carrying the count has been handed to anybody yet.
 
 ### Fixed
+
+- **The field you type in, inside every spin control, now has a name.** A spin control is two
+  pieces: the arrows, and the field beside them where you type a number. The arrows were named
+  and the field was not, so in Settings, the account editor, Edit Event, Send Later and Insert
+  Table a screen reader said nothing for the field, or said the label before it with its colon.
+  The program wrote the name onto the field, and tests read it there, but the program itself
+  threw it away: it builds the message preview, a web browser control, before any window with
+  a spin control opens, and once that browser exists no name written onto a field afterwards
+  is kept. The program now writes one name before it builds the browser, and every later name
+  is kept. Why the browser does this is not known. Proved on the running program, not only in
+  a test: the accessibility scan on pull request #98 (run 35976411245) found every spin
+  control's field in Edit Event, Send Later, Settings and the account editor named with the
+  arrows' words, on the channel NVDA reads and, wherever the scan could reach the field, on the
+  one Narrator reads (#73, #35, ledger 408 to 425).
+  Known limitations: nobody has heard a spin control's field with a screen reader since this
+  change (ledger 592). The scan does not reach the account editor's two spin fields or four of
+  Edit Event's on the Narrator channel, because it records only the page each window opens on.
 
 - **An account signing in with Google or Microsoft no longer fails at start with "Could not
   reach the credential store".** When the program starts it checks every account for mail and

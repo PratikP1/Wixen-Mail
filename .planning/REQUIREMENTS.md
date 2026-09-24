@@ -5427,6 +5427,13 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
   cause is unknown and belongs to 12-06.1; ledger 408 to 425 stay open, and ledger 593 says
   the reading cannot see the fault. The third `[D]` line's ledger half and #73 and #35 wait
   on it too. The `[S]` lines stay: ledger 592 for the ear.
+  **The naming half is met as of 2026-09-24 (12-06.1).** The running program built its
+  WebView2 preview before any dialog named a spin control, and after that no annotation
+  write was kept; `names::ready_the_annotation_store` makes one write first, and the scan
+  of the running program, run 35976411245 on #98, reads every spin field named. Ledger 408
+  to 425's twelve spinner entries and 593 are fixed. The box stays unticked only until #73
+  and #35 are closed from 12-06.1's merge commit, the last clause of 12-06's third `[D]`
+  line; the closing is in 12-06.1's report.
   - Evidence: `grep -n 'Check &Interval' src/presentation/wx_account_manager.rs` on
     2026-09-20 at `0ad66e48`: `:1639`, `tf_with_description`, a `TextCtrl`, read back at
     `:1254` with `.parse().unwrap_or(5).clamp(1, 60)`; the `spin` closure at `:1488-1499`
@@ -5464,22 +5471,37 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
   - [D] The twelve ledger entries marked fixed on the reading in both halves; the pages say
     which numbers are spin controls and how they are worked; #73 and #35 closed (12-06,
     task 3).
-  - [D] Each naming call's outcome is logged at warn with the thread, the COM apartment, the
+  - [x] [D] Each naming call's outcome is logged at warn with the thread, the COM apartment, the
     annotation service's creation result, the field's handle and class, each write's result,
     the name read back inside the program and whether the field is still the live one once
     the dialog is up; the Accessibility scan uploads the program's own log and prints those
     lines, with one scan target that reads nothing inside the program as the control. Not
     test-first, on Pratik's exception of 2026-09-24 for these lines only (12-06.1, task 1).
-  - [D] The cause is named from that scan run as one row of 12-06.1's table, with the
+    Met 2026-09-24: `e9452bda`, read in Accessibility run 35966112515 on #98; the startup
+    bisect under the same exception, `7d00b817` and `1476b1af`, runs 35968417797 and
+    35970583171.
+  - [x] [D] The cause is named from that scan run as one row of 12-06.1's table, with the
     evidence for each target quoted, and a test that reproduces the program's condition,
     reading the field only from another process and the way the scan reads it, was red
     before the fix and is green after it, so the reading sees what the scan sees (12-06.1,
     tasks 2 and 3; ledger 593).
-  - [D] The Accessibility scan on 12-06.1's pull request, on the tree that merges, reads the
+    Met 2026-09-24, with a deviation: run 35966112515 matched no row (every write `S_OK`
+    and the name unreadable inside the program too), so the plan stopped at its checkpoint,
+    and two bisects found the cause, a WebView2 built before the process's first annotation
+    write. `tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs`,
+    `test_send_later_names_every_typing_field_where_the_scan_reads_it` and
+    `test_the_event_form_names_every_typing_field_where_the_scan_reads_it`, red at
+    `97440d7f`, green at `e50aee6f`; ledger 593 fixed.
+  - [x] [D] The Accessibility scan on 12-06.1's pull request, on the tree that merges, reads the
     arrows' words on every spin control's typing field it walks, on MSAA and on UI
     Automation at the field's own handle; the twelve spinner entries among ledger 408 to 425
     fixed on that run; after the fix a failure to name a field is said at warn and nothing
     else from the diagnosis remains (12-06.1, tasks 3 and 4).
+    Met 2026-09-24: Accessibility run 35976411245 at `e50aee6f` on #98, every logged spin
+    field of new-event, send-later, settings and account-editor named on MSAA and, for the
+    13 of 19 the snapshot holds, on UI Automation (ledger 595 for the six it does not);
+    `1151b984` took the diagnosis out and kept `service-failed`, `write-failed` and
+    `no-field` at warn and one `named` line at debug; the twelve entries fixed.
   - [S] A field and its arrows heard with one name, the values said after Up and Down, and
     Mark read after's three entries are the tester's ear; the twelve findings gone from the
     scan is the next push.
@@ -5937,7 +5959,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
 | ALPHA-02 | Phase 12 | Complete, 12-05, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and a report arriving at each address, are ledger 589 and 590 |
 | ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
-| EDIT-01 | Phase 12 | Pending; 12-06 on 2026-09-23 made the numbers spin controls, and the typing field's name is not in the running program (ledger 408 to 425, 593), which is 12-06.1's; the ear is ledger 592 |
+| EDIT-01 | Phase 12 | Pending until #73 and #35 close from 12-06.1's merge; 12-06 on 2026-09-23 made the numbers spin controls, and 12-06.1 on 2026-09-24 put the typing field's name in the running program, read by scan run 35976411245 (ledger 408 to 425 and 593 fixed); the ear is ledger 592 |
 | EDIT-02 | Phase 12 | Pending, 12-07 |
 | EDIT-03 | Phase 12 | Pending, 12-08 |
 | EDIT-04 | Phase 12 | Pending, 12-09 |
