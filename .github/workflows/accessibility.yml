@@ -204,6 +204,27 @@ jobs:
           } else {
             Remove-Item Env:WIXEN_DIAGNOSE_NO_READBACK -ErrorAction SilentlyContinue
           }
+          # 12-06.1's bisect across processes, deviation 2 of 2026-09-24, and
+          # it leaves with the diagnosis. Each target but the two controls,
+          # send-later and new-event, probes one point in startup, so the
+          # probe is the first use of the annotation service in its process
+          # and cannot cure the points after it. Thirteen points, assigned in
+          # turn, so each is probed by at least two targets.
+          $points = @(
+            'after-logging-and-mutex', 'after-offer-to-windows', 'before-accessibility',
+            'after-uia-listening-check', 'after-audio-device', 'after-accessibility',
+            'on-init-first', 'after-first-announcement', 'after-webview-preview',
+            'after-main-frame', 'after-frame-shown', 'after-pipe-listen', 'before-target-dialog'
+          )
+          $probed = @($targets | Where-Object { $_ -ne 'send-later' -and $_ -ne 'new-event' })
+          $slot = [array]::IndexOf($probed, $target)
+          if ($slot -ge 0) {
+            $env:WIXEN_DIAGNOSE_PROBE_AT = $points[$slot % $points.Count]
+            Write-Host "$target probes $($env:WIXEN_DIAGNOSE_PROBE_AT)"
+          } else {
+            Remove-Item Env:WIXEN_DIAGNOSE_PROBE_AT -ErrorAction SilentlyContinue
+            Write-Host "$target is a control and probes nothing"
+          }
           $app = Start-Process -FilePath 'target/release/wixen-mail.exe' `
             -ArgumentList $arguments -PassThru
           try {

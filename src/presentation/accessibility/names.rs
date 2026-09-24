@@ -357,7 +357,7 @@ mod typing_field {
             None => {
                 let created = the_service();
                 let asked = match &created {
-                    Ok(_) => ServiceAsked::Created,
+                    Ok(_) => ServiceAsked::Created(diagnosis::count_a_service()),
                     Err(why) => ServiceAsked::Failed(why.code()),
                 };
                 let _ = kept.set(created.ok());
@@ -470,38 +470,51 @@ mod typing_field {
             PROBING.store(on, std::sync::atomic::Ordering::Relaxed);
         }
 
-        /// One line for one point in startup: a throwaway field named and
-        /// read back on this thread, on a thread of its own, and in a hidden
-        /// spin control once the toolkit is up; with the two accessibility
-        /// libraries the process has loaded by then.
+        /// How many annotation service instances this process has created,
+        /// across every thread, so a line can say whether its instance was
+        /// the process's first.
+        static SERVICES_CREATED: std::sync::atomic::AtomicU32 =
+            std::sync::atomic::AtomicU32::new(0);
+
+        /// Count one more service instance created; its number in the process.
+        pub(super) fn count_a_service() -> u32 {
+            SERVICES_CREATED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+        }
+
+        /// The one point this process probes, from the scan's workflow
+        /// (deviation 2, the bisect across processes): one first use per
+        /// process, so a probe cannot cure the points after it.
+        fn the_assigned_point() -> Option<&'static str> {
+            static ASSIGNED: OnceLock<Option<String>> = OnceLock::new();
+            ASSIGNED
+                .get_or_init(|| {
+                    std::env::var("WIXEN_DIAGNOSE_PROBE_AT")
+                        .ok()
+                        .filter(|point| !point.is_empty())
+                })
+                .as_deref()
+        }
+
+        /// One line for this process's point in startup: a throwaway plain
+        /// field named and read back on this thread, the process's first use
+        /// of the annotation service, and then a hidden spin control's field
+        /// once the toolkit is up; with the two accessibility libraries the
+        /// process has loaded by then.
         pub(super) fn at_the_point(point: &str, toolkit_is_up: bool) {
-            if !PROBING.load(std::sync::atomic::Ordering::Relaxed) || reads_are_switched_off() {
+            if !PROBING.load(std::sync::atomic::Ordering::Relaxed)
+                || reads_are_switched_off()
+                || the_assigned_point() != Some(point)
+            {
                 return;
             }
-            let here = a_plain_field_named_and_read();
-            let elsewhere = std::thread::spawn(|| {
-                use windows::Win32::System::Com::{
-                    COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize,
-                };
-                // SAFETY: the probe's own thread, which leaves the apartment
-                // it joined before it ends.
-                let joined = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-                let read = a_plain_field_named_and_read();
-                if joined.is_ok() {
-                    // SAFETY: pairs the join above on the same thread.
-                    unsafe { CoUninitialize() };
-                }
-                format!("joined={} {read}", hex(joined))
-            })
-            .join()
-            .unwrap_or_else(|_| "the probe's thread panicked".to_string());
+            let first = a_plain_field_named_and_read();
             let spin = if toolkit_is_up {
                 a_spin_field_named_and_read()
             } else {
                 "toolkit-not-up".to_string()
             };
             tracing::warn!(
-                "spin-field-naming: point={point} main=[{here}] own-thread=[{elsewhere}] spin=[{spin}] {}",
+                "spin-field-naming: point={point} first-use=[{first}] then-spin=[{spin}] {}",
                 the_libraries()
             );
         }
@@ -536,7 +549,7 @@ mod typing_field {
             let named = name_and_read(field);
             // SAFETY: the window made above, on this thread.
             let _ = unsafe { DestroyWindow(field) };
-            format!("apartment={apartment} {named}")
+            named
         }
 
         /// A hidden spin control's field, named and read back, then the
@@ -570,6 +583,8 @@ mod typing_field {
                 Ok(service) => service,
                 Err(why) => return format!("service hr={}", hex(why.code())),
             };
+            let instance = count_a_service();
+            let apartment = the_apartment();
             // SAFETY: the field is a live window; the string outlives the call.
             let written = unsafe {
                 service.SetHwndPropStr(
@@ -586,7 +601,12 @@ mod typing_field {
                 Ok(name) => format!("name=\"{name}\" equals={}", name == PROBE_WORDS),
                 Err(why) => format!("read hr={}", hex(why.code())),
             };
-            format!("write={} props={properties} {read}", hex(code))
+            let stored = properties.contains("MSAA_");
+            format!(
+                "apartment={apartment} instance={instance} first-in-process={} write={} stored={stored} props={properties} {read}",
+                instance == 1,
+                hex(code)
+            )
         }
 
         /// Called once per window property; `found` is the list it adds to.
@@ -633,7 +653,34 @@ mod typing_field {
             );
             if call == 1 {
                 tracing::warn!("spin-field-naming: libraries={call} {}", the_libraries());
+                tracing::warn!(
+                    "spin-field-naming: setprop={call} {}",
+                    a_plain_property_on(field)
+                );
             }
+        }
+
+        /// Set one plain window property of this program's own on `field`,
+        /// read it back and take it off again: whether any property sticks on
+        /// that window at that moment, apart from the annotation service.
+        fn a_plain_property_on(field: HWND) -> String {
+            use windows::Win32::Foundation::HANDLE;
+            use windows::Win32::UI::WindowsAndMessaging::{GetPropW, RemovePropW, SetPropW};
+            const MARK: isize = 0x5A5A;
+            let key = windows::core::w!("WixenDiagnoseProbe");
+            // SAFETY: a live window; the key is a static string and the value
+            // a plain number, never a pointer.
+            let set = unsafe { SetPropW(field, key, Some(HANDLE(MARK as *mut std::ffi::c_void))) };
+            // SAFETY: as above.
+            let read = unsafe { GetPropW(field, key) }.0 as isize;
+            let properties = the_properties_of(field);
+            // SAFETY: as above; takes off only what was set here.
+            let _ = unsafe { RemovePropW(field, key) };
+            format!(
+                "set={} read=0x{read:X} equals={} props={properties}",
+                set.map_or_else(|why| hex(why.code()), |()| "ok".to_string()),
+                read == MARK
+            )
         }
 
         #[link(name = "kernel32")]
@@ -735,7 +782,9 @@ mod typing_field {
         /// What asking for the annotation service found on one naming call.
         #[derive(Debug, Clone, Copy)]
         pub(super) enum ServiceAsked {
-            Created,
+            /// Created on this call, with its number among the process's
+            /// service instances.
+            Created(u32),
             Failed(HRESULT),
             Reused,
             Absent,
@@ -812,7 +861,10 @@ mod typing_field {
             let class = field.map_or_else(String::new, the_class);
             let service = match asked {
                 None => "not-asked".to_string(),
-                Some(ServiceAsked::Created) => "created hr=0x00000000".to_string(),
+                Some(ServiceAsked::Created(instance)) => format!(
+                    "created hr=0x00000000 instance={instance} first-in-process={}",
+                    instance == 1
+                ),
                 Some(ServiceAsked::Failed(code)) => format!("failed hr={}", hex(code)),
                 Some(ServiceAsked::Reused) => "reused".to_string(),
                 Some(ServiceAsked::Absent) => "absent".to_string(),
