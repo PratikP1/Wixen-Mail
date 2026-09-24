@@ -2788,6 +2788,10 @@ impl MessageCache {
         // sent under: renaming "Work" to "Employer" must not orphan every
         // message already labelled with it on the server.
         self.ensure_column_exists("tags", "keyword", "TEXT")?;
+        // Where a label sits in its account's order, counted from one, which
+        // is the number its key carries (#48). Rows written before it existed
+        // are numbered on open by `number_the_unnumbered_labels`.
+        self.ensure_column_exists("tags", "position", "INTEGER")?;
         self.ensure_column_exists("messages", "snippet", "TEXT")?;
         self.ensure_column_exists("messages", "size_bytes", "INTEGER")?;
         // Whether the message's own Content-Type said it was S/MIME encrypted.

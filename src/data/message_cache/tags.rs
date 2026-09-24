@@ -95,6 +95,17 @@ impl MessageCache {
         Ok(tags)
     }
 
+    /// Write an account's labels in the order given, the first at one.
+    pub fn put_labels_in_order(&self, _account_id: &str, _ids: &[String]) -> Result<()> {
+        Ok(())
+    }
+
+    /// Give every label with no place in its account's order one, after the
+    /// labels that have one, in name order.
+    pub fn number_the_unnumbered_labels(&self) -> Result<()> {
+        Ok(())
+    }
+
     /// Get a specific tag by ID
     pub fn get_tag(&self, tag_id: &str) -> Result<Option<Tag>> {
         let mut stmt = self
@@ -788,6 +799,127 @@ mod tests {
         assert!(
             !by_message.contains_key(&untagged_msg),
             "an untagged message should not appear in the map at all"
+        );
+    }
+
+    fn a_label_named(cache: &MessageCache, account_id: &str, name: &str) {
+        cache
+            .create_tag(&Tag {
+                id: format!("{account_id}:{name}"),
+                account_id: account_id.to_string(),
+                name: name.to_string(),
+                color: "#FF0000".to_string(),
+                created_at: "2026-08-01T00:00:00Z".to_string(),
+                keyword: None,
+            })
+            .expect("a label");
+    }
+
+    fn names_in_order(cache: &MessageCache, account_id: &str) -> Vec<String> {
+        cache
+            .get_tags_for_account(account_id)
+            .expect("the labels to read")
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect()
+    }
+
+    #[test]
+    fn test_labels_come_back_in_the_order_they_were_made() {
+        // The order an account starts with is Thunderbird's, which is not
+        // alphabetical, and a label made later goes after the rest (#48).
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+        for name in [
+            "Important",
+            "Work",
+            "Personal",
+            "To Do",
+            "Later",
+            "Invoices",
+        ] {
+            a_label_named(&cache, "acct", name);
+        }
+
+        assert_eq!(
+            names_in_order(&cache, "acct"),
+            [
+                "Important",
+                "Work",
+                "Personal",
+                "To Do",
+                "Later",
+                "Invoices"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_the_order_written_is_the_order_read_back() {
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+        for name in ["Important", "Work", "Later"] {
+            a_label_named(&cache, "acct", name);
+        }
+
+        cache
+            .put_labels_in_order(
+                "acct",
+                &[
+                    "acct:Later".to_string(),
+                    "acct:Important".to_string(),
+                    "acct:Work".to_string(),
+                ],
+            )
+            .expect("the order to be written");
+
+        assert_eq!(
+            names_in_order(&cache, "acct"),
+            ["Later", "Important", "Work"]
+        );
+    }
+
+    #[test]
+    fn test_labels_from_before_are_numbered_in_the_order_they_were_listed() {
+        // A build before this one listed an account's labels by name and its
+        // keys applied them in that order, so that is the order they keep:
+        // Ctrl+2 goes on applying what it applied. Per account, each from one.
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+        for (account_id, name) in [
+            ("acct", "Work"),
+            ("acct", "Important"),
+            ("acct", "Later"),
+            ("other", "Zeta"),
+        ] {
+            cache
+                .conn
+                .execute(
+                    "INSERT INTO tags (id, account_id, name, color, created_at)
+                     VALUES (?1, ?2, ?3, '#FF0000', '2026-08-01T00:00:00Z')",
+                    params![format!("{account_id}:{name}"), account_id, name],
+                )
+                .expect("a row written before labels had a place");
+        }
+
+        cache.number_the_unnumbered_labels().expect("the pass");
+
+        let placed: Vec<(String, Option<i64>)> = cache
+            .conn
+            .prepare("SELECT name, position FROM tags ORDER BY account_id, name")
+            .expect("a query")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("the rows")
+            .collect::<std::result::Result<_, _>>()
+            .expect("every row");
+        assert_eq!(
+            placed,
+            [
+                ("Important".to_string(), Some(1)),
+                ("Later".to_string(), Some(2)),
+                ("Work".to_string(), Some(3)),
+                ("Zeta".to_string(), Some(1)),
+            ]
         );
     }
 

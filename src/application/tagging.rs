@@ -153,6 +153,45 @@ pub fn at_number<T>(labels: &[T], number: usize) -> Option<&T> {
     labels.get(number - 1)
 }
 
+/// One line of the Label submenu: where it sits, and what it says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuLine {
+    /// Its place in the account's order, counted from one, which is also the
+    /// number its key carries while there is a key.
+    pub position: usize,
+    /// The item's text, with the key after a tab where it has one.
+    pub text: String,
+}
+
+/// What the Label submenu says, one line per label in the account's order.
+pub fn what_the_menu_says(names: &[String]) -> Vec<MenuLine> {
+    names
+        .iter()
+        .enumerate()
+        .map(|(at, name)| MenuLine {
+            position: at + 1,
+            text: name.clone(),
+        })
+        .collect()
+}
+
+/// What is said when the cursor is on no label in the Label Manager.
+pub const WHICH_LABEL: &str = "Choose a label first. Move Up and Move Down act on the row \
+                               the cursor is on.";
+
+/// Move one label up or down the account's order.
+///
+/// `labels` is every label as `(id, name)` in the order they sit in now.
+pub fn moved(labels: &[(String, String)], _which: &str, _direction: Move) -> Moved {
+    Moved {
+        order: labels.iter().map(|(id, _)| id.clone()).collect(),
+        say: String::new(),
+        moved: false,
+    }
+}
+
+pub use crate::application::reordering::{Move, Moved};
+
 /// Whether pressing a number puts the label on or takes it off.
 ///
 /// The same key both ways, because a label applied by mistake should come off
@@ -250,12 +289,126 @@ mod tests {
     }
 
     #[test]
-    fn test_nothing_past_nine_is_reachable_by_key() {
-        // Ten labels, and the tenth has no digit to reach it.
+    fn test_nothing_past_nine_has_a_key() {
+        // Ten labels, and the tenth has no digit to reach it, so its line on
+        // the menu carries no key while the ninth's does.
         let many: Vec<String> = (1..=10).map(|n| format!("Label {n}")).collect();
 
-        assert_eq!(at_number(&many, 9), Some(&"Label 9".to_string()));
-        assert_eq!(at_number(&many, 10), None);
+        let lines = what_the_menu_says(&many);
+
+        assert_eq!(lines[8].text, "Label 9\tCtrl+9");
+        assert_eq!(lines[9].text, "Label 10");
+    }
+
+    #[test]
+    fn test_the_tenth_label_is_reached_from_the_menu() {
+        // The menu is how a label past the ninth is put on, and the number a
+        // menu line carries is its place in the order, key or not.
+        let many: Vec<String> = (1..=10).map(|n| format!("Label {n}")).collect();
+
+        assert_eq!(at_number(&many, 10), Some(&"Label 10".to_string()));
+        assert_eq!(at_number(&many, 11), None);
+    }
+
+    #[test]
+    fn test_the_menu_says_each_label_in_its_order_with_its_key() {
+        // The order the account keeps, not the order an account starts with:
+        // the key beside a name is the key that applies it (#48).
+        let held: Vec<String> = ["Later", "Important", "Invoices"]
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+
+        assert_eq!(
+            what_the_menu_says(&held),
+            vec![
+                MenuLine {
+                    position: 1,
+                    text: "Later\tCtrl+1".to_string(),
+                },
+                MenuLine {
+                    position: 2,
+                    text: "Important\tCtrl+2".to_string(),
+                },
+                MenuLine {
+                    position: 3,
+                    text: "Invoices\tCtrl+3".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_labels_is_offered_the_five_the_first_key_makes() {
+        // The first press of a key makes the five an account starts with, in
+        // this order, so a menu read before then says what that press will
+        // find rather than being empty and leaving every key unbound.
+        let lines = what_the_menu_says(&[]);
+
+        let texts: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "Important\tCtrl+1",
+                "Work\tCtrl+2",
+                "Personal\tCtrl+3",
+                "To Do\tCtrl+4",
+                "Later\tCtrl+5",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_ampersand_in_a_labels_name_is_shown_and_claims_no_letter() {
+        // A menu reads a lone ampersand as the mark before an access letter,
+        // so "R&D" would show as "RD" and take D from the items beside it.
+        // Doubled, it is shown as itself.
+        let lines = what_the_menu_says(&["R&D".to_string()]);
+
+        assert_eq!(lines[0].text, "R&&D\tCtrl+1");
+    }
+
+    fn five_as_stored() -> Vec<(String, String)> {
+        ["Important", "Work", "Personal", "To Do", "Later"]
+            .iter()
+            .map(|name| (format!("acct:{name}"), name.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_moving_a_label_says_where_it_is_now() {
+        // The gesture accounts and pinned folders already use, worded the way
+        // they word it, and the whole order handed back to be written.
+        let after = moved(&five_as_stored(), "acct:Work", Move::Down);
+
+        assert_eq!(after.say, "Work, 3 of 5.");
+        assert!(after.moved);
+        assert_eq!(
+            after.order,
+            [
+                "acct:Important",
+                "acct:Personal",
+                "acct:Work",
+                "acct:To Do",
+                "acct:Later",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_the_first_label_does_not_move_up_and_says_so() {
+        let after = moved(&five_as_stored(), "acct:Important", Move::Up);
+
+        assert_eq!(after.say, "Important is already first of 5.");
+        assert!(!after.moved);
+    }
+
+    #[test]
+    fn test_moving_with_no_label_chosen_says_to_choose_one() {
+        let after = moved(&five_as_stored(), "", Move::Down);
+
+        assert_eq!(after.say, WHICH_LABEL);
+        assert!(!after.moved);
     }
 
     #[test]
