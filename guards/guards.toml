@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 274 records have arrived since and have not been through it.
+# 276 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30044,4 +30044,40 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/phone_numbers.rs", tests = 46 },
+]
+
+# ── A new event starts at the next boundary, not the nearest (#41) ─────────
+#
+# The tester's first answer of 2026-09-15: 14:37 with half an hour gives
+# 15:00, not 14:30. The break rounds to the nearest boundary instead, which
+# is the reading of "the block" most likely to be written by mistake.
+[[guard]]
+name = "a new event starts at the next block boundary after now, not the nearest"
+file = "src/application/time_blocks.rs"
+before = '''    boundary_at_or_before(now, block) + block.length()'''
+after = '''    boundary_at_or_before(now + Duration::minutes(i64::from(block.minutes() / 2)), block)'''
+red = [
+    "application::time_blocks::tests::test_a_new_event_at_14_37_starts_at_15_00_not_14_30",
+    "application::time_blocks::tests::test_a_new_event_on_a_boundary_starts_at_the_next_one",
+    "application::time_blocks::tests::test_a_new_event_with_an_hour_starts_on_the_next_hour",
+    "application::time_blocks::tests::test_a_new_event_late_in_the_evening_starts_at_midnight_the_next_day",
+]
+tests_last_seen = [
+    { file = "src/application/time_blocks.rs", tests = 17 },
+]
+
+# ── An end the person changed stays where they put it (#41, T-12-29) ───────
+#
+# The tester's second answer: the end moves with the start unless the person
+# has edited the end. The break moves it anyway.
+[[guard]]
+name = "an end the person changed does not follow the start"
+file = "src/application/time_blocks.rs"
+before = '''        true => end,'''
+after = '''        true => end + (new_start - old_start),'''
+red = [
+    "application::time_blocks::tests::test_an_end_the_person_changed_stays_where_they_put_it",
+]
+tests_last_seen = [
+    { file = "src/application/time_blocks.rs", tests = 17 },
 ]

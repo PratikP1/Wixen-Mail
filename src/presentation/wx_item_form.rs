@@ -91,6 +91,7 @@
 
 use crate::application::item_fields::{Entry, Field, FieldName, Filled, Problem, fields_for};
 use crate::application::new_item::ItemKind;
+use crate::application::time_blocks::Block;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
@@ -288,7 +289,7 @@ pub fn ask_for<W: WxWidget>(
             a11y,
             asking,
         },
-        current_date_settings(),
+        how_this_form_keeps_time(),
         prefill,
     )?;
 
@@ -312,17 +313,50 @@ pub fn ask_for<W: WxWidget>(
     filled
 }
 
-/// The date order and clock this computer, or somebody's own setting, reads.
+/// The date order and clock this computer, or somebody's own setting, reads,
+/// the moment the form opens, and the block a time moves by (#41).
 ///
-/// Read fresh rather than threaded in from the caller, the same way
-/// [`theme::current_from_stored_config`] already is a few lines above this:
-/// one place to load it means an event's date fields and the list row it
-/// lands in cannot come to disagree about which order the day and month go
-/// in.
-fn current_date_settings() -> DateSettings {
-    crate::data::config::ConfigManager::load_stored()
-        .map(|mgr| date_settings_from(mgr.app_config()))
-        .unwrap_or_default()
+/// Read fresh where the form opens rather than threaded in from the caller,
+/// the same way [`theme::current_from_stored_config`] already is a few lines
+/// above this: one place to load it means an event's date fields and the list
+/// row it lands in cannot come to disagree about which order the day and month
+/// go in, and a length changed in Settings reaches the next form without a
+/// restart.
+fn how_this_form_keeps_time() -> Timekeeping {
+    let stored = crate::data::config::ConfigManager::load_stored().ok();
+    let config = stored.as_ref().map(|mgr| mgr.app_config());
+    Timekeeping {
+        settings: config.map(date_settings_from).unwrap_or_default(),
+        now: chrono::Local::now().naive_local(),
+        block: config.map_or_else(Block::default, |config| {
+            Block::from_setting(config.event_length_minutes)
+        }),
+    }
+}
+
+/// How a form reads and moves time: the date order and clock it shows, the
+/// moment it opened, and the block a time moves by.
+///
+/// A form built from date settings alone opens on the present moment and the
+/// default block. That is what a test about something else wants, and it is
+/// why [`build_item_form_dialog`] takes either.
+#[derive(Debug, Clone, Copy)]
+pub struct Timekeeping {
+    pub settings: DateSettings,
+    /// When the form opened. A new event starts at the next block boundary
+    /// after it.
+    pub now: chrono::NaiveDateTime,
+    pub block: Block,
+}
+
+impl From<DateSettings> for Timekeeping {
+    fn from(settings: DateSettings) -> Self {
+        Timekeeping {
+            settings,
+            now: chrono::Local::now().naive_local(),
+            block: Block::default(),
+        }
+    }
 }
 
 /// The notebook a form gets when it has anything to say about how often
@@ -406,7 +440,7 @@ impl ItemFormWidgets {
 struct FormContext<'a> {
     containers: &'a [Container],
     known_categories: &'a [String],
-    date_settings: DateSettings,
+    time: Timekeeping,
     /// What to fill the form with, for something already made. `None` for
     /// something new, which is every field left at its ordinary default.
     existing: Option<&'a Filled>,
@@ -426,24 +460,27 @@ struct FormContext<'a> {
 /// itself used to do on the same case.
 ///
 /// `prefill` is `ask_for`'s own prefill parameter, passed straight through;
-/// see its doc comment for what it means.
+/// see its doc comment for what it means. `time` is [`Timekeeping`], or date
+/// settings alone for a form that opens now on the default block.
 pub fn build_item_form_dialog<W: WxWidget>(
     parent: &W,
     kind: ItemKind,
     containers: &[Container],
     known_categories: &[String],
     chrome: Chrome,
-    date_settings: DateSettings,
+    time: impl Into<Timekeeping>,
     prefill: Option<Prefill>,
 ) -> Option<ItemFormWidgets> {
     let fields = fields_for(kind);
     if fields.is_empty() {
         return None;
     }
+    let time = time.into();
+    let date_settings = time.settings;
     let ctx = FormContext {
         containers,
         known_categories,
-        date_settings,
+        time,
         existing: prefill.as_ref().map(|p| p.filled),
         existing_container: prefill.as_ref().and_then(|p| p.container),
     };
@@ -830,7 +867,7 @@ const LATEST_YEAR: i32 = 2100;
 pub fn build_date_fields(
     parent: &dyn WxWidget,
     order: DateOrder,
-    now: chrono::DateTime<chrono::Local>,
+    now: impl chrono::Datelike,
     existing: Option<&str>,
 ) -> DateFields {
     use chrono::Datelike;
@@ -902,11 +939,9 @@ pub fn build_date_fields(
 pub fn build_time_fields(
     parent: &dyn WxWidget,
     clock: Clock,
-    now: chrono::DateTime<chrono::Local>,
+    now: impl chrono::Timelike,
     existing: Option<&str>,
 ) -> TimeFields {
-    use chrono::Timelike;
-
     let parsed = existing.and_then(|text| {
         let (h, m) = text.split_once(':')?;
         Some((h.parse::<u32>().ok()?, m.parse::<u32>().ok()?))
@@ -968,7 +1003,7 @@ fn on_the_face_of(hour: u32, clock: Clock) -> (u32, bool) {
 /// there is one, otherwise left at the same defaults as before there was
 /// anything to prefill from.
 fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Control {
-    let now = chrono::Local::now();
+    let now = ctx.time.now;
     // `Some("")` for something being edited whose box happens to be blank,
     // `None` for something new. The two have to stay different: a blank box
     // is still a real answer to prefill a `Pick` or a `Tick` from, and only
@@ -1007,13 +1042,13 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
         }
         Entry::Date => Control::Date(build_date_fields(
             parent,
-            ctx.date_settings.order,
+            ctx.time.settings.order,
             now,
             existing_text,
         )),
         Entry::Time => Control::Time(build_time_fields(
             parent,
-            ctx.date_settings.clock,
+            ctx.time.settings.clock,
             now,
             existing_text,
         )),

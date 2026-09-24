@@ -16,9 +16,12 @@
 //! crosses midnight carries the day change in its date rather than in a second
 //! return value.
 
-use chrono::NaiveDateTime;
+use chrono::{Duration, NaiveDateTime, Timelike};
 
 /// How long a new event lasts, and how far Up and Down move a time.
+///
+/// Each divides an hour, and so a day, which is what lets a boundary be found
+/// from the minute of the day alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Block {
     Fifteen,
@@ -35,44 +38,76 @@ impl Block {
 
     /// The block's length in minutes, which is also how it is stored.
     pub fn minutes(self) -> u32 {
-        15
+        match self {
+            Block::Fifteen => 15,
+            Block::Thirty => 30,
+            Block::Sixty => 60,
+        }
     }
 
     /// The block as Settings lists it.
     pub fn label(self) -> &'static str {
-        ""
+        match self {
+            Block::Fifteen => "15 minutes",
+            Block::Thirty => "30 minutes",
+            Block::Sixty => "1 hour",
+        }
     }
 
-    /// The block a stored number of minutes names.
+    /// The block a stored number of minutes names. Anything else, a hand-edited
+    /// file or one written before the setting existed, is the default.
     pub fn from_setting(minutes: u32) -> Block {
-        let _ = minutes;
-        Block::Fifteen
+        Block::ALL
+            .into_iter()
+            .find(|block| block.minutes() == minutes)
+            .unwrap_or_default()
     }
+
+    fn length(self) -> Duration {
+        Duration::minutes(i64::from(self.minutes()))
+    }
+}
+
+/// `at` with its seconds dropped: the editors hold hours and minutes only.
+fn to_the_minute(at: NaiveDateTime) -> NaiveDateTime {
+    at - Duration::seconds(i64::from(at.second()))
+        - Duration::nanoseconds(i64::from(at.nanosecond()))
+}
+
+/// The boundary at or before `at`, to the minute.
+fn boundary_at_or_before(at: NaiveDateTime, block: Block) -> NaiveDateTime {
+    let into_the_block = (at.hour() * 60 + at.minute()) % block.minutes();
+    to_the_minute(at) - Duration::minutes(i64::from(into_the_block))
 }
 
 /// The first block boundary strictly after `now`: where a new event starts.
 pub fn next_boundary(now: NaiveDateTime, block: Block) -> NaiveDateTime {
-    let _ = block;
-    now
+    boundary_at_or_before(now, block) + block.length()
 }
 
 /// Where Up (`up`) or Down takes a time: one block from a boundary, or to the
 /// nearest boundary in that direction from anywhere else.
 pub fn step_by_block(at: NaiveDateTime, block: Block, up: bool) -> NaiveDateTime {
-    let _ = (block, up);
-    at
+    let before = boundary_at_or_before(at, block);
+    match (up, before == to_the_minute(at)) {
+        (true, _) => before + block.length(),
+        (false, true) => before - block.length(),
+        (false, false) => before,
+    }
 }
 
 /// Where Right (`forward`) or Left takes a time: one minute.
 pub fn step_by_minute(at: NaiveDateTime, forward: bool) -> NaiveDateTime {
-    let _ = forward;
-    at
+    let one_minute = Duration::minutes(1);
+    match forward {
+        true => to_the_minute(at) + one_minute,
+        false => to_the_minute(at) - one_minute,
+    }
 }
 
 /// Where a new event ends: one block after it starts.
 pub fn end_after(start: NaiveDateTime, block: Block) -> NaiveDateTime {
-    let _ = block;
-    start
+    start + block.length()
 }
 
 /// Where the end goes when the start moves from `old_start` to `new_start`:
@@ -84,8 +119,10 @@ pub fn follow(
     end: NaiveDateTime,
     end_edited: bool,
 ) -> NaiveDateTime {
-    let _ = (old_start, new_start, end_edited);
-    end
+    match end_edited {
+        true => end,
+        false => end + (new_start - old_start),
+    }
 }
 
 #[cfg(test)]

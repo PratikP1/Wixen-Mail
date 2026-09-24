@@ -542,8 +542,12 @@ pub struct AppConfig {
     #[serde(default = "default_reminder_minutes")]
     pub default_reminder_minutes: u32,
     /// How long a new event lasts, in minutes, and how far Up and Down move a
-    /// time in the event and reminder editors: 15, 30 or 60 (#41).
-    #[serde(default)]
+    /// time in the event and reminder editors: 15, 30 or 60 (#41). Anything
+    /// else reads as 30, through `application::time_blocks::Block::from_setting`.
+    ///
+    /// Read where an editor opens, never captured at startup, so a change in
+    /// Settings reaches the next form without a restart.
+    #[serde(default = "default_event_length_minutes")]
     pub event_length_minutes: u32,
     /// Which stretch of calendar the calendar opens on: "agenda", "week" or
     /// "month".
@@ -727,6 +731,13 @@ fn default_reminder_minutes() -> u32 {
     15
 }
 
+/// Half an hour, the tester's default in #41. Written out rather than taken
+/// from `time_blocks::Block::default()`, so this layer does not reach up into
+/// the one that reads it; `time_blocks`' own case holds the two to one answer.
+fn default_event_length_minutes() -> u32 {
+    30
+}
+
 /// The agenda, which is what the calendar showed before views existed, so that
 /// nobody's calendar changes shape because this shipped.
 ///
@@ -822,7 +833,7 @@ impl Default for AppConfig {
             default_sort_order: default_sort_order(),
             show_conversations_by_default: default_true(),
             default_reminder_minutes: default_reminder_minutes(),
-            event_length_minutes: 0,
+            event_length_minutes: default_event_length_minutes(),
             calendar_view: default_calendar_view(),
         }
     }
