@@ -541,6 +541,10 @@ pub struct AppConfig {
     /// Default reminder lead-time in minutes (e.g. 15 = remind 15 min before)
     #[serde(default = "default_reminder_minutes")]
     pub default_reminder_minutes: u32,
+    /// How long a new event lasts, in minutes, and how far Up and Down move a
+    /// time in the event and reminder editors: 15, 30 or 60 (#41).
+    #[serde(default)]
+    pub event_length_minutes: u32,
     /// Which stretch of calendar the calendar opens on: "agenda", "week" or
     /// "month".
     ///
@@ -818,6 +822,7 @@ impl Default for AppConfig {
             default_sort_order: default_sort_order(),
             show_conversations_by_default: default_true(),
             default_reminder_minutes: default_reminder_minutes(),
+            event_length_minutes: 0,
             calendar_view: default_calendar_view(),
         }
     }
@@ -1763,6 +1768,7 @@ mod permission_tests {
             "clock_hours",
             "draft_autosave_minutes",
             "default_reminder_minutes",
+            "event_length_minutes",
             "unread_on_a_parent",
             "announce_decorative_pictures",
             "hold_back_remote_pictures",
@@ -1819,6 +1825,10 @@ mod permission_tests {
         assert_eq!(parsed.clock_hours, "auto");
         assert_eq!(parsed.default_sort_order, "date_newest");
         assert_eq!(parsed.default_reminder_minutes, 15);
+        assert_eq!(
+            parsed.event_length_minutes, 30,
+            "a settings file from before #41 would open every new event with no length"
+        );
         assert_eq!(
             parsed.calendar_view, "agenda",
             "an absent key would have changed the shape of every existing \
