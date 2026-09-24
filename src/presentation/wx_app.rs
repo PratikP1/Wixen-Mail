@@ -7583,9 +7583,10 @@ impl WxMailApp {
             );
         }
         help.append_separator();
-        // F is the one letter free among the Help menu's items and topics
-        // on 2026-09-23; C and U are each held twice already, which is on the
-        // ledger rather than moved here.
+        // F was free among the Help menu's items and topics on 2026-09-23.
+        // The topics' letters live in `application::help::TOPICS`, and
+        // `tests/wired.rs` reads them with this menu's own since 2026-09-24,
+        // when C and U were each held twice (ledger 591).
         help.append(
             ID_SEND_FEEDBACK,
             "Send &Feedback...\tCtrl+Shift+F",

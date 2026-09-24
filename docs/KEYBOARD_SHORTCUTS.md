@@ -514,6 +514,14 @@ can navigate. Making them real headings is being worked on.
 | Send Feedback | `Ctrl+Shift+F` | On the Help menu, and as a button on About. Tell the people who make Wixen Mail about a problem, an idea or a question, and read the whole message before it goes |
 | Close Dialog | `Esc` | Close the current dialog or window |
 
+On the Help menu (`Alt+H`) every item has a letter of its own: `C` for
+Contents, `G` Getting started, `K` Keyboard shortcuts, `M` Using Wixen Mail,
+`P` Setting up a provider, `W` When something goes wrong, `A` Accessibility,
+`V` Privacy, `H` What changed, `F` Send Feedback, `S` Load Sample Mailbox,
+`U` Check for Updates and `B` About. Until 2026-09-24 Using Wixen Mail
+shared `U` with Check for Updates and What changed shared `C` with Contents,
+so those letters moved between two items rather than choosing one.
+
 In Settings, every number is a spin control: `Up` adds one and `Down` takes one away, it stops at the ends of its range, and you can also type a number over the one shown. `Page Up` and `Page Down` do nothing in a spin control yet.
 
 ### Window and Pane Navigation
