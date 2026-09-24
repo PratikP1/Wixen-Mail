@@ -1169,13 +1169,17 @@ message as it will be sent, then the buttons. Each letter is used once.
 | Field | Shortcut |
 |-------|----------|
 | Name | `Alt+N` |
+| Prefix | `Alt+P` |
 | Given name | `Alt+G` |
+| Middle name | `Alt+I` |
 | Family name | `Alt+M` |
+| Suffix | `Alt+X` |
 | Nickname | `Alt+K` |
 | Company | `Alt+C` |
 | Department | `Alt+D` |
 | Job Title | `Alt+J` |
-| Birthday | `Alt+B` |
+| Birthday (the check box saying there is one) | `Alt+B` |
+| No year (beside the birthday) | `Alt+Y` |
 | Website | `Alt+W` |
 | Relationship | `Alt+R` |
 | Avatar URL | `Alt+A` |
@@ -1215,6 +1219,16 @@ message as it will be sent, then the buttons. Each letter is used once.
 | City | `Alt+I` | (C conflicts with Country) |
 | State/Province | varies | Label changes per country (e.g., State, Province, County) |
 | ZIP/Postal Code | varies | Label changes per country (e.g., ZIP, Postcode, PLZ) |
+
+### Phone Sub-Dialog Accelerators
+
+The Add Phone Number dialog, opened with Add Phone on the Email & Phone tab.
+
+| Field | Shortcut | Notes |
+|-------|----------|-------|
+| Type | `Alt+T` | Mobile, Home, Work and the rest |
+| Number | `Alt+N` | Typed with + and its country code, or as the country writes it at home |
+| Country | `Alt+C` | The country a number typed without its code belongs to; opens on the country Windows says you are in |
 
 ### Context Menu
 

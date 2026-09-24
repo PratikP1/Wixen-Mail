@@ -5409,9 +5409,11 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     carries updates, a trial with no card, whether the supporter tier delivers a real
     licence, how priority support is carried.
 
-- [ ] **EDIT-01**: Every number a person sets in the account editor and in Settings is a spin
+- [x] **EDIT-01**: Every number a person sets in the account editor and in Settings is a spin
   control, the check interval first, and every spin control's typing field has a name on the
   channel a screen reader reads.
+  **Ticked 2026-09-24 (12-07's documents commit):** 12-06.1 closed its last lines, and #73
+  and #35 are closed, which was the one clause keeping the box open.
   **Not ticked: half of it is met, the naming half is not, as of 2026-09-23.** 12-06 met the
   second `[D]` line: the check interval, Font size and Default reminder are spin controls
   holding their own ranges, and Mark as read after is a three-way choice with a seconds spin
@@ -5506,9 +5508,11 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     Mark read after's three entries are the tester's ear; the twelve findings gone from the
     scan is the next push.
 
-- [ ] **EDIT-02**: The contact editor has prefix, middle name and suffix fields; a whole name
+- [x] **EDIT-02**: The contact editor has prefix, middle name and suffix fields; a whole name
   and its parts fill each other without overwriting what the person typed; the birthday is
   a date control; an email address and a phone number are checked without refusing real ones.
+  **Ticked 2026-09-24 (12-07).** Both `[D]` lines are met, each with the tests that hold it
+  below; the `[S]` lines stay, ledger 596 for the ear and 597 for the tester's account.
   - Evidence: `sed -n 1276,1312p src/presentation/wx_managers.rs` on 2026-09-20 at
     `0ad66e48`: Basic Info holds Name, Given name, Family name, Nickname, Company,
     Department, Job Title, Birthday (`add_panel_field`, a `TextCtrl`, `:1297`), Website,
@@ -5535,7 +5539,7 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     formatting and country designations for phone numbers?" Pratik on 2026-09-16: "Point 5
     (the unnamed Favourite checkbox) is fixed in 165fd811 with #42; points 1 to 4 and 6 are
     later phases and this issue stays open for them."
-  - [D] `application::contact_names` with `guess_parts` and `compose` over titles, suffixes
+  - [x] [D] `application::contact_names` with `guess_parts` and `compose` over titles, suffixes
     and particles, the Hopper and van der Berg cases; `application::phone_numbers` over
     `phonenumber` 0.3.10, which Pratik confirmed on 2026-09-24, the one file naming the crate
     and routing around its four measured defects,
@@ -5546,7 +5550,12 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     five parts; `GoogleName` with `honorific_prefix`, `middle_name`, `honorific_suffix`;
     the Graph contact with `title`, `middle_name`, `generation`; each carried both ways
     (12-07, task 1).
-  - [D] The editor's Prefix and Suffix as `ComboBox`es with room to type, Middle name, the
+    Met 2026-09-24: `build(12-07)` `e542a21b`; `application::contact_names::tests` (13),
+    `application::phone_numbers::tests` (46, 38 of them rows of the audit),
+    `service::this_machine::tests::test_this_machine_names_a_region_says_where_it_is_and_folds_digits`,
+    the card, provider and merge cases rewritten in place in `contacts.rs`, `google_api.rs`,
+    `microsoft_graph.rs` and `contacts_sync.rs`; green at `8a360905` and `450045b6`.
+  - [x] [D] The editor's Prefix and Suffix as `ComboBox`es with room to type, Middle name, the
     birthday through `build_date_fields` with a no-year position stored as `YEAR_LEFT_OUT`,
     the fills each way guarded by per-field typed flags, an address checked by
     `is_an_address`, and a number in the Add Phone Number dialog read by `phone_numbers::read`
@@ -5556,6 +5565,14 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     every new control named on both channels; a reading in
     `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` drives the
     built editor and reads the Favourite box over MSAA (12-07, task 2).
+    Met 2026-09-24: the target's 22 readings, green at `99ea1914`, among them
+    `test_a_family_name_typed_first_is_not_overwritten_by_the_name`,
+    `test_a_doubted_number_is_said_once_and_kept_exactly_as_typed_on_the_second_ok` and
+    `test_every_new_control_is_named_where_the_keyboard_lands_on_both_channels`, and
+    `presentation::wx_item_form::tests::test_a_birthday_with_no_year_is_stored_as_the_marker_the_sync_writes`.
+    Two changes from the line's words: the birthday has a Birthday check box beside the no-year
+    one, so a contact with none is not saved with today's, and a stored part counts as
+    typed, so a guess never writes over it.
   - [S] The tab heard in order, the fill heard after a name, the no-year position and a
     refusal are the tester's ear; a contact with five name parts round-tripping through
     Google is his account's; whether a phone-number library is wanted beyond the digit rule
@@ -5959,8 +5976,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
 | ALPHA-02 | Phase 12 | Complete, 12-05, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and a report arriving at each address, are ledger 589 and 590 |
 | ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
-| EDIT-01 | Phase 12 | Pending until #73 and #35 close from 12-06.1's merge; 12-06 on 2026-09-23 made the numbers spin controls, and 12-06.1 on 2026-09-24 put the typing field's name in the running program, read by scan run 35976411245 (ledger 408 to 425 and 593 fixed); the ear is ledger 592 |
-| EDIT-02 | Phase 12 | Pending, 12-07 |
+| EDIT-01 | Phase 12 | Done 2026-09-24: 12-06 on 2026-09-23 made the numbers spin controls, 12-06.1 on 2026-09-24 put the typing field's name in the running program, read by scan run 35976411245 (ledger 408 to 425 and 593 fixed), and #73 and #35 are closed; the ear is ledger 592 |
+| EDIT-02 | Phase 12 | Done 2026-09-24, 12-07: the name parts, the fills, the birthday and the checks, held by `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` and the module cases; the ear is ledger 596 and the tester's account ledger 597 |
 | EDIT-03 | Phase 12 | Pending, 12-08 |
 | EDIT-04 | Phase 12 | Pending, 12-09 |
 | EDIT-05 | Phase 12 | Pending, 12-10 |

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 540
+open_count: 545
 waived_count: 0
 fixed_count: 55
-total_count: 595
-last_updated: 2026-09-24T08:52:00.000Z
+total_count: 600
+last_updated: 2026-09-24T11:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -610,6 +610,11 @@ last_updated: 2026-09-24T08:52:00.000Z
 | 593 | 12 | deviation | tests/every_spin_control_names_the_field_a_person_types_in.rs |  | 12-06: the reading of every spin control's typing field passes and the running program fails it. In a test process, and from a second process the test starts, every field answers its arrows' name on MSAA and UI Automation, on this machine and in CI's Test Suite, in debug and release, hidden and shown; the Accessibility scan of the running program on pull request #97, runs 35927025769 and 35930014324, found the same fields unnamed or named by the label before them. So this test cannot see the fault ledger 408 to 425 describe, and a green run of it is not evidence the fields are named. 12-06.1 owns the cause, and closes this when the test can see what the scan sees or the reason it cannot is written down | fixed | 12-06.1: tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs builds the WebView2 first, as the program does, and reads every field from another process only; it was red at 97440d7f on exactly the fields the scan found nameless and is green at e50aee6f, so a reading now sees what the scan sees | 2026-09-24T00:30:00.000Z | 2026-09-24T08:52:00.000Z |
 | 594 | 12 | deviation | src/presentation/accessibility/names.rs |  | 12-06.1: a platform behaviour worked around and not explained. Once a WebView2 is built in a process whose IAccPropServices has written nothing yet, every later SetHwndPropStr in that process answers S_OK and stores nothing, on any window and from any thread; one write before the browser, onto a window destroyed straight after and not cleared with ClearHwndProps, and every later write is kept. Measured on 2026-09-24 by the bisect across processes (Accessibility run 35970583171) and by tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs; names::ready_the_annotation_store works around it. Whether to report it to Microsoft (WebView2 or the annotation service) is Pratik's decision | open |  | 2026-09-24T08:52:00.000Z |  |
 | 595 | 12 | todo | .github/workflows/accessibility.yml |  | 12-06.1: the scan reads six spin fields on MSAA only. Axe records the UI Automation tree of the page each window opens on, so the account editor's Check Interval and Then remove it after fields and Edit Event's Alert minutes before, Last day Day, Last day Year and How many times fields were not in run 35976411245's snapshot; the MSAA walk read all six named. A scan target, or a snapshot, that reaches those pages would close it | open |  | 2026-09-24T08:52:00.000Z |  |
+| 596 | 12 | unrun-verify | src/presentation/wx_managers.rs |  | 12-07: the contact editor under NVDA. What only the tester's ear settles: the Basic Info tab heard in its new order, Name then Prefix, Given name, Middle name, Family name and Suffix; the fill heard after typing a whole name; the Birthday and No year check boxes and the birthday's month, day and year; an address refused in a sentence naming it; the Add Phone Number dialog's Country entries; and a doubted number's sentence and the second OK that keeps it. tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs reads every new control named on MSAA and UI Automation at the handle the keyboard reaches, and the Accessibility scan's contact-editor and phone-number targets read them in the running program | open |  | 2026-09-24T11:45:00.000Z |  |
+| 597 | 12 | unrun-verify | src/application/contacts_sync.rs |  | 12-07: a contact with all five name parts has not round-tripped through a real account. The cases hold Google's honorificPrefix, middleName and honorificSuffix and Graph's title, middleName and generation to serde and to the mappings both ways, and a card's N to five parts; whether Google, Outlook and a CardDAV server, when one is set up, keep and return them is the tester's account to settle | open |  | 2026-09-24T11:45:00.000Z |  |
+| 598 | 12 | todo | Cargo.toml |  | 12-07: phonenumber 0.3.10 carries Google's numbering data 9.0.33 of 2026-06-17; Google's current release on 2026-09-23 was 9.0.39 of 2026-09-09, with 42 regions' data changed between, and upstream pull request 110, the fix for the reference-country defect, is open against the v0.3 branch. When a release carries newer data or that fix, take the 102 rows of 12-07's audit again against it and retire each route in application::phone_numbers the release makes unnecessary, keeping its rows as cases | open |  | 2026-09-24T11:45:00.000Z |  |
+| 599 | 12 | todo | installer/Wixen-Mail-Setup.iss |  | 12-07: the installer ships no third-party licence notices. self_cell, taken under its Apache-2.0 arm, already needed one (06-03's audit), and phonenumber 0.3.10, Apache-2.0 only, needs one too; Apache-2.0 asks that a redistributed binary carry the licence text. oncemutex, in phonenumber's closure, ships no licence text of its own | open |  | 2026-09-24T11:45:00.000Z |  |
+| 600 | 12 | todo | src/presentation/wx_managers.rs |  | 12-07: the Add Address dialog keeps its own list of 127 English country names, stores the name the provider then receives, and defaults to United States for a region it does not know. The phone dialog's Country list takes its names from Windows in its display language; version 2's translation has to reach the address list too, and changing what it stores changes what each provider receives, so 12-07 left it as it is | open |  | 2026-09-24T11:45:00.000Z |  |
 
 ````json
 [
@@ -7751,6 +7756,66 @@ last_updated: 2026-09-24T08:52:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T08:52:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 596,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "12-07: the contact editor under NVDA. What only the tester's ear settles: the Basic Info tab heard in its new order, Name then Prefix, Given name, Middle name, Family name and Suffix; the fill heard after typing a whole name; the Birthday and No year check boxes and the birthday's month, day and year; an address refused in a sentence naming it; the Add Phone Number dialog's Country entries; and a doubted number's sentence and the second OK that keeps it. tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs reads every new control named on MSAA and UI Automation at the handle the keyboard reaches, and the Accessibility scan's contact-editor and phone-number targets read them in the running program",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T11:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 597,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/application/contacts_sync.rs",
+    "line": null,
+    "description": "12-07: a contact with all five name parts has not round-tripped through a real account. The cases hold Google's honorificPrefix, middleName and honorificSuffix and Graph's title, middleName and generation to serde and to the mappings both ways, and a card's N to five parts; whether Google, Outlook and a CardDAV server, when one is set up, keep and return them is the tester's account to settle",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T11:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 598,
+    "kind": "todo",
+    "phase": "12",
+    "file": "Cargo.toml",
+    "line": null,
+    "description": "12-07: phonenumber 0.3.10 carries Google's numbering data 9.0.33 of 2026-06-17; Google's current release on 2026-09-23 was 9.0.39 of 2026-09-09, with 42 regions' data changed between, and upstream pull request 110, the fix for the reference-country defect, is open against the v0.3 branch. When a release carries newer data or that fix, take the 102 rows of 12-07's audit again against it and retire each route in application::phone_numbers the release makes unnecessary, keeping its rows as cases",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T11:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 599,
+    "kind": "todo",
+    "phase": "12",
+    "file": "installer/Wixen-Mail-Setup.iss",
+    "line": null,
+    "description": "12-07: the installer ships no third-party licence notices. self_cell, taken under its Apache-2.0 arm, already needed one (06-03's audit), and phonenumber 0.3.10, Apache-2.0 only, needs one too; Apache-2.0 asks that a redistributed binary carry the licence text. oncemutex, in phonenumber's closure, ships no licence text of its own",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T11:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 600,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "12-07: the Add Address dialog keeps its own list of 127 English country names, stores the name the provider then receives, and defaults to United States for a region it does not know. The phone dialog's Country list takes its names from Windows in its display language; version 2's translation has to reach the address list too, and changing what it stores changes what each provider receives, so 12-07 left it as it is",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T11:45:00.000Z",
     "resolved_at": null
   }
 ]
