@@ -280,6 +280,14 @@ pub fn name_and_describe_the_spin_control(spin: &SpinCtrl, name: &str, descripti
     );
 }
 
+/// Make the process's first annotation write before anything builds a
+/// browser, so every spin control's typing field named after it keeps its
+/// name. Called first thing when the interface starts.
+///
+/// The red half of 12-06.1's fix: this does nothing yet, so the reading that
+/// builds a browser first and then names the fields sees them nameless.
+pub fn ready_the_annotation_store() {}
+
 /// Which property of a spin control's typing field some words are written to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FieldProperty {
