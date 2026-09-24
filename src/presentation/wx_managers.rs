@@ -16,6 +16,7 @@ use crate::application::filters::{
     the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
 use crate::application::phone_numbers::{self, Reading, Region};
+use crate::application::reordering::Move;
 use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
@@ -4095,12 +4096,12 @@ pub fn show_tag_manager_dialog(
     // `theme::current_from_stored_config`'s own doc comment for why that
     // matters).
     let palette = theme::current_from_stored_config();
-    let (dialog, sizer, list, status) =
-        make_shell(parent, "Tag Manager", "Tags", 450, 400, palette);
-
-    list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
-    list.insert_column(1, "Color", ListColumnFormat::Left, 100);
-    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    let TagManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+    } = build_tag_manager(parent, tags, palette);
 
     let mut working = tags.to_vec();
     let changed = run_manager_loop(
@@ -4126,7 +4127,53 @@ pub fn show_tag_manager_dialog(
     }
 }
 
-fn populate_tags(list: &ListCtrl, tags: &[TagEntry]) {
+/// The Label Manager's window, built and filled without being shown.
+pub struct TagManagerWidgets {
+    pub dialog: Dialog,
+    pub sizer: BoxSizer,
+    pub list: ListCtrl,
+    pub status: StaticText,
+}
+
+/// Build the Label Manager over an account's labels, in their order, and
+/// fill its list. Split out of [`show_tag_manager_dialog`] so a test can read
+/// the rows a live list holds.
+pub fn build_tag_manager(
+    parent: &Frame,
+    tags: &[TagEntry],
+    palette: Option<theme::Palette>,
+) -> TagManagerWidgets {
+    let (dialog, sizer, list, status) =
+        make_shell(parent, "Tag Manager", "Tags", 450, 400, palette);
+
+    list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
+    list.insert_column(1, "Color", ListColumnFormat::Left, 100);
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    populate_tags(&list, tags);
+
+    TagManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+    }
+}
+
+/// Move the row the cursor is on one place up or down, in a window whose rows
+/// are kept in an order the person chooses, and say where it went.
+pub fn move_the_chosen_row<T: ManagedRow>(
+    _state: &Rc<RefCell<ManagerState<T>>>,
+    _list: &ListCtrl,
+    _status_text: &StaticText,
+    _a11y: &Accessibility,
+    _populate: impl Fn(&ListCtrl, &[T]),
+    _name_fn: impl Fn(&T) -> String,
+    _direction: Move,
+) {
+}
+
+/// Fill the Label Manager's list, one row per label in its order.
+pub fn populate_tags(list: &ListCtrl, tags: &[TagEntry]) {
     list.delete_all_items();
     for (i, t) in tags.iter().enumerate() {
         let idx = i as i64;

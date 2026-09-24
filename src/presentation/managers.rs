@@ -146,7 +146,7 @@ pub fn manage_tags(
 /// touched is written with the values it already has. `created_at` and the
 /// keyword a label travels under are left alone by the update, which is what
 /// keeps a whole-list write from quietly rewriting them.
-fn save_what_the_tag_manager_returned(
+pub fn save_what_the_tag_manager_returned(
     cache: &MessageCache,
     account: &str,
     stored: &[crate::data::message_cache::Tag],

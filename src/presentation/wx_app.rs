@@ -6533,7 +6533,11 @@ impl WxMailApp {
         }
     }
 
-    fn build_menu_bar() -> MenuBar {
+    /// The main window's menu bar, as the window is given it.
+    ///
+    /// Public so a test can build the real menus and read their items back
+    /// (`tests/the_label_menu_says_the_labels_an_account_has.rs`).
+    pub fn build_menu_bar() -> MenuBar {
         // ── "New" submenu (expanded for all PIM modules) ────────────
         //
         // The keys come from `ItemKind` rather than being typed here, so the
@@ -6949,36 +6953,10 @@ impl WxMailApp {
             )
             .build();
 
-        // One entry per label, carrying Ctrl and its number, and a last one to
-        // take them all off. The names here are the ones an account starts
-        // with; they are rewritten from the account's own labels when those
-        // load, so renaming a label changes the menu rather than leaving it
-        // describing something that no longer exists.
-        //
-        // Ctrl and a digit rather than the bare digit Thunderbird uses. A bare
-        // digit in a list is also a character, and a list that jumps to what
-        // you type cannot tell "label this work" from somebody spelling their
-        // way to a message about invoice 4021.
+        // Built from no labels, which is the five an account starts with, and
+        // built again from the account's own labels each time they load.
         let labels_menu = Menu::builder().build();
-        for (index, id) in LABEL_IDS.iter().enumerate() {
-            let name = crate::application::tagging::TO_BEGIN_WITH
-                .get(index)
-                .map(|label| label.name)
-                .unwrap_or("Label");
-            labels_menu.append(
-                *id,
-                &format!("{name}\tCtrl+{}", index + 1),
-                "Put this label on the message, or take it off",
-                wxdragon::menus::ItemKind::Normal,
-            );
-        }
-        labels_menu.append_separator();
-        labels_menu.append(
-            ID_LABEL_NONE,
-            "&Remove every label\tCtrl+0",
-            "Take all the labels off this message",
-            wxdragon::menus::ItemKind::Normal,
-        );
+        rebuild_the_label_menu(&labels_menu, &[]);
 
         // The thing you have to do arrived as an email, and retyping its
         // subject into a task list is the clerical work software exists to
@@ -10527,6 +10505,38 @@ const LABEL_IDS: [i32; 9] = [
     ID_LABEL_1, ID_LABEL_2, ID_LABEL_3, ID_LABEL_4, ID_LABEL_5, ID_LABEL_6, ID_LABEL_7, ID_LABEL_8,
     ID_LABEL_9,
 ];
+
+/// Fill the Label submenu from an account's labels, in their order.
+pub fn rebuild_the_label_menu(labels_menu: &Menu, _names: &[String]) {
+    for (index, id) in LABEL_IDS.iter().enumerate() {
+        let name = crate::application::tagging::TO_BEGIN_WITH
+            .get(index)
+            .map(|label| label.name)
+            .unwrap_or("Label");
+        labels_menu.append(
+            *id,
+            &format!("{name}\tCtrl+{}", index + 1),
+            "Put this label on the message, or take it off",
+            wxdragon::menus::ItemKind::Normal,
+        );
+    }
+    labels_menu.append_separator();
+    labels_menu.append(
+        ID_LABEL_NONE,
+        "&Remove every label\tCtrl+0",
+        "Take all the labels off this message",
+        wxdragon::menus::ItemKind::Normal,
+    );
+}
+
+/// Put an account's labels, as `(id, name)` in their order, on the window's
+/// Label submenu.
+pub fn put_the_labels_on_the_menu(_frame: &Frame, _labels: &[(String, String)]) {}
+
+/// Whether Ctrl and this number has no label on the menu to answer it.
+pub fn a_label_key_the_menu_does_not_answer(_menu_bar: &MenuBar, _number: usize) -> bool {
+    false
+}
 
 /// Rebuild the list's columns from a layout.
 ///
