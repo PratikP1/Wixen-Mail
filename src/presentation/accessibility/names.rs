@@ -320,12 +320,33 @@ mod typing_field {
         static SERVICE: OnceCell<Option<IAccPropServices>> = const { OnceCell::new() };
     }
 
-    fn the_service() -> Option<IAccPropServices> {
+    fn the_service() -> windows::core::Result<IAccPropServices> {
         // SAFETY: COM is initialised on the interface thread by wxWidgets
         // before any window is built.
         unsafe { CoCreateInstance(&CLSID_AccPropServices, None, CLSCTX_INPROC_SERVER) }
             .inspect_err(|why| tracing::debug!("The annotation service is not available: {why}"))
-            .ok()
+    }
+
+    /// The service for this thread, asked for once and kept, whichever way
+    /// the first ask went, as 12-06 shipped it; and what this call found.
+    fn the_kept_service(
+        kept: &OnceCell<Option<IAccPropServices>>,
+    ) -> (Option<&IAccPropServices>, diagnosis::ServiceAsked) {
+        use diagnosis::ServiceAsked;
+        let asked = match kept.get() {
+            Some(Some(_)) => ServiceAsked::Reused,
+            Some(None) => ServiceAsked::Absent,
+            None => {
+                let created = the_service();
+                let asked = match &created {
+                    Ok(_) => ServiceAsked::Created,
+                    Err(why) => ServiceAsked::Failed(why.code()),
+                };
+                let _ = kept.set(created.ok());
+                asked
+            }
+        };
+        (kept.get().and_then(Option::as_ref), asked)
     }
 
     fn property(which: FieldProperty) -> GUID {
@@ -339,17 +360,25 @@ mod typing_field {
     /// cannot be found or written is said at debug and left as it was: the
     /// arrows still carry the words.
     pub(super) fn carry(spin: &SpinCtrl, carries: &[(FieldProperty, &str)]) {
+        let call = diagnosis::next_call();
+        let named = carries
+            .iter()
+            .find(|(which, _)| *which == FieldProperty::Name)
+            .map_or("", |(_, words)| *words);
         let arrows = HWND(spin.get_handle());
         // SAFETY: the arrows are a live window this program built; the
         // message takes and returns no pointer.
         let buddy = unsafe { SendMessageW(arrows, UDM_GETBUDDY, None, None) };
         if buddy.0 == 0 {
+            diagnosis::the_call(call, named, arrows, None, None);
             tracing::debug!("A spin control has no typing field to name");
             return;
         }
         let field = HWND(buddy.0 as *mut std::ffi::c_void);
         SERVICE.with(|service| {
-            let Some(service) = service.get_or_init(the_service) else {
+            let (service, asked) = the_kept_service(service);
+            diagnosis::the_call(call, named, arrows, Some(field), Some(asked));
+            let Some(service) = service else {
                 return;
             };
             for (which, words) in carries {
@@ -363,11 +392,233 @@ mod typing_field {
                         &HSTRING::from(*words),
                     )
                 };
+                diagnosis::the_write(call, *which, &written);
                 if let Err(why) = written {
                     tracing::debug!("A spin control's typing field could not be named: {why}");
                 }
             }
         });
+        diagnosis::the_read_back(call, field, named);
+        diagnosis::check_at_show(call, arrows, field, named);
+    }
+
+    /// 12-06.1's diagnosis, and nothing else: every line it writes starts
+    /// `spin-field-naming:` and is at warn, so the Accessibility scan's copy
+    /// of the running program's log says what became of each name. Not
+    /// test-first, on Pratik's exception of 2026-09-24 for the diagnostic
+    /// lines only; it changes no answer and leaves with the diagnosis, as a
+    /// module, once the scan has been read.
+    ///
+    /// Written: handles in decimal, HRESULTs in hex, the thread, the
+    /// apartment, the window class and the helper's own fixed words. Never a
+    /// field's value, a window's title, or anything from mail or an account.
+    mod diagnosis {
+        use super::FieldProperty;
+        use std::cell::Cell;
+        use std::sync::OnceLock;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::System::Com::{APTTYPE, APTTYPEQUALIFIER, CoGetApartmentType};
+        use windows::Win32::System::Threading::GetCurrentThreadId;
+        use windows::Win32::System::Variant::{
+            VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_I4,
+        };
+        use windows::Win32::UI::Accessibility::{AccessibleObjectFromWindow, IAccessible};
+        use windows::Win32::UI::Controls::UDM_GETBUDDY;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CHILDID_SELF, GWLP_WNDPROC, GetClassNameW, GetWindowLongPtrW, IsWindow, OBJID_CLIENT,
+            SendMessageW,
+        };
+        use windows::core::{HRESULT, Interface};
+
+        /// What asking for the annotation service found on one naming call.
+        #[derive(Debug, Clone, Copy)]
+        pub(super) enum ServiceAsked {
+            Created,
+            Failed(HRESULT),
+            Reused,
+            Absent,
+        }
+
+        thread_local! {
+            static CALLS: Cell<u32> = const { Cell::new(0) };
+        }
+
+        /// The control the scan's send-later target runs under: set, and the
+        /// program reads no name inside itself, so a read inside the program
+        /// cannot be what carries the name out of it.
+        fn reads_are_switched_off() -> bool {
+            static SWITCHED_OFF: OnceLock<bool> = OnceLock::new();
+            *SWITCHED_OFF.get_or_init(|| std::env::var_os("WIXEN_DIAGNOSE_NO_READBACK").is_some())
+        }
+
+        pub(super) fn next_call() -> u32 {
+            CALLS.with(|calls| {
+                let call = calls.get() + 1;
+                calls.set(call);
+                call
+            })
+        }
+
+        fn hex(code: HRESULT) -> String {
+            format!("0x{:08X}", code.0 as u32)
+        }
+
+        fn handle(window: HWND) -> isize {
+            window.0 as isize
+        }
+
+        fn window(handle: isize) -> HWND {
+            HWND(handle as *mut std::ffi::c_void)
+        }
+
+        fn the_apartment() -> String {
+            let mut kind = APTTYPE::default();
+            let mut qualifier = APTTYPEQUALIFIER::default();
+            // SAFETY: both pointers are to locals that outlive the call.
+            match unsafe { CoGetApartmentType(&mut kind, &mut qualifier) } {
+                Ok(()) => {
+                    let name = match kind.0 {
+                        0 => "STA",
+                        1 => "MTA",
+                        2 => "NA",
+                        3 => "MAINSTA",
+                        _ => "other",
+                    };
+                    format!("{name}({}) qualifier={}", kind.0, qualifier.0)
+                }
+                Err(why) => format!("unknown hr={}", hex(why.code())),
+            }
+        }
+
+        fn the_class(field: HWND) -> String {
+            let mut class = [0u16; 64];
+            // SAFETY: the buffer outlives the call and its length is passed.
+            let length = unsafe { GetClassNameW(field, &mut class) };
+            String::from_utf16_lossy(&class[..usize::try_from(length).unwrap_or(0)])
+        }
+
+        pub(super) fn the_call(
+            call: u32,
+            words: &str,
+            arrows: HWND,
+            field: Option<HWND>,
+            asked: Option<ServiceAsked>,
+        ) {
+            // SAFETY: takes and returns plain values.
+            let thread = unsafe { GetCurrentThreadId() };
+            let field_handle = field.map_or(0, handle);
+            let class = field.map_or_else(String::new, the_class);
+            let service = match asked {
+                None => "not-asked".to_string(),
+                Some(ServiceAsked::Created) => "created hr=0x00000000".to_string(),
+                Some(ServiceAsked::Failed(code)) => format!("failed hr={}", hex(code)),
+                Some(ServiceAsked::Reused) => "reused".to_string(),
+                Some(ServiceAsked::Absent) => "absent".to_string(),
+            };
+            tracing::warn!(
+                "spin-field-naming: call={call} words=\"{words}\" thread={thread} apartment={} arrows={} field={field_handle} class=\"{class}\" service={service}",
+                the_apartment(),
+                handle(arrows),
+            );
+        }
+
+        pub(super) fn the_write(
+            call: u32,
+            which: FieldProperty,
+            written: &windows::core::Result<()>,
+        ) {
+            let property = match which {
+                FieldProperty::Name => "name",
+                FieldProperty::Description => "description",
+            };
+            let code = written
+                .as_ref()
+                .map_or_else(|why| why.code(), |()| HRESULT(0));
+            tracing::warn!(
+                "spin-field-naming: write={call} property={property} hr={}",
+                hex(code)
+            );
+        }
+
+        /// The field's MSAA name, read inside this process the way a
+        /// screen reader asks for it from outside.
+        fn msaa_name(field: HWND) -> windows::core::Result<String> {
+            let child = VARIANT {
+                Anonymous: VARIANT_0 {
+                    Anonymous: std::mem::ManuallyDrop::new(VARIANT_0_0 {
+                        vt: VT_I4,
+                        wReserved1: 0,
+                        wReserved2: 0,
+                        wReserved3: 0,
+                        Anonymous: VARIANT_0_0_0 {
+                            lVal: CHILDID_SELF as i32,
+                        },
+                    }),
+                },
+            };
+            let mut object = std::ptr::null_mut();
+            // SAFETY: the out pointer is a local; on success it holds an
+            // IAccessible whose reference this takes over.
+            unsafe {
+                AccessibleObjectFromWindow(
+                    field,
+                    OBJID_CLIENT.0 as u32,
+                    &IAccessible::IID,
+                    &mut object,
+                )?;
+                let accessible = IAccessible::from_raw(object);
+                Ok(accessible.get_accName(&child)?.to_string())
+            }
+        }
+
+        fn the_name_now(field: HWND, words: &str) -> String {
+            if reads_are_switched_off() {
+                return "skipped".to_string();
+            }
+            match msaa_name(field) {
+                Ok(name) => format!("name=\"{name}\" equals={}", name == words),
+                Err(why) => format!("hr={}", hex(why.code())),
+            }
+        }
+
+        pub(super) fn the_read_back(call: u32, field: HWND, words: &str) {
+            tracing::warn!(
+                "spin-field-naming: readback={call} {}",
+                the_name_now(field, words)
+            );
+        }
+
+        /// Queued to run from the dialog's own loop once it is up, holding
+        /// plain handles and the words and never a widget.
+        pub(super) fn check_at_show(call: u32, arrows: HWND, field: HWND, words: &str) {
+            let arrows = handle(arrows);
+            let named = handle(field);
+            // SAFETY: reads a value from a window this program built.
+            let procedure = unsafe { GetWindowLongPtrW(field, GWLP_WNDPROC) };
+            let words = words.to_string();
+            wxdragon::call_after(Box::new(move || {
+                // SAFETY: each call takes a handle that may no longer be a
+                // window, which these calls answer for rather than fault on.
+                let (arrows_live, buddy, field_live, procedure_now) = unsafe {
+                    (
+                        IsWindow(Some(window(arrows))).as_bool(),
+                        SendMessageW(window(arrows), UDM_GETBUDDY, None, None).0,
+                        IsWindow(Some(window(named))).as_bool(),
+                        GetWindowLongPtrW(window(named), GWLP_WNDPROC),
+                    )
+                };
+                let name = if field_live {
+                    the_name_now(window(named), &words)
+                } else {
+                    "gone".to_string()
+                };
+                tracing::warn!(
+                    "spin-field-naming: at-show={call} arrows_live={arrows_live} buddy={buddy} same_field={} field_live={field_live} same_procedure={} {name}",
+                    buddy == named,
+                    procedure_now == procedure,
+                );
+            }));
+        }
     }
 }
 

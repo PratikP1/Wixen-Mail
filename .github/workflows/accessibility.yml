@@ -195,6 +195,15 @@ jobs:
           New-Item -ItemType Directory -Force $outDir | Out-Null
 
           $arguments = if ($target -eq 'main') { @() } else { @("--scan-target", $target) }
+          # 12-06.1's control, added 2026-09-24, and it leaves with the
+          # diagnosis. Under it the program reads no spin control's field
+          # inside itself, so if a read inside the program is what carries a
+          # name out to other processes, send-later alone comes back unnamed.
+          if ($target -eq 'send-later') {
+            $env:WIXEN_DIAGNOSE_NO_READBACK = '1'
+          } else {
+            Remove-Item Env:WIXEN_DIAGNOSE_NO_READBACK -ErrorAction SilentlyContinue
+          }
           $app = Start-Process -FilePath 'target/release/wixen-mail.exe' `
             -ArgumentList $arguments -PassThru
           try {
@@ -362,4 +371,37 @@ jobs:
       with:
         name: accessibility-scan-results
         path: a11y-results/
+        if-no-files-found: warn
+
+    # The running program's own log, from the scan's throwaway profile, so a
+    # scan says what the program did as well as what the scanner read. Added
+    # 2026-09-24 for 12-06.1, whose spin-control naming reached the field in
+    # a test process and not in the program. The profile is made fresh on
+    # the runner and holds only the scan's fixtures, no account and no mail.
+    - name: Print the program's naming lines
+      if: always()
+      shell: pwsh
+      run: |
+        $logs = Join-Path $env:RUNNER_TEMP 'a11y-profile/logs'
+        if (-not (Test-Path $logs)) {
+          Write-Host "No logs folder at $logs, so the program wrote no log the scan can hand back."
+          exit 0
+        }
+        $lines = Get-ChildItem $logs -Filter *.log | Get-Content |
+          Where-Object { $_ -match 'for the accessibility scan|spin-field-naming:' }
+        $opening = @($lines | Where-Object { $_ -match 'for the accessibility scan' }).Count
+        $naming = @($lines | Where-Object { $_ -match 'spin-field-naming:' }).Count
+        if ($naming -eq 0) {
+          Write-Host "A log with no naming lines: $opening Opening line(s) and 0 spin-field-naming lines."
+        } else {
+          Write-Host "$opening Opening line(s) and $naming spin-field-naming line(s):"
+        }
+        $lines | ForEach-Object { Write-Host $_ }
+
+    - name: Upload the program's log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: accessibility-scan-program-log
+        path: ${{ runner.temp }}/a11y-profile/logs/
         if-no-files-found: warn
