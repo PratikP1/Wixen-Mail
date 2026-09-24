@@ -15,8 +15,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   says whether the contact has one, so a contact nobody gave a birthday is not saved with
   today's, and a No year check box leaves the year out; a birthday without a year is stored
   the way Google's already are, so it goes to Google, Outlook and address book servers as
-  before. A birthday an address book sent as something these controls cannot show is kept as
-  it was, untouched, while Birthday stays unticked.
+  before. A birthday these controls cannot show, such as one an address book sent as words or
+  one in a year before 1900 or after 2100, is kept as it was, untouched, while Birthday stays
+  unticked.
   Known limitations: nobody has heard the birthday's controls with a screen reader yet.
 
 - **A new library, for phone numbers.** `phonenumber` 0.3.10, a port of Google's

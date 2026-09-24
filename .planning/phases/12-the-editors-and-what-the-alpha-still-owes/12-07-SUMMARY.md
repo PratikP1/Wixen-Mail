@@ -112,7 +112,9 @@ Pratik's confirmation, quoted: "Use phonenumber. See if you can get around the b
 | `99ea1914` | green: the fills, the birthday, the checks, the Country list, three records | `affected`, 153 s |
 | `95a0a039` | red: a scan target for the Add Phone Number dialog | `red`, 140 s |
 | `52d1b633` | ci: the scan asks for it | `all`, 478 s |
-| this commit | docs: the pages, the ledger, the changelog, the summary, the marks | |
+| `074856b5` | docs: the pages, the ledger, the changelog, the summary, the marks | `docs_only`, 86 s |
+| `79b020d8` | red: two faults pull request #99's review found (3 named) | `red`, 107 s |
+| the green after it | green: an address added without its spaces, a birthday outside 1900 to 2100 kept as it was, three records re-measured | |
 
 `which-checks.sh` answered `all` for the build commit's staged paths before it was made, and its hook's mode line read `check.sh: mode all`. The first attempt at `8a360905` was refused by `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`: five records had arrived and the count at the top of `guards/guards.toml` said 262. It says 274 now, three raises for three batches of records.
 
@@ -178,6 +180,7 @@ Opened, both halves: 596 (the editor under NVDA), 597 (five name parts through a
 5. **A Birthday check box.** A date control always holds a date, so a contact with no birthday would have been saved with today's. A stored birthday the controls cannot show is kept as it was while the box stays unticked. Rule 2.
 6. **A phone-number scan target**, in `scan_target.rs`, `wx_app.rs` and the Accessibility workflow, so the Country list is read in the running program. Rule 2. The workflow line cost one full gate, `52d1b633`.
 10. **Every commit on the branch was first made with a `Co-Authored-By` line naming the assistant**, which this project's rules forbid; it was taken out of the ten messages with `git filter-branch --msg-filter`, which changed no tree (the tree listing's hash was `78c5a4bf` before and after), and the branch was pushed again. The hashes here are the rewritten ones. The pull request's first description carried the assistant's line too and was edited.
+11. **Two faults found by the pull request's review, fixed after the documents commit.** An address typed with spaces around it passed the shape check and was stored with them; it is now added trimmed (`an_address_to_add` replaces `an_address_refusal`). A stored birthday in a year the year control does not offer, 1815 for one, would have opened clamped to 1900 and been saved so; it is now kept as it was, like a birthday written as words. A third point, that `PhoneEntry.country` needs `serde(default)`, was checked and does not hold: the struct carries `#[serde(default)]`, and every stored list read in the cases has no `country` key. A fourth, about `.githooks/commit-msg`'s comments, is about `main`'s own history and not this branch. The summary and the changelog line on the birthday changed in that green commit, so the documents came in two commits.
 7. **Two records on `contact_names.rs` instead of one.** A split at the last space takes two edits; the two single-edit breaks are the middle names dropped (Hopper red) and the particles dropped (van der Berg red).
 8. **The address check lives in Add Email Address's OK**, where addresses are added, and adds a space or a colon to what it refuses. Rule 2.
 9. **Files outside the plan's list:** `contact_convert.rs` (the editor's conversion, three parts and a number's country both ways), `scan_target.rs`, `wx_app.rs`, `accessibility.yml`, `tests/theme_reach.rs` (the birthday text box gone, the middle name painted instead, the phone dialog's new return).

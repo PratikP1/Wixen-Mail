@@ -1606,8 +1606,14 @@ fn what_the_birthday_is(existing: Option<&str>) -> StoredBirthday {
     let Some(text) = existing.map(str::trim).filter(|text| !text.is_empty()) else {
         return StoredBirthday::Nothing;
     };
-    if chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").is_ok() {
-        return StoredBirthday::Date(text.to_string());
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d") {
+        use chrono::Datelike;
+        // A year the year control cannot hold is kept as text rather than
+        // clamped into range and saved as a different year.
+        return match (EARLIEST_YEAR..=LATEST_YEAR).contains(&date.year()) {
+            true => StoredBirthday::Date(text.to_string()),
+            false => StoredBirthday::Unread(text.to_string()),
+        };
     }
     // A leap year, so the twenty-ninth of February with no year is a day.
     let month_and_day = text

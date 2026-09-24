@@ -2184,7 +2184,7 @@ pub fn an_address_to_add(typed: &str) -> Result<String, String> {
         && !address.contains(|c: char| c.is_whitespace() || c == ':')
         && crate::application::links_in_text::is_an_address(address);
     match has_the_shape {
-        true => Ok(typed.to_string()),
+        true => Ok(address.to_string()),
         false => Err(format!(
             "The address {address} is not the shape of an email address. \
              An email address is written like name@example.com."

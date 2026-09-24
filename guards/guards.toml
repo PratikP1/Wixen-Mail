@@ -9796,7 +9796,7 @@ red = [
     "presentation::wx_item_form::tests::test_a_birthday_with_no_year_is_stored_as_the_marker_the_sync_writes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_item_form.rs", tests = 15 },
+    { file = "src/presentation/wx_item_form.rs", tests = 16 },
 ]
 
 # ── A doubted number is kept as typed on the second OK (T-12-25) ────────────
@@ -14845,7 +14845,7 @@ red = [
     "test_every_check_box_in_a_form_carries_its_own_label",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_item_form.rs", tests = 15 },
+    { file = "src/presentation/wx_item_form.rs", tests = 16 },
     { file = "tests/checkbox_labels.rs", tests = 1 },
 ]
 
@@ -29881,7 +29881,7 @@ red = [
     "test_every_typing_field_carries_its_name_to_a_reader_in_another_process",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_item_form.rs", tests = 15 },
+    { file = "src/presentation/wx_item_form.rs", tests = 16 },
     { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 
