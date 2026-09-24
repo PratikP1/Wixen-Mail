@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 278 records have arrived since and have not been through it.
+# 280 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30138,4 +30138,44 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 16 },
     { file = "tests/event_times_move_in_blocks.rs", tests = 16 },
+]
+
+# ── An account's own signature before the default (#43) ────────────────────
+#
+# The tester's rule: a signature assigned to an account is the one it uses,
+# and the default only where none is assigned. The break answers the default
+# first, so every account with a default set signs with it whatever it was
+# given.
+[[guard]]
+name = "an account's assigned signature is used before the default for everyone"
+file = "src/application/signatures.rs"
+before = '''    assigned.or(default_for_all)'''
+after = '''    default_for_all.or(assigned)'''
+red = [
+    "application::signatures::tests::test_an_assigned_signature_is_the_one_used",
+    "data::message_cache::signatures::tests::test_an_account_takes_its_assignment_before_the_default",
+    "data::message_cache::signatures::tests::test_the_pass_keeps_every_accounts_signature_and_one_default",
+]
+tests_last_seen = [
+    { file = "src/application/signatures.rs", tests = 13 },
+    { file = "src/data/message_cache/signatures.rs", tests = 11 },
+]
+
+# ── The pass gives every account the default it had (#43, T-12-31) ────────
+#
+# Before 2026-09-24 each account marked a default of its own. The pass turns
+# each into that account's assignment before it clears all marks but one.
+# The break writes no assignment, so every account but one loses the
+# signature it had to the one default kept.
+[[guard]]
+name = "the pass that makes signatures one set gives each account the default it had"
+file = "src/data/message_cache/signatures.rs"
+before = '''             SELECT account_id, id FROM signatures WHERE is_default = 1'''
+after = '''             SELECT account_id, id FROM signatures WHERE 0'''
+red = [
+    "data::message_cache::signatures::tests::test_the_pass_keeps_every_accounts_signature_and_one_default",
+    "data::message_cache::signatures::tests::test_the_pass_runs_once",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/signatures.rs", tests = 11 },
 ]

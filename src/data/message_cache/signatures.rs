@@ -1,11 +1,43 @@
-//! Signature persistence operations
+//! Signature persistence operations.
+//!
+//! Signatures are one set since 2026-09-24 (#43). A row's `account_id` says
+//! which account was active when it was written and nothing more; which
+//! account uses which signature is `signature_assignments`, one row per
+//! account, and the default for every account with none assigned is the one
+//! row with `is_default` set. Both writers are here, [`MessageCache::assign`]
+//! and [`MessageCache::set_the_default`], and the account's own dialog and
+//! the Signature Manager both call them, so the two surfaces read one answer.
 
 use super::{MessageCache, Signature};
+use crate::application::signatures::which_signature;
 use crate::common::{Error, Result};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Row, params};
+
+/// The columns [`signature_from`] reads, in its order.
+const SIGNATURE_COLUMNS: &str =
+    "id, account_id, name, content_plain, content_html, is_default, created_at";
+
+/// One row of `signatures`, selected through [`SIGNATURE_COLUMNS`].
+fn signature_from(row: &Row<'_>) -> rusqlite::Result<Signature> {
+    Ok(Signature {
+        id: row.get(0)?,
+        account_id: row.get(1)?,
+        name: row.get(2)?,
+        content_plain: row.get(3)?,
+        content_html: row.get(4)?,
+        is_default: row.get(5)?,
+        created_at: row.get(6)?,
+    })
+}
+
+/// The name under which the once-only pass that made signatures one set is
+/// recorded in `work_done_once`.
+const SIGNATURES_ARE_ONE_SET: &str =
+    "signatures made one set, each account keeping its own, 2026-09-24";
 
 impl MessageCache {
-    /// Create a new signature
+    /// Create a new signature. One written as the default is the default for
+    /// every account from then on, so it clears the mark on every other row.
     pub fn create_signature(&self, signature: &Signature) -> Result<()> {
         self.conn.execute(
             "INSERT INTO signatures (id, account_id, name, content_plain, content_html, is_default, created_at)
@@ -20,8 +52,8 @@ impl MessageCache {
         if signature.is_default {
             self.conn
                 .execute(
-                    "UPDATE signatures SET is_default = 0 WHERE account_id = ?1 AND id != ?2",
-                    params![&signature.account_id, &signature.id],
+                    "UPDATE signatures SET is_default = 0 WHERE id != ?1",
+                    params![&signature.id],
                 )
                 .map_err(|e| Error::Other(format!("Failed to update defaults: {}", e)))?;
         }
@@ -30,173 +62,197 @@ impl MessageCache {
 
     /// Get all signatures for an account
     pub fn get_signatures_for_account(&self, account_id: &str) -> Result<Vec<Signature>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached(
-                "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
-             FROM signatures WHERE account_id = ?1 ORDER BY name",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-
-        let signatures = stmt
-            .query_map(params![account_id], |row| {
-                Ok(Signature {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    name: row.get(2)?,
-                    content_plain: row.get(3)?,
-                    content_html: row.get(4)?,
-                    is_default: row.get(5)?,
-                    created_at: row.get(6)?,
-                })
-            })
-            .map_err(|e| Error::Other(format!("Failed to query signatures: {}", e)))?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::Other(format!("Failed to collect signatures: {}", e)))?;
-        Ok(signatures)
-    }
-
-    /// Get a specific signature by ID
-    pub fn get_signature(&self, signature_id: &str) -> Result<Option<Signature>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached(
-                "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
-             FROM signatures WHERE id = ?1",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-
-        let signature = stmt
-            .query_row(params![signature_id], |row| {
-                Ok(Signature {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    name: row.get(2)?,
-                    content_plain: row.get(3)?,
-                    content_html: row.get(4)?,
-                    is_default: row.get(5)?,
-                    created_at: row.get(6)?,
-                })
-            })
-            .optional()
-            .map_err(|e| Error::Other(format!("Failed to get signature: {}", e)))?;
-        Ok(signature)
-    }
-
-    /// Get the default signature for an account
-    pub fn get_default_signature(&self, account_id: &str) -> Result<Option<Signature>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached(
-                "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
-             FROM signatures WHERE account_id = ?1 AND is_default = 1",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-
-        let signature = stmt
-            .query_row(params![account_id], |row| {
-                Ok(Signature {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    name: row.get(2)?,
-                    content_plain: row.get(3)?,
-                    content_html: row.get(4)?,
-                    is_default: row.get(5)?,
-                    created_at: row.get(6)?,
-                })
-            })
-            .optional()
-            .map_err(|e| Error::Other(format!("Failed to get default signature: {}", e)))?;
-        Ok(signature)
-    }
-
-    /// Update a signature, and say how many rows that touched.
-    ///
-    /// The count matters, for the same reason it does on a label. Updating a
-    /// row that is not there is not an error in SQL, so a caller that creates
-    /// only when the update fails would never create anything.
-    pub fn update_signature(&self, signature: &Signature) -> Result<usize> {
-        let touched = self
-            .conn
-            .execute(
-                "UPDATE signatures
-             SET name = ?1, content_plain = ?2, content_html = ?3, is_default = ?4
-             WHERE id = ?5",
-                params![
-                    &signature.name,
-                    &signature.content_plain,
-                    &signature.content_html,
-                    &signature.is_default,
-                    &signature.id
-                ],
-            )
-            .map_err(|e| Error::Other(format!("Failed to update signature: {}", e)))?;
-
-        if signature.is_default {
-            self.conn
-                .execute(
-                    "UPDATE signatures SET is_default = 0 WHERE account_id = ?1 AND id != ?2",
-                    params![&signature.account_id, &signature.id],
-                )
-                .map_err(|e| Error::Other(format!("Failed to update defaults: {}", e)))?;
-        }
-        Ok(touched)
-    }
-
-    /// Delete a signature
-    pub fn delete_signature(&self, signature_id: &str) -> Result<()> {
-        self.conn
-            .execute(
-                "DELETE FROM signatures WHERE id = ?1",
-                params![signature_id],
-            )
-            .map_err(|e| Error::Other(format!("Failed to delete signature: {}", e)))?;
-        Ok(())
+        self.signatures_where("account_id = ?1", params![account_id])
     }
 
     /// Every signature, whichever account was active when it was written,
     /// ordered by name.
     pub fn get_every_signature(&self) -> Result<Vec<Signature>> {
-        Ok(Vec::new())
+        self.signatures_where("1", [])
+    }
+
+    fn signatures_where(
+        &self,
+        clause: &str,
+        values: impl rusqlite::Params,
+    ) -> Result<Vec<Signature>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT {SIGNATURE_COLUMNS} FROM signatures WHERE {clause} ORDER BY name"
+            ))
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        stmt.query_map(values, signature_from)
+            .map_err(|e| Error::Other(format!("Failed to query signatures: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect signatures: {}", e)))
+    }
+
+    /// Get a specific signature by ID
+    pub fn get_signature(&self, signature_id: &str) -> Result<Option<Signature>> {
+        self.one_signature_where("id = ?1", params![signature_id])
+    }
+
+    /// Get the default signature for an account
+    pub fn get_default_signature(&self, account_id: &str) -> Result<Option<Signature>> {
+        self.one_signature_where("account_id = ?1 AND is_default = 1", params![account_id])
+    }
+
+    fn one_signature_where(
+        &self,
+        clause: &str,
+        values: impl rusqlite::Params,
+    ) -> Result<Option<Signature>> {
+        self.conn
+            .prepare_cached(&format!(
+                "SELECT {SIGNATURE_COLUMNS} FROM signatures WHERE {clause}"
+            ))
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?
+            .query_row(values, signature_from)
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to get signature: {}", e)))
+    }
+
+    /// Update a signature's name and text, and say how many rows that touched.
+    ///
+    /// The count matters, for the same reason it does on a label. Updating a
+    /// row that is not there is not an error in SQL, so a caller that creates
+    /// only when the update fails would never create anything.
+    ///
+    /// Whether it is the default is not written here: that is
+    /// [`Self::set_the_default`]'s, the one writer of the mark.
+    pub fn update_signature(&self, signature: &Signature) -> Result<usize> {
+        self.conn
+            .execute(
+                "UPDATE signatures SET name = ?1, content_plain = ?2, content_html = ?3
+                 WHERE id = ?4",
+                params![
+                    &signature.name,
+                    &signature.content_plain,
+                    &signature.content_html,
+                    &signature.id
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update signature: {}", e)))
+    }
+
+    /// Delete a signature, and every assignment that named it, so the
+    /// accounts that used it take the default.
+    pub fn delete_signature(&self, signature_id: &str) -> Result<()> {
+        for statement in [
+            "DELETE FROM signature_assignments WHERE signature_id = ?1",
+            "DELETE FROM signatures WHERE id = ?1",
+        ] {
+            self.conn
+                .execute(statement, params![signature_id])
+                .map_err(|e| Error::Other(format!("Failed to delete signature: {}", e)))?;
+        }
+        Ok(())
     }
 
     /// Give an account a signature, or with `None` take its assignment away so
     /// it uses the default.
     pub fn assign(&self, account_id: &str, signature_id: Option<&str>) -> Result<()> {
-        let _ = (account_id, signature_id);
-        Ok(())
+        let written = match signature_id {
+            Some(signature_id) => self.conn.execute(
+                "INSERT INTO signature_assignments (account_id, signature_id) VALUES (?1, ?2)
+                 ON CONFLICT(account_id) DO UPDATE SET signature_id = excluded.signature_id",
+                params![account_id, signature_id],
+            ),
+            None => self.conn.execute(
+                "DELETE FROM signature_assignments WHERE account_id = ?1",
+                params![account_id],
+            ),
+        };
+        written
+            .map(|_| ())
+            .map_err(|e| Error::Other(format!("Failed to assign a signature: {}", e)))
     }
 
     /// The signature assigned to an account, if one is.
     pub fn assignment_for(&self, account_id: &str) -> Result<Option<String>> {
-        let _ = account_id;
-        Ok(None)
+        self.conn
+            .query_row(
+                "SELECT signature_id FROM signature_assignments WHERE account_id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read a signature assignment: {}", e)))
     }
 
     /// Make one signature the default for every account with none assigned,
     /// or with `None` leave no default at all.
     pub fn set_the_default(&self, signature_id: Option<&str>) -> Result<()> {
-        let _ = signature_id;
-        Ok(())
+        // `IS` rather than `=`, so `None` matches no row and clears them all.
+        self.conn
+            .execute(
+                "UPDATE signatures SET is_default = (id IS ?1)",
+                params![signature_id],
+            )
+            .map(|_| ())
+            .map_err(|e| Error::Other(format!("Failed to set the default signature: {}", e)))
     }
 
-    /// The signature an account's messages start with.
+    /// The signature an account's messages start with: its assignment, else
+    /// the default, else none.
     pub fn signature_for_account(&self, account_id: &str) -> Result<Option<Signature>> {
-        let _ = account_id;
-        Ok(None)
+        let default_for_all = self
+            .one_signature_where("is_default = 1", [])?
+            .map(|signature| signature.id);
+        match which_signature(self.assignment_for(account_id)?, default_for_all) {
+            Some(id) => self.get_signature(&id),
+            None => Ok(None),
+        }
     }
 
     /// Turn signatures kept per account into one set, once.
+    ///
+    /// Before 2026-09-24 each account could mark a signature of its own as
+    /// its default. Every such account is given that signature as its
+    /// assignment, where it has none, before any mark is cleared, so every
+    /// account keeps the signature it had; then the oldest mark is kept as
+    /// the default for everyone and the rest are cleared. One transaction,
+    /// recorded as done under [`SIGNATURES_ARE_ONE_SET`] in the same
+    /// transaction, so a pass that fails part way leaves nothing changed and
+    /// the next open tries again.
     pub fn make_signatures_one_set(&self) -> Result<()> {
-        let _ = SIGNATURES_ARE_ONE_SET;
-        Ok(())
+        let failed =
+            |e: rusqlite::Error| Error::Other(format!("Failed to make signatures one set: {}", e));
+        let pass = self.conn.unchecked_transaction().map_err(failed)?;
+        let already: bool = pass
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM work_done_once WHERE name = ?1)",
+                params![SIGNATURES_ARE_ONE_SET],
+                |row| row.get(0),
+            )
+            .map_err(failed)?;
+        if already {
+            return Ok(());
+        }
+        pass.execute(
+            "INSERT OR IGNORE INTO signature_assignments (account_id, signature_id)
+             SELECT account_id, id FROM signatures WHERE is_default = 1
+             ORDER BY created_at, id",
+            [],
+        )
+        .map_err(failed)?;
+        pass.execute(
+            "UPDATE signatures SET is_default = (id = (
+                 SELECT id FROM signatures WHERE is_default = 1 ORDER BY created_at, id LIMIT 1
+             ))
+             WHERE is_default = 1",
+            [],
+        )
+        .map_err(failed)?;
+        pass.execute(
+            "INSERT INTO work_done_once (name, done_at) VALUES (?1, ?2)",
+            params![SIGNATURES_ARE_ONE_SET, chrono::Utc::now().to_rfc3339()],
+        )
+        .map_err(failed)?;
+        pass.commit().map_err(failed)
     }
 }
-
-/// The name under which the once-only pass that made signatures one set is
-/// recorded in `work_done_once`.
-const SIGNATURES_ARE_ONE_SET: &str =
-    "signatures made one set, each account keeping its own, 2026-09-24";
 
 #[cfg(test)]
 mod tests {

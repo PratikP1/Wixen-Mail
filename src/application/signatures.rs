@@ -15,8 +15,7 @@
 /// The signature an account's messages start with: the one assigned to it,
 /// else the default for everyone, else none.
 pub fn which_signature<Id>(assigned: Option<Id>, default_for_all: Option<Id>) -> Option<Id> {
-    let _ = (assigned, default_for_all);
-    None
+    assigned.or(default_for_all)
 }
 
 /// What a change of From account does to the message being written.
@@ -40,8 +39,26 @@ pub enum Swap {
 /// it would lose what they wrote. The first place it stands is the one taken,
 /// since the composer puts the signature above anything it quotes.
 pub fn whether_to_swap(body: &str, was: &str, becomes: &str) -> Swap {
-    let _ = (body, was, becomes);
-    Swap::LeaveAlone
+    if was.is_empty() || was == becomes {
+        return Swap::LeaveAlone;
+    }
+    let Some(at) = body.find(was) else {
+        return Swap::LeaveAlone;
+    };
+    let end = at + was.len();
+    let (before, after) = (&body[..at], &body[end..]);
+    // A line or a tag ends before the block and another begins after it.
+    // Anything else is somebody's typing run into the block.
+    let starts_a_line = before
+        .chars()
+        .next_back()
+        .is_none_or(|c| matches!(c, '>' | '\n'));
+    let ends_a_line = after.chars().next().is_none_or(|c| matches!(c, '<' | '\n'));
+    if starts_a_line && ends_a_line {
+        Swap::ReplaceBlock(format!("{before}{becomes}{after}"))
+    } else {
+        Swap::LeaveAlone
+    }
 }
 
 #[cfg(test)]
