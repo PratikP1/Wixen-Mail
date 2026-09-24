@@ -45,6 +45,102 @@ fn expect_eq(name: &'static str, got: &str, want: &str, into: &mut Wrong) {
     }
 }
 
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn EnumChildWindows(
+        parent: isize,
+        callback: extern "system" fn(isize, isize) -> i32,
+        lparam: isize,
+    ) -> i32;
+    fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
+}
+
+/// winuser.h: `GWL_STYLE` and `WS_VISIBLE`.
+const GWL_STYLE: i32 = -16;
+const WS_VISIBLE: isize = 0x1000_0000;
+
+thread_local! {
+    static FOUND: std::cell::RefCell<Vec<isize>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+extern "system" fn collect(hwnd: isize, _lparam: isize) -> i32 {
+    FOUND.with(|found| found.borrow_mut().push(hwnd));
+    1
+}
+
+fn win32_text(hwnd: isize, read: unsafe extern "system" fn(isize, *mut u16, i32) -> i32) -> String {
+    let mut buffer = [0u16; 512];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { read(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+/// The letter a label claims, when it claims one; `&&` is a literal ampersand,
+/// the rule Windows follows.
+fn alt_key_of(label: &str) -> Option<char> {
+    let mut chars = label.chars();
+    while let Some(c) = chars.next() {
+        if c == '&' {
+            match chars.next() {
+                Some('&') => continue,
+                Some(letter) if letter.is_alphanumeric() => {
+                    return Some(letter.to_ascii_lowercase());
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Every letter more than one control on the page as it stands claims.
+///
+/// Read from the dialog's own windows: every label and button that is
+/// showing, which is what the keyboard can reach at once. A page shows a
+/// third of what the dialog builds, so reading the source finds clashes no
+/// person can meet; `tests/wired.rs` leaves this dialog to this reading for
+/// that reason. Hidden windows keep their text, so a control is counted only
+/// when its own visible style is set, the flag `Show` sets.
+fn letters_claimed_twice(dialog: &Dialog) -> Vec<String> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumChildWindows(dialog.get_handle() as isize, collect, 0) };
+    let windows = FOUND.with(|found| found.borrow().clone());
+    let mut claimed: std::collections::BTreeMap<char, Vec<String>> = Default::default();
+    for hwnd in windows {
+        // SAFETY: a window this thread just enumerated.
+        let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
+        let class = win32_text(hwnd, GetClassNameW);
+        if style & WS_VISIBLE == 0 || !(class == "Static" || class == "Button") {
+            continue;
+        }
+        let label = win32_text(hwnd, GetWindowTextW);
+        if let Some(letter) = alt_key_of(&label) {
+            claimed.entry(letter).or_default().push(label);
+        }
+    }
+    claimed
+        .into_iter()
+        .filter(|(_, labels)| labels.len() > 1)
+        .map(|(letter, labels)| {
+            format!(
+                "Alt+{} on {}",
+                letter.to_ascii_uppercase(),
+                labels.join(" and ")
+            )
+        })
+        .collect()
+}
+
+fn expect_every_letter_its_own(name: &'static str, w: &AccountEditWidgets, into: &mut Wrong) {
+    let twice = letters_claimed_twice(&w.dialog);
+    if !twice.is_empty() {
+        into.push((name, format!("letters claimed twice: {}", twice.join("; "))));
+    }
+}
+
 fn pop_account(name: &str, email: &str) -> Account {
     Account {
         protocol: Protocol::Pop3.as_str().to_string(),
@@ -142,6 +238,7 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             expect_shown("identity page: Back hidden", &w.back, false, &mut wrong);
             expect_shown("identity page: OK hidden", &w.ok, false, &mut wrong);
             expect_shown("identity page: Cancel shown", &w.cancel, true, &mut wrong);
+            expect_every_letter_its_own("identity page: Alt letters", &w, &mut wrong);
 
             // ── Next moves to the connection page, showing only what this
             // ── IMAP, password-signed-in account uses. ─────────────────────
@@ -253,6 +350,11 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             expect_shown("connection page: Back shown", &w.back, true, &mut wrong);
             expect_shown("connection page: OK shown", &w.ok, true, &mut wrong);
             expect_shown("connection page: Cancel shown", &w.cancel, true, &mut wrong);
+            expect_every_letter_its_own(
+                "connection page, IMAP and a password: Alt letters",
+                &w,
+                &mut wrong,
+            );
 
             // ── Back returns to the identity page, hiding every connection
             // ── field again, not only the ones this account happened to use.
@@ -303,6 +405,11 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                 true,
                 &mut wrong,
             );
+            expect_every_letter_its_own(
+                "POP account, connection page: Alt letters",
+                &w,
+                &mut wrong,
+            );
 
             // ── An account that signs in through the browser has no
             // ── password box on its connection page. ────────────────────
@@ -319,6 +426,11 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                 "OAuth account, connection page: password hidden",
                 &w.pass_f,
                 false,
+                &mut wrong,
+            );
+            expect_every_letter_its_own(
+                "OAuth account, connection page: Alt letters",
+                &w,
                 &mut wrong,
             );
 
