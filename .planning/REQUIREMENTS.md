@@ -5233,7 +5233,9 @@ The two plans moved from phase 11 keep their ids there: LIST-19 (12-02) and LIST
 FOUND-20 (12-01) sits under phase 9's section beside FOUND-19. Added 2026-09-23: FOUND-22
 (12-03.1) sits there too, and 12-03.1 also carries FOUND-20 again, whose product half the
 NVDA workflow reopened on the push of `26beb051` and `6cb8f17c`. Added later the same day:
-FOUND-23 (12-03.2), the gate's changes, sits there beside them.
+FOUND-23 (12-03.2), the gate's changes, sits there beside them. Added 2026-09-24:
+12-06.1 carries EDIT-01 again, whose first `[D]` line 12-06 met in a test process and not
+in the running program, with three `[D]` lines of its own under EDIT-01.
 
 Nothing here has met a real provider except through the tester's Gmail account. Each
 requirement's last `[S]` line says what only his ear, his reader, his account, the runner or
@@ -5462,6 +5464,22 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
   - [D] The twelve ledger entries marked fixed on the reading in both halves; the pages say
     which numbers are spin controls and how they are worked; #73 and #35 closed (12-06,
     task 3).
+  - [D] Each naming call's outcome is logged at warn with the thread, the COM apartment, the
+    annotation service's creation result, the field's handle and class, each write's result,
+    the name read back inside the program and whether the field is still the live one once
+    the dialog is up; the Accessibility scan uploads the program's own log and prints those
+    lines, with one scan target that reads nothing inside the program as the control. Not
+    test-first, on Pratik's exception of 2026-09-24 for these lines only (12-06.1, task 1).
+  - [D] The cause is named from that scan run as one row of 12-06.1's table, with the
+    evidence for each target quoted, and a test that reproduces the program's condition,
+    reading the field only from another process and the way the scan reads it, was red
+    before the fix and is green after it, so the reading sees what the scan sees (12-06.1,
+    tasks 2 and 3; ledger 593).
+  - [D] The Accessibility scan on 12-06.1's pull request, on the tree that merges, reads the
+    arrows' words on every spin control's typing field it walks, on MSAA and on UI
+    Automation at the field's own handle; the twelve spinner entries among ledger 408 to 425
+    fixed on that run; after the fix a failure to name a field is said at warn and nothing
+    else from the diagnosis remains (12-06.1, tasks 3 and 4).
   - [S] A field and its arrows heard with one name, the values said after Up and Down, and
     Mark read after's three entries are the tester's ear; the twelve findings gone from the
     scan is the next push.
@@ -5496,8 +5514,12 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     (the unnamed Favourite checkbox) is fixed in 165fd811 with #42; points 1 to 4 and 6 are
     later phases and this issue stays open for them."
   - [D] `application::contact_names` with `guess_parts` and `compose` over titles, suffixes
-    and particles, the Hopper and van der Berg cases; `application::phone_countries` with
-    every calling code and `with_country`; `name_prefix`, `middle_name` and `name_suffix`
+    and particles, the Hopper and van der Berg cases; `application::phone_numbers` over
+    `phonenumber` 0.3.10, which Pratik confirmed on 2026-09-24, the one file naming the crate
+    and routing around its four measured defects,
+    after a `build(12-07)` commit holding the manifest, the lock file and the census alone
+    (his answer of 2026-09-23; `application::phone_countries` with every calling code and
+    `with_country` until then); `name_prefix`, `middle_name` and `name_suffix`
     as columns through `ensure_column_exists` and fields on `ContactEntry`; vcard `N` with
     five parts; `GoogleName` with `honorific_prefix`, `middle_name`, `honorific_suffix`;
     the Graph contact with `title`, `middle_name`, `generation`; each carried both ways
@@ -5505,14 +5527,19 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
   - [D] The editor's Prefix and Suffix as `ComboBox`es with room to type, Middle name, the
     birthday through `build_date_fields` with a no-year position stored as `YEAR_LEFT_OUT`,
     the fills each way guarded by per-field typed flags, an address checked by
-    `is_an_address` and a number by `looks_like_a_number` with a country choice beside it,
+    `is_an_address`, and a number in the Add Phone Number dialog read by `phone_numbers::read`
+    against its own code or the country chosen beside it, saved in its country's grouping, a
+    doubted one kept as typed on a second OK and only a text with no digit refused
+    (`looks_like_a_number` until 2026-09-23),
     every new control named on both channels; a reading in
     `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` drives the
     built editor and reads the Favourite box over MSAA (12-07, task 2).
   - [S] The tab heard in order, the fill heard after a name, the no-year position and a
     refusal are the tester's ear; a contact with five name parts round-tripping through
     Google is his account's; whether a phone-number library is wanted beyond the digit rule
-    is Pratik's.
+    was Pratik's, and he answered on 2026-09-23 that it is, for per-country checking and
+    formatting, and confirmed `phonenumber` 0.3.10 on 2026-09-24; the Country entries and a
+    doubted number's sentence heard are the tester's ear.
 
 - [ ] **EDIT-03**: Event, task and reminder times move in 15, 30 or 60 minute blocks from a
   setting, a new item starts at the next boundary with a default length, the end follows the
@@ -5565,16 +5592,20 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
   - [D] `application::signatures::which_signature` (the assignment, else the default, else
     none) and `whether_to_swap` (only a block still equal to the previous signature);
     `signature_assignments` as a new table; `get_every_signature`, `assign`,
-    `assignment_for`, `set_the_default` clearing every other row, `signature_for_account`;
+    `assignment_for`, `set_the_default` setting one row and clearing every other or, since
+    Pratik's answer of 2026-09-23, clearing every row, `signature_for_account`;
     `make_signatures_one_set` once under a marker writing an assignment for every account
     that had a default before clearing all but the oldest (12-09, task 1).
   - [D] The manager over the whole set with a Used by column and one Default box meaning for
-    everyone; "Signature:" as a `Choice` on the account's own edit dialog with "Use the
-    default" first; compose opening with the From account's signature and swapping the
+    everyone; "Signature for this account:" as a `Choice` on the account's own edit dialog
+    with "Use the default" first, naming it ("Signature:" until 2026-09-23), and, on Pratik's
+    answer that day, the signature editor's check boxes choosing the accounts that use it,
+    both writing one assignment through `assign`, each showing what the other chose; compose opening with the From account's signature and swapping the
     block on a From change only while untouched, said at Normal; a reading in
     `tests/a_signature_follows_the_from_account.rs` (12-09, task 2).
-  - [S] The manager's columns, the choice and the sentence on a From change are the tester's
-    ear; where the choice reads better by ear is his.
+  - [S] The manager's columns, the choice, the account boxes and the sentence on a From change
+    are the tester's ear; where the choice reads better by ear was his, and Pratik answered on
+    2026-09-23 that it is made in both places, one setting reachable from both.
 
 - [ ] **EDIT-05**: The Label submenu shows the account's labels by their current names in a
   stored order with the key beside each, leads to a manager that creates, edits and orders

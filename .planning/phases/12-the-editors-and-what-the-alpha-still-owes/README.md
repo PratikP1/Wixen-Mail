@@ -1,6 +1,6 @@
 # Phase 12: The editors, and what the alpha still owes
 
-Fifteen plans, one per wave. Twelve at first, two moved in from phase 11 and ten written on
+Sixteen plans, one per wave. Twelve at first, two moved in from phase 11 and ten written on
 2026-09-20 against `main` at `0ad66e48`, version `1.0.0-alpha.1`,
 `guards/guards.toml` holding 1,029 records by the TOML reader (the census
 lines at `guards.toml:83-84` say 798 swept and 231 since), `.planning/WINDOWS.md`
@@ -34,6 +34,21 @@ race of ledger 374, carries FOUND-23, and moved 12-04 and every plan
 after it down one wave, 12-12 ending at wave 15. From its merge on, a
 merge into `main` runs what the branch's diff earns, and 12-12 runs the
 whole suite once for the phase (its task 3).
+The sixteenth, 12-06.1, was inserted at wave 10 on 2026-09-24 against
+`01dfbe28`, after the Accessibility scan on 12-06's pull request (#97,
+runs 35927025769 and 35930014324) read the running program and found
+every spin control's typing field as it was before 12-06: unnamed in
+the event form and Send Later, named by the label before it in Settings
+and the account editor, while 12-06's readings, in a test process and
+from a second one, were green. Pratik split it out and approved, as an
+exception to test-first for the diagnostic lines only, logging each
+naming call's outcome at warn and having the scan upload the program's
+log ("Split it + followup with logging level changes that you
+recommended"). 12-06.1 reads the cause from one scan run, reproduces it
+in a test that fails first, fixes it, and closes the twelve spinner
+entries among ledger 408 to 425 and ledger 593 on its own pull request's
+scan. It carries EDIT-01 again and moved 12-07 and every plan after it
+down one wave, 12-12 ending at wave 16.
 Phase 11 closed on 2026-09-20 with twenty-nine of its thirty-one plans
 merged and two deferred to the front of this phase on Pratik's decision
 under his token budget. This is the fifth of the seven groups he agreed on
@@ -118,12 +133,13 @@ carry `version 2` on his word and belong to no phase here.
 | 12-04 | 7 | 4 (but its Send Feedback clause) | #78 | advances to its last point | the copyright line naming Pratik Patel and the Wixen Project with other contributors under MIT, LICENSE in step and held by a reading; the full version kept; wixen.app and wixen.app/support as controls named by their address, the kind chosen by a reading over MSAA; no dead button; neither the dialog nor the guide says whether the site is up (Pratik, 2026-09-23) |
 | 12-05 | 8 | 5, and 4's last clause | #64, #71 third point, #78 point 4 | closes all three | Help, Send Feedback on `Ctrl+Shift+F`: six categories, the questions that fit, the includes with the log excerpt ticked by default and redacted, the reply address, the exact payload shown before Send; an email from the default account to support@wixen.app through the one queued-row path and the one gate; no account or forbidden said with the clipboard and the GitHub page as doors; since 2026-09-23 security through the same path and gate to an address of its own, `security@wixen.app` (the planner's name for it, Pratik's to correct), its log excerpt unticked and its subject bare, with the private reporting page beside Send (it read "security to the private page only" until then); the alpha page saying a report bounces until public testing; About's button; the scan target; the privacy page's two rows |
 | 12-06 | 9 | 6 | #73, #35 | closes both; twelve ledger entries fixed | `name_the_spin_control` naming the typing field through the annotation service on every spin control in the tree, a reading over MSAA on four built dialogs; the check interval 1..=60, Font size 8..=72, Default reminder 0..=1440 as spin controls; Mark read after a three-way choice with a seconds spin |
-| 12-07 | 10 | 7 | #40 points 1 to 4 | closes | prefix, middle name and suffix as columns, fields and each provider's own field both ways; `contact_names::guess_parts` and `compose` with the Hopper and van der Berg cases; the fills each way that never overwrite a typed field; the birthday as the three-control date with a no-year position; an address checked by 11-10.1's rule, a number kept as typed with a country beside it; the Favourite box re-read over MSAA |
-| 12-08 | 11 | 8 | #41 | closes | `time_blocks` pure at every boundary; the setting on the Calendar and PIM tab, 30 by default, read on use; Up and Down by the block and Left and Right by a minute on the minute control in all three editors, measured first where the key arrives; a new item on the next boundary with its end one block later, the end following the start until edited |
-| 12-09 | 12 | 9 | #43 | closes | signatures as one set with an assignment table and a once-only pass that keeps every account's default; the manager over the set with a Used by column and one Default box; the choice on the account's own dialog; compose taking the From account's signature and swapping the block on a From change only when untouched |
-| 12-10 | 13 | 10 | #48 | closes | a position column with a pass numbering rows in the order they were shown; the submenu rebuilt from the account's labels with their keys and Edit Labels at its end; the manager with Move Up and Down through the reordering rule and a Key column; one word, Label; the disagreement between the menu and the keys fixed and named |
-| 12-11 | 14 | 11 | #65 | advances to the decisions | the design under `docs/plans/`: what exists, the free and pro line as a table, the offline key, the seam, the lapse, the prices as decided, the merchant table carried whole, the decisions table for Pratik; nothing in the product |
-| 12-12 | 15 | 12 | all eleven | closes the phase | the pages, the listening lines from item 84, the closing read over the coverage blocks in one pass, the four planning files told; since 2026-09-23 (12-03.2), the phase's full gate once, `scripts/check.sh all` by hand before its merge, a red one fixed on its branch as a red and green pair on Pratik's answer to decision 14 |
+| 12-06.1 | 10 | 6, reopened | #73, #35 | closes both once the scan reads the names; the twelve spinner entries among ledger 408 to 425 and 593 fixed | inserted 2026-09-24 after the Accessibility scan on 12-06's pull request found the typing fields as before in the running program while 12-06's readings were green: each naming call's outcome logged at warn and the program's log uploaded and printed by the scan, on Pratik's exception to test-first of that day for those lines only, with one scan target that reads nothing inside the program as the control; the cause read from one scan run as one row of the plan's table, or a stop with the evidence; a test reproducing the program's condition, reading the field only from another process and the way the scan reads, red and then green on the fix; the scan on the pull request reading the words on MSAA and on UI Automation at the field's own handle; after the fix, a failure to name a field said at warn and the rest of the diagnosis gone; EDIT-01 |
+| 12-07 | 11 | 7 | #40 points 1 to 4 | closes | prefix, middle name and suffix as columns, fields and each provider's own field both ways; `contact_names::guess_parts` and `compose` with the Hopper and van der Berg cases; the fills each way that never overwrite a typed field; the birthday as the three-control date with a no-year position; an address checked by 11-10.1's rule; since Pratik's answer of 2026-09-23 a number read by its country and formatted as that country writes it through `phonenumber` 0.3.10 behind `application::phone_numbers`, which he confirmed on 2026-09-24 and whose four measured defects the module routes around ("a number kept as typed with a country beside it" until then); the Favourite box re-read over MSAA |
+| 12-08 | 12 | 8 | #41 | closes | `time_blocks` pure at every boundary; the setting on the Calendar and PIM tab, 30 by default, read on use; Up and Down by the block and Left and Right by a minute on the minute control in all three editors, measured first where the key arrives; a new item on the next boundary with its end one block later, the end following the start until edited |
+| 12-09 | 13 | 9 | #43 | closes | signatures as one set with an assignment table and a once-only pass that keeps every account's default; the manager over the set with a Used by column and one Default box; the choice on the account's own dialog and, since Pratik's answer of 2026-09-23, in the manager's signature editor, one stored assignment both show; compose taking the From account's signature and swapping the block on a From change only when untouched |
+| 12-10 | 14 | 10 | #48 | closes | a position column with a pass numbering rows in the order they were shown; the submenu rebuilt from the account's labels with their keys and Edit Labels at its end; the manager with Move Up and Down through the reordering rule and a Key column; one word, Label; the disagreement between the menu and the keys fixed and named |
+| 12-11 | 15 | 11 | #65 | advances to the decisions | the design under `docs/plans/`: what exists, the free and pro line as a table, the offline key, the seam, the lapse, the prices as decided, the merchant table carried whole, the decisions table for Pratik; nothing in the product |
+| 12-12 | 16 | 12 | all eleven | closes the phase | the pages, the listening lines from item 84, the closing read over the coverage blocks in one pass, the four planning files told; since 2026-09-23 (12-03.2), the phase's full gate once, `scripts/check.sh all` by hand before its merge, a red one fixed on its branch as a red and green pair on Pratik's answer to decision 14 |
 
 Requirement coverage: FOUND-20 by 12-01; LIST-19 by 12-02 (with 11-11.1);
 LIST-11 by 12-03; ALPHA-01 by 12-04; ALPHA-02 by 12-05; EDIT-01 by 12-06;
@@ -135,7 +151,10 @@ closed by their plans and their `[S]` lines are a sweep's and the
 runner's. Added later on 2026-09-23: FOUND-23 by 12-03.2, seven of its
 eight `[D]` lines; the eighth is 12-12's full gate (its task 3), so
 12-12's list names FOUND-23, and its `[S]` line is that run and the
-stage lines the plans after 12-03.2 print.
+stage lines the plans after 12-03.2 print. Added 2026-09-24: EDIT-01
+again by 12-06.1, whose first `[D]` line 12-06 met in a test process and
+not in the running program; 12-06.1 adds three `[D]` lines of its own to
+it.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
@@ -189,6 +208,11 @@ with them added no two plans here are disjoint. The order:
 - **The spin controls sixth** (12-06), the first of the group, because
   the helper it writes names every spinner in the tree and 12-07 and
   12-08 add spinners that go through it.
+- **The typing field's name, inserted 2026-09-24** (12-06.1), straight
+  after 12-06 and before the two editors, because every spin control
+  12-07 and 12-08 add goes through the helper whose second half the scan
+  found missing from the running program, and each would arrive with the
+  same defect.
 - **The contact editor seventh** (12-07), the group's largest, on the
   helper.
 - **Event times eighth** (12-08), on the same item form 12-07 changed
@@ -264,6 +288,14 @@ with them added no two plans here are disjoint. The order:
    country chosen beside it from a full calling-code table in the tree;
    no phone-number library, because that is a new dependency and the
    tester's words were a question, listed below for him.
+   **Overruled 2026-09-23 by Pratik's answer to Decisions for Pratik
+   6**: per-country checking and formatting through a phone-number
+   library, behind `application::phone_numbers`, the calling-code table
+   replaced by the library's metadata and the country names taken from
+   Windows in its display language; a doubted number is kept as typed on
+   a second OK and only a text with no digit is refused. 12-07's audit
+   recommended `phonenumber` 0.3.10 and he confirmed it on 2026-09-24,
+   item 17 below.
 10. **The check box the brief calls #40's point 6 is the Favourite box
     fixed in `165fd811`**, named outright since 2026-09-16; 12-07 reads
     its MSAA name on the built dialog so the record carries a
@@ -280,7 +312,12 @@ with them added no two plans here are disjoint. The order:
     and shown in the manager's Used by column, on the settings rule that
     a fact about one account is looked for where the account is; the
     issue offered either place "whichever reads better by ear", which is
-    the tester's to say.
+    the tester's to say. **Overruled 2026-09-23 by Pratik's answer to
+    Decisions for Pratik 8**: both places, one setting reachable from
+    both. The account's dialog keeps the choice, and a signature's editor
+    in the manager ticks the accounts that use it and sets or clears the
+    default, both writing the one stored assignment, with a reading that
+    what either sets is what the other shows next time it opens.
 14. **The signatures pass writes an assignment for every account that
     had a default before it clears any**, so nothing an account had
     changes, and one default remains, the oldest; the version does not
@@ -300,6 +337,29 @@ with them added no two plans here are disjoint. The order:
 18. **12-12 counts the ticks in the roadmap's plan list against the
     progress row**, the check `CLAUDE.md`'s completion-marks paragraph
     wants and does not have, by hand, and reports drift.
+19. **The phone dialog's country names are Windows' own and its default
+    is the home region** (added 2026-09-23 with Pratik's answer to
+    Decisions for Pratik 6): the library carries no names, Windows gives
+    them in its display language, which is how this tree already takes
+    month and day names, and the home region is the setting Windows calls
+    Country or region; the three regions Windows does not name are shown
+    by their code. The address sub-dialog's own English list is left as
+    it is, and 12-07 files it for version 2.
+20. **The signature letters are F and U** (added 2026-09-23 with
+    Pratik's answer to Decisions for Pratik 8): "Si&gnature:" would have
+    claimed the account dialog's G, which "&Get an app password in your
+    browser" holds, and every letter of "Signature" is taken there, so
+    the choice reads "Signature &for this account:"; the signature
+    editor's account boxes sit under "&Use for these accounts:".
+21. **A phone number is saved in its international form, and
+    `atomic-polyfill` is accepted by name** (added 2026-09-24, the
+    defaults for the two questions of Decisions for Pratik 17 he did not
+    answer when he confirmed the package): the form is the plan's own,
+    "+44 121 234 5678", because the number goes to three providers and
+    means the same wherever it is read, and he did not object;
+    RUSTSEC-2023-0089 goes into `.cargo/audit.toml` with a reason and an
+    exit condition, as `paste` did, so that a new warning stands out.
+    Both are his to overrule.
 
 ## What the tree contradicted in the issues and the brief
 
@@ -365,7 +425,7 @@ are rewritten in place, and every plan quotes the count before and after.
 New readings go in new integration targets at zero records, each with a
 record whose `suite` names it, or in new modules at zero records
 (`about`, `feedback_report`, `this_machine`, `wx_feedback`,
-`contact_names`, `phone_countries`, `time_blocks`, `signatures`,
+`contact_names`, `phone_numbers` (`phone_countries` until 2026-09-23), `time_blocks`, `signatures`,
 `status_sentences`, `page_window`). Where a plan must add a test to a
 named file (`paths.rs` 1 record, `wx_item_form.rs` 1, `tags.rs` 2,
 `names.rs` 0), the red trailer names the count check bare.
@@ -484,15 +544,18 @@ plan rather than restated per task:
 Each requirement's last `[S]` line names it, and none of it is claimed by
 any plan. The runner: the corrected case green at the next push (12-01);
 the accessibility scan walking About, Send Feedback and the page window,
-and the twelve spinner findings gone (12-04, 12-05, 12-02, 12-06). The
+and the twelve spinner findings gone (12-04, 12-05, 12-02, 12-06; since
+2026-09-24 12-06.1, whose own pull request's scan is where they close). The
 tester's ear: the separate window's title and links (12-02); the bar read
 on its own under the new wording (12-03); the two About controls (12-04);
 the feedback dialog's category, questions, excerpt box and payload
 (12-05); a spin control's field and arrows heard with one name and Mark
 read after's three entries (12-06); the contact tab in order, the fill
-heard after a name, the no-year position (12-07); a time's value after Up
+heard after a name, the no-year position, the phone dialog's Country
+entries and a doubted number's sentence (12-07); a time's value after Up
 and after Left, the end heard following (12-08); the manager's Used by
-column and the sentence on a From change (12-09); the submenu's items
+column, the signature editor's account boxes and the sentence on a From
+change (12-09); the submenu's items
 with their keys and a move said (12-10). The account and the mailboxes:
 a report from a real account arriving at support@wixen.app, and one at
 the security address, `security@wixen.app` unless he names another,
@@ -561,12 +624,26 @@ Listed here rather than decided, each with what the plans do meanwhile.
    a full calling-code table in the tree; whether a phone-number library
    (a new dependency, which needs the package gate) is wanted for more
    than that is his.
+   **Answered 2026-09-23: yes, per-country checking and formatting
+   through a phone-number library**, because internationalisation is
+   planned and whatever is chosen now is the first piece of version 2's
+   system rather than a point fix. 12-07's `<package_legitimacy_audit>`
+   compares five crates and Windows' own formatter, recommends
+   `phonenumber` 0.3.10, and asked three questions, item 17 below, which
+   he answered on 2026-09-24. Decision 9 above is rewritten to match.
 7. **Whether #40's remaining points are the four** the issue body
    numbers, the check box being the fifth and fixed; the brief and the
    phase 9 table say "1 to 4 and 6".
 8. **Where an account's signature is chosen** (12-09 puts the choice on
    the account's own dialog and shows it in the manager); the issue
    offered either "whichever reads better by ear", which is his ear.
+   **Answered 2026-09-23: both places, one setting reachable from
+   both.** 12-09 keeps the choice on the account's dialog and adds it to
+   the Signature Manager, where a signature's editor ticks the accounts
+   that use it and its Default box sets or clears the default, all
+   writing the one stored assignment, with a reading that what either
+   sets is what the other shows the next time it opens. Decision 13
+   above is rewritten to match.
 9. **The pro licence's decisions**, the table in 12-11's document: the
    free and pro line; whether several accounts are gated at all; the
    merchant (Paddle recommended, undecided); online revocation; how long
@@ -633,12 +710,30 @@ Listed here rather than decided, each with what the plans do meanwhile.
     applies to every file the program compiles in, the date catalogue
     included. 12-03.2's task 5 closes 373 in both halves with its green
     commit.
+17. **The phone-number package, the saved form, and the one new audit
+    warning** (added 2026-09-23 with 12-07's audit, from his answer to
+    item 6). Asked with 12-07's audit on 2026-09-23: whether
+    `phonenumber` 0.3.10 is the package (or `rlibphonenumber` 2.2.12, or
+    neither); whether a number is saved internationally in its country's
+    grouping, "+44 121 234 5678", which 12-07 builds unless he says
+    otherwise, or nationally with the country beside it; and whether
+    `cargo audit`'s one new unmaintained warning, `atomic-polyfill`, a
+    crate never compiled for Windows, is left printing or accepted by
+    name as `paste` was. **Answered 2026-09-24: "Use phonenumber. See if
+    you can get around the bug."** The package is confirmed, so 12-07
+    carries no checkpoint. He left the other two, and the defaults taken
+    that day are decision 21 above: the international form, and
+    `atomic-polyfill` accepted by name. The bug was measured the same day
+    outside the repository and routed around, with three more defects
+    found beside it; 12-07's `<decisions>` has the four routes and its
+    audit the 102 rows.
 
 ## Estimates, and the factor behind them
 
 `raw_tokens` is 30,000 per work task, the projection shape phases 6 to 11
 used, with 120,000 on the three largest (12-03, 12-05, 12-07) as phase 11
-did for its largest. `tokens` is that multiplied by **0.32**, the mean of
+did for its largest; 12-07's rose to 150,000 and 12-09's from 90,000 to
+105,000 on 2026-09-23, for Pratik's answers to decisions 6 and 8. `tokens` is that multiplied by **0.32**, the mean of
 `actuals.tokens / estimate.raw_tokens` over the twenty-nine landed plans of
 phase 11, read 2026-09-20 from each plan's `estimate` block and each
 summary's `actuals` block: 0.076, 0.199, 0.412, 0.234, 0.275, 0.151,
@@ -652,7 +747,10 @@ Phase 11's README gave 0.43 over phase 10's ten; phase 11 ran under it.
 `gsd-tools query estimate-calibration` answers `factor: 1, sample_count:
 0` on this project, so the factor is taken by hand from the files and
 said here. The two moved plans' `tokens` were re-projected at this
-factor from their unchanged `raw_tokens`.
+factor from their unchanged `raw_tokens`. 12-06.1, inserted 2026-09-24,
+is four tasks at 30,000, 120,000 raw and 38,400 at the same factor; most
+of its time is two scan runs of about twelve minutes each and two commits
+that earn the whole gate.
 
 ## What is owed to documents, and who does it
 
@@ -681,7 +779,9 @@ factor from their unchanged `raw_tokens`.
    read ticks"); 12-12 re-reads every name in one pass and stands or
    corrects each tick.
 6. **The ledger.** Each plan adds entries by hand for what it could not
-   settle, both halves; 12-02 fixes 566; 12-06 fixes twelve.
+   settle, both halves; 12-02 fixes 566; 12-06 was to fix twelve, and
+   they were reopened on 2026-09-23 when the scan found the fields as
+   before; 12-06.1 fixes them on its pull request's scan.
 7. **The pages.** Each plan writes the rows and paragraphs its keys and
    settings owe on `docs/KEYBOARD_SHORTCUTS.md`, `docs/USER_GUIDE.md`,
    `docs/ALPHA_TESTING.md` and `docs/privacy.md` in its own commits;
@@ -735,7 +835,10 @@ rest stand as written. **And later still on 2026-09-23:** he answered
 items 1 to 4, the four 12-04 and 12-05 needed, and both plans carry the
 answers, so neither asks before building; the one name he left open,
 the security address, is `security@wixen.app` until he corrects it.
-Items 5 to 11 stand as written.
+Items 5 to 11 stood as written until later on 2026-09-23, when he
+answered 6 and 8 (12-07's phone library, 12-09's two places) and item 17
+was added for 12-07's package, which he answered on 2026-09-24; 5, 7 and
+9 to 11 stand as written.
 
 **Twelve staged skill updates** from the observation review of
 2026-09-20 sit uninstalled outside this repository, under the workspace's

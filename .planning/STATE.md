@@ -11,7 +11,7 @@ state_head: 8f57f80e
 progress:
   total_phases: 17
   completed_phases: 0
-  total_plans: 171
+  total_plans: 172
   completed_plans: 165
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
@@ -29,11 +29,21 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 12 (The editors, and what the alpha still owes). Current plan 9 of 15: 12-01, 12-02,
-12-02.1, 12-03, 12-03.1, 12-03.2, 12-04, 12-05 and 12-06 complete, **12-07 next**. Until
+Phase: 12 (The editors, and what the alpha still owes). Current plan 9 of 16: 12-01, 12-02,
+12-02.1, 12-03, 12-03.1, 12-03.2, 12-04, 12-05 and 12-06 complete, **12-06.1 next**, then 12-07. Until
 2026-09-23, after 12-04, this line read "Current plan 5 of 15 ... 12-03.2 next, then 12-04",
 which 12-03.2 had left as it was; after 12-05 it read "Current plan 7 of 15 ... 12-05 next";
 after 12-06 it read "Current plan 8 of 15 ... 12-06 next".
+
+**12-06.1 inserted at wave 10 on 2026-09-24**, against `01dfbe28`. The Accessibility scan
+on 12-06's pull request read the running program and found every spin control's typing
+field as before, while 12-06's readings in a test process were green. Pratik split the
+naming out and approved, as an exception to test-first for the diagnostic lines only,
+logging each naming call's outcome at warn and having the scan upload the program's log.
+The plan reads the cause from one scan run, reproduces it in a test that fails first,
+fixes it, and closes the twelve spinner entries among ledger 408 to 425 and 593 on its
+own pull request's scan. It carries EDIT-01 again and moved 12-07 and every plan after it
+down one wave, 12-12 ending at wave 16.
 
 **12-06 complete 2026-09-23**, on branch `12-06-spin-controls` from `main` at `b00be9c0`,
 pushed as pull request #97; the merge commit is in the report that closes it. The check
@@ -45,7 +55,8 @@ reach the running program.** `names::name_the_spin_control` gives the buddy from
 `UDM_GETBUDDY` the arrows' words through `IAccPropServices::SetHwndPropStr`, and a reading
 over 25 spin controls in five built windows sees it on MSAA and UI Automation, in-process and
 from a second process; the pull request's Accessibility scan of the real program found the
-fields as before. Cause unknown; Pratik split it out to 12-06.1 on 2026-09-23. EDIT-01 not
+fields as before. Cause unknown; Pratik split it out to 12-06.1 on 2026-09-24, the day
+of his message (this line said 2026-09-23 until 12-06.1 was inserted). EDIT-01 not
 ticked; ledger 408 to 425 open, 592 (the ear) and 593 (the reading cannot see the fault)
 opened.
 
@@ -3315,7 +3326,7 @@ counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
 Current Plan: 9
-Total Plans in Phase: 15
+Total Plans in Phase: 16
 
 ---
 
