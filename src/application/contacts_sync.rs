@@ -574,6 +574,7 @@ fn chosen_phones(contact: &ContactEntry) -> Vec<PhoneEntry> {
         .map(|number| PhoneEntry {
             label: String::new(),
             number: number.clone(),
+            country: None,
         })
         .collect()
 }
@@ -2876,6 +2877,7 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
             .map(|p| PhoneEntry {
                 label: label_for_provider_type(&p.phone_type),
                 number: p.value.clone(),
+                country: None,
             })
             .collect();
         serde_json::to_string(&entries).ok()
@@ -3160,6 +3162,7 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         .map(|(label, number)| PhoneEntry {
             label: label.to_string(),
             number: number.clone(),
+            country: None,
         })
         .collect();
     let phones_json = if phones.is_empty() {
@@ -4381,6 +4384,7 @@ mod tests {
             serde_json::to_string(&[PhoneEntry {
                 label: "Work".to_string(),
                 number: "+44 113 496 0000".to_string(),
+                country: None,
             }])
             .expect("the list can be written"),
         );
@@ -4531,6 +4535,7 @@ mod tests {
             .map(|(label, number)| PhoneEntry {
                 label: (*label).to_string(),
                 number: (*number).to_string(),
+                country: None,
             })
             .collect();
         contact.phones_json = serde_json::to_string(&numbers).ok();

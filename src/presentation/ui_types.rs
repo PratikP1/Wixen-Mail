@@ -2028,6 +2028,7 @@ mod tests {
             serde_json::to_string(&[crate::data::message_cache::PhoneEntry {
                 label: "Work".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             }])
             .expect("a phone list encodes"),
         );

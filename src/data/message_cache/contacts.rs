@@ -727,6 +727,7 @@ impl MessageCache {
                     serde_json::to_string(&[super::PhoneEntry {
                         label: Self::NO_LABEL.to_string(),
                         number: number.clone(),
+                        country: None,
                     }])
                     .ok()
                 })
@@ -1493,6 +1494,7 @@ impl MessageCache {
                 phones.push(super::PhoneEntry {
                     label,
                     number: num.clone(),
+                    country: None,
                 });
                 if phone.is_none() {
                     phone = Some(num);
@@ -2937,11 +2939,14 @@ mod tests {
                 // carrying one takes part of itself into the phone number.
                 label: "Ada: personal".to_string(),
                 number: "+44 7700 900123".to_string(),
+                // A card has nowhere to carry the country beside a number.
+                country: None,
             },
             super::super::PhoneEntry {
                 // A shipped dropdown value, and the one with a space in it.
                 label: "Work Fax".to_string(),
                 number: "+44 20 7946 0000".to_string(),
+                country: None,
             },
         ];
         let addresses = vec![
@@ -3476,6 +3481,7 @@ mod tests {
             let phones = vec![super::super::PhoneEntry {
                 label: label.to_string(),
                 number: "+44 7700 900999".to_string(),
+                country: None,
             }];
             let original = ContactEntry {
                 phone: Some("+44 7700 900999".to_string()),
@@ -4752,6 +4758,7 @@ END:VCARD";
         let stale_phones = vec![super::super::PhoneEntry {
             label: "Old".to_string(),
             number: "+1-000-000-0000".to_string(),
+            country: None,
         }];
         let stale_addresses = vec![super::super::AddressEntry {
             label: "Old".to_string(),

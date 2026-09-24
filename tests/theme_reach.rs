@@ -1252,7 +1252,7 @@ fn check_contact_edit(
         ("contact edit company field", &handles.company_f),
         ("contact edit department field", &handles.dept_f),
         ("contact edit job title field", &handles.title_f),
-        ("contact edit birthday field", &handles.bday_f),
+        ("contact edit middle name field", &handles.middle_f),
         ("contact edit website field", &handles.web_f),
         ("contact edit relationship field", &handles.rel_f),
         ("contact edit avatar url field", &handles.avatar_f),
@@ -1289,17 +1289,22 @@ fn check_email_sub_dialog(parent: &Frame, palette: theme::Palette, into: &mut Ve
 }
 
 /// The Contact editor's own Add Phone Number sub-dialog. Parented to a
-/// throwaway `Dialog`, the same as production. The type `Choice` is left to
-/// Windows, matching every other `Choice` this round paints around, so only
-/// the dialog and the number field are checked here.
+/// throwaway `Dialog`, the same as production. The type and country
+/// `Choice` controls are left to Windows, matching every other `Choice` this
+/// round paints around, so only the dialog and the number field are checked
+/// here.
 fn check_phone_sub_dialog(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
     let scratch_parent = Dialog::builder(parent, "scratch parent for add phone").build();
-    let (dialog, _type_choice, num_f) =
-        wx_managers::build_phone_sub_dialog(&scratch_parent, Some(palette));
-    check("add phone dialog", &dialog, palette.main_surface(), into);
+    let phone = wx_managers::build_phone_sub_dialog(&scratch_parent, Some(palette));
+    check(
+        "add phone dialog",
+        &phone.dialog,
+        palette.main_surface(),
+        into,
+    );
     check(
         "add phone number field",
-        &num_f,
+        &phone.asker.number_f,
         palette.main_surface(),
         into,
     );

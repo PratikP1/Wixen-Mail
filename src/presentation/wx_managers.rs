@@ -9,20 +9,24 @@
 //! something first is said above the ordinary run of outcomes, because it is
 //! the answer to the key just pressed.
 
+use crate::application::contact_names::{SUFFIXES, TITLES};
 use crate::application::filters::{
     A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, SAY_FIRST_LIMIT,
     a_way_of_matching_compares_against_nothing, the_field_those_words_name,
     the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
+use crate::application::phone_numbers::Region;
 use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
-    leave_the_cell_empty, name_from_label, set_accessible_name, set_accessible_name_and_description,
+    leave_the_cell_empty, name_from_label, name_the_spin_control, set_accessible_name,
+    set_accessible_name_and_description,
 };
 use crate::presentation::manager_words;
 use crate::presentation::status_line::said_and_shown;
 use crate::presentation::theme;
+use crate::presentation::wx_item_form::{BirthdayFields, build_birthday_fields};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -460,6 +464,10 @@ pub fn make_shell(
 pub struct PhoneItem {
     pub label: String,
     pub number: String,
+    /// The two-letter code of the country the number was read against, when
+    /// the Add Phone Number dialog knew one. `None` for a number stored
+    /// before 12-07 and for one kept as typed with no country chosen.
+    pub country: Option<String>,
 }
 
 /// Email address with type label
@@ -502,6 +510,12 @@ pub struct ContactEntry {
     pub given_name: String,
     /// The other part, kept whole however many spaces it carries.
     pub family_name: String,
+    /// A title before the name, "Dr." or "Mrs".
+    pub name_prefix: String,
+    /// The words between the given name and the family name.
+    pub middle_name: String,
+    /// What follows the name, "Jr." or "PhD".
+    pub name_suffix: String,
     pub nickname: String,
     // ── Organization ────────────────────────────────────────────────────
     pub company: String,
@@ -1209,6 +1223,65 @@ fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCt
     field
 }
 
+/// Add a label and a box that offers `choices` and takes anything typed.
+fn add_panel_combo(
+    parent: &Panel,
+    sizer: &FlexGridSizer,
+    label: &str,
+    choices: &[&str],
+) -> ComboBox {
+    let lbl = StaticText::builder(parent).with_label(label).build();
+    let field = ComboBox::builder(parent)
+        .with_string_choices(choices)
+        .build();
+    set_accessible_name(&field, &name_from_label(label));
+    sizer.add(&lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    field
+}
+
+/// Add the birthday's row: whether there is one, then the month, the day and
+/// the year in the order this computer reads a date, and whether the year is
+/// known. Each part is named for what it is part of, the way Send Later names
+/// its date: "Month" alone stops naming anything beside another date.
+fn add_birthday_row(
+    parent: &Panel,
+    sizer: &FlexGridSizer,
+    existing: Option<&str>,
+) -> BirthdayFields {
+    let dates = crate::presentation::wx_app::date_settings_from_stored_config();
+    let fields = build_birthday_fields(parent, dates.order, chrono::Local::now(), existing);
+    set_accessible_name(&fields.known, "Birthday");
+    set_accessible_name(&fields.date.month, "Birthday Month");
+    name_the_spin_control(&fields.date.day, "Birthday Day");
+    name_the_spin_control(&fields.date.year, "Birthday Year");
+    set_accessible_name(&fields.no_year, "No year");
+
+    // Laid out in the order they were built, which is the order they tab in.
+    let row = BoxSizer::builder(Orientation::Horizontal).build();
+    let beside = SizerFlag::AlignCenterVertical | SizerFlag::All;
+    match fields.date.day_first {
+        true => {
+            row.add(&fields.date.day, 0, beside, 2);
+            row.add(&fields.date.month, 0, beside, 2);
+        }
+        false => {
+            row.add(&fields.date.month, 0, beside, 2);
+            row.add(&fields.date.day, 0, beside, 2);
+        }
+    }
+    row.add(&fields.date.year, 0, beside, 2);
+    row.add(&fields.no_year, 0, beside, 2);
+    sizer.add(
+        &fields.known,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    sizer.add_sizer(&row, 1, SizerFlag::Expand | SizerFlag::All, 2);
+    fields
+}
+
 /// Open the Add Contact dialog directly (for File > New > Contact).
 pub fn show_new_contact_dialog(parent: &Frame, a11y: &Arc<Accessibility>) -> Option<ContactEntry> {
     show_contact_edit(parent, None, theme::current_from_stored_config(), a11y)
@@ -1226,13 +1299,16 @@ pub struct ContactEditDialogHandles {
     pub addr_panel: Panel,
     pub notes_panel: Panel,
     pub name_f: TextCtrl,
+    pub prefix_f: ComboBox,
     pub given_f: TextCtrl,
+    pub middle_f: TextCtrl,
     pub family_f: TextCtrl,
+    pub suffix_f: ComboBox,
     pub nick_f: TextCtrl,
     pub company_f: TextCtrl,
     pub dept_f: TextCtrl,
     pub title_f: TextCtrl,
-    pub bday_f: TextCtrl,
+    pub birthday: BirthdayFields,
     pub web_f: TextCtrl,
     pub rel_f: TextCtrl,
     pub avatar_f: TextCtrl,
@@ -1274,9 +1350,10 @@ pub fn build_contact_edit_dialog(
     let notebook = Notebook::builder(&dlg).build();
 
     // ── Tab 1: Basic Info ────────────────────────────────────────────────
-    // Accelerators: N(Name), G(Given name), M(Family name), K(Nickname),
-    //   C(Company), D(Department), J(Job Title), B(Birthday), W(Website),
-    //   R(Relationship), A(Avatar), F(Favorite)
+    // Accelerators: N(Name), P(Prefix), G(Given name), I(Middle name),
+    //   M(Family name), X(Suffix), K(Nickname), C(Company), D(Department),
+    //   J(Job Title), B(Birthday), Y(No year), W(Website), R(Relationship),
+    //   A(Avatar), F(Favorite)
     let basic_panel = Panel::builder(&notebook).build();
     let basic_sizer = BoxSizer::builder(Orientation::Vertical).build();
     let basic_fields = FlexGridSizer::builder(0, 2)
@@ -1285,16 +1362,24 @@ pub fn build_contact_edit_dialog(
         .build();
     basic_fields.add_growable_col(1, 1);
 
+    // The whole name first, where the tester looked for it (#40), then its
+    // five parts in the order a name is written. Each fills the other as a
+    // first guess; see `NameFields`.
     let name_f = add_panel_field(&basic_panel, &basic_fields, "&Name:");
-    // The two parts, shown so a guess at them can be corrected before it goes
-    // anywhere. Nothing splits the name again after this.
+    let prefix_f = add_panel_combo(&basic_panel, &basic_fields, "&Prefix:", &TITLES);
     let given_f = add_panel_field(&basic_panel, &basic_fields, "&Given name:");
+    let middle_f = add_panel_field(&basic_panel, &basic_fields, "M&iddle name:");
     let family_f = add_panel_field(&basic_panel, &basic_fields, "Fa&mily name:");
+    let suffix_f = add_panel_combo(&basic_panel, &basic_fields, "Suffi&x:", &SUFFIXES);
     let nick_f = add_panel_field(&basic_panel, &basic_fields, "Nic&kname:");
     let company_f = add_panel_field(&basic_panel, &basic_fields, "&Company:");
     let dept_f = add_panel_field(&basic_panel, &basic_fields, "&Department:");
     let title_f = add_panel_field(&basic_panel, &basic_fields, "&Job Title:");
-    let bday_f = add_panel_field(&basic_panel, &basic_fields, "&Birthday:");
+    let birthday = add_birthday_row(
+        &basic_panel,
+        &basic_fields,
+        existing.map(|c| c.birthday.as_str()),
+    );
     let web_f = add_panel_field(&basic_panel, &basic_fields, "&Website:");
     let rel_f = add_panel_field(&basic_panel, &basic_fields, "&Relationship:");
     let avatar_f = add_panel_field(&basic_panel, &basic_fields, "&Avatar URL:");
@@ -1502,13 +1587,15 @@ pub fn build_contact_edit_dialog(
 
     if let Some(c) = existing {
         name_f.set_value(&c.name);
+        prefix_f.set_value(&c.name_prefix);
         given_f.set_value(&c.given_name);
+        middle_f.set_value(&c.middle_name);
         family_f.set_value(&c.family_name);
+        suffix_f.set_value(&c.name_suffix);
         nick_f.set_value(&c.nickname);
         company_f.set_value(&c.company);
         dept_f.set_value(&c.department);
         title_f.set_value(&c.job_title);
-        bday_f.set_value(&c.birthday);
         web_f.set_value(&c.website);
         rel_f.set_value(&c.relationship);
         avatar_f.set_value(&c.avatar_url);
@@ -1665,8 +1752,8 @@ pub fn build_contact_edit_dialog(
             theme::paint(panel, palette.main_surface());
         }
         for field in [
-            &name_f, &given_f, &family_f, &nick_f, &company_f, &dept_f, &title_f, &bday_f, &web_f,
-            &rel_f, &avatar_f, &notes_f,
+            &name_f, &given_f, &middle_f, &family_f, &nick_f, &company_f, &dept_f, &title_f,
+            &web_f, &rel_f, &avatar_f, &notes_f,
         ] {
             theme::paint(field, palette.main_surface());
         }
@@ -1683,13 +1770,16 @@ pub fn build_contact_edit_dialog(
         addr_panel,
         notes_panel,
         name_f,
+        prefix_f,
         given_f,
+        middle_f,
         family_f,
+        suffix_f,
         nick_f,
         company_f,
         dept_f,
         title_f,
-        bday_f,
+        birthday,
         web_f,
         rel_f,
         avatar_f,
@@ -1706,63 +1796,76 @@ pub fn build_contact_edit_dialog(
     }
 }
 
+impl ContactEditDialogHandles {
+    /// Everything the dialog holds, as the contact it would save, under `id`.
+    /// What OK reads back, and what a test reads from a built dialog.
+    pub fn what_it_holds(&self, id: String) -> ContactEntry {
+        ContactEntry {
+            id,
+            name: self.name_f.get_value(),
+            given_name: self.given_f.get_value(),
+            family_name: self.family_f.get_value(),
+            name_prefix: self.prefix_f.get_value(),
+            middle_name: self.middle_f.get_value(),
+            name_suffix: self.suffix_f.get_value(),
+            nickname: self.nick_f.get_value(),
+            company: self.company_f.get_value(),
+            department: self.dept_f.get_value(),
+            job_title: self.title_f.get_value(),
+            birthday: self.birthday.stored(),
+            website: self.web_f.get_value(),
+            relationship: self.rel_f.get_value(),
+            avatar_url: self.avatar_f.get_value(),
+            notes: self.notes_f.get_value(),
+            favorite: self.fav_check.get_value(),
+            emails: self.emails_data.borrow().clone(),
+            phones: self.phones_data.borrow().clone(),
+            addresses: self.addrs_data.borrow().clone(),
+            custom_fields: self.custom_data.borrow().clone(),
+        }
+    }
+
+    /// Add an item the Add Phone Number dialog gave back, as its modal loop
+    /// does.
+    pub fn add_phone(&self, item: PhoneItem) {
+        self.phones_data.borrow_mut().push(item);
+        refresh_phone_list(&self.phone_list, &self.phones_data.borrow());
+    }
+}
+
 fn show_contact_edit(
     parent: &dyn WxWidget,
     existing: Option<&ContactEntry>,
     palette: Option<theme::Palette>,
     a11y: &Arc<Accessibility>,
 ) -> Option<ContactEntry> {
-    let ContactEditDialogHandles {
-        dialog: dlg,
-        name_f,
-        given_f,
-        family_f,
-        nick_f,
-        company_f,
-        dept_f,
-        title_f,
-        bday_f,
-        web_f,
-        rel_f,
-        avatar_f,
-        notes_f,
-        fav_check,
-        email_list,
-        phone_list,
-        addr_list,
-        custom_list,
-        emails_data,
-        phones_data,
-        addrs_data,
-        custom_data,
-        ..
-    } = build_contact_edit_dialog(parent, existing, palette, a11y);
+    let editor = build_contact_edit_dialog(parent, existing, palette, a11y);
+    let dlg = editor.dialog;
 
     // ── Modal loop (handle sub-list actions before OK/Cancel) ────────────
     loop {
         match dlg.show_modal() {
             r if r == ID_ADD_EMAIL => {
                 if let Some(item) = show_email_sub_dialog(&dlg, None, palette) {
-                    emails_data.borrow_mut().push(item);
-                    refresh_email_list(&email_list, &emails_data.borrow());
+                    editor.emails_data.borrow_mut().push(item);
+                    refresh_email_list(&editor.email_list, &editor.emails_data.borrow());
                 }
             }
             r if r == ID_ADD_PHONE => {
                 if let Some(item) = show_phone_sub_dialog(&dlg, None, palette) {
-                    phones_data.borrow_mut().push(item);
-                    refresh_phone_list(&phone_list, &phones_data.borrow());
+                    editor.add_phone(item);
                 }
             }
             r if r == ID_ADD_ADDR => {
                 if let Some(item) = show_address_sub_dialog(&dlg, None, palette) {
-                    addrs_data.borrow_mut().push(item);
-                    refresh_addr_list(&addr_list, &addrs_data.borrow());
+                    editor.addrs_data.borrow_mut().push(item);
+                    refresh_addr_list(&editor.addr_list, &editor.addrs_data.borrow());
                 }
             }
             r if r == ID_ADD_CUSTOM => {
                 if let Some(item) = show_custom_field_sub_dialog(&dlg, None, palette) {
-                    custom_data.borrow_mut().push(item);
-                    refresh_custom_list(&custom_list, &custom_data.borrow());
+                    editor.custom_data.borrow_mut().push(item);
+                    refresh_custom_list(&editor.custom_list, &editor.custom_data.borrow());
                 }
             }
             r if r == ID_OK => {
@@ -1771,29 +1874,11 @@ fn show_contact_edit(
                 // returned from, refuses to end the modal at all while the
                 // name is still empty, so there is nothing left to check on
                 // this side of it.
-                let contact_name = name_f.get_value();
-                let answer = ContactEntry {
-                    id: existing
+                let answer = editor.what_it_holds(
+                    existing
                         .map(|c| c.id.clone())
                         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-                    name: contact_name,
-                    given_name: given_f.get_value(),
-                    family_name: family_f.get_value(),
-                    nickname: nick_f.get_value(),
-                    company: company_f.get_value(),
-                    department: dept_f.get_value(),
-                    job_title: title_f.get_value(),
-                    birthday: bday_f.get_value(),
-                    website: web_f.get_value(),
-                    relationship: rel_f.get_value(),
-                    avatar_url: avatar_f.get_value(),
-                    notes: notes_f.get_value(),
-                    favorite: fav_check.get_value(),
-                    emails: emails_data.borrow().clone(),
-                    phones: phones_data.borrow().clone(),
-                    addresses: addrs_data.borrow().clone(),
-                    custom_fields: custom_data.borrow().clone(),
-                };
+                );
                 // Read first, then taken down. wxWidgets does not free a
                 // dialog when the Rust value goes, so every contact editor
                 // ever opened stayed for the life of the session, and this
@@ -1923,6 +2008,15 @@ fn a_sub_dialog_needs(parent: &Dialog, titled: &str, said: &str) {
     box_.show_modal();
 }
 
+/// Why the Add Email Address dialog will not add what was typed, or `None`
+/// when it will.
+pub fn an_address_refusal(typed: &str) -> Option<String> {
+    typed
+        .trim()
+        .is_empty()
+        .then(|| "An email address is needed before this can be added.".to_string())
+}
+
 pub fn build_email_sub_dialog(
     parent: &Dialog,
     palette: Option<theme::Palette>,
@@ -1975,12 +2069,8 @@ pub fn build_email_sub_dialog(
             // Consuming the click is what makes the refusal stick; see
             // `wx_item_form.rs`'s module doc comment.
             event.event.skip(false);
-            if addr_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(
-                    &d,
-                    "Not added",
-                    "An email address is needed before this can be added.",
-                );
+            if let Some(said) = an_address_refusal(&addr_f.get_value()) {
+                a_sub_dialog_needs(&d, "Not added", &said);
                 addr_f.set_focus();
                 return;
             }
@@ -2044,15 +2134,12 @@ fn show_email_sub_dialog(
 /// Settings: a test can build the real dialog and read back the real colour
 /// a live control holds, and never call `.show_modal()` at all.
 ///
-/// Returns the type choice and the number field alongside the dialog, the
+/// Returns the dialog with the controls and the reading its OK makes, the
 /// same way `show_phone_sub_dialog` still needs them after a real
 /// `.show_modal()`.
-pub fn build_phone_sub_dialog(
-    parent: &Dialog,
-    palette: Option<theme::Palette>,
-) -> (Dialog, Choice, TextCtrl) {
+pub fn build_phone_sub_dialog(parent: &Dialog, palette: Option<theme::Palette>) -> PhoneSubDialog {
     let dlg = Dialog::builder(parent, "Add Phone Number")
-        .with_size(400, 200)
+        .with_size(460, 230)
         .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
     let fields = FlexGridSizer::builder(0, 2)
@@ -2061,7 +2148,8 @@ pub fn build_phone_sub_dialog(
         .build();
     fields.add_growable_col(1, 1);
 
-    // Accelerators are first letters, no conflicts: T(Type), N(Number)
+    // Accelerators are first letters, no conflicts: T(Type), N(Number),
+    // C(Country)
     let type_lbl = StaticText::builder(&dlg).with_label("&Type:").build();
     let type_choices: Vec<String> = PHONE_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
@@ -2076,7 +2164,38 @@ pub fn build_phone_sub_dialog(
     fields.add(&type_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let num_f = add_field(&dlg, &fields, "&Number:");
+
+    // The country a number typed without its code is read against. A number
+    // typed with + and its code finds its own country whatever is chosen.
+    let countries = the_countries_offered();
+    let country_lbl = StaticText::builder(&dlg).with_label("&Country:").build();
+    let country_choice = Choice::builder(&dlg)
+        .with_choices(countries.iter().map(|(_, shown)| shown.clone()).collect())
+        .build();
+    set_accessible_name(&country_choice, "Country");
+    let home = the_home_country();
+    let opens_on = countries
+        .iter()
+        .position(|(region, _)| *region == home)
+        .unwrap_or(0);
+    country_choice.set_selection(opens_on as u32);
+    fields.add(
+        &country_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&country_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let asker = PhoneAsker {
+        type_choice,
+        number_f: num_f,
+        country_choice,
+        countries: Rc::new(countries.into_iter().map(|(region, _)| region).collect()),
+        doubted: Rc::new(RefCell::new(None)),
+        added: Rc::new(RefCell::new(None)),
+    };
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     btn_row.add_spacer(0);
@@ -2095,20 +2214,25 @@ pub fn build_phone_sub_dialog(
 
     ok.on_click({
         let d = dlg;
+        let asker = asker.clone();
         move |event| {
             // Consuming the click is what makes the refusal stick; see
             // `wx_item_form.rs`'s module doc comment.
             event.event.skip(false);
-            if num_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(
-                    &d,
-                    "Not added",
-                    "A phone number is needed before this can be added.",
-                );
-                num_f.set_focus();
-                return;
+            match asker.decide_on_ok() {
+                PhoneOk::Add(item) => {
+                    *asker.added.borrow_mut() = Some(item);
+                    d.end_modal(ID_OK);
+                }
+                PhoneOk::Refuse(said) => {
+                    a_sub_dialog_needs(&d, "Not added", &said);
+                    num_f.set_focus();
+                }
+                PhoneOk::Doubt(said) => {
+                    a_sub_dialog_needs(&d, "Check this number", &said);
+                    num_f.set_focus();
+                }
             }
-            d.end_modal(ID_OK);
         }
     });
     cancel.on_click({
@@ -2118,16 +2242,93 @@ pub fn build_phone_sub_dialog(
         }
     });
 
-    // Painted last. The type Choice is left to Windows, matching every other
-    // Choice this round paints around. `None` means high contrast is on, or
-    // the system is set up in a way this application should not paint over,
-    // so nothing is set here and Windows decides.
+    // Painted last. The type and country Choices are left to Windows,
+    // matching every other Choice this round paints around. `None` means
+    // high contrast is on, or the system is set up in a way this application
+    // should not paint over, so nothing is set here and Windows decides.
     if let Some(palette) = palette {
         theme::paint(&dlg, palette.main_surface());
         theme::paint(&num_f, palette.main_surface());
     }
 
-    (dlg, type_choice, num_f)
+    PhoneSubDialog { dialog: dlg, asker }
+}
+
+/// The Add Phone Number dialog and what its OK reads.
+pub struct PhoneSubDialog {
+    pub dialog: Dialog,
+    pub asker: PhoneAsker,
+}
+
+/// What OK decides in the Add Phone Number dialog.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PhoneOk {
+    /// Add this and close.
+    Add(PhoneItem),
+    /// Say this and stay open: nothing typed here can be a number.
+    Refuse(String),
+    /// Say this and stay open. A second OK with the same number and country
+    /// adds the number exactly as typed, because the numbering data trails
+    /// the world's and a real number can be doubted.
+    Doubt(String),
+}
+
+/// A number OK doubted, and the country it was read against. A second OK
+/// keeps the number only while both are what they were.
+#[derive(Debug, Clone, PartialEq)]
+struct Doubted {
+    typed: String,
+    country: Option<Region>,
+}
+
+/// The controls OK reads, and what it remembers between two presses.
+#[derive(Clone)]
+pub struct PhoneAsker {
+    pub type_choice: Choice,
+    pub number_f: TextCtrl,
+    pub country_choice: Choice,
+    /// The region each Country entry stands for, in the order listed: `None`
+    /// for No country, first.
+    pub countries: Rc<Vec<Option<Region>>>,
+    /// The number and country the last OK doubted.
+    doubted: Rc<RefCell<Option<Doubted>>>,
+    /// What the last OK added, read once the dialog has closed.
+    added: Rc<RefCell<Option<PhoneItem>>>,
+}
+
+impl PhoneAsker {
+    /// The country chosen, `None` for No country.
+    pub fn chosen_country(&self) -> Option<Region> {
+        self.country_choice
+            .get_selection()
+            .and_then(|at| self.countries.get(at as usize).copied().flatten())
+    }
+
+    /// What OK does with what is typed and chosen.
+    pub fn decide_on_ok(&self) -> PhoneOk {
+        let typed = self.number_f.get_value();
+        if typed.trim().is_empty() {
+            return PhoneOk::Refuse("A phone number is needed before this can be added.".into());
+        }
+        *self.doubted.borrow_mut() = None;
+        PhoneOk::Add(PhoneItem {
+            label: get_choice_string(&self.type_choice).unwrap_or_else(|| "Other".to_string()),
+            number: typed,
+            country: None,
+        })
+    }
+}
+
+/// "No country", then every region the numbering data knows, each shown as
+/// its name in the language Windows shows and its calling code, sorted by
+/// what is shown.
+fn the_countries_offered() -> Vec<(Option<Region>, String)> {
+    vec![(None, "No country".to_string())]
+}
+
+/// Where the person says they are, when the numbering data knows it.
+fn the_home_country() -> Option<Region> {
+    None
 }
 
 fn show_phone_sub_dialog(
@@ -2135,26 +2336,20 @@ fn show_phone_sub_dialog(
     _existing: Option<&PhoneItem>,
     palette: Option<theme::Palette>,
 ) -> Option<PhoneItem> {
-    let (dlg, type_choice, num_f) = build_phone_sub_dialog(parent, palette);
+    let PhoneSubDialog { dialog: dlg, asker } = build_phone_sub_dialog(parent, palette);
 
     // Read first, then destroy: the fields belong to the dialog.
     // wxWidgets does not free a dialog when the Rust value goes, and
     // nothing in this file did, so every one of these little windows
     // stayed for the life of the session. `wx_compose` hit the same
     // thing and says so where it fixed it.
+    //
+    // What comes back is what OK decided to add, in the window that has
+    // just closed: its handler refuses to close while nothing can be added.
     let answered = dlg.show_modal();
-    let chosen = if answered == ID_OK {
-        let num = num_f.get_value();
-        // Whatever comes back already held together: OK's own handler, in
-        // the window that has just closed, refuses to close at all while a
-        // needed box is empty. The check that used to be here ran after the
-        // window was gone and could only throw away everything typed.
-        Some(PhoneItem {
-            label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
-            number: num,
-        })
-    } else {
-        None
+    let chosen = match answered == ID_OK {
+        true => asker.added.borrow_mut().take(),
+        false => None,
     };
     dlg.destroy();
     chosen
@@ -5029,6 +5224,9 @@ mod tests {
             name: "Grace Hopper".to_string(),
             given_name: "Grace".to_string(),
             family_name: "Hopper".to_string(),
+            name_prefix: String::new(),
+            middle_name: String::new(),
+            name_suffix: String::new(),
             nickname: String::new(),
             company: "Navy".to_string(),
             department: String::new(),
@@ -5047,10 +5245,12 @@ mod tests {
                 PhoneItem {
                     label: "Home".to_string(),
                     number: "555 0100".to_string(),
+                    country: None,
                 },
                 PhoneItem {
                     label: "Mobile".to_string(),
                     number: "555 0101".to_string(),
+                    country: None,
                 },
             ],
             addresses: Vec::new(),

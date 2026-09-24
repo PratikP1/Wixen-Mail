@@ -359,6 +359,12 @@ pub struct PhoneEntry {
     /// Label: "Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other"
     pub label: String,
     pub number: String,
+    /// The two-letter code of the country the number was read against when
+    /// it was added in the contact editor (12-07). Left out of the stored
+    /// list when there is none, so a list written before it existed, or by
+    /// an address book, reads and writes exactly as it did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
 }
 
 /// Typed email address entry (stored as JSON array)
@@ -778,6 +784,7 @@ impl ContactEntry {
             .map(|number| PhoneEntry {
                 label: "Mobile".to_string(),
                 number: number.clone(),
+                country: None,
             })
     }
 
@@ -4826,6 +4833,7 @@ mod tests {
             serde_json::to_string(&[PhoneEntry {
                 label: "Work".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             }])
             .expect("a phone list encodes"),
         );
@@ -4835,6 +4843,7 @@ mod tests {
             Some(PhoneEntry {
                 label: "Work".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             })
         );
     }
@@ -4852,6 +4861,7 @@ mod tests {
             Some(PhoneEntry {
                 label: "Mobile".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             })
         );
     }
@@ -4878,6 +4888,7 @@ mod tests {
             Some(PhoneEntry {
                 label: "Mobile".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             })
         );
     }

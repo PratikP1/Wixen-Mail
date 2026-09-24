@@ -1532,6 +1532,7 @@ fn every_number_on(item: &TheItem<'_>) -> Vec<PhoneEntry> {
         Some(PhoneEntry {
             label: label.to_string(),
             number: item.words(at)?.to_string(),
+            country: None,
         })
     })
     .collect()

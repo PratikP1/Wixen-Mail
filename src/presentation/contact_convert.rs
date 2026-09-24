@@ -83,6 +83,7 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
         .map(|p| PhoneItem {
             label: p.label,
             number: p.number,
+            country: None,
         })
         .collect();
     if phones.is_empty()
@@ -91,6 +92,7 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
         phones.push(PhoneItem {
             label: "Mobile".to_string(),
             number: phone.clone(),
+            country: None,
         });
     }
 
@@ -153,6 +155,9 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
         name: stored.name.clone(),
         given_name,
         family_name,
+        name_prefix: String::new(),
+        middle_name: String::new(),
+        name_suffix: String::new(),
         nickname: stored.nickname.clone().unwrap_or_default(),
         company: stored.company.clone().unwrap_or_default(),
         department: stored.department.clone().unwrap_or_default(),
@@ -245,6 +250,7 @@ pub fn to_stored(
         .map(|p| PhoneEntry {
             label: p.label.clone(),
             number: p.number.clone(),
+            country: None,
         })
         .collect();
     let addresses: Vec<AddressEntry> = editor
@@ -361,6 +367,9 @@ mod tests {
             name: "Grace Hopper".to_string(),
             given_name: "Grace".to_string(),
             family_name: "Hopper".to_string(),
+            name_prefix: "Rear Admiral".to_string(),
+            middle_name: "Brewster Murray".to_string(),
+            name_suffix: "PhD".to_string(),
             nickname: "Amazing Grace".to_string(),
             company: "Navy".to_string(),
             department: "Research".to_string(),
@@ -379,10 +388,12 @@ mod tests {
                 PhoneItem {
                     label: "Work".to_string(),
                     number: "555 0100".to_string(),
+                    country: Some("US".to_string()),
                 },
                 PhoneItem {
                     label: "Mobile".to_string(),
                     number: "555 0101".to_string(),
+                    country: None,
                 },
             ],
             addresses: vec![AddressItem {
@@ -415,6 +426,10 @@ mod tests {
         let restored = to_editor(&to_stored(&original, "acct", None));
 
         assert_eq!(restored.name, original.name);
+        assert_eq!(restored.name_prefix, original.name_prefix);
+        assert_eq!(restored.middle_name, original.middle_name);
+        assert_eq!(restored.name_suffix, original.name_suffix);
+        assert_eq!(restored.phones[0].country.as_deref(), Some("US"));
         assert_eq!(restored.nickname, original.nickname);
         assert_eq!(restored.company, original.company);
         assert_eq!(restored.department, original.department);
@@ -539,6 +554,7 @@ mod tests {
         contact.phones.push(PhoneItem {
             label: "Other".to_string(),
             number: String::new(),
+            country: None,
         });
         let restored = to_editor(&to_stored(&contact, "acct", None));
         assert_eq!(restored.emails.len(), 2);
@@ -716,6 +732,9 @@ mod tests {
             name: String::new(),
             given_name: String::new(),
             family_name: String::new(),
+            name_prefix: String::new(),
+            middle_name: String::new(),
+            name_suffix: String::new(),
             nickname: String::new(),
             company: String::new(),
             department: String::new(),
@@ -862,6 +881,7 @@ mod tests {
         edited.phones.push(PhoneItem {
             label: "Home".to_string(),
             number: "555 0199".to_string(),
+            country: None,
         });
 
         assert!(holds_a_change(&edited, &stored));
