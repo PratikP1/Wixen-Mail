@@ -1448,6 +1448,14 @@ impl MessageCache {
             tracing::warn!("Could not make the signatures one set: {}", e);
         }
 
+        // Labels written before 2026-09-24 have no place in an order, and
+        // take the name order their keys applied them in (#48). Not fatal:
+        // an unnumbered label sorts first by name, and the next open tries
+        // again.
+        if let Err(e) = cache.number_the_unnumbered_labels() {
+            tracing::warn!("Could not number the labels: {}", e);
+        }
+
         // Databases written before the five local folders were shared have one
         // set per account. Bring them together on open (D-18, D-19). Not fatal
         // for the same reason as above: every message is still readable where

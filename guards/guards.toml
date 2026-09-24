@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 284 records have arrived since and have not been through it.
+# 286 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25316,7 +25316,7 @@ red = [
     "test_a_folder_above_the_variable_limit_reads_its_labels_by_folder_without_an_error",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 10 },
+    { file = "src/data/message_cache/tags.rs", tests = 13 },
     { file = "tests/the_list_holds_everything_the_folder_holds.rs", tests = 5 },
 ]
 
@@ -25380,7 +25380,7 @@ red = [
     "test_a_label_view_answers_in_the_order_it_is_handed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 10 },
+    { file = "src/data/message_cache/tags.rs", tests = 13 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
@@ -30259,4 +30259,42 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
+]
+
+# ── An account's labels are read in the order it keeps (#48, T-12-34) ──────
+#
+# Until 12-10 `get_tags_for_account` ordered by name while the Label menu was
+# built from the five an account starts with, so Ctrl+2 said Work and applied
+# Later. The break puts the name order back, which is the defect itself: the
+# order the menu shows and the keys read would no longer be the order the
+# person made or wrote. Measured through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an account's labels are read in the order it keeps, not by name"
+file = "src/data/message_cache/tags.rs"
+before = '''             FROM tags WHERE account_id = ?1 ORDER BY position, name",'''
+after = '''             FROM tags WHERE account_id = ?1 ORDER BY name",'''
+red = [
+    "data::message_cache::tags::tests::test_labels_come_back_in_the_order_they_were_made",
+    "data::message_cache::tags::tests::test_the_order_written_is_the_order_read_back",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tags.rs", tests = 13 },
+]
+
+# ── Only the first nine labels carry a key on the menu (#48) ────────────────
+#
+# There are nine digits that are not zero, so a tenth label is reached from
+# the Label menu alone. The break gives the tenth a key too, which would
+# write "Ctrl+10" beside it, a key no keyboard can press. Measured through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the Label menu gives a key to the first nine labels and to no tenth"
+file = "src/application/tagging.rs"
+before = '''    (1..=REACHABLE_BY_KEY)'''
+after = '''    (1..=REACHABLE_BY_KEY + 1)'''
+red = [
+    "application::tagging::tests::test_nothing_past_nine_has_a_key",
+]
+tests_last_seen = [
+    { file = "src/application/tagging.rs", tests = 19 },
 ]

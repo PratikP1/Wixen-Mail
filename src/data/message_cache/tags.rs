@@ -7,12 +7,13 @@ use crate::common::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 
 impl MessageCache {
-    /// Create a new tag
+    /// Create a new tag, after every label its account already has.
     pub fn create_tag(&self, tag: &Tag) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO tags (id, account_id, name, color, created_at, keyword)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO tags (id, account_id, name, color, created_at, keyword, position)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6,
+                     (SELECT COALESCE(MAX(position), 0) + 1 FROM tags WHERE account_id = ?2))",
                 params![
                     &tag.id,
                     &tag.account_id,
@@ -68,13 +69,18 @@ impl MessageCache {
         Ok(changed)
     }
 
-    /// Get all tags for an account
+    /// An account's labels, in the order the person keeps them.
+    ///
+    /// The one order: the Label menu shows it, the number keys apply by it,
+    /// and the sidebar and the Label Manager list by it (#48). By name until
+    /// 2026-09-24, which is why the pass that numbers rows from earlier
+    /// builds numbers them in name order.
     pub fn get_tags_for_account(&self, account_id: &str) -> Result<Vec<Tag>> {
         let mut stmt = self
             .conn
             .prepare_cached(
                 "SELECT id, account_id, name, color, created_at, keyword
-             FROM tags WHERE account_id = ?1 ORDER BY name",
+             FROM tags WHERE account_id = ?1 ORDER BY position, name",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
@@ -96,14 +102,55 @@ impl MessageCache {
     }
 
     /// Write an account's labels in the order given, the first at one.
-    pub fn put_labels_in_order(&self, _account_id: &str, _ids: &[String]) -> Result<()> {
-        Ok(())
+    ///
+    /// The whole order rather than the two that swapped, for the reason
+    /// `reordering::Moved::order` gives. One transaction, so a write that
+    /// fails part way leaves the order it found.
+    pub fn put_labels_in_order(&self, account_id: &str, ids: &[String]) -> Result<()> {
+        let failed = |e: rusqlite::Error| Error::Other(format!("Failed to order labels: {}", e));
+        let writing = self.conn.unchecked_transaction().map_err(failed)?;
+        for (at, id) in ids.iter().enumerate() {
+            writing
+                .execute(
+                    "UPDATE tags SET position = ?1 WHERE id = ?2 AND account_id = ?3",
+                    params![at as i64 + 1, id, account_id],
+                )
+                .map_err(failed)?;
+        }
+        writing.commit().map_err(failed)
     }
 
     /// Give every label with no place in its account's order one, after the
     /// labels that have one, in name order.
+    ///
+    /// Run on every open rather than once under a marker: a label written by
+    /// a build before 2026-09-24 has no place, and neither does one written by
+    /// such a build to a database this one has opened, and either way the
+    /// answer is the same, so there is nothing a marker would decide. Name
+    /// order because that is the order those builds listed an account's
+    /// labels in and the order their keys applied them, so Ctrl+2 goes on
+    /// applying what it applied. One transaction.
     pub fn number_the_unnumbered_labels(&self) -> Result<()> {
-        Ok(())
+        let failed = |e: rusqlite::Error| Error::Other(format!("Failed to number labels: {}", e));
+        let numbering = self.conn.unchecked_transaction().map_err(failed)?;
+        let unnumbered: Vec<(String, String)> = numbering
+            .prepare("SELECT id, account_id FROM tags WHERE position IS NULL ORDER BY account_id, name, id")
+            .map_err(failed)?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(failed)?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(failed)?;
+        for (id, account_id) in unnumbered {
+            numbering
+                .execute(
+                    "UPDATE tags SET position =
+                         (SELECT COALESCE(MAX(position), 0) + 1 FROM tags WHERE account_id = ?1)
+                     WHERE id = ?2",
+                    params![account_id, id],
+                )
+                .map_err(failed)?;
+        }
+        numbering.commit().map_err(failed)
     }
 
     /// Get a specific tag by ID

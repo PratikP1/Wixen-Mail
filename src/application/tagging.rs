@@ -142,15 +142,15 @@ pub fn is_a_label_keyword(keyword: &str, known: &[String]) -> bool {
 /// menu, which is what every other client does too.
 pub const REACHABLE_BY_KEY: usize = 9;
 
-/// Which label a number key means, out of the ones this account has.
+/// Which label a number means, out of the ones this account has, in the
+/// order the Label menu shows them.
 ///
-/// `None` for a number past the end, which is a key press worth answering with
-/// "there is no ninth label" rather than with silence.
+/// The number a menu line carries, key or not: the first nine are reached by
+/// Ctrl and their digit as well as from the menu, and a tenth is reached from
+/// the menu alone. `None` for a number past the end, which is a key press
+/// worth answering with "there is no ninth label" rather than with silence.
 pub fn at_number<T>(labels: &[T], number: usize) -> Option<&T> {
-    if number == 0 || number > REACHABLE_BY_KEY {
-        return None;
-    }
-    labels.get(number - 1)
+    labels.get(number.checked_sub(1)?)
 }
 
 /// One line of the Label submenu: where it sits, and what it says.
@@ -164,15 +164,50 @@ pub struct MenuLine {
 }
 
 /// What the Label submenu says, one line per label in the account's order.
+///
+/// Read from the account's own labels, the same list and the same order
+/// [`at_number`] reads when a key is pressed, so the key beside a name is the
+/// key that applies it. Until 2026-09-24 the menu was built once from
+/// [`TO_BEGIN_WITH`] while the keys read the stored labels by name, and Ctrl+2
+/// said Work and applied Later (#48).
+///
+/// An account with no labels yet is offered the five it starts with, because
+/// that is what the first press of any of these keys makes, in this order.
+/// A lone ampersand in a name is doubled, since a menu reads one as the mark
+/// before an access letter.
 pub fn what_the_menu_says(names: &[String]) -> Vec<MenuLine> {
+    let starting: Vec<String> = TO_BEGIN_WITH
+        .iter()
+        .map(|label| label.name.to_string())
+        .collect();
+    let names = if names.is_empty() {
+        &starting[..]
+    } else {
+        names
+    };
     names
         .iter()
         .enumerate()
-        .map(|(at, name)| MenuLine {
-            position: at + 1,
-            text: name.clone(),
+        .map(|(at, name)| {
+            let position = at + 1;
+            let shown = name.replace('&', "&&");
+            let text = match key_for(position) {
+                Some(key) => format!("{shown}\t{key}"),
+                None => shown,
+            };
+            MenuLine { position, text }
         })
         .collect()
+}
+
+/// The key that applies the label at this place in the order, if it has one.
+///
+/// The menu writes it beside the name and the Label Manager's Key column
+/// shows it, from this one answer. `None` past the ninth.
+pub fn key_for(position: usize) -> Option<String> {
+    (1..=REACHABLE_BY_KEY)
+        .contains(&position)
+        .then(|| format!("Ctrl+{position}"))
 }
 
 /// What is said when the cursor is on no label in the Label Manager.
@@ -181,13 +216,11 @@ pub const WHICH_LABEL: &str = "Choose a label first. Move Up and Move Down act o
 
 /// Move one label up or down the account's order.
 ///
-/// `labels` is every label as `(id, name)` in the order they sit in now.
-pub fn moved(labels: &[(String, String)], _which: &str, _direction: Move) -> Moved {
-    Moved {
-        order: labels.iter().map(|(id, _)| id.clone()).collect(),
-        say: String::new(),
-        moved: false,
-    }
+/// `labels` is every label as `(id, name)` in the order they sit in now. The
+/// gesture and its wording are the ones accounts and pinned folders use, so a
+/// move is said the same way whatever moved.
+pub fn moved(labels: &[(String, String)], which: &str, direction: Move) -> Moved {
+    crate::application::reordering::moved(labels, which, direction, WHICH_LABEL)
 }
 
 pub use crate::application::reordering::{Move, Moved};
