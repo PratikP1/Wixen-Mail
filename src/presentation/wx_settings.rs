@@ -17,6 +17,7 @@ use crate::application::reading_habits::{
 };
 use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
+use crate::application::time_blocks::Block;
 use crate::common::paths::AppPaths;
 use crate::data::account::Account;
 use crate::data::config::AppConfig;
@@ -1590,6 +1591,9 @@ pub struct CalendarPimTabControls {
     day_starts: Choice,
     day_ends: Choice,
     calendar_view: Choice,
+    /// How long a new event lasts, and how far Up and Down move a time: one
+    /// of `Block::ALL`, in its order.
+    event_length: Choice,
 }
 
 impl CalendarPimTabControls {
@@ -2514,6 +2518,30 @@ fn build_calendar_pim_tab(
         CalendarView::from_stored(&config.calendar_view).offered_at(),
     );
 
+    // How long a new event lasts, and how far a time moves on Up and Down
+    // (#41). In the Calendar section because a new event's length is a
+    // question about the calendar; the description says what else it moves,
+    // since a reminder's time takes the same keys.
+    let stored_block = Block::from_setting(config.event_length_minutes);
+    let event_length = labelled_choice(
+        panel,
+        &view_sec,
+        "New events &last:",
+        "New events last",
+        &Block::ALL.map(Block::label),
+        Block::ALL
+            .iter()
+            .position(|block| *block == stored_block)
+            .unwrap_or_default() as u32,
+    );
+    set_accessible_name_and_description(
+        &event_length,
+        "New events last",
+        "A new event starts at the next whole block and lasts this long. In an \
+         event or a reminder, Up and Down on a time's minutes move it by this \
+         much, and Left and Right by one minute.",
+    );
+
     sizer.add_sizer(&view_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Reminders
@@ -2611,6 +2639,7 @@ fn build_calendar_pim_tab(
         day_starts,
         day_ends,
         calendar_view: view_choice,
+        event_length,
     }
 }
 
@@ -3713,6 +3742,12 @@ fn read_the_calendar_and_pim_page(w: &CalendarPimTabControls, cfg: &mut AppConfi
         .to_string();
 
     cfg.default_reminder_minutes = held(&w.default_reminder);
+
+    cfg.event_length_minutes = Block::ALL
+        .get(sel(&w.event_length) as usize)
+        .copied()
+        .unwrap_or_default()
+        .minutes();
 }
 
 /// Advanced: the log level, the download folder, what is looked at.

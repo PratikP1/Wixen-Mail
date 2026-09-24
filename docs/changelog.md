@@ -1218,6 +1218,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Event and reminder times move in blocks.** The tester on 2026-09-15 (#41): "each event
+  should be blocked for 30 minutes by default unless the user has indicated otherwise in
+  settings ... The configuration should allow for 15 minutes, 30 minutes, or 1 hour ...
+  Pressing up and down arrow keys when picking time should move in those blocks. However the
+  user should be able to choose other times minutely using left and right arrow keys." Since
+  2026-09-24, **New events last** in the Calendar section of the Calendar and PIM tab offers
+  15 minutes, 30 minutes and 1 hour, 30 by default and for a settings file from before. His
+  four answers of the same day are the rules. A new event starts at the next whole block
+  after now, so 2:37 with 30 minutes gives 3:00 and not 2:30, and ends one block later. The
+  end moves with the start until you change the end yourself. `Left` and `Right` on a time's
+  minutes move it a minute, and typing over the value still works. The same block and keys
+  apply in the reminder window; the task window has a due date and no time, so it has
+  nothing to move. `Up` and `Down` on the minutes move by the block, to a whole block from
+  between two; the hour keeps its step of one hour.
+  Known limitations: nobody has heard the time spoken after a key, or the setting's list,
+  with a screen reader yet. `Left` and `Right` no longer move the cursor through the digits;
+  `Shift` or `Ctrl` with them still does.
+
 - **A contact's prefix, middle name and suffix, and a name that fills its parts.** The tester
   on 2026-09-15 (#40): "There is no prefix/suffix fields with common options. There is no
   field for middle name. On the basic tab, if the user enters the full name in the first

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 547
+open_count: 549
 waived_count: 0
 fixed_count: 55
-total_count: 602
-last_updated: 2026-09-24T13:10:00.000Z
+total_count: 604
+last_updated: 2026-09-24T14:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -617,6 +617,8 @@ last_updated: 2026-09-24T13:10:00.000Z
 | 600 | 12 | todo | src/presentation/wx_managers.rs |  | 12-07: the Add Address dialog keeps its own list of 127 English country names, stores the name the provider then receives, and defaults to United States for a region it does not know. The phone dialog's Country list takes its names from Windows in its display language; version 2's translation has to reach the address list too, and changing what it stores changes what each provider receives, so 12-07 left it as it is | open |  | 2026-09-24T11:45:00.000Z |  |
 | 601 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07: pull request #99's Accessibility scan (run 35995441987) found the contact editor's Birthday Month list's value element, the static text showing the month, focusable with no name. It is the class ledger 411, 415, 418 and 423 name for Send Later's and the event form's lists, and the list is the one build_date_fields builds for all three, so 12-07 left it for the fix that reaches all of them | open |  | 2026-09-24T13:10:00.000Z |  |
 | 602 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07 judged ledger 416's class: an editable combo box carrying an accessible object of ours is put behind the MSAA proxy on UI Automation, which offers no ExpandCollapse pattern, and without the object Windows' own combo box provider offers it and takes the name from the label before the box. The contact editor's Prefix and Suffix boxes are named that way since 12-07, read by tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs; the event form's Category box still carries the object, and naming it the same way would close 416 | open |  | 2026-09-24T13:10:00.000Z |  |
+| 603 | 12 | unrun-verify | src/presentation/wx_item_form.rs |  | 12-08: #41 under NVDA. What only the tester's ear settles: the time spoken after Up and Down on a start's minutes and after Left and Right, whether the end moving with the start is heard or goes unsaid, the reminder window's time after the same keys, and the New events last list on the Calendar and PIM tab. tests/event_times_move_in_blocks.rs reads the values off the controls and cannot hear any of it | open |  | 2026-09-24T14:00:00.000Z |  |
+| 604 | 12 | todo | src/presentation/managers.rs |  | Found by 12-08, not its subject: a new event or reminder opened while Settings holds a default reminder is headed Edit Event or Edit Reminder, because starting_alert_for hands the alert to ask_for as a prefill and build_item_form_dialog heads any form with a prefill Edit. The default is 15 minutes, so this is every new event and reminder opened from New unless somebody set the default to none; the scan's rows 408 to 417 name the new-event window Edit Event for this reason. The fix is to tell the form it is new apart from what it opens with | open |  | 2026-09-24T14:00:00.000Z |  |
 
 ````json
 [
@@ -7842,6 +7844,30 @@ last_updated: 2026-09-24T13:10:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T13:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 603,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "12-08: #41 under NVDA. What only the tester's ear settles: the time spoken after Up and Down on a start's minutes and after Left and Right, whether the end moving with the start is heard or goes unsaid, the reminder window's time after the same keys, and the New events last list on the Calendar and PIM tab. tests/event_times_move_in_blocks.rs reads the values off the controls and cannot hear any of it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T14:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 604,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "Found by 12-08, not its subject: a new event or reminder opened while Settings holds a default reminder is headed Edit Event or Edit Reminder, because starting_alert_for hands the alert to ask_for as a prefill and build_item_form_dialog heads any form with a prefill Edit. The default is 15 minutes, so this is every new event and reminder opened from New unless somebody set the default to none; the scan's rows 408 to 417 name the new-event window Edit Event for this reason. The fix is to tell the form it is new apart from what it opens with",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T14:00:00.000Z",
     "resolved_at": null
   }
 ]

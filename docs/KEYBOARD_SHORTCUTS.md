@@ -188,6 +188,23 @@ Four controls work together on the first page, in tab order:
 The answer is spoken as well as shown, in full rather than shortened. Asking
 again replaces what was said rather than reading both answers out.
 
+On the minutes of a start or end time, the arrow keys move the time rather
+than the cursor. The block is **New events last** on the Calendar and PIM tab
+in Settings: 15 minutes, 30 minutes or 1 hour, 30 until you change it.
+
+| Key | What it does |
+|-----|--------------|
+| `Up` | Forward one block, or to the next whole block when the time sits between two |
+| `Down` | Back one block, or to the whole block before when the time sits between two |
+| `Right` | Forward one minute |
+| `Left` | Back one minute |
+
+Typing over the minutes or the hour still works, and `Shift` or `Ctrl` with
+`Left` and `Right` still selects and moves within the digits. The hour keeps
+its own step of one hour. The end moves with the start until you change the
+end yourself. The reminder window takes the same keys on its time; the task
+window has a due date and no time.
+
 ### The Reader Window
 
 `Enter` on a message opens it, formatted: the sender's headings are headings so

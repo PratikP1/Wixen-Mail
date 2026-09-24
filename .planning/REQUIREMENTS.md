@@ -5580,9 +5580,12 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     formatting, and confirmed `phonenumber` 0.3.10 on 2026-09-24; the Country entries and a
     doubted number's sentence heard are the tester's ear.
 
-- [ ] **EDIT-03**: Event, task and reminder times move in 15, 30 or 60 minute blocks from a
+- [x] **EDIT-03**: Event, task and reminder times move in 15, 30 or 60 minute blocks from a
   setting, a new item starts at the next boundary with a default length, the end follows the
   start, and Left and Right move by a minute.
+  **Ticked 2026-09-24 (12-08).** Both `[D]` lines are met, each with the tests that hold it
+  below. A task has a due date and no time field (`item_fields::TASK`), so "task" in this
+  line has nothing to move; the reading says so. The `[S]` line stays, ledger 603.
   - Evidence: `sed -n 901,946p src/presentation/wx_item_form.rs` on 2026-09-20 at
     `0ad66e48`: `build_time_fields` with the hour spin and the minute spin 0..=59 stepping
     one, anchored on `now` or the stored `HH:MM`; nothing aligns or sets an end. `grep -n
@@ -5599,17 +5602,25 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     next boundary after now (14:37 gives 15:00); the end moves with the start unless edited
     explicitly; Left and Right stepping single minutes accepted, typing over the selection
     still works; the same for the task and reminder editors.
-  - [D] `application::time_blocks` with `Block`, `next_boundary` strictly after now,
+  - [x] [D] `application::time_blocks` with `Block`, `next_boundary` strictly after now,
     `step_by_block`, `step_by_minute`, `end_after` and `follow`, cases at every boundary of
     the day and the 12-hour face; `event_length_minutes` in `config.rs` defaulting to 30
     with the older-file test, a `Choice` on the Calendar and PIM tab, read where the form
-    opens and never captured at startup (12-08, task 1).
-  - [D] On the minute control Up and Down by the block and Left and Right by a minute, the
+    opens and never captured at startup (12-08, task 1). Met 2026-09-24: the 17
+    `application::time_blocks::tests` cases;
+    `data::config::permission_tests::test_a_settings_file_written_before_these_existed_reads_the_way_it_should`
+    (the older-file test is this one, not the nested-key test the plan named); both
+    `every_setting_is_acted_on` guards green with "New events last" in the Calendar section
+    and the read in `wx_item_form::how_this_form_keeps_time`.
+  - [x] [D] On the minute control Up and Down by the block and Left and Right by a minute, the
     key consumed, the hour rolling, in all three editors; a new item on the next boundary
     with its end one block later; the end following the start until edited; where the key
     arrives measured first on the built form; a reading in
     `tests/event_times_move_in_blocks.rs` drives the keys and reads the values (12-08,
-    task 2).
+    task 2). Met 2026-09-24 for the event and reminder editors, by the 16 readings of that
+    target; the task editor has no time. Where the key arrives:
+    `test_right_reaches_a_handler_on_the_spin_control_and_up_does_not`, so the key is taken
+    on the typing field (`presentation::spin_field_keys`, 3 cases).
   - [S] The value spoken after Up and after Left, the end heard following, and the setting's
     list are the tester's ear.
 
@@ -5978,7 +5989,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
 | EDIT-01 | Phase 12 | Done 2026-09-24: 12-06 on 2026-09-23 made the numbers spin controls, 12-06.1 on 2026-09-24 put the typing field's name in the running program, read by scan run 35976411245 (ledger 408 to 425 and 593 fixed), and #73 and #35 are closed; the ear is ledger 592 |
 | EDIT-02 | Phase 12 | Done 2026-09-24, 12-07: the name parts, the fills, the birthday and the checks, held by `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` and the module cases; the ear is ledger 596 and the tester's account ledger 597 |
-| EDIT-03 | Phase 12 | Pending, 12-08 |
+| EDIT-03 | Phase 12 | Done 2026-09-24, 12-08: the block rules, the setting, the keys taken on the typing field and the opening times, held by `application::time_blocks`' cases and `tests/event_times_move_in_blocks.rs`; a task has no time; the ear is ledger 603 |
 | EDIT-04 | Phase 12 | Pending, 12-09 |
 | EDIT-05 | Phase 12 | Pending, 12-10 |
 | GAP-01 | Phase 13 | Not planned, 2026-09-20 |

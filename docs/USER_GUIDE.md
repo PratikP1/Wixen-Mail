@@ -992,6 +992,40 @@ refused is text with no digit in it at all.
 Google, Outlook and address book servers each receive all five parts of a
 name, each in the field that service keeps for it.
 
+### Times in events and reminders
+
+Times move in blocks of 15 minutes, 30 minutes or 1 hour. The block is set by
+**New events last** in the Calendar section of the Calendar and PIM tab in
+Settings, and it is 30 minutes until you change it. A change there applies to
+the next event or reminder you open, with no restart.
+
+A new event starts at the next whole block after the moment you open it and
+lasts one block. With 30 minutes, an event opened at 2:37 starts at 3:00 and
+ends at 3:30, not at 2:30. Opened at 11:50 at night with 15 minutes, it starts
+at midnight on the next day. A new reminder is set for the next whole block in
+the same way.
+
+On a time's minutes:
+
+| Key | What it does |
+|---|---|
+| `Up` | Moves the time forward one block, or to the next whole block when it sits between two: 2:37 becomes 3:00, and 3:00 becomes 3:30 |
+| `Down` | Moves the time back the same way: 2:37 becomes 2:30, and 2:30 becomes 2:00 |
+| `Right` | Moves the time forward one minute |
+| `Left` | Moves the time back one minute |
+
+The hour keeps its own step of one hour. You can still type over the hour or
+the minutes; the arrow keys take the place of moving through the digits, so
+`Shift` or `Ctrl` with `Left` and `Right` is what still selects and moves
+within them. A time moved past midnight moves its date with it.
+
+An event's end moves with its start by the same amount, so moving a 3:00 to
+3:30 event to 4:00 makes it end at 4:30. Once you change the end yourself, by
+a key or by typing, it stays where you put it. Choosing a time with **Put this
+time in the event** sets both.
+
+A task has a due date and no time, so none of this changes the task window.
+
 ## Keyboard Shortcuts
 
 ### Application Control
