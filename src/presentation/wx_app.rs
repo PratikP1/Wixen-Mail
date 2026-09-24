@@ -950,6 +950,10 @@ impl WxMailApp {
 
         let wx_result = wxdragon::main(move |_| {
             tracing::info!("wxdragon on_init callback entered");
+            // Before the preview's browser is built below: a browser built
+            // first leaves every spin control's typing field nameless
+            // (12-06.1).
+            crate::presentation::accessibility::names::ready_the_annotation_store();
 
             let frame = Frame::builder()
                 .with_title("Wixen Mail")

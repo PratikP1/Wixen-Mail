@@ -256,11 +256,14 @@ pub fn name_from_label(label: &str) -> String {
 /// `tests/every_spin_control_names_the_field_a_person_types_in.rs` on every
 /// spin control in the program.
 ///
-/// **Not in the running program.** On 2026-09-23 the Accessibility scan on
-/// pull request #97 launched the real program and found the fields as they
-/// were before this existed: nameless, or named by the static text before
-/// them. Why the annotation reaches the field in a test process and not in the
-/// app is not known; 12-06.1 owns it, and ledger 408 to 425 stay open.
+/// **The running program needs [`ready_the_annotation_store`] first.** On
+/// 2026-09-23 the Accessibility scan on pull request #97 found the fields in
+/// the real program as they were before this existed. 12-06.1 found why on
+/// 2026-09-24: the main window builds a WebView2 before any dialog names a
+/// spin control, and after that no annotation write in the process is kept.
+/// The program now makes one write before the browser, and
+/// `tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs` reads
+/// the fields in that condition, from another process, the way the scan does.
 ///
 /// Every spin control is named through this or
 /// [`name_and_describe_the_spin_control`], and through nothing else.
@@ -282,11 +285,27 @@ pub fn name_and_describe_the_spin_control(spin: &SpinCtrl, name: &str, descripti
 
 /// Make the process's first annotation write before anything builds a
 /// browser, so every spin control's typing field named after it keeps its
-/// name. Called first thing when the interface starts.
+/// name. Called first thing when the interface starts, before the main
+/// window builds its message preview.
 ///
-/// The red half of 12-06.1's fix: this does nothing yet, so the reading that
-/// builds a browser first and then names the fields sees them nameless.
-pub fn ready_the_annotation_store() {}
+/// Why, measured by 12-06.1 on 2026-09-24: once a WebView2 has been built in
+/// a process whose annotation service has written nothing yet, every later
+/// `SetHwndPropStr` in that process answers `S_OK` and keeps nothing, on any
+/// window and from any thread, so the running program's spin fields were
+/// nameless on both channels while every test, which built no browser, read
+/// them named. The bisect across processes on the scan (run 35970583171) put
+/// the step between the first announcement and the preview, and
+/// `tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs` holds
+/// it: red with this doing nothing, green with it. One write before the
+/// browser, onto a window destroyed straight after, and every later write is
+/// kept. Why the browser does this is not known; ledgered as a platform
+/// behaviour this works around (guardrail 9).
+///
+/// Once per process; a second call does nothing.
+pub fn ready_the_annotation_store() {
+    #[cfg(target_os = "windows")]
+    typing_field::ready_the_store();
+}
 
 /// Which property of a spin control's typing field some words are written to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +375,76 @@ mod typing_field {
             Ok(()) => format!("{}/{}", kind.0, qualifier.0),
             Err(why) => format!("none hr=0x{:08X}", why.code().0 as u32),
         }
+    }
+
+    /// The first annotation write of the process, onto a hidden window made
+    /// for it and taken away again, so a browser built later cannot leave the
+    /// store keeping nothing. See [`super::ready_the_annotation_store`].
+    pub(super) fn ready_the_store() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_POPUP,
+        };
+        static READIED: std::sync::Once = std::sync::Once::new();
+        READIED.call_once(|| {
+            // SAFETY: a hidden window of a system class, destroyed below on
+            // this same thread.
+            let made = unsafe {
+                CreateWindowExW(
+                    WINDOW_EX_STYLE(0),
+                    windows::core::w!("Edit"),
+                    windows::core::PCWSTR::null(),
+                    WS_POPUP,
+                    0,
+                    0,
+                    0,
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            };
+            let window = match made {
+                Ok(window) => window,
+                Err(why) => {
+                    tracing::warn!(
+                        "spin-field-naming: ready-failed window hr=0x{:08X}",
+                        why.code().0 as u32
+                    );
+                    return;
+                }
+            };
+            SERVICE.with(|service| {
+                let Some(service) = service.get_or_init(the_service) else {
+                    return;
+                };
+                // SAFETY: the window is live until the destroy below; the
+                // string outlives the call.
+                //
+                // Not cleared with `ClearHwndProps` before the window goes:
+                // measured against the reading on 2026-09-24, clearing it
+                // undoes the whole effect and the fields come back nameless.
+                // Whether a later window given this handle could read the
+                // name was not measured.
+                let readied = unsafe {
+                    service.SetHwndPropStr(
+                        window,
+                        OBJID_CLIENT.0 as u32,
+                        CHILDID_SELF,
+                        PROPID_ACC_NAME,
+                        &HSTRING::from("Wixen Mail"),
+                    )
+                };
+                if let Err(why) = readied {
+                    tracing::warn!(
+                        "spin-field-naming: ready-failed write hr=0x{:08X}",
+                        why.code().0 as u32
+                    );
+                }
+            });
+            // SAFETY: the window made above, on this thread.
+            let _ = unsafe { DestroyWindow(window) };
+        });
     }
 
     fn property(which: FieldProperty) -> GUID {

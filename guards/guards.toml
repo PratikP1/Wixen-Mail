@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 261 records have arrived since and have not been through it.
+# 262 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29722,6 +29722,34 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/accessibility/names.rs", tests = 12 },
     { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
+]
+
+# ── The store is readied before the program's first browser (12-06.1) ───────
+#
+# The break makes the hidden window the first annotation write goes to fail
+# to exist, so the program's first write never happens and the browser built
+# next leaves every later write unkept, which is the running program before
+# 12-06.1. Send Later's and the event form's fields, read from another
+# process after a browser, come back nameless, or named by their label. The
+# two companions stay green: they do not depend on the store being readied.
+# Taken by hand first on 2026-09-24: exactly the two named tests went red.
+[[guard]]
+name = "the annotation store is readied before the program's first browser"
+file = "src/presentation/accessibility/names.rs"
+suite = "a_spin_controls_field_is_named_where_the_scan_reads_it"
+before = '''            let window = match made {
+                Ok(window) => window,'''
+after = '''            let made: windows::core::Result<windows::Win32::Foundation::HWND> =
+                Err(windows::core::Error::from_hresult(windows::core::HRESULT(-1)));
+            let window = match made {
+                Ok(window) => window,'''
+red = [
+    "test_send_later_names_every_typing_field_where_the_scan_reads_it",
+    "test_the_event_form_names_every_typing_field_where_the_scan_reads_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/names.rs", tests = 12 },
+    { file = "tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs", tests = 6 },
 ]
 
 # ── One spin control named the old way is found (EDIT-01, ledger 410) ──────
