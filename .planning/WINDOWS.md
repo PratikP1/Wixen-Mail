@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 545
+open_count: 547
 waived_count: 0
 fixed_count: 55
-total_count: 600
-last_updated: 2026-09-24T11:45:00.000Z
+total_count: 602
+last_updated: 2026-09-24T13:10:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -615,6 +615,8 @@ last_updated: 2026-09-24T11:45:00.000Z
 | 598 | 12 | todo | Cargo.toml |  | 12-07: phonenumber 0.3.10 carries Google's numbering data 9.0.33 of 2026-06-17; Google's current release on 2026-09-23 was 9.0.39 of 2026-09-09, with 42 regions' data changed between, and upstream pull request 110, the fix for the reference-country defect, is open against the v0.3 branch. When a release carries newer data or that fix, take the 102 rows of 12-07's audit again against it and retire each route in application::phone_numbers the release makes unnecessary, keeping its rows as cases | open |  | 2026-09-24T11:45:00.000Z |  |
 | 599 | 12 | todo | installer/Wixen-Mail-Setup.iss |  | 12-07: the installer ships no third-party licence notices. self_cell, taken under its Apache-2.0 arm, already needed one (06-03's audit), and phonenumber 0.3.10, Apache-2.0 only, needs one too; Apache-2.0 asks that a redistributed binary carry the licence text. oncemutex, in phonenumber's closure, ships no licence text of its own | open |  | 2026-09-24T11:45:00.000Z |  |
 | 600 | 12 | todo | src/presentation/wx_managers.rs |  | 12-07: the Add Address dialog keeps its own list of 127 English country names, stores the name the provider then receives, and defaults to United States for a region it does not know. The phone dialog's Country list takes its names from Windows in its display language; version 2's translation has to reach the address list too, and changing what it stores changes what each provider receives, so 12-07 left it as it is | open |  | 2026-09-24T11:45:00.000Z |  |
+| 601 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07: pull request #99's Accessibility scan (run 35995441987) found the contact editor's Birthday Month list's value element, the static text showing the month, focusable with no name. It is the class ledger 411, 415, 418 and 423 name for Send Later's and the event form's lists, and the list is the one build_date_fields builds for all three, so 12-07 left it for the fix that reaches all of them | open |  | 2026-09-24T13:10:00.000Z |  |
+| 602 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07 judged ledger 416's class: an editable combo box carrying an accessible object of ours is put behind the MSAA proxy on UI Automation, which offers no ExpandCollapse pattern, and without the object Windows' own combo box provider offers it and takes the name from the label before the box. The contact editor's Prefix and Suffix boxes are named that way since 12-07, read by tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs; the event form's Category box still carries the object, and naming it the same way would close 416 | open |  | 2026-09-24T13:10:00.000Z |  |
 
 ````json
 [
@@ -7816,6 +7818,30 @@ last_updated: 2026-09-24T11:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T11:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 601,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "12-07: pull request #99's Accessibility scan (run 35995441987) found the contact editor's Birthday Month list's value element, the static text showing the month, focusable with no name. It is the class ledger 411, 415, 418 and 423 name for Send Later's and the event form's lists, and the list is the one build_date_fields builds for all three, so 12-07 left it for the fix that reaches all of them",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T13:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 602,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "12-07 judged ledger 416's class: an editable combo box carrying an accessible object of ours is put behind the MSAA proxy on UI Automation, which offers no ExpandCollapse pattern, and without the object Windows' own combo box provider offers it and takes the name from the label before the box. The contact editor's Prefix and Suffix boxes are named that way since 12-07, read by tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs; the event form's Category box still carries the object, and naming it the same way would close 416",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T13:10:00.000Z",
     "resolved_at": null
   }
 ]

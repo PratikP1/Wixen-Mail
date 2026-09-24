@@ -9778,7 +9778,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs", tests = 22 },
+    { file = "tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs", tests = 23 },
 ]
 
 # ── A birthday with no year is stored as --MM-DD (#40, 12-07) ───────────────
@@ -9815,7 +9815,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs", tests = 22 },
+    { file = "tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs", tests = 23 },
 ]
 
 [[guard]]

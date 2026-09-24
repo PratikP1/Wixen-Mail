@@ -1224,6 +1224,14 @@ fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCt
 }
 
 /// Add a label and a box that offers `choices` and takes anything typed.
+///
+/// Named by the label built just before it, which Windows reads on both
+/// channels, and not with `set_accessible_name`. An accessible object of
+/// ours puts the box behind the MSAA proxy on UI Automation, which offers no
+/// way to open and close the list: pull request #99's Accessibility scan
+/// flagged both boxes for it, and without the object Windows' own combo box
+/// provider answers with the pattern and the label's name, measured by
+/// `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs`.
 fn add_panel_combo(
     parent: &Panel,
     sizer: &FlexGridSizer,
@@ -1234,7 +1242,6 @@ fn add_panel_combo(
     let field = ComboBox::builder(parent)
         .with_string_choices(choices)
         .build();
-    set_accessible_name(&field, &name_from_label(label));
     sizer.add(&lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);
     field
