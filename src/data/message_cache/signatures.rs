@@ -153,11 +153,274 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to delete signature: {}", e)))?;
         Ok(())
     }
+
+    /// Every signature, whichever account was active when it was written,
+    /// ordered by name.
+    pub fn get_every_signature(&self) -> Result<Vec<Signature>> {
+        Ok(Vec::new())
+    }
+
+    /// Give an account a signature, or with `None` take its assignment away so
+    /// it uses the default.
+    pub fn assign(&self, account_id: &str, signature_id: Option<&str>) -> Result<()> {
+        let _ = (account_id, signature_id);
+        Ok(())
+    }
+
+    /// The signature assigned to an account, if one is.
+    pub fn assignment_for(&self, account_id: &str) -> Result<Option<String>> {
+        let _ = account_id;
+        Ok(None)
+    }
+
+    /// Make one signature the default for every account with none assigned,
+    /// or with `None` leave no default at all.
+    pub fn set_the_default(&self, signature_id: Option<&str>) -> Result<()> {
+        let _ = signature_id;
+        Ok(())
+    }
+
+    /// The signature an account's messages start with.
+    pub fn signature_for_account(&self, account_id: &str) -> Result<Option<Signature>> {
+        let _ = account_id;
+        Ok(None)
+    }
+
+    /// Turn signatures kept per account into one set, once.
+    pub fn make_signatures_one_set(&self) -> Result<()> {
+        let _ = SIGNATURES_ARE_ONE_SET;
+        Ok(())
+    }
 }
+
+/// The name under which the once-only pass that made signatures one set is
+/// recorded in `work_done_once`.
+const SIGNATURES_ARE_ONE_SET: &str =
+    "signatures made one set, each account keeping its own, 2026-09-24";
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
+
+    fn a_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_sig_test_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
+    }
+
+    fn a_signature(id: &str, account_id: &str, name: &str) -> Signature {
+        Signature {
+            id: id.to_string(),
+            account_id: account_id.to_string(),
+            name: name.to_string(),
+            content_plain: format!("Regards, {name}"),
+            content_html: None,
+            is_default: false,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    /// A row as a build before this one wrote it, where each account could
+    /// have a default of its own, and the pass not yet run.
+    fn written_before(
+        cache: &MessageCache,
+        id: &str,
+        account_id: &str,
+        is_default: bool,
+        at: &str,
+    ) {
+        cache
+            .conn
+            .execute(
+                "INSERT INTO signatures (id, account_id, name, content_plain, is_default, created_at)
+                 VALUES (?1, ?2, ?1, ?1, ?3, ?4)",
+                params![id, account_id, is_default, at],
+            )
+            .expect("a row written before");
+        cache
+            .conn
+            .execute(
+                "DELETE FROM work_done_once WHERE name = ?1",
+                params![SIGNATURES_ARE_ONE_SET],
+            )
+            .expect("the pass not yet run");
+    }
+
+    fn defaults(cache: &MessageCache) -> Vec<String> {
+        cache
+            .get_every_signature()
+            .expect("signatures to read")
+            .into_iter()
+            .filter(|s| s.is_default)
+            .map(|s| s.id)
+            .collect()
+    }
+
+    fn for_account(cache: &MessageCache, account_id: &str) -> Option<String> {
+        cache
+            .signature_for_account(account_id)
+            .expect("a signature to resolve")
+            .map(|s| s.id)
+    }
+
+    #[test]
+    fn test_every_signature_is_listed_whichever_account_wrote_it() {
+        let cache = a_cache();
+        for signature in [
+            a_signature("s1", "work", "Work"),
+            a_signature("s2", "home", "Home"),
+            a_signature("s3", "local", "Brief"),
+        ] {
+            cache
+                .create_signature(&signature)
+                .expect("a signature to save");
+        }
+        let names: Vec<String> = cache
+            .get_every_signature()
+            .expect("signatures to read")
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, ["Brief", "Home", "Work"]);
+    }
+
+    #[test]
+    fn test_an_assignment_is_read_back_and_none_takes_it_away() {
+        let cache = a_cache();
+        cache
+            .create_signature(&a_signature("s1", "work", "Work"))
+            .expect("a signature");
+        cache.assign("work", Some("s1")).expect("an assignment");
+        assert_eq!(
+            cache.assignment_for("work").expect("read"),
+            Some("s1".to_string())
+        );
+        cache
+            .assign("work", None)
+            .expect("the assignment taken away");
+        assert_eq!(cache.assignment_for("work").expect("read"), None);
+    }
+
+    #[test]
+    fn test_an_account_takes_its_assignment_before_the_default() {
+        let cache = a_cache();
+        cache
+            .create_signature(&a_signature("s1", "work", "Work"))
+            .expect("a signature");
+        cache
+            .create_signature(&a_signature("s2", "work", "Home"))
+            .expect("a signature");
+        cache.set_the_default(Some("s2")).expect("a default");
+        cache.assign("work", Some("s1")).expect("an assignment");
+        assert_eq!(for_account(&cache, "work"), Some("s1".to_string()));
+    }
+
+    #[test]
+    fn test_an_account_with_no_assignment_takes_the_default() {
+        let cache = a_cache();
+        cache
+            .create_signature(&a_signature("s1", "work", "Work"))
+            .expect("a signature");
+        cache.set_the_default(Some("s1")).expect("a default");
+        assert_eq!(for_account(&cache, "home"), Some("s1".to_string()));
+    }
+
+    #[test]
+    fn test_setting_the_default_clears_it_on_every_other_account() {
+        let cache = a_cache();
+        cache
+            .create_signature(&a_signature("s1", "work", "Work"))
+            .expect("a signature");
+        cache
+            .create_signature(&a_signature("s2", "home", "Home"))
+            .expect("a signature");
+        cache.set_the_default(Some("s1")).expect("a default");
+        cache.set_the_default(Some("s2")).expect("another default");
+        assert_eq!(defaults(&cache), ["s2"]);
+    }
+
+    #[test]
+    fn test_clearing_the_default_leaves_an_unassigned_account_with_none() {
+        let cache = a_cache();
+        cache
+            .create_signature(&a_signature("s1", "work", "Work"))
+            .expect("a signature");
+        cache.set_the_default(Some("s1")).expect("a default");
+        assert_eq!(for_account(&cache, "home"), Some("s1".to_string()));
+        cache.set_the_default(None).expect("the default cleared");
+        assert_eq!(for_account(&cache, "home"), None);
+        assert!(defaults(&cache).is_empty());
+    }
+
+    #[test]
+    fn test_deleting_a_signature_takes_away_the_assignments_that_named_it() {
+        let cache = a_cache();
+        cache
+            .create_signature(&a_signature("s1", "work", "Work"))
+            .expect("a signature");
+        cache.assign("work", Some("s1")).expect("an assignment");
+        assert_eq!(
+            cache.assignment_for("work").expect("read"),
+            Some("s1".to_string())
+        );
+        cache.delete_signature("s1").expect("a delete");
+        assert_eq!(cache.assignment_for("work").expect("read"), None);
+    }
+
+    #[test]
+    fn test_the_pass_keeps_every_accounts_signature_and_one_default() {
+        // Three accounts, each with the default it had before, and one
+        // signature that was nobody's default.
+        let cache = a_cache();
+        written_before(&cache, "work-sig", "work", true, "2026-03-01T00:00:00Z");
+        written_before(&cache, "home-sig", "home", true, "2026-01-01T00:00:00Z");
+        written_before(&cache, "club-sig", "club", true, "2026-02-01T00:00:00Z");
+        written_before(&cache, "spare", "work", false, "2025-01-01T00:00:00Z");
+
+        cache.make_signatures_one_set().expect("the pass");
+
+        for (account, signature) in [
+            ("work", "work-sig"),
+            ("home", "home-sig"),
+            ("club", "club-sig"),
+        ] {
+            assert_eq!(
+                for_account(&cache, account),
+                Some(signature.to_string()),
+                "{account} lost the signature it had"
+            );
+        }
+        assert_eq!(
+            defaults(&cache),
+            ["home-sig"],
+            "the oldest default is the one kept"
+        );
+    }
+
+    #[test]
+    fn test_the_pass_runs_once() {
+        let cache = a_cache();
+        written_before(&cache, "work-sig", "work", true, "2026-03-01T00:00:00Z");
+        cache.make_signatures_one_set().expect("the pass");
+        assert_eq!(
+            cache.assignment_for("work").expect("read"),
+            Some("work-sig".to_string())
+        );
+
+        // A default set per account after the pass is not a row from before
+        // it, and a second open must not turn it into an assignment.
+        cache
+            .conn
+            .execute(
+                "INSERT INTO signatures (id, account_id, name, content_plain, is_default, created_at)
+                 VALUES ('later', 'home', 'later', 'later', 1, '2026-04-01T00:00:00Z')",
+                [],
+            )
+            .expect("a later row");
+        cache.make_signatures_one_set().expect("the pass again");
+        assert_eq!(cache.assignment_for("home").expect("read"), None);
+    }
 
     #[test]
     fn test_signature_operations() {
