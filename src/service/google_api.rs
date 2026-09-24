@@ -82,6 +82,15 @@ pub struct GoogleName {
     pub given_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub family_name: String,
+    /// A title before the name, "Dr." or "Mrs", which People calls
+    /// `honorificPrefix`. Left out when empty, like the two parts above.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub honorific_prefix: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub middle_name: String,
+    /// What follows the name, "Jr." or "PhD", People's `honorificSuffix`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub honorific_suffix: String,
     /// The whole name on one line, which is the only whole-name field Google
     /// will accept a change to.
     ///
@@ -1134,6 +1143,9 @@ mod tests {
                 display_name: "Grace van der Berg".to_string(),
                 given_name: "Grace".to_string(),
                 family_name: "van der Berg".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             email_addresses: vec![GoogleEmail {
@@ -1199,6 +1211,9 @@ mod tests {
                 display_name: "Grace van der Berg".to_string(),
                 given_name: "Grace".to_string(),
                 family_name: "van der Berg".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             ..Default::default()
@@ -1288,6 +1303,9 @@ mod tests {
                 display_name: "Grace van der Berg".to_string(),
                 given_name: "Grace".to_string(),
                 family_name: "van der Berg".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             ..Default::default()
@@ -1351,6 +1369,9 @@ mod tests {
                 display_name: "Grace van der Berg".to_string(),
                 given_name: "Grace".to_string(),
                 family_name: "van der Berg".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             ..Default::default()
@@ -1523,6 +1544,9 @@ mod tests {
                 display_name: "Grace Hopper".to_string(),
                 given_name: "Grace".to_string(),
                 family_name: "Hopper".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             ..Default::default()
@@ -1662,7 +1686,8 @@ mod tests {
                 {
                     "resourceName": "people/c123",
                     "etag": "abc",
-                    "names": [{"displayName": "Alice", "givenName": "Alice", "familyName": "Smith"}],
+                    "names": [{"displayName": "Alice", "givenName": "Alice", "familyName": "Smith",
+                               "honorificPrefix": "Dr.", "middleName": "Jane", "honorificSuffix": "PhD"}],
                     "emailAddresses": [{"value": "alice@example.com", "type": "home"}],
                     "phoneNumbers": [{"value": "+1-555-0101", "type": "mobile"}],
                     "organizations": [{"name": "Acme Corp", "title": "Engineer", "department": "R&D"}],
@@ -1677,6 +1702,9 @@ mod tests {
         assert_eq!(resp.connections.len(), 1);
         assert_eq!(resp.connections[0].resource_name, "people/c123");
         assert_eq!(resp.connections[0].names[0].display_name, "Alice");
+        assert_eq!(resp.connections[0].names[0].honorific_prefix, "Dr.");
+        assert_eq!(resp.connections[0].names[0].middle_name, "Jane");
+        assert_eq!(resp.connections[0].names[0].honorific_suffix, "PhD");
         assert_eq!(
             resp.connections[0].email_addresses[0].value,
             "alice@example.com"
@@ -1756,6 +1784,9 @@ mod tests {
             display_name: "Grace van der Berg".to_string(),
             given_name: "Grace".to_string(),
             family_name: "van der Berg".to_string(),
+            honorific_prefix: String::new(),
+            middle_name: String::new(),
+            honorific_suffix: String::new(),
             unstructured_name: String::new(),
         };
 
@@ -1774,6 +1805,9 @@ mod tests {
                 display_name: "Test User".to_string(),
                 given_name: "Test".to_string(),
                 family_name: "User".to_string(),
+                honorific_prefix: "Dr.".to_string(),
+                middle_name: "Jane".to_string(),
+                honorific_suffix: "PhD".to_string(),
                 unstructured_name: String::new(),
             }],
             email_addresses: vec![GoogleEmail {
@@ -1786,6 +1820,9 @@ mod tests {
         let json = serde_json::to_string(&person).unwrap();
         assert!(json.contains(r#""givenName":"Test""#), "{json}");
         assert!(json.contains(r#""familyName":"User""#), "{json}");
+        assert!(json.contains(r#""honorificPrefix":"Dr.""#), "{json}");
+        assert!(json.contains(r#""middleName":"Jane""#), "{json}");
+        assert!(json.contains(r#""honorificSuffix":"PhD""#), "{json}");
         assert!(json.contains("test@example.com"), "{json}");
         assert!(!json.contains("displayName"), "{json}");
     }

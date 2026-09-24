@@ -1542,6 +1542,144 @@ pub fn as_stored_date(year: i32, month: u32, day: u32) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// A birthday read from its controls: a date when the year is known, and
+/// the marker the sync already writes for one with no year, `--MM-DD`, when
+/// it is not.
+pub fn as_stored_birthday(year: Option<i32>, month: u32, day: u32) -> String {
+    match year {
+        Some(year) => as_stored_date(year, month, day),
+        None => format!("{}{month:02}-{day:02}", crate::common::types::YEAR_LEFT_OUT),
+    }
+}
+
+/// A birthday's controls: a check box saying whether there is one, the three
+/// a date is entered with, and a check box saying the year is not known,
+/// since a birthday often arrives without one.
+///
+/// The first check box exists because a date control always holds a date.
+/// Without it, saving a contact nobody gave a birthday would store today's.
+#[derive(Clone)]
+pub struct BirthdayFields {
+    pub known: CheckBox,
+    pub date: DateFields,
+    pub no_year: CheckBox,
+    /// A stored birthday these controls cannot show, such as words an address
+    /// book sent. Kept as it was while "Birthday" stays unticked, so opening
+    /// a contact and pressing OK never throws it away.
+    pub unread: Option<String>,
+}
+
+impl BirthdayFields {
+    /// What the controls hold, in the form a contact stores: empty for no
+    /// birthday, `--MM-DD` for one with no year, a date otherwise.
+    pub fn stored(&self) -> String {
+        if !self.known.get_value() {
+            return self.unread.clone().unwrap_or_default();
+        }
+        let month = self.date.month.get_selection().map_or(1, |i| i + 1);
+        let day = self.date.day.value().max(1) as u32;
+        let year = (!self.no_year.get_value()).then(|| self.date.year.value());
+        as_stored_birthday(year, month, day)
+    }
+
+    /// Only what can be changed is offered: nothing but the first box while
+    /// there is no birthday, and no year while the year is not known.
+    fn enable_what_applies(&self) {
+        let known = self.known.get_value();
+        self.date.month.enable(known);
+        self.date.day.enable(known);
+        self.no_year.enable(known);
+        self.date.year.enable(known && !self.no_year.get_value());
+    }
+}
+
+/// What a stored birthday is: a whole date, a month and day with the year
+/// left out, or something these controls cannot show.
+enum StoredBirthday {
+    Nothing,
+    Date(String),
+    NoYear { month: u32, day: u32 },
+    Unread(String),
+}
+
+fn what_the_birthday_is(existing: Option<&str>) -> StoredBirthday {
+    let Some(text) = existing.map(str::trim).filter(|text| !text.is_empty()) else {
+        return StoredBirthday::Nothing;
+    };
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d") {
+        use chrono::Datelike;
+        // A year the year control cannot hold is kept as text rather than
+        // clamped into range and saved as a different year.
+        return match (EARLIEST_YEAR..=LATEST_YEAR).contains(&date.year()) {
+            true => StoredBirthday::Date(text.to_string()),
+            false => StoredBirthday::Unread(text.to_string()),
+        };
+    }
+    // A leap year, so the twenty-ninth of February with no year is a day.
+    let month_and_day = text
+        .strip_prefix(crate::common::types::YEAR_LEFT_OUT)
+        .and_then(|rest| {
+            chrono::NaiveDate::parse_from_str(&format!("2000-{rest}"), "%Y-%m-%d").ok()
+        });
+    match month_and_day {
+        Some(date) => {
+            use chrono::Datelike;
+            StoredBirthday::NoYear {
+                month: date.month(),
+                day: date.day(),
+            }
+        }
+        None => StoredBirthday::Unread(text.to_string()),
+    }
+}
+
+/// Build a birthday's controls, opened on `existing` when a contact has one:
+/// a date, or `--MM-DD` for a birthday with no year.
+pub fn build_birthday_fields(
+    parent: &dyn WxWidget,
+    order: DateOrder,
+    now: chrono::DateTime<chrono::Local>,
+    existing: Option<&str>,
+) -> BirthdayFields {
+    let known = CheckBox::builder(parent).with_label("&Birthday").build();
+    let stored = what_the_birthday_is(existing);
+    let opens_on = match &stored {
+        StoredBirthday::Date(text) => Some(text.clone()),
+        _ => None,
+    };
+    let date = build_date_fields(parent, order, now, opens_on.as_deref());
+    let no_year = CheckBox::builder(parent).with_label("No &year").build();
+    known.set_value(matches!(
+        stored,
+        StoredBirthday::Date(_) | StoredBirthday::NoYear { .. }
+    ));
+    if let StoredBirthday::NoYear { month, day } = &stored {
+        let (month, day) = (*month, *day);
+        no_year.set_value(true);
+        // A leap year behind the greyed-out year, so the day's range holds
+        // the twenty-ninth of February.
+        date.year.set_value(2000);
+        date.month.set_selection(month - 1);
+        clamp_day_to_month(date);
+        date.day.set_value(day as i32);
+    }
+    let fields = BirthdayFields {
+        known,
+        date,
+        no_year,
+        unread: match &stored {
+            StoredBirthday::Unread(text) => Some(text.clone()),
+            _ => None,
+        },
+    };
+    fields.enable_what_applies();
+    for check in [known, no_year] {
+        let fields = fields.clone();
+        check.on_toggled(move |_| fields.enable_what_applies());
+    }
+    fields
+}
+
 /// A time read from the hour and minute controls, in the form everything
 /// downstream stores.
 pub fn as_stored_time(hour: u32, minute: u32) -> String {
@@ -1659,6 +1797,27 @@ mod tests {
     #[test]
     fn test_a_date_is_stored_from_its_three_controls() {
         assert_eq!(as_stored_date(2026, 7, 31), "2026-07-31");
+    }
+
+    #[test]
+    fn test_a_birthday_with_no_year_is_stored_as_the_marker_the_sync_writes() {
+        assert_eq!(as_stored_birthday(None, 3, 14), "--03-14");
+        assert_eq!(as_stored_birthday(Some(1906), 12, 9), "1906-12-09");
+        assert!(as_stored_birthday(None, 3, 14).starts_with(crate::common::types::YEAR_LEFT_OUT));
+    }
+
+    #[test]
+    fn test_a_stored_birthday_in_a_year_the_controls_do_not_offer_is_kept_as_it_was() {
+        // Pull request #99's review on 2026-09-24: the year control holds 1900
+        // to 2100, so a birthday of 1815 opened in it would be saved as 1900.
+        assert!(matches!(
+            what_the_birthday_is(Some("1815-12-10")),
+            StoredBirthday::Unread(kept) if kept == "1815-12-10"
+        ));
+        assert!(matches!(
+            what_the_birthday_is(Some("1906-12-09")),
+            StoredBirthday::Date(_)
+        ));
     }
 
     #[test]

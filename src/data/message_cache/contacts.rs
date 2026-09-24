@@ -98,9 +98,9 @@ impl MessageCache {
              (id, account_id, name, email, phone, company, job_title, website, address, birthday,
               avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at,
               nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-              pending, given_name, family_name)
+              pending, given_name, family_name, name_prefix, middle_name, name_suffix)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
+                    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)
              ON CONFLICT(id) DO UPDATE SET
                 account_id = excluded.account_id,
                 name = excluded.name,
@@ -128,7 +128,10 @@ impl MessageCache {
                 custom_fields_json = excluded.custom_fields_json,
                 pending = excluded.pending,
                 given_name = excluded.given_name,
-                family_name = excluded.family_name",
+                family_name = excluded.family_name,
+                name_prefix = excluded.name_prefix,
+                middle_name = excluded.middle_name,
+                name_suffix = excluded.name_suffix",
             params![
                 &contact.id, &contact.account_id, &contact.name, &contact.email,
                 &contact.phone, &contact.company,
@@ -140,6 +143,7 @@ impl MessageCache {
                 &contact.emails_json, &contact.phones_json, &contact.addresses_json,
                 &contact.custom_fields_json, &contact.pending,
                 &contact.given_name, &contact.family_name,
+                &contact.name_prefix, &contact.middle_name, &contact.name_suffix,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
 
@@ -244,7 +248,7 @@ impl MessageCache {
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending, given_name, family_name
+                    pending, given_name, family_name, name_prefix, middle_name, name_suffix
              FROM contacts
              WHERE account_id = ?1
              ORDER BY favorite DESC, name ASC"
@@ -289,6 +293,9 @@ impl MessageCache {
             pending: row.get(25)?,
             given_name: row.get(26)?,
             family_name: row.get(27)?,
+            name_prefix: row.get(28)?,
+            middle_name: row.get(29)?,
+            name_suffix: row.get(30)?,
             known_to: Vec::new(),
         })
     }
@@ -305,7 +312,7 @@ impl MessageCache {
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending, given_name, family_name
+                    pending, given_name, family_name, name_prefix, middle_name, name_suffix
              FROM contacts
              WHERE account_id = ?1
                AND (
@@ -569,6 +576,9 @@ impl MessageCache {
             },
             given_name: from_card.given_name.or_else(|| held.given_name.clone()),
             family_name: from_card.family_name.or_else(|| held.family_name.clone()),
+            name_prefix: from_card.name_prefix.or_else(|| held.name_prefix.clone()),
+            middle_name: from_card.middle_name.or_else(|| held.middle_name.clone()),
+            name_suffix: from_card.name_suffix.or_else(|| held.name_suffix.clone()),
             phone: from_card.phone.or_else(|| held.phone.clone()),
             company: from_card.company.or_else(|| held.company.clone()),
             job_title: from_card.job_title.or_else(|| held.job_title.clone()),
@@ -717,6 +727,7 @@ impl MessageCache {
                     serde_json::to_string(&[super::PhoneEntry {
                         label: Self::NO_LABEL.to_string(),
                         number: number.clone(),
+                        country: None,
                     }])
                     .ok()
                 })
@@ -786,11 +797,13 @@ impl MessageCache {
             "FN:{}",
             Self::escape_vcard_text(&contact.name)
         )));
-        // The parts of the name this application actually holds, in the
-        // five fields RFC 2426 gives them, with the three it holds nothing
-        // for left empty. Nothing is split out of the whole name to fill
-        // them: splitting sends "Grace Brewster Murray Hopper" out with
-        // the wrong given name and brings "van der Berg" back as "Berg".
+        // The five parts of the name in the five fields RFC 2426 gives
+        // them: family, given, additional (the middle name), prefix and
+        // suffix, each left empty when nobody recorded it. Nothing is split
+        // out of the whole name to fill them: splitting sends "Grace
+        // Brewster Murray Hopper" out with the wrong given name and brings
+        // "van der Berg" back as "Berg". The contact editor offers a guess
+        // the person can correct before saving; this writes what was saved.
         //
         // Written for every contact, even one with no parts recorded,
         // because a vCard 3.0 card without N is malformed and other
@@ -800,9 +813,9 @@ impl MessageCache {
             Self::structured_value(&[
                 contact.family_name.as_deref().unwrap_or_default(),
                 contact.given_name.as_deref().unwrap_or_default(),
-                "",
-                "",
-                "",
+                contact.middle_name.as_deref().unwrap_or_default(),
+                contact.name_prefix.as_deref().unwrap_or_default(),
+                contact.name_suffix.as_deref().unwrap_or_default(),
             ])
         )));
         if let Some(ref nick) = contact.nickname {
@@ -1436,6 +1449,9 @@ impl MessageCache {
         let mut nickname = None;
         let mut given_name = None;
         let mut family_name = None;
+        let mut name_prefix = None;
+        let mut middle_name = None;
+        let mut name_suffix = None;
         let mut department = None;
         let mut relationship = None;
         // Collect multi-value entries
@@ -1448,14 +1464,15 @@ impl MessageCache {
             if let Some((_, value)) = Self::vcard_named(&line, "FN") {
                 name = Self::unescape_vcard_text(value.trim());
             } else if let Some((_, value)) = Self::vcard_named(&line, "N") {
-                // The two parts this application holds, taken from the two
-                // fields that hold them and nowhere else. The three fields
-                // after them are an additional name, a prefix and a suffix,
-                // and there is nowhere here to keep any of them, so they are
-                // read past rather than folded into something else.
+                // Each part from the field that holds it and nowhere else:
+                // family, given, additional (the middle name), prefix and
+                // suffix, in RFC 2426's order.
                 let parts = Self::structured_parts(value.trim());
                 family_name = Self::a_field_that_was_filled_in(parts.first());
                 given_name = Self::a_field_that_was_filled_in(parts.get(1));
+                middle_name = Self::a_field_that_was_filled_in(parts.get(2));
+                name_prefix = Self::a_field_that_was_filled_in(parts.get(3));
+                name_suffix = Self::a_field_that_was_filled_in(parts.get(4));
             } else if let Some((_, value)) = Self::vcard_named(&line, "NICKNAME") {
                 nickname = Some(Self::unescape_vcard_text(value.trim()));
             } else if let Some((prefix, value)) = Self::vcard_named(&line, "EMAIL") {
@@ -1477,6 +1494,7 @@ impl MessageCache {
                 phones.push(super::PhoneEntry {
                     label,
                     number: num.clone(),
+                    country: None,
                 });
                 if phone.is_none() {
                     phone = Some(num);
@@ -1583,6 +1601,9 @@ impl MessageCache {
             name,
             given_name,
             family_name,
+            name_prefix,
+            middle_name,
+            name_suffix,
             email: primary_email,
             phone,
             company,
@@ -2250,6 +2271,9 @@ mod tests {
             name: name.to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: String::new(),
             phone: None,
             company: None,
@@ -2915,11 +2939,14 @@ mod tests {
                 // carrying one takes part of itself into the phone number.
                 label: "Ada: personal".to_string(),
                 number: "+44 7700 900123".to_string(),
+                // A card has nowhere to carry the country beside a number.
+                country: None,
             },
             super::super::PhoneEntry {
                 // A shipped dropdown value, and the one with a space in it.
                 label: "Work Fax".to_string(),
                 number: "+44 20 7946 0000".to_string(),
+                country: None,
             },
         ];
         let addresses = vec![
@@ -2952,6 +2979,11 @@ mod tests {
             // splitting a whole name gets right. It is kept as it was given.
             given_name: Some("Grace".to_string()),
             family_name: Some("van der Berg".to_string()),
+            // The three other parts of N, each with a character a card has to
+            // escape: a comma, a semicolon and a space.
+            name_prefix: Some("Rear Admiral, retd.".to_string()),
+            middle_name: Some("Brewster; Murray".to_string()),
+            name_suffix: Some("Ph D".to_string()),
             email: "grace@example.com".to_string(),
             phone: Some("+44 7700 900123".to_string()),
             company: Some("Acme, Limited".to_string()),
@@ -3449,6 +3481,7 @@ mod tests {
             let phones = vec![super::super::PhoneEntry {
                 label: label.to_string(),
                 number: "+44 7700 900999".to_string(),
+                country: None,
             }];
             let original = ContactEntry {
                 phone: Some("+44 7700 900999".to_string()),
@@ -3504,6 +3537,9 @@ mod tests {
             name: "Ada Lovelace".to_string(), email: "ada@example.com".to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             phone: Some("+1-555-0101".to_string()), company: Some("Analytical Engines".to_string()),
             job_title: Some("Mathematician".to_string()), website: Some("https://example.com".to_string()),
             address: Some("London".to_string()), birthday: Some("1815-12-10".to_string()),
@@ -4072,20 +4108,31 @@ mod tests {
     }
 
     #[test]
-    fn test_a_contact_keeps_the_two_parts_of_a_name_it_was_saved_with() {
+    fn test_a_contact_keeps_the_five_parts_of_a_name_it_was_saved_with() {
         let cache = a_cache("name_parts");
-        let mut grace = a_contact("grace-1", "Grace van der Berg");
+        let mut grace = a_contact("grace-1", "Dr. Grace Brewster van der Berg PhD");
         grace.given_name = Some("Grace".to_string());
         grace.family_name = Some("van der Berg".to_string());
+        grace.name_prefix = Some("Dr.".to_string());
+        grace.middle_name = Some("Brewster".to_string());
+        grace.name_suffix = Some("PhD".to_string());
         cache.save_contact(&grace).expect("the contact to save");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
             .expect("the contacts to read back");
+        let found = cache
+            .search_contacts_for_account("test@example.com", "grace", 5)
+            .expect("the search to answer");
 
         assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].given_name.as_deref(), Some("Grace"));
-        assert_eq!(stored[0].family_name.as_deref(), Some("van der Berg"));
+        for read in [&stored[0], &found[0]] {
+            assert_eq!(read.given_name.as_deref(), Some("Grace"));
+            assert_eq!(read.family_name.as_deref(), Some("van der Berg"));
+            assert_eq!(read.name_prefix.as_deref(), Some("Dr."));
+            assert_eq!(read.middle_name.as_deref(), Some("Brewster"));
+            assert_eq!(read.name_suffix.as_deref(), Some("PhD"));
+        }
     }
 
     #[test]
@@ -4711,6 +4758,7 @@ END:VCARD";
         let stale_phones = vec![super::super::PhoneEntry {
             label: "Old".to_string(),
             number: "+1-000-000-0000".to_string(),
+            country: None,
         }];
         let stale_addresses = vec![super::super::AddressEntry {
             label: "Old".to_string(),
@@ -4728,6 +4776,9 @@ END:VCARD";
             email: "grace@example.com".to_string(),
             given_name: Some("StaleGiven".to_string()),
             family_name: Some("StaleFamily".to_string()),
+            name_prefix: Some("StalePrefix".to_string()),
+            middle_name: Some("StaleMiddle".to_string()),
+            name_suffix: Some("StaleSuffix".to_string()),
             phone: Some("+1-000-000-0000".to_string()),
             website: Some("https://stale.example/old".to_string()),
             address: Some("1 Stale Street, Nowhere".to_string()),
@@ -4748,7 +4799,7 @@ END:VCARD";
             .import_contacts_from_vcard(
                 "test@example.com",
                 "BEGIN:VCARD\r\nVERSION:3.0\r\n\
-                 FN:Grace Brewster Hopper\r\nN:Hopper;Grace;;;\r\n\
+                 FN:Grace Brewster Hopper\r\nN:Hopper;Grace;Brewster;Rear Admiral;PhD\r\n\
                  NICKNAME:Amazing Grace\r\nEMAIL:grace@example.com\r\n\
                  TEL;TYPE=WORK:+1-202-555-0100\r\nTEL;TYPE=HOME:+1-202-555-0199\r\n\
                  ORG:US Navy;Computation\r\nURL:https://example.com/grace-new\r\n\
@@ -4764,6 +4815,9 @@ END:VCARD";
         assert_eq!(grace.name, "Grace Brewster Hopper");
         assert_eq!(grace.given_name.as_deref(), Some("Grace"));
         assert_eq!(grace.family_name.as_deref(), Some("Hopper"));
+        assert_eq!(grace.name_prefix.as_deref(), Some("Rear Admiral"));
+        assert_eq!(grace.middle_name.as_deref(), Some("Brewster"));
+        assert_eq!(grace.name_suffix.as_deref(), Some("PhD"));
         assert_eq!(grace.phone.as_deref(), Some("+1-202-555-0100"));
         assert_eq!(
             grace.website.as_deref(),

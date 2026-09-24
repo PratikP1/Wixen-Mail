@@ -353,6 +353,45 @@ fluent-langneg = "0.13"
 intl-memoizer = "0.5"
 unic-langid = "0.9"
 
+# Phone numbers, read against their own country's numbering plan and saved in
+# the international form grouped the way that country writes it. A port of
+# Google's libphonenumber, and the second piece of version 2's locale work
+# beside Fluent: the stored value carries no language, and the country names
+# shown beside a number come from Windows rather than from here. Named in one
+# file only, `application::phone_numbers`, so nothing else grows uses of it.
+#
+# Chosen on 2026-09-23 over rlibphonenumber (current data, one maintainer, a
+# protobuf compiler at build time, no licence text), Windows' own formatter
+# (it answered this machine's region for a British number) and a hand-kept
+# table (a private copy of Google's data). Confirmed by Pratik on 2026-09-24.
+# The audit, with every crate it brings read from its published tarball, is in
+# `.planning/phases/12-the-editors-and-what-the-alpha-still-owes/12-07-PLAN.md`
+# under `package_legitimacy_audit`.
+#
+# Costs carried openly, as guardrail 9 asks:
+#
+# Its numbering data is Google's 9.0.33 of 2026-06-17, byte for byte, and is
+# refreshed only when this crate is. A number from a range a country opened
+# since then can read as doubtful, which is why the editor doubts and never
+# refuses.
+#
+# Four defects were measured on 2026-09-24 against a second port of Google's
+# library, and `phone_numbers` routes around each: a number carrying its own
+# code misread under a different chosen country (upstream pull request 110), a
+# region lost when the significant number keeps a leading zero, a national
+# number that begins with its country's code cut short (upstream issue 68), and
+# digits in other scripts refused. Plain calls agreed on 46 of 102 numbers, the
+# routes on 101.
+#
+# `atomic-polyfill` arrives in the lock file for five embedded targets and is
+# never compiled for this program; `.cargo/audit.toml` accepts its advisory by
+# name. And it is Apache-2.0, whose notice the installer does not ship yet,
+# which `self_cell` already needed.
+#
+# Pinned exactly, because the routes were measured against this version's
+# behaviour and a new one is a new measurement, not an update.
+phonenumber = "=0.3.10"
+
 # For the platform spell checker and the annotation service that names a spin
 # control's typing field, both COM, and the few flat calls listed below. The
 # rest of what this project needs from Windows is a flat call behind a small

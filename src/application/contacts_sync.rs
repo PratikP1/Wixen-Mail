@@ -574,6 +574,7 @@ fn chosen_phones(contact: &ContactEntry) -> Vec<PhoneEntry> {
         .map(|number| PhoneEntry {
             label: String::new(),
             number: number.clone(),
+            country: None,
         })
         .collect()
 }
@@ -1382,6 +1383,9 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
         name: remote.name.clone(),
         given_name: remote.given_name.clone(),
         family_name: remote.family_name.clone(),
+        name_prefix: remote.name_prefix.clone(),
+        middle_name: remote.middle_name.clone(),
+        name_suffix: remote.name_suffix.clone(),
         email: remote.email.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
@@ -1424,6 +1428,9 @@ fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> C
         name: remote.name.clone(),
         given_name: remote.given_name.clone(),
         family_name: remote.family_name.clone(),
+        name_prefix: remote.name_prefix.clone(),
+        middle_name: remote.middle_name.clone(),
+        name_suffix: remote.name_suffix.clone(),
         email: remote.email.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
@@ -2870,6 +2877,7 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
             .map(|p| PhoneEntry {
                 label: label_for_provider_type(&p.phone_type),
                 number: p.value.clone(),
+                country: None,
             })
             .collect();
         serde_json::to_string(&entries).ok()
@@ -2893,6 +2901,9 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         },
         given_name: a_recorded_part(person.names.first().map(|n| n.given_name.as_str())),
         family_name: a_recorded_part(person.names.first().map(|n| n.family_name.as_str())),
+        name_prefix: a_recorded_part(person.names.first().map(|n| n.honorific_prefix.as_str())),
+        middle_name: a_recorded_part(person.names.first().map(|n| n.middle_name.as_str())),
+        name_suffix: a_recorded_part(person.names.first().map(|n| n.honorific_suffix.as_str())),
         email: primary_email,
         phone,
         company,
@@ -2940,11 +2951,22 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
     let names = if contact.name.is_empty() {
         vec![]
     } else {
-        let recorded_parts = contact.given_name.is_some() || contact.family_name.is_some();
+        let recorded_parts = [
+            &contact.given_name,
+            &contact.family_name,
+            &contact.name_prefix,
+            &contact.middle_name,
+            &contact.name_suffix,
+        ]
+        .iter()
+        .any(|part| part.is_some());
         vec![GoogleName {
             display_name: String::new(),
             given_name: contact.given_name.clone().unwrap_or_default(),
             family_name: contact.family_name.clone().unwrap_or_default(),
+            honorific_prefix: contact.name_prefix.clone().unwrap_or_default(),
+            middle_name: contact.middle_name.clone().unwrap_or_default(),
+            honorific_suffix: contact.name_suffix.clone().unwrap_or_default(),
             unstructured_name: if recorded_parts {
                 String::new()
             } else {
@@ -3140,6 +3162,7 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         .map(|(label, number)| PhoneEntry {
             label: label.to_string(),
             number: number.clone(),
+            country: None,
         })
         .collect();
     let phones_json = if phones.is_empty() {
@@ -3177,6 +3200,9 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         },
         given_name: a_recorded_part(Some(ms.given_name.as_str())),
         family_name: a_recorded_part(Some(ms.surname.as_str())),
+        name_prefix: a_recorded_part(Some(ms.title.as_str())),
+        middle_name: a_recorded_part(Some(ms.middle_name.as_str())),
+        name_suffix: a_recorded_part(Some(ms.generation.as_str())),
         email: primary_email,
         phone,
         company,
@@ -3269,6 +3295,9 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
         // parts goes out under its display name alone.
         given_name: contact.given_name.clone().unwrap_or_default(),
         surname: contact.family_name.clone().unwrap_or_default(),
+        title: contact.name_prefix.clone().unwrap_or_default(),
+        middle_name: contact.middle_name.clone().unwrap_or_default(),
+        generation: contact.name_suffix.clone().unwrap_or_default(),
         nick_name: contact.nickname.clone().unwrap_or_default(),
         email_addresses,
         home_phones,
@@ -3303,6 +3332,9 @@ mod tests {
             name: name.to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: email.to_string(),
             phone: None,
             company: None,
@@ -3339,6 +3371,9 @@ mod tests {
                 display_name: "Alice Smith".to_string(),
                 given_name: "Alice".to_string(),
                 family_name: "Smith".to_string(),
+                honorific_prefix: "Dame".to_string(),
+                middle_name: "Mary".to_string(),
+                honorific_suffix: "OBE".to_string(),
                 unstructured_name: String::new(),
             }],
             email_addresses: vec![GoogleEmail {
@@ -3362,6 +3397,9 @@ mod tests {
         };
 
         let contact = google_person_to_contact(&person, "test@gmail.com");
+        assert_eq!(contact.name_prefix.as_deref(), Some("Dame"));
+        assert_eq!(contact.middle_name.as_deref(), Some("Mary"));
+        assert_eq!(contact.name_suffix.as_deref(), Some("OBE"));
         assert_eq!(contact.name, "Alice Smith");
         assert_eq!(contact.email, "alice@example.com");
         assert_eq!(contact.id_in(&AddressBook::Google), Some("people/c123"));
@@ -3381,6 +3419,9 @@ mod tests {
             name: "Bob Jones".to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: "bob@example.com".to_string(),
             phone: Some("+1-555-0202".to_string()),
             company: Some("Corp".to_string()),
@@ -3712,6 +3753,9 @@ mod tests {
             display_name: "Carol White".to_string(),
             given_name: "Carol".to_string(),
             surname: "White".to_string(),
+            title: "Prof.".to_string(),
+            middle_name: "Ann".to_string(),
+            generation: "III".to_string(),
             email_addresses: vec![MsEmailAddress {
                 name: "Carol White".to_string(),
                 address: "carol@outlook.com".to_string(),
@@ -3726,6 +3770,16 @@ mod tests {
         };
 
         let contact = ms_contact_to_contact(&ms, "test@outlook.com");
+        assert_eq!(contact.name_prefix.as_deref(), Some("Prof."));
+        assert_eq!(contact.middle_name.as_deref(), Some("Ann"));
+        assert_eq!(contact.name_suffix.as_deref(), Some("III"));
+        // And back to Graph in the same three fields, not folded into the
+        // display name or the job title.
+        let sent = contact_to_ms_contact(&contact);
+        assert_eq!(sent.title, "Prof.");
+        assert_eq!(sent.middle_name, "Ann");
+        assert_eq!(sent.generation, "III");
+        assert_eq!(sent.job_title, "Director");
         assert_eq!(contact.name, "Carol White");
         assert_eq!(contact.email, "carol@outlook.com");
         assert_eq!(contact.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
@@ -3743,6 +3797,9 @@ mod tests {
             name: "Dave Lee".to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: "dave@example.com".to_string(),
             phone: Some("+1-555-0404".to_string()),
             company: Some("Fabrikam".to_string()),
@@ -3792,9 +3849,12 @@ mod tests {
         let original = ContactEntry {
             id: "rt-1".to_string(),
             account_id: "test@gmail.com".to_string(),
-            name: "Test Person".to_string(),
-            given_name: None,
-            family_name: None,
+            name: "Dr. Test Quinn Person Jr.".to_string(),
+            given_name: Some("Test".to_string()),
+            family_name: Some("Person".to_string()),
+            name_prefix: Some("Dr.".to_string()),
+            middle_name: Some("Quinn".to_string()),
+            name_suffix: Some("Jr.".to_string()),
             email: "test@example.com".to_string(),
             phone: Some("+1-555-9999".to_string()),
             company: Some("TestCo".to_string()),
@@ -3821,9 +3881,17 @@ mod tests {
             known_to: Vec::new(),
         };
 
-        let google = contact_to_google_person(&original);
+        let mut google = contact_to_google_person(&original);
+        // Google works the display name out from the parts it holds, and the
+        // reader reads it, so the round trip stands in for Google here.
+        google.names[0].display_name = original.name.clone();
         let back = google_person_to_contact(&google, "test@gmail.com");
         assert_eq!(back.name, original.name);
+        assert_eq!(back.given_name, original.given_name);
+        assert_eq!(back.family_name, original.family_name);
+        assert_eq!(back.name_prefix, original.name_prefix);
+        assert_eq!(back.middle_name, original.middle_name);
+        assert_eq!(back.name_suffix, original.name_suffix);
         assert_eq!(back.email, original.email);
         assert_eq!(back.phone, original.phone);
         assert_eq!(back.company, original.company);
@@ -3984,6 +4052,9 @@ mod tests {
                 display_name: "Grace van der Berg".to_string(),
                 given_name: "Grace".to_string(),
                 family_name: "van der Berg".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             ..Default::default()
@@ -4169,6 +4240,9 @@ mod tests {
                 display_name: "Prince".to_string(),
                 given_name: "Prince".to_string(),
                 family_name: "   ".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             ..Default::default()
@@ -4310,6 +4384,7 @@ mod tests {
             serde_json::to_string(&[PhoneEntry {
                 label: "Work".to_string(),
                 number: "+44 113 496 0000".to_string(),
+                country: None,
             }])
             .expect("the list can be written"),
         );
@@ -4460,6 +4535,7 @@ mod tests {
             .map(|(label, number)| PhoneEntry {
                 label: (*label).to_string(),
                 number: (*number).to_string(),
+                country: None,
             })
             .collect();
         contact.phones_json = serde_json::to_string(&numbers).ok();
@@ -4721,6 +4797,9 @@ mod tests {
                 display_name: name.to_string(),
                 given_name: name.split(' ').next().unwrap_or_default().to_string(),
                 family_name: name.split(' ').nth(1).unwrap_or_default().to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             email_addresses: vec![GoogleEmail {
@@ -5272,6 +5351,9 @@ mod tests {
             name: value("name"),
             given_name: Some(value("given name")),
             family_name: Some(value("family name")),
+            name_prefix: Some(value("name prefix")),
+            middle_name: Some(value("middle name")),
+            name_suffix: Some(value("name suffix")),
             email: value("email"),
             phone: Some(value("phone")),
             company: Some(value("company")),
@@ -5323,6 +5405,9 @@ mod tests {
             name,
             given_name,
             family_name,
+            name_prefix,
+            middle_name,
+            name_suffix,
             email,
             phone,
             company,
@@ -5356,6 +5441,9 @@ mod tests {
         assert_eq!(name, google.name);
         assert_eq!(given_name, google.given_name);
         assert_eq!(family_name, google.family_name);
+        assert_eq!(name_prefix, google.name_prefix);
+        assert_eq!(middle_name, google.middle_name);
+        assert_eq!(name_suffix, google.name_suffix);
         assert_eq!(email, google.email);
         assert_eq!(phone, google.phone);
         assert_eq!(company, google.company);
@@ -5409,6 +5497,9 @@ mod tests {
             name,
             given_name,
             family_name,
+            name_prefix,
+            middle_name,
+            name_suffix,
             email,
             phone,
             company,
@@ -5441,6 +5532,9 @@ mod tests {
         assert_eq!(name, outlook.name);
         assert_eq!(given_name, outlook.given_name);
         assert_eq!(family_name, outlook.family_name);
+        assert_eq!(name_prefix, outlook.name_prefix);
+        assert_eq!(middle_name, outlook.middle_name);
+        assert_eq!(name_suffix, outlook.name_suffix);
         assert_eq!(email, outlook.email);
         assert_eq!(phone, outlook.phone);
         assert_eq!(company, outlook.company);
@@ -5760,6 +5854,9 @@ mod tests {
                 display_name: String::new(),
                 given_name: "Phone".to_string(),
                 family_name: "Only".to_string(),
+                honorific_prefix: String::new(),
+                middle_name: String::new(),
+                honorific_suffix: String::new(),
                 unstructured_name: String::new(),
             }],
             ..Default::default()

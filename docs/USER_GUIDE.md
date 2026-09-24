@@ -952,6 +952,46 @@ is for; `Delete` removes the one you are on, asking first and naming what it
 will delete. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) has every key for
 every module in full.
 
+### The contact editor
+
+The Basic Info tab asks for a name in this order: Name, Prefix, Given name,
+Middle name, Family name and Suffix, then Nickname, Company, Department, Job
+Title, Birthday, Website, Relationship, Avatar URL and Favorite. Prefix and
+Suffix offer the common titles and endings, such as Dr., Mrs, Jr. and PhD, and
+take anything you type instead.
+
+The whole name and its parts fill each other as a first guess. Type
+"Grace Brewster Murray Hopper" in Name and the parts fill in as Grace, Brewster
+Murray and Hopper; fill in the parts with Name empty and Name is written from
+them. A box you typed in is never written over, and neither is one a saved
+contact opened with, so correcting a name does not undo a family name you set
+by hand. Empty a box and it can be guessed again.
+
+The birthday is three controls, month, day and year, in the order your
+computer writes a date. Tick Birthday to give a contact one; with it unticked,
+the contact has none. Tick No year for a birthday whose year you do not know,
+and the year is left out.
+
+An email address is checked when you add it. One that is not the shape of an
+address, such as "grace.example.com", is refused with a sentence naming it,
+and the dialog stays open so you can correct it.
+
+A phone number is read against its own country's numbering plan. Type it with
+`+` and its country code and its country is found from the code, whatever
+Country says; type it the way the country writes it at home and it is read as
+a number of the country chosen in Country. Country opens on the country
+Windows says you are in, and its entries are Windows' own country names,
+each with its code. A number the check accepts is saved in the international
+form, grouped the way its country writes it, so "0121 234 5678" with the
+United Kingdom chosen is saved as "+44 121 234 5678". A number the check
+doubts, because it looks too short, too long or not a number that country
+uses, is not refused: a sentence says what looks wrong, and pressing OK again
+without changing anything keeps it exactly as you typed it. The only text
+refused is text with no digit in it at all.
+
+Google, Outlook and address book servers each receive all five parts of a
+name, each in the field that service keeps for it.
+
 ## Keyboard Shortcuts
 
 ### Application Control

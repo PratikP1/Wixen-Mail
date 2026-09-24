@@ -230,6 +230,9 @@ pub fn contact() -> ContactEntry {
         name: "Scan Target".to_string(),
         given_name: "Scan".to_string(),
         family_name: "Target".to_string(),
+        name_prefix: "Dr.".to_string(),
+        middle_name: "Middle".to_string(),
+        name_suffix: "PhD".to_string(),
         nickname: "Scan".to_string(),
         company: "Example".to_string(),
         department: "Scanning".to_string(),
@@ -241,6 +244,7 @@ pub fn contact() -> ContactEntry {
         phones: vec![PhoneItem {
             label: "Work".to_string(),
             number: "+1 555 0100".to_string(),
+            country: Some("US".to_string()),
         }],
         addresses: vec![AddressItem {
             label: "Work".to_string(),

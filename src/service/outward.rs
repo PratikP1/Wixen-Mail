@@ -1592,7 +1592,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 53] = [
+    const A_CRATE_THAT_CANNOT: [&str; 54] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1671,6 +1671,10 @@ mod completeness {
         "fluent-langneg",
         "intl-memoizer",
         "unic-langid",
+        // Reads a phone number a person typed against numbering data compiled
+        // into the binary by its build script. Text in, a reading out; no
+        // socket, no file, nothing to fetch.
+        "phonenumber",
         "windows",
         "winresource",
         "boa_engine",

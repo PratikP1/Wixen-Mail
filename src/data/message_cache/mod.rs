@@ -359,6 +359,12 @@ pub struct PhoneEntry {
     /// Label: "Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other"
     pub label: String,
     pub number: String,
+    /// The two-letter code of the country the number was read against when
+    /// it was added in the contact editor (12-07). Left out of the stored
+    /// list when there is none, so a list written before it existed, or by
+    /// an address book, reads and writes exactly as it did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
 }
 
 /// Typed email address entry (stored as JSON array)
@@ -609,6 +615,14 @@ pub struct ContactEntry {
     /// The other half of [`ContactEntry::given_name`], under the same rule. A
     /// family name carrying a space is kept whole and never separated.
     pub family_name: Option<String>,
+    /// A title before the name, such as "Dr." or "Mrs", under the same rule:
+    /// `None` when none was ever recorded.
+    pub name_prefix: Option<String>,
+    /// The words between the given name and the family name, under the same
+    /// rule. "Brewster Murray" for Grace Brewster Murray Hopper.
+    pub middle_name: Option<String>,
+    /// What follows the name, such as "Jr." or "PhD", under the same rule.
+    pub name_suffix: Option<String>,
     /// The address to write to, or empty. A contact with only a phone number
     /// is an ordinary contact, so this being empty is a real answer and not a
     /// missing one.
@@ -770,6 +784,7 @@ impl ContactEntry {
             .map(|number| PhoneEntry {
                 label: "Mobile".to_string(),
                 number: number.clone(),
+                country: None,
             })
     }
 
@@ -3216,6 +3231,12 @@ impl MessageCache {
         // parts or somebody saves the contact here.
         self.ensure_column_exists("contacts", "given_name", "TEXT")?;
         self.ensure_column_exists("contacts", "family_name", "TEXT")?;
+        // The other three parts of a name (#40, 12-07), under the same rule
+        // and after the rebuild for the same reason: NULL is the honest answer
+        // for every row written before they existed.
+        self.ensure_column_exists("contacts", "name_prefix", "TEXT")?;
+        self.ensure_column_exists("contacts", "middle_name", "TEXT")?;
+        self.ensure_column_exists("contacts", "name_suffix", "TEXT")?;
         // Before the indexes below and not after them: each rebuild drops its
         // table and the indexes over it go with it, and the index list at the
         // end of this function is what puts those back.
@@ -4773,6 +4794,9 @@ mod tests {
             name: name.to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: String::new(),
             phone: None,
             company: None,
@@ -4809,6 +4833,7 @@ mod tests {
             serde_json::to_string(&[PhoneEntry {
                 label: "Work".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             }])
             .expect("a phone list encodes"),
         );
@@ -4818,6 +4843,7 @@ mod tests {
             Some(PhoneEntry {
                 label: "Work".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             })
         );
     }
@@ -4835,6 +4861,7 @@ mod tests {
             Some(PhoneEntry {
                 label: "Mobile".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             })
         );
     }
@@ -4861,6 +4888,7 @@ mod tests {
             Some(PhoneEntry {
                 label: "Mobile".to_string(),
                 number: "555-0100".to_string(),
+                country: None,
             })
         );
     }

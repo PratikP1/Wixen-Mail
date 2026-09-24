@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **A contact's birthday is a date.** The tester on 2026-09-15 (#40): "The birthday field
+  should be a date similar to other date fields used in calendars, tasks, reminders, etc."
+  Since 2026-09-24 the contact editor's birthday is a month, a day and a year, in the order
+  this computer writes a date, the same controls the event form uses. A Birthday check box
+  says whether the contact has one, so a contact nobody gave a birthday is not saved with
+  today's, and a No year check box leaves the year out; a birthday without a year is stored
+  the way Google's already are, so it goes to Google, Outlook and address book servers as
+  before. A birthday these controls cannot show, such as one an address book sent as words or
+  one in a year before 1900 or after 2100, is kept as it was, untouched, while Birthday stays
+  unticked.
+  Known limitations: nobody has heard the birthday's controls with a screen reader yet.
+
+- **A new library, for phone numbers.** `phonenumber` 0.3.10, a port of Google's
+  libphonenumber, reads a contact's phone numbers against their country's numbering plan. It
+  is the first piece of version 2's work on other countries and languages, beside the Fluent
+  catalogues. Four defects in it were measured on 2026-09-24 and the program works around
+  each; the plain library agreed with a second port of Google's library on 46 of 102 numbers,
+  and the program's reading of it on 101.
+
 - **Numbers are spin controls.** The tester
   on 2026-09-15 (#35): "where numbers are expected, spin boxes/controls should be used so that
   users can use up/down arrow keys to make changes", and on 2026-09-18 (#73) that the account
@@ -1198,6 +1217,45 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   oldest. If you never chose a sort, All Inboxes reads as before.
 
 ### Added
+
+- **A contact's prefix, middle name and suffix, and a name that fills its parts.** The tester
+  on 2026-09-15 (#40): "There is no prefix/suffix fields with common options. There is no
+  field for middle name. On the basic tab, if the user enters the full name in the first
+  field, it should be parsed so that the remaining fields ... should automatically fill in
+  appropriately. Similarly, if the full name field is not filled in and the other fields are
+  subsequently completed, the full name field should be updated automatically." Since
+  2026-09-24 the contact editor's Basic Info tab has Name first, then Prefix, Given name,
+  Middle name, Family name and Suffix. Prefix and Suffix offer the common titles and endings
+  and take anything typed. A whole name typed in Name fills the parts as a first guess, and
+  parts typed while Name is empty write Name from them; a box somebody typed in, or one a
+  saved contact opened with, is never written over. The three new parts are stored, written
+  to a card in the three fields of N a card keeps for them, and sent to and read from Google
+  (honorificPrefix, middleName, honorificSuffix), Outlook (title, middleName, generation) and
+  address book servers, each in that service's own field.
+  Known limitations: no real Google account, Outlook account or address book server has yet
+  received a prefix, a middle name or a suffix from this program, and nobody has heard the
+  tab with a screen reader since it changed.
+
+- **Phone numbers are read by their country.** The tester on 2026-09-15 (#40): "Are email
+  addresses and phone number validated for formatting and country designations for phone
+  numbers?" Since 2026-09-24 the Add Phone Number dialog has a Country list, opening on the
+  country Windows says you are in, with every country named the way Windows names it in its
+  display language and its calling code beside it. A number typed with `+` and its code is
+  read as its own country's whatever is chosen; one typed as its country writes it at home is
+  read as the chosen country's. A number the check accepts is saved in the international form,
+  grouped the way its country writes it: "0121 234 5678" with the United Kingdom chosen is
+  saved as "+44 121 234 5678". A number it doubts is not refused: a sentence says what looks
+  wrong and how to keep it, and OK again with nothing changed keeps it exactly as typed. Only
+  text with no digit in it is refused. An email address is checked for its shape when it is
+  added, and one that is not the shape of an address is refused in a sentence naming it.
+  Known limitations: the numbering data is Google's of 2026-06-17 (version 9.0.33) and is
+  refreshed only when the library carrying it is, so a number from a range a country opened
+  since then may be doubted, and is kept on a second OK. Three regions, Ascension, Western
+  Sahara and Tristan da Cunha, are listed by their two-letter code because Windows gives them
+  no name. A number typed with its country code but without `+`, such as "39 06 3551 1397"
+  with the United Kingdom chosen, is read as a British number and doubted; the sentence says
+  to type it with `+`. Nobody has heard the Country list or a doubted number's sentence with
+  a screen reader yet.
 
 - **Send Feedback: tell the people who make Wixen Mail about a problem, and read every word
   before it goes.** The tester on 2026-09-16 asked for "a direct way to provide feedback from
