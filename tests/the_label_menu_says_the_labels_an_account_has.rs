@@ -234,6 +234,48 @@ fn the_tools_menu(bar: &MenuBar) -> String {
         .unwrap_or_else(|| "no Tools menu".to_string())
 }
 
+fn every_item(menu: &Menu, into: &mut Vec<(i32, String)>) {
+    for item in menu.get_menu_items() {
+        into.push((item.get_item_id(), item.get_label()));
+        if let Some(sub) = item.get_sub_menu() {
+            every_item(&sub, into);
+        }
+    }
+}
+
+/// Each Help item whose menu id another item on the bar carries, with the
+/// other item's label. A separator carries no id of its own and is skipped.
+///
+/// The Help menu takes one id per topic, counted up from the first, and the
+/// window answers a menu id with the first arm that claims it. An id another
+/// command also holds runs that command.
+fn help_items_sharing_an_id(bar: &MenuBar) -> String {
+    let mut all = Vec::new();
+    for at in 0..bar.get_menu_count() {
+        if let Some(menu) = bar.get_menu(at) {
+            every_item(&menu, &mut all);
+        }
+    }
+    let Some(help) = usize::try_from(bar.find_menu("Help"))
+        .ok()
+        .and_then(|at| bar.get_menu(at))
+    else {
+        return "no Help menu".to_string();
+    };
+    help.get_menu_items()
+        .iter()
+        .filter(|item| !item.get_label().is_empty())
+        .flat_map(|item| {
+            let (id, label) = (item.get_item_id(), item.get_label());
+            all.iter()
+                .filter(|(other, other_label)| *other == id && *other_label != label)
+                .map(|(_, other_label)| format!("{label} and {other_label}"))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 fn at_number_says(labels: &[Tag], number: usize) -> String {
     tagging::at_number(labels, number)
         .map(|tag| tag.name.clone())
@@ -247,6 +289,10 @@ fn read_the_menus(frame: &Frame, cache: &MessageCache, harvest: &mut Harvest) {
     harvest.insert("the menu as the window starts", the_label_menu_now(frame));
     if let Some(bar) = frame.get_menu_bar() {
         harvest.insert("the Tools menu", the_tools_menu(&bar));
+        harvest.insert(
+            "Help items whose id another item carries",
+            help_items_sharing_an_id(&bar),
+        );
     }
 
     let fresh = the_labels(cache, FRESH);
@@ -578,6 +624,17 @@ fn test_a_key_past_the_last_label_is_one_the_menu_does_not_answer() {
     // Ctrl+6 with five labels has no item to carry it, so the message list
     // answers it with "There is no label 6" rather than silence.
     assert_eq!(reading("Ctrl+5 and Ctrl+6 with five labels"), "false true");
+}
+
+#[test]
+fn test_no_help_item_carries_the_id_of_another_command() {
+    // Found by 12-10 while the Help menu's letters were being read: its
+    // topics took ids counted up from the first into the ids after it, and
+    // What changed carried the one New Calendar, List, Folder or Group
+    // carries. The ids in between are the context menus' New, Delete, Move,
+    // Copy, Done and Pin, which the menu bar does not show and the window
+    // answers all the same.
+    assert_eq!(reading("Help items whose id another item carries"), "");
 }
 
 #[test]
