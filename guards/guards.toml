@@ -12435,10 +12435,8 @@ tests_last_seen = [
 [[guard]]
 name = "forwarding takes the original's pictures with it"
 file = "src/presentation/wx_compose.rs"
-before = """        "---------- Forwarded message ----------",
-        ThePictures::ComeAlong,"""
-after = """        "---------- Forwarded message ----------",
-        ThePictures::StayBehind,"""
+before = """    quoted_under(body, A_FORWARD_QUOTES_UNDER, ThePictures::ComeAlong)"""
+after = """    quoted_under(body, A_FORWARD_QUOTES_UNDER, ThePictures::StayBehind)"""
 red = [
     "presentation::wx_compose::tests::test_forwarding_a_message_passes_its_pictures_on",
 ]

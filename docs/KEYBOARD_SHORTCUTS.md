@@ -692,6 +692,8 @@ Five submenus hold the rest:
 
 In the account editor, Check Interval and the days before POP mail is removed are spin controls, worked with `Up` and `Down` or by typing; the server ports are typed.
 
+On the account editor's first page, `Alt+F` reaches Signature for this account: the signature messages from this account start with. Its first entry is the default, which names the signature it is; the Signature Manager can choose the same thing, and each shows what the other chose.
+
 ### Contact Management
 
 | Action | Shortcut | Description |
@@ -1246,6 +1248,17 @@ The Add Phone Number dialog, opened with Add Phone on the Email & Phone tab.
 | Type | `Alt+T` | Mobile, Home, Work and the rest |
 | Number | `Alt+N` | Typed with + and its country code, or as the country writes it at home |
 | Country | `Alt+C` | The country a number typed without its code belongs to; opens on the country Windows says you are in |
+
+### Signature Dialog Accelerators
+
+The Add Signature and Edit Signature dialog, opened with Add or Edit in the Signature Manager.
+
+| Field | Shortcut | Notes |
+|-------|----------|-------|
+| Name | `Alt+N` | What the signature is called in the manager and on each account's dialog |
+| Default signature | `Alt+D` | The signature for every account that has not been given one. Unticked on the default, no signature is the default |
+| Use for these accounts | `Alt+U` | A check box per email account, ticked for the accounts that use this signature. Each box says which signature an account uses now, if another |
+| Signature | `Alt+S` | The signature itself, in Markdown |
 
 ### Context Menu
 

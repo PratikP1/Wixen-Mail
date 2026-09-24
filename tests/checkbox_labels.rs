@@ -149,15 +149,37 @@ fn every_editor_checkbox(
     ticks.push(("the filter editor, Enabled".to_string(), filter.en_check));
     dialogs.push(filter.dialog);
 
+    // With one email account offered, so its box under "Use for these
+    // accounts" is read as well (#43).
+    let offers = [wx_managers::AccountOffer {
+        account: wx_managers::SignatureAccount {
+            id: "work".to_string(),
+            name: "Work".to_string(),
+        },
+        uses_this: true,
+        uses_now: None,
+    }];
     let signature =
-        wx_managers::build_sig_edit_dialog(frame, Some(&scan_fixtures::signature()), None);
+        wx_managers::build_sig_edit_dialog(frame, Some(&scan_fixtures::signature()), &offers, None);
     ticks.push((
         "the signature editor, Default signature".to_string(),
         signature.def_check,
     ));
+    for (account, tick) in &signature.account_boxes {
+        ticks.push((
+            format!("the signature editor, Use for {}", account.name),
+            *tick,
+        ));
+    }
     dialogs.push(signature.dialog);
 
-    let account = wx_account_manager::build_account_edit_dialog(frame, None, a11y, None);
+    let account = wx_account_manager::build_account_edit_dialog(
+        frame,
+        None,
+        a11y,
+        None,
+        &wx_account_manager::SignatureChoices::default(),
+    );
     for (what, tick) in [
         ("Use TLS", account.imap_tls),
         ("Use TLS for POP", account.pop_tls),

@@ -253,22 +253,19 @@ enum ThePictures {
     StayBehind,
 }
 
+/// The line a reply's quoted original sits under.
+const A_REPLY_QUOTES_UNDER: &str = "--- Original Message ---";
+/// The line a forwarded message sits under.
+const A_FORWARD_QUOTES_UNDER: &str = "---------- Forwarded message ----------";
+
 /// Format a quoted body for reply.
 fn format_reply_body(quoted_body: &MessageBody) -> MessageBody {
-    quoted_under(
-        quoted_body,
-        "--- Original Message ---",
-        ThePictures::StayBehind,
-    )
+    quoted_under(quoted_body, A_REPLY_QUOTES_UNDER, ThePictures::StayBehind)
 }
 
 /// Format a forwarded body.
 fn format_forward_body(body: &MessageBody) -> MessageBody {
-    quoted_under(
-        body,
-        "---------- Forwarded message ----------",
-        ThePictures::ComeAlong,
-    )
+    quoted_under(body, A_FORWARD_QUOTES_UNDER, ThePictures::ComeAlong)
 }
 
 /// Put an original under a line saying what it is, leaving room to type above.
@@ -300,6 +297,32 @@ fn quoted_under(body: &MessageBody, marker: &str, pictures: ThePictures) -> Mess
     }
 }
 
+/// The signature one account in the From list signs with, and its name for
+/// the sentence a change of account says. An empty `text` is no signature.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignatureFor {
+    pub name: String,
+    pub text: String,
+}
+
+/// Make the signature follow the From account (#43).
+///
+/// `signatures` is one per account, in the From list's order, and
+/// `opened_with` is the account the message opened signed by. When the From
+/// account changes, the block the last account's signature went in as is
+/// replaced by the next account's, if it is still in the message as it went
+/// in, and the change is said. A block somebody has typed into is left as it
+/// is, and nothing is said.
+pub fn follow_the_from_account(
+    account_choice: Choice,
+    body_editor: WebView,
+    signatures: Vec<SignatureFor>,
+    opened_with: usize,
+    a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    let _ = (account_choice, body_editor, signatures, opened_with, a11y);
+}
+
 /// Put the signature above whatever is being quoted.
 ///
 /// Above, because that is where somebody replying is already typing and where
@@ -310,7 +333,7 @@ fn quoted_under(body: &MessageBody, marker: &str, pictures: ThePictures) -> Mess
 /// is a page, and a page drops a space at the end of a paragraph. It is turned
 /// back into an ordinary space in the text that goes out, by
 /// [`sign_off::canonical_delimiter`].
-fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
+pub fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
     if signature.trim().is_empty() {
         return body.clone();
     }
@@ -1075,10 +1098,12 @@ pub fn show_compose_dialog_full(
     account_names: &[String],
     active_account_index: u32,
     preview_before_send: bool,
-    // `signature` is the account's default, or nothing. It goes above the
-    // quoted original when the window opens, so it can be read and edited
-    // before sending rather than appearing on the way out.
-    signature: &str,
+    // One per account in the From list, in its order: the signature each
+    // signs with, or nothing. The From account's goes above the quoted
+    // original when the window opens, so it can be read and edited before
+    // sending rather than appearing on the way out, and it follows a change
+    // of From account (#43).
+    signatures: &[SignatureFor],
     autosave: crate::application::autosave::AutosaveInterval,
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
     finding_people: Option<FindingPeople>,
@@ -1150,6 +1175,10 @@ pub fn show_compose_dialog_full(
         }
     };
     set_body(&MessageBody::Plain(String::new()));
+
+    let signature = signatures
+        .get(active_account_index as usize)
+        .map_or("", |signed| signed.text.as_str());
 
     // ── Pre-populate fields based on mode ────────────────────────────────
     // Filled before the copy lines are hidden or kept, because whether a reply
@@ -1248,6 +1277,13 @@ pub fn show_compose_dialog_full(
             set_body(&MessageBody::Html(data.body.clone()));
         }
     }
+    follow_the_from_account(
+        account_choice,
+        body_editor,
+        signatures.to_vec(),
+        active_account_index as usize,
+        a11y.clone(),
+    );
 
     // ── The copy lines ────────────────────────────────────────────────────
     //

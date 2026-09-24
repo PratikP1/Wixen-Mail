@@ -431,8 +431,13 @@ fn check_account_manager(
         into,
     );
 
-    let edit =
-        wx_account_manager::build_account_edit_dialog(&manager.dialog, None, a11y, Some(palette));
+    let edit = wx_account_manager::build_account_edit_dialog(
+        &manager.dialog,
+        None,
+        a11y,
+        Some(palette),
+        &wx_account_manager::SignatureChoices::default(),
+    );
     check(
         "account edit dialog",
         &edit.dialog,
@@ -1408,7 +1413,7 @@ fn check_tag_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteRe
 /// fields are what is checked here.
 fn check_sig_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
     let scratch_parent = Dialog::builder(parent, "scratch parent for signature edit").build();
-    let widgets = wx_managers::build_sig_edit_dialog(&scratch_parent, None, Some(palette));
+    let widgets = wx_managers::build_sig_edit_dialog(&scratch_parent, None, &[], Some(palette));
     check(
         "signature edit dialog",
         &widgets.dialog,

@@ -20,7 +20,7 @@ use wixen_mail::data::account::Account;
 use wixen_mail::data::config::ConfigManager;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::wx_account_manager::{
-    AccountEditWidgets, advance_to_connection_page, build_account_edit_dialog,
+    AccountEditWidgets, SignatureChoices, advance_to_connection_page, build_account_edit_dialog,
     build_account_manager_dialog, return_to_identity_page,
 };
 use wxdragon::prelude::*;
@@ -111,7 +111,13 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
             // ── A brand new account opens on the identity page. ────────────
-            let w = build_account_edit_dialog(&manager.dialog, None, &a11y, None);
+            let w = build_account_edit_dialog(
+                &manager.dialog,
+                None,
+                &a11y,
+                None,
+                &SignatureChoices::default(),
+            );
             expect_eq(
                 "new dialog: step heading",
                 &w.step_heading.get_label(),
@@ -271,7 +277,13 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             // ── A POP3 account's connection page shows POP fields, not
             // ── IMAP ones. ───────────────────────────────────────────────
             let pop = pop_account("Old ISP", "me@example.com");
-            let w = build_account_edit_dialog(&manager.dialog, Some(&pop), &a11y, None);
+            let w = build_account_edit_dialog(
+                &manager.dialog,
+                Some(&pop),
+                &a11y,
+                None,
+                &SignatureChoices::default(),
+            );
             advance_to_connection_page(&w);
             expect_shown(
                 "POP account, connection page: IMAP server hidden",
@@ -295,7 +307,13 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             // ── An account that signs in through the browser has no
             // ── password box on its connection page. ────────────────────
             let oauth = oauth_account("Personal Gmail", "me@gmail.com");
-            let w = build_account_edit_dialog(&manager.dialog, Some(&oauth), &a11y, None);
+            let w = build_account_edit_dialog(
+                &manager.dialog,
+                Some(&oauth),
+                &a11y,
+                None,
+                &SignatureChoices::default(),
+            );
             advance_to_connection_page(&w);
             expect_shown(
                 "OAuth account, connection page: password hidden",

@@ -16592,6 +16592,35 @@ fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
         .unwrap_or_default()
 }
 
+/// The signature a message from one account starts with: the one assigned
+/// to it, else the default, else none (#43), and nothing at all when
+/// somebody has said not to start every message with one.
+///
+/// A signature that cannot be read is logged rather than swallowed: a message
+/// going out unsigned when a signature exists is a change somebody would
+/// otherwise have to notice in the sent copy.
+fn the_signature_a_message_starts_with(
+    cache: Option<&MessageCache>,
+    account_id: &str,
+    automatically: bool,
+) -> wx_compose::SignatureFor {
+    let found = match cache.map(|cache| cache.signature_for_account(account_id)) {
+        Some(Ok(found)) => found,
+        Some(Err(e)) => {
+            tracing::warn!("The signature could not be read: {}", e);
+            None
+        }
+        None => None,
+    };
+    found.map_or_else(wx_compose::SignatureFor::default, |signature| {
+        wx_compose::SignatureFor {
+            text: crate::application::sign_off::opens_with(automatically, &signature.content_plain)
+                .to_string(),
+            name: signature.name,
+        }
+    })
+}
+
 /// Open the compose dialog and handle the result.
 fn open_compose(
     app: AppHandles<'_>,
@@ -16669,33 +16698,15 @@ fn open_compose(
         })
         .unwrap_or_else(|_| (Default::default(), true, true));
 
-    // The account's default signature, for the account this is being sent from
-    // rather than whichever was last looked at. Signatures could be written,
+    // Each account's signature, in the From list's order: its own, else the
+    // default, else none (#43), so the message starts with the From
+    // account's and follows a change of account. Signatures could be written,
     // named and marked as the default, and none of that ever reached a message
     // because nothing read them back.
-    let stored_signature = {
-        let account = lock_state(state)
-            .accounts
-            .get(active as usize)
-            .map(|a| a.id.clone());
-        match (cache.as_ref(), account) {
-            (Some(cache), Some(id)) => match cache.get_default_signature(&id) {
-                Ok(found) => found.map(|s| s.content_plain).unwrap_or_default(),
-                // Said out loud rather than swallowed: a message going out
-                // unsigned when a signature exists is a change somebody would
-                // otherwise have to notice in the sent copy.
-                Err(e) => {
-                    tracing::warn!("The signature could not be read: {}", e);
-                    String::new()
-                }
-            },
-            _ => String::new(),
-        }
-    };
-    // Whether it is put there without being asked is the compose tab's
-    // "Start every message with my signature". The rule is in `sign_off` so
-    // that a test can reach it; this window cannot be reached by one.
-    let signature = crate::application::sign_off::opens_with(sign_it, &stored_signature);
+    let signatures: Vec<wx_compose::SignatureFor> = account_ids
+        .iter()
+        .map(|id| the_signature_a_message_starts_with(cache.as_deref(), id, sign_it))
+        .collect();
 
     let saver = {
         let state = state.clone();
@@ -16738,7 +16749,7 @@ fn open_compose(
         &names,
         active,
         preview_first,
-        signature,
+        &signatures,
         autosave,
         a11y.clone(),
         Some(crate::presentation::finding_people::through(
@@ -17290,6 +17301,7 @@ fn open_for_scanning(
                 None,
                 None,
                 a11y,
+                cache.as_deref(),
             );
             OnReturn::WindowClosed
         }
@@ -17627,9 +17639,20 @@ fn open_for_scanning(
             OnReturn::WindowClosed
         }
         ScanTarget::SignatureEditor => {
+            // With the scan-only account offered, so the box under "Use for
+            // these accounts" is walked as well as the rest (#43).
+            let signature = scan_fixtures::signature();
+            let offers = crate::presentation::wx_managers::offers_for(
+                &[crate::presentation::wx_managers::SignatureAccount::from(
+                    &scan_only_account(),
+                )],
+                Some(&signature),
+                std::slice::from_ref(&signature),
+            );
             let editor = crate::presentation::wx_managers::build_sig_edit_dialog(
                 frame,
-                Some(&scan_fixtures::signature()),
+                Some(&signature),
+                &offers,
                 theme::current_from_stored_config(),
             );
             editor.dialog.show_modal();
@@ -17647,6 +17670,7 @@ fn open_for_scanning(
                 Some(&fixture),
                 a11y,
                 theme::current_from_stored_config(),
+                &scan_fixtures::signature_choices(),
             );
             wx_account_manager::advance_to_connection_page(&editor);
             editor.dialog.show_modal();
@@ -18481,6 +18505,7 @@ fn handle_account_mgr(
         active_id.as_deref(),
         default_id.as_deref(),
         a11y,
+        cache.as_deref(),
     ) {
         // An account that has gone is signed out of rather than left holding a
         // session. Worked out before the list is replaced, because afterwards

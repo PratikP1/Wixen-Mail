@@ -789,13 +789,16 @@ fn test_the_composer_asks_whether_a_signature_was_wanted() {
         "nothing on the compose path reads the setting, so a signature goes on \
          whatever the settings screen was told"
     );
+    // Since 12-09 the answer decides each account's signature, one per
+    // account in the From list, so the signature can follow the From account.
     assert!(
-        app.contains("sign_off::opens_with(sign_it, &stored_signature)"),
+        app.contains("sign_off::opens_with(automatically, &signature.content_plain)")
+            && app.contains("the_signature_a_message_starts_with(cache.as_deref(), id, sign_it)"),
         "the setting is read and nothing decides the signature with it"
     );
     assert!(
-        app.contains("preview_first,\n        signature,\n        autosave,"),
-        "the composer is handed something other than the signature that answer \
+        app.contains("preview_first,\n        &signatures,\n        autosave,"),
+        "the composer is handed something other than the signatures that answer \
          decided, so deciding it changes nothing"
     );
 }
@@ -2198,7 +2201,7 @@ fn test_the_signature_editor_offers_no_box_that_reaches_no_message() {
     // And the one that is left is really read, so this does not pass by both
     // halves being absent.
     assert!(
-        app.contains("s.content_plain"),
+        app.contains("signature.content_plain"),
         "nothing on the send path takes the signature's text any more, so every \
          box in that editor is now one that reaches no message"
     );
