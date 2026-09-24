@@ -35,6 +35,24 @@ pub fn display_language() -> String {
     win32::locale_name().unwrap_or_else(|| "unknown".to_string())
 }
 
+/// The region this person says they are in, the setting Windows calls
+/// Country or region, as a two-letter code such as "GB".
+pub fn home_region() -> Option<String> {
+    None
+}
+
+/// A region's name in the language Windows shows, such as "United Kingdom"
+/// for "GB". `None` for a code Windows has no name for.
+pub fn region_name(_code: &str) -> Option<String> {
+    None
+}
+
+/// The text with every decimal digit, in any script, written as its ASCII
+/// digit. Anything that is not a digit is left as it was.
+pub fn fold_digits(text: &str) -> String {
+    text.to_string()
+}
+
 /// The screen reader running and its version, when one is.
 pub fn screen_reader() -> Option<(String, String)> {
     let running = win32::running_processes();
@@ -402,5 +420,31 @@ mod tests {
         let answer = windows_build();
 
         assert!(answer.starts_with("Windows"), "{answer:?}");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_this_machine_names_a_region_says_where_it_is_and_folds_digits() {
+        // Asks the real machine, as the case above does. ZZ is a code no
+        // region has, so the name for GB is a name and not an echo.
+        assert_eq!(region_name("GB").as_deref(), Some("United Kingdom"));
+        assert_eq!(region_name("ZZ"), None);
+
+        let home = home_region().unwrap_or_default();
+        assert!(
+            home.len() == 2 && home.chars().all(|c| c.is_ascii_uppercase()),
+            "{home:?}"
+        );
+
+        // Full-width digits and Arabic-Indic digits, then what must not move.
+        assert_eq!(
+            fold_digits("\u{FF10}\u{FF11}\u{FF12}\u{FF11} 234"),
+            "0121 234"
+        );
+        assert_eq!(
+            fold_digits("\u{0660}\u{0661}\u{0662}\u{0661} \u{0665}\u{0666}"),
+            "0121 56"
+        );
+        assert_eq!(fold_digits("+44 Ext x"), "+44 Ext x");
     }
 }
