@@ -162,13 +162,19 @@ jobs:
         # Feedback, opened on made-up facts and no log, so it reads nothing
         # about the runner. A fresh profile has no account, so it opens with
         # Send shut and the sentence saying why, which is also walked.
+        #
+        # The phone-number target, added 2026-09-24 (#40, 12-07), is the Add
+        # Phone Number dialog, which opens from inside the contact editor, so
+        # 'contact-editor' never reached it. It is here for its Country list,
+        # whose entries are country names Windows gives in its display
+        # language, and whose name is read here in the running program.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
           'which-days', 'send-later', 'add-address-book', 'about', 'feedback',
           'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
           'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
-          'page', 'page-window'
+          'phone-number', 'page', 'page-window'
         )
 
         # Point the app at a throwaway profile so the scan never touches real
