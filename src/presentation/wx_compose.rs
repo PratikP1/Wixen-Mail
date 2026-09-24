@@ -8,7 +8,8 @@ use crate::application::conversations;
 use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
-    name_from_label, set_accessible_name, set_accessible_name_and_description,
+    name_from_label, name_the_spin_control, set_accessible_name,
+    set_accessible_name_and_description,
 };
 use crate::presentation::browser_ready::BrowserReady;
 use crate::presentation::compose_toolbar;
@@ -3212,7 +3213,7 @@ pub fn build_insert_table_dialog(
         .with_range(1, editor_document::MAX_TABLE_ROWS as i32)
         .with_initial_value(3)
         .build();
-    set_accessible_name(&rows, "Rows");
+    name_the_spin_control(&rows, "Rows");
     fields.add(
         &rows_label,
         0,
@@ -3226,7 +3227,7 @@ pub fn build_insert_table_dialog(
         .with_range(1, editor_document::MAX_TABLE_COLUMNS as i32)
         .with_initial_value(3)
         .build();
-    set_accessible_name(&columns, "Columns");
+    name_the_spin_control(&columns, "Columns");
     fields.add(
         &columns_label,
         0,

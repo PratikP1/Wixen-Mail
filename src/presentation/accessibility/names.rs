@@ -52,7 +52,7 @@
 
 use wxdragon::accessible::{AccStatus, Accessible, AccessibleImpl};
 use wxdragon::ffi;
-use wxdragon::prelude::WxWidget;
+use wxdragon::prelude::{SpinCtrl, WxWidget};
 
 /// Whether a name set here reaches the accessibility tree on this build.
 ///
@@ -242,6 +242,145 @@ pub fn name_from_label(label: &str) -> String {
     }
 }
 
+/// Name a spin control on both of its windows.
+///
+/// A Windows spin control is two windows, and the keyboard lands in the one
+/// wxWidgets does not hand back. `get_handle` answers the arrows, an
+/// `msctls_updown32`, which is where [`set_accessible_name`] attaches its
+/// object; the number sits in the arrows' buddy, an `Edit`, and Tab reaches
+/// that and never the arrows. Named on the arrows alone, the field a person
+/// types in was nameless on MSAA, which NVDA reads for an edit, and named
+/// from whatever static text sat before it on UI Automation (ledger 408 to
+/// 425). So the field is given the same words through the annotation service,
+/// which both channels read in a test process, measured by
+/// `tests/every_spin_control_names_the_field_a_person_types_in.rs` on every
+/// spin control in the program.
+///
+/// **Not in the running program.** On 2026-09-23 the Accessibility scan on
+/// pull request #97 launched the real program and found the fields as they
+/// were before this existed: nameless, or named by the static text before
+/// them. Why the annotation reaches the field in a test process and not in the
+/// app is not known; 12-06.1 owns it, and ledger 408 to 425 stay open.
+///
+/// Every spin control is named through this or
+/// [`name_and_describe_the_spin_control`], and through nothing else.
+pub fn name_the_spin_control(spin: &SpinCtrl, name: &str) {
+    set_accessible_name(spin, name);
+    typing_field::carry(spin, &what_the_typing_field_carries(name, None));
+}
+
+/// [`name_the_spin_control`], with the sentence that explains it on both
+/// windows too. On the arrows alone a description is never heard, because
+/// nobody's focus is ever on the arrows.
+pub fn name_and_describe_the_spin_control(spin: &SpinCtrl, name: &str, description: &str) {
+    set_accessible_name_and_description(spin, name, description);
+    typing_field::carry(
+        spin,
+        &what_the_typing_field_carries(name, Some(description)),
+    );
+}
+
+/// Which property of a spin control's typing field some words are written to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FieldProperty {
+    Name,
+    Description,
+}
+
+/// What the field a person types in carries, property by property: the
+/// arrows' name, and their description where they have one.
+fn what_the_typing_field_carries<'a>(
+    name: &'a str,
+    description: Option<&'a str>,
+) -> Vec<(FieldProperty, &'a str)> {
+    std::iter::once((FieldProperty::Name, name))
+        .chain(description.map(|said| (FieldProperty::Description, said)))
+        .collect()
+}
+
+/// Writing onto the typing field, which only Windows has a way to do.
+#[cfg(target_os = "windows")]
+mod typing_field {
+    use super::FieldProperty;
+    use std::cell::OnceCell;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
+    use windows::Win32::UI::Accessibility::{
+        CLSID_AccPropServices, IAccPropServices, PROPID_ACC_DESCRIPTION, PROPID_ACC_NAME,
+    };
+    use windows::Win32::UI::Controls::UDM_GETBUDDY;
+    use windows::Win32::UI::WindowsAndMessaging::{CHILDID_SELF, OBJID_CLIENT, SendMessageW};
+    use windows::core::{GUID, HSTRING};
+    use wxdragon::prelude::{SpinCtrl, WxWidget};
+
+    thread_local! {
+        /// The annotation service, created the first time a spin control is
+        /// named and kept. Per thread because a COM interface is, and every
+        /// window is built on the one interface thread.
+        static SERVICE: OnceCell<Option<IAccPropServices>> = const { OnceCell::new() };
+    }
+
+    fn the_service() -> Option<IAccPropServices> {
+        // SAFETY: COM is initialised on the interface thread by wxWidgets
+        // before any window is built.
+        unsafe { CoCreateInstance(&CLSID_AccPropServices, None, CLSCTX_INPROC_SERVER) }
+            .inspect_err(|why| tracing::debug!("The annotation service is not available: {why}"))
+            .ok()
+    }
+
+    fn property(which: FieldProperty) -> GUID {
+        match which {
+            FieldProperty::Name => PROPID_ACC_NAME,
+            FieldProperty::Description => PROPID_ACC_DESCRIPTION,
+        }
+    }
+
+    /// Write `carries` onto the field beside `spin`'s arrows. A field that
+    /// cannot be found or written is said at debug and left as it was: the
+    /// arrows still carry the words.
+    pub(super) fn carry(spin: &SpinCtrl, carries: &[(FieldProperty, &str)]) {
+        let arrows = HWND(spin.get_handle());
+        // SAFETY: the arrows are a live window this program built; the
+        // message takes and returns no pointer.
+        let buddy = unsafe { SendMessageW(arrows, UDM_GETBUDDY, None, None) };
+        if buddy.0 == 0 {
+            tracing::debug!("A spin control has no typing field to name");
+            return;
+        }
+        let field = HWND(buddy.0 as *mut std::ffi::c_void);
+        SERVICE.with(|service| {
+            let Some(service) = service.get_or_init(the_service) else {
+                return;
+            };
+            for (which, words) in carries {
+                // SAFETY: the field is a live window; the string outlives the call.
+                let written = unsafe {
+                    service.SetHwndPropStr(
+                        field,
+                        OBJID_CLIENT.0 as u32,
+                        CHILDID_SELF,
+                        property(*which),
+                        &HSTRING::from(*words),
+                    )
+                };
+                if let Err(why) = written {
+                    tracing::debug!("A spin control's typing field could not be named: {why}");
+                }
+            }
+        });
+    }
+}
+
+/// Everywhere else the arrows are all there is to name, and
+/// [`A_NAME_REACHES_THE_ACCESSIBILITY_TREE`] says that does nothing either.
+#[cfg(not(target_os = "windows"))]
+mod typing_field {
+    use super::FieldProperty;
+    use wxdragon::prelude::SpinCtrl;
+
+    pub(super) fn carry(_spin: &SpinCtrl, _carries: &[(FieldProperty, &str)]) {}
+}
+
 /// Hold one cell of a two-column grid open with nothing in it.
 ///
 /// A checkbox carries its own label, so in a grid of label and field pairs
@@ -263,8 +402,24 @@ pub fn leave_the_cell_empty(grid: &wxdragon::sizers::FlexGridSizer) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibleImpl, FixedName, name_from_label};
+    use super::{
+        AccessibleImpl, FieldProperty, FixedName, name_from_label, what_the_typing_field_carries,
+    };
     use wxdragon::ffi;
+
+    #[test]
+    fn test_a_spin_controls_description_travels_to_the_field_a_person_types_in() {
+        // Tab lands in the field, never on the arrows, so a sentence the
+        // arrows alone carry is one nobody tabbing through a form hears. The
+        // event form's Alert minutes before has one, "Nought for no alert".
+        assert_eq!(
+            what_the_typing_field_carries("Alert minutes before", Some("Nought for no alert")),
+            vec![
+                (FieldProperty::Name, "Alert minutes before"),
+                (FieldProperty::Description, "Nought for no alert"),
+            ]
+        );
+    }
 
     #[test]
     fn test_the_name_is_the_only_thing_replaced() {

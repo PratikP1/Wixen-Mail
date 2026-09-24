@@ -94,7 +94,8 @@ use crate::application::new_item::ItemKind;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
-    name_from_label, set_accessible_name, set_accessible_name_and_description,
+    name_and_describe_the_spin_control, name_from_label, name_the_spin_control,
+    set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::date_display::{self, Clock, DateOrder, DateSettings};
 use crate::presentation::status_line::said_and_shown;
@@ -1097,16 +1098,17 @@ fn name_it(control: &Control, name: &str, help: &str) {
     match control {
         Control::Date(fields) => {
             name_part(fields.month, name, "Month", help);
-            name_part(fields.day, name, "Day", "");
-            name_part(fields.year, name, "Year", "");
+            name_spin_control(&fields.day, &format!("{name} Day"), "");
+            name_spin_control(&fields.year, &format!("{name} Year"), "");
         }
         Control::Time(fields) => {
-            name_part(fields.hour, name, "Hour", help);
-            name_part(fields.minute, name, "Minute", "");
+            name_spin_control(&fields.hour, &format!("{name} Hour"), help);
+            name_spin_control(&fields.minute, &format!("{name} Minute"), "");
             if let Some(am_pm) = fields.am_pm {
                 name_part(am_pm, name, "AM or PM", "");
             }
         }
+        Control::Whole(spin) => name_spin_control(spin, name, help),
         _ => {
             let widget = as_widget(control);
             if help.is_empty() {
@@ -1126,6 +1128,16 @@ fn name_part(widget: impl WxWidget, field_name: &str, part: &str, help: &str) {
         set_accessible_name(&widget, &full);
     } else {
         set_accessible_name_and_description(&widget, &full, help);
+    }
+}
+
+/// Name a spin control on its arrows and on the field a person types in,
+/// with the help sentence on both where there is one.
+fn name_spin_control(spin: &SpinCtrl, name: &str, help: &str) {
+    if help.is_empty() {
+        name_the_spin_control(spin, name);
+    } else {
+        name_and_describe_the_spin_control(spin, name, help);
     }
 }
 

@@ -12,7 +12,7 @@ use crate::application::describing_pictures::{
 use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::opening_links::Where as OpenLinks;
 use crate::application::reading_habits::{
-    CopyLines, MarkRead, TAKES_EFFECT_AT_THE_NEXT_START, WHAT_MARK_READ_COUNTS_FROM,
+    CopyLines, MarkRead, MarkReadWay, TAKES_EFFECT_AT_THE_NEXT_START, WHAT_MARK_READ_COUNTS_FROM,
     WHERE_THE_DEFAULT_SORT_ORDER_APPLIES, WorkingDay,
 };
 use crate::application::reading_style::Style as ReadingStyle;
@@ -25,7 +25,8 @@ use crate::presentation::accessibility::Accessibility;
 // `wxdragon::prelude` brings its own `Event` and the two would shadow.
 use crate::presentation::accessibility::feedback::{self, Channel, FeedbackSettings, Switch};
 use crate::presentation::accessibility::names::{
-    name_from_label, set_accessible_name, set_accessible_name_and_description,
+    name_and_describe_the_spin_control, name_from_label, name_the_spin_control,
+    set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::accessibility::sound_scheme::SoundScheme;
 use crate::presentation::accessibility::sound_scheme_import;
@@ -162,7 +163,7 @@ pub struct SettingsWidgets {
     pub advanced_panel: Panel,
     // General, the page the dialog opens on, built before it is shown.
     theme: Choice,
-    pub font_size: TextCtrl,
+    pub font_size: SpinCtrl,
     pub font_family: Choice,
     smooth_scrolling: CheckBox,
     keep_selected_message_in_view: CheckBox,
@@ -428,6 +429,38 @@ impl LaterPages {
 fn sel(choice: &Choice) -> u32 {
     choice.get_selection().unwrap_or(0)
 }
+
+/// The sizes Font size holds and the minutes Default reminder holds: the
+/// bounds each save applied after the fact until 12-06, now the controls' own
+/// (#35), so Up and Down stop at them and a screen reader can say them.
+const FONT_SIZES: (i32, i32) = (8, 72);
+const REMINDER_MINUTES: (i32, i32) = (0, 1440);
+
+/// A stored number as a spin control with `range` shows it: a hand-edited
+/// file holding a number out of range opens on the nearest end.
+fn within(stored: u32, (least, most): (i32, i32)) -> i32 {
+    i32::try_from(stored).unwrap_or(most).clamp(least, most)
+}
+
+/// The number a spin control holds. Every spin control in this dialog has a
+/// range starting at nought or above, so nothing is lost converting it and
+/// nothing parses a number the control already holds.
+fn held(spin: &SpinCtrl) -> u32 {
+    spin.value().unsigned_abs()
+}
+
+/// Which way of marking read the Mark as read after choice has chosen.
+fn chosen_way(choice: &Choice) -> MarkReadWay {
+    MarkReadWay::ALL
+        .get(sel(choice) as usize)
+        .copied()
+        .unwrap_or(MarkRead::default().parts().0)
+}
+
+/// What the Mark as read after choice and its seconds are called on both
+/// channels.
+const MARK_READ_AFTER: &str = "Mark as read after";
+const MARK_READ_SECONDS: &str = "Mark as read after, in seconds";
 
 // ── Section helper ───────────────────────────────────────────────────────────
 
@@ -869,7 +902,7 @@ fn add_closing(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> CheckBox 
 struct GeneralTabControls {
     theme: Choice,
     font_family: Choice,
-    font_size: TextCtrl,
+    font_size: SpinCtrl,
     language: Choice,
     check_before_send: CheckBox,
     check_as_you_type: CheckBox,
@@ -1107,9 +1140,11 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
 
     let font_row = BoxSizer::builder(Orientation::Horizontal).build();
     let font_label = StaticText::builder(panel).with_label("Font size:").build();
-    let font_field = TextCtrl::builder(panel).build();
-    set_accessible_name(&font_field, "Font size");
-    font_field.set_value(&config.font_size.to_string());
+    let font_field = SpinCtrl::builder(panel)
+        .with_range(FONT_SIZES.0, FONT_SIZES.1)
+        .with_initial_value(within(config.font_size, FONT_SIZES))
+        .build();
+    name_the_spin_control(&font_field, "Font size");
     font_row.add(
         &font_label,
         0,
@@ -1338,11 +1373,11 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> ComposeTabControls {
         .with_range(Hold::OFF.seconds() as i32, Hold::LONGEST.seconds() as i32)
         .build();
     let hold_now = Hold::of_seconds(config.undo_send_hold_seconds);
-    // `set_accessible_name_and_description` rather than `set_name`, which sets
-    // an internal wxWidgets identifier and never reaches the accessibility
-    // tree. Sixteen widgets were once named that way; it compiled and 324
-    // tests passed and no screen reader heard any of them.
-    set_accessible_name_and_description(
+    // Named through the spin control's own helper rather than `set_name`,
+    // which sets an internal wxWidgets identifier and never reaches the
+    // accessibility tree. Sixteen widgets were once named that way; it
+    // compiled and 324 tests passed and no screen reader heard any of them.
+    name_and_describe_the_spin_control(
         &hold_spin,
         "Hold a message before sending for, seconds, 0 for no hold",
         &what_send_does(hold_now),
@@ -1380,7 +1415,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> ComposeTabControls {
     let autosave_spin = SpinCtrl::builder(panel)
         .with_range(0, AutosaveInterval::MAX_MINUTES as i32)
         .build();
-    set_accessible_name(
+    name_the_spin_control(
         &autosave_spin,
         "Save drafts automatically every, minutes, 0 for never",
     );
@@ -1509,6 +1544,7 @@ pub struct ReadingTabControls {
     date_wording: Choice,
     clock_hours: Choice,
     mark_read_after: Choice,
+    mark_read_seconds: SpinCtrl,
     pub sort_then: Choice,
 }
 
@@ -1550,7 +1586,7 @@ impl PermissionsTabControls {
 /// The controls `build_calendar_pim_tab` lays out. The reminder field is
 /// public because a test reads back the colour it was painted.
 pub struct CalendarPimTabControls {
-    pub default_reminder: TextCtrl,
+    pub default_reminder: SpinCtrl,
     day_starts: Choice,
     day_ends: Choice,
     calendar_view: Choice,
@@ -1818,25 +1854,43 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     // Built from the list rather than from a second copy of the words, and
     // read back below. It was neither before: four fixed choices, a fixed
     // selection, and nothing that saved it, so the answer was always
-    // "immediately" whatever it said here.
+    // "immediately" whatever it said here. Since 12-06 the choice says which
+    // kind of answer and the spin control beside it says how many seconds
+    // (#35), reachable only while a wait is chosen.
     let markread_choice = labelled_choice(
         panel,
         &read_sec,
         "&Mark as read after:",
-        "Mark as read after",
-        &MarkRead::ALL
-            .iter()
-            .map(|c| c.label())
-            .collect::<Vec<_>>()
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
+        MARK_READ_AFTER,
+        &MarkReadWay::ALL.map(MarkReadWay::label),
         crate::application::reading_habits::offered_index(&config.mark_read_after) as u32,
     );
-    // What the wait is counted from, under the choice, because seven answers
-    // cannot say on their own when the counting starts, and until 2026-09-18
-    // it started when a row was selected (#25). Named on both channels, the
-    // way the sentence under the message-text size is.
+    let (markread_way, markread_wait) = MarkRead::from_setting(&config.mark_read_after).parts();
+    let seconds_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let seconds_label = StaticText::builder(panel)
+        .with_label("Seconds to wait:")
+        .build();
+    let markread_seconds = SpinCtrl::builder(panel)
+        .with_range(1, MarkRead::LONGEST_WAIT_SECONDS as i32)
+        .with_initial_value(markread_wait as i32)
+        .build();
+    name_the_spin_control(&markread_seconds, MARK_READ_SECONDS);
+    markread_seconds.enable(markread_way == MarkReadWay::AfterSeconds);
+    markread_choice.on_selection_changed(move |_| {
+        markread_seconds.enable(chosen_way(&markread_choice) == MarkReadWay::AfterSeconds);
+    });
+    seconds_row.add(
+        &seconds_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    seconds_row.add(&markread_seconds, 0, SizerFlag::All, 4);
+    read_sec.add_sizer(&seconds_row, 0, SizerFlag::Expand, 0);
+    // What the wait is counted from, under the choice, because the choice
+    // and its seconds cannot say on their own when the counting starts, and
+    // until 2026-09-18 it started when a row was selected (#25). Named on both
+    // channels, the way the sentence under the message-text size is.
     let markread_note = StaticText::builder(panel)
         .with_label(WHAT_MARK_READ_COUNTS_FROM)
         .build();
@@ -2108,6 +2162,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         date_wording,
         clock_hours,
         mark_read_after: markread_choice,
+        mark_read_seconds: markread_seconds,
         sort_then,
         show_conversations_by_default,
         start_in_all_inboxes,
@@ -2468,9 +2523,11 @@ fn build_calendar_pim_tab(
     let rem_label = StaticText::builder(panel)
         .with_label("Default &reminder (minutes):")
         .build();
-    let rem_field = TextCtrl::builder(panel).build();
-    set_accessible_name(&rem_field, "Default reminder in minutes");
-    rem_field.set_value(&config.default_reminder_minutes.to_string());
+    let rem_field = SpinCtrl::builder(panel)
+        .with_range(REMINDER_MINUTES.0, REMINDER_MINUTES.1)
+        .with_initial_value(within(config.default_reminder_minutes, REMINDER_MINUTES))
+        .build();
+    name_the_spin_control(&rem_field, "Default reminder in minutes");
     rem_row.add(
         &rem_label,
         0,
@@ -3394,12 +3451,7 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         _ => "default",
     }
     .to_string();
-    cfg.font_size = w
-        .font_size
-        .get_value()
-        .parse::<u32>()
-        .unwrap_or(base.font_size)
-        .clamp(8, 72);
+    cfg.font_size = held(&w.font_size);
     cfg.smooth_scrolling = w.smooth_scrolling.get_value();
     cfg.keep_running_in_the_tray = w.keep_running_in_the_tray.get_value();
     // By the words shown rather than the row number. A row number needs the
@@ -3440,7 +3492,7 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         read_the_reading_page(page, base, &mut cfg);
     }
     if let Some(page) = w.later.calendar_and_pim.if_built() {
-        read_the_calendar_and_pim_page(page, base, &mut cfg);
+        read_the_calendar_and_pim_page(page, &mut cfg);
     }
     if let Some(page) = w.later.advanced.if_built() {
         read_the_advanced_page(page, &mut cfg);
@@ -3630,11 +3682,9 @@ fn read_the_reading_page(w: &ReadingTabControls, base: &AppConfig, cfg: &mut App
     }
     .to_string();
 
-    cfg.mark_read_after = MarkRead::ALL
-        .get(sel(&w.mark_read_after) as usize)
-        .copied()
-        .unwrap_or_default()
-        .as_stored();
+    cfg.mark_read_after =
+        MarkRead::from_parts(chosen_way(&w.mark_read_after), held(&w.mark_read_seconds))
+            .as_stored();
     cfg.message_columns = with_second_level(&base.message_columns, sel(&w.sort_then));
 
     cfg.read_receipts = Policy::ALL
@@ -3646,11 +3696,7 @@ fn read_the_reading_page(w: &ReadingTabControls, base: &AppConfig, cfg: &mut App
 }
 
 /// Calendar & PIM: the working day, the calendar's view, the reminder.
-fn read_the_calendar_and_pim_page(
-    w: &CalendarPimTabControls,
-    base: &AppConfig,
-    cfg: &mut AppConfig,
-) {
+fn read_the_calendar_and_pim_page(w: &CalendarPimTabControls, cfg: &mut AppConfig) {
     // Kept through the same check the calendar reads it through, so a day
     // that ends before it starts never reaches the file.
     let day = WorkingDay::from_setting(sel(&w.day_starts) as u8, sel(&w.day_ends) as u8);
@@ -3666,12 +3712,7 @@ fn read_the_calendar_and_pim_page(
         .stored()
         .to_string();
 
-    cfg.default_reminder_minutes = w
-        .default_reminder
-        .get_value()
-        .parse::<u32>()
-        .unwrap_or(base.default_reminder_minutes)
-        .min(1440);
+    cfg.default_reminder_minutes = held(&w.default_reminder);
 }
 
 /// Advanced: the log level, the download folder, what is looked at.

@@ -43,7 +43,7 @@
 use crate::application::sending_later::{Scheduling, schedule};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
-use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::accessibility::names::{name_the_spin_control, set_accessible_name};
 use crate::presentation::date_display::DateSettings;
 use crate::presentation::status_line::said_and_shown;
 use crate::presentation::theme;
@@ -108,7 +108,10 @@ pub fn ask_when_to_send<W: WxWidget>(
 /// by the Set handler rather than returned, because a handler cannot return
 /// anything to the modal loop that called it and reading the controls again
 /// afterwards would be reading them a second time.
-fn build_the_asking_dialog<W: WxWidget>(
+///
+/// `pub` so `tests/every_spin_control_names_the_field_a_person_types_in.rs`
+/// can read the built window over MSAA without opening it.
+pub fn build_the_asking_dialog<W: WxWidget>(
     parent: &W,
     now: DateTime<Local>,
     dates: DateSettings,
@@ -151,10 +154,10 @@ fn build_the_asking_dialog<W: WxWidget>(
     // and a time in one window; "Send on Month" says both which group it
     // belongs to and which part of it this is.
     set_accessible_name(&date.month, "Send on Month");
-    set_accessible_name(&date.day, "Send on Day");
-    set_accessible_name(&date.year, "Send on Year");
-    set_accessible_name(&time.hour, "Send at Hour");
-    set_accessible_name(&time.minute, "Send at Minute");
+    name_the_spin_control(&date.day, "Send on Day");
+    name_the_spin_control(&date.year, "Send on Year");
+    name_the_spin_control(&time.hour, "Send at Hour");
+    name_the_spin_control(&time.minute, "Send at Minute");
     if let Some(am_pm) = time.am_pm {
         set_accessible_name(&am_pm, "Send at AM or PM");
     }

@@ -21,7 +21,8 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::{
-    leave_the_cell_empty, name_from_label, set_accessible_name, set_accessible_name_and_description,
+    leave_the_cell_empty, name_and_describe_the_spin_control, name_from_label,
+    name_the_spin_control, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::manager_words;
 use crate::presentation::theme;
@@ -920,7 +921,7 @@ struct Page2Shell {
     user: TextCtrl,
     settings_section_heading: StaticText,
     interval_label: StaticText,
-    interval: TextCtrl,
+    interval: SpinCtrl,
     interval_note: StaticText,
     enabled: CheckBox,
     allowed_section_heading: StaticText,
@@ -972,11 +973,20 @@ impl Page2Shell {
 const STEP_ONE_HEADING: &str = "Step 1 of 2: Account details";
 const STEP_TWO_HEADING: &str = "Step 2 of 2: Connection and sign-in";
 
+/// The minutes the Check Interval spin control holds: the schedule's own
+/// bounds, the control's range since 12-06 (#73) rather than a clamp applied
+/// after it was typed.
+const CHECK_INTERVAL_MINUTES: (i32, i32) = (
+    crate::application::checking_on_a_schedule::SHORTEST_INTERVAL_MINUTES as i32,
+    crate::application::checking_on_a_schedule::LONGEST_INTERVAL_MINUTES as i32,
+);
+
 /// What the Check Interval field does, in the words under it and on it.
 ///
 /// The field is read by `application::checking_on_a_schedule` since
 /// 2026-09-18 (#37), which is what makes this sentence true; the bounds are
-/// the clamp `show_edit` applies and that module applies again.
+/// the spin control's range, [`CHECK_INTERVAL_MINUTES`], and that module
+/// applies them again.
 const WHAT_THE_INTERVAL_DOES: &str = "How often this account is checked for new mail when \
      nothing is watching it, or for the folders a watch does not cover. Between 1 and 60 minutes.";
 
@@ -1126,7 +1136,7 @@ pub struct AccountEditWidgets {
     pub use_oauth_cb: CheckBox,
     pub user_f: TextCtrl,
     pub pass_f: TextCtrl,
-    pub interval_f: TextCtrl,
+    pub interval_f: SpinCtrl,
     pub enabled: CheckBox,
     /// What this account may change, one box per answer in
     /// `application::allowed::Allowed`. Each can only narrow what Settings
@@ -1265,7 +1275,8 @@ fn show_edit(
 ) -> Option<Account> {
     let w = build_account_edit_dialog(parent, existing, a11y, palette);
     if w.dialog.show_modal() == ID_OK {
-        let interval: u32 = w.interval_f.get_value().parse().unwrap_or(5).clamp(1, 60);
+        // The spin control's range starts at one, so nothing is lost.
+        let interval = w.interval_f.value().unsigned_abs();
         let email_val = w.email_f.get_value();
         let is_oauth = w.use_oauth_cb.get_value();
 
@@ -1499,16 +1510,27 @@ pub fn build_account_edit_dialog(
         fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
         (l, c)
     };
-    let spin = |label: &str, default: i32| -> (StaticText, SpinCtrl) {
+    // A number, stepped with Up and Down inside the range it holds as its
+    // own, and typed over if somebody prefers. Named on the arrows and on the
+    // field a person types in, with the description on both where there is
+    // one, and painted like every other field here.
+    let spin = |label: &str, (least, most): (i32, i32), default: i32, description: Option<&str>| {
         let l = StaticText::builder(&dlg).with_label(label).build();
         let c = SpinCtrl::builder(&dlg)
-            .with_min_value(0)
-            .with_max_value(3650)
+            .with_range(least, most)
             .with_initial_value(default)
             .build();
-        set_accessible_name(&c, &name_from_label(label));
+        match description {
+            Some(description) => {
+                name_and_describe_the_spin_control(&c, &name_from_label(label), description)
+            }
+            None => name_the_spin_control(&c, &name_from_label(label)),
+        }
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        if let Some(palette) = palette {
+            theme::paint(&c, palette.main_surface());
+        }
         (l, c)
     };
 
@@ -1574,7 +1596,12 @@ pub fn build_account_edit_dialog(
         true,
         SERVER_REMOVAL_IS_PERMANENT,
     );
-    let (pop_days_label, pop_days) = spin("Then remove it after this many &days (0 for never):", 0);
+    let (pop_days_label, pop_days) = spin(
+        "Then remove it after this many &days (0 for never):",
+        (0, 3650),
+        0,
+        None,
+    );
     // What happens, rather than what it is called underneath. On by default,
     // because Delete doing nothing is what somebody meets first and it never
     // touches a server: mail moves to this account's own Trash folder here.
@@ -1649,8 +1676,12 @@ pub fn build_account_edit_dialog(
     // 2026-09-18 (#37): the schedule reads it now, and the sentence says
     // what it does, on the field for whoever tabs to it and beneath it for
     // whoever reads the page.
-    let (interval_label, interval_f) =
-        tf_with_description("Check &Interval (min):", "5", WHAT_THE_INTERVAL_DOES);
+    let (interval_label, interval_f) = spin(
+        "Check &Interval (min):",
+        CHECK_INTERVAL_MINUTES,
+        5,
+        Some(WHAT_THE_INTERVAL_DOES),
+    );
     let interval_note = {
         let n = StaticText::builder(&dlg)
             .with_label(WHAT_THE_INTERVAL_DOES)
@@ -1866,7 +1897,12 @@ pub fn build_account_edit_dialog(
         smtp_tls.set_value(a.smtp_use_tls);
         user_f.set_value(&a.username);
         pass_f.set_value(&a.password);
-        interval_f.set_value(&a.check_interval_minutes.to_string());
+        let (least, most) = CHECK_INTERVAL_MINUTES;
+        interval_f.set_value(
+            i32::try_from(a.check_interval_minutes)
+                .unwrap_or(most)
+                .clamp(least, most),
+        );
         enabled.set_value(a.enabled);
         use_oauth_cb.set_value(a.use_oauth);
         // The directory this account already names, if it names one. Kept in

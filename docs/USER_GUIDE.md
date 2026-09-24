@@ -45,6 +45,35 @@ name:
 Until 2026-09-20 two more waited for a restart without saying so: Mark as read
 after, and how dates are written in the lists. Both apply on OK now.
 
+### Numbers you set
+
+Every number in Settings and in the account editor is a spin control. `Up`
+adds one, `Down` takes one away, and the control stops at the ends of its
+range, so a number outside it cannot be set. You can also type a number over
+the one shown. `Page Up` and `Page Down` do nothing in a spin control yet.
+The field you type in does not have a name of its own yet: a screen reader
+may say nothing for it, or say the label before it, colon included. The
+arrows beside it carry the name. This is a known fault, measured on
+2026-09-23, and not yet explained.
+
+| Where | Number | Range |
+|---|---|---|
+| Settings, General | Font size | 8 to 72 |
+| Settings, Compose | Hold a message before sending for, in seconds | 0 (no hold) to 60 |
+| Settings, Compose | Save drafts automatically every, in minutes | 0 (never) to 10 |
+| Settings, Reading | Mark as read after, in seconds | 1 to 600 |
+| Settings, Calendar and PIM | Default reminder, in minutes | 0 to 1440 |
+| Account editor | Check Interval, in minutes | 1 to 60 |
+| Account editor, POP | Days before mail is removed from the server | 0 (never) to 3650 |
+
+The server ports in the account editor are typed rather than stepped: a port
+is a number you copy from your provider, not one you count up to.
+
+Font size, Default reminder and Check Interval became spin controls on
+2026-09-23 (#35, #73); before that they were text fields that accepted
+anything and corrected it when you saved. Mark as read after's seconds were a
+fixed list of waits until the same day.
+
 ## Account Setup
 
 ### Adding an account
@@ -85,8 +114,10 @@ enabled accounts.
 
 ### How often an account is checked
 
-Each account's editor has a field, "Check Interval (min)", between 1 and 60,
-5 unless you changed it. Since the build of 2026-09-18 it does what it says:
+Each account's editor has a spin control, "Check Interval (min)", holding 1 to
+60, 5 unless you changed it: `Up` and `Down` step it by a minute and stop at
+the ends, or type the number. It was a text field until 2026-09-23 (#73).
+Since the build of 2026-09-18 it does what it says:
 how often this account is checked for new mail when nothing is watching it,
 or for the folders a watch does not cover. The field had been on the editor
 since 2026-03-01 and nothing read it until that build. Most of the time the
@@ -385,9 +416,13 @@ was. A message counts as read once you have read the whole of it: press
 subject, the sender and the snippet, does not count. Then the delay under
 Settings, then Reading, then Mark as read after runs, two seconds unless you
 have changed it, and the message is marked read if it is still the one you are
-on. Move off it before the delay runs and it stays unread. Choose Only when I
-say so and nothing is ever marked on its own; marking by hand still works as
-it did. Until 2026-09-18 the delay was counted from the moment a row was
+on. Move off it before the delay runs and it stays unread. Mark as read after
+offers three choices: Immediately, After a number of seconds, and Never. The
+seconds are a spin control beside the choice, holding 1 to 600, which you can
+reach only while After a number of seconds is chosen. Choose Never and nothing
+is ever marked on its own; marking by hand still works as it did. Until
+2026-09-23 the choice was a list of seven, with five fixed waits, and Never was
+called Only when I say so; a wait you had chosen from that list is kept. Until 2026-09-18 the delay was counted from the moment a row was
 selected, so listening to a row was enough to mark it, and from the build of
 2026-09-18 until this one the first `Space` counted too. Changing the delay
 applies as soon as you save Settings: the next message you read is marked after
