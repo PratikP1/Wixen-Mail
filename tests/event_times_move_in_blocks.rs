@@ -238,6 +238,30 @@ fn read_the_event(
     Ok(())
 }
 
+/// An event whose start's hour is stepped by the hour field's own Up, which
+/// the form leaves to the control: the end still follows.
+fn read_the_hour_step(
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+    into: &mut Harvest,
+) -> Result<(), String> {
+    let form = a_form(
+        frame,
+        a11y,
+        ItemKind::Event,
+        Timekeeping {
+            settings: on_a_clock(Clock::TwentyFourHour),
+            now: a_moment(24, 14, 37, 10),
+            block: Block::Thirty,
+        },
+    )?;
+    let start = time_of(&form, FieldName::StartTime)?;
+    press(&start.hour, VK_UP)?;
+    into.insert("event after Up on the start's hour", start_and_end(&form)?);
+    form.dialog.destroy();
+    Ok(())
+}
+
 /// An event opened at 23:50 with a quarter of an hour: the start is
 /// midnight, on the next day.
 fn read_the_late_event(
@@ -411,6 +435,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 let mut harvest = Harvest::new();
                 read_a_bare_spin_control(&frame, &mut harvest)?;
                 read_the_event(&frame, &a11y, &mut harvest)?;
+                read_the_hour_step(&frame, &a11y, &mut harvest)?;
                 read_the_late_event(&frame, &a11y, &mut harvest)?;
                 read_the_twelve_hour_event(&frame, &a11y, &mut harvest)?;
                 read_the_reminder(&frame, &a11y, &mut harvest)?;
@@ -534,6 +559,14 @@ fn test_a_start_typed_over_still_works_and_the_edited_end_stays() {
     assert_eq!(
         reading("event with the start typed"),
         "2026-09-24 09:30 | 2026-09-24 16:00"
+    );
+}
+
+#[test]
+fn test_the_hour_keeps_its_own_step_of_one_and_the_end_follows_it() {
+    assert_eq!(
+        reading("event after Up on the start's hour"),
+        "2026-09-24 16:00 | 2026-09-24 16:30"
     );
 }
 

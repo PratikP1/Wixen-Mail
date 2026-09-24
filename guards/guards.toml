@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 276 records have arrived since and have not been through it.
+# 278 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30080,4 +30080,62 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/time_blocks.rs", tests = 17 },
+]
+
+# ── An arrow the form takes goes no further (#41, T-12-28) ─────────────────
+#
+# The field's subclass steps the time and then stops the key. The break lets
+# it through as well, so the spin control's own arrows step one more minute
+# after the block: 15:31 rather than 15:30 after Up.
+[[guard]]
+name = "an arrow key the form takes in a spin field does not also reach the control's own step"
+file = "src/presentation/spin_field_keys.rs"
+suite = "event_times_move_in_blocks"
+before = '''                if the_arrow(wparam, is_a_modifier_held).is_some_and(on_arrow) {'''
+after = '''                if the_arrow(wparam, is_a_modifier_held).is_some_and(on_arrow) && false {'''
+red = [
+    "test_up_on_the_start_moves_it_half_an_hour_and_the_end_with_it",
+    "test_a_new_reminder_opens_on_the_next_hour_and_moves_by_it",
+    "test_a_start_typed_over_still_works_and_the_edited_end_stays",
+    "test_an_end_the_person_typed_stays_when_the_start_moves_again",
+    "test_an_end_typed_over_is_where_the_person_put_it",
+    "test_down_on_the_start_crosses_midnight_back_into_the_day_before_with_the_end",
+    "test_down_twice_on_the_start_moves_it_back_an_hour_and_the_end_with_it",
+    "test_left_on_the_start_moves_it_back_one_minute_at_a_time",
+    "test_on_a_twelve_hour_clock_up_crosses_noon_and_says_afternoon",
+    "test_right_on_the_start_moves_it_one_minute_and_the_end_with_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/spin_field_keys.rs", tests = 3 },
+    { file = "tests/event_times_move_in_blocks.rs", tests = 16 },
+]
+
+# ── A new event opens on the next boundary, in the form (#41) ──────────────
+#
+# The tester's first answer, in the built form rather than in the rule: a
+# new event opened at 14:37 starts at 15:00. The break opens it on the
+# moment itself, the way every form opened before #41.
+[[guard]]
+name = "a new event's form opens on the next block boundary rather than on the moment it opened"
+file = "src/presentation/wx_item_form.rs"
+suite = "event_times_move_in_blocks"
+before = '''            true => time_blocks::next_boundary(time.now, time.block),'''
+after = '''            true => time.now,'''
+red = [
+    "test_a_new_event_at_14_37_opens_at_15_00_and_ends_at_15_30",
+    "test_a_new_event_late_in_the_evening_opens_at_midnight_on_the_next_day",
+    "test_a_new_reminder_opens_on_the_next_hour_and_moves_by_it",
+    "test_a_start_typed_over_still_works_and_the_edited_end_stays",
+    "test_an_end_the_person_typed_stays_when_the_start_moves_again",
+    "test_an_end_typed_over_is_where_the_person_put_it",
+    "test_down_twice_on_the_start_moves_it_back_an_hour_and_the_end_with_it",
+    "test_left_on_the_start_moves_it_back_one_minute_at_a_time",
+    "test_on_a_twelve_hour_clock_up_crosses_noon_and_says_afternoon",
+    "test_right_on_the_start_moves_it_one_minute_and_the_end_with_it",
+    "test_the_hour_keeps_its_own_step_of_one_and_the_end_follows_it",
+    "test_up_on_the_start_moves_it_half_an_hour_and_the_end_with_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_item_form.rs", tests = 16 },
+    { file = "tests/event_times_move_in_blocks.rs", tests = 16 },
 ]

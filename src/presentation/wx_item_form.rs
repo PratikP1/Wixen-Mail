@@ -91,7 +91,7 @@
 
 use crate::application::item_fields::{Entry, Field, FieldName, Filled, Problem, fields_for};
 use crate::application::new_item::ItemKind;
-use crate::application::time_blocks::Block;
+use crate::application::time_blocks::{self, Block};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
@@ -99,10 +99,11 @@ use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::date_display::{self, Clock, DateOrder, DateSettings};
+use crate::presentation::spin_field_keys::{Arrow, take_the_arrows};
 use crate::presentation::status_line::said_and_shown;
 use crate::presentation::theme;
 use crate::presentation::wx_app::date_settings_from;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use wxdragon::prelude::*;
@@ -359,6 +360,39 @@ impl From<DateSettings> for Timekeeping {
     }
 }
 
+/// Where a date or time with nothing stored in it opens (#41): the start at
+/// the next block boundary after the form opened and the end one block later,
+/// the date rolled when the boundary is past midnight.
+///
+/// A form with no time at all, a task, opens on the moment itself, so a
+/// task's due date is today and not tomorrow at ten to midnight.
+#[derive(Clone, Copy)]
+struct Opening {
+    starts: chrono::NaiveDateTime,
+    ends: chrono::NaiveDateTime,
+}
+
+impl Opening {
+    fn for_a_form_of(fields: &[Field], time: Timekeeping) -> Opening {
+        let has_a_time = fields.iter().any(|field| field.entry == Entry::Time);
+        let starts = match has_a_time {
+            true => time_blocks::next_boundary(time.now, time.block),
+            false => time.now,
+        };
+        Opening {
+            starts,
+            ends: time_blocks::end_after(starts, time.block),
+        }
+    }
+
+    fn of(self, field: FieldName) -> chrono::NaiveDateTime {
+        match field {
+            FieldName::EndDate | FieldName::EndTime => self.ends,
+            _ => self.starts,
+        }
+    }
+}
+
 /// The notebook a form gets when it has anything to say about how often
 /// something comes round again, and the two pages behind it.
 ///
@@ -440,7 +474,9 @@ impl ItemFormWidgets {
 struct FormContext<'a> {
     containers: &'a [Container],
     known_categories: &'a [String],
-    time: Timekeeping,
+    settings: DateSettings,
+    /// Where a date or time with nothing stored in it opens.
+    opening: Opening,
     /// What to fill the form with, for something already made. `None` for
     /// something new, which is every field left at its ordinary default.
     existing: Option<&'a Filled>,
@@ -480,7 +516,8 @@ pub fn build_item_form_dialog<W: WxWidget>(
     let ctx = FormContext {
         containers,
         known_categories,
-        time,
+        settings: date_settings,
+        opening: Opening::for_a_form_of(fields, time),
         existing: prefill.as_ref().map(|p| p.filled),
         existing_container: prefill.as_ref().and_then(|p| p.container),
     };
@@ -583,6 +620,11 @@ pub fn build_item_form_dialog<W: WxWidget>(
     // that puts a time into the form clears the line above, and that line could
     // not exist yet: a control takes its place in the tab order when it is
     // built, so building it earlier would put it in front of the whole form.
+    // The arrow keys on each time's minutes, and the end following the start
+    // (#41). Wired once every field is built, because a time moves the date
+    // beside it and an event's start moves its end.
+    let following = take_the_arrows_in(&built, time.block, date_settings.clock);
+
     if let (Some(controls), Some(asking)) = (free_busy.as_ref(), chrome.asking.as_ref()) {
         wire_asking_when_free(
             controls,
@@ -592,6 +634,7 @@ pub fn build_item_form_dialog<W: WxWidget>(
                 built: &built,
                 containers,
                 settings: date_settings,
+                following,
             },
             problem_line,
         );
@@ -1003,7 +1046,7 @@ fn on_the_face_of(hour: u32, clock: Clock) -> (u32, bool) {
 /// there is one, otherwise left at the same defaults as before there was
 /// anything to prefill from.
 fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Control {
-    let now = ctx.time.now;
+    let opens_on = ctx.opening.of(field.name);
     // `Some("")` for something being edited whose box happens to be blank,
     // `None` for something new. The two have to stay different: a blank box
     // is still a real answer to prefill a `Pick` or a `Tick` from, and only
@@ -1042,14 +1085,14 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
         }
         Entry::Date => Control::Date(build_date_fields(
             parent,
-            ctx.time.settings.order,
-            now,
+            ctx.settings.order,
+            opens_on,
             existing_text,
         )),
         Entry::Time => Control::Time(build_time_fields(
             parent,
-            ctx.time.settings.clock,
-            now,
+            ctx.settings.clock,
+            opens_on,
             existing_text,
         )),
         Entry::Pick(options) => {
@@ -1308,6 +1351,7 @@ fn wire_asking_when_free(
             times: controls.shown.times,
             offered: &controls.offered,
             problem_line,
+            following: what_it_needs.following,
         },
         what_it_needs.a11y,
         what_it_needs.built,
@@ -1322,6 +1366,8 @@ struct WhatAskingNeeds<'a> {
     built: &'a [(&'static Field, Control)],
     containers: &'a [Container],
     settings: DateSettings,
+    /// The event's start and end, told when a chosen time replaces both.
+    following: Option<Rc<Following>>,
 }
 
 /// What the button that applies a time works on.
@@ -1332,6 +1378,7 @@ struct PuttingItIn<'a> {
     /// Where Save says why it refused this form. Cleared when a time is put in,
     /// because whatever it was refused for was about the start and the end.
     problem_line: StaticText,
+    following: Option<Rc<Following>>,
 }
 
 /// The controls one wiring function needs, bundled so it does not carry six
@@ -1416,6 +1463,7 @@ fn wire_putting_it_in(
         times,
         offered,
         problem_line,
+        following,
     } = controls;
     let a11y = Arc::clone(a11y);
     let built: Vec<(&'static Field, Control)> = built.to_vec();
@@ -1433,6 +1481,9 @@ fn wire_putting_it_in(
         };
 
         put_the_time_into_the_form(&built, &chosen, settings);
+        if let Some(following) = &following {
+            following.both_were_set();
+        }
         // Whatever Save last refused this form for was about the start and the
         // end, and those have just been replaced. Left on screen it is a
         // sentence about values that are no longer there, which is the same
@@ -1504,6 +1555,202 @@ fn put_the_clock_in(fields: TimeFields, at: chrono::NaiveTime, clock: Clock) {
     }
     fields.hour.set_value(displayed as i32);
     fields.minute.set_value(at.minute() as i32);
+}
+
+/// A time's controls and the date controls beside it, read and set as one
+/// moment, so a time moved past midnight moves its date too.
+#[derive(Clone, Copy)]
+struct Moment {
+    date: DateFields,
+    time: TimeFields,
+    clock: Clock,
+}
+
+impl Moment {
+    /// The moment `built` holds for the time field `time_field` and its date.
+    fn of(
+        built: &[(&'static Field, Control)],
+        time_field: FieldName,
+        clock: Clock,
+    ) -> Option<Self> {
+        let date_field = the_date_of(time_field)?;
+        let time = built.iter().find_map(|(field, control)| match control {
+            Control::Time(time) if field.name == time_field => Some(*time),
+            _ => None,
+        })?;
+        let date = built.iter().find_map(|(field, control)| match control {
+            Control::Date(date) if field.name == date_field => Some(*date),
+            _ => None,
+        })?;
+        Some(Moment { date, time, clock })
+    }
+
+    fn read(self) -> Option<chrono::NaiveDateTime> {
+        let month = self.date.month.get_selection()? + 1;
+        let day = self.date.day.value().max(1) as u32;
+        chrono::NaiveDate::from_ymd_opt(self.date.year.value(), month, day)?.and_hms_opt(
+            hour_from(&self.time),
+            self.time.minute.value().max(0) as u32,
+            0,
+        )
+    }
+
+    fn show(self, at: chrono::NaiveDateTime) {
+        put_the_date_in(self.date, at.date());
+        put_the_clock_in(self.time, at.time(), self.clock);
+    }
+
+    /// Move by the arrow: a block on Up and Down, a minute on Left and Right.
+    /// Answers whether it moved, which is whether the key was taken.
+    fn step(self, arrow: Arrow, block: Block) -> bool {
+        let Some(at) = self.read() else {
+            return false;
+        };
+        self.show(match arrow {
+            Arrow::Up => time_blocks::step_by_block(at, block, true),
+            Arrow::Down => time_blocks::step_by_block(at, block, false),
+            Arrow::Left => time_blocks::step_by_minute(at, false),
+            Arrow::Right => time_blocks::step_by_minute(at, true),
+        });
+        true
+    }
+
+    /// Call `then` whenever a person changes any of this moment's controls:
+    /// typed over, stepped by the arrows' own buttons, or chosen from a list.
+    /// A change made from code raises none of these.
+    ///
+    /// A spin control is watched through its text event, which typing over
+    /// the value and the control's own step of one both raise. Its value
+    /// event is not raised by typing: measured 2026-09-24 by the typed
+    /// readings in `tests/event_times_move_in_blocks.rs`, which stayed where
+    /// they were with the value event alone, and the hour's own Up moved the
+    /// end with the text event alone.
+    fn when_changed_by_hand(self, then: AfterAMove) {
+        for spin in [
+            self.date.day,
+            self.date.year,
+            self.time.hour,
+            self.time.minute,
+        ] {
+            let then = Rc::clone(&then);
+            spin.bind_internal(EventType::TEXT, move |event| {
+                event.skip(true);
+                then();
+            });
+        }
+        for choice in [Some(self.date.month), self.time.am_pm]
+            .into_iter()
+            .flatten()
+        {
+            let then = Rc::clone(&then);
+            choice.on_selection_changed(move |_| then());
+        }
+    }
+}
+
+/// The date a time field belongs to.
+fn the_date_of(time_field: FieldName) -> Option<FieldName> {
+    match time_field {
+        FieldName::StartTime => Some(FieldName::StartDate),
+        FieldName::EndTime => Some(FieldName::EndDate),
+        FieldName::DueTime => Some(FieldName::DueDate),
+        _ => None,
+    }
+}
+
+/// An event's start and end, and whether the person has changed the end:
+/// the tester's second answer in #41, that the end moves with the start
+/// unless the person has edited the end.
+struct Following {
+    start: Moment,
+    end: Moment,
+    /// Where the start was before it last moved.
+    start_was: Cell<Option<chrono::NaiveDateTime>>,
+    is_end_edited: Cell<bool>,
+}
+
+impl Following {
+    /// The start has moved, by a key or by typing: the end goes with it by
+    /// the same amount, until the person has changed the end.
+    fn start_moved(&self) {
+        let Some(starts) = self.start.read() else {
+            return;
+        };
+        let was = self.start_was.replace(Some(starts));
+        if let (Some(was), Some(ends)) = (was, self.end.read()) {
+            self.end.show(time_blocks::follow(
+                was,
+                starts,
+                ends,
+                self.is_end_edited.get(),
+            ));
+        }
+    }
+
+    /// Both were set from code together, so where the start is now is where
+    /// it was.
+    fn both_were_set(&self) {
+        self.start_was.set(self.start.read());
+    }
+}
+
+/// Take the arrow keys on every time's minutes, and have an event's end
+/// follow its start. The end is marked as the person's once they change it,
+/// by a key or by typing.
+fn take_the_arrows_in(
+    built: &[(&'static Field, Control)],
+    block: Block,
+    clock: Clock,
+) -> Option<Rc<Following>> {
+    let following = Moment::of(built, FieldName::StartTime, clock)
+        .zip(Moment::of(built, FieldName::EndTime, clock))
+        .map(|(start, end)| {
+            Rc::new(Following {
+                start,
+                end,
+                start_was: Cell::new(start.read()),
+                is_end_edited: Cell::new(false),
+            })
+        });
+
+    for time_field in [FieldName::StartTime, FieldName::EndTime, FieldName::DueTime] {
+        let Some(moment) = Moment::of(built, time_field, clock) else {
+            continue;
+        };
+        let then = after_moving(time_field, following.as_ref());
+        moment.when_changed_by_hand(Rc::clone(&then));
+        take_the_arrows(
+            &moment.time.minute,
+            Box::new(move |arrow| {
+                let moved = moment.step(arrow, block);
+                if moved {
+                    then();
+                }
+                moved
+            }),
+        );
+    }
+    following
+}
+
+/// What is done after a person moves a time.
+type AfterAMove = Rc<dyn Fn()>;
+
+/// What follows a person moving the time `time_field`: an event's start takes
+/// its end along, an event's end becomes the person's, and anything else
+/// moves alone.
+fn after_moving(time_field: FieldName, following: Option<&Rc<Following>>) -> AfterAMove {
+    match (time_field, following) {
+        (FieldName::StartTime, Some(following)) => {
+            let following = Rc::clone(following);
+            Rc::new(move || following.start_moved())
+        }
+        (FieldName::EndTime, Some(following)) => {
+            let following = Rc::clone(following);
+            Rc::new(move || following.is_end_edited.set(true))
+        }
+        _ => Rc::new(|| {}),
+    }
 }
 
 /// The one widget that stands for a control, for the cases where there is
