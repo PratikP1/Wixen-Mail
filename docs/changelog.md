@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Labels can be made, renamed and put in order, and the Label menu shows yours.** The
+  tester on 2026-09-15 (#48): "There is NO UI for creating these labels. Create a UI for this
+  functionality for additional labels as well as for editing and moving labels' order." The
+  Label submenu on the Action menu now lists your account's own labels in their order, each
+  with the key that applies it, `Ctrl+1` to `Ctrl+9`, and a tenth label onward without a key,
+  up to fifty. It ends with Edit Labels, which opens the Label Manager, also on the Tools menu
+  as Labels (`Alt+E` on the menu); it was called Tags there. The Label Manager adds, renames,
+  recolours and deletes labels as before, has a Key column saying which key each label has,
+  and moves a label with Move Up and Move Down or `Alt+Shift+Up` and `Alt+Shift+Down`, saying
+  where it went. The submenu and the sidebar follow when it closes. A key past your last label
+  says there is no such label. The version does not move for this: the stored mail only gains
+  a column, and no build has been cut since 1.0.0-alpha.1. Known limitations: nobody has heard
+  the rebuilt submenu, a move in the Label Manager or its Key column with a screen reader yet.
+  A label past the fiftieth is in the Label Manager and the sidebar but not on the submenu.
+
 - **Signatures are assigned per account, with one default for the rest.** The tester on
   2026-09-15 (#43): "Allow signatures to be assigned by email account. Default should apply if
   no signature is assigned to a particular account." Signatures are one list now: the
@@ -398,6 +413,37 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   resource with the build. No build carrying the count has been handed to anybody yet.
 
 ### Fixed
+
+- **`Ctrl+2` applies the label the Label menu says it does.** Until this build the Label
+  submenu listed the five labels an account starts with, in Thunderbird's order, whatever your
+  labels were, while `Ctrl` and a number applied your labels in alphabetical order. So the
+  menu said "Work Ctrl+2" and `Ctrl+2` applied Later, and "Later Ctrl+5" applied Work (#48).
+  The submenu is now built from your own labels in the order the keys follow. Labels from an
+  earlier build keep the order their keys already applied, alphabetical, so every key goes on
+  doing what it did; the menu is what changed, and you can reorder the labels in the Label
+  Manager.
+
+- **Help pages open from the Help menu instead of running other commands.** The Help menu's
+  pages shared their command numbers with other commands, so choosing Keyboard shortcuts on
+  the Help menu started a new item in the module you were in, Using Wixen Mail asked whether to
+  delete the chosen task, event, reminder, note or contact, the pages after them moved or
+  copied the item, marked it done or pinned it, and What changed started a new calendar, list,
+  folder or group. Each page has a number of its own now. Found while the Help menu's letters
+  were being checked; this was read from the code and shown on the real menu bar, not tried in
+  the running program.
+
+- **Every item on the Help menu has a letter of its own.** Using Wixen Mail shared `U` with
+  Check for Updates, and What changed shared `C` with Contents, so pressing either letter moved
+  between two items instead of choosing one. Using Wixen Mail is `M` now and What changed is
+  `H`.
+
+- **Every letter on a page of the account editor is its own.** Five letters were each claimed
+  by two or three labels showing on one page, such as `Alt+B` on Back, Enable this account and
+  the browser sign-in, so the letter moved between them. On the first page Account Name is
+  `Alt+A`. On the second, Check Interval is `Alt+V`, the Use TLS box for IMAP `Alt+L`, for
+  SMTP `Alt+E` and for POP `Alt+F`, the browser sign-in `Alt+N`, Enable this account `Alt+A`,
+  and Directory address `Alt+Y`. The keyboard shortcuts page lists every letter on both
+  pages.
 
 - **A new event or reminder says New again.** Since the default reminder in Settings started
   being filled in on every new event and reminder, their windows were headed "Edit Event" and
