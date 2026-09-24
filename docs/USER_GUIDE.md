@@ -132,7 +132,7 @@ The Tools menu also opens:
 
 - **Message Filters**, rules that sort, mark, or move messages as they
   arrive. Each rule matches on a field such as subject, sender, or date,
-  and can mark a message read, star it, move it, tag it, or say a phrase
+  and can mark a message read, star it, move it, label it, or say a phrase
   first when its row is read; any rule can also play a sound when a check
   finds a match. See [Rules that change how a row is announced](#rules-that-change-how-a-row-is-announced).
 - **Contact Manager**, a dialog for the contacts stored for the account you
@@ -141,7 +141,8 @@ The Tools menu also opens:
   overlaps it.
 - **Signatures**, the text added to the end of messages you send, and which
   account uses which. See [Signatures](#signatures).
-- **Tags**, the labels you can put on a message.
+- **Labels**, the Label Manager, where you make, rename, recolour, delete
+  and order the labels you put on messages. See [Labels](#labels).
 - **Sync Contacts**, **Sync Calendar**, and **Sync Tasks**, to sync with
   your provider now. Corrected on 2026-09-18: this line said "rather than
   waiting for the next automatic sync", and there is none; the three
@@ -155,6 +156,40 @@ The Tools menu also opens:
 on, sending a composed message queues it in a local outbox instead of
 sending it immediately, one queue per account. **View → Flush Outbox**
 attempts every queued send once you are back online.
+
+### Labels
+
+A label marks a message as belonging to something, such as Work or Later,
+without moving it. The **Label** submenu of the Action menu lists your
+account's labels in their order, each with its key: `Ctrl+1` puts the first
+label on the messages you have selected, `Ctrl+2` the second, up to `Ctrl+9`.
+Pressing the key again takes the label off. A tenth label and any after it
+have no key and are on the submenu alone, which shows up to fifty.
+`Ctrl+0` takes every label off.
+
+An account starts with five labels: Important, Work, Personal, To Do and
+Later, in that order, which is Thunderbird's.
+
+**Edit Labels**, at the end of the submenu, and **Labels** on the Tools menu
+open the Label Manager. Its list shows each label with the key that applies it
+and its colour. From it you can:
+
+- add a label, rename one, or change its colour with **Add** and **Edit**
+- delete a label with **Delete**
+- move a label up or down the order with **Move Up** and **Move Down**, or
+  `Alt+Shift+Up` and `Alt+Shift+Down` in the list. Each move says where the
+  label is now, such as "Later, 2 of 5.", and the key that applied it now
+  applies the label it swapped with.
+
+The order and the names are saved when you close the Label Manager, and the
+submenu and the sidebar's Labels branch show them straight away.
+
+If you used labels before 2026-09-24, they keep the order their keys applied
+them in, which was alphabetical: Important, Later, Personal, To Do, Work. Until
+then the submenu listed the five starting labels in Thunderbird's order
+whatever your labels were, so `Ctrl+2` said Work and applied Later. The
+submenu now says what each key does, and you can put the labels in any order
+you like.
 
 ## Reading and Managing Email
 
@@ -1357,6 +1392,6 @@ and that About would offer one when it arrived; both are here now.
 ## Conclusion
 
 Learning the keyboard shortcuts pays off quickly, since almost everything in
-Wixen Mail is reachable that way. Folders, stars, and tags keep a growing
+Wixen Mail is reachable that way. Folders, stars, and labels keep a growing
 mailbox organised, and search finds a specific message faster than scrolling
 to it.

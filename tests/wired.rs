@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 /// without `cfg(test)`, and this used to be gated on exactly that. If that
 /// dev-dependency ever goes, this file stops compiling, which is the failure
 /// direction wanted. The alternative was reading nothing and passing.
+use wixen_mail::application::help::TOPICS;
 use wixen_mail::common::what_ships::what_ships;
 
 /// The presentation sources, which is where commands are raised and handled.
@@ -1587,11 +1588,11 @@ fn builder_bodies(text: &str) -> Vec<(String, &str)> {
 /// So this reports imaginary faults there and would be quieted by rewording
 /// labels to satisfy it, which helps nobody. What that window needs is a check
 /// that builds it, walks it to each page for each protocol, and reads the
-/// labels of the controls that are actually showing. `advance_to_connection_page`,
-/// `return_to_identity_page` and `is_shown()` already exist for exactly that,
-/// and `tests/account_edit_protocol_fields.rs` already drives them. That check
-/// is not written, and until it is, the mnemonics on that window are unchecked
-/// by anything. Said here rather than left as a green run.
+/// labels of the controls that are actually showing. Since 2026-09-24 that is
+/// `tests/account_edit_protocol_fields.rs`, which walks it to each page for
+/// IMAP, POP and the browser sign-in and reads the letters of the windows
+/// that are showing; it found five letters claimed twice on one page, which
+/// is ledger 606.
 const READ_AT_RUN_TIME_INSTEAD: &[&str] = &["build_account_edit_dialog"];
 
 /// Every literal in one body that claims an Alt key.
@@ -1984,7 +1985,19 @@ fn test_no_two_items_on_one_menu_claim_the_same_letter() {
 
         // A submenu, or an item appended once the builder has finished, sits on
         // the menu like any other and claims a letter like any other.
-        let labels = menu_labels_claiming_a_letter(&menu_block(&ship, name));
+        let mut labels = menu_labels_claiming_a_letter(&menu_block(&ship, name));
+        // The Help menu appends one item per page, from the list of help
+        // topics, in a loop whose labels are not literals here, so they are
+        // read from the list itself. Until 2026-09-24 nothing read them, and
+        // C and U were each claimed twice on that menu (ledger 591).
+        if name == "help" {
+            labels.extend(
+                TOPICS
+                    .iter()
+                    .map(|topic| topic.title.to_string())
+                    .filter(|title| alt_key_of(title).is_some()),
+            );
+        }
         if labels.len() < 2 {
             continue;
         }

@@ -88,16 +88,33 @@ const FOLDER_W: i32 = 220;
 /// instead, which is not checkable, and the application asserted on startup.
 /// Nothing here depends on a particular value, only on them being distinct,
 /// so the numbering is not a thing a person should be doing.
+///
+/// `NAME[count]` holds a block of that many ids, the first called `NAME`,
+/// for a list whose items are data rather than names; the next id comes
+/// after the block, so an id taken as `NAME + n` inside it is nobody else's.
 macro_rules! menu_ids {
-    ($($name:ident),* $(,)?) => {
-        menu_ids!(@assign 0; $($name,)*);
-    };
-    (@assign $offset:expr; $head:ident, $($tail:ident,)*) => {
-        pub(crate) const $head: Id = ID_HIGHEST + $offset;
-        menu_ids!(@assign $offset + 1; $($tail,)*);
-    };
     (@assign $offset:expr;) => {};
+    (@assign $offset:expr; $head:ident [$count:expr], $($tail:tt)*) => {
+        pub(crate) const $head: Id = ID_HIGHEST + $offset;
+        menu_ids!(@assign $offset + $count; $($tail)*);
+    };
+    (@assign $offset:expr; $head:ident, $($tail:tt)*) => {
+        pub(crate) const $head: Id = ID_HIGHEST + $offset;
+        menu_ids!(@assign $offset + 1; $($tail)*);
+    };
+    ($($body:tt)*) => {
+        menu_ids!(@assign 0; $($body)*);
+    };
 }
+
+/// How many labels past the ninth the Label menu offers, each with an id of
+/// its own and no key. Fifty labels in all; a label past the fiftieth is
+/// still listed in the sidebar and the Label Manager, and is left off the
+/// menu with a line in the log saying so.
+const LABELS_PAST_NINE_ON_THE_MENU: i32 = 41;
+
+/// How many help pages the Help menu offers, each with an id of its own.
+const HELP_TOPICS_ON_THE_MENU: i32 = crate::application::help::TOPICS.len() as i32;
 
 menu_ids!(
     ID_MUTE_CONTENT,
@@ -234,12 +251,18 @@ menu_ids!(
     ID_LABEL_7,
     ID_LABEL_8,
     ID_LABEL_9,
+    // The tenth label and every one after it, reached from the Label menu
+    // alone because there are no more digits.
+    ID_LABEL_PAST_NINE[LABELS_PAST_NINE_ON_THE_MENU],
     ID_LABEL_NONE,
     ID_HELP_CONTENTS,
     // The first of one id per help page, taken in order from the topic list.
     // A block rather than one id each, because the list is data and the ids
-    // should not have to be edited when a page is added to it.
-    ID_HELP_TOPIC_FIRST,
+    // should not have to be edited when a page is added to it. Held as a
+    // block since 2026-09-24: until then only the first was, and the rest
+    // were the next commands' ids, so Keyboard shortcuts ran New and Using
+    // Wixen Mail ran Delete on the chosen item.
+    ID_HELP_TOPIC_FIRST[HELP_TOPICS_ON_THE_MENU],
     ID_CONTEXT_NEW_ITEM,
     ID_CONTEXT_DELETE_ITEM,
     ID_CONTEXT_MOVE_ITEM,
@@ -3744,6 +3767,22 @@ impl WxMailApp {
                 });
             }
 
+            answer_the_label_keys_the_menu_cannot(&msg_list, frame, {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                let message_cache = message_cache.clone();
+                move |number| {
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
+                    label_the_message(app, &message_cache, &a11y, &msg_list, Some(number));
+                }
+            });
+
             wire_read_aloud(
                 &msg_list,
                 &a11y,
@@ -4118,14 +4157,13 @@ impl WxMailApp {
                                 }
                             }
                         }
-                        _ if LABEL_IDS.contains(&id) || id == ID_LABEL_NONE => {
-                            let number = LABEL_IDS.iter().position(|held| *held == id);
+                        _ if label_position_of(id).is_some() || id == ID_LABEL_NONE => {
                             label_the_message(
                                 app,
                                 &message_cache,
                                 &a11y,
                                 &msg_list,
-                                number.map(|at| at + 1),
+                                label_position_of(id),
                             );
                         }
                         _ if id == ID_READ_ROW_COLUMNS => {
@@ -5620,14 +5658,21 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
-                        _ if id == ID_TAG_MGR => managers::manage_tags(
-                            &state,
-                            &message_cache,
-                            &frame,
-                            &ui_tx,
-                            &runtime,
-                            &a11y,
-                        ),
+                        // From Tools and from the end of the Label menu. The
+                        // sidebar is read again afterwards, which is what puts
+                        // a renamed, added or moved label on the Label menu
+                        // and in the sidebar's Labels branch.
+                        _ if id == ID_TAG_MGR => {
+                            managers::manage_tags(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
+                            read_the_tree_back(&message_cache, &state, &ui_tx);
+                        }
                         _ if id == ID_SIG_MGR => managers::manage_signatures(
                             &state,
                             &message_cache,
@@ -6533,7 +6578,11 @@ impl WxMailApp {
         }
     }
 
-    fn build_menu_bar() -> MenuBar {
+    /// The main window's menu bar, as the window is given it.
+    ///
+    /// Public so a test can build the real menus and read their items back
+    /// (`tests/the_label_menu_says_the_labels_an_account_has.rs`).
+    pub fn build_menu_bar() -> MenuBar {
         // ── "New" submenu (expanded for all PIM modules) ────────────
         //
         // The keys come from `ItemKind` rather than being typed here, so the
@@ -6949,36 +6998,10 @@ impl WxMailApp {
             )
             .build();
 
-        // One entry per label, carrying Ctrl and its number, and a last one to
-        // take them all off. The names here are the ones an account starts
-        // with; they are rewritten from the account's own labels when those
-        // load, so renaming a label changes the menu rather than leaving it
-        // describing something that no longer exists.
-        //
-        // Ctrl and a digit rather than the bare digit Thunderbird uses. A bare
-        // digit in a list is also a character, and a list that jumps to what
-        // you type cannot tell "label this work" from somebody spelling their
-        // way to a message about invoice 4021.
+        // Built from no labels, which is the five an account starts with, and
+        // built again from the account's own labels each time they load.
         let labels_menu = Menu::builder().build();
-        for (index, id) in LABEL_IDS.iter().enumerate() {
-            let name = crate::application::tagging::TO_BEGIN_WITH
-                .get(index)
-                .map(|label| label.name)
-                .unwrap_or("Label");
-            labels_menu.append(
-                *id,
-                &format!("{name}\tCtrl+{}", index + 1),
-                "Put this label on the message, or take it off",
-                wxdragon::menus::ItemKind::Normal,
-            );
-        }
-        labels_menu.append_separator();
-        labels_menu.append(
-            ID_LABEL_NONE,
-            "&Remove every label\tCtrl+0",
-            "Take all the labels off this message",
-            wxdragon::menus::ItemKind::Normal,
-        );
+        rebuild_the_label_menu(&labels_menu, &[]);
 
         // The thing you have to do arrived as an email, and retyping its
         // subject into a task list is the clerical work software exists to
@@ -7481,7 +7504,10 @@ impl WxMailApp {
                 "S&ignatures...",
                 "Text added to the end of messages you send",
             )
-            .append_item(ID_TAG_MGR, "Ta&gs...", "Labels you can put on messages")
+            // Labels, the word the Label menu, the sidebar and the tester use.
+            // e, because l is Folders to Keep Up to Date's on this menu and a,
+            // b and s are taken too.
+            .append_item(ID_TAG_MGR, "Lab&els...", "Labels you can put on messages")
             .append_separator()
             // b, because every other letter this menu uses is taken. No
             // shortcut key: this is done once per calendar, and a key nobody
@@ -7563,9 +7589,10 @@ impl WxMailApp {
             );
         }
         help.append_separator();
-        // F is the one letter free among the Help menu's items and topics
-        // on 2026-09-23; C and U are each held twice already, which is on the
-        // ledger rather than moved here.
+        // F was free among the Help menu's items and topics on 2026-09-23.
+        // The topics' letters live in `application::help::TOPICS`, and
+        // `tests/wired.rs` reads them with this menu's own since 2026-09-24,
+        // when C and U were each held twice (ledger 591).
         help.append(
             ID_SEND_FEEDBACK,
             "Send &Feedback...\tCtrl+Shift+F",
@@ -10520,13 +10547,167 @@ fn open_help(topic: &crate::application::help::Topic, tx: &Sender<UIUpdate>, rt:
 
 /// Every label id, in the order the number keys reach them.
 ///
-/// One list rather than nine names written out at each of the three places
-/// that need them: the menu that offers them, the handler that answers them,
-/// and the code that renames them when an account's labels load.
+/// One list rather than nine names written out at each place that needs
+/// them; [`label_id_at`] is the one reader, and the menu and the handler both
+/// ask it.
 const LABEL_IDS: [i32; 9] = [
     ID_LABEL_1, ID_LABEL_2, ID_LABEL_3, ID_LABEL_4, ID_LABEL_5, ID_LABEL_6, ID_LABEL_7, ID_LABEL_8,
     ID_LABEL_9,
 ];
+
+/// The menu id of the label at this place in the account's order.
+///
+/// The first nine are the ids whose items carry Ctrl and the digit; the rest
+/// come from the block reserved for them. `None` past the block.
+fn label_id_at(position: usize) -> Option<Id> {
+    match position {
+        0 => None,
+        1..=9 => LABEL_IDS.get(position - 1).copied(),
+        _ => {
+            let past_nine = i32::try_from(position - 10).ok()?;
+            (past_nine < LABELS_PAST_NINE_ON_THE_MENU).then_some(ID_LABEL_PAST_NINE + past_nine)
+        }
+    }
+}
+
+/// The place in the account's order a label's menu id stands for: the
+/// inverse of [`label_id_at`], asked of it rather than written twice.
+fn label_position_of(id: Id) -> Option<usize> {
+    let on_the_menu = LABEL_IDS.len() + LABELS_PAST_NINE_ON_THE_MENU as usize;
+    (1..=on_the_menu).find(|position| label_id_at(*position) == Some(id))
+}
+
+/// Fill the Label submenu from an account's labels, in their order.
+///
+/// One item per label as `tagging::what_the_menu_says` words it, Ctrl and
+/// the number on the first nine, then Remove every label and Edit Labels,
+/// which opens the Label Manager. Everything on the menu goes first, so a
+/// label renamed or moved, or one that went, leaves nothing behind. No
+/// labels at all is the five an account starts with, which is what the first
+/// press of a key makes.
+///
+/// Built from the same list in the same order `label_the_message` reads when
+/// a key is pressed, so the key beside a name is the key that applies it.
+/// Until 2026-09-24 the menu was built once from the five an account starts
+/// with, the keys read the stored labels by name, and Ctrl+2 said Work and
+/// applied Later (#48).
+pub fn rebuild_the_label_menu(labels_menu: &Menu, names: &[String]) {
+    // Counted rather than asked until nothing is left: asking for the first
+    // item of an empty menu is an assertion in wxWidgets, which a debug build
+    // answers with seconds of stack walking per call.
+    for item in labels_menu.get_menu_items() {
+        labels_menu.delete_item(&item);
+    }
+    for line in crate::application::tagging::what_the_menu_says(names) {
+        let Some(id) = label_id_at(line.position) else {
+            tracing::warn!(
+                "The Label menu shows {} labels; the {} after them are in the Label Manager",
+                line.position - 1,
+                names.len() + 1 - line.position
+            );
+            break;
+        };
+        labels_menu.append(
+            id,
+            &line.text,
+            "Put this label on the message, or take it off",
+            wxdragon::menus::ItemKind::Normal,
+        );
+    }
+    labels_menu.append_separator();
+    labels_menu.append(
+        ID_LABEL_NONE,
+        "&Remove every label\tCtrl+0",
+        "Take all the labels off this message",
+        wxdragon::menus::ItemKind::Normal,
+    );
+    labels_menu.append_separator();
+    labels_menu.append(
+        ID_TAG_MGR,
+        "&Edit Labels...",
+        "Make labels, rename them, and put them in the order the keys follow",
+        wxdragon::menus::ItemKind::Normal,
+    );
+}
+
+/// Answer Ctrl and a digit past the account's last label from the message
+/// list.
+///
+/// A label key is the accelerator of its item on the Label menu, and a key
+/// past the last label has no item, so the menu never sees it; left alone it
+/// would do nothing and say nothing, which is indistinguishable from a key
+/// that is broken. The list is where labels are put on, so the list answers
+/// it, with what the menu item would have run. Every other key is left to
+/// the list.
+fn answer_the_label_keys_the_menu_cannot(
+    list: &ListCtrl,
+    frame: Frame,
+    answer: impl Fn(usize) + 'static,
+) {
+    list.bind_internal(EventType::KEY_DOWN, move |event| {
+        event.skip(true);
+        if !event.control_down() || event.shift_down() || event.alt_down() {
+            return;
+        }
+        let Some(number) = event
+            .get_key_code()
+            .and_then(|key| u8::try_from(key).ok())
+            .filter(u8::is_ascii_digit)
+            .map(|digit| usize::from(digit - b'0'))
+        else {
+            return;
+        };
+        let the_menu_cannot = frame
+            .get_menu_bar()
+            .is_some_and(|bar| a_label_key_the_menu_does_not_answer(&bar, number));
+        if the_menu_cannot {
+            event.skip(false);
+            answer(number);
+        }
+    });
+}
+
+/// Put an account's labels, as `(id, name)` in their order, on the window's
+/// Label submenu.
+///
+/// Called when the labels load, which is whenever the sidebar is read again:
+/// on start, on a change of account, after the Label Manager closes, and on
+/// a timer among other times. Labels the menu already says are left as they
+/// are, so a menu somebody has open is not emptied and filled under them.
+pub fn put_the_labels_on_the_menu(frame: &Frame, labels: &[(String, String)]) {
+    let Some((_, labels_menu)) = frame
+        .get_menu_bar()
+        .and_then(|bar| bar.find_item_and_menu(ID_LABEL_NONE))
+    else {
+        return;
+    };
+    let names: Vec<String> = labels.iter().map(|(_, name)| name.clone()).collect();
+    let wanted: Vec<String> = crate::application::tagging::what_the_menu_says(&names)
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+    // The label items are the ones before the first separator, whose label
+    // is empty.
+    let shown: Vec<String> = labels_menu
+        .get_menu_items()
+        .iter()
+        .map(|item| item.get_label())
+        .take_while(|label| !label.is_empty())
+        .collect();
+    if shown != wanted {
+        rebuild_the_label_menu(&labels_menu, &names);
+    }
+}
+
+/// Whether Ctrl and this number has no label on the menu to answer it.
+///
+/// A key past the account's last label has no item to carry it, so the menu
+/// never sees it and the message list answers it instead, with "There is no
+/// label 6" rather than silence.
+pub fn a_label_key_the_menu_does_not_answer(menu_bar: &MenuBar, number: usize) -> bool {
+    (1..=crate::application::tagging::REACHABLE_BY_KEY).contains(&number)
+        && label_id_at(number).is_some_and(|id| menu_bar.find_item(id).is_none())
+}
 
 /// Rebuild the list's columns from a layout.
 ///
@@ -19207,6 +19388,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::LabelsLoaded(labels) => {
             lock_state(state).labels = labels.clone();
+            put_the_labels_on_the_menu(frame, labels);
         }
         UIUpdate::SavedSearchesLoaded(searches) => {
             lock_state(state).saved_searches = (**searches).clone();

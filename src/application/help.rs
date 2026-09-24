@@ -68,7 +68,8 @@ pub const TOPICS: &[Topic] = &[
         about: None,
     },
     Topic {
-        title: "&Using Wixen Mail",
+        // M, because U is Check for Updates' on the Help menu (ledger 591).
+        title: "Using Wixen &Mail",
         file: "USER_GUIDE.md",
         // What is in it, which is mail and nothing else. It claimed five more
         // and holds a section on none of them, so pressing F1 in the calendar
@@ -101,7 +102,8 @@ pub const TOPICS: &[Topic] = &[
         about: None,
     },
     Topic {
-        title: "What &changed",
+        // H, because C is Contents' on the Help menu (ledger 591).
+        title: "What c&hanged",
         file: "changelog.md",
         covers: "Every change, newest first, including known limitations",
         about: None,

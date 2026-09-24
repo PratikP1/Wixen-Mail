@@ -316,7 +316,7 @@ pub const REACH: &str = "Colour is applied to the sidebar and content area of \
      about one word, the Insert Table window its formatting menu opens, \
      the preview it can show before a message sends, the Calendar window \
      itself, the confirm delete question it can ask, the Search window, \
-     the Filter, Tag and Signature managers, the Contact Manager, the \
+     the Filter, Label and Signature managers, the Contact Manager, the \
      window shown while a calendar server is asked what it has, the \
      window used to choose a calendar to add or to reopen a saved \
      draft, and the window that asks for a name when you create or \
@@ -1024,7 +1024,7 @@ mod tests {
             "the Calendar window itself",
             "confirm delete question",
             "the Search window",
-            "Filter, Tag and Signature managers",
+            "Filter, Label and Signature managers",
             "the Contact Manager",
             "calendar server is asked what it has",
             "choose a calendar to add",

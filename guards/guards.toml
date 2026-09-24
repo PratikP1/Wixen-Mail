@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 284 records have arrived since and have not been through it.
+# 291 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25316,7 +25316,7 @@ red = [
     "test_a_folder_above_the_variable_limit_reads_its_labels_by_folder_without_an_error",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 10 },
+    { file = "src/data/message_cache/tags.rs", tests = 13 },
     { file = "tests/the_list_holds_everything_the_folder_holds.rs", tests = 5 },
 ]
 
@@ -25380,7 +25380,7 @@ red = [
     "test_a_label_view_answers_in_the_order_it_is_handed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 10 },
+    { file = "src/data/message_cache/tags.rs", tests = 13 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
@@ -30259,4 +30259,149 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
+]
+
+# ── An account's labels are read in the order it keeps (#48, T-12-34) ──────
+#
+# Until 12-10 `get_tags_for_account` ordered by name while the Label menu was
+# built from the five an account starts with, so Ctrl+2 said Work and applied
+# Later. The break puts the name order back, which is the defect itself: the
+# order the menu shows and the keys read would no longer be the order the
+# person made or wrote. Measured through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an account's labels are read in the order it keeps, not by name"
+file = "src/data/message_cache/tags.rs"
+before = '''             FROM tags WHERE account_id = ?1 ORDER BY position, name",'''
+after = '''             FROM tags WHERE account_id = ?1 ORDER BY name",'''
+red = [
+    "data::message_cache::tags::tests::test_labels_come_back_in_the_order_they_were_made",
+    "data::message_cache::tags::tests::test_the_order_written_is_the_order_read_back",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tags.rs", tests = 13 },
+]
+
+# ── Only the first nine labels carry a key on the menu (#48) ────────────────
+#
+# There are nine digits that are not zero, so a tenth label is reached from
+# the Label menu alone. The break gives the tenth a key too, which would
+# write "Ctrl+10" beside it, a key no keyboard can press. Measured through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the Label menu gives a key to the first nine labels and to no tenth"
+file = "src/application/tagging.rs"
+before = '''    (1..=REACHABLE_BY_KEY)'''
+after = '''    (1..=REACHABLE_BY_KEY + 1)'''
+red = [
+    "application::tagging::tests::test_nothing_past_nine_has_a_key",
+]
+tests_last_seen = [
+    { file = "src/application/tagging.rs", tests = 19 },
+]
+
+# ── The Label menu is rebuilt from the labels that load (#48, T-12-34) ─────
+#
+# Until 12-10 the submenu was built once from the five an account starts
+# with and never rebuilt, while its comment said it was. The break rebuilds
+# it only for an account with no labels, which is the old menu for every
+# account that has some. Measured through `scripts/guards.sh --remeasure`
+# against the target that reads the real menu bar.
+[[guard]]
+name = "the Label menu is rebuilt from the labels an account has when they load"
+file = "src/presentation/wx_app.rs"
+suite = "the_label_menu_says_the_labels_an_account_has"
+before = '''    if shown != wanted {'''
+after = '''    if shown != wanted && names.is_empty() {'''
+red = [
+    "test_labels_from_before_keep_the_order_their_keys_applied",
+    "test_the_second_key_applies_the_label_the_menu_shows_second",
+    "test_a_renamed_and_moved_label_is_what_the_menu_says_next",
+    "test_the_key_follows_a_move",
+    "test_a_tenth_label_is_on_the_menu_without_a_key",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 16 },
+]
+
+# ── The Label Manager says which key each label has (#48) ───────────────────
+#
+# A label's place is the number its key carries, so the manager shows it in
+# a Key column beside the name. The break leaves the column empty, as a
+# manager with no Key column would read. Measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "the Label Manager says the key beside each label"
+file = "src/presentation/wx_managers.rs"
+suite = "the_label_menu_says_the_labels_an_account_has"
+before = '''        list.set_item_text_by_column(idx, 1, &key);'''
+after = '''        list.set_item_text_by_column(idx, 1, "");'''
+red = [
+    "test_the_manager_is_the_label_manager_and_says_each_labels_key",
+    "test_moving_a_label_in_the_manager_says_where_it_went",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 16 },
+]
+
+# ── A page of the account editor gives each letter to one control (606) ─────
+#
+# The account editor shows a page of its controls at a time, and a letter two
+# showing labels claim moves between them rather than choosing. The break
+# gives Account Name back the N that Next holds on the first page, which is
+# the clash 12-10 fixed. `suite` couples this file to the reading that walks
+# the dialog's pages, which nothing reached from a change here before.
+[[guard]]
+name = "a page of the account editor gives each letter to one control"
+file = "src/presentation/wx_account_manager.rs"
+suite = "account_edit_protocol_fields"
+before = '''    let (name_label, name_f) = tf("&Account Name:", "");'''
+after = '''    let (name_label, name_f) = tf("Account &Name:", "");'''
+red = [
+    "test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+    { file = "tests/account_edit_protocol_fields.rs", tests = 1 },
+]
+
+# ── Every item on the Help menu has a letter of its own (591) ────────────────
+#
+# The Help menu's topics carry their letters in `application::help::TOPICS`,
+# which `tests/wired.rs` reads with the menu's own items since 12-10. The
+# break gives What changed back the C that Contents holds.
+[[guard]]
+name = "every item on the Help menu has a letter of its own"
+file = "src/application/help.rs"
+suite = "wired"
+before = '''        title: "What c&hanged",'''
+after = '''        title: "What &changed",'''
+red = [
+    "test_no_two_items_on_one_menu_claim_the_same_letter",
+]
+tests_last_seen = [
+    { file = "src/application/help.rs", tests = 9 },
+    { file = "tests/wired.rs", tests = 77 },
+]
+
+# ── Every Help page has a menu id of its own (found by 12-10) ───────────────
+#
+# The Help menu gives each page the id counted up from ID_HELP_TOPIC_FIRST.
+# Until 12-10 only that first id was held, so the rest were the next
+# commands' ids and the window ran those commands: Keyboard shortcuts ran
+# New and Using Wixen Mail ran Delete on the chosen item. The break holds one
+# id again, which is the defect itself.
+[[guard]]
+name = "every Help page has a menu id of its own"
+file = "src/presentation/wx_app.rs"
+suite = "the_label_menu_says_the_labels_an_account_has"
+before = '''    ID_HELP_TOPIC_FIRST[HELP_TOPICS_ON_THE_MENU],'''
+after = '''    ID_HELP_TOPIC_FIRST,'''
+red = [
+    "test_no_help_item_carries_the_id_of_another_command",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 16 },
 ]

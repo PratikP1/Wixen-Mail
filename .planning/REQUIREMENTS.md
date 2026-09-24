@@ -5668,9 +5668,9 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     are the tester's ear; where the choice reads better by ear was his, and Pratik answered on
     2026-09-23 that it is made in both places, one setting reachable from both.
 
-- [ ] **EDIT-05**: The Label submenu shows the account's labels by their current names in a
+- [x] **EDIT-05**: The Label submenu shows the account's labels by their current names in a
   stored order with the key beside each, leads to a manager that creates, edits and orders
-  them, and the keys apply the label the menu shows.
+  them, and the keys apply the label the menu shows. Ticked 2026-09-24 by 12-10.
   - Evidence: `sed -n 6918,6946p src/presentation/wx_app.rs` on 2026-09-20 at `0ad66e48`:
     the submenu built once from `tagging::TO_BEGIN_WITH` by index, slots six to nine "Label",
     the comment claiming the names are rewritten on load; `grep -n labels_menu
@@ -5687,15 +5687,24 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     Currently there are five preconfigured labels. Four additional slots are available but
     are not assigned. There is NO UI for creating these labels. Create a UI for this
     functionality for additional labels as well as for editing and moving labels' order."
-  - [D] `position` on `tags` through `ensure_column_exists`, `get_tags_for_account` ordered
+  - [x] [D] `position` on `tags` through `ensure_column_exists`, `get_tags_for_account` ordered
     by position then name, a once-only numbering in name order under a marker, `move_tag`
     through `reordering::moved`; `tagging::what_the_menu_says` giving each label its line and
-    key for the first nine (12-10, task 1).
-  - [D] The submenu rebuilt from the labels on load and after the manager closes, ending
+    key for the first nine (12-10, task 1). Met 2026-09-24 with two departures the 12-10
+    summary gives: the numbering runs on every open over rows with no place rather than once
+    under a marker, and the store writes a whole order through `put_labels_in_order` while
+    the move is `tagging::moved` over the manager's rows. Held by the 19
+    `application::tagging::tests` cases and the 13 `data::message_cache::tags::` cases, among
+    them `test_labels_from_before_are_numbered_in_the_order_they_were_listed` and
+    `test_nothing_past_nine_has_a_key`.
+  - [x] [D] The submenu rebuilt from the labels on load and after the manager closes, ending
     with Edit Labels; Tools says Labels and the manager is the Label Manager with Move Up,
     Move Down and a Key column; a reading in
     `tests/the_label_menu_says_the_labels_an_account_has.rs` reads the items after a rename
-    and a move and `at_number` against them (12-10, task 2).
+    and a move and `at_number` against them (12-10, task 2). Met 2026-09-24 by the 16
+    readings of that target on the real menu bar and the live Label Manager, with two
+    companions refusing the old menu and a key reading by name; Tools says Lab&els because L
+    is Folders to Keep Up to Date's there.
   - [S] The submenu's items with their keys, Edit Labels, a move said and the Key column are
     the tester's ear.
 
@@ -6002,7 +6011,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | EDIT-02 | Phase 12 | Done 2026-09-24, 12-07: the name parts, the fills, the birthday and the checks, held by `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` and the module cases; the ear is ledger 596 and the tester's account ledger 597 |
 | EDIT-03 | Phase 12 | Done 2026-09-24, 12-08: the block rules, the setting, the keys taken on the typing field and the opening times, held by `application::time_blocks`' cases and `tests/event_times_move_in_blocks.rs`; a task has no time; the ear is ledger 603 |
 | EDIT-04 | Phase 12 | Done 2026-09-24, 12-09: one set with an assignment per account and one default, chosen on the account's dialog or in a signature's editor through one stored assignment, compose following the From account, held by `application::signatures`' and the store's cases and `tests/a_signature_follows_the_from_account.rs`; the ear is ledger 605 |
-| EDIT-05 | Phase 12 | Pending, 12-10 |
+| EDIT-05 | Phase 12 | Done 2026-09-24, 12-10: labels in a stored order, the Label submenu rebuilt from them with the key that applies each and Edit Labels at its end, the Label Manager with a Key column and moves, held by `application::tagging`'s and the store's cases and `tests/the_label_menu_says_the_labels_an_account_has.rs`; the ear is ledger 607 |
 | GAP-01 | Phase 13 | Not planned, 2026-09-20 |
 | GAP-02 | Phase 13 | Not planned, 2026-09-20 |
 | GAP-03 | Phase 13 | Not planned, 2026-09-20 |
