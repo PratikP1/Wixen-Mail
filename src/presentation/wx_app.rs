@@ -113,6 +113,9 @@ macro_rules! menu_ids {
 /// menu with a line in the log saying so.
 const LABELS_PAST_NINE_ON_THE_MENU: i32 = 41;
 
+/// How many help pages the Help menu offers, each with an id of its own.
+const HELP_TOPICS_ON_THE_MENU: i32 = crate::application::help::TOPICS.len() as i32;
+
 menu_ids!(
     ID_MUTE_CONTENT,
     ID_NEW_FOLDER,
@@ -255,8 +258,11 @@ menu_ids!(
     ID_HELP_CONTENTS,
     // The first of one id per help page, taken in order from the topic list.
     // A block rather than one id each, because the list is data and the ids
-    // should not have to be edited when a page is added to it.
-    ID_HELP_TOPIC_FIRST,
+    // should not have to be edited when a page is added to it. Held as a
+    // block since 2026-09-24: until then only the first was, and the rest
+    // were the next commands' ids, so Keyboard shortcuts ran New and Using
+    // Wixen Mail ran Delete on the chosen item.
+    ID_HELP_TOPIC_FIRST[HELP_TOPICS_ON_THE_MENU],
     ID_CONTEXT_NEW_ITEM,
     ID_CONTEXT_DELETE_ITEM,
     ID_CONTEXT_MOVE_ITEM,

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 288 records have arrived since and have not been through it.
+# 291 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30321,7 +30321,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 15 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 16 },
 ]
 
 # ── The Label Manager says which key each label has (#48) ───────────────────
@@ -30342,5 +30342,66 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 15 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 16 },
+]
+
+# ── A page of the account editor gives each letter to one control (606) ─────
+#
+# The account editor shows a page of its controls at a time, and a letter two
+# showing labels claim moves between them rather than choosing. The break
+# gives Account Name back the N that Next holds on the first page, which is
+# the clash 12-10 fixed. `suite` couples this file to the reading that walks
+# the dialog's pages, which nothing reached from a change here before.
+[[guard]]
+name = "a page of the account editor gives each letter to one control"
+file = "src/presentation/wx_account_manager.rs"
+suite = "account_edit_protocol_fields"
+before = '''    let (name_label, name_f) = tf("&Account Name:", "");'''
+after = '''    let (name_label, name_f) = tf("Account &Name:", "");'''
+red = [
+    "test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+    { file = "tests/account_edit_protocol_fields.rs", tests = 1 },
+]
+
+# ── Every item on the Help menu has a letter of its own (591) ────────────────
+#
+# The Help menu's topics carry their letters in `application::help::TOPICS`,
+# which `tests/wired.rs` reads with the menu's own items since 12-10. The
+# break gives What changed back the C that Contents holds.
+[[guard]]
+name = "every item on the Help menu has a letter of its own"
+file = "src/application/help.rs"
+suite = "wired"
+before = '''        title: "What c&hanged",'''
+after = '''        title: "What &changed",'''
+red = [
+    "test_no_two_items_on_one_menu_claim_the_same_letter",
+]
+tests_last_seen = [
+    { file = "src/application/help.rs", tests = 9 },
+    { file = "tests/wired.rs", tests = 77 },
+]
+
+# ── Every Help page has a menu id of its own (found by 12-10) ───────────────
+#
+# The Help menu gives each page the id counted up from ID_HELP_TOPIC_FIRST.
+# Until 12-10 only that first id was held, so the rest were the next
+# commands' ids and the window ran those commands: Keyboard shortcuts ran
+# New and Using Wixen Mail ran Delete on the chosen item. The break holds one
+# id again, which is the defect itself.
+[[guard]]
+name = "every Help page has a menu id of its own"
+file = "src/presentation/wx_app.rs"
+suite = "the_label_menu_says_the_labels_an_account_has"
+before = '''    ID_HELP_TOPIC_FIRST[HELP_TOPICS_ON_THE_MENU],'''
+after = '''    ID_HELP_TOPIC_FIRST,'''
+red = [
+    "test_no_help_item_carries_the_id_of_another_command",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 16 },
 ]
