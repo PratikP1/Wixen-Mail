@@ -289,6 +289,9 @@ impl MessageCache {
             pending: row.get(25)?,
             given_name: row.get(26)?,
             family_name: row.get(27)?,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             known_to: Vec::new(),
         })
     }
@@ -1583,6 +1586,9 @@ impl MessageCache {
             name,
             given_name,
             family_name,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: primary_email,
             phone,
             company,
@@ -2250,6 +2256,9 @@ mod tests {
             name: name.to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: String::new(),
             phone: None,
             company: None,
@@ -2952,6 +2961,11 @@ mod tests {
             // splitting a whole name gets right. It is kept as it was given.
             given_name: Some("Grace".to_string()),
             family_name: Some("van der Berg".to_string()),
+            // The three other parts of N, each with a character a card has to
+            // escape: a comma, a semicolon and a space.
+            name_prefix: Some("Rear Admiral, retd.".to_string()),
+            middle_name: Some("Brewster; Murray".to_string()),
+            name_suffix: Some("Ph D".to_string()),
             email: "grace@example.com".to_string(),
             phone: Some("+44 7700 900123".to_string()),
             company: Some("Acme, Limited".to_string()),
@@ -3504,6 +3518,9 @@ mod tests {
             name: "Ada Lovelace".to_string(), email: "ada@example.com".to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             phone: Some("+1-555-0101".to_string()), company: Some("Analytical Engines".to_string()),
             job_title: Some("Mathematician".to_string()), website: Some("https://example.com".to_string()),
             address: Some("London".to_string()), birthday: Some("1815-12-10".to_string()),
@@ -4072,20 +4089,31 @@ mod tests {
     }
 
     #[test]
-    fn test_a_contact_keeps_the_two_parts_of_a_name_it_was_saved_with() {
+    fn test_a_contact_keeps_the_five_parts_of_a_name_it_was_saved_with() {
         let cache = a_cache("name_parts");
-        let mut grace = a_contact("grace-1", "Grace van der Berg");
+        let mut grace = a_contact("grace-1", "Dr. Grace Brewster van der Berg PhD");
         grace.given_name = Some("Grace".to_string());
         grace.family_name = Some("van der Berg".to_string());
+        grace.name_prefix = Some("Dr.".to_string());
+        grace.middle_name = Some("Brewster".to_string());
+        grace.name_suffix = Some("PhD".to_string());
         cache.save_contact(&grace).expect("the contact to save");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
             .expect("the contacts to read back");
+        let found = cache
+            .search_contacts_for_account("test@example.com", "grace", 5)
+            .expect("the search to answer");
 
         assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].given_name.as_deref(), Some("Grace"));
-        assert_eq!(stored[0].family_name.as_deref(), Some("van der Berg"));
+        for read in [&stored[0], &found[0]] {
+            assert_eq!(read.given_name.as_deref(), Some("Grace"));
+            assert_eq!(read.family_name.as_deref(), Some("van der Berg"));
+            assert_eq!(read.name_prefix.as_deref(), Some("Dr."));
+            assert_eq!(read.middle_name.as_deref(), Some("Brewster"));
+            assert_eq!(read.name_suffix.as_deref(), Some("PhD"));
+        }
     }
 
     #[test]
@@ -4728,6 +4756,9 @@ END:VCARD";
             email: "grace@example.com".to_string(),
             given_name: Some("StaleGiven".to_string()),
             family_name: Some("StaleFamily".to_string()),
+            name_prefix: Some("StalePrefix".to_string()),
+            middle_name: Some("StaleMiddle".to_string()),
+            name_suffix: Some("StaleSuffix".to_string()),
             phone: Some("+1-000-000-0000".to_string()),
             website: Some("https://stale.example/old".to_string()),
             address: Some("1 Stale Street, Nowhere".to_string()),
@@ -4748,7 +4779,7 @@ END:VCARD";
             .import_contacts_from_vcard(
                 "test@example.com",
                 "BEGIN:VCARD\r\nVERSION:3.0\r\n\
-                 FN:Grace Brewster Hopper\r\nN:Hopper;Grace;;;\r\n\
+                 FN:Grace Brewster Hopper\r\nN:Hopper;Grace;Brewster;Rear Admiral;PhD\r\n\
                  NICKNAME:Amazing Grace\r\nEMAIL:grace@example.com\r\n\
                  TEL;TYPE=WORK:+1-202-555-0100\r\nTEL;TYPE=HOME:+1-202-555-0199\r\n\
                  ORG:US Navy;Computation\r\nURL:https://example.com/grace-new\r\n\
@@ -4764,6 +4795,9 @@ END:VCARD";
         assert_eq!(grace.name, "Grace Brewster Hopper");
         assert_eq!(grace.given_name.as_deref(), Some("Grace"));
         assert_eq!(grace.family_name.as_deref(), Some("Hopper"));
+        assert_eq!(grace.name_prefix.as_deref(), Some("Rear Admiral"));
+        assert_eq!(grace.middle_name.as_deref(), Some("Brewster"));
+        assert_eq!(grace.name_suffix.as_deref(), Some("PhD"));
         assert_eq!(grace.phone.as_deref(), Some("+1-202-555-0100"));
         assert_eq!(
             grace.website.as_deref(),

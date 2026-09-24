@@ -279,6 +279,9 @@ pub fn to_stored(
         // this is where a person's correction is taken at its word.
         given_name: blank_to_none(&editor.given_name),
         family_name: blank_to_none(&editor.family_name),
+        name_prefix: None,
+        middle_name: None,
+        name_suffix: None,
         // The primary is the first of the list, which is the order the editor
         // shows and the user can rearrange.
         email: emails

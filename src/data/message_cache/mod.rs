@@ -609,6 +609,14 @@ pub struct ContactEntry {
     /// The other half of [`ContactEntry::given_name`], under the same rule. A
     /// family name carrying a space is kept whole and never separated.
     pub family_name: Option<String>,
+    /// A title before the name, such as "Dr." or "Mrs", under the same rule:
+    /// `None` when none was ever recorded.
+    pub name_prefix: Option<String>,
+    /// The words between the given name and the family name, under the same
+    /// rule. "Brewster Murray" for Grace Brewster Murray Hopper.
+    pub middle_name: Option<String>,
+    /// What follows the name, such as "Jr." or "PhD", under the same rule.
+    pub name_suffix: Option<String>,
     /// The address to write to, or empty. A contact with only a phone number
     /// is an ordinary contact, so this being empty is a real answer and not a
     /// missing one.
@@ -4773,6 +4781,9 @@ mod tests {
             name: name.to_string(),
             given_name: None,
             family_name: None,
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
             email: String::new(),
             phone: None,
             company: None,

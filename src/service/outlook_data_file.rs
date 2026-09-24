@@ -1429,6 +1429,9 @@ fn a_contact_from(item: &TheItem<'_>, going_to: WhereItIsGoing<'_>) -> ContactEn
         name: item.words(DISPLAY_NAME).unwrap_or_default().to_string(),
         given_name: item.words(GIVEN_NAME).map(str::to_string),
         family_name: item.words(SURNAME).map(str::to_string),
+        name_prefix: None,
+        middle_name: None,
+        name_suffix: None,
         // The one a row shows, which is the first the file listed.
         email: addresses
             .first()

@@ -40,6 +40,12 @@ pub struct MsGraphContact {
     pub given_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub surname: String,
+    #[serde(skip)]
+    pub title: String,
+    #[serde(skip)]
+    pub middle_name: String,
+    #[serde(skip)]
+    pub generation: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub nick_name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2136,6 +2142,9 @@ mod tests {
                     "displayName": "Bob Jones",
                     "givenName": "Bob",
                     "surname": "Jones",
+                    "title": "Mr",
+                    "middleName": "Alan",
+                    "generation": "Jr.",
                     "emailAddresses": [
                         {"name": "Bob Jones", "address": "bob@example.com"}
                     ],
@@ -2151,6 +2160,9 @@ mod tests {
         let resp: MsContactsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.value.len(), 1);
         assert_eq!(resp.value[0].display_name, "Bob Jones");
+        assert_eq!(resp.value[0].title, "Mr");
+        assert_eq!(resp.value[0].middle_name, "Alan");
+        assert_eq!(resp.value[0].generation, "Jr.");
         assert_eq!(resp.value[0].email_addresses[0].address, "bob@example.com");
         assert_eq!(resp.value[0].business_phones[0], "+1-555-0102");
         assert_eq!(resp.value[0].mobile_phone, "+1-555-0103");
@@ -2314,6 +2326,9 @@ mod tests {
             display_name: "Test User".to_string(),
             given_name: "Test".to_string(),
             surname: "User".to_string(),
+            title: "Dr.".to_string(),
+            middle_name: "Jane".to_string(),
+            generation: "Jr.".to_string(),
             email_addresses: vec![MsEmailAddress {
                 name: "Test User".to_string(),
                 address: "test@example.com".to_string(),
@@ -2323,6 +2338,9 @@ mod tests {
         let json = serde_json::to_string(&contact).unwrap();
         assert!(json.contains("Test User"));
         assert!(json.contains("test@example.com"));
+        assert!(json.contains(r#""title":"Dr.""#), "{json}");
+        assert!(json.contains(r#""middleName":"Jane""#), "{json}");
+        assert!(json.contains(r#""generation":"Jr.""#), "{json}");
     }
 
     #[test]
