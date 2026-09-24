@@ -98,7 +98,8 @@ still listed as outstanding; each now says so and where it lives.
 |------|-------------|----------|
 | Exchange Web Services (EWS) | Native Exchange protocol for calendar/contacts | Low |
 | ~~Microsoft Graph API~~ | Built, for contacts, calendar and tasks. `service/microsoft_graph.rs` | Done |
-| CalDAV | Client built and signs in (`service/caldav.rs`); never run against a real server. CardDAV not built | Medium |
+| CalDAV | Client built and signs in (`service/caldav.rs`); never run against a real server. This row also said "CardDAV not built" until 2026-09-24, false since 05.1-06 built it on 2026-09-11; CardDAV has its own row below | Medium |
+| CardDAV | Built and never run against a real server. Tools, Add an Address Book by Address (`presentation/managers.rs`, `add_address_book_by_address`) asks for the address and a sign-in, asks the server which address books it holds and keeps the one you choose, with the sign-in in the Windows credential store (`service/carddav.rs`, `sign_in`). The client makes four requests: whether anything changed, the cards, write a card, delete a card. Every contacts sync then syncs each such address book both ways (`application/carddav_sync.rs`, `sync_carddav_address_book`), through the same merge Google and Outlook contacts use, and a card carries all five name parts since 2026-09-24. Every fixture was written in this repository, so whether a real server's answers parse and whether it accepts a card this writes is unknown | Medium |
 | JMAP protocol | Modern, efficient email protocol | Low |
 | ~~Calendar integration~~ | Built. Invitations are read, answered and filed | Done |
 | Plugin/extension system | Third-party extensibility | Low |

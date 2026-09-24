@@ -98,11 +98,12 @@ and this page exists because structure present is not experience good.
 
 ## A. Blind: screen readers
 
-Eighty-three items. Walk them in order; the first ones are the ground the rest
+Ninety-five items. Walk them in order; the first ones are the ground the rest
 stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57 the same day,
 for what phase 10 built; this line said forty-one until then. Items 58 to 83
 were added on 2026-09-20 for what phase 11 built; this line said fifty-seven
-until then.
+until then. Items 84 to 95 were added on 2026-09-24 for what phase 12 built;
+this line said eighty-three until then.
 
 ### The main window
 
@@ -432,7 +433,9 @@ proved by readings of the code, by tests on a built window and by a stand-in
 server inside the tests, and none of it has been heard. Two of the phase's
 plans are not in the build these items describe: the separate window a link
 can open in, and the pass over the status bar's sentences, both put off to the
-next phase on 2026-09-20.
+next phase on 2026-09-20. Corrected 2026-09-24: both arrived in phase 12, the
+separate window on 2026-09-22 and the status bar's sentences on 2026-09-23, and
+items 84 and 85 below are theirs.
 
 58. **Open Tools, Folders to Keep Up to Date and arrow down the tree.** Each
     folder should be heard as a check box with its state, "checked" for a kept
@@ -624,6 +627,85 @@ next phase on 2026-09-20.
     held-back line should be there; say whether they are the lines that make
     your next problem diagnosable, and what the day's log came to on the disk.
     **A person, with the log.** [ledger 535]
+
+### The editors, and what the alpha still owes
+
+Added 2026-09-24 for what phase 12 built. Everything in this group has been
+proved by readings of the code, by tests on a built window and, for the spin
+controls, the About dialog, Send Feedback and the contact editor, by the
+accessibility scan of the running program on a pull request. None of it has
+been heard, and nothing in it has sent mail or met a real address book.
+
+84. **Set Open links to a separate Wixen Mail window under Settings, Reading,
+    and press Enter on a link in a message.** A window holding only that page:
+    its title said once when the page arrives and carried in the title bar; a
+    link on the page opening in the same window; `Backspace` going back, and
+    "This is the first page" when there is none; `Escape` and `F6` closing it;
+    the sentence when the page will not load; and "Opening" with the site's
+    name on the surface the link came from. **NVDA.** [ledger 568]
+85. **Read the status bar on its own with NVDA+End while mail is checked and
+    downloaded.** The watch's three state lines and the download's steps one
+    after another, and whether a step and an answer are still told apart now
+    that both may end in an ellipsis; a command with nothing chosen in the
+    account manager and in the message list, heard as the same kind of
+    sentence, "Choose an account first." and "Choose a message first."; and
+    whether "The mail on this computer is not open." is clearer than the two
+    wordings it replaced. **NVDA.** [ledger 574]
+86. **Open a conversation in the formatted window, switch to another program
+    and back with Alt+Tab, then press K or H at once.** The keyboard should be
+    in the message and the key should move. Then the same after moving to the
+    attachments list or the warning bar first: the keyboard should still be
+    there when you come back. **NVDA.** [ledger 578]
+87. **Open Help, About.** The copyright line and the licence sentence read when
+    it opens; focus on OK; `Shift+Tab` reaching Send Feedback, then each link
+    heard as a link with its address, wixen.app/support and then wixen.app;
+    Enter on a link opening the page once in your browser and leaving About
+    open. **NVDA.** [ledger 587]
+88. **Press Ctrl+Shift+F.** The window opening on What is this about with its
+    description read; the questions below following each category as you move
+    through them; each of the five boxes read with its sentence and its state,
+    the log excerpt ticked on opening; choosing Report a security concern
+    unticking the excerpt, and whether you notice; What will be sent read line
+    by line with the words Send queues; and Send's sentence when the report
+    goes into the Outbox. **NVDA.** [ledger 589]
+89. **Send one report from a real account, and one security report.** Each
+    should leave the Outbox and arrive, one at support@wixen.app and one at
+    security@wixen.app or the address Pratik names instead; until public
+    testing either may come back as undeliverable, which is expected and worth
+    saying. **A person, with an account and both mailboxes.** [ledger 590]
+90. **Open the account editor's second page and Settings, Reading.** Check
+    Interval said once, with its name and its sentence, and the new value
+    spoken after `Up` and `Down`; Mark as read after's three entries heard, and
+    the seconds beside them unavailable unless After a number of seconds is
+    chosen. **NVDA.** [ledger 592]
+91. **Make a contact and type a whole name, such as Grace Brewster Murray
+    Hopper, in Name.** The Basic Info tab heard in its order, Name, Prefix,
+    Given name, Middle name, Family name, Suffix; the parts heard filling; the
+    Birthday and No year check boxes and the birthday's month, day and year; an
+    address that is not an address refused in a sentence naming it; the Add
+    Phone Number dialog's Country entries; and a doubted number's sentence, then
+    a second OK keeping it. **NVDA.** [ledger 596]
+92. **Give a synced contact all five name parts and sync it.** Google, Outlook
+    and, when you have one, an address book server should each keep the prefix,
+    the middle name and the suffix and send them back unchanged at the next
+    sync. **A person, with an account.** [ledger 597]
+93. **Open a new event and press Up, Down, Left and Right on the start's
+    minutes.** The time spoken after each key; whether the end moving with the
+    start is heard or goes unsaid; the reminder window's time after the same
+    keys; and the New events last list on the Calendar and PIM tab. **NVDA.**
+    [ledger 603]
+94. **Open Tools, Signatures, then an account's own dialog, then a new
+    message.** The Signature Manager's Used by column read row by row; the
+    account's Signature for this account choice with its first entry naming the
+    default; the check boxes under Use for these accounts in a signature's
+    editor; and "Signature changed to" and the name when you change From.
+    **NVDA.** [ledger 605]
+95. **Open the Action menu's Label submenu, then Edit Labels.** Each label heard
+    with its key, after the labels load and again after a rename and a move;
+    Edit Labels at the end; the Label Manager's Key column read row by row; a
+    move said as, for example, "Later, 2 of 5." after `Alt+Shift+Up`, with the
+    cursor staying on the moved row; and `Ctrl+6` with five labels saying
+    "There is no label 6" from the message list. **NVDA.** [ledger 607]
 
 ## B. Low vision and colour
 
