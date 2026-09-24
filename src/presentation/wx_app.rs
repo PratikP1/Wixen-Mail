@@ -907,7 +907,12 @@ impl WxMailApp {
             tracing::info!("{} reminders loaded", state.reminders.len());
         }
 
+        crate::presentation::accessibility::names::diagnose_naming_at(
+            "before-accessibility",
+            false,
+        );
         let accessibility = Accessibility::new()?;
+        crate::presentation::accessibility::names::diagnose_naming_at("after-accessibility", false);
         accessibility.initialize().unwrap_or_else(|e| {
             tracing::warn!("Accessibility init: {}", e);
         });
@@ -950,6 +955,7 @@ impl WxMailApp {
 
         let wx_result = wxdragon::main(move |_| {
             tracing::info!("wxdragon on_init callback entered");
+            crate::presentation::accessibility::names::diagnose_naming_at("on-init-first", true);
 
             let frame = Frame::builder()
                 .with_title("Wixen Mail")
@@ -970,6 +976,10 @@ impl WxMailApp {
                 .with_size(Size::new(1, 1))
                 .build();
             a11y.register_live_region(live_region.get_handle() as isize);
+            crate::presentation::accessibility::names::diagnose_naming_at(
+                "after-first-announcement",
+                true,
+            );
 
             // Restore the stored mute preference before anything can speak.
             {
@@ -1487,6 +1497,10 @@ impl WxMailApp {
             let preview = WebView::builder(&inner)
                 .with_backend(WebViewBackend::Edge)
                 .build();
+            crate::presentation::accessibility::names::diagnose_naming_at(
+                "after-webview-preview",
+                true,
+            );
             set_accessible_name(&preview, "Email preview");
             // Focus is kept off the preview wherever this application decides
             // it, and the browser overrules that, which is why the rest of
@@ -6294,8 +6308,13 @@ impl WxMailApp {
             }
 
             tracing::info!("UI setup complete, showing main frame");
+            crate::presentation::accessibility::names::diagnose_naming_at("after-main-frame", true);
             frame.show(true);
             tracing::info!("Main frame shown, entering event loop");
+            crate::presentation::accessibility::names::diagnose_naming_at(
+                "after-frame-shown",
+                true,
+            );
 
             // Fill the module the window opens on. Every other fill comes from
             // a switch, and a switch to the module already on screen is
@@ -6430,6 +6449,10 @@ impl WxMailApp {
                     );
                 }
             }
+            crate::presentation::accessibility::names::diagnose_naming_at(
+                "after-pipe-listen",
+                true,
+            );
 
             if let Some(opening) = open {
                 open_what_windows_handed_over(
@@ -6489,6 +6512,10 @@ impl WxMailApp {
             // what makes that a failure somebody sees.
             if let Some(target) = scan_target {
                 use crate::presentation::scan_target::{OnReturn, WINDOW_NOT_OPEN};
+                crate::presentation::accessibility::names::diagnose_naming_at(
+                    "before-target-dialog",
+                    true,
+                );
                 let on_return = open_for_scanning(
                     target,
                     AppHandles {

@@ -48,14 +48,22 @@ pub struct Accessibility {
 impl Accessibility {
     /// Create a new accessibility instance
     pub fn new() -> Result<Self> {
+        // 12-06.1's startup bisect (D-01 extended on 2026-09-24) splits this
+        // in two: the screen reader bridge asks UI Automation whether anyone
+        // listens, and the earcon player opens the audio device. Both run
+        // before wxWidgets starts. Leaves with the rest of the diagnosis.
+        let screen_reader = screen_reader::ScreenReaderBridge::new()?;
+        names::diagnose_naming_at("after-uia-listening-check", false);
+        let earcons = feedback::EarconPlayer::new();
+        names::diagnose_naming_at("after-audio-device", false);
         Ok(Self {
-            screen_reader: screen_reader::ScreenReaderBridge::new()?,
+            screen_reader,
             keyboard: keyboard::KeyboardHandler::new()?,
             focus: focus::FocusManager::new()?,
             announcements: announcements::AnnouncementQueue::new()?,
             automation: automation::AutomationStore::new()?,
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
-            earcons: feedback::EarconPlayer::new(),
+            earcons,
             scheme: std::sync::Mutex::new(sound_scheme::SoundScheme::generated()),
             how_much_to_say: std::sync::Mutex::new(
                 crate::application::what_is_said_while_fetching::HowMuchToSay::default(),

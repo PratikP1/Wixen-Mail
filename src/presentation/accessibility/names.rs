@@ -280,6 +280,24 @@ pub fn name_and_describe_the_spin_control(spin: &SpinCtrl, name: &str, descripti
     );
 }
 
+/// 12-06.1's startup bisect, D-01 extended on 2026-09-24, leaving with the
+/// rest of the diagnosis: switched on for the scan's runs only.
+pub fn diagnose_startup_naming(on: bool) {
+    #[cfg(target_os = "windows")]
+    typing_field::diagnose_startup_naming(on);
+    #[cfg(not(target_os = "windows"))]
+    let _ = on;
+}
+
+/// 12-06.1's startup bisect: name and read back a throwaway field at `point`,
+/// one line in the log. `toolkit_is_up` once wxWidgets has started.
+pub fn diagnose_naming_at(point: &str, toolkit_is_up: bool) {
+    #[cfg(target_os = "windows")]
+    typing_field::diagnose_naming_at(point, toolkit_is_up);
+    #[cfg(not(target_os = "windows"))]
+    let _ = (point, toolkit_is_up);
+}
+
 /// Which property of a spin control's typing field some words are written to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FieldProperty {
@@ -398,8 +416,19 @@ mod typing_field {
                 }
             }
         });
+        diagnosis::the_properties(call, field);
         diagnosis::the_read_back(call, field, named);
         diagnosis::check_at_show(call, arrows, field, named);
+    }
+
+    /// 12-06.1's startup bisect, D-01 extended on 2026-09-24: switch it on.
+    pub(super) fn diagnose_startup_naming(on: bool) {
+        diagnosis::probe_the_startup(on);
+    }
+
+    /// 12-06.1's startup bisect: one line for `point` in startup.
+    pub(super) fn diagnose_naming_at(point: &str, toolkit_is_up: bool) {
+        diagnosis::at_the_point(point, toolkit_is_up);
     }
 
     /// 12-06.1's diagnosis, and nothing else: every line it writes starts
@@ -429,6 +458,279 @@ mod typing_field {
             SendMessageW,
         };
         use windows::core::{HRESULT, Interface};
+
+        /// Whether this process bisects its startup (12-06.1, D-01 extended
+        /// on 2026-09-24): on in the scan's runs only, never in a test.
+        static PROBING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+        /// What the throwaway fields are named, and all the bisect writes.
+        const PROBE_WORDS: &str = "Probe words";
+
+        pub(super) fn probe_the_startup(on: bool) {
+            PROBING.store(on, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        /// One line for one point in startup: a throwaway field named and
+        /// read back on this thread, on a thread of its own, and in a hidden
+        /// spin control once the toolkit is up; with the two accessibility
+        /// libraries the process has loaded by then.
+        pub(super) fn at_the_point(point: &str, toolkit_is_up: bool) {
+            if !PROBING.load(std::sync::atomic::Ordering::Relaxed) || reads_are_switched_off() {
+                return;
+            }
+            let here = a_plain_field_named_and_read();
+            let elsewhere = std::thread::spawn(|| {
+                use windows::Win32::System::Com::{
+                    COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize,
+                };
+                // SAFETY: the probe's own thread, which leaves the apartment
+                // it joined before it ends.
+                let joined = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+                let read = a_plain_field_named_and_read();
+                if joined.is_ok() {
+                    // SAFETY: pairs the join above on the same thread.
+                    unsafe { CoUninitialize() };
+                }
+                format!("joined={} {read}", hex(joined))
+            })
+            .join()
+            .unwrap_or_else(|_| "the probe's thread panicked".to_string());
+            let spin = if toolkit_is_up {
+                a_spin_field_named_and_read()
+            } else {
+                "toolkit-not-up".to_string()
+            };
+            tracing::warn!(
+                "spin-field-naming: point={point} main=[{here}] own-thread=[{elsewhere}] spin=[{spin}] {}",
+                the_libraries()
+            );
+        }
+
+        /// A hidden plain edit, named and read back, then destroyed.
+        fn a_plain_field_named_and_read() -> String {
+            use windows::Win32::UI::WindowsAndMessaging::{
+                CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_POPUP,
+            };
+            let apartment = the_apartment();
+            // SAFETY: a hidden window of a system class, destroyed below.
+            let created = unsafe {
+                CreateWindowExW(
+                    WINDOW_EX_STYLE(0),
+                    windows::core::w!("Edit"),
+                    windows::core::PCWSTR::null(),
+                    WS_POPUP,
+                    0,
+                    0,
+                    40,
+                    20,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            };
+            let field = match created {
+                Ok(field) => field,
+                Err(why) => return format!("apartment={apartment} window hr={}", hex(why.code())),
+            };
+            let named = name_and_read(field);
+            // SAFETY: the window made above, on this thread.
+            let _ = unsafe { DestroyWindow(field) };
+            format!("apartment={apartment} {named}")
+        }
+
+        /// A hidden spin control's field, named and read back, then the
+        /// frame holding it destroyed.
+        fn a_spin_field_named_and_read() -> String {
+            use wxdragon::prelude::*;
+            let frame = Frame::builder().build();
+            let spin = SpinCtrl::builder(&frame).with_range(0, 9).build();
+            // SAFETY: the arrows are a live window just built.
+            let buddy =
+                unsafe { SendMessageW(HWND(spin.get_handle()), UDM_GETBUDDY, None, None).0 };
+            let read = if buddy == 0 {
+                "no field".to_string()
+            } else {
+                name_and_read(window(buddy))
+            };
+            frame.destroy();
+            read
+        }
+
+        /// Name `field` through a service of its own and read it back.
+        fn name_and_read(field: HWND) -> String {
+            use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
+            use windows::Win32::UI::Accessibility::{
+                CLSID_AccPropServices, IAccPropServices, PROPID_ACC_NAME,
+            };
+            // SAFETY: an in-process COM object; failure is an answer.
+            let created: windows::core::Result<IAccPropServices> =
+                unsafe { CoCreateInstance(&CLSID_AccPropServices, None, CLSCTX_INPROC_SERVER) };
+            let service = match created {
+                Ok(service) => service,
+                Err(why) => return format!("service hr={}", hex(why.code())),
+            };
+            // SAFETY: the field is a live window; the string outlives the call.
+            let written = unsafe {
+                service.SetHwndPropStr(
+                    field,
+                    OBJID_CLIENT.0 as u32,
+                    CHILDID_SELF,
+                    PROPID_ACC_NAME,
+                    &windows::core::HSTRING::from(PROBE_WORDS),
+                )
+            };
+            let code = written.map_or_else(|why| why.code(), |()| HRESULT(0));
+            let properties = the_properties_of(field);
+            let read = match msaa_name(field) {
+                Ok(name) => format!("name=\"{name}\" equals={}", name == PROBE_WORDS),
+                Err(why) => format!("read hr={}", hex(why.code())),
+            };
+            format!("write={} props={properties} {read}", hex(code))
+        }
+
+        /// Called once per window property; `found` is the list it adds to.
+        unsafe extern "system" fn one_property(
+            _window: HWND,
+            name: windows::core::PCWSTR,
+            _data: windows::Win32::Foundation::HANDLE,
+            found: usize,
+        ) -> windows::core::BOOL {
+            // SAFETY: `found` is the list `the_properties_of` handed over,
+            // alive for the whole enumeration.
+            let found = unsafe { &mut *(found as *mut Vec<String>) };
+            let raw = name.0 as usize;
+            found.push(if raw >> 16 == 0 {
+                format!("#{raw}")
+            } else {
+                // SAFETY: a property name is a nul-terminated string when it
+                // is not an atom.
+                unsafe { name.to_string() }.unwrap_or_else(|_| "?".to_string())
+            });
+            windows::core::BOOL(1)
+        }
+
+        /// The names of `field`'s window properties, never their values.
+        fn the_properties_of(field: HWND) -> String {
+            use windows::Win32::Foundation::LPARAM;
+            use windows::Win32::UI::WindowsAndMessaging::EnumPropsExW;
+            let mut found: Vec<String> = Vec::new();
+            // SAFETY: the list outlives the enumeration, which is synchronous.
+            unsafe {
+                EnumPropsExW(
+                    field,
+                    Some(one_property),
+                    LPARAM(&mut found as *mut Vec<String> as isize),
+                )
+            };
+            format!("[{}]", found.join(","))
+        }
+
+        pub(super) fn the_properties(call: u32, field: HWND) {
+            tracing::warn!(
+                "spin-field-naming: props={call} {}",
+                the_properties_of(field)
+            );
+            if call == 1 {
+                tracing::warn!("spin-field-naming: libraries={call} {}", the_libraries());
+            }
+        }
+
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetModuleHandleW(name: *const u16) -> isize;
+            fn GetModuleFileNameW(module: isize, path: *mut u16, size: u32) -> u32;
+        }
+
+        #[link(name = "version")]
+        unsafe extern "system" {
+            fn GetFileVersionInfoSizeW(path: *const u16, handle: *mut u32) -> u32;
+            fn GetFileVersionInfoW(
+                path: *const u16,
+                handle: u32,
+                size: u32,
+                data: *mut std::ffi::c_void,
+            ) -> i32;
+            fn VerQueryValueW(
+                block: *const std::ffi::c_void,
+                sub_block: *const u16,
+                out: *mut *mut std::ffi::c_void,
+                length: *mut u32,
+            ) -> i32;
+        }
+
+        fn wide(text: &str) -> Vec<u16> {
+            text.encode_utf16().chain(Some(0)).collect()
+        }
+
+        /// Where a loaded library came from and its file version, or that
+        /// it is not loaded. System paths only; nothing of the person's.
+        fn the_library(name: &str) -> String {
+            // SAFETY: a nul-terminated name; the answer is a handle or 0.
+            let module = unsafe { GetModuleHandleW(wide(name).as_ptr()) };
+            if module == 0 {
+                return format!("{name}=not-loaded");
+            }
+            let mut path = [0u16; 520];
+            // SAFETY: the buffer's length is passed with it.
+            let length = unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), 520) } as usize;
+            let path = &path[..length.min(520)];
+            format!(
+                "{name}=\"{}\" version={}",
+                String::from_utf16_lossy(path),
+                the_version(path)
+            )
+        }
+
+        fn the_version(path: &[u16]) -> String {
+            let path: Vec<u16> = path.iter().copied().chain(Some(0)).collect();
+            let mut ignored = 0u32;
+            // SAFETY: a nul-terminated path and a local to write to.
+            let size = unsafe { GetFileVersionInfoSizeW(path.as_ptr(), &mut ignored) };
+            if size == 0 {
+                return "unknown".to_string();
+            }
+            let mut block = vec![0u8; size as usize];
+            // SAFETY: the block is as long as `size` says.
+            if unsafe { GetFileVersionInfoW(path.as_ptr(), 0, size, block.as_mut_ptr().cast()) }
+                == 0
+            {
+                return "unknown".to_string();
+            }
+            let mut fixed = std::ptr::null_mut();
+            let mut length = 0u32;
+            // SAFETY: the root query answers a pointer into `block`.
+            let found = unsafe {
+                VerQueryValueW(
+                    block.as_ptr().cast(),
+                    wide("\\").as_ptr(),
+                    &mut fixed,
+                    &mut length,
+                )
+            };
+            if found == 0 || fixed.is_null() || length < 16 {
+                return "unknown".to_string();
+            }
+            // SAFETY: VS_FIXEDFILEINFO starts with four u32s, the last two
+            // the file version, inside `block`, which is still alive.
+            let words = unsafe { std::slice::from_raw_parts(fixed as *const u32, 4) };
+            let (high, low) = (words[2], words[3]);
+            format!(
+                "{}.{}.{}.{}",
+                high >> 16,
+                high & 0xFFFF,
+                low >> 16,
+                low & 0xFFFF
+            )
+        }
+
+        fn the_libraries() -> String {
+            format!(
+                "{} {}",
+                the_library("oleacc.dll"),
+                the_library("UIAutomationCore.dll")
+            )
+        }
 
         /// What asking for the annotation service found on one naming call.
         #[derive(Debug, Clone, Copy)]
