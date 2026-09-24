@@ -1801,6 +1801,20 @@ mod tests {
     }
 
     #[test]
+    fn test_a_stored_birthday_in_a_year_the_controls_do_not_offer_is_kept_as_it_was() {
+        // Pull request #99's review on 2026-09-24: the year control holds 1900
+        // to 2100, so a birthday of 1815 opened in it would be saved as 1900.
+        assert!(matches!(
+            what_the_birthday_is(Some("1815-12-10")),
+            StoredBirthday::Unread(kept) if kept == "1815-12-10"
+        ));
+        assert!(matches!(
+            what_the_birthday_is(Some("1906-12-09")),
+            StoredBirthday::Date(_)
+        ));
+    }
+
+    #[test]
     fn test_putting_an_hour_into_the_boxes_and_reading_it_back_gives_the_same_hour() {
         // Two functions that have to be exact opposites: one fills the hour
         // box and the morning-or-afternoon choice, the other reads them. Every

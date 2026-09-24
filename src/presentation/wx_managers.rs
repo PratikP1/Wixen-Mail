@@ -2168,27 +2168,28 @@ fn a_sub_dialog_needs(parent: &Dialog, titled: &str, said: &str) {
     box_.show_modal();
 }
 
-/// Why the Add Email Address dialog will not add what was typed, or `None`
-/// when it will.
+/// The address the Add Email Address dialog adds for what was typed, or the
+/// sentence saying why it will not.
 ///
 /// The shape is 11-10.1's rule for a bare address, `name@host.tld`, and
 /// nothing stricter, so a real address the rule did not foresee is let
 /// through rather than refused; a space or a colon, which no address to write
 /// to holds, is refused with it.
-pub fn an_address_refusal(typed: &str) -> Option<String> {
+pub fn an_address_to_add(typed: &str) -> Result<String, String> {
     let address = typed.trim();
     if address.is_empty() {
-        return Some("An email address is needed before this can be added.".to_string());
+        return Err("An email address is needed before this can be added.".to_string());
     }
     let has_the_shape = address.contains('@')
         && !address.contains(|c: char| c.is_whitespace() || c == ':')
         && crate::application::links_in_text::is_an_address(address);
-    (!has_the_shape).then(|| {
-        format!(
+    match has_the_shape {
+        true => Ok(typed.to_string()),
+        false => Err(format!(
             "The address {address} is not the shape of an email address. \
              An email address is written like name@example.com."
-        )
-    })
+        )),
+    }
 }
 
 pub fn build_email_sub_dialog(
@@ -2243,7 +2244,7 @@ pub fn build_email_sub_dialog(
             // Consuming the click is what makes the refusal stick; see
             // `wx_item_form.rs`'s module doc comment.
             event.event.skip(false);
-            if let Some(said) = an_address_refusal(&addr_f.get_value()) {
+            if let Err(said) = an_address_to_add(&addr_f.get_value()) {
                 a_sub_dialog_needs(&d, "Not added", &said);
                 addr_f.set_focus();
                 return;
@@ -2284,11 +2285,13 @@ fn show_email_sub_dialog(
     // thing and says so where it fixed it.
     let answered = dlg.show_modal();
     let chosen = if answered == ID_OK {
-        let addr = addr_f.get_value();
+        let typed = addr_f.get_value();
         // Whatever comes back already held together: OK's own handler, in
-        // the window that has just closed, refuses to close at all while a
-        // needed box is empty. The check that used to be here ran after the
-        // window was gone and could only throw away everything typed.
+        // the window that has just closed, refuses to close at all while the
+        // box holds no address, so what it would add is what is added. The
+        // check that used to be here ran after the window was gone and could
+        // only throw away everything typed.
+        let addr = an_address_to_add(&typed).unwrap_or(typed);
         Some(EmailItem {
             label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
             address: addr,

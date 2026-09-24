@@ -303,7 +303,7 @@ struct Harvest {
     a_birthday_with_no_year: String,
     a_stored_birthday_with_no_year: (bool, bool, String),
     no_birthday: (bool, String),
-    address_refusals: Vec<(String, Option<String>)>,
+    address_answers: Vec<(String, Result<String, String>)>,
     countries: Countries,
     british_number: PhoneOk,
     italian_number_with_britain_chosen: PhoneOk,
@@ -448,15 +448,19 @@ fn read_everything(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest, 
 
     let parent = Dialog::builder(frame, "Contact editor stand-in").build();
     let email = wx_managers::build_email_sub_dialog(&parent, None);
-    let address_refusals = ["grace.example.com", "grace@example.com", "   "]
-        .into_iter()
-        .map(|typed| {
-            email.2.set_value(typed);
-            let value = email.2.get_value();
-            let refused = wx_managers::an_address_refusal(&value);
-            (typed.to_string(), refused)
-        })
-        .collect();
+    let address_answers = [
+        "grace.example.com",
+        "grace@example.com",
+        " grace@example.com ",
+        "   ",
+    ]
+    .into_iter()
+    .map(|typed| {
+        email.2.set_value(typed);
+        let value = email.2.get_value();
+        (typed.to_string(), wx_managers::an_address_to_add(&value))
+    })
+    .collect();
     email.0.destroy();
 
     let phone = wx_managers::build_phone_sub_dialog(&parent, None);
@@ -507,7 +511,7 @@ fn read_everything(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest, 
         a_birthday_with_no_year,
         a_stored_birthday_with_no_year,
         no_birthday,
-        address_refusals,
+        address_answers,
         countries,
         british_number,
         italian_number_with_britain_chosen,
@@ -568,14 +572,14 @@ fn the_typed_family_name_stands(parts: &Parts) -> Result<(), String> {
 }
 
 /// An address that is not the shape of one is refused, in a sentence naming
-/// it; a real one is not.
-fn the_address_check_holds(refusals: &[(String, Option<String>)]) -> Result<(), String> {
-    for (typed, refused) in refusals {
-        let should_refuse = !typed.contains('@');
-        match (should_refuse, refused) {
-            (true, Some(said)) if typed.trim().is_empty() || said.contains(typed.trim()) => {}
-            (false, None) => {}
-            _ => return Err(format!("{typed:?} was answered {refused:?}")),
+/// it; a real one is added without the spaces around it.
+fn the_address_check_holds(answers: &[(String, Result<String, String>)]) -> Result<(), String> {
+    for (typed, answer) in answers {
+        let address = typed.trim();
+        match (address.contains('@'), answer) {
+            (true, Ok(added)) if added == address => {}
+            (false, Err(said)) if address.is_empty() || said.contains(address) => {}
+            _ => return Err(format!("{typed:?} was answered {answer:?}")),
         }
     }
     Ok(())
@@ -710,12 +714,17 @@ fn test_a_contact_with_no_birthday_saves_none_and_not_today() {
 
 #[test]
 fn test_an_address_that_is_not_the_shape_of_one_is_refused_in_a_sentence_naming_it() {
-    the_address_check_holds(&the_harvest().address_refusals).unwrap_or_else(|why| panic!("{why}"));
+    // Pull request #99's review on 2026-09-24: an address with spaces around
+    // it passed the check and was stored with them.
+    the_address_check_holds(&the_harvest().address_answers).unwrap_or_else(|why| panic!("{why}"));
 }
 
 #[test]
 fn test_a_planted_save_of_a_bad_address_is_seen() {
-    let planted = vec![("grace.example.com".to_string(), None)];
+    let planted = vec![(
+        "grace.example.com".to_string(),
+        Ok("grace.example.com".to_string()),
+    )];
 
     assert!(the_address_check_holds(&planted).is_err());
 }
