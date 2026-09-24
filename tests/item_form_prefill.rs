@@ -113,6 +113,7 @@ fn test_an_existing_item_fills_every_kind_of_field_it_is_opened_on() {
                 Some(Prefill {
                     filled: &existing,
                     container: Some("cal-2"),
+                    is_new: false,
                 }),
             )
             .expect("an Event has fields to ask for");

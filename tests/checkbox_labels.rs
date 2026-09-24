@@ -264,6 +264,7 @@ fn test_every_check_box_in_a_form_carries_its_own_label() {
                 Some(Prefill {
                     filled: &existing,
                     container: None,
+                    is_new: false,
                 }),
             ) {
                 if let Some((_, pinned)) = widgets.tick_fields.first()

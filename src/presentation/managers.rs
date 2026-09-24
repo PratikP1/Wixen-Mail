@@ -1212,6 +1212,7 @@ pub(crate) fn an_event_editor(
                 .map(|filled| crate::presentation::wx_item_form::Prefill {
                     filled,
                     container: existing_container.as_deref(),
+                    is_new: false,
                 });
         crate::presentation::wx_item_form::ask_for(
             dialog,
@@ -2765,6 +2766,9 @@ pub fn new_pim_item(
             .map(|filled| crate::presentation::wx_item_form::Prefill {
                 filled,
                 container: None,
+                // New, whatever it opens with: the alert is Settings' answer
+                // put in ahead, not something already made (ledger 604).
+                is_new: true,
             }),
         a11y,
         // Only an event has a guest list to ask about, so only an event gets

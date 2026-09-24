@@ -169,7 +169,8 @@ enum Control {
     Tick(CheckBox),
 }
 
-/// What to fill the form with, for something already made, bundled into one
+/// What to fill the form with, for something already made or for something
+/// new opened with answers put in ahead of the person, bundled into one
 /// parameter because a container id only ever means anything alongside the
 /// answer it goes with.
 pub struct Prefill<'a> {
@@ -178,6 +179,10 @@ pub struct Prefill<'a> {
     /// chosen by name in the box and known by id everywhere else. `None`
     /// when this kind does not live in a container, or nothing was chosen.
     pub container: Option<&'a str>,
+    /// Whether this is something new, opened with answers filled in ahead,
+    /// such as the alert Settings chose (ledger 604). Said apart from what it
+    /// opens with, because a form cannot tell the two apart from the answers.
+    pub is_new: bool,
 }
 
 /// How this dialog paints itself, and how it reaches the accessibility
