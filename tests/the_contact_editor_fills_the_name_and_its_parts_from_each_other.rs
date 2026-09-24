@@ -238,6 +238,31 @@ fn uia_name_of(hwnd: isize) -> Result<String, String> {
     }
 }
 
+/// Whether UI Automation offers a way to open and close the list of the
+/// control at `hwnd`, which is how Narrator and the scan know it is a list
+/// that opens. `Err` carries why the element could not be read.
+fn opens_and_closes_on_uia(hwnd: isize) -> Result<bool, String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
+    use windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, UIA_ExpandCollapsePatternId,
+    };
+    // SAFETY: as `uia_name_of`.
+    unsafe {
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
+                .map_err(|why| format!("CUIAutomation: {why}"))?;
+        let element = automation
+            .ElementFromHandle(HWND(hwnd as *mut c_void))
+            .map_err(|why| format!("ElementFromHandle: {why}"))?;
+        // A pattern the element does not offer comes back as no object,
+        // which the crate turns into an error.
+        Ok(element
+            .GetCurrentPattern(UIA_ExpandCollapsePatternId)
+            .is_ok())
+    }
+}
+
 /// A control as both channels read it, at the handle the keyboard reaches.
 #[derive(Debug, Clone)]
 struct Heard {
@@ -311,6 +336,7 @@ struct Harvest {
     doubted_then_kept: (PhoneOk, PhoneOk),
     changed_between_two_oks: (PhoneOk, PhoneOk),
     heard: Vec<Heard>,
+    lists_that_open: Vec<(&'static str, Result<bool, String>)>,
 }
 
 fn a_new_editor(frame: &Frame, a11y: &Arc<Accessibility>) -> ContactEditDialogHandles {
@@ -444,6 +470,16 @@ fn read_everything(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest, 
             editor.fav_check.get_handle() as isize,
         ),
     ];
+    let lists_that_open = vec![
+        (
+            "the Prefix box",
+            opens_and_closes_on_uia(editor.prefix_f.get_handle() as isize),
+        ),
+        (
+            "the Suffix box",
+            opens_and_closes_on_uia(editor.suffix_f.get_handle() as isize),
+        ),
+    ];
     editor.dialog.destroy();
 
     let parent = Dialog::builder(frame, "Contact editor stand-in").build();
@@ -519,6 +555,7 @@ fn read_everything(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest, 
         doubted_then_kept,
         changed_between_two_oks,
         heard: heard_here,
+        lists_that_open,
     })
 }
 
@@ -851,6 +888,20 @@ fn test_every_new_control_is_named_where_the_keyboard_lands_on_both_channels() {
     .into_iter()
     .filter_map(|(control, name)| is_named(the_heard(control), name).err())
     .collect();
+
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_prefix_and_suffix_boxes_open_and_close_on_ui_automation() {
+    // Pull request #99's Accessibility scan on 2026-09-24 flagged both as a
+    // combo box without the ExpandCollapse pattern, ledger 416's class.
+    let wrong: Vec<String> = the_harvest()
+        .lists_that_open
+        .iter()
+        .filter(|(_, opens)| !matches!(opens, Ok(true)))
+        .map(|(control, opens)| format!("{control}: {opens:?}"))
+        .collect();
 
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
