@@ -39,6 +39,7 @@ key-files:
     - docs/manual-accessibility-pass.md
     - docs/changelog.md
     - docs/development/requirements-backlog.md
+    - docs/development/measurements.md
     - .planning/REQUIREMENTS.md
     - .planning/ROADMAP.md
     - .planning/STATE.md
@@ -56,7 +57,7 @@ metrics:
 
 # Phase 12 Plan 12: The pages, the listening lines and the closing read Summary
 
-**The pages describe the program phase 12 built, every tick stands on a name in the tree, and the phase's full gate is the step after this commit.** Thirteen of the phase's fourteen requirements stand as their plans ticked them; FOUND-23's box waits for the gate.
+**Phase 12 is closed: the full gate was green on its first run, the pages describe the program the phase built, and every tick stands on a name in the tree.** `scripts/check.sh all` at `566116d3` exited 0 after 516 s with 8,985 tests passed. All fourteen of the phase's requirements stand, FOUND-23's ticked on that run.
 
 ## For a person
 
@@ -84,7 +85,7 @@ The name was replaced by 12-02 in `a1774d9e` (its deviation 9) with `page_window
 | FOUND-20 | 12-01 `e29c514b`, 12-03.1 `8f57f80e` | Stands. Handler and readings found; NVDA run 35876075636 green; ear 578 |
 | FOUND-21 | 12-02.1 `a503ce77` | Stands. `[S]` waits for the next sweep |
 | FOUND-22 | 12-03.1 `8f57f80e` | Stands. Runner green; row corrected, 576 fixed |
-| FOUND-23 | 12-03.2 `b3cc380a` | Open on its last `[D]` line, this plan's task 3 |
+| FOUND-23 | 12-03.2 `b3cc380a`, 12-12 | Stands. Last `[D]` line met by this plan's full gate; 585 fixed |
 | LIST-11 | 12-03 `a9ce329d` | Stands. Ear 574 |
 | LIST-19 | 11-11.1 `8340e5e6`, 12-02 `70f5435a` | Stands, one name corrected. Ear 568 |
 | ALPHA-01 | 12-04 `2e00c42b` | Stands. Ear 587, site 588 |
@@ -100,11 +101,11 @@ The name was replaced by 12-02 in `a1774d9e` (its deviation 9) with `page_window
 
 ## The four marks
 
-The roadmap's plan list has 16 ticked lines of 16 and the row reads 16/16; `STATE.md` has `current_plan: 16`, `Current Plan: 16`, `Total Plans in Phase: 16`, and `completed_plans: 172` of `total_plans: 172`, from `ls .planning/phases/*/*-SUMMARY.md | wc -l` and the same over `*-PLAN.md` once this file exists. No requirement's `[D]` line was this plan's to tick in this commit; FOUND-23's is ticked with the gate's result.
+The roadmap's plan list has 16 ticked lines of 16 and the row reads 16/16; `STATE.md` has `current_plan: 16`, `Current Plan: 16`, `Total Plans in Phase: 16`, and `completed_plans: 172` of `total_plans: 172`, from `ls .planning/phases/*/*-SUMMARY.md | wc -l` and the same over `*-PLAN.md` once this file exists. The requirement marks: FOUND-23's last `[D]` line, its box and its row, in the second commit, after the gate. The phase line is ticked and the row reads Complete from the same commit.
 
 ## The ledger
 
-`head -7 .planning/WINDOWS.md` after this commit: 551 open, 58 fixed, 609 in all, agreeing with the table and the JSON. One entry opened, 609, the push of `main`.
+`head -7 .planning/WINDOWS.md` at the end: 550 open, 59 fixed, 609 in all, agreeing with the table and the JSON by `the_planning_files_agree_with_themselves`. One entry opened, 609, the push of `main`; one fixed, 585, the full gate.
 
 ## The pages
 
@@ -116,7 +117,15 @@ The roadmap's plan list has 16 ticked lines of 16 and the row reads 16/16; `STAT
 
 ## The full gate
 
-Runs after this commit, on this branch, with `main` unmoved; its result is added by the commit that follows it.
+`git rev-list HEAD..main --count` read 0 immediately before the run. Then, with nothing else building:
+
+```
+scripts/check.sh all > <scratchpad>/12-12-full-gate.log 2>&1; echo "exit=$?"
+exit=0
+check.sh: all passed after 516 s: start 1 s, rustfmt 3 s, clippy 29 s, the scripts that decide what runs 103 s, security advisories 6 s, tests 289 s, release build 85 s
+```
+
+At `566116d3`, 19:50:21Z to 19:58:57Z on 2026-09-24, warm, NVDA running for the tester. Summed over its 111 `test result:` lines: 8,985 passed, 0 failed, 12 ignored, against 8,693 on 12-03's gate the day before. The audit: all 5 accepted advisories still reported, nothing outside `.cargo/audit.toml`. Green on the first run, so no red and green pair was needed. The run covers five of CI's seven jobs: no debug build, no setup executable, no search handler checks, and no NVDA case or accessibility scan, which is ledger 609. The row is on `docs/development/measurements.md`.
 
 ## Deviations from Plan
 
