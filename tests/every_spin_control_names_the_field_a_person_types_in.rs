@@ -1,17 +1,17 @@
 //! Every spin control names the field a person types in, on both channels, in
 //! every window that holds one, as far as a test process can see.
 //!
-//! **This reading passes and the running program fails it.** On 2026-09-23 the
-//! Accessibility scan on pull request #97 (runs 35927025769 and 35930014324)
-//! launched the real program and found the same fields unnamed: Edit Event 8
-//! with no MSAA name, Send Later 4, and the account editor's and Settings'
-//! fields named only by the static text before them, the colon included. Every
-//! test here, the naming readings, UI Automation and the read from another
-//! process below, was green on this machine and in CI's Test Suite, in debug
-//! and release, hidden and shown. So the annotation reaches the field in a test
-//! process and not in the running app, and why is not known. 12-06.1 owns
-//! finding out, and ledger 408 to 425 stay open until the scan says otherwise;
-//! ledger 593 records that this reading cannot see the failure.
+//! **This reading cannot see the running program's condition, and
+//! `tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs` can.** On
+//! 2026-09-23 the Accessibility scan on pull request #97 (runs 35927025769 and
+//! 35930014324) found the fields unnamed in the real program while every test
+//! here was green. 12-06.1 found why on 2026-09-24: the program builds a
+//! WebView2 preview before any dialog names a spin control, and once a browser
+//! is built before the process's first annotation write, no later write is
+//! kept. Nothing here builds a browser, so the fault never appeared here. The
+//! other target builds one first, the way the program does, and reads from
+//! another process only; the program now makes its first write before the
+//! browser (`names::ready_the_annotation_store`).
 //!
 //! A Windows spin control is two windows. The arrows are an `msctls_updown32`,
 //! which is the handle wxWidgets hands back and the one `set_accessible_name`

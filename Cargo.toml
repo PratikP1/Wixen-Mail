@@ -387,10 +387,11 @@ windows = { version = "0.62.2", features = [
     # ledger 408). A Windows spin control is two windows, and the keyboard lands
     # in the one wxWidgets does not hand back: IAccPropServices::SetHwndPropStr
     # with PROPID_ACC_NAME writes a name onto that field for MSAA and UI
-    # Automation both, in a test process; the running program's scan did not
-    # see it on 2026-09-23 (12-06.1, ledger 408 to 425). It is the typed COM
-    # interface rather than a hand-written vtable, and it is the one COM call
-    # besides the spell checker.
+    # Automation both. The running program needs one write before its first
+    # WebView2, or no write after it is kept (12-06.1, 2026-09-24,
+    # names::ready_the_annotation_store). It is the typed COM interface rather
+    # than a hand-written vtable, and it is the one COM call besides the spell
+    # checker.
     "Win32_UI_Accessibility",
     # UDM_GETBUDDY, which asks the arrows for the field beside them.
     "Win32_UI_Controls",
