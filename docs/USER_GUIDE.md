@@ -51,8 +51,10 @@ Every number in Settings and in the account editor is a spin control. `Up`
 adds one, `Down` takes one away, and the control stops at the ends of its
 range, so a number outside it cannot be set. You can also type a number over
 the one shown. `Page Up` and `Page Down` do nothing in a spin control yet.
-Your screen reader says the same name on the field you type in as on the
-arrows beside it.
+The field you type in does not have a name of its own yet: a screen reader
+may say nothing for it, or say the label before it, colon included. The
+arrows beside it carry the name. This is a known fault, measured on
+2026-09-23, and not yet explained.
 
 | Where | Number | Range |
 |---|---|---|

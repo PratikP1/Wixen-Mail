@@ -8,7 +8,7 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
-- **Numbers are spin controls, and every spin control's typing field has a name.** The tester
+- **Numbers are spin controls.** The tester
   on 2026-09-15 (#35): "where numbers are expected, spin boxes/controls should be used so that
   users can use up/down arrow keys to make changes", and on 2026-09-18 (#73) that the account
   editor's check interval "should be a spin control, so Up and Down change it and the bounds
@@ -17,16 +17,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   `Down` step it, it stops at the ends, and typing over the number still works. Mark as read
   after is a choice of Immediately, After a number of seconds, and Never, with a seconds spin
   control beside it holding 1 to 600 that can be reached only while a wait is chosen; a wait
-  chosen from the old list of seven is kept. The server ports stay typed. And every spin
-  control in the program, in Settings, the account editor, Edit Event, Send Later and Insert
-  Table, now carries its name on the field a person types in as well as on the arrows beside
-  it, on both of the channels screen readers read. Before this, NVDA heard ten of those fields
-  with no name at all and nine by whatever label sat before them, found by the accessibility
-  scan in September (ledger 408 to 425). A spin control's description, such as the check
-  interval's sentence, reaches the field too.
-  Known limitations: nobody has heard a spin control's field name with a screen reader since
-  this change; the reading is over MSAA and UI Automation in a test. `Page Up` and `Page Down`
-  do nothing in a spin control.
+  chosen from the old list of seven is kept. The server ports stay typed.
+  Known limitations: the field a person types in, inside every spin control, still has no
+  name of its own in the running program. The arrows beside it are named, and the code now
+  writes the same name onto the field, which tests read correctly; but the accessibility
+  scan of the real program on 2026-09-23 found the fields as before, some with no name at
+  all and the rest named by the label before them, colon included. Why is not known yet
+  (ledger 408 to 425). `Page Up` and `Page Down` do nothing in a spin control.
 
 - **About says who holds the copyright, and links to the project's two pages.** The tester on
   2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` (#78): About said "Copyright 2024-2026

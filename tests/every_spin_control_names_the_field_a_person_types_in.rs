@@ -1,5 +1,17 @@
 //! Every spin control names the field a person types in, on both channels, in
-//! every window that holds one.
+//! every window that holds one, as far as a test process can see.
+//!
+//! **This reading passes and the running program fails it.** On 2026-09-23 the
+//! Accessibility scan on pull request #97 (runs 35927025769 and 35930014324)
+//! launched the real program and found the same fields unnamed: Edit Event 8
+//! with no MSAA name, Send Later 4, and the account editor's and Settings'
+//! fields named only by the static text before them, the colon included. Every
+//! test here, the naming readings, UI Automation and the read from another
+//! process below, was green on this machine and in CI's Test Suite, in debug
+//! and release, hidden and shown. So the annotation reaches the field in a test
+//! process and not in the running app, and why is not known. 12-06.1 owns
+//! finding out, and ledger 408 to 425 stay open until the scan says otherwise;
+//! ledger 593 records that this reading cannot see the failure.
 //!
 //! A Windows spin control is two windows. The arrows are an `msctls_updown32`,
 //! which is the handle wxWidgets hands back and the one `set_accessible_name`
@@ -24,7 +36,9 @@
 //! and a name visible only inside the program is heard by nobody. That half
 //! was added on 2026-09-23 after the pull request's Accessibility scan, which
 //! reads from outside the program, found the fields named by their labels or
-//! not at all while every reading here was green.
+//! not at all while every reading here was green. It passes too, so it did not
+//! reproduce what the scan sees, and it is kept as the reading 12-06.1's fix
+//! must still pass.
 //!
 //! The whole object is read, not only the name. 12-04 measured a naming object
 //! that erased a native link's only child while the name check stayed green,

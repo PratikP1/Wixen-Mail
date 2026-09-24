@@ -252,9 +252,15 @@ pub fn name_from_label(label: &str) -> String {
 /// types in was nameless on MSAA, which NVDA reads for an edit, and named
 /// from whatever static text sat before it on UI Automation (ledger 408 to
 /// 425). So the field is given the same words through the annotation service,
-/// which both channels read, measured by
+/// which both channels read in a test process, measured by
 /// `tests/every_spin_control_names_the_field_a_person_types_in.rs` on every
 /// spin control in the program.
+///
+/// **Not in the running program.** On 2026-09-23 the Accessibility scan on
+/// pull request #97 launched the real program and found the fields as they
+/// were before this existed: nameless, or named by the static text before
+/// them. Why the annotation reaches the field in a test process and not in the
+/// app is not known; 12-06.1 owns it, and ledger 408 to 425 stay open.
 ///
 /// Every spin control is named through this or
 /// [`name_and_describe_the_spin_control`], and through nothing else.

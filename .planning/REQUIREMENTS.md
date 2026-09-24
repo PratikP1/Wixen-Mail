@@ -5407,24 +5407,24 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     carries updates, a trial with no card, whether the supporter tier delivers a real
     licence, how priority support is carried.
 
-- [x] **EDIT-01**: Every number a person sets in the account editor and in Settings is a spin
+- [ ] **EDIT-01**: Every number a person sets in the account editor and in Settings is a spin
   control, the check interval first, and every spin control's typing field has a name on the
   channel a screen reader reads.
-  **Ticked 2026-09-23 by 12-06, on its three `[D]` lines; the merge commit is in the report
-  that closes it:** `tests/every_spin_control_names_the_field_a_person_types_in.rs`, 14
-  readings, builds the account editor, Settings with every page, the event form, the table
-  asker and Send Later hidden, finds 25 spin controls by class (2, 5, 12, 2, 4), and holds
-  each typing field's name to its arrows' on MSAA and UI Automation, its description, its
-  role and child count to a bare spin control's, the four new ranges, what Settings saves
-  when a number is typed and an entry chosen, and when the seconds can be reached, with a
-  companion that builds the old defect and sees it. `presentation::accessibility::names`
-  holds that a description travels to the field; `application::reading_habits` holds
-  `MarkRead::parts` and `from_parts` over every stored shape, 25 cases before and after.
-  Send Later's four spinners are named there, a file the plan did not list, and Insert Table
-  and Send Later are read as well as the plan's four windows. Four guard records written and
-  one existing one re-measured, each exact. The pages say which numbers are spin controls
-  and how they are worked; `Page Up` and `Page Down` do nothing in one, measured, and the
-  pages say so. The `[S]` lines stay: ledger 592 for the ear, the scan at the next push.
+  **Not ticked: half of it is met, the naming half is not, as of 2026-09-23.** 12-06 met the
+  second `[D]` line: the check interval, Font size and Default reminder are spin controls
+  holding their own ranges, and Mark as read after is a three-way choice with a seconds spin
+  control, held by `tests/every_spin_control_names_the_field_a_person_types_in.rs` (the
+  ranges, what Settings saves when a number is typed and an entry chosen, when the seconds
+  can be reached) and `application::reading_habits` (`MarkRead::parts` and `from_parts` over
+  every stored shape, 25 cases before and after). The pages say which numbers are spin
+  controls and that `Page Up` and `Page Down` do nothing in one, measured. The first `[D]`
+  line is not met. 12-06 wrote each typing field's name through the annotation service and
+  its readings see the name in a test process and from a second process, but the
+  Accessibility scan of the running program on pull request #97, runs 35927025769 and
+  35930014324, found the fields as before, unnamed or named by the label before them. The
+  cause is unknown and belongs to 12-06.1; ledger 408 to 425 stay open, and ledger 593 says
+  the reading cannot see the fault. The third `[D]` line's ledger half and #73 and #35 wait
+  on it too. The `[S]` lines stay: ledger 592 for the ear.
   - Evidence: `grep -n 'Check &Interval' src/presentation/wx_account_manager.rs` on
     2026-09-20 at `0ad66e48`: `:1639`, `tf_with_description`, a `TextCtrl`, read back at
     `:1254` with `.parse().unwrap_or(5).clamp(1, 60)`; the `spin` closure at `:1488-1499`
@@ -5906,7 +5906,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
 | ALPHA-02 | Phase 12 | Complete, 12-05, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and a report arriving at each address, are ledger 589 and 590 |
 | ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
-| EDIT-01 | Phase 12 | Complete, 12-06, 2026-09-23; the `[S]` lines, a spin control heard under NVDA and the twelve findings gone from the scan, are ledger 592 and the next push |
+| EDIT-01 | Phase 12 | Pending; 12-06 on 2026-09-23 made the numbers spin controls, and the typing field's name is not in the running program (ledger 408 to 425, 593), which is 12-06.1's; the ear is ledger 592 |
 | EDIT-02 | Phase 12 | Pending, 12-07 |
 | EDIT-03 | Phase 12 | Pending, 12-08 |
 | EDIT-04 | Phase 12 | Pending, 12-09 |
