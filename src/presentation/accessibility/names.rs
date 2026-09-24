@@ -280,24 +280,6 @@ pub fn name_and_describe_the_spin_control(spin: &SpinCtrl, name: &str, descripti
     );
 }
 
-/// 12-06.1's startup bisect, D-01 extended on 2026-09-24, leaving with the
-/// rest of the diagnosis: switched on for the scan's runs only.
-pub fn diagnose_startup_naming(on: bool) {
-    #[cfg(target_os = "windows")]
-    typing_field::diagnose_startup_naming(on);
-    #[cfg(not(target_os = "windows"))]
-    let _ = on;
-}
-
-/// 12-06.1's startup bisect: name and read back a throwaway field at `point`,
-/// one line in the log. `toolkit_is_up` once wxWidgets has started.
-pub fn diagnose_naming_at(point: &str, toolkit_is_up: bool) {
-    #[cfg(target_os = "windows")]
-    typing_field::diagnose_naming_at(point, toolkit_is_up);
-    #[cfg(not(target_os = "windows"))]
-    let _ = (point, toolkit_is_up);
-}
-
 /// Which property of a spin control's typing field some words are written to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FieldProperty {
@@ -338,33 +320,34 @@ mod typing_field {
         static SERVICE: OnceCell<Option<IAccPropServices>> = const { OnceCell::new() };
     }
 
-    fn the_service() -> windows::core::Result<IAccPropServices> {
+    /// The service, or a warn line saying why not. Warn and not debug, on
+    /// Pratik's logging decision of 2026-09-24 (12-06.1, D-04): a service
+    /// that cannot be made is every spin control's field left nameless, and
+    /// said at debug it was thrown away with the log it was in.
+    fn the_service() -> Option<IAccPropServices> {
         // SAFETY: COM is initialised on the interface thread by wxWidgets
         // before any window is built.
         unsafe { CoCreateInstance(&CLSID_AccPropServices, None, CLSCTX_INPROC_SERVER) }
-            .inspect_err(|why| tracing::debug!("The annotation service is not available: {why}"))
+            .inspect_err(|why| {
+                tracing::warn!(
+                    "spin-field-naming: service-failed hr=0x{:08X} apartment={}",
+                    why.code().0 as u32,
+                    the_apartment()
+                )
+            })
+            .ok()
     }
 
-    /// The service for this thread, asked for once and kept, whichever way
-    /// the first ask went, as 12-06 shipped it; and what this call found.
-    fn the_kept_service(
-        kept: &OnceCell<Option<IAccPropServices>>,
-    ) -> (Option<&IAccPropServices>, diagnosis::ServiceAsked) {
-        use diagnosis::ServiceAsked;
-        let asked = match kept.get() {
-            Some(Some(_)) => ServiceAsked::Reused,
-            Some(None) => ServiceAsked::Absent,
-            None => {
-                let created = the_service();
-                let asked = match &created {
-                    Ok(_) => ServiceAsked::Created(diagnosis::count_a_service()),
-                    Err(why) => ServiceAsked::Failed(why.code()),
-                };
-                let _ = kept.set(created.ok());
-                asked
-            }
-        };
-        (kept.get().and_then(Option::as_ref), asked)
+    /// The calling thread's COM apartment, as a service failure reports it.
+    fn the_apartment() -> String {
+        use windows::Win32::System::Com::{APTTYPE, APTTYPEQUALIFIER, CoGetApartmentType};
+        let mut kind = APTTYPE::default();
+        let mut qualifier = APTTYPEQUALIFIER::default();
+        // SAFETY: both pointers are to locals that outlive the call.
+        match unsafe { CoGetApartmentType(&mut kind, &mut qualifier) } {
+            Ok(()) => format!("{}/{}", kind.0, qualifier.0),
+            Err(why) => format!("none hr=0x{:08X}", why.code().0 as u32),
+        }
     }
 
     fn property(which: FieldProperty) -> GUID {
@@ -375,10 +358,11 @@ mod typing_field {
     }
 
     /// Write `carries` onto the field beside `spin`'s arrows. A field that
-    /// cannot be found or written is said at debug and left as it was: the
-    /// arrows still carry the words.
+    /// cannot be found or written is said at warn and left as it was: the
+    /// arrows still carry the words. Each naming says so once at debug, with
+    /// the field's handle, which is what ties a field a scan reads to the
+    /// call that named it.
     pub(super) fn carry(spin: &SpinCtrl, carries: &[(FieldProperty, &str)]) {
-        let call = diagnosis::next_call();
         let named = carries
             .iter()
             .find(|(which, _)| *which == FieldProperty::Name)
@@ -388,15 +372,19 @@ mod typing_field {
         // message takes and returns no pointer.
         let buddy = unsafe { SendMessageW(arrows, UDM_GETBUDDY, None, None) };
         if buddy.0 == 0 {
-            diagnosis::the_call(call, named, arrows, None, None);
-            tracing::debug!("A spin control has no typing field to name");
+            tracing::warn!(
+                "spin-field-naming: no-field arrows={} words=\"{named}\"",
+                arrows.0 as isize
+            );
             return;
         }
+        tracing::debug!(
+            "spin-field-naming: named words=\"{named}\" field={}",
+            buddy.0
+        );
         let field = HWND(buddy.0 as *mut std::ffi::c_void);
         SERVICE.with(|service| {
-            let (service, asked) = the_kept_service(service);
-            diagnosis::the_call(call, named, arrows, Some(field), Some(asked));
-            let Some(service) = service else {
+            let Some(service) = service.get_or_init(the_service) else {
                 return;
             };
             for (which, words) in carries {
@@ -410,569 +398,15 @@ mod typing_field {
                         &HSTRING::from(*words),
                     )
                 };
-                diagnosis::the_write(call, *which, &written);
                 if let Err(why) = written {
-                    tracing::debug!("A spin control's typing field could not be named: {why}");
+                    tracing::warn!(
+                        "spin-field-naming: write-failed property={which:?} hr=0x{:08X} field={}",
+                        why.code().0 as u32,
+                        buddy.0
+                    );
                 }
             }
         });
-        diagnosis::the_properties(call, field);
-        diagnosis::the_read_back(call, field, named);
-        diagnosis::check_at_show(call, arrows, field, named);
-    }
-
-    /// 12-06.1's startup bisect, D-01 extended on 2026-09-24: switch it on.
-    pub(super) fn diagnose_startup_naming(on: bool) {
-        diagnosis::probe_the_startup(on);
-    }
-
-    /// 12-06.1's startup bisect: one line for `point` in startup.
-    pub(super) fn diagnose_naming_at(point: &str, toolkit_is_up: bool) {
-        diagnosis::at_the_point(point, toolkit_is_up);
-    }
-
-    /// 12-06.1's diagnosis, and nothing else: every line it writes starts
-    /// `spin-field-naming:` and is at warn, so the Accessibility scan's copy
-    /// of the running program's log says what became of each name. Not
-    /// test-first, on Pratik's exception of 2026-09-24 for the diagnostic
-    /// lines only; it changes no answer and leaves with the diagnosis, as a
-    /// module, once the scan has been read.
-    ///
-    /// Written: handles in decimal, HRESULTs in hex, the thread, the
-    /// apartment, the window class and the helper's own fixed words. Never a
-    /// field's value, a window's title, or anything from mail or an account.
-    mod diagnosis {
-        use super::FieldProperty;
-        use std::cell::Cell;
-        use std::sync::OnceLock;
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::System::Com::{APTTYPE, APTTYPEQUALIFIER, CoGetApartmentType};
-        use windows::Win32::System::Threading::GetCurrentThreadId;
-        use windows::Win32::System::Variant::{
-            VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_I4,
-        };
-        use windows::Win32::UI::Accessibility::{AccessibleObjectFromWindow, IAccessible};
-        use windows::Win32::UI::Controls::UDM_GETBUDDY;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            CHILDID_SELF, GWLP_WNDPROC, GetClassNameW, GetWindowLongPtrW, IsWindow, OBJID_CLIENT,
-            SendMessageW,
-        };
-        use windows::core::{HRESULT, Interface};
-
-        /// Whether this process bisects its startup (12-06.1, D-01 extended
-        /// on 2026-09-24): on in the scan's runs only, never in a test.
-        static PROBING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-        /// What the throwaway fields are named, and all the bisect writes.
-        const PROBE_WORDS: &str = "Probe words";
-
-        pub(super) fn probe_the_startup(on: bool) {
-            PROBING.store(on, std::sync::atomic::Ordering::Relaxed);
-        }
-
-        /// How many annotation service instances this process has created,
-        /// across every thread, so a line can say whether its instance was
-        /// the process's first.
-        static SERVICES_CREATED: std::sync::atomic::AtomicU32 =
-            std::sync::atomic::AtomicU32::new(0);
-
-        /// Count one more service instance created; its number in the process.
-        pub(super) fn count_a_service() -> u32 {
-            SERVICES_CREATED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
-        }
-
-        /// The one point this process probes, from the scan's workflow
-        /// (deviation 2, the bisect across processes): one first use per
-        /// process, so a probe cannot cure the points after it.
-        fn the_assigned_point() -> Option<&'static str> {
-            static ASSIGNED: OnceLock<Option<String>> = OnceLock::new();
-            ASSIGNED
-                .get_or_init(|| {
-                    std::env::var("WIXEN_DIAGNOSE_PROBE_AT")
-                        .ok()
-                        .filter(|point| !point.is_empty())
-                })
-                .as_deref()
-        }
-
-        /// One line for this process's point in startup: a throwaway plain
-        /// field named and read back on this thread, the process's first use
-        /// of the annotation service, and then a hidden spin control's field
-        /// once the toolkit is up; with the two accessibility libraries the
-        /// process has loaded by then.
-        pub(super) fn at_the_point(point: &str, toolkit_is_up: bool) {
-            if !PROBING.load(std::sync::atomic::Ordering::Relaxed)
-                || reads_are_switched_off()
-                || the_assigned_point() != Some(point)
-            {
-                return;
-            }
-            let first = a_plain_field_named_and_read();
-            let spin = if toolkit_is_up {
-                a_spin_field_named_and_read()
-            } else {
-                "toolkit-not-up".to_string()
-            };
-            tracing::warn!(
-                "spin-field-naming: point={point} first-use=[{first}] then-spin=[{spin}] {}",
-                the_libraries()
-            );
-        }
-
-        /// A hidden plain edit, named and read back, then destroyed.
-        fn a_plain_field_named_and_read() -> String {
-            use windows::Win32::UI::WindowsAndMessaging::{
-                CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_POPUP,
-            };
-            let apartment = the_apartment();
-            // SAFETY: a hidden window of a system class, destroyed below.
-            let created = unsafe {
-                CreateWindowExW(
-                    WINDOW_EX_STYLE(0),
-                    windows::core::w!("Edit"),
-                    windows::core::PCWSTR::null(),
-                    WS_POPUP,
-                    0,
-                    0,
-                    40,
-                    20,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-            };
-            let field = match created {
-                Ok(field) => field,
-                Err(why) => return format!("apartment={apartment} window hr={}", hex(why.code())),
-            };
-            let named = name_and_read(field);
-            // SAFETY: the window made above, on this thread.
-            let _ = unsafe { DestroyWindow(field) };
-            named
-        }
-
-        /// A hidden spin control's field, named and read back, then the
-        /// frame holding it destroyed.
-        fn a_spin_field_named_and_read() -> String {
-            use wxdragon::prelude::*;
-            let frame = Frame::builder().build();
-            let spin = SpinCtrl::builder(&frame).with_range(0, 9).build();
-            // SAFETY: the arrows are a live window just built.
-            let buddy =
-                unsafe { SendMessageW(HWND(spin.get_handle()), UDM_GETBUDDY, None, None).0 };
-            let read = if buddy == 0 {
-                "no field".to_string()
-            } else {
-                name_and_read(window(buddy))
-            };
-            frame.destroy();
-            read
-        }
-
-        /// Name `field` through a service of its own and read it back.
-        fn name_and_read(field: HWND) -> String {
-            use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
-            use windows::Win32::UI::Accessibility::{
-                CLSID_AccPropServices, IAccPropServices, PROPID_ACC_NAME,
-            };
-            // SAFETY: an in-process COM object; failure is an answer.
-            let created: windows::core::Result<IAccPropServices> =
-                unsafe { CoCreateInstance(&CLSID_AccPropServices, None, CLSCTX_INPROC_SERVER) };
-            let service = match created {
-                Ok(service) => service,
-                Err(why) => return format!("service hr={}", hex(why.code())),
-            };
-            let instance = count_a_service();
-            let apartment = the_apartment();
-            // SAFETY: the field is a live window; the string outlives the call.
-            let written = unsafe {
-                service.SetHwndPropStr(
-                    field,
-                    OBJID_CLIENT.0 as u32,
-                    CHILDID_SELF,
-                    PROPID_ACC_NAME,
-                    &windows::core::HSTRING::from(PROBE_WORDS),
-                )
-            };
-            let code = written.map_or_else(|why| why.code(), |()| HRESULT(0));
-            let properties = the_properties_of(field);
-            let read = match msaa_name(field) {
-                Ok(name) => format!("name=\"{name}\" equals={}", name == PROBE_WORDS),
-                Err(why) => format!("read hr={}", hex(why.code())),
-            };
-            let stored = properties.contains("MSAA_");
-            format!(
-                "apartment={apartment} instance={instance} first-in-process={} write={} stored={stored} props={properties} {read}",
-                instance == 1,
-                hex(code)
-            )
-        }
-
-        /// Called once per window property; `found` is the list it adds to.
-        unsafe extern "system" fn one_property(
-            _window: HWND,
-            name: windows::core::PCWSTR,
-            _data: windows::Win32::Foundation::HANDLE,
-            found: usize,
-        ) -> windows::core::BOOL {
-            // SAFETY: `found` is the list `the_properties_of` handed over,
-            // alive for the whole enumeration.
-            let found = unsafe { &mut *(found as *mut Vec<String>) };
-            let raw = name.0 as usize;
-            found.push(if raw >> 16 == 0 {
-                format!("#{raw}")
-            } else {
-                // SAFETY: a property name is a nul-terminated string when it
-                // is not an atom.
-                unsafe { name.to_string() }.unwrap_or_else(|_| "?".to_string())
-            });
-            windows::core::BOOL(1)
-        }
-
-        /// The names of `field`'s window properties, never their values.
-        fn the_properties_of(field: HWND) -> String {
-            use windows::Win32::Foundation::LPARAM;
-            use windows::Win32::UI::WindowsAndMessaging::EnumPropsExW;
-            let mut found: Vec<String> = Vec::new();
-            // SAFETY: the list outlives the enumeration, which is synchronous.
-            unsafe {
-                EnumPropsExW(
-                    field,
-                    Some(one_property),
-                    LPARAM(&mut found as *mut Vec<String> as isize),
-                )
-            };
-            format!("[{}]", found.join(","))
-        }
-
-        pub(super) fn the_properties(call: u32, field: HWND) {
-            tracing::warn!(
-                "spin-field-naming: props={call} {}",
-                the_properties_of(field)
-            );
-            if call == 1 {
-                tracing::warn!("spin-field-naming: libraries={call} {}", the_libraries());
-                tracing::warn!(
-                    "spin-field-naming: setprop={call} {}",
-                    a_plain_property_on(field)
-                );
-            }
-        }
-
-        /// Set one plain window property of this program's own on `field`,
-        /// read it back and take it off again: whether any property sticks on
-        /// that window at that moment, apart from the annotation service.
-        fn a_plain_property_on(field: HWND) -> String {
-            use windows::Win32::Foundation::HANDLE;
-            use windows::Win32::UI::WindowsAndMessaging::{GetPropW, RemovePropW, SetPropW};
-            const MARK: isize = 0x5A5A;
-            let key = windows::core::w!("WixenDiagnoseProbe");
-            // SAFETY: a live window; the key is a static string and the value
-            // a plain number, never a pointer.
-            let set = unsafe { SetPropW(field, key, Some(HANDLE(MARK as *mut std::ffi::c_void))) };
-            // SAFETY: as above.
-            let read = unsafe { GetPropW(field, key) }.0 as isize;
-            let properties = the_properties_of(field);
-            // SAFETY: as above; takes off only what was set here.
-            let _ = unsafe { RemovePropW(field, key) };
-            format!(
-                "set={} read=0x{read:X} equals={} props={properties}",
-                set.map_or_else(|why| hex(why.code()), |()| "ok".to_string()),
-                read == MARK
-            )
-        }
-
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetModuleHandleW(name: *const u16) -> isize;
-            fn GetModuleFileNameW(module: isize, path: *mut u16, size: u32) -> u32;
-        }
-
-        #[link(name = "version")]
-        unsafe extern "system" {
-            fn GetFileVersionInfoSizeW(path: *const u16, handle: *mut u32) -> u32;
-            fn GetFileVersionInfoW(
-                path: *const u16,
-                handle: u32,
-                size: u32,
-                data: *mut std::ffi::c_void,
-            ) -> i32;
-            fn VerQueryValueW(
-                block: *const std::ffi::c_void,
-                sub_block: *const u16,
-                out: *mut *mut std::ffi::c_void,
-                length: *mut u32,
-            ) -> i32;
-        }
-
-        fn wide(text: &str) -> Vec<u16> {
-            text.encode_utf16().chain(Some(0)).collect()
-        }
-
-        /// Where a loaded library came from and its file version, or that
-        /// it is not loaded. System paths only; nothing of the person's.
-        fn the_library(name: &str) -> String {
-            // SAFETY: a nul-terminated name; the answer is a handle or 0.
-            let module = unsafe { GetModuleHandleW(wide(name).as_ptr()) };
-            if module == 0 {
-                return format!("{name}=not-loaded");
-            }
-            let mut path = [0u16; 520];
-            // SAFETY: the buffer's length is passed with it.
-            let length = unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), 520) } as usize;
-            let path = &path[..length.min(520)];
-            format!(
-                "{name}=\"{}\" version={}",
-                String::from_utf16_lossy(path),
-                the_version(path)
-            )
-        }
-
-        fn the_version(path: &[u16]) -> String {
-            let path: Vec<u16> = path.iter().copied().chain(Some(0)).collect();
-            let mut ignored = 0u32;
-            // SAFETY: a nul-terminated path and a local to write to.
-            let size = unsafe { GetFileVersionInfoSizeW(path.as_ptr(), &mut ignored) };
-            if size == 0 {
-                return "unknown".to_string();
-            }
-            let mut block = vec![0u8; size as usize];
-            // SAFETY: the block is as long as `size` says.
-            if unsafe { GetFileVersionInfoW(path.as_ptr(), 0, size, block.as_mut_ptr().cast()) }
-                == 0
-            {
-                return "unknown".to_string();
-            }
-            let mut fixed = std::ptr::null_mut();
-            let mut length = 0u32;
-            // SAFETY: the root query answers a pointer into `block`.
-            let found = unsafe {
-                VerQueryValueW(
-                    block.as_ptr().cast(),
-                    wide("\\").as_ptr(),
-                    &mut fixed,
-                    &mut length,
-                )
-            };
-            if found == 0 || fixed.is_null() || length < 16 {
-                return "unknown".to_string();
-            }
-            // SAFETY: VS_FIXEDFILEINFO starts with four u32s, the last two
-            // the file version, inside `block`, which is still alive.
-            let words = unsafe { std::slice::from_raw_parts(fixed as *const u32, 4) };
-            let (high, low) = (words[2], words[3]);
-            format!(
-                "{}.{}.{}.{}",
-                high >> 16,
-                high & 0xFFFF,
-                low >> 16,
-                low & 0xFFFF
-            )
-        }
-
-        fn the_libraries() -> String {
-            format!(
-                "{} {}",
-                the_library("oleacc.dll"),
-                the_library("UIAutomationCore.dll")
-            )
-        }
-
-        /// What asking for the annotation service found on one naming call.
-        #[derive(Debug, Clone, Copy)]
-        pub(super) enum ServiceAsked {
-            /// Created on this call, with its number among the process's
-            /// service instances.
-            Created(u32),
-            Failed(HRESULT),
-            Reused,
-            Absent,
-        }
-
-        thread_local! {
-            static CALLS: Cell<u32> = const { Cell::new(0) };
-        }
-
-        /// The control the scan's send-later target runs under: set, and the
-        /// program reads no name inside itself, so a read inside the program
-        /// cannot be what carries the name out of it.
-        fn reads_are_switched_off() -> bool {
-            static SWITCHED_OFF: OnceLock<bool> = OnceLock::new();
-            *SWITCHED_OFF.get_or_init(|| std::env::var_os("WIXEN_DIAGNOSE_NO_READBACK").is_some())
-        }
-
-        pub(super) fn next_call() -> u32 {
-            CALLS.with(|calls| {
-                let call = calls.get() + 1;
-                calls.set(call);
-                call
-            })
-        }
-
-        fn hex(code: HRESULT) -> String {
-            format!("0x{:08X}", code.0 as u32)
-        }
-
-        fn handle(window: HWND) -> isize {
-            window.0 as isize
-        }
-
-        fn window(handle: isize) -> HWND {
-            HWND(handle as *mut std::ffi::c_void)
-        }
-
-        fn the_apartment() -> String {
-            let mut kind = APTTYPE::default();
-            let mut qualifier = APTTYPEQUALIFIER::default();
-            // SAFETY: both pointers are to locals that outlive the call.
-            match unsafe { CoGetApartmentType(&mut kind, &mut qualifier) } {
-                Ok(()) => {
-                    let name = match kind.0 {
-                        0 => "STA",
-                        1 => "MTA",
-                        2 => "NA",
-                        3 => "MAINSTA",
-                        _ => "other",
-                    };
-                    format!("{name}({}) qualifier={}", kind.0, qualifier.0)
-                }
-                Err(why) => format!("unknown hr={}", hex(why.code())),
-            }
-        }
-
-        fn the_class(field: HWND) -> String {
-            let mut class = [0u16; 64];
-            // SAFETY: the buffer outlives the call and its length is passed.
-            let length = unsafe { GetClassNameW(field, &mut class) };
-            String::from_utf16_lossy(&class[..usize::try_from(length).unwrap_or(0)])
-        }
-
-        pub(super) fn the_call(
-            call: u32,
-            words: &str,
-            arrows: HWND,
-            field: Option<HWND>,
-            asked: Option<ServiceAsked>,
-        ) {
-            // SAFETY: takes and returns plain values.
-            let thread = unsafe { GetCurrentThreadId() };
-            let field_handle = field.map_or(0, handle);
-            let class = field.map_or_else(String::new, the_class);
-            let service = match asked {
-                None => "not-asked".to_string(),
-                Some(ServiceAsked::Created(instance)) => format!(
-                    "created hr=0x00000000 instance={instance} first-in-process={}",
-                    instance == 1
-                ),
-                Some(ServiceAsked::Failed(code)) => format!("failed hr={}", hex(code)),
-                Some(ServiceAsked::Reused) => "reused".to_string(),
-                Some(ServiceAsked::Absent) => "absent".to_string(),
-            };
-            tracing::warn!(
-                "spin-field-naming: call={call} words=\"{words}\" thread={thread} apartment={} arrows={} field={field_handle} class=\"{class}\" service={service}",
-                the_apartment(),
-                handle(arrows),
-            );
-        }
-
-        pub(super) fn the_write(
-            call: u32,
-            which: FieldProperty,
-            written: &windows::core::Result<()>,
-        ) {
-            let property = match which {
-                FieldProperty::Name => "name",
-                FieldProperty::Description => "description",
-            };
-            let code = written
-                .as_ref()
-                .map_or_else(|why| why.code(), |()| HRESULT(0));
-            tracing::warn!(
-                "spin-field-naming: write={call} property={property} hr={}",
-                hex(code)
-            );
-        }
-
-        /// The field's MSAA name, read inside this process the way a
-        /// screen reader asks for it from outside.
-        fn msaa_name(field: HWND) -> windows::core::Result<String> {
-            let child = VARIANT {
-                Anonymous: VARIANT_0 {
-                    Anonymous: std::mem::ManuallyDrop::new(VARIANT_0_0 {
-                        vt: VT_I4,
-                        wReserved1: 0,
-                        wReserved2: 0,
-                        wReserved3: 0,
-                        Anonymous: VARIANT_0_0_0 {
-                            lVal: CHILDID_SELF as i32,
-                        },
-                    }),
-                },
-            };
-            let mut object = std::ptr::null_mut();
-            // SAFETY: the out pointer is a local; on success it holds an
-            // IAccessible whose reference this takes over.
-            unsafe {
-                AccessibleObjectFromWindow(
-                    field,
-                    OBJID_CLIENT.0 as u32,
-                    &IAccessible::IID,
-                    &mut object,
-                )?;
-                let accessible = IAccessible::from_raw(object);
-                Ok(accessible.get_accName(&child)?.to_string())
-            }
-        }
-
-        fn the_name_now(field: HWND, words: &str) -> String {
-            if reads_are_switched_off() {
-                return "skipped".to_string();
-            }
-            match msaa_name(field) {
-                Ok(name) => format!("name=\"{name}\" equals={}", name == words),
-                Err(why) => format!("hr={}", hex(why.code())),
-            }
-        }
-
-        pub(super) fn the_read_back(call: u32, field: HWND, words: &str) {
-            tracing::warn!(
-                "spin-field-naming: readback={call} {}",
-                the_name_now(field, words)
-            );
-        }
-
-        /// Queued to run from the dialog's own loop once it is up, holding
-        /// plain handles and the words and never a widget.
-        pub(super) fn check_at_show(call: u32, arrows: HWND, field: HWND, words: &str) {
-            let arrows = handle(arrows);
-            let named = handle(field);
-            // SAFETY: reads a value from a window this program built.
-            let procedure = unsafe { GetWindowLongPtrW(field, GWLP_WNDPROC) };
-            let words = words.to_string();
-            wxdragon::call_after(Box::new(move || {
-                // SAFETY: each call takes a handle that may no longer be a
-                // window, which these calls answer for rather than fault on.
-                let (arrows_live, buddy, field_live, procedure_now) = unsafe {
-                    (
-                        IsWindow(Some(window(arrows))).as_bool(),
-                        SendMessageW(window(arrows), UDM_GETBUDDY, None, None).0,
-                        IsWindow(Some(window(named))).as_bool(),
-                        GetWindowLongPtrW(window(named), GWLP_WNDPROC),
-                    )
-                };
-                let name = if field_live {
-                    the_name_now(window(named), &words)
-                } else {
-                    "gone".to_string()
-                };
-                tracing::warn!(
-                    "spin-field-naming: at-show={call} arrows_live={arrows_live} buddy={buddy} same_field={} field_live={field_live} same_procedure={} {name}",
-                    buddy == named,
-                    procedure_now == procedure,
-                );
-            }));
-        }
     }
 }
 

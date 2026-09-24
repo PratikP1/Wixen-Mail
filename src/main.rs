@@ -119,15 +119,6 @@ fn main() {
     // The build identifier is part of this on purpose: a bug report arrives
     // with a log, and several builds can share a version now.
     tracing::info!("Starting Wixen Mail v{}", version::current());
-    // 12-06.1's startup bisect, D-01 extended on 2026-09-24; the scan's runs
-    // only, and it leaves with the rest of the diagnosis.
-    wixen_mail::presentation::accessibility::names::diagnose_startup_naming(
-        run.scan_target.is_some(),
-    );
-    wixen_mail::presentation::accessibility::names::diagnose_naming_at(
-        "after-logging-and-mutex",
-        false,
-    );
     if let Some(why) = unmarked {
         // Not silently absorbed: without the mark, an uninstall started now
         // would not know this window is open.
@@ -169,10 +160,6 @@ fn main() {
     }
 
     offer_this_program_to_windows();
-    wixen_mail::presentation::accessibility::names::diagnose_naming_at(
-        "after-offer-to-windows",
-        false,
-    );
 
     // Before the application is built, because an unknown name here has to
     // stop rather than start normally: a scan that walks the main window and

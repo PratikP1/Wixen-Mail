@@ -396,11 +396,6 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_Controls",
     # SendMessageW, OBJID_CLIENT and CHILDID_SELF for the same call.
     "Win32_UI_WindowsAndMessaging",
-    # For 12-06.1's diagnosis only, and they leave with it: the typed
-    # IAccessible::get_accName the naming call's read-back uses is gated
-    # behind these two. Added 2026-09-24.
-    "Win32_System_Ole",
-    "Win32_System_Variant",
 ] }
 
 [target.'cfg(windows)'.build-dependencies]
