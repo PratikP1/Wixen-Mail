@@ -1588,11 +1588,11 @@ fn builder_bodies(text: &str) -> Vec<(String, &str)> {
 /// So this reports imaginary faults there and would be quieted by rewording
 /// labels to satisfy it, which helps nobody. What that window needs is a check
 /// that builds it, walks it to each page for each protocol, and reads the
-/// labels of the controls that are actually showing. `advance_to_connection_page`,
-/// `return_to_identity_page` and `is_shown()` already exist for exactly that,
-/// and `tests/account_edit_protocol_fields.rs` already drives them. That check
-/// is not written, and until it is, the mnemonics on that window are unchecked
-/// by anything. Said here rather than left as a green run.
+/// labels of the controls that are actually showing. Since 2026-09-24 that is
+/// `tests/account_edit_protocol_fields.rs`, which walks it to each page for
+/// IMAP, POP and the browser sign-in and reads the letters of the windows
+/// that are showing; it found five letters claimed twice on one page, which
+/// is ledger 606.
 const READ_AT_RUN_TIME_INSTEAD: &[&str] = &["build_account_edit_dialog"];
 
 /// Every literal in one body that claims an Alt key.

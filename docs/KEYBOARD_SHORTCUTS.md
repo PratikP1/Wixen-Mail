@@ -702,6 +702,8 @@ In the account editor, Check Interval and the days before POP mail is removed ar
 
 On the account editor's first page, `Alt+F` reaches Signature for this account: the signature messages from this account start with. Its first entry is the default, which names the signature it is; the Signature Manager can choose the same thing, and each shows what the other chose.
 
+Every letter on a page of the account editor is its own. On the first page: `Alt+A` Account Name, `Alt+E` Email Address, `Alt+M` the name people see, `Alt+F` Signature for this account, `Alt+N` Next. On the second: `Alt+R` How to read your mail; `Alt+I` IMAP Server, `Alt+P` IMAP Port, `Alt+L` its Use TLS, or for POP `Alt+P` POP Server, `Alt+O` POP Port, `Alt+F` Use TLS for POP, `Alt+L` Leave mail on the server, `Alt+D` the days, `Alt+C` Let me delete mail on this computer; `Alt+S` SMTP Server, `Alt+T` SMTP Port, `Alt+E` its Use TLS; `Alt+N` Sign in with the provider in a browser, `Alt+U` Username, `Alt+W` Password, `Alt+G` Get an app password; `Alt+V` Check Interval, `Alt+A` Enable this account; `Alt+M`, `Alt+K` and `Alt+X` the three boxes for what this account may change; `Alt+Y` Directory address, `Alt+H` Where in it to look; `Alt+B` Back. Until 2026-09-24 five letters were each claimed by two or three labels on one page, so the letter moved between them rather than choosing one.
+
 ### Contact Management
 
 | Action | Shortcut | Description |

@@ -1671,7 +1671,11 @@ pub fn build_account_edit_dialog(
         (l, c)
     };
 
-    let (name_label, name_f) = tf("Account &Name:", "");
+    // The letters on each page are one set: a letter two showing controls
+    // share moves between them rather than choosing one (ledger 606).
+    // `tests/account_edit_protocol_fields.rs` reads every page's showing
+    // windows for them. A, because N is Next's on this page.
+    let (name_label, name_f) = tf("&Account Name:", "");
     let (email_label, email_f) = tf("&Email Address:", "");
     // The third box in this dialog that could be mistaken for the other two.
     // Account Name is what you call the account, usually "Work"; Username is
@@ -1733,7 +1737,9 @@ pub fn build_account_edit_dialog(
     let imap_section_heading = section("── IMAP Settings ──");
     let (imap_label, imap_f) = tf("&IMAP Server:", "");
     let (imap_port_label, imap_port_f) = tf("IMAP &Port:", "993");
-    let imap_tls = cb("Use &TLS", true);
+    // L, because T is SMTP Port's on this page; the POP box that also takes
+    // L is never shown with it.
+    let imap_tls = cb("Use T&LS", true);
     let imap_fields = ImapFields {
         section_heading: imap_section_heading,
         server_label: imap_label,
@@ -1746,7 +1752,8 @@ pub fn build_account_edit_dialog(
     let pop_section_heading = section("── POP Settings ──");
     let (pop_label, pop_f) = tf("PO&P Server:", "");
     let (pop_port_label, pop_port_f) = tf("POP P&ort:", "995");
-    let pop_tls = cb("Use TL&S for POP", true);
+    // F, because S is SMTP Server's on this page.
+    let pop_tls = cb("Use TLS &for POP", true);
     // On by default and deliberately. POP3 has one delete and it is permanent,
     // so a client that clears the server as it downloads leaves somebody with
     // one copy, on one computer, with no way back.
@@ -1787,7 +1794,9 @@ pub fn build_account_edit_dialog(
     let smtp_section_heading = section("── SMTP Settings ──");
     let (smtp_label, smtp_f) = tf("&SMTP Server:", "");
     let (smtp_port_label, smtp_port_f) = tf("SM&TP Port:", "465");
-    let smtp_tls = cb("Use TL&S", true);
+    // E, because S is SMTP Server's and L and T the IMAP box's and SMTP
+    // Port's.
+    let smtp_tls = cb("Us&e TLS", true);
 
     let auth_section_heading = section("── Authentication ──");
     // A choice rather than something worked out from the address. Google
@@ -1795,7 +1804,8 @@ pub fn build_account_edit_dialog(
     // application to be through Google verification, so an address is not
     // enough to decide. Deciding it silently left people unable to add their
     // own mail with no control to change it and nothing saying why.
-    let use_oauth_cb = cb("Sign in with the provider in a &browser (OAuth)", false);
+    // N, free on this page since Next is not shown on it; B is Back's.
+    let use_oauth_cb = cb("Sign i&n with the provider in a browser (OAuth)", false);
     let (user_label, user_f) = tf("&Username:", "");
     // Built with a raw `TextCtrl::builder` rather than through `tf`, because
     // it needs the password style `tf` does not offer, so it needs its own
@@ -1836,7 +1846,8 @@ pub fn build_account_edit_dialog(
     // what it does, on the field for whoever tabs to it and beneath it for
     // whoever reads the page.
     let (interval_label, interval_f) = spin(
-        "Check &Interval (min):",
+        // V, because I is IMAP Server's on this page.
+        "Check Inter&val (min):",
         CHECK_INTERVAL_MINUTES,
         5,
         Some(WHAT_THE_INTERVAL_DOES),
@@ -1850,7 +1861,8 @@ pub fn build_account_edit_dialog(
         fields.add(&n, 0, SizerFlag::Expand | SizerFlag::All, 4);
         n
     };
-    let enabled = cb("Ena&ble this account", true);
+    // A, because B is Back's, and Directory address gave A up for this.
+    let enabled = cb("En&able this account", true);
 
     // ── What this account may change ─────────────────────────────────────
     //
@@ -1917,7 +1929,8 @@ pub fn build_account_edit_dialog(
     // somebody says a name being typed may be sent to that server.
     let directory_section_heading = section("── Looking people up at work ──");
     let (directory_url_label, directory_url_f) = tf_with_description(
-        "Directory &address:",
+        // Y, the one letter of these words nothing on this page holds.
+        "Director&y address:",
         "",
         "Where your organisation keeps its list of people. Whoever looks after it will \
          know: it starts with ldaps:// for an encrypted connection, or ldap:// where \
