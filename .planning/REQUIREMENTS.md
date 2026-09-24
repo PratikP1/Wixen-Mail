@@ -5374,10 +5374,11 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     exist and are read by the time public testing begins on his answer of 2026-09-23;
     priority for pro subscribers waits on #65, by his own words on #64.
 
-- [ ] **ALPHA-03**: The pro licence is designed in a document the tree keeps as a design: what
+- [x] **ALPHA-03**: The pro licence is designed in a document the tree keeps as a design: what
   is gated, how a key is checked offline, what a lapse does, what the alpha carries, the
   prices and the trial as decided, the merchants compared, and every decision that is
-  Pratik's in one table; nothing in the product is gated.
+  Pratik's in one table; nothing in the product is gated. Ticked 2026-09-24 by 12-11; the
+  decisions, its `[S]` line, are Pratik's and stay open.
   - Evidence: `grep -rniE 'licen[cs]e key|entitlement' src --include=*.rs` on 2026-09-20 at
     `0ad66e48`: nothing, so nothing knows a licence (the issue's wider grep with
     `subscription|entitle` answers 202 lines of iCal and folder subscriptions and 23 of
@@ -5394,7 +5395,7 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     features." Pratik on 2026-09-16: "a $10 a year supporter licence; a $19 pro licence
     (yearly); a $99 perpetual pro licence; a 60-day trial of pro"; and his merchant table
     of the same day, Paddle recommended and undecided.
-  - [D] `docs/plans/20260920-pro-licence.md` (dated the day it is written) with ten
+  - [x] [D] `docs/plans/20260920-pro-licence.md` (dated the day it is written) with ten
     sections: what it is for and is not; what exists today, each claim with its command; the
     free and pro line as a table with each feature's state in the tree; the licence as a
     signed string checked offline, entered on Settings, kept in the credential store; the
@@ -5403,7 +5404,16 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     whole with its date; the decisions table for Pratik with an empty answer column; what
     follows the decisions. A row in `docs/development/requirements-backlog.md`; a ledger
     `todo` naming the decisions as his; no file under `src/`, `tests/` or `guards/` touched
-    (12-11).
+    (12-11). Met 2026-09-24 as `docs/plans/20260924-pro-licence.md`, the day it was written:
+    sections 1 (what this is for), 2 (what exists today, each claim with its command at
+    `015035f7`), 3 (the line, one row per feature with its state), 4 (the licence), 5 (the
+    seam, named `application::licence` with `Licence` and `Unlocked` rather than
+    `Entitlement`, beside the `Entitles` alias now at `wx_app.rs:13150`; in a dialog a gated
+    button stays enabled, because Tab passes over a greyed one), 6 (a lapse), 7 (the prices),
+    8 (the merchant table whole with its date, and a worked $10 and $19 sale), 9 (Decisions
+    for Pratik, ten rows, the answer column empty) and 10 (what follows). The backlog row
+    under Platform and Distribution; ledger 608; `git diff --stat main` names no file under
+    `src/`, `tests/` or `guards/`.
   - [S] Every row of the decisions table is Pratik's: the free and pro line, whether several
     accounts are gated at all, the merchant, online revocation, how long a perpetual licence
     carries updates, a trial with no card, whether the supporter tier delivers a real
@@ -6006,7 +6016,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-27 | Phase 11 | Complete, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages) and 11-11.1.3 at `1e39650a` (All Inboxes' own view, the every-inbox listing, the row's own account, the sentence, the pages); a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept and a two-account conversation as two rows (ledger 563), are his ear's |
 | ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
 | ALPHA-02 | Phase 12 | Complete, 12-05, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and a report arriving at each address, are ledger 589 and 590 |
-| ALPHA-03 | Phase 12 | Pending, 12-11; every decision in its table is Pratik's |
+| ALPHA-03 | Phase 12 | Done 2026-09-24, 12-11: the design at `docs/plans/20260924-pro-licence.md`, nothing gated; every decision in its table of ten is Pratik's, ledger 608 |
 | EDIT-01 | Phase 12 | Done 2026-09-24: 12-06 on 2026-09-23 made the numbers spin controls, 12-06.1 on 2026-09-24 put the typing field's name in the running program, read by scan run 35976411245 (ledger 408 to 425 and 593 fixed), and #73 and #35 are closed; the ear is ledger 592 |
 | EDIT-02 | Phase 12 | Done 2026-09-24, 12-07: the name parts, the fills, the birthday and the checks, held by `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` and the module cases; the ear is ledger 596 and the tester's account ledger 597 |
 | EDIT-03 | Phase 12 | Done 2026-09-24, 12-08: the block rules, the setting, the keys taken on the typing field and the opening times, held by `application::time_blocks`' cases and `tests/event_times_move_in_blocks.rs`; a task has no time; the ear is ledger 603 |
