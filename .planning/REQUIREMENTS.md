@@ -5624,8 +5624,8 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
   - [S] The value spoken after Up and after Left, the end heard following, and the setting's
     list are the tester's ear.
 
-- [ ] **EDIT-04**: Signatures are one set assignable per account, with one default for any
-  account that has none, and compose follows the From account.
+- [x] **EDIT-04**: Signatures are one set assignable per account, with one default for any
+  account that has none, and compose follows the From account. Ticked 2026-09-24 by 12-09.
   - Evidence: `grep -n 'CREATE TABLE IF NOT EXISTS signatures' -A 9 src/data/message_cache/mod.rs`
     on 2026-09-20 at `0ad66e48`: `:1830`, `account_id NOT NULL`, `is_default`, `UNIQUE(account_id, name)`;
     `grep -n 'pub fn ' src/data/message_cache/signatures.rs`: every reader takes an account
@@ -5639,20 +5639,31 @@ the site can settle; the caveat at the top of this file binds every `[D]` line.
     `:2379`, the marker table a once-only pass uses.
   - [S] #43, the tester on 2026-09-15: "Allow signatures to be assigned by email account.
     Default should apply if no signature is assigned to a particular account."
-  - [D] `application::signatures::which_signature` (the assignment, else the default, else
+  - [x] [D] `application::signatures::which_signature` (the assignment, else the default, else
     none) and `whether_to_swap` (only a block still equal to the previous signature);
     `signature_assignments` as a new table; `get_every_signature`, `assign`,
     `assignment_for`, `set_the_default` setting one row and clearing every other or, since
     Pratik's answer of 2026-09-23, clearing every row, `signature_for_account`;
     `make_signatures_one_set` once under a marker writing an assignment for every account
-    that had a default before clearing all but the oldest (12-09, task 1).
-  - [D] The manager over the whole set with a Used by column and one Default box meaning for
+    that had a default before clearing all but the oldest (12-09, task 1). Met 2026-09-24:
+    the 13 `application::signatures::tests` cases and the 11
+    `data::message_cache::signatures::tests` cases, among them
+    `test_the_pass_keeps_every_accounts_signature_and_one_default`,
+    `test_the_pass_runs_once` and
+    `test_clearing_the_default_leaves_an_unassigned_account_with_none`. `whether_to_swap`
+    compares the block as it went into the page rather than the text `sign_off::split`
+    finds, which cannot see a Markdown signature or one above a quote (12-09 summary).
+  - [x] [D] The manager over the whole set with a Used by column and one Default box meaning for
     everyone; "Signature for this account:" as a `Choice` on the account's own edit dialog
     with "Use the default" first, naming it ("Signature:" until 2026-09-23), and, on Pratik's
     answer that day, the signature editor's check boxes choosing the accounts that use it,
     both writing one assignment through `assign`, each showing what the other chose; compose opening with the From account's signature and swapping the
     block on a From change only while untouched, said at Normal; a reading in
-    `tests/a_signature_follows_the_from_account.rs` (12-09, task 2).
+    `tests/a_signature_follows_the_from_account.rs` (12-09, task 2). Met 2026-09-24 by the
+    16 readings of that target: the manager's rows read off the live list, the account
+    dialog's choice built and read back, each surface after the other wrote, the default set
+    and cleared, and the real composer's page after From was changed with the key a person
+    presses, for a new message, an edited signature and a reply.
   - [S] The manager's columns, the choice, the account boxes and the sentence on a From change
     are the tester's ear; where the choice reads better by ear was his, and Pratik answered on
     2026-09-23 that it is made in both places, one setting reachable from both.
@@ -5990,7 +6001,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | EDIT-01 | Phase 12 | Done 2026-09-24: 12-06 on 2026-09-23 made the numbers spin controls, 12-06.1 on 2026-09-24 put the typing field's name in the running program, read by scan run 35976411245 (ledger 408 to 425 and 593 fixed), and #73 and #35 are closed; the ear is ledger 592 |
 | EDIT-02 | Phase 12 | Done 2026-09-24, 12-07: the name parts, the fills, the birthday and the checks, held by `tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs` and the module cases; the ear is ledger 596 and the tester's account ledger 597 |
 | EDIT-03 | Phase 12 | Done 2026-09-24, 12-08: the block rules, the setting, the keys taken on the typing field and the opening times, held by `application::time_blocks`' cases and `tests/event_times_move_in_blocks.rs`; a task has no time; the ear is ledger 603 |
-| EDIT-04 | Phase 12 | Pending, 12-09 |
+| EDIT-04 | Phase 12 | Done 2026-09-24, 12-09: one set with an assignment per account and one default, chosen on the account's dialog or in a signature's editor through one stored assignment, compose following the From account, held by `application::signatures`' and the store's cases and `tests/a_signature_follows_the_from_account.rs`; the ear is ledger 605 |
 | EDIT-05 | Phase 12 | Pending, 12-10 |
 | GAP-01 | Phase 13 | Not planned, 2026-09-20 |
 | GAP-02 | Phase 13 | Not planned, 2026-09-20 |

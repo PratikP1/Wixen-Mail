@@ -1439,6 +1439,15 @@ impl MessageCache {
             Err(e) => tracing::warn!("Could not put the stored snippets right: {}", e),
         }
 
+        // Databases written before 2026-09-24 keep a default signature per
+        // account. Each account is given its own as an assignment and one
+        // default is kept for the rest, once (#43). Not fatal: until it runs,
+        // an account with none assigned reads the default, which is what it
+        // did, and the next open tries again.
+        if let Err(e) = cache.make_signatures_one_set() {
+            tracing::warn!("Could not make the signatures one set: {}", e);
+        }
+
         // Databases written before the five local folders were shared have one
         // set per account. Bring them together on open (D-18, D-19). Not fatal
         // for the same reason as above: every message is still readable where
@@ -1855,6 +1864,27 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create signatures table: {}", e)))?;
+
+        // Which account uses which signature, since 2026-09-24 (#43): one row
+        // per account, written by the account's own dialog and by the
+        // Signature Manager alike. An account with no row takes the one
+        // signature marked `is_default`. Additive: the `account_id` and
+        // `is_default` columns above stay, and `make_signatures_one_set`
+        // turns what they meant before into rows here, once.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS signature_assignments (
+                account_id TEXT PRIMARY KEY,
+                signature_id TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create signature assignments table: {}",
+                    e
+                ))
+            })?;
 
         self.conn
             .execute(

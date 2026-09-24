@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Signatures are assigned per account, with one default for the rest.** The tester on
+  2026-09-15 (#43): "Allow signatures to be assigned by email account. Default should apply if
+  no signature is assigned to a particular account." Signatures are one list now: the
+  Signature Manager shows every one, whichever account was active when it was written, with a
+  Used by column naming the accounts that use it and "everyone else" on the default. You
+  choose an account's signature in either of two places, which change one setting: on the
+  account's own dialog, under Signature for this account (`Alt+F`), whose first entry is the
+  default by name; or in a signature's editor in the manager, where a check box per email
+  account under Use for these accounts (`Alt+U`) is ticked for the accounts that use it. The
+  Default signature box sets the default for everyone, and unticked on the default leaves
+  none. A new message starts with its From account's signature, and changing the From account
+  changes the signature and says so, unless you have typed into it, when it is left alone.
+  Mail from an earlier build keeps what each account signed with: the first time this build
+  opens it, once, each account that had a default signature of its own is given that one, and
+  the oldest of those defaults becomes the default for everyone. The version does not move for
+  this: the stored mail only gains a table, and no build has been cut since 1.0.0-alpha.1.
+  Known limitations: nobody has heard the Used by column, the choice on the account's dialog,
+  the account boxes or the sentence on a From change with a screen reader yet. A message that
+  opened with no signature does not gain one when its From account changes.
+
 - **A contact's birthday is a date.** The tester on 2026-09-15 (#40): "The birthday field
   should be a date similar to other date fields used in calendars, tasks, reminders, etc."
   Since 2026-09-24 the contact editor's birthday is a month, a day and a year, in the order
@@ -378,6 +398,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   resource with the build. No build carrying the count has been handed to anybody yet.
 
 ### Fixed
+
+- **A new event or reminder says New again.** Since the default reminder in Settings started
+  being filled in on every new event and reminder, their windows were headed "Edit Event" and
+  "Edit Reminder" as though you were changing one you already had. The default is 15 minutes,
+  so that was every new event and reminder unless the default was set to none. They are headed
+  "New Event" and "New Reminder" again, and an event you open to change still says "Edit
+  Event".
 
 - **The field you type in, inside every spin control, now has a name.** A spin control is two
   pieces: the arrows, and the field beside them where you type a number. The arrows were named

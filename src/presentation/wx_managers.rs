@@ -223,6 +223,18 @@ fn nothing_stops_this_closing<T>(_rows: &[T]) -> Option<&'static str> {
     None
 }
 
+/// A row one of these managers edits, and what one edit does to the rows
+/// beside it.
+pub trait ManagedRow: Clone + 'static {
+    /// Called once the row at `edited` has been added or changed. Most rows
+    /// stand alone, so by default nothing happens to the others.
+    fn settle(_rows: &mut [Self], _edited: usize) {}
+}
+
+impl ManagedRow for FilterRule {}
+impl ManagedRow for Question {}
+impl ManagedRow for TagEntry {}
+
 /// Run the standard Add/Edit/Delete modal loop shared by all manager dialogs.
 ///
 /// `kind` is the word this window's rows are, "filter", "tag" or
@@ -240,7 +252,10 @@ fn nothing_stops_this_closing<T>(_rows: &[T]) -> Option<&'static str> {
 /// row and the row itself for an existing one. One function rather than two,
 /// because every window on this loop passed the same call twice with only that
 /// argument differing, and two closures over one dialog is how the two come to
-/// open it differently.
+/// open it differently. It is handed every row as well, since a row can be
+/// about its neighbours: a signature's editor says which signature an
+/// account uses now. What one edit does to the rows beside it is the row's
+/// own [`ManagedRow::settle`].
 ///
 /// `what_it_still_needs` is asked on the way out, and a sentence back from it
 /// refuses the Close and keeps the window open. Four of the five windows on
@@ -250,12 +265,12 @@ fn nothing_stops_this_closing<T>(_rows: &[T]) -> Option<&'static str> {
 /// store as well, and a window is where somebody can be told why.
 ///
 /// Returns `true` if any changes were made.
-fn run_manager_loop<T: Clone + 'static>(
+fn run_manager_loop<T: ManagedRow>(
     chrome: ManagerChrome<'_>,
     kind: &str,
     working: &mut Vec<T>,
     populate: impl Fn(&ListCtrl, &[T]) + Copy + 'static,
-    open_one: impl Fn(&Dialog, Option<&T>) -> Option<T>,
+    open_one: impl Fn(&Dialog, Option<&T>, &[T]) -> Option<T>,
     name_fn: impl Fn(&T) -> String + Copy + 'static,
     what_it_still_needs: impl Fn(&[T]) -> Option<&'static str> + 'static,
 ) -> bool {
@@ -350,10 +365,13 @@ fn run_manager_loop<T: Clone + 'static>(
     loop {
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
-                if let Some(item) = open_one(dialog, None) {
+                let opened = open_one(dialog, None, &state.borrow().working);
+                if let Some(item) = opened {
                     let name = name_fn(&item);
                     let mut s = state.borrow_mut();
                     s.working.push(item);
+                    let added = s.working.len() - 1;
+                    T::settle(&mut s.working, added);
                     s.changed = true;
                     drop(s);
                     let left = state.borrow().working.len();
@@ -369,10 +387,12 @@ fn run_manager_loop<T: Clone + 'static>(
             r if r == ID_MGR_EDIT => {
                 if let Some(idx) = get_selected(list) {
                     let current = state.borrow().working[idx].clone();
-                    if let Some(edited) = open_one(dialog, Some(&current)) {
+                    let opened = open_one(dialog, Some(&current), &state.borrow().working);
+                    if let Some(edited) = opened {
                         let name = name_fn(&edited);
                         let mut s = state.borrow_mut();
                         s.working[idx] = edited;
+                        T::settle(&mut s.working, idx);
                         s.changed = true;
                         drop(s);
                         let left = state.borrow().working.len();
@@ -2969,7 +2989,7 @@ pub fn show_filter_manager_dialog(
         manager_words::FILTER,
         &mut working,
         populate_filters,
-        |d, existing| show_filter_edit(d, existing, palette),
+        |d, existing, _| show_filter_edit(d, existing, palette),
         |r| r.name.clone(),
         nothing_stops_this_closing,
     );
@@ -3665,7 +3685,7 @@ pub fn show_rule_manager_dialog(
         manager_words::CONDITION,
         &mut working,
         populate_questions,
-        |d, existing| show_rule_edit(d, existing, a11y, palette),
+        |d, existing, _| show_rule_edit(d, existing, a11y, palette),
         a_condition_in_words,
         what_a_condition_list_still_needs,
     );
@@ -4094,7 +4114,7 @@ pub fn show_tag_manager_dialog(
         manager_words::TAG,
         &mut working,
         populate_tags,
-        |d, existing| show_tag_edit(d, existing, palette),
+        |d, existing, _| show_tag_edit(d, existing, palette),
         |t| t.name.clone(),
         nothing_stops_this_closing,
     );
@@ -4266,6 +4286,35 @@ fn show_tag_edit(
 // Signature Manager
 // ══════════════════════════════════════════════════════════════════════════════
 
+/// An email account a signature can be given to, as the Signature Manager
+/// names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignatureAccount {
+    pub id: String,
+    pub name: String,
+}
+
+impl From<&crate::data::Account> for SignatureAccount {
+    /// The account's own name, which is what somebody called it ("Work"),
+    /// or its address where it has none.
+    fn from(account: &crate::data::Account) -> Self {
+        let name = match account.name.trim() {
+            "" => account.email.clone(),
+            named => named.to_string(),
+        };
+        SignatureAccount {
+            id: account.id.clone(),
+            name,
+        }
+    }
+}
+
+/// One signature as the Signature Manager holds it.
+///
+/// Signatures are one set (#43): every one is listed whichever account was
+/// active when it was written. `used_by` is which accounts it is assigned
+/// to, read from the store's one assignment per account and written back
+/// through it, so the account's own dialog and this window say the same.
 #[derive(Debug, Clone)]
 pub struct SignatureEntry {
     pub id: String,
@@ -4273,6 +4322,26 @@ pub struct SignatureEntry {
     pub content_plain: String,
     pub content_html: Option<String>,
     pub is_default: bool,
+    pub used_by: Vec<SignatureAccount>,
+}
+
+impl ManagedRow for SignatureEntry {
+    /// An account uses one signature, and there is one default, so the row
+    /// just saved takes its accounts, and the default if it is marked, from
+    /// every other row. What the manager shows is then what will be stored.
+    fn settle(rows: &mut [Self], edited: usize) {
+        let Some(saved) = rows.get(edited).cloned() else {
+            return;
+        };
+        for (at, row) in rows.iter_mut().enumerate() {
+            if at == edited {
+                continue;
+            }
+            row.used_by
+                .retain(|account| !saved.used_by.contains(account));
+            row.is_default &= !saved.is_default;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -4284,6 +4353,7 @@ pub enum SignatureManagerAction {
 pub fn show_signature_manager_dialog(
     parent: &Frame,
     signatures: &[SignatureEntry],
+    accounts: &[SignatureAccount],
     a11y: &Arc<Accessibility>,
 ) -> SignatureManagerAction {
     // Read once and reused for the manager shell and every Add/Edit dialog
@@ -4291,13 +4361,12 @@ pub fn show_signature_manager_dialog(
     // `theme::current_from_stored_config`'s own doc comment for why that
     // matters).
     let palette = theme::current_from_stored_config();
-    let (dialog, sizer, list, status) =
-        make_shell(parent, "Signature Manager", "Signatures", 550, 450, palette);
-
-    list.insert_column(0, "Name", ListColumnFormat::Left, 200);
-    list.insert_column(1, "Default", ListColumnFormat::Centre, 80);
-    list.insert_column(2, "Preview", ListColumnFormat::Left, 220);
-    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    let SignatureManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+    } = build_signature_manager(parent, signatures, palette);
 
     let mut working = signatures.to_vec();
     let changed = run_manager_loop(
@@ -4311,26 +4380,73 @@ pub fn show_signature_manager_dialog(
         manager_words::SIGNATURE,
         &mut working,
         populate_sigs,
-        |d, existing| show_sig_edit(d, existing, palette),
+        |d, existing, rows| {
+            show_sig_edit(d, existing, &offers_for(accounts, existing, rows), palette)
+        },
         |s| s.name.clone(),
         nothing_stops_this_closing,
     );
 
     if changed {
-        // Ensure at most one default (last-added wins)
-        let mut saw_default = false;
-        for s in working.iter_mut().rev() {
-            if s.is_default {
-                if saw_default {
-                    s.is_default = false;
-                }
-                saw_default = true;
-            }
-        }
         SignatureManagerAction::Updated(working)
     } else {
         SignatureManagerAction::None
     }
+}
+
+/// The Signature Manager's window, built and filled without being shown.
+pub struct SignatureManagerWidgets {
+    pub dialog: Dialog,
+    pub sizer: BoxSizer,
+    pub list: ListCtrl,
+    pub status: StaticText,
+}
+
+/// Build the Signature Manager over every signature, whichever account is
+/// active, with who uses each, and fill its list. Split out of
+/// [`show_signature_manager_dialog`] so a test can read the rows a live list
+/// holds.
+pub fn build_signature_manager(
+    parent: &Frame,
+    signatures: &[SignatureEntry],
+    palette: Option<theme::Palette>,
+) -> SignatureManagerWidgets {
+    let (dialog, sizer, list, status) = make_shell(
+        parent,
+        "Signature Manager",
+        "Every account's signatures",
+        640,
+        450,
+        palette,
+    );
+
+    list.insert_column(0, "Name", ListColumnFormat::Left, 170);
+    list.insert_column(1, "Default", ListColumnFormat::Centre, 70);
+    list.insert_column(2, "Used by", ListColumnFormat::Left, 190);
+    list.insert_column(3, "Preview", ListColumnFormat::Left, 190);
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    populate_sigs(&list, signatures);
+
+    SignatureManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+    }
+}
+
+/// Who uses a signature, as its Used by column says it: the accounts it is
+/// assigned to, and "everyone else" on the default.
+pub fn used_by_words(signature: &SignatureEntry) -> String {
+    let mut who: Vec<&str> = signature
+        .used_by
+        .iter()
+        .map(|account| account.name.as_str())
+        .collect();
+    if signature.is_default {
+        who.push("everyone else");
+    }
+    who.join(", ")
 }
 
 fn populate_sigs(list: &ListCtrl, sigs: &[SignatureEntry]) {
@@ -4339,8 +4455,54 @@ fn populate_sigs(list: &ListCtrl, sigs: &[SignatureEntry]) {
         let idx = i as i64;
         list.insert_item(idx, &s.name, None);
         list.set_item_text_by_column(idx, 1, if s.is_default { "★" } else { "" });
+        list.set_item_text_by_column(idx, 2, &used_by_words(s));
         let preview: String = s.content_plain.chars().take(50).collect();
-        list.set_item_text_by_column(idx, 2, &preview);
+        list.set_item_text_by_column(idx, 3, &preview);
+    }
+}
+
+/// One email account as a signature's editor offers it: whether it uses
+/// this signature now, and which other signature it uses if another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountOffer {
+    pub account: SignatureAccount,
+    pub uses_this: bool,
+    pub uses_now: Option<String>,
+}
+
+/// What a signature's editor offers for each email account, from the rows
+/// the manager holds now.
+pub fn offers_for(
+    accounts: &[SignatureAccount],
+    this: Option<&SignatureEntry>,
+    rows: &[SignatureEntry],
+) -> Vec<AccountOffer> {
+    accounts
+        .iter()
+        .map(|account| {
+            let holder = rows.iter().find(|row| row.used_by.contains(account));
+            let uses_this = holder
+                .zip(this)
+                .is_some_and(|(held, this)| held.id == this.id);
+            AccountOffer {
+                account: account.clone(),
+                uses_this,
+                uses_now: holder.filter(|_| !uses_this).map(|held| held.name.clone()),
+            }
+        })
+        .collect()
+}
+
+/// The label on one account's box. An account's name is written with its
+/// ampersands doubled, so a name holding one is not read as a mnemonic.
+pub fn account_box_label(offer: &AccountOffer) -> String {
+    let name = offer.account.name.replace('&', "&&");
+    match &offer.uses_now {
+        Some(other) => format!(
+            "Use for {name}, which uses {} now",
+            other.replace('&', "&&")
+        ),
+        None => format!("Use for {name}"),
     }
 }
 
@@ -4351,6 +4513,9 @@ pub struct SigEditWidgets {
     pub name_f: TextCtrl,
     pub def_check: CheckBox,
     pub content_f: TextCtrl,
+    /// One box per email account, under "Use for these accounts", ticked
+    /// for the accounts that use this signature.
+    pub account_boxes: Vec<(SignatureAccount, CheckBox)>,
 }
 
 /// Build the Add/Edit Signature dialog without showing it.
@@ -4362,9 +4527,15 @@ pub struct SigEditWidgets {
 /// a live control holds, and never call `.show_modal()` at all.
 ///
 /// `parent` is any window, for the reason [`build_rule_edit_dialog`] gives.
+///
+/// `offers` is one entry per email account, from [`offers_for`]: each becomes
+/// a box under "Use for these accounts", so a signature is given to accounts
+/// here as well as on each account's own dialog, one stored assignment read
+/// by both (Pratik, 2026-09-23).
 pub fn build_sig_edit_dialog(
     parent: &dyn WxWidget,
     existing: Option<&SignatureEntry>,
+    offers: &[AccountOffer],
     palette: Option<theme::Palette>,
 ) -> SigEditWidgets {
     let title = if existing.is_some() {
@@ -4380,7 +4551,9 @@ pub fn build_sig_edit_dialog(
         .build();
     fields.add_growable_col(1, 1);
 
-    // Accelerators are all first letters: N(Name), D(Default), S(Signature/plain), H(HTML)
+    // Accelerators are all first letters: N(Name), D(Default), U(Use for
+    // these accounts), S(Signature). The account boxes carry none, since how
+    // many there are depends on the accounts.
     let name_f = add_field(&dlg, &fields, "&Name:");
 
     // The box the tester met with no name (#42), built after an empty static
@@ -4394,6 +4567,34 @@ pub fn build_sig_edit_dialog(
         SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
         8,
     );
+
+    // A group rather than a line of text over the boxes, so a screen reader
+    // says the group's name on the way into it, and Alt+U lands on its first
+    // box. Not built at all with no email account set up, since a heading
+    // over nothing is a stop that goes nowhere.
+    let account_boxes: Vec<(SignatureAccount, CheckBox)> = if offers.is_empty() {
+        Vec::new()
+    } else {
+        let group = StaticBoxSizerBuilder::new_with_label(
+            Orientation::Vertical,
+            &dlg,
+            "&Use for these accounts",
+        )
+        .build();
+        let boxes = offers
+            .iter()
+            .map(|offer| {
+                let label = account_box_label(offer);
+                let check = CheckBox::builder(&dlg).with_label(&label).build();
+                set_accessible_name(&check, &name_from_label(&label));
+                check.set_value(offer.uses_this);
+                group.add(&check, 0, SizerFlag::All, 4);
+                (offer.account.clone(), check)
+            })
+            .collect();
+        sizer.add_sizer(&group, 0, SizerFlag::Expand | SizerFlag::All, 8);
+        boxes
+    };
 
     let plain_label = StaticText::builder(&dlg)
         .with_label("&Signature, in Markdown:")
@@ -4482,44 +4683,52 @@ pub fn build_sig_edit_dialog(
         name_f,
         def_check,
         content_f,
+        account_boxes,
+    }
+}
+
+/// The signature as its editor holds it once OK is pressed: `existing` with
+/// what was typed and ticked, or a new one with an id of its own.
+pub fn the_signature_as_edited(
+    widgets: &SigEditWidgets,
+    existing: Option<&SignatureEntry>,
+) -> SignatureEntry {
+    SignatureEntry {
+        id: existing
+            .map(|s| s.id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        name: widgets.name_f.get_value(),
+        content_plain: widgets.content_f.get_value(),
+        // Kept as it was found rather than cleared. Nothing reads it and
+        // nothing offers to edit it any more, and quietly deleting what
+        // somebody typed is not this change's business.
+        content_html: existing.and_then(|s| s.content_html.clone()),
+        is_default: widgets.def_check.get_value(),
+        used_by: widgets
+            .account_boxes
+            .iter()
+            .filter(|(_, check)| check.get_value())
+            .map(|(account, _)| account.clone())
+            .collect(),
     }
 }
 
 fn show_sig_edit(
     parent: &Dialog,
     existing: Option<&SignatureEntry>,
+    offers: &[AccountOffer],
     palette: Option<theme::Palette>,
 ) -> Option<SignatureEntry> {
-    let SigEditWidgets {
-        dialog: dlg,
-        name_f,
-        def_check,
-        content_f,
-    } = build_sig_edit_dialog(parent, existing, palette);
+    let widgets = build_sig_edit_dialog(parent, existing, offers, palette);
 
     // Read first, then destroy: the fields belong to the dialog.
     // wxWidgets does not free a dialog when the Rust value goes, and
     // nothing in this file did, so every one of these little windows
     // stayed for the life of the session. `wx_compose` hit the same
     // thing and says so where it fixed it.
-    let answered = dlg.show_modal();
-    let chosen = if answered == ID_OK {
-        Some(SignatureEntry {
-            id: existing
-                .map(|s| s.id.clone())
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-            name: name_f.get_value(),
-            content_plain: content_f.get_value(),
-            // Kept as it was found rather than cleared. Nothing reads it and
-            // nothing offers to edit it any more, and quietly deleting what
-            // somebody typed is not this change's business.
-            content_html: existing.and_then(|s| s.content_html.clone()),
-            is_default: def_check.get_value(),
-        })
-    } else {
-        None
-    };
-    dlg.destroy();
+    let answered = widgets.dialog.show_modal();
+    let chosen = (answered == ID_OK).then(|| the_signature_as_edited(&widgets, existing));
+    widgets.dialog.destroy();
     chosen
 }
 

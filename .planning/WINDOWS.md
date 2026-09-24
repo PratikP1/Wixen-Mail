@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 549
+open_count: 550
 waived_count: 0
-fixed_count: 55
-total_count: 604
-last_updated: 2026-09-24T14:00:00.000Z
+fixed_count: 56
+total_count: 606
+last_updated: 2026-09-24T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -618,7 +618,9 @@ last_updated: 2026-09-24T14:00:00.000Z
 | 601 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07: pull request #99's Accessibility scan (run 35995441987) found the contact editor's Birthday Month list's value element, the static text showing the month, focusable with no name. It is the class ledger 411, 415, 418 and 423 name for Send Later's and the event form's lists, and the list is the one build_date_fields builds for all three, so 12-07 left it for the fix that reaches all of them | open |  | 2026-09-24T13:10:00.000Z |  |
 | 602 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07 judged ledger 416's class: an editable combo box carrying an accessible object of ours is put behind the MSAA proxy on UI Automation, which offers no ExpandCollapse pattern, and without the object Windows' own combo box provider offers it and takes the name from the label before the box. The contact editor's Prefix and Suffix boxes are named that way since 12-07, read by tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs; the event form's Category box still carries the object, and naming it the same way would close 416 | open |  | 2026-09-24T13:10:00.000Z |  |
 | 603 | 12 | unrun-verify | src/presentation/wx_item_form.rs |  | 12-08: #41 under NVDA. What only the tester's ear settles: the time spoken after Up and Down on a start's minutes and after Left and Right, whether the end moving with the start is heard or goes unsaid, the reminder window's time after the same keys, and the New events last list on the Calendar and PIM tab. tests/event_times_move_in_blocks.rs reads the values off the controls and cannot hear any of it | open |  | 2026-09-24T14:00:00.000Z |  |
-| 604 | 12 | todo | src/presentation/managers.rs |  | Found by 12-08, not its subject: a new event or reminder opened while Settings holds a default reminder is headed Edit Event or Edit Reminder, because starting_alert_for hands the alert to ask_for as a prefill and build_item_form_dialog heads any form with a prefill Edit. The default is 15 minutes, so this is every new event and reminder opened from New unless somebody set the default to none; the scan's rows 408 to 417 name the new-event window Edit Event for this reason. The fix is to tell the form it is new apart from what it opens with | open |  | 2026-09-24T14:00:00.000Z |  |
+| 604 | 12 | todo | src/presentation/managers.rs |  | Found by 12-08, not its subject: a new event or reminder opened while Settings holds a default reminder is headed Edit Event or Edit Reminder, because starting_alert_for hands the alert to ask_for as a prefill and build_item_form_dialog heads any form with a prefill Edit. The default is 15 minutes, so this is every new event and reminder opened from New unless somebody set the default to none; the scan's rows 408 to 417 name the new-event window Edit Event for this reason. The fix is to tell the form it is new apart from what it opens with | fixed | 12-09: Prefill carries is_new, the New command sets it, and the heading reads it rather than whether answers were handed in; tests/a_new_item_is_headed_new.rs read Edit Event and Edit Reminder at a954d93d and New Event and New Reminder at 0f310521, and its companion keeps an event already made headed Edit Event | 2026-09-24T14:00:00.000Z | 2026-09-24T20:00:00.000Z |
+| 605 | 12 | unrun-verify | src/presentation/wx_managers.rs |  | 12-09: #43 under NVDA. What only the tester's ear settles: the Signature Manager's Used by column read row by row, the account dialog's Signature for this account choice and its first entry naming the default, the check boxes under Use for these accounts in a signature's editor with their which-uses-now wording, and the Signature changed to sentence on a From change in the composer. tests/a_signature_follows_the_from_account.rs reads the controls and the page and cannot hear any of it | open |  | 2026-09-24T20:00:00.000Z |  |
+| 606 | 12 | todo | src/presentation/wx_account_manager.rs |  | 12-09 premise 4: in the account editor seven Alt letters are claimed by more than one label, some on different pages: B (Back, Enable this account, the browser sign-in), I (IMAP Server, Check Interval), M (the name people see, the mail permission), N (Account Name, Next), P (IMAP Port, POP Server), S (SMTP Server, and the Use TLS boxes for SMTP and for POP) and T (SMTP Port, and the Use TLS box for IMAP). 12-09 added none of them; whoever reads that dialog page by page settles which collide on one page and gives each a free letter | open |  | 2026-09-24T20:00:00.000Z |  |
 
 ````json
 [
@@ -7865,9 +7867,33 @@ last_updated: 2026-09-24T14:00:00.000Z
     "file": "src/presentation/managers.rs",
     "line": null,
     "description": "Found by 12-08, not its subject: a new event or reminder opened while Settings holds a default reminder is headed Edit Event or Edit Reminder, because starting_alert_for hands the alert to ask_for as a prefill and build_item_form_dialog heads any form with a prefill Edit. The default is 15 minutes, so this is every new event and reminder opened from New unless somebody set the default to none; the scan's rows 408 to 417 name the new-event window Edit Event for this reason. The fix is to tell the form it is new apart from what it opens with",
+    "status": "fixed",
+    "reason": "12-09: Prefill carries is_new, the New command sets it, and the heading reads it rather than whether answers were handed in; tests/a_new_item_is_headed_new.rs read Edit Event and Edit Reminder at a954d93d and New Event and New Reminder at 0f310521, and its companion keeps an event already made headed Edit Event",
+    "recorded_at": "2026-09-24T14:00:00.000Z",
+    "resolved_at": "2026-09-24T20:00:00.000Z"
+  },
+  {
+    "id": 605,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "12-09: #43 under NVDA. What only the tester's ear settles: the Signature Manager's Used by column read row by row, the account dialog's Signature for this account choice and its first entry naming the default, the check boxes under Use for these accounts in a signature's editor with their which-uses-now wording, and the Signature changed to sentence on a From change in the composer. tests/a_signature_follows_the_from_account.rs reads the controls and the page and cannot hear any of it",
     "status": "open",
     "reason": "",
-    "recorded_at": "2026-09-24T14:00:00.000Z",
+    "recorded_at": "2026-09-24T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 606,
+    "kind": "todo",
+    "phase": "12",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "12-09 premise 4: in the account editor seven Alt letters are claimed by more than one label, some on different pages: B (Back, Enable this account, the browser sign-in), I (IMAP Server, Check Interval), M (the name people see, the mail permission), N (Account Name, Next), P (IMAP Port, POP Server), S (SMTP Server, and the Use TLS boxes for SMTP and for POP) and T (SMTP Port, and the Use TLS box for IMAP). 12-09 added none of them; whoever reads that dialog page by page settles which collide on one page and gives each a free letter",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T20:00:00.000Z",
     "resolved_at": null
   }
 ]

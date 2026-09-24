@@ -194,6 +194,10 @@ pub enum ScanTarget {
     /// every checkbox it has is. `Accounts` reached the Account Manager and
     /// stopped at Edit.
     AccountEditor,
+    /// The same account editor on its first page, which `AccountEditor`
+    /// turns past. Added on 2026-09-24 (#43, 12-09) for the signature
+    /// choice, so its name is read in the running program.
+    AccountDetails,
     /// The Add Phone Number dialog, which opens from inside the contact
     /// editor and which `ContactEditor` never reached. Added on 2026-09-24
     /// (#40, 12-07) for its Country list, so the list's name and entries are
@@ -222,7 +226,7 @@ pub enum ScanTarget {
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 39] = [
+    pub const ALL: [ScanTarget; 40] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -259,6 +263,7 @@ impl ScanTarget {
         ScanTarget::FilterEditor,
         ScanTarget::SignatureEditor,
         ScanTarget::AccountEditor,
+        ScanTarget::AccountDetails,
         ScanTarget::PhoneNumber,
         ScanTarget::Page,
         ScanTarget::PageWindow,
@@ -303,6 +308,7 @@ impl ScanTarget {
             Self::FilterEditor => "filter-editor",
             Self::SignatureEditor => "signature-editor",
             Self::AccountEditor => "account-editor",
+            Self::AccountDetails => "account-details",
             Self::PhoneNumber => "phone-number",
             Self::Page => "page",
             Self::PageWindow => "page-window",
@@ -433,6 +439,9 @@ mod tests {
         // third place a link can open in stopped being a status line.
         //
         // Send Feedback arrived on 2026-09-23 (#64), with the dialog it names.
+        //
+        // The account editor's first page arrived on 2026-09-24 (#43), with
+        // the signature choice on it.
         for name in [
             "columns",
             "which-copy",
@@ -460,6 +469,7 @@ mod tests {
             "filter-editor",
             "signature-editor",
             "account-editor",
+            "account-details",
             "page",
             "page-window",
         ] {

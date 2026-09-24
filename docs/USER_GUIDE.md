@@ -139,7 +139,8 @@ The Tools menu also opens:
   are looking at. The [Contacts module](#other-modules) reached with
   `Ctrl+Shift+2` is the fuller way to work with contacts; this dialog
   overlaps it.
-- **Signatures**, the text added to the end of messages you send.
+- **Signatures**, the text added to the end of messages you send, and which
+  account uses which. See [Signatures](#signatures).
 - **Tags**, the labels you can put on a message.
 - **Sync Contacts**, **Sync Calendar**, and **Sync Tasks**, to sync with
   your provider now. Corrected on 2026-09-18: this line said "rather than
@@ -733,6 +734,43 @@ structure is now written to the log, so a report can say which line it was on.
 3. Enter recipient(s)
 4. Add any additional comments
 5. Send the message
+
+### Signatures
+
+Your signatures are one list, whichever account you were looking at when you
+wrote each one. **Tools → Signatures** opens the Signature Manager, which lists
+them all. Its **Used by** column names the accounts each signature is given to,
+and says "everyone else" on the default.
+
+Each email account uses one signature, and you can choose it in either of two
+places. Both change the same setting, so what you choose in one is what the
+other shows the next time you open it.
+
+- **On the account.** In the Account Manager, edit the account. On the first
+  page, **Signature for this account** (`Alt+F`) lists the signatures. Its first
+  entry is the default, written as "Use the default:" and the default's name, or
+  "Use the default (none is set)" when there is no default.
+- **On the signature.** In the Signature Manager, add or edit a signature. Under
+  **Use for these accounts** (`Alt+U`) there is a check box for each email
+  account, ticked for the accounts that use this signature. A box says which
+  signature that account uses now, if it uses another. Ticking it moves the
+  account to this signature.
+
+One signature can be the default. It is used for every account you have not
+given a signature. Tick **Default signature** (`Alt+D`) on a signature to make
+it the default. Untick it on the default and there is no default, so an account
+you have not given a signature sends mail with none.
+
+A new message starts with the signature of the account in its **From** line.
+If you change the From account, the signature changes to the new account's, and
+you hear "Signature changed to" and its name. If you have typed into the
+signature, it stays as you left it and nothing is said, so you never lose what
+you wrote. A reply or forward keeps the signature above the quoted message.
+
+Mail from an earlier build keeps every account's signature. The first time this
+build opens your mail, each account that had a default signature of its own is
+given that signature, and the oldest of those defaults becomes the default for
+everyone.
 
 ## Search Functionality
 

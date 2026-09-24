@@ -189,7 +189,7 @@ fn save_what_the_tag_manager_returned(
     failures
 }
 
-/// Signatures.
+/// Signatures: one set for every account (#43), with who uses each.
 pub fn manage_signatures(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -198,33 +198,59 @@ pub fn manage_signatures(
     rt: &Arc<Runtime>,
     a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
+    // The active account, or this computer, is only where a new signature's
+    // row is filed. Which account uses it is the assignment's.
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
         Err(reason) => return send_refusal(tx, rt, reason),
     };
-    let stored = match cache.get_signatures_for_account(&account) {
-        Ok(items) => items,
+    let accounts: Vec<wx_managers::SignatureAccount> = lock_state(state)
+        .accounts
+        .iter()
+        .map(wx_managers::SignatureAccount::from)
+        .collect();
+    let rows = match the_signature_managers_rows(&cache, &accounts) {
+        Ok(rows) => rows,
         Err(e) => return send_status(tx, rt, &format!("Signatures could not be read: {}.", e)),
     };
-    let rows: Vec<wx_managers::SignatureEntry> = stored
-        .iter()
-        .map(|s| wx_managers::SignatureEntry {
-            id: s.id.clone(),
-            name: s.name.clone(),
-            content_plain: s.content_plain.clone(),
-            content_html: s.content_html.clone(),
-            is_default: s.is_default,
-        })
-        .collect();
 
     let wx_managers::SignatureManagerAction::Updated(updated) =
-        wx_managers::show_signature_manager_dialog(frame, &rows, a11y)
+        wx_managers::show_signature_manager_dialog(frame, &rows, &accounts, a11y)
     else {
         return;
     };
 
-    let failures = save_what_the_signature_manager_returned(&cache, &account, &stored, updated);
+    let failures =
+        save_what_the_signature_manager_returned(&cache, &account, &rows, updated, &accounts);
     report(tx, rt, "signatures", failures);
+}
+
+/// What the Signature Manager lists: every signature, whichever account was
+/// active when it was written, each with the accounts assigned to it.
+pub fn the_signature_managers_rows(
+    cache: &MessageCache,
+    accounts: &[wx_managers::SignatureAccount],
+) -> crate::common::Result<Vec<wx_managers::SignatureEntry>> {
+    let assigned = accounts
+        .iter()
+        .map(|account| Ok((account, cache.assignment_for(&account.id)?)))
+        .collect::<crate::common::Result<Vec<_>>>()?;
+    Ok(cache
+        .get_every_signature()?
+        .into_iter()
+        .map(|signature| wx_managers::SignatureEntry {
+            used_by: assigned
+                .iter()
+                .filter(|(_, uses)| uses.as_deref() == Some(signature.id.as_str()))
+                .map(|(account, _)| (*account).clone())
+                .collect(),
+            id: signature.id,
+            name: signature.name,
+            content_plain: signature.content_plain,
+            content_html: signature.content_html,
+            is_default: signature.is_default,
+        })
+        .collect())
 }
 
 /// Write back what the signature manager returned, and name anything that
@@ -233,28 +259,36 @@ pub fn manage_signatures(
 /// Safe to write every row for the same reason as the labels: the update names
 /// exactly the columns the manager can edit, so `created_at` survives a row
 /// being written with the values it already has.
-fn save_what_the_signature_manager_returned(
+///
+/// Rows first, so a new signature exists before anything names it; then the
+/// default through `set_the_default` and each account's signature through
+/// `assign`, the same two writers the account's own dialog uses, where they
+/// differ from what is stored. The window keeps no assignment of its own.
+pub fn save_what_the_signature_manager_returned(
     cache: &MessageCache,
     account: &str,
-    stored: &[crate::data::message_cache::Signature],
-    updated: Vec<wx_managers::SignatureEntry>,
+    opened_with: &[wx_managers::SignatureEntry],
+    returned: Vec<wx_managers::SignatureEntry>,
+    accounts: &[wx_managers::SignatureAccount],
 ) -> Vec<String> {
     let changes =
-        collection_sync::changes_between(stored, updated, |s| s.id.clone(), |s| s.id.clone());
+        collection_sync::changes_between(opened_with, returned, |s| s.id.clone(), |s| s.id.clone());
     let mut failures = Vec::new();
     for id in &changes.removed {
         if let Err(e) = cache.delete_signature(id) {
             failures.push(format!("delete {}: {}", id, e));
         }
     }
-    for row in &changes.written {
+    let mut kept = Vec::new();
+    for row in changes.written {
         let signature = crate::data::message_cache::Signature {
             id: id_or_new(&row.id, "sig"),
             account_id: account.to_string(),
             name: row.name.clone(),
             content_plain: row.content_plain.clone(),
             content_html: row.content_html.clone(),
-            is_default: row.is_default,
+            // Set below, through the one writer of the mark.
+            is_default: false,
             created_at: now_stamp(),
         };
         // On the count, not on an error, for the same reason as the labels
@@ -264,6 +298,38 @@ fn save_what_the_signature_manager_returned(
             && let Err(e) = cache.create_signature(&signature)
         {
             failures.push(format!("{}: {}", row.name, e));
+            continue;
+        }
+        kept.push((signature.id, row));
+    }
+
+    let the_default = kept
+        .iter()
+        .find(|(_, row)| row.is_default)
+        .map(|(id, _)| id.as_str());
+    let was_the_default = opened_with
+        .iter()
+        .find(|row| row.is_default)
+        .map(|row| row.id.as_str());
+    if the_default != was_the_default
+        && let Err(e) = cache.set_the_default(the_default)
+    {
+        failures.push(format!("the default: {}", e));
+    }
+
+    for each in accounts {
+        let wanted = kept
+            .iter()
+            .find(|(_, row)| row.used_by.contains(each))
+            .map(|(id, _)| id.as_str());
+        match cache.assignment_for(&each.id) {
+            Ok(now) if now.as_deref() == wanted => {}
+            Ok(_) => {
+                if let Err(e) = cache.assign(&each.id, wanted) {
+                    failures.push(format!("{}'s signature: {}", each.name, e));
+                }
+            }
+            Err(e) => failures.push(format!("{}'s signature: {}", each.name, e)),
         }
     }
     failures
@@ -1212,6 +1278,7 @@ pub(crate) fn an_event_editor(
                 .map(|filled| crate::presentation::wx_item_form::Prefill {
                     filled,
                     container: existing_container.as_deref(),
+                    is_new: false,
                 });
         crate::presentation::wx_item_form::ask_for(
             dialog,
@@ -2765,6 +2832,9 @@ pub fn new_pim_item(
             .map(|filled| crate::presentation::wx_item_form::Prefill {
                 filled,
                 container: None,
+                // New, whatever it opens with: the alert is Settings' answer
+                // put in ahead, not something already made (ledger 604).
+                is_new: true,
             }),
         a11y,
         // Only an event has a guest list to ask about, so only an event gets
@@ -9449,6 +9519,21 @@ mod saving_the_other_managers {
         }
     }
 
+    /// Rows as the Signature Manager opens on them, nobody assigned.
+    fn as_the_manager_shows(stored: &[Signature]) -> Vec<wx_managers::SignatureEntry> {
+        stored
+            .iter()
+            .map(|s| wx_managers::SignatureEntry {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                content_plain: s.content_plain.clone(),
+                content_html: s.content_html.clone(),
+                is_default: s.is_default,
+                used_by: Vec::new(),
+            })
+            .collect()
+    }
+
     #[test]
     fn test_editing_one_signature_leaves_the_others_exactly_as_they_were() {
         let cache = a_cache("signatures_one_edit");
@@ -9458,19 +9543,12 @@ mod saving_the_other_managers {
                 .create_signature(signature)
                 .expect("a signature to save");
         }
-        let mut returned: Vec<wx_managers::SignatureEntry> = stored
-            .iter()
-            .map(|s| wx_managers::SignatureEntry {
-                id: s.id.clone(),
-                name: s.name.clone(),
-                content_plain: s.content_plain.clone(),
-                content_html: s.content_html.clone(),
-                is_default: s.is_default,
-            })
-            .collect();
+        let opened = as_the_manager_shows(&stored);
+        let mut returned = opened.clone();
         returned[1].content_plain = "See you".to_string();
 
-        let failures = save_what_the_signature_manager_returned(&cache, ACCOUNT, &stored, returned);
+        let failures =
+            save_what_the_signature_manager_returned(&cache, ACCOUNT, &opened, returned, &[]);
         assert!(failures.is_empty(), "{failures:?}");
 
         let after = cache
@@ -9491,25 +9569,18 @@ mod saving_the_other_managers {
         cache
             .create_signature(&stored[0])
             .expect("a signature to save");
-        let mut returned: Vec<wx_managers::SignatureEntry> = stored
-            .iter()
-            .map(|s| wx_managers::SignatureEntry {
-                id: s.id.clone(),
-                name: s.name.clone(),
-                content_plain: s.content_plain.clone(),
-                content_html: s.content_html.clone(),
-                is_default: s.is_default,
-            })
-            .collect();
+        let opened = as_the_manager_shows(&stored);
+        let mut returned = opened.clone();
         returned.push(wx_managers::SignatureEntry {
             id: String::new(),
             name: "Short".to_string(),
             content_plain: "P".to_string(),
             content_html: None,
             is_default: false,
+            used_by: Vec::new(),
         });
 
-        save_what_the_signature_manager_returned(&cache, ACCOUNT, &stored, returned);
+        save_what_the_signature_manager_returned(&cache, ACCOUNT, &opened, returned, &[]);
 
         let after = cache
             .get_signatures_for_account(ACCOUNT)

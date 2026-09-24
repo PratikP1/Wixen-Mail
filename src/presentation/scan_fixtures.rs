@@ -308,6 +308,18 @@ pub fn signature() -> SignatureEntry {
         content_plain: "Sent from the accessibility scan.".to_string(),
         content_html: None,
         is_default: true,
+        used_by: Vec::new(),
+    }
+}
+
+/// What the account editor's signature choice offers in the scan: the
+/// scanned signature, as the default, so the choice's first entry names one.
+pub fn signature_choices() -> crate::presentation::wx_account_manager::SignatureChoices {
+    let signature = signature();
+    crate::presentation::wx_account_manager::SignatureChoices {
+        default_name: Some(signature.name.clone()),
+        every: vec![(signature.id, signature.name)],
+        assigned: None,
     }
 }
 

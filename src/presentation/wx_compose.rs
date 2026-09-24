@@ -253,22 +253,19 @@ enum ThePictures {
     StayBehind,
 }
 
+/// The line a reply's quoted original sits under.
+const A_REPLY_QUOTES_UNDER: &str = "--- Original Message ---";
+/// The line a forwarded message sits under.
+const A_FORWARD_QUOTES_UNDER: &str = "---------- Forwarded message ----------";
+
 /// Format a quoted body for reply.
 fn format_reply_body(quoted_body: &MessageBody) -> MessageBody {
-    quoted_under(
-        quoted_body,
-        "--- Original Message ---",
-        ThePictures::StayBehind,
-    )
+    quoted_under(quoted_body, A_REPLY_QUOTES_UNDER, ThePictures::StayBehind)
 }
 
 /// Format a forwarded body.
 fn format_forward_body(body: &MessageBody) -> MessageBody {
-    quoted_under(
-        body,
-        "---------- Forwarded message ----------",
-        ThePictures::ComeAlong,
-    )
+    quoted_under(body, A_FORWARD_QUOTES_UNDER, ThePictures::ComeAlong)
 }
 
 /// Put an original under a line saying what it is, leaving room to type above.
@@ -300,6 +297,122 @@ fn quoted_under(body: &MessageBody, marker: &str, pictures: ThePictures) -> Mess
     }
 }
 
+/// The signature one account in the From list signs with, and its name for
+/// the sentence a change of account says. An empty `text` is no signature.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignatureFor {
+    pub name: String,
+    pub text: String,
+}
+
+/// Make the signature follow the From account (#43).
+///
+/// `signatures` is one per account, in the From list's order, and
+/// `opened_with` is the account the message opened signed by. When the From
+/// account changes, the block the last account's signature went in as is
+/// replaced by the next account's, if it is still in the message as it went
+/// in, and the change is said. A block somebody has typed into is left as it
+/// is, and nothing is said.
+pub fn follow_the_from_account(
+    account_choice: Choice,
+    body_editor: WebView,
+    signatures: Vec<SignatureFor>,
+    opened_with: usize,
+    a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    let signed_by = std::cell::Cell::new(opened_with);
+    account_choice.on_selection_changed(move |_| {
+        let Some(next) = account_choice.get_selection().map(|at| at as usize) else {
+            return;
+        };
+        let was = signatures
+            .get(signed_by.replace(next))
+            .map_or("", |signed| signed.text.as_str());
+        let Some(becomes) = signatures.get(next) else {
+            return;
+        };
+        if let Some(said) = swap_the_signature(&body_editor, was, becomes) {
+            let _ = a11y.announce(
+                &said,
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+        }
+    });
+}
+
+/// Replace the last account's signature block in the page with the next
+/// one's, where it still stands as it went in, and the sentence saying so.
+/// `None`, and the page untouched, where it does not.
+///
+/// The block is looked for above the quoted original only, since that is
+/// where the composer puts it, and in both the ways it goes in: as markup
+/// above a quote written as a page, and as text in a message written from
+/// nothing. The rule is `application::signatures::whether_to_swap`; the
+/// message that results is sanitised before it goes back in, the same as
+/// anything else put into the page.
+fn swap_the_signature(body_editor: &WebView, was: &str, becomes: &SignatureFor) -> Option<String> {
+    use crate::application::signatures::{Swap, whether_to_swap};
+
+    let body = editor_document::plain_from_editor(
+        &body_editor.run_script(&editor_document::read_body_script())?,
+    );
+    let (above, quoted) = the_part_above_the_quote(&body);
+    let blocks: [fn(&str) -> String; 2] = [signature_block_as_markup, signature_block_as_text];
+    let swapped = blocks.into_iter().find_map(|block| {
+        match whether_to_swap(above, &block(was), &block(&becomes.text)) {
+            Swap::ReplaceBlock(swapped) => Some(swapped),
+            Swap::LeaveAlone => None,
+        }
+    })?;
+    let _ = body_editor.run_script(&editor_document::replace_body_script(
+        &HtmlRenderer::new().sanitize_html(&format!("{swapped}{quoted}")),
+    ));
+    Some(match becomes.text.trim().is_empty() {
+        true => "Signature taken out: this account has none".to_string(),
+        false => format!("Signature changed to {}", becomes.name),
+    })
+}
+
+/// A message's markup cut where its quoted original starts, if it quotes one.
+fn the_part_above_the_quote(body: &str) -> (&str, &str) {
+    let starts = [A_REPLY_QUOTES_UNDER, A_FORWARD_QUOTES_UNDER]
+        .iter()
+        .filter_map(|marker| body.find(marker))
+        .min()
+        .unwrap_or(body.len());
+    body.split_at(starts)
+}
+
+/// The block a signature is in a page as, when it went in as markup above a
+/// quote: the separator and the signature, without the empty line above them
+/// that somebody types on. Nothing for no signature.
+fn signature_block_as_markup(signature: &str) -> String {
+    if signature.trim().is_empty() {
+        return String::new();
+    }
+    HtmlRenderer::new().sanitize_html(&format!(
+        "{THE_SEPARATOR_AS_MARKUP}{}",
+        crate::application::long_text::as_markup(signature.trim_end())
+    ))
+}
+
+/// The block a signature is in a page as, when it went in as text, in a
+/// message written from nothing. Nothing for no signature.
+fn signature_block_as_text(signature: &str) -> String {
+    if signature.trim().is_empty() {
+        return String::new();
+    }
+    editor_document::escaped_plain_text(&format!(
+        "{}\n{}",
+        crate::application::sign_off::DELIMITER,
+        signature.trim_end()
+    ))
+}
+
+/// The separator line as markup, its trailing space a non-breaking one; see
+/// [`with_signature`].
+const THE_SEPARATOR_AS_MARKUP: &str = "<div>--&nbsp;</div>";
+
 /// Put the signature above whatever is being quoted.
 ///
 /// Above, because that is where somebody replying is already typing and where
@@ -310,7 +423,7 @@ fn quoted_under(body: &MessageBody, marker: &str, pictures: ThePictures) -> Mess
 /// is a page, and a page drops a space at the end of a paragraph. It is turned
 /// back into an ordinary space in the text that goes out, by
 /// [`sign_off::canonical_delimiter`].
-fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
+pub fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
     if signature.trim().is_empty() {
         return body.clone();
     }
@@ -348,7 +461,7 @@ fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
 /// still safe and a script pasted in from a web page still does not survive.
 fn signature_markup(signature: &str) -> String {
     let written = crate::application::long_text::as_markup(signature.trim_end());
-    format!("<div><br></div><div>--&nbsp;</div>{written}")
+    format!("<div><br></div>{THE_SEPARATOR_AS_MARKUP}{written}")
 }
 
 /// The conversation this window is answering, if it is answering one.
@@ -1075,10 +1188,12 @@ pub fn show_compose_dialog_full(
     account_names: &[String],
     active_account_index: u32,
     preview_before_send: bool,
-    // `signature` is the account's default, or nothing. It goes above the
-    // quoted original when the window opens, so it can be read and edited
-    // before sending rather than appearing on the way out.
-    signature: &str,
+    // One per account in the From list, in its order: the signature each
+    // signs with, or nothing. The From account's goes above the quoted
+    // original when the window opens, so it can be read and edited before
+    // sending rather than appearing on the way out, and it follows a change
+    // of From account (#43).
+    signatures: &[SignatureFor],
     autosave: crate::application::autosave::AutosaveInterval,
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
     finding_people: Option<FindingPeople>,
@@ -1150,6 +1265,10 @@ pub fn show_compose_dialog_full(
         }
     };
     set_body(&MessageBody::Plain(String::new()));
+
+    let signature = signatures
+        .get(active_account_index as usize)
+        .map_or("", |signed| signed.text.as_str());
 
     // ── Pre-populate fields based on mode ────────────────────────────────
     // Filled before the copy lines are hidden or kept, because whether a reply
@@ -1248,6 +1367,13 @@ pub fn show_compose_dialog_full(
             set_body(&MessageBody::Html(data.body.clone()));
         }
     }
+    follow_the_from_account(
+        account_choice,
+        body_editor,
+        signatures.to_vec(),
+        active_account_index as usize,
+        a11y.clone(),
+    );
 
     // ── The copy lines ────────────────────────────────────────────────────
     //

@@ -771,7 +771,13 @@ struct Harvest {
 fn read_every_window(frame: &Frame, a11y: &Arc<Accessibility>) -> Result<Harvest, String> {
     let mut spinners = Vec::new();
 
-    let editor = wx_account_manager::build_account_edit_dialog(frame, None, a11y, None);
+    let editor = wx_account_manager::build_account_edit_dialog(
+        frame,
+        None,
+        a11y,
+        None,
+        &wx_account_manager::SignatureChoices::default(),
+    );
     spinners.extend(the_spinners_under(
         "the account editor",
         editor.dialog.get_handle() as isize,

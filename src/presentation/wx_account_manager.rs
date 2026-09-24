@@ -93,12 +93,16 @@ pub struct AccountManagerDialogHandles {
     set_active: Button,
 }
 
+///
+/// `signatures` is the store an account's signature choice is read from and
+/// written to; `None` offers the default alone and writes nothing.
 pub fn show_account_manager_dialog(
     parent: &Frame,
     accounts: &[Account],
     active_account_id: Option<&str>,
     default_account_id: Option<&str>,
     a11y: &Arc<Accessibility>,
+    signatures: Option<&crate::data::MessageCache>,
 ) -> AccountManagerAction {
     let palette = theme::current_from_stored_config();
     let widgets = build_account_manager_dialog(
@@ -117,7 +121,7 @@ pub fn show_account_manager_dialog(
     }));
 
     wire_account_manager_actions(&widgets, &state, a11y);
-    run_account_manager_loop(&widgets, &state, a11y, palette);
+    run_account_manager_loop(&widgets, &state, a11y, palette, signatures);
 
     let outcome = state.borrow();
     if outcome.changed {
@@ -386,6 +390,7 @@ fn run_account_manager_loop(
     state: &Rc<RefCell<AccountManagerState>>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
+    signatures: Option<&crate::data::MessageCache>,
 ) {
     let dlg = &widgets.dialog;
     let list = &widgets.list;
@@ -393,7 +398,7 @@ fn run_account_manager_loop(
     loop {
         match dlg.show_modal() {
             r if r == ID_ADD => {
-                if let Some(mut a) = show_edit(dlg, None, a11y, palette) {
+                if let Some(mut a) = show_edit(dlg, None, a11y, palette, signatures) {
                     if state.borrow().working.is_empty() {
                         state.borrow_mut().active_id = Some(a.id.clone());
                     }
@@ -456,7 +461,8 @@ fn run_account_manager_loop(
             r if r == ID_EDIT => {
                 if let Some(idx) = get_selected(list) {
                     let existing = state.borrow().working[idx].clone();
-                    if let Some(mut u) = show_edit(dlg, Some(&existing), a11y, palette) {
+                    if let Some(mut u) = show_edit(dlg, Some(&existing), a11y, palette, signatures)
+                    {
                         // Run OAuth if needed and no tokens yet
                         if u.use_oauth && u.oauth_access_token.is_empty() {
                             match run_oauth_flow(&mut u) {
@@ -883,6 +889,8 @@ struct IdentityFields {
     sender_name: TextCtrl,
     email_label: StaticText,
     email: TextCtrl,
+    signature_label: StaticText,
+    signature: Choice,
 }
 
 impl IdentityFields {
@@ -893,6 +901,8 @@ impl IdentityFields {
         self.sender_name.show(visible);
         self.email_label.show(visible);
         self.email.show(visible);
+        self.signature_label.show(visible);
+        self.signature.show(visible);
     }
 }
 
@@ -967,6 +977,100 @@ impl Page2Shell {
         self.directory_base_label.show(visible);
         self.directory_base.show(visible);
     }
+}
+
+/// The label on the account's signature choice. F, because every letter of
+/// "Signature" is taken on this dialog, and "Si&gnature" would have claimed
+/// the G of "&Get an app password in your browser" (12-09, premise 4).
+const SIGNATURE_FOR_THIS_ACCOUNT: &str = "Signature &for this account:";
+
+/// What the signature choice does, on the control for whoever tabs to it.
+const WHAT_THE_SIGNATURE_CHOICE_DOES: &str = "Used for messages sent from this account. The \
+     Signature Manager can choose it too, and sets the default";
+
+/// The words the signature choice's first entry opens with, whichever
+/// default there is.
+const USE_THE_DEFAULT: &str = "Use the default";
+
+/// The signatures an account's dialog offers, and which one the account has
+/// (#43).
+///
+/// One set for every account: the first entry is the default, whichever it
+/// is, and then every signature by name. What is chosen is written through
+/// the store's `assign`, the same call the Signature Manager makes, so each
+/// shows what the other chose.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignatureChoices {
+    /// Every signature, as its id and its name, in the order offered.
+    pub every: Vec<(String, String)>,
+    /// The default's name, when one is set.
+    pub default_name: Option<String>,
+    /// The signature assigned to this account, if one is.
+    pub assigned: Option<String>,
+}
+
+impl SignatureChoices {
+    /// What the store holds for an account, or for a new one with nothing
+    /// assigned yet.
+    pub fn read(
+        cache: &crate::data::MessageCache,
+        account_id: Option<&str>,
+    ) -> crate::common::Result<Self> {
+        let every = cache.get_every_signature()?;
+        Ok(SignatureChoices {
+            default_name: every
+                .iter()
+                .find(|signature| signature.is_default)
+                .map(|signature| signature.name.clone()),
+            assigned: match account_id {
+                Some(account_id) => cache.assignment_for(account_id)?,
+                None => None,
+            },
+            every: every
+                .into_iter()
+                .map(|signature| (signature.id, signature.name))
+                .collect(),
+        })
+    }
+
+    /// The entries the choice lists, the default first.
+    pub fn entries(&self) -> Vec<String> {
+        let the_default = match &self.default_name {
+            Some(name) => format!("{USE_THE_DEFAULT}: {name}"),
+            None => format!("{USE_THE_DEFAULT} (none is set)"),
+        };
+        std::iter::once(the_default)
+            .chain(self.every.iter().map(|(_, name)| name.clone()))
+            .collect()
+    }
+
+    /// Where the choice opens: on the assigned signature, or on the default.
+    fn opens_at(&self) -> u32 {
+        self.assigned
+            .as_ref()
+            .and_then(|assigned| self.every.iter().position(|(id, _)| id == assigned))
+            .map_or(0, |at| at as u32 + 1)
+    }
+
+    /// The signature a selection names, or `None` for the default.
+    pub fn chosen(&self, selection: Option<u32>) -> Option<&str> {
+        let at = selection?.checked_sub(1)? as usize;
+        self.every.get(at).map(|(id, _)| id.as_str())
+    }
+}
+
+/// Write down the signature the dialog chose for an account, through the one
+/// writer the Signature Manager uses as well.
+pub fn keep_the_signature_choice(
+    cache: &crate::data::MessageCache,
+    account_id: &str,
+    widgets: &AccountEditWidgets,
+    choices: &SignatureChoices,
+) -> crate::common::Result<()> {
+    cache.assign(
+        account_id,
+        choices.chosen(widgets.signature_choice.get_selection()),
+    )
 }
 
 /// What the step heading reads on each page.
@@ -1120,6 +1224,8 @@ pub struct AccountEditWidgets {
     pub name_f: TextCtrl,
     pub sender_name_f: TextCtrl,
     pub email_f: TextCtrl,
+    /// Which signature this account signs with, the default first (#43).
+    pub signature_choice: Choice,
     pub protocol_choice: Choice,
     pub imap_f: TextCtrl,
     pub imap_port_f: TextCtrl,
@@ -1272,8 +1378,22 @@ fn show_edit(
     existing: Option<&Account>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
+    signatures: Option<&crate::data::MessageCache>,
 ) -> Option<Account> {
-    let w = build_account_edit_dialog(parent, existing, a11y, palette);
+    // What the signature choice offers, read once. Written back only when it
+    // could be read: a choice built on nothing would write "the default" over
+    // whatever this account had.
+    let choices = signatures.and_then(|cache| {
+        SignatureChoices::read(cache, existing.map(|a| a.id.as_str()))
+            .inspect_err(|e| tracing::warn!("The signatures could not be read: {e}"))
+            .ok()
+            .map(|choices| (cache, choices))
+    });
+    let offered = choices
+        .as_ref()
+        .map(|(_, choices)| choices.clone())
+        .unwrap_or_default();
+    let w = build_account_edit_dialog(parent, existing, a11y, palette, &offered);
     if w.dialog.show_modal() == ID_OK {
         // The spin control's range starts at one, so nothing is lost.
         let interval = w.interval_f.value().unsigned_abs();
@@ -1337,6 +1457,18 @@ fn show_edit(
                 Priority::High,
             );
         }
+        if let Some((cache, choices)) = &choices
+            && let Err(why) = keep_the_signature_choice(cache, &id, &w, choices)
+        {
+            let _ = a11y.announce(
+                &format!(
+                    "This account's signature could not be saved, so it signs as it did \
+                     before you opened this page. Everything else on this page was kept. \
+                     ({why})"
+                ),
+                Priority::High,
+            );
+        }
 
         Some(Account {
             id,
@@ -1390,11 +1522,16 @@ fn show_edit(
 /// accessibility scan opens this editor on the main frame with no manager
 /// behind it, since one scan is one window. Nothing here reads the parent
 /// beyond handing it to the dialog builder.
+///
+/// `signatures` is what the signature choice on the first page offers,
+/// read by [`SignatureChoices::read`]; a caller with no store hands the
+/// default, which offers the default alone.
 pub fn build_account_edit_dialog(
     parent: &dyn WxWidget,
     existing: Option<&Account>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
+    signatures: &SignatureChoices,
 ) -> AccountEditWidgets {
     let title = if existing.is_some() {
         "Edit Account"
@@ -1543,6 +1680,26 @@ pub fn build_account_edit_dialog(
     // box starts empty, which is what every message sent before it existed
     // carried.
     let (sender_name_label, sender_name_f) = tf("The na&me people see when your mail arrives:", "");
+    // Beside the name people see, the other thing on this page a recipient
+    // reads (#43). The Signature Manager offers the same choice and writes
+    // the same stored assignment, so each shows what the other chose.
+    let (signature_label, signature_choice) = {
+        let l = StaticText::builder(&dlg)
+            .with_label(SIGNATURE_FOR_THIS_ACCOUNT)
+            .build();
+        let c = Choice::builder(&dlg)
+            .with_choices(signatures.entries())
+            .with_selection(Some(signatures.opens_at()))
+            .build();
+        set_accessible_name_and_description(
+            &c,
+            &name_from_label(SIGNATURE_FOR_THIS_ACCOUNT),
+            WHAT_THE_SIGNATURE_CHOICE_DOES,
+        );
+        fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+        fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        (l, c)
+    };
     let identity_fields = IdentityFields {
         name_label,
         name: name_f,
@@ -1550,6 +1707,8 @@ pub fn build_account_edit_dialog(
         sender_name: sender_name_f,
         email_label,
         email: email_f,
+        signature_label,
+        signature: signature_choice,
     };
 
     // Auth hint: shown on the connection page, tells the person what will
@@ -1839,6 +1998,7 @@ pub fn build_account_edit_dialog(
         name_f,
         sender_name_f,
         email_f,
+        signature_choice,
         protocol_choice,
         imap_f,
         imap_port_f,
