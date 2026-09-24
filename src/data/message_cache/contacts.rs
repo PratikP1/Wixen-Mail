@@ -98,9 +98,9 @@ impl MessageCache {
              (id, account_id, name, email, phone, company, job_title, website, address, birthday,
               avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at,
               nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-              pending, given_name, family_name)
+              pending, given_name, family_name, name_prefix, middle_name, name_suffix)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
+                    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)
              ON CONFLICT(id) DO UPDATE SET
                 account_id = excluded.account_id,
                 name = excluded.name,
@@ -128,7 +128,10 @@ impl MessageCache {
                 custom_fields_json = excluded.custom_fields_json,
                 pending = excluded.pending,
                 given_name = excluded.given_name,
-                family_name = excluded.family_name",
+                family_name = excluded.family_name,
+                name_prefix = excluded.name_prefix,
+                middle_name = excluded.middle_name,
+                name_suffix = excluded.name_suffix",
             params![
                 &contact.id, &contact.account_id, &contact.name, &contact.email,
                 &contact.phone, &contact.company,
@@ -140,6 +143,7 @@ impl MessageCache {
                 &contact.emails_json, &contact.phones_json, &contact.addresses_json,
                 &contact.custom_fields_json, &contact.pending,
                 &contact.given_name, &contact.family_name,
+                &contact.name_prefix, &contact.middle_name, &contact.name_suffix,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
 
@@ -244,7 +248,7 @@ impl MessageCache {
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending, given_name, family_name
+                    pending, given_name, family_name, name_prefix, middle_name, name_suffix
              FROM contacts
              WHERE account_id = ?1
              ORDER BY favorite DESC, name ASC"
@@ -289,9 +293,9 @@ impl MessageCache {
             pending: row.get(25)?,
             given_name: row.get(26)?,
             family_name: row.get(27)?,
-            name_prefix: None,
-            middle_name: None,
-            name_suffix: None,
+            name_prefix: row.get(28)?,
+            middle_name: row.get(29)?,
+            name_suffix: row.get(30)?,
             known_to: Vec::new(),
         })
     }
@@ -308,7 +312,7 @@ impl MessageCache {
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending, given_name, family_name
+                    pending, given_name, family_name, name_prefix, middle_name, name_suffix
              FROM contacts
              WHERE account_id = ?1
                AND (
@@ -572,6 +576,9 @@ impl MessageCache {
             },
             given_name: from_card.given_name.or_else(|| held.given_name.clone()),
             family_name: from_card.family_name.or_else(|| held.family_name.clone()),
+            name_prefix: from_card.name_prefix.or_else(|| held.name_prefix.clone()),
+            middle_name: from_card.middle_name.or_else(|| held.middle_name.clone()),
+            name_suffix: from_card.name_suffix.or_else(|| held.name_suffix.clone()),
             phone: from_card.phone.or_else(|| held.phone.clone()),
             company: from_card.company.or_else(|| held.company.clone()),
             job_title: from_card.job_title.or_else(|| held.job_title.clone()),
@@ -789,11 +796,13 @@ impl MessageCache {
             "FN:{}",
             Self::escape_vcard_text(&contact.name)
         )));
-        // The parts of the name this application actually holds, in the
-        // five fields RFC 2426 gives them, with the three it holds nothing
-        // for left empty. Nothing is split out of the whole name to fill
-        // them: splitting sends "Grace Brewster Murray Hopper" out with
-        // the wrong given name and brings "van der Berg" back as "Berg".
+        // The five parts of the name in the five fields RFC 2426 gives
+        // them: family, given, additional (the middle name), prefix and
+        // suffix, each left empty when nobody recorded it. Nothing is split
+        // out of the whole name to fill them: splitting sends "Grace
+        // Brewster Murray Hopper" out with the wrong given name and brings
+        // "van der Berg" back as "Berg". The contact editor offers a guess
+        // the person can correct before saving; this writes what was saved.
         //
         // Written for every contact, even one with no parts recorded,
         // because a vCard 3.0 card without N is malformed and other
@@ -803,9 +812,9 @@ impl MessageCache {
             Self::structured_value(&[
                 contact.family_name.as_deref().unwrap_or_default(),
                 contact.given_name.as_deref().unwrap_or_default(),
-                "",
-                "",
-                "",
+                contact.middle_name.as_deref().unwrap_or_default(),
+                contact.name_prefix.as_deref().unwrap_or_default(),
+                contact.name_suffix.as_deref().unwrap_or_default(),
             ])
         )));
         if let Some(ref nick) = contact.nickname {
@@ -1439,6 +1448,9 @@ impl MessageCache {
         let mut nickname = None;
         let mut given_name = None;
         let mut family_name = None;
+        let mut name_prefix = None;
+        let mut middle_name = None;
+        let mut name_suffix = None;
         let mut department = None;
         let mut relationship = None;
         // Collect multi-value entries
@@ -1451,14 +1463,15 @@ impl MessageCache {
             if let Some((_, value)) = Self::vcard_named(&line, "FN") {
                 name = Self::unescape_vcard_text(value.trim());
             } else if let Some((_, value)) = Self::vcard_named(&line, "N") {
-                // The two parts this application holds, taken from the two
-                // fields that hold them and nowhere else. The three fields
-                // after them are an additional name, a prefix and a suffix,
-                // and there is nowhere here to keep any of them, so they are
-                // read past rather than folded into something else.
+                // Each part from the field that holds it and nowhere else:
+                // family, given, additional (the middle name), prefix and
+                // suffix, in RFC 2426's order.
                 let parts = Self::structured_parts(value.trim());
                 family_name = Self::a_field_that_was_filled_in(parts.first());
                 given_name = Self::a_field_that_was_filled_in(parts.get(1));
+                middle_name = Self::a_field_that_was_filled_in(parts.get(2));
+                name_prefix = Self::a_field_that_was_filled_in(parts.get(3));
+                name_suffix = Self::a_field_that_was_filled_in(parts.get(4));
             } else if let Some((_, value)) = Self::vcard_named(&line, "NICKNAME") {
                 nickname = Some(Self::unescape_vcard_text(value.trim()));
             } else if let Some((prefix, value)) = Self::vcard_named(&line, "EMAIL") {
@@ -1586,9 +1599,9 @@ impl MessageCache {
             name,
             given_name,
             family_name,
-            name_prefix: None,
-            middle_name: None,
-            name_suffix: None,
+            name_prefix,
+            middle_name,
+            name_suffix,
             email: primary_email,
             phone,
             company,

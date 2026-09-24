@@ -40,11 +40,14 @@ pub struct MsGraphContact {
     pub given_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub surname: String,
-    #[serde(skip)]
+    /// A title before the name, "Dr." or "Mrs". Graph's `title` is this and
+    /// not the job, which is `jobTitle` below.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub middle_name: String,
-    #[serde(skip)]
+    /// What follows the name, "Jr." or "III", which Graph calls `generation`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub generation: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub nick_name: String,

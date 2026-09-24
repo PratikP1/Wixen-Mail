@@ -3224,6 +3224,12 @@ impl MessageCache {
         // parts or somebody saves the contact here.
         self.ensure_column_exists("contacts", "given_name", "TEXT")?;
         self.ensure_column_exists("contacts", "family_name", "TEXT")?;
+        // The other three parts of a name (#40, 12-07), under the same rule
+        // and after the rebuild for the same reason: NULL is the honest answer
+        // for every row written before they existed.
+        self.ensure_column_exists("contacts", "name_prefix", "TEXT")?;
+        self.ensure_column_exists("contacts", "middle_name", "TEXT")?;
+        self.ensure_column_exists("contacts", "name_suffix", "TEXT")?;
         // Before the indexes below and not after them: each rebuild drops its
         // table and the indexes over it go with it, and the index list at the
         // end of this function is what puts those back.

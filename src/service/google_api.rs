@@ -82,11 +82,14 @@ pub struct GoogleName {
     pub given_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub family_name: String,
-    #[serde(skip)]
+    /// A title before the name, "Dr." or "Mrs", which People calls
+    /// `honorificPrefix`. Left out when empty, like the two parts above.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub honorific_prefix: String,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub middle_name: String,
-    #[serde(skip)]
+    /// What follows the name, "Jr." or "PhD", People's `honorificSuffix`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub honorific_suffix: String,
     /// The whole name on one line, which is the only whole-name field Google
     /// will accept a change to.

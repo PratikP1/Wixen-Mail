@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 267 records have arrived since and have not been through it.
+# 271 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -9711,6 +9711,61 @@ tests_last_seen = [
 name = "a card over what is held carries the card's family_name over a stale one"
 file = "src/data/message_cache/contacts.rs"
 before = """            family_name: from_card.family_name.or_else(|| held.family_name.clone()),
+            name_prefix: from_card.name_prefix.or_else(|| held.name_prefix.clone()),"""
+after = """            name_prefix: from_card.name_prefix.or_else(|| held.name_prefix.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
+]
+
+# The three parts of a name 12-07 added, each on the chain's pattern, so a
+# merge that drops a card's prefix, middle name or suffix is not unguarded.
+# The card over what is held carries all three over stale ones since 12-07.
+[[guard]]
+name = "a card over what is held carries the card's name_prefix over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            name_prefix: from_card.name_prefix.or_else(|| held.name_prefix.clone()),
+            middle_name: from_card.middle_name.or_else(|| held.middle_name.clone()),"""
+after = """            middle_name: from_card.middle_name.or_else(|| held.middle_name.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
+]
+
+[[guard]]
+name = "a card over what is held carries the card's middle_name over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            middle_name: from_card.middle_name.or_else(|| held.middle_name.clone()),
+            name_suffix: from_card.name_suffix.or_else(|| held.name_suffix.clone()),"""
+after = """            name_suffix: from_card.name_suffix.or_else(|| held.name_suffix.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
+]
+
+# ── A card carries all five parts of N (#40, 12-07) ─────────────────────────
+#
+# The break writes N as it was written before 12-07, family and given with the
+# last three fields empty, so a contact's middle name, prefix and suffix never
+# leave for a file or a CardDAV server. The round trip goes red on the three.
+[[guard]]
+name = "a card writes a contact's middle name, prefix and suffix in the last three fields of N"
+file = "src/data/message_cache/contacts.rs"
+before = """                contact.middle_name.as_deref().unwrap_or_default(),
+                contact.name_prefix.as_deref().unwrap_or_default(),
+                contact.name_suffix.as_deref().unwrap_or_default(),"""
+after = """                "",
+                "",
+                "","""
+red = ["data::message_cache::contacts::tests::test_a_contact_written_out_to_a_card_and_read_back_is_the_contact_it_was"]
+tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
+]
+
+[[guard]]
+name = "a card over what is held carries the card's name_suffix over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            name_suffix: from_card.name_suffix.or_else(|| held.name_suffix.clone()),
             phone: from_card.phone.or_else(|| held.phone.clone()),"""
 after = """            phone: from_card.phone.or_else(|| held.phone.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]

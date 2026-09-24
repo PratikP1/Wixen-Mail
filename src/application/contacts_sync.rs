@@ -1382,6 +1382,9 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
         name: remote.name.clone(),
         given_name: remote.given_name.clone(),
         family_name: remote.family_name.clone(),
+        name_prefix: remote.name_prefix.clone(),
+        middle_name: remote.middle_name.clone(),
+        name_suffix: remote.name_suffix.clone(),
         email: remote.email.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
@@ -1424,6 +1427,9 @@ fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> C
         name: remote.name.clone(),
         given_name: remote.given_name.clone(),
         family_name: remote.family_name.clone(),
+        name_prefix: remote.name_prefix.clone(),
+        middle_name: remote.middle_name.clone(),
+        name_suffix: remote.name_suffix.clone(),
         email: remote.email.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
@@ -2893,9 +2899,9 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         },
         given_name: a_recorded_part(person.names.first().map(|n| n.given_name.as_str())),
         family_name: a_recorded_part(person.names.first().map(|n| n.family_name.as_str())),
-        name_prefix: None,
-        middle_name: None,
-        name_suffix: None,
+        name_prefix: a_recorded_part(person.names.first().map(|n| n.honorific_prefix.as_str())),
+        middle_name: a_recorded_part(person.names.first().map(|n| n.middle_name.as_str())),
+        name_suffix: a_recorded_part(person.names.first().map(|n| n.honorific_suffix.as_str())),
         email: primary_email,
         phone,
         company,
@@ -2943,14 +2949,22 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
     let names = if contact.name.is_empty() {
         vec![]
     } else {
-        let recorded_parts = contact.given_name.is_some() || contact.family_name.is_some();
+        let recorded_parts = [
+            &contact.given_name,
+            &contact.family_name,
+            &contact.name_prefix,
+            &contact.middle_name,
+            &contact.name_suffix,
+        ]
+        .iter()
+        .any(|part| part.is_some());
         vec![GoogleName {
             display_name: String::new(),
             given_name: contact.given_name.clone().unwrap_or_default(),
             family_name: contact.family_name.clone().unwrap_or_default(),
-            honorific_prefix: String::new(),
-            middle_name: String::new(),
-            honorific_suffix: String::new(),
+            honorific_prefix: contact.name_prefix.clone().unwrap_or_default(),
+            middle_name: contact.middle_name.clone().unwrap_or_default(),
+            honorific_suffix: contact.name_suffix.clone().unwrap_or_default(),
             unstructured_name: if recorded_parts {
                 String::new()
             } else {
@@ -3183,9 +3197,9 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         },
         given_name: a_recorded_part(Some(ms.given_name.as_str())),
         family_name: a_recorded_part(Some(ms.surname.as_str())),
-        name_prefix: None,
-        middle_name: None,
-        name_suffix: None,
+        name_prefix: a_recorded_part(Some(ms.title.as_str())),
+        middle_name: a_recorded_part(Some(ms.middle_name.as_str())),
+        name_suffix: a_recorded_part(Some(ms.generation.as_str())),
         email: primary_email,
         phone,
         company,
@@ -3278,6 +3292,9 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
         // parts goes out under its display name alone.
         given_name: contact.given_name.clone().unwrap_or_default(),
         surname: contact.family_name.clone().unwrap_or_default(),
+        title: contact.name_prefix.clone().unwrap_or_default(),
+        middle_name: contact.middle_name.clone().unwrap_or_default(),
+        generation: contact.name_suffix.clone().unwrap_or_default(),
         nick_name: contact.nickname.clone().unwrap_or_default(),
         email_addresses,
         home_phones,
