@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 271 records have arrived since and have not been through it.
+# 274 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -9762,6 +9762,62 @@ tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
 
+# ── A guess never writes over a name part somebody typed (T-12-24) ──────────
+#
+# The break lets the guess from the whole name write the family name even
+# when the person typed it, so "van der Berg" typed first becomes "Berg" when
+# "Anna Maria Berg" is typed as the name. Read on the built editor.
+[[guard]]
+name = "a family name somebody typed is not overwritten by the guess from the whole name"
+file = "src/presentation/wx_managers.rs"
+suite = "the_contact_editor_fills_the_name_and_its_parts_from_each_other"
+before = '''                if !self.is_theirs(field) {'''
+after = '''                if !self.is_theirs(field) || field == NameField::Family {'''
+red = [
+    "test_a_family_name_typed_first_is_not_overwritten_by_the_name",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs", tests = 22 },
+]
+
+# ── A birthday with no year is stored as --MM-DD (#40, 12-07) ───────────────
+#
+# The break stores a birthday with no year as the year nought, "0000-03-14",
+# which the sync and the display read as a real date in the year nought
+# rather than as the marker Google's birthdays already use.
+[[guard]]
+name = "a birthday with no year is stored as the marker the sync writes, not the year nought"
+file = "src/presentation/wx_item_form.rs"
+before = '''        Some(year) => as_stored_date(year, month, day),
+        None => format!("{}{month:02}-{day:02}", crate::common::types::YEAR_LEFT_OUT),'''
+after = '''        _ => as_stored_date(year.unwrap_or(0), month, day),'''
+red = [
+    "presentation::wx_item_form::tests::test_a_birthday_with_no_year_is_stored_as_the_marker_the_sync_writes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_item_form.rs", tests = 15 },
+]
+
+# ── A doubted number is kept as typed on the second OK (T-12-25) ────────────
+#
+# The numbering data trails the world's, so a real number can be doubted, and
+# the rule is that nothing refuses one: a second OK keeps it as typed. The
+# break refuses it instead, which is the denial of service T-12-25 names.
+[[guard]]
+name = "a doubted phone number is kept exactly as typed on the second OK, not refused"
+file = "src/presentation/wx_managers.rs"
+suite = "the_contact_editor_fills_the_name_and_its_parts_from_each_other"
+before = '''            Reading::Doubtful { .. } if asked_before => self.an_item(typed, chosen),'''
+after = '''            Reading::Doubtful { .. } if asked_before => PhoneOk::Refuse(typed),'''
+red = [
+    "test_a_doubted_number_is_said_once_and_kept_exactly_as_typed_on_the_second_ok",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs", tests = 22 },
+]
+
 [[guard]]
 name = "a card over what is held carries the card's name_suffix over a stale one"
 file = "src/data/message_cache/contacts.rs"
@@ -14789,7 +14845,7 @@ red = [
     "test_every_check_box_in_a_form_carries_its_own_label",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_item_form.rs", tests = 14 },
+    { file = "src/presentation/wx_item_form.rs", tests = 15 },
     { file = "tests/checkbox_labels.rs", tests = 1 },
 ]
 
@@ -29825,7 +29881,7 @@ red = [
     "test_every_typing_field_carries_its_name_to_a_reader_in_another_process",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_item_form.rs", tests = 14 },
+    { file = "src/presentation/wx_item_form.rs", tests = 15 },
     { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 

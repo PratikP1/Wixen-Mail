@@ -1546,7 +1546,10 @@ pub fn as_stored_date(year: i32, month: u32, day: u32) -> String {
 /// the marker the sync already writes for one with no year, `--MM-DD`, when
 /// it is not.
 pub fn as_stored_birthday(year: Option<i32>, month: u32, day: u32) -> String {
-    as_stored_date(year.unwrap_or(0), month, day)
+    match year {
+        Some(year) => as_stored_date(year, month, day),
+        None => format!("{}{month:02}-{day:02}", crate::common::types::YEAR_LEFT_OUT),
+    }
 }
 
 /// A birthday's controls: a check box saying whether there is one, the three

@@ -9,13 +9,13 @@
 //! something first is said above the ordinary run of outcomes, because it is
 //! the answer to the key just pressed.
 
-use crate::application::contact_names::{SUFFIXES, TITLES};
+use crate::application::contact_names::{self, NameParts, SUFFIXES, TITLES};
 use crate::application::filters::{
     A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, SAY_FIRST_LIMIT,
     a_way_of_matching_compares_against_nothing, the_field_those_words_name,
     the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
-use crate::application::phone_numbers::Region;
+use crate::application::phone_numbers::{self, Reading, Region};
 use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
@@ -1240,6 +1240,151 @@ fn add_panel_combo(
     field
 }
 
+/// One of the six name fields: the whole name and its five parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NameField {
+    Whole,
+    Prefix,
+    Given,
+    Middle,
+    Family,
+    Suffix,
+}
+
+impl NameField {
+    const PARTS: [NameField; 5] = [
+        NameField::Prefix,
+        NameField::Given,
+        NameField::Middle,
+        NameField::Family,
+        NameField::Suffix,
+    ];
+    const ALL: [NameField; 6] = [
+        NameField::Whole,
+        NameField::Prefix,
+        NameField::Given,
+        NameField::Middle,
+        NameField::Family,
+        NameField::Suffix,
+    ];
+
+    fn at(self) -> usize {
+        self as usize
+    }
+}
+
+/// The whole name and its five parts, each filling the other as a first
+/// guess (#40): a whole name typed fills the parts, and parts typed while the
+/// whole name is not the person's compose it.
+///
+/// A field whose words are the person's is never written over: one they
+/// typed in, or one a stored contact opened with, since a stored part was
+/// somebody's decision once. A field emptied by the person is theirs to have
+/// guessed again. Guesses are written with `filling` set, so the text event
+/// each write sends is not taken for typing.
+#[derive(Clone)]
+struct NameFields {
+    whole: TextCtrl,
+    prefix: ComboBox,
+    given: TextCtrl,
+    middle: TextCtrl,
+    family: TextCtrl,
+    suffix: ComboBox,
+    theirs: Rc<RefCell<[bool; 6]>>,
+    filling: Rc<std::cell::Cell<bool>>,
+}
+
+impl NameFields {
+    fn text(&self, field: NameField) -> String {
+        match field {
+            NameField::Whole => self.whole.get_value(),
+            NameField::Prefix => self.prefix.get_value(),
+            NameField::Given => self.given.get_value(),
+            NameField::Middle => self.middle.get_value(),
+            NameField::Family => self.family.get_value(),
+            NameField::Suffix => self.suffix.get_value(),
+        }
+    }
+
+    fn write(&self, field: NameField, text: &str) {
+        if self.text(field) == text {
+            return;
+        }
+        self.filling.set(true);
+        match field {
+            NameField::Whole => self.whole.set_value(text),
+            NameField::Prefix => self.prefix.set_value(text),
+            NameField::Given => self.given.set_value(text),
+            NameField::Middle => self.middle.set_value(text),
+            NameField::Family => self.family.set_value(text),
+            NameField::Suffix => self.suffix.set_value(text),
+        }
+        self.filling.set(false);
+    }
+
+    fn is_theirs(&self, field: NameField) -> bool {
+        self.theirs.borrow()[field.at()]
+    }
+
+    /// Take what each field holds now as the person's, which is what opening
+    /// a stored contact does.
+    fn take_what_is_there_as_theirs(&self) {
+        for field in NameField::ALL {
+            self.theirs.borrow_mut()[field.at()] = !self.text(field).trim().is_empty();
+        }
+    }
+
+    /// Called from every name field's text event.
+    fn typed_in(&self, field: NameField) {
+        if self.filling.get() {
+            return;
+        }
+        self.theirs.borrow_mut()[field.at()] = !self.text(field).trim().is_empty();
+        self.fill_the_other_fields(field);
+    }
+
+    fn fill_the_other_fields(&self, which_changed: NameField) {
+        if which_changed == NameField::Whole {
+            let guess = contact_names::guess_parts(&self.text(NameField::Whole));
+            for (field, part) in NameField::PARTS.into_iter().zip([
+                guess.prefix,
+                guess.given,
+                guess.middle,
+                guess.family,
+                guess.suffix,
+            ]) {
+                if !self.is_theirs(field) {
+                    self.write(field, part.as_deref().unwrap_or_default());
+                }
+            }
+        } else if !self.is_theirs(NameField::Whole) {
+            let part = |field| Some(self.text(field)).filter(|text| !text.trim().is_empty());
+            let composed = contact_names::compose(&NameParts {
+                prefix: part(NameField::Prefix),
+                given: part(NameField::Given),
+                middle: part(NameField::Middle),
+                family: part(NameField::Family),
+                suffix: part(NameField::Suffix),
+            });
+            self.write(NameField::Whole, &composed);
+        }
+    }
+
+    /// Listen to all six.
+    fn listen(&self) {
+        let each = |field: NameField| {
+            let fields = self.clone();
+            move |_: wxdragon::event::TextEventData| fields.typed_in(field)
+        };
+        self.whole.on_text_updated(each(NameField::Whole));
+        self.prefix.on_text_updated(each(NameField::Prefix));
+        self.given.on_text_updated(each(NameField::Given));
+        self.middle.on_text_updated(each(NameField::Middle));
+        self.family.on_text_updated(each(NameField::Family));
+        self.suffix.on_text_updated(each(NameField::Suffix));
+    }
+}
+
 /// Add the birthday's row: whether there is one, then the month, the day and
 /// the year in the order this computer reads a date, and whether the year is
 /// known. Each part is named for what it is part of, the way Send Later names
@@ -1607,6 +1752,21 @@ pub fn build_contact_edit_dialog(
         *addrs_data.borrow_mut() = c.addresses.clone();
         *custom_data.borrow_mut() = c.custom_fields.clone();
     }
+
+    // Listened to only after the stored contact is in, and what it opened
+    // with counts as the person's: a guess never writes over a stored part.
+    let names = NameFields {
+        whole: name_f,
+        prefix: prefix_f,
+        given: given_f,
+        middle: middle_f,
+        family: family_f,
+        suffix: suffix_f,
+        theirs: Rc::new(RefCell::new([false; 6])),
+        filling: Rc::new(std::cell::Cell::new(false)),
+    };
+    names.take_what_is_there_as_theirs();
+    names.listen();
 
     refresh_email_list(&email_list, &emails_data.borrow());
     refresh_phone_list(&phone_list, &phones_data.borrow());
@@ -2010,11 +2170,25 @@ fn a_sub_dialog_needs(parent: &Dialog, titled: &str, said: &str) {
 
 /// Why the Add Email Address dialog will not add what was typed, or `None`
 /// when it will.
+///
+/// The shape is 11-10.1's rule for a bare address, `name@host.tld`, and
+/// nothing stricter, so a real address the rule did not foresee is let
+/// through rather than refused; a space or a colon, which no address to write
+/// to holds, is refused with it.
 pub fn an_address_refusal(typed: &str) -> Option<String> {
-    typed
-        .trim()
-        .is_empty()
-        .then(|| "An email address is needed before this can be added.".to_string())
+    let address = typed.trim();
+    if address.is_empty() {
+        return Some("An email address is needed before this can be added.".to_string());
+    }
+    let has_the_shape = address.contains('@')
+        && !address.contains(|c: char| c.is_whitespace() || c == ':')
+        && crate::application::links_in_text::is_an_address(address);
+    (!has_the_shape).then(|| {
+        format!(
+            "The address {address} is not the shape of an email address. \
+             An email address is written like name@example.com."
+        )
+    })
 }
 
 pub fn build_email_sub_dialog(
@@ -2310,25 +2484,66 @@ impl PhoneAsker {
         if typed.trim().is_empty() {
             return PhoneOk::Refuse("A phone number is needed before this can be added.".into());
         }
-        *self.doubted.borrow_mut() = None;
+        let chosen = self.chosen_country();
+        let asked = Doubted {
+            typed: typed.clone(),
+            country: chosen,
+        };
+        let asked_before = self.doubted.borrow_mut().take() == Some(asked.clone());
+        match phone_numbers::read(&typed, chosen) {
+            Reading::Valid { stored, region } => self.an_item(stored, region),
+            Reading::NoDigit => PhoneOk::Refuse(phone_numbers::no_digit_sentence(&typed)),
+            // The second OK on the same number and country: kept exactly as
+            // typed, under the country chosen beside it.
+            Reading::Doubtful { .. } if asked_before => self.an_item(typed, chosen),
+            Reading::Doubtful { doubt, region } => {
+                let judged_by = region.or(chosen);
+                let country = judged_by.map(|region| the_name_of(region.as_str()));
+                *self.doubted.borrow_mut() = Some(asked);
+                PhoneOk::Doubt(phone_numbers::sentence(&typed, doubt, country.as_deref()))
+            }
+        }
+    }
+
+    fn an_item(&self, number: String, country: Option<Region>) -> PhoneOk {
         PhoneOk::Add(PhoneItem {
             label: get_choice_string(&self.type_choice).unwrap_or_else(|| "Other".to_string()),
-            number: typed,
-            country: None,
+            number,
+            country: country.map(|region| region.as_str().to_string()),
         })
     }
+}
+
+/// A region's name as Windows shows it, or its code for the few Windows
+/// gives no name (Ascension, Western Sahara and Tristan da Cunha on
+/// 2026-09-23).
+fn the_name_of(code: &str) -> String {
+    crate::service::this_machine::region_name(code).unwrap_or_else(|| code.to_string())
 }
 
 /// "No country", then every region the numbering data knows, each shown as
 /// its name in the language Windows shows and its calling code, sorted by
 /// what is shown.
 fn the_countries_offered() -> Vec<(Option<Region>, String)> {
-    vec![(None, "No country".to_string())]
+    let mut regions: Vec<(Option<Region>, String)> = phone_numbers::every_region()
+        .into_iter()
+        .map(|(region, code)| {
+            (
+                Some(region),
+                format!("{} (+{code})", the_name_of(region.as_str())),
+            )
+        })
+        .collect();
+    regions.sort_by_key(|(_, shown)| shown.to_lowercase());
+    std::iter::once((None, "No country".to_string()))
+        .chain(regions)
+        .collect()
 }
 
-/// Where the person says they are, when the numbering data knows it.
+/// Where the person says they are, the setting Windows calls Country or
+/// region, when the numbering data knows it.
 fn the_home_country() -> Option<Region> {
-    None
+    crate::service::this_machine::home_region().and_then(|code| Region::from_code(&code))
 }
 
 fn show_phone_sub_dialog(

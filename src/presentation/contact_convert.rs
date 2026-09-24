@@ -83,7 +83,7 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
         .map(|p| PhoneItem {
             label: p.label,
             number: p.number,
-            country: None,
+            country: p.country,
         })
         .collect();
     if phones.is_empty()
@@ -155,9 +155,9 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
         name: stored.name.clone(),
         given_name,
         family_name,
-        name_prefix: String::new(),
-        middle_name: String::new(),
-        name_suffix: String::new(),
+        name_prefix: stored.name_prefix.clone().unwrap_or_default(),
+        middle_name: stored.middle_name.clone().unwrap_or_default(),
+        name_suffix: stored.name_suffix.clone().unwrap_or_default(),
         nickname: stored.nickname.clone().unwrap_or_default(),
         company: stored.company.clone().unwrap_or_default(),
         department: stored.department.clone().unwrap_or_default(),
@@ -250,7 +250,7 @@ pub fn to_stored(
         .map(|p| PhoneEntry {
             label: p.label.clone(),
             number: p.number.clone(),
-            country: None,
+            country: p.country.clone(),
         })
         .collect();
     let addresses: Vec<AddressEntry> = editor
@@ -285,9 +285,9 @@ pub fn to_stored(
         // this is where a person's correction is taken at its word.
         given_name: blank_to_none(&editor.given_name),
         family_name: blank_to_none(&editor.family_name),
-        name_prefix: None,
-        middle_name: None,
-        name_suffix: None,
+        name_prefix: blank_to_none(&editor.name_prefix),
+        middle_name: blank_to_none(&editor.middle_name),
+        name_suffix: blank_to_none(&editor.name_suffix),
         // The primary is the first of the list, which is the order the editor
         // shows and the user can rearrange.
         email: emails

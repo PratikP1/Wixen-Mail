@@ -678,7 +678,9 @@ fn test_a_stored_contacts_parts_are_not_guessed_over_when_its_name_changes() {
 
     assert_eq!(parts.given, "Grace", "{parts:?}");
     assert_eq!(parts.family, "van der Berg", "{parts:?}");
-    assert_eq!(parts.middle, "", "{parts:?}");
+    // The one part the contact was stored without is filled from the guess,
+    // since nobody's words were in it.
+    assert_eq!(parts.middle, "Anne", "{parts:?}");
 }
 
 // ── The birthday ──────────────────────────────────────────────────────────
