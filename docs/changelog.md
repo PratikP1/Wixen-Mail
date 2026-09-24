@@ -1432,7 +1432,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   listener still cannot read an address, so a navigation the listener does not catch, a live
   page's own script moving somewhere for instance, is stopped and logged rather than routed;
   the main window's title does not change for a page in the preview pane; nobody has heard
-  any of it in a screen reader, and the NVDA case has not yet run.
+  any of it in a screen reader, and the NVDA case has not yet run. Since 2026-09-23 it has:
+  NVDA run 35876075636 on pull request #94 passed the case, with the link going where the
+  setting says and the keyboard back in the page after the return.
 - **A rule can change how a row is announced: a phrase said first, a sound once per check, and
   the labels as a column.** From the Outlook gap report of 2026-08-27 and the audit of
   2026-09-15 (#62): conditional formatting in the sense that matters to somebody working by

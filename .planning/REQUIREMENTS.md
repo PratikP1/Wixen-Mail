@@ -3459,7 +3459,7 @@ seven groups.
     hold "Choose an event first." after Edit Event and again after Delete Event, "Syncing the
     calendar..." after Sync, and "Choose a filter first." after Delete in the filter manager.
     Ledger 576 is fixed.
-- [ ] **FOUND-23**: The commit gate spends only what a change earns and says where its time
+- [x] **FOUND-23**: The commit gate spends only what a change earns and says where its time
   went, and the whole suite runs once a phase: a merge into `main` runs what the branch's
   whole diff earns, not the whole suite; the closing plan of each phase runs the whole
   suite, the release build and the audit once; the risk of that is written where the gate
@@ -3560,13 +3560,22 @@ seven groups.
     `check.test.sh` cases and `test_the_measurements_reading_is_found_in_the_documents_array`
     with its two siblings; ledger 584 is the check the premise rule lacks. This plan's own
     merge is the first under the new path; its mode line is in the report that closed it.
-  - [D] The closing plan of phase 12 runs `scripts/check.sh all` once, by hand, before its
+  - [x] [D] The closing plan of phase 12 runs `scripts/check.sh all` once, by hand, before its
     merge, and the phase is not called closed on a red one: a red one is fixed on 12-12's
     own branch as a small red and green pair and the gate run again, not a plan of its own,
     on Pratik's answer of 2026-09-23 (12-12, task 3).
+    **Met 2026-09-24 at `566116d3`**, on branch `12-12-phase-close` with `git rev-list
+    HEAD..main --count` at 0: exit 0 after 516 s, read directly from the run, 8,985 tests
+    passed and none failed, green on its first run, so no pair was needed. Ledger 585 fixed;
+    the row is on `docs/development/measurements.md`. With this line the box is ticked, the
+    other seven carrying 12-03.2's names.
   - [S] Whether moving the full gate to the phase's close lets a break through that the
     merge would have caught is 12-12's full gate, and each phase's after it; what the
     changes saved is read from the stage lines 12-03.2 and the plans after it print.
+    **Phase 12's answer, 2026-09-24:** nothing. The nine merges from 12-03.2 to 12-11 went
+    in without the whole suite, and the whole suite, the release build and the audit then
+    passed on the tree they made, 8,985 tests in 289 s of a 516 s run. One phase is one
+    reading; each later phase's closing gate is the next.
 
 ### All the mail, and what is said while it comes
 
@@ -4729,6 +4738,13 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     three cases in `common::paths` for the erase; and
     `test_the_route_starts_this_program_again_rather_than_opening_the_browser` for the
     spawn, with a record on `wx_app.rs` breaking it back to the browser.
+    **Corrected 2026-09-24 by 12-12's closing read:** the first of those names is not in the
+    tree. 12-02 replaced it in its green commit `a1774d9e`, because it measured the order of
+    names in one file and could not be made right (12-02's summary, deviation 9): the order is
+    held by `presentation::page_window::tests::test_the_profile_name_is_set_before_the_browser_is_built`,
+    and `test_the_page_process_is_the_only_one_that_renames_itself` in
+    `tests/a_separate_window_is_its_own_process.rs` asks what a single file cannot. The tick
+    stands on those two.
   - [S] The three routes under NVDA are his ear's, and the separate window's title, its
     links, its way back and Escape are ledger 568; the accessibility scan's `page-window`
     target runs at the next push of `main`.
@@ -5240,6 +5256,27 @@ in the running program, with three `[D]` lines of its own under EDIT-01.
 Nothing here has met a real provider except through the tester's Gmail account. Each
 requirement's last `[S]` line says what only his ear, his reader, his account, the runner or
 the site can settle; the caveat at the top of this file binds every `[D]` line.
+
+**Read 2026-09-24 by 12-12, the phase's closing read, against `main` at `3791bc9d`.** The
+phase carries fourteen requirements, not the eleven its roadmap line named first: FOUND-20,
+LIST-19, LIST-11, ALPHA-01 to ALPHA-03 and EDIT-01 to EDIT-05, then FOUND-21, FOUND-22 and
+FOUND-23 for the three plans inserted on 2026-09-22 and 2026-09-23. Every name the ticks
+stand on was checked in one pass. The five summaries that carry a coverage block, 12-01 to
+12-03.1, hold 83 refs: 39 are `path#name`, and every one of the 39 names is found as `fn
+<name>` in its file; the other 44 are commands and readings. The summaries from 12-03.2 on
+carry no coverage block, so the pass also read the fourteen requirement blocks here: 30
+backticked `test_` names, each looked for as `fn <name>` over `src/` and `tests/`, and 33
+backticked paths, each looked for on disk. One name was not found,
+`test_the_page_process_names_its_profile_before_it_builds_a_browser` under LIST-19, which
+12-02 replaced in its green commit `a1774d9e` (its summary's deviation 9); LIST-19's line now
+says so. Two paths were not found as written and both resolve:
+`tests/a-link-opens-where-the-setting-says.test.js` under FOUND-20 is under `nvda-tests/`,
+and ALPHA-03's `docs/plans/20260920-pro-licence.md` is the planned name of the file its own
+line records as written at `docs/plans/20260924-pro-licence.md`. Thirteen ticks stand;
+FOUND-23's box waited for its last `[D]` line, 12-12's task 3, and was ticked when that full
+gate came back green at `566116d3`, so all fourteen stand. No `[S]` line was touched but
+FOUND-23's, which gained the gate's answer, and
+the coverage count below, 122, is unchanged because the phase added no requirement.
 
 - [x] **ALPHA-01**: The About dialog names the copyright holders and the licence in words held
   to LICENSE, keeps the full version with the build counter, and links to wixen.app and
@@ -5983,10 +6020,10 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
-| FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567. Corrected 2026-09-23: runs 35839692317 and 35839954840 read the keyboard on the frame after a real activation, so the product half was not cleared by 12-01; 12-03.1 added the handler in `presentation::page_focus`, red first on wx's frame-saved path, and the case's record of the window's own thread, on a third `[D]` line; the run is still ledger 567 and the ear ledger 578 |
+| FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567. Corrected 2026-09-23: runs 35839692317 and 35839954840 read the keyboard on the frame after a real activation, so the product half was not cleared by 12-01; 12-03.1 added the handler in `presentation::page_focus`, red first on wx's frame-saved path, and the case's record of the window's own thread, on a third `[D]` line; the run is still ledger 567 and the ear ledger 578. Corrected 2026-09-24 by 12-12: the run answered green later on 2026-09-23, NVDA run 35876075636 on pull request #94, so ledger 567 is fixed, as the requirement's `[S]` line already says; the ear, ledger 578, stays open |
 | FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
-| FOUND-22 | Phase 12 | Complete, 12-03.1 on 2026-09-23, on both `[D]` lines: `tests/the_nvda_cases_wait_for_words_the_program_says.rs` red on the four stale texts and then green, in the whole-tree list; the two cases corrected. The two cases green on the runner is the `[S]` line, ledger 576 |
-| FOUND-23 | Phase 12 | Pending, 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3 |
+| FOUND-22 | Phase 12 | Complete, 12-03.1 on 2026-09-23, on both `[D]` lines: `tests/the_nvda_cases_wait_for_words_the_program_says.rs` red on the four stale texts and then green, in the whole-tree list; the two cases corrected. The two cases green on the runner is the `[S]` line, ledger 576. Corrected 2026-09-24 by 12-12: NVDA runs 35872797349 and 35876075636 on pull request #94 passed both cases on 2026-09-23, so ledger 576 is fixed, as the requirement's `[S]` line already says |
+| FOUND-23 | Phase 12 | Complete 2026-09-24; until then this row read "Pending": 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3. Complete 2026-09-24: 12-12's full gate at `566116d3`, exit 0 after 516 s with 8,985 tests passed, green on its first run; ledger 585 fixed |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |

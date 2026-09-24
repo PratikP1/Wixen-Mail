@@ -62,6 +62,30 @@ has been driven against a stand-in written for the tests and none of it
 against a mail provider; the account you point it at is the first one it
 meets. The list further down says what nobody has seen it do.
 
+**Between 2026-09-22 and 2026-09-24 the editors, About and the ways to reach
+us changed, and none of it has been heard by anybody yet.** Every number in
+Settings and in the account editor is a spin control: `Up` and `Down` step it,
+it stops at the ends of its range, and the field you type in has the same name
+as its arrows. The contact editor has Prefix, Middle name and Suffix; a whole
+name typed in Name fills the parts, and parts typed with Name empty fill Name,
+never writing over a box you typed in. A contact's birthday is a month, a day
+and a year with a No year box, and a phone number is read against its
+country's numbering plan and saved in the international form. A new event or
+reminder starts at the next block of 15, 30 or 60 minutes, `Up` and `Down` on
+the minutes move by the block and `Left` and `Right` by a minute, and an
+event's end follows its start. Each email account has its own signature, with
+one default for the rest, chosen on the account or in the Signature Manager.
+The Label submenu lists your own labels with the key that applies each, and
+you put them in order in the Label Manager. About names who holds the copyright and
+links to wixen.app and wixen.app/support. Help, Send Feedback, `Ctrl+Shift+F`,
+sends a report you have read from your own account. A link can open in a
+separate Wixen Mail window with nothing in it but the page. Every sentence the
+status bar shows was rewritten to one shape, and a command with nothing chosen
+says one sentence, such as "Choose a message first.", in every window. Coming
+back to the window that shows a conversation as headings puts the keyboard in
+the message. Each of these was proved by tests on a built window, and the list
+further down says what only your ear, your account or a mailbox can settle.
+
 **Everything that writes is experimental.** Sending a message, deleting one,
 moving or copying one to another folder, marking one read on the server, filing
 a copy of what you send in Sent, changing which folders you are subscribed to,
@@ -205,6 +229,18 @@ In rough order of how useful it is to know.
    pictures are there, whether the line about tracking pixels was heard once
    at the top, what a picture with no description was read as, and whether a
    picture inside a link read as the link's words.
+16. **A contact typed whole.** Make a contact and type a full name in Name,
+   such as Grace Brewster Murray Hopper. Say whether you heard the parts fill
+   in, whether the tab reads Prefix, Given name, Middle name, Family name and
+   Suffix in that order, and whether a box you had typed in was left alone.
+17. **A report sent from a real account.** Send one report with Help, Send
+   Feedback, read What will be sent first, and say whether it left your Outbox
+   and whether it came back as undeliverable, which it may until public
+   testing begins.
+18. **An event's time moved by a block.** Open a new event, press `Up` and
+   `Down` on the start's minutes, then `Left` and `Right`, and say what was
+   spoken after each key and whether you could tell the end had moved with
+   the start.
 
 ## What is already known to be missing or unproven
 
@@ -388,6 +424,49 @@ Written down so you do not spend time reporting things already on the list.
   after Enter on the empty first line and after Shift+Enter, and the word after
   a closing star read plain, have not been heard; the steps are on the
   listening page.
+- **Nothing the editors, About and Send Feedback gained between 2026-09-22 and
+  2026-09-24 has been heard.** Each of the following was proved by a test on a
+  built window or a reading of the code, some by the accessibility scan of the
+  running program as well, and by nobody's ear; each names what only your ear,
+  your account or a mailbox can settle. The separate window is the entry on
+  where a link opens, above.
+- **The status bar read on its own.** Every sentence on it now has one shape,
+  and nobody has read the bar by itself with NVDA+End to hear whether a step
+  and an answer are still told apart, whether "Choose an account first." and
+  "Choose a message first." read as the same kind of sentence, and whether
+  "The mail on this computer is not open." is clearer than what it replaced.
+- **Coming back to a conversation shown as headings.** Switching to another
+  program and back, then pressing K or H at once, should find the keyboard in
+  the message; a test sends the window the message Windows sends, and only
+  the NVDA run on a pull request has made a real switch. Nobody has heard it.
+- **About.** The copyright line and the licence sentence read on opening, each
+  link heard as a link with its address, and Enter on a link opening your
+  browser once and leaving About open, have not been heard. Both pages
+  answered 522 when they were last fetched, on 2026-09-23, and are due up by
+  public testing.
+- **Send Feedback.** The categories and the questions that follow them, the
+  five boxes with the log excerpt ticked, the excerpt unticking for a
+  security concern, What will be sent read line by line, and Send's sentence
+  have not been heard. No report from a real account has reached
+  support@wixen.app or security@wixen.app.
+- **Spin controls.** Check Interval said once with its name and its sentence,
+  the value spoken after `Up` and `Down`, and Mark as read after's three
+  entries with the seconds unavailable until a wait is chosen, have not been
+  heard.
+- **The contact editor.** The Basic Info tab in its new order, the parts
+  heard filling after a whole name, the Birthday and No year boxes, an address
+  refused in a sentence naming it, the Country entries and a doubted number's
+  sentence have not been heard. No real Google account, Outlook account or
+  address book server has received a prefix, a middle name or a suffix.
+- **Times in blocks.** The time spoken after each arrow key on an event's or a
+  reminder's minutes, whether the end moving with the start is heard, and the
+  New events last list have not been heard.
+- **Signatures per account.** The Signature Manager's Used by column, the
+  account's Signature for this account choice, the Use for these accounts
+  boxes and "Signature changed to" on a From change have not been heard.
+- **Labels.** The Label submenu's items with their keys, Edit Labels at its
+  end, the Label Manager's Key column, a move said as "Later, 2 of 5." and
+  "There is no label 6" have not been heard.
 - **Notes can now go to a calendar server, and no build has ever sent one to a
   real server.** If you added a calendar by its address, that same server is
   where your notes for that account now go, under the same sign-in. Settings
