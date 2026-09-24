@@ -4477,13 +4477,18 @@ pub fn offers_for(
     this: Option<&SignatureEntry>,
     rows: &[SignatureEntry],
 ) -> Vec<AccountOffer> {
-    let _ = (this, rows);
     accounts
         .iter()
-        .map(|account| AccountOffer {
-            account: account.clone(),
-            uses_this: false,
-            uses_now: None,
+        .map(|account| {
+            let holder = rows.iter().find(|row| row.used_by.contains(account));
+            let uses_this = holder
+                .zip(this)
+                .is_some_and(|(held, this)| held.id == this.id);
+            AccountOffer {
+                account: account.clone(),
+                uses_this,
+                uses_now: holder.filter(|_| !uses_this).map(|held| held.name.clone()),
+            }
         })
         .collect()
 }

@@ -231,8 +231,26 @@ pub fn the_signature_managers_rows(
     cache: &MessageCache,
     accounts: &[wx_managers::SignatureAccount],
 ) -> crate::common::Result<Vec<wx_managers::SignatureEntry>> {
-    let _ = (cache, accounts);
-    Ok(Vec::new())
+    let assigned = accounts
+        .iter()
+        .map(|account| Ok((account, cache.assignment_for(&account.id)?)))
+        .collect::<crate::common::Result<Vec<_>>>()?;
+    Ok(cache
+        .get_every_signature()?
+        .into_iter()
+        .map(|signature| wx_managers::SignatureEntry {
+            used_by: assigned
+                .iter()
+                .filter(|(_, uses)| uses.as_deref() == Some(signature.id.as_str()))
+                .map(|(account, _)| (*account).clone())
+                .collect(),
+            id: signature.id,
+            name: signature.name,
+            content_plain: signature.content_plain,
+            content_html: signature.content_html,
+            is_default: signature.is_default,
+        })
+        .collect())
 }
 
 /// Write back what the signature manager returned, and name anything that

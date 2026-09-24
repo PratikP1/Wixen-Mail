@@ -348,8 +348,15 @@ fn test_a_database_that_ran_the_older_pass_still_gets_this_one() {
     assert_eq!(the_snippet_of(&reopened, id), THE_PARCEL_SNIPPET);
     drop(reopened);
     let conn = the_database_under(dir.path());
+    // The snippet passes' rows, by their names: other once-only passes keep
+    // rows here too, the signatures' since 12-09 (#43), and a count of every
+    // row is a count of how many passes exist rather than of these two.
     let rows: i64 = conn
-        .query_row("SELECT COUNT(*) FROM work_done_once", [], |row| row.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM work_done_once WHERE name LIKE 'snippets %'",
+            [],
+            |row| row.get(0),
+        )
         .expect("the markers counted");
     assert_eq!(rows, 2, "the older pass's row was not left where it was");
 }

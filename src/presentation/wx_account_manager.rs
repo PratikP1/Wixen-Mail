@@ -1016,8 +1016,21 @@ impl SignatureChoices {
         cache: &crate::data::MessageCache,
         account_id: Option<&str>,
     ) -> crate::common::Result<Self> {
-        let _ = (cache, account_id);
-        Ok(Self::default())
+        let every = cache.get_every_signature()?;
+        Ok(SignatureChoices {
+            default_name: every
+                .iter()
+                .find(|signature| signature.is_default)
+                .map(|signature| signature.name.clone()),
+            assigned: match account_id {
+                Some(account_id) => cache.assignment_for(account_id)?,
+                None => None,
+            },
+            every: every
+                .into_iter()
+                .map(|signature| (signature.id, signature.name))
+                .collect(),
+        })
     }
 
     /// The entries the choice lists, the default first.
@@ -1054,8 +1067,10 @@ pub fn keep_the_signature_choice(
     widgets: &AccountEditWidgets,
     choices: &SignatureChoices,
 ) -> crate::common::Result<()> {
-    let _ = (cache, account_id, widgets, choices);
-    Ok(())
+    cache.assign(
+        account_id,
+        choices.chosen(widgets.signature_choice.get_selection()),
+    )
 }
 
 /// What the step heading reads on each page.

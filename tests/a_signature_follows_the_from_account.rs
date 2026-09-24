@@ -78,6 +78,69 @@ unsafe extern "system" {
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
 }
 
+/// commctrl.h: `LVM_FIRST + 115`.
+const LVM_GETITEMTEXTW: u32 = 0x1000 + 115;
+
+/// commctrl.h's `LVITEMW`, of which `LVM_GETITEMTEXTW` reads the sub-item,
+/// the buffer and its length.
+#[repr(C)]
+struct ListViewItem {
+    mask: u32,
+    item: i32,
+    sub_item: i32,
+    state: u32,
+    state_mask: u32,
+    text: *mut u16,
+    text_max: i32,
+    image: i32,
+    param: isize,
+    indent: i32,
+    group_id: i32,
+    columns: u32,
+    column_list: *mut u32,
+    column_formats: *mut i32,
+    group: i32,
+}
+
+/// One cell of a live list, read from the list itself.
+///
+/// Not through `ListCtrl::get_item_text`, which loses the last character of
+/// every cell and puts a NUL in its place (`wxdragon-0.9.17`,
+/// `src/widgets/list_ctrl.rs:429`, measured in
+/// `tests/manager_dialog_labels.rs`). This reading is about whole words, "Work"
+/// against "Work, Home", so the cell is read whole.
+fn cell(list: &ListCtrl, row: i64, column: i32) -> String {
+    let mut buffer = [0u16; 512];
+    let mut item = ListViewItem {
+        mask: 0,
+        item: row as i32,
+        sub_item: column,
+        state: 0,
+        state_mask: 0,
+        text: buffer.as_mut_ptr(),
+        text_max: buffer.len() as i32,
+        image: 0,
+        param: 0,
+        indent: 0,
+        group_id: 0,
+        columns: 0,
+        column_list: std::ptr::null_mut(),
+        column_formats: std::ptr::null_mut(),
+        group: 0,
+    };
+    // SAFETY: a live list on this thread; the item and its buffer outlive the
+    // call, and the length handed over is the buffer's.
+    let length = unsafe {
+        SendMessageW(
+            list.get_handle() as isize,
+            LVM_GETITEMTEXTW,
+            row as usize,
+            &mut item as *mut ListViewItem as isize,
+        )
+    };
+    String::from_utf16_lossy(&buffer[..length.clamp(0, buffer.len() as isize) as usize])
+}
+
 // ── The store ─────────────────────────────────────────────────────────────
 
 fn the_accounts() -> Vec<SignatureAccount> {
@@ -157,7 +220,7 @@ fn the_manager_as_shown(frame: &Frame, cache: &MessageCache) -> Result<String, S
     let rows: Vec<String> = (0..manager.list.get_item_count() as i64)
         .map(|row| {
             (0..3)
-                .map(|column| manager.list.get_item_text(row, column))
+                .map(|column| cell(&manager.list, row, column))
                 .collect::<Vec<_>>()
                 .join(" | ")
         })

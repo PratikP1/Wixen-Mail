@@ -320,8 +320,98 @@ pub fn follow_the_from_account(
     opened_with: usize,
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
 ) {
-    let _ = (account_choice, body_editor, signatures, opened_with, a11y);
+    let signed_by = std::cell::Cell::new(opened_with);
+    account_choice.on_selection_changed(move |_| {
+        let Some(next) = account_choice.get_selection().map(|at| at as usize) else {
+            return;
+        };
+        let was = signatures
+            .get(signed_by.replace(next))
+            .map_or("", |signed| signed.text.as_str());
+        let Some(becomes) = signatures.get(next) else {
+            return;
+        };
+        if let Some(said) = swap_the_signature(&body_editor, was, becomes) {
+            let _ = a11y.announce(
+                &said,
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+        }
+    });
 }
+
+/// Replace the last account's signature block in the page with the next
+/// one's, where it still stands as it went in, and the sentence saying so.
+/// `None`, and the page untouched, where it does not.
+///
+/// The block is looked for above the quoted original only, since that is
+/// where the composer puts it, and in both the ways it goes in: as markup
+/// above a quote written as a page, and as text in a message written from
+/// nothing. The rule is `application::signatures::whether_to_swap`; the
+/// message that results is sanitised before it goes back in, the same as
+/// anything else put into the page.
+fn swap_the_signature(body_editor: &WebView, was: &str, becomes: &SignatureFor) -> Option<String> {
+    use crate::application::signatures::{Swap, whether_to_swap};
+
+    let body = editor_document::plain_from_editor(
+        &body_editor.run_script(&editor_document::read_body_script())?,
+    );
+    let (above, quoted) = the_part_above_the_quote(&body);
+    let blocks: [fn(&str) -> String; 2] = [signature_block_as_markup, signature_block_as_text];
+    let swapped = blocks.into_iter().find_map(|block| {
+        match whether_to_swap(above, &block(was), &block(&becomes.text)) {
+            Swap::ReplaceBlock(swapped) => Some(swapped),
+            Swap::LeaveAlone => None,
+        }
+    })?;
+    let _ = body_editor.run_script(&editor_document::replace_body_script(
+        &HtmlRenderer::new().sanitize_html(&format!("{swapped}{quoted}")),
+    ));
+    Some(match becomes.text.trim().is_empty() {
+        true => "Signature taken out: this account has none".to_string(),
+        false => format!("Signature changed to {}", becomes.name),
+    })
+}
+
+/// A message's markup cut where its quoted original starts, if it quotes one.
+fn the_part_above_the_quote(body: &str) -> (&str, &str) {
+    let starts = [A_REPLY_QUOTES_UNDER, A_FORWARD_QUOTES_UNDER]
+        .iter()
+        .filter_map(|marker| body.find(marker))
+        .min()
+        .unwrap_or(body.len());
+    body.split_at(starts)
+}
+
+/// The block a signature is in a page as, when it went in as markup above a
+/// quote: the separator and the signature, without the empty line above them
+/// that somebody types on. Nothing for no signature.
+fn signature_block_as_markup(signature: &str) -> String {
+    if signature.trim().is_empty() {
+        return String::new();
+    }
+    HtmlRenderer::new().sanitize_html(&format!(
+        "{THE_SEPARATOR_AS_MARKUP}{}",
+        crate::application::long_text::as_markup(signature.trim_end())
+    ))
+}
+
+/// The block a signature is in a page as, when it went in as text, in a
+/// message written from nothing. Nothing for no signature.
+fn signature_block_as_text(signature: &str) -> String {
+    if signature.trim().is_empty() {
+        return String::new();
+    }
+    editor_document::escaped_plain_text(&format!(
+        "{}\n{}",
+        crate::application::sign_off::DELIMITER,
+        signature.trim_end()
+    ))
+}
+
+/// The separator line as markup, its trailing space a non-breaking one; see
+/// [`with_signature`].
+const THE_SEPARATOR_AS_MARKUP: &str = "<div>--&nbsp;</div>";
 
 /// Put the signature above whatever is being quoted.
 ///
@@ -371,7 +461,7 @@ pub fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
 /// still safe and a script pasted in from a web page still does not survive.
 fn signature_markup(signature: &str) -> String {
     let written = crate::application::long_text::as_markup(signature.trim_end());
-    format!("<div><br></div><div>--&nbsp;</div>{written}")
+    format!("<div><br></div>{THE_SEPARATOR_AS_MARKUP}{written}")
 }
 
 /// The conversation this window is answering, if it is answering one.

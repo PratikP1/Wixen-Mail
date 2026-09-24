@@ -93,11 +93,6 @@ impl MessageCache {
         self.one_signature_where("id = ?1", params![signature_id])
     }
 
-    /// Get the default signature for an account
-    pub fn get_default_signature(&self, account_id: &str) -> Result<Option<Signature>> {
-        self.one_signature_where("account_id = ?1 AND is_default = 1", params![account_id])
-    }
-
     fn one_signature_where(
         &self,
         clause: &str,
@@ -503,7 +498,7 @@ mod tests {
             .unwrap();
         assert_eq!(sigs.len(), 1);
 
-        let default_sig = cache.get_default_signature("test@example.com").unwrap();
+        let default_sig = cache.signature_for_account("test@example.com").unwrap();
         assert!(default_sig.is_some());
 
         let mut updated_sig = signature.clone();
@@ -547,7 +542,7 @@ mod tests {
         };
         cache.create_signature(&sig2).unwrap();
 
-        let default = cache.get_default_signature("test@example.com").unwrap();
+        let default = cache.signature_for_account("test@example.com").unwrap();
         assert!(default.is_some());
         assert_eq!(default.unwrap().id, "sig-2");
 

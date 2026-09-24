@@ -80,7 +80,7 @@ const BLOCK_FUNCTION: &str = "wixenBlock";
 /// reply carries it as a link the way it would have carried a sender's own
 /// anchor. An address never holds a line break, so the breaks are turned
 /// after.
-fn escaped_plain_text(text: &str) -> String {
+pub fn escaped_plain_text(text: &str) -> String {
     crate::application::links_in_text::as_html(text)
         .replace("\r\n", "\n")
         .replace('\n', "<br>")
@@ -1353,6 +1353,19 @@ fn format_key_table() -> String {
 /// view is the only thing that can execute it and this module stays pure.
 pub fn read_body_script() -> String {
     format!("document.getElementById({BODY_ID:?}).innerHTML")
+}
+
+/// The script that puts a whole message back into the page, for a change the
+/// composer makes to what is already there, such as a signature following
+/// the From account (#43). The markup is the caller's to have sanitised.
+///
+/// Written as JSON, which is a JavaScript string literal whatever the markup
+/// holds.
+pub fn replace_body_script(markup: &str) -> String {
+    let literal = serde_json::to_string(markup).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        "(function () {{ document.getElementById({BODY_ID:?}).innerHTML = {literal}; return 'replaced'; }})()"
+    )
 }
 
 /// The script that reads the message as plain text.

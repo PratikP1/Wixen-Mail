@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 281 records have arrived since and have not been through it.
+# 284 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30196,4 +30196,67 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 16 },
     { file = "tests/a_new_item_is_headed_new.rs", tests = 3 },
+]
+
+# ── A From change leaves a signature somebody typed into (#43, T-12-32) ────
+#
+# The composer replaces the signature block only where it stands as it went
+# in. The break replaces the message with the next account's block whatever
+# the page holds, so a signature somebody had typed into is lost, and the
+# reading of an edited message goes red on the real page.
+[[guard]]
+name = "a change of From account leaves a signature somebody typed into as it is"
+file = "src/presentation/wx_compose.rs"
+suite = "a_signature_follows_the_from_account"
+before = '''            Swap::LeaveAlone => None,'''
+after = '''            Swap::LeaveAlone => Some(block(&becomes.text)),'''
+red = [
+    "test_a_signature_somebody_typed_into_stays_when_the_from_account_changes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
+]
+
+# ── The Signature Manager lists every account's signatures (#43) ──────────
+#
+# Signatures are one set. The break lists the first account's alone, which is
+# what the manager did before 12-09 with whichever account was active, and
+# said nothing about it.
+[[guard]]
+name = "the signature manager lists every signature whichever account wrote it"
+file = "src/presentation/managers.rs"
+suite = "a_signature_follows_the_from_account"
+before = '''    Ok(cache
+        .get_every_signature()?'''
+after = '''    Ok(cache
+        .get_signatures_for_account(&accounts[0].id)?'''
+red = [
+    "test_the_manager_lists_every_signature_whichever_account_wrote_it",
+    "test_the_manager_says_who_uses_each_signature",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
+]
+
+# ── A box ticked in a signature's editor is the account's (#43, T-12-44) ──
+#
+# The Signature Manager writes an account's signature through the store's
+# assign, the call the account dialog makes too. The break drops the call,
+# as a manager keeping its own copy would, so the account dialog never shows
+# what was ticked, and a signature's Used by column misses the account.
+[[guard]]
+name = "an account ticked in a signature's editor is written through the one assignment"
+file = "src/presentation/managers.rs"
+suite = "a_signature_follows_the_from_account"
+before = '''                if let Err(e) = cache.assign(&each.id, wanted) {'''
+after = '''                if let Some(e) = wanted.and(None::<crate::common::Error>) {'''
+red = [
+    "test_an_account_ticked_in_a_signatures_editor_is_what_its_dialog_shows",
+    "test_a_signature_chosen_on_the_account_dialog_is_what_the_manager_shows",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
 ]

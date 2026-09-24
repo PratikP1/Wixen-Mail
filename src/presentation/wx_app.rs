@@ -17677,6 +17677,22 @@ fn open_for_scanning(
             editor.dialog.destroy();
             OnReturn::WindowClosed
         }
+        ScanTarget::AccountDetails => {
+            // The same editor on its first page, which the target above turns
+            // past: the name, the address, the name people see and, since
+            // 12-09, the signature choice (#43).
+            let fixture = scan_only_account();
+            let editor = wx_account_manager::build_account_edit_dialog(
+                frame,
+                Some(&fixture),
+                a11y,
+                theme::current_from_stored_config(),
+                &scan_fixtures::signature_choices(),
+            );
+            editor.dialog.show_modal();
+            editor.dialog.destroy();
+            OnReturn::WindowClosed
+        }
         // The main window with a module showing and nothing over it. `main`
         // is the frame with the first-run question on top, because that
         // question opens whenever no target is given, so the bare window and
