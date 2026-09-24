@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 /// without `cfg(test)`, and this used to be gated on exactly that. If that
 /// dev-dependency ever goes, this file stops compiling, which is the failure
 /// direction wanted. The alternative was reading nothing and passing.
+use wixen_mail::application::help::TOPICS;
 use wixen_mail::common::what_ships::what_ships;
 
 /// The presentation sources, which is where commands are raised and handled.
@@ -1984,7 +1985,19 @@ fn test_no_two_items_on_one_menu_claim_the_same_letter() {
 
         // A submenu, or an item appended once the builder has finished, sits on
         // the menu like any other and claims a letter like any other.
-        let labels = menu_labels_claiming_a_letter(&menu_block(&ship, name));
+        let mut labels = menu_labels_claiming_a_letter(&menu_block(&ship, name));
+        // The Help menu appends one item per page, from the list of help
+        // topics, in a loop whose labels are not literals here, so they are
+        // read from the list itself. Until 2026-09-24 nothing read them, and
+        // C and U were each claimed twice on that menu (ledger 591).
+        if name == "help" {
+            labels.extend(
+                TOPICS
+                    .iter()
+                    .map(|topic| topic.title.to_string())
+                    .filter(|title| alt_key_of(title).is_some()),
+            );
+        }
         if labels.len() < 2 {
             continue;
         }
