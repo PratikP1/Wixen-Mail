@@ -428,6 +428,9 @@ pub struct WxUIState {
     /// The message an undo just brought back, for the cursor to land on when
     /// the folder it came back to is next listed (13-08).
     pub land_on_when_listed: Option<i64>,
+    /// The item an undo just brought back in another module, for the cursor
+    /// to land on when that module's list is next read back (13-09).
+    pub land_on_the_item_when_listed: Option<(PimModule, String)>,
     /// Folder name to database id, so selecting a folder can read it.
     pub folder_ids: std::collections::HashMap<String, i64>,
     /// The watch on each account's inbox, by account id: the connection when
@@ -703,6 +706,7 @@ impl Default for WxUIState {
             reading_began: None,
             last_action: None,
             land_on_when_listed: None,
+            land_on_the_item_when_listed: None,
             folder_ids: std::collections::HashMap::new(),
             mail_watches: std::collections::HashMap::new(),
             last_checked: std::collections::HashMap::new(),
@@ -6093,8 +6097,9 @@ impl WxMailApp {
                 let dispatch = std::rc::Rc::clone(&dispatch);
                 move |event| dispatch(event.get_id())
             });
-            // The same three boxes the Edit commands act on, and the message
-            // list, whose Undo names the last action on messages.
+            // The same three boxes the Edit commands act on, the message
+            // list, whose Undo names the last action on messages, and the
+            // five lists whose Undo names the last action on an item.
             keep_the_edit_menu_honest(
                 &frame,
                 vec![
@@ -6103,6 +6108,13 @@ impl WxMailApp {
                     pim_refs.contacts_search,
                 ],
                 Some((msg_list, state.clone())),
+                vec![
+                    (pim_refs.contact_list, PimModule::Contacts),
+                    (pim_refs.cal_event_list, PimModule::Calendar),
+                    (pim_refs.reminder_list, PimModule::Reminders),
+                    (pim_refs.task_list, PimModule::Tasks),
+                    (pim_refs.note_list, PimModule::Notes),
+                ],
             );
             // A box in a dialog has no Edit menu and answers Ctrl+Z and
             // Ctrl+Y itself. With nothing to take back or put back it says
@@ -11349,6 +11361,7 @@ fn remember_the_last_action(
     use crate::application::undoing::{LastAction, OneStep, what_redo_does};
     let changed_something = match &action {
         LastAction::Moved { went, .. } => !went.is_empty(),
+        LastAction::OnAnItem(_) => true,
         marked => !what_redo_does(marked).is_empty(),
     };
     if changed_something {
@@ -18731,26 +18744,46 @@ fn read_the_row_with_its_headings(
 /// does not wait on it. The event is skipped on so wxWidgets' own handling of
 /// a menu opening still runs.
 pub fn keep_undo_and_redo_honest_on_the_menu(frame: &Frame, boxes: Vec<TextCtrl>) {
-    keep_the_edit_menu_honest(frame, boxes, None);
+    keep_the_edit_menu_honest(frame, boxes, None, Vec::new());
 }
 
 /// The same, and with the message list focused Undo and Redo name the last
 /// action on messages instead, "Undo Mark as Read: Quarterly report", greyed
-/// by which way the one step can go (13-07). Closing puts back the words the
-/// menu was built with, read off the bar when this is bound, so the two
-/// cannot drift apart.
+/// by which way the one step can go (13-07). With one of the other five lists
+/// focused they name the last action on an item there (13-09). A step taken
+/// in another module leaves the plain words, offered, so the key arrives and
+/// says where it was taken. Closing puts back the words the menu was built
+/// with, read off the bar when this is bound, so the two cannot drift apart.
 fn keep_the_edit_menu_honest(
     frame: &Frame,
     boxes: Vec<TextCtrl>,
     messages: Option<(ListCtrl, Arc<StdMutex<WxUIState>>)>,
+    modules: Vec<(ListCtrl, PimModule)>,
 ) {
     use crate::presentation::text_undo::what_the_edit_menu_offers;
     let plain = [ID_EDIT_UNDO, ID_EDIT_REDO].map(|id| words_on_the_menu(frame, id));
     let opened = *frame;
     frame.on_menu_opened(move |event| {
-        match messages.as_ref().filter(|(list, _)| list.has_focus()) {
-            Some((_, state)) => {
-                name_the_step_on_the_edit_menu(&opened, lock_state(state).last_action.as_ref());
+        let focused = messages.as_ref().and_then(|(list, state)| {
+            let here = match list.has_focus() {
+                true => Some(PimModule::Mail),
+                false => modules
+                    .iter()
+                    .find(|(list, _)| list.has_focus())
+                    .map(|(_, module)| *module),
+            };
+            here.map(|here| (here, state))
+        });
+        match focused {
+            Some((here, state)) => {
+                let s = lock_state(state);
+                match s.last_action.as_ref() {
+                    Some(step) if step.action().module() != here => {
+                        sync_menu_enable(&opened, ID_EDIT_UNDO, true);
+                        sync_menu_enable(&opened, ID_EDIT_REDO, true);
+                    }
+                    step => name_the_step_on_the_edit_menu(&opened, step),
+                }
             }
             None => {
                 let focused = boxes.iter().find(|box_| box_.has_focus());
@@ -19002,14 +19035,35 @@ fn do_an_edit_command(
             }
             put_on_the_clipboard(&words, a11y);
         }
-        // The message list keeps the last mark, star or label. The other five
-        // lists have nothing to take back until their own undo arrives, and
-        // say so as they did before.
+        // The message list keeps the last mark, star, label, move, delete or
+        // copy, and the other five lists the last action on one of their
+        // items (13-09); it is one step, so each says where it was taken when
+        // it was taken somewhere else.
         Doing::TheLastAction => match focused_list {
             Some((list, PimModule::Mail)) => {
                 take_back_or_do_again(command, list, messages, frame, a11y);
             }
-            _ => {
+            Some((_, module)) => {
+                let direction = match command {
+                    EditCommand::Redo => crate::application::undoing::Direction::Redo,
+                    _ => crate::application::undoing::Direction::Undo,
+                };
+                match managers::undo_or_redo_on_an_item(
+                    direction,
+                    *module,
+                    messages.app.state,
+                    messages.cache,
+                    frame,
+                    messages.app.tx,
+                ) {
+                    Ok(Some(said)) => say_what_the_undo_did(frame, a11y, &said, Priority::Normal),
+                    // A delete was asked about and answered No: nothing
+                    // happened, and the answer to No is that nothing does.
+                    Ok(None) => {}
+                    Err(why) => say_what_the_undo_did(frame, a11y, &why, Priority::High),
+                }
+            }
+            None => {
                 let _ = a11y.announce(
                     &crate::application::editing::works_in_a_box_not_here(command),
                     Priority::High,
@@ -19124,6 +19178,15 @@ fn take_back_or_do_again(
         EditCommand::Redo => Direction::Redo,
         _ => Direction::Undo,
     };
+    // The one step was taken in another module: said, and nothing else done.
+    let elsewhere = lock_state(app.state)
+        .last_action
+        .as_ref()
+        .filter(|step| step.action().module() != PimModule::Mail)
+        .map(|step| crate::application::undoing::in_another_module(step.action(), direction));
+    if let Some(elsewhere) = elsewhere {
+        return say_what_the_undo_did(frame, a11y, &elsewhere, Priority::High);
+    }
     let Some(cache) = cache.as_ref() else {
         return say_what_the_undo_did(
             frame,
@@ -21280,6 +21343,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.cal_event_list.set_item_count(events.len() as i64);
+            land_on_the_item_that_came_back(
+                state,
+                &pim.cal_event_list,
+                PimModule::Calendar,
+                events.iter().map(|event| event.id.as_str()),
+            );
             let msg = how_many_loaded(events.len(), "calendar event");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "calendar-events");
@@ -21350,6 +21419,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.reminder_list.set_item_count(reminders.len() as i64);
+            land_on_the_item_that_came_back(
+                state,
+                &pim.reminder_list,
+                PimModule::Reminders,
+                reminders.iter().map(|reminder| reminder.id.as_str()),
+            );
 
             // Sidebar groups reminders by urgency, matching how the tasks and
             // notes sidebars group their own items.
@@ -21407,6 +21482,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.task_list.set_item_count(tasks.len() as i64);
+            land_on_the_item_that_came_back(
+                state,
+                &pim.task_list,
+                PimModule::Tasks,
+                tasks.iter().map(|task| task.id.as_str()),
+            );
             let msg = how_many_loaded(tasks.len(), "task");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "tasks");
@@ -21463,12 +21544,18 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.note_list.set_item_count(notes.len() as i64);
+            land_on_the_item_that_came_back(
+                state,
+                &pim.note_list,
+                PimModule::Notes,
+                notes.iter().map(|note| note.id.as_str()),
+            );
             let msg = how_many_loaded(notes.len(), "note");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "notes");
         }
         UIUpdate::ContactsLoaded(contacts) => {
-            let shown = {
+            let shown: Vec<String> = {
                 let mut s = lock_state(state);
                 s.all_contacts = contacts.clone();
                 // Narrowed by whatever the sidebar already has selected,
@@ -21476,12 +21563,22 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 // a reload while Team A is chosen must not flash every
                 // contact before settling back down to Team A's own.
                 recompute_which_contacts_are_shown(&mut s);
-                s.contacts.len()
+                s.contacts
+                    .iter()
+                    .map(|contact| contact.id.clone())
+                    .collect()
             };
             // Virtual mode: the row count, and the callback answers for
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
-            pim.contact_list.set_item_count(shown as i64);
+            pim.contact_list.set_item_count(shown.len() as i64);
+            land_on_the_item_that_came_back(
+                state,
+                &pim.contact_list,
+                PimModule::Contacts,
+                shown.iter().map(String::as_str),
+            );
+            let shown = shown.len();
             let msg = how_many_loaded(shown, "contact");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "contacts");
@@ -23511,6 +23608,24 @@ fn put_the_cursor_on(list: &ListCtrl, row: usize) {
     list.set_item_state(row as i64, ListItemState::None, both);
     list.set_item_state(row as i64, both, both);
     list.ensure_visible(row as i64);
+}
+
+/// Put a module list's cursor on the item an undo brought back, once the list
+/// has been read back and holds it (13-09). Asked by each of the five lists as
+/// it fills; the request is used up by the list it was for, whether or not the
+/// item is on it, so a later reload never moves the cursor by surprise.
+fn land_on_the_item_that_came_back<'a>(
+    state: &Arc<StdMutex<WxUIState>>,
+    list: &ListCtrl,
+    module: PimModule,
+    ids: impl IntoIterator<Item = &'a str>,
+) {
+    let wanted = lock_state(state)
+        .land_on_the_item_when_listed
+        .take_if(|(for_the, _)| *for_the == module);
+    if let Some(row) = wanted.and_then(|(_, wanted)| ids.into_iter().position(|id| id == wanted)) {
+        put_the_cursor_on(list, row);
+    }
 }
 
 /// Land the message list's cursor after `removed` rows have left it (#76).
@@ -27199,6 +27314,12 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
+        // Counted from before the store is opened until the sync ends, so an
+        // undo never takes back a deletion this sync may be sending (13-09).
+        let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
+            aid,
+            crate::application::new_item::ItemKind::Contact,
+        );
         let cache_dir = AppPaths::resolve().ok().map(|paths| paths.cache_dir());
         let Some(dir) = cache_dir else {
             handle.block_on(async {
@@ -27343,6 +27464,12 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
+        // Counted until the sync ends, so an undo never takes back a deletion
+        // this sync may be sending (13-09).
+        let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
+            aid,
+            crate::application::new_item::ItemKind::Task,
+        );
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(
                 "Tasks could not be synced: there is nowhere to keep them.".into(),
@@ -27445,6 +27572,12 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
+        // Counted until the sync ends, so an undo never takes back a deletion
+        // this sync may be sending (13-09).
+        let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
+            aid,
+            crate::application::new_item::ItemKind::Note,
+        );
         let Some(account) = accounts.iter().find(|account| account.id == aid).cloned() else {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(
                 "Notes could not be synced: no account is open.".into(),
@@ -27520,6 +27653,12 @@ pub(crate) fn spawn_calendar_sync(
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
+        // Counted until the sync ends, so an undo never takes back a deletion
+        // this sync may be sending (13-09).
+        let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
+            aid,
+            crate::application::new_item::ItemKind::Event,
+        );
         let cache_dir = AppPaths::resolve().ok().map(|paths| paths.cache_dir());
         let Some(dir) = cache_dir else {
             handle.block_on(async {

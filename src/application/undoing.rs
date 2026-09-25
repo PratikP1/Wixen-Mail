@@ -41,8 +41,22 @@
 //! This knows nothing of the window. It says what an undo changes and what it
 //! is called; `presentation::wx_app` carries it out through the same path the
 //! action took, so a server that refuses puts it back and says so.
+//!
+//! # The other five modules
+//!
+//! A contact, an event, a task, a note or a reminder has its own last action
+//! (13-09): Mark Done or Pin, a move, a copy, a delete. It is the same one
+//! step, so the last action on an item replaces the last action on messages
+//! and the other way round, and Undo in a module that did not take it says
+//! where it was taken. A delete comes back as it was while its account has not
+//! been told, through `data::message_cache::taking_back`, which changes the row
+//! and the deletion note together; once the account has taken the deletion it
+//! comes back as a new item there, and says so.
 
+use crate::application::new_item::ItemKind;
+use crate::common::types::PimModule;
 use crate::data::message_cache::moves_waiting::AWaitingMove;
+use crate::data::message_cache::taking_back::Record;
 use crate::service::caldav::how_many;
 
 /// A label as an undo needs it: which one it is here, what it is called, and
@@ -118,8 +132,9 @@ impl Mark {
 /// the item stays readable and the menu does not stretch across the screen.
 const MOST_OF_A_SUBJECT_ON_THE_MENU: usize = 60;
 
-/// The last action somebody took on messages.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The last action somebody took on messages, or on one item in another
+/// module.
+#[derive(Debug, Clone, PartialEq)]
 pub enum LastAction {
     /// One mark, the same for every message.
     Marked { mark: Mark, before: Vec<Before> },
@@ -130,9 +145,21 @@ pub enum LastAction {
         moving: Moving,
         went: Vec<WhereItWas>,
     },
+    /// Mark Done, Pin, a move, a copy or a delete of one contact, event,
+    /// task, note or reminder.
+    OnAnItem(OnAnItem),
 }
 
 impl LastAction {
+    /// The module the action was taken in, which is the one whose list
+    /// Undo takes it back from.
+    pub fn module(&self) -> PimModule {
+        match self {
+            LastAction::OnAnItem(item) => the_module_of(item.kind),
+            _ => PimModule::Mail,
+        }
+    }
+
     /// What the action is called, the way the menu that does it would say
     /// it: "Mark as Read", "Label Work", and "Remove every label" as the Label
     /// menu words it. A label taken off one message has no item of its own,
@@ -141,6 +168,7 @@ impl LastAction {
         let mark = match self {
             LastAction::LabelsRemoved { .. } => return "Remove every label".to_string(),
             LastAction::Moved { moving, .. } => return moving.name(),
+            LastAction::OnAnItem(item) => return item.did.name(),
             LastAction::Marked { mark, .. } => mark,
         };
         match mark {
@@ -164,12 +192,17 @@ impl LastAction {
                 .iter()
                 .map(|message| message.subject.as_str())
                 .collect(),
+            LastAction::OnAnItem(item) => vec![item.name.as_str()],
         }
     }
 
     /// The message's subject when there is one message with a subject, and
-    /// the count otherwise, the way a command over the set names it.
+    /// the count otherwise, the way a command over the set names it. An item
+    /// is named by its own name.
     fn what_it_was_done_to(&self) -> String {
+        if let LastAction::OnAnItem(item) = self {
+            return item.named();
+        }
         match self.subjects().as_slice() {
             [only] if !only.trim().is_empty() => only.trim().to_string(),
             all => how_many(all.len(), "message"),
@@ -466,7 +499,7 @@ pub enum Direction {
 }
 
 /// The one step kept, and which way it last went.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OneStep {
     action: LastAction,
     undone: bool,
@@ -512,8 +545,8 @@ pub fn what_undo_does(action: &LastAction) -> Vec<(Before, Mark)> {
             .collect(),
         LastAction::LabelsRemoved { before } => each_label_carried(before, true),
         // No mark: each message's undo is decided from the store, by
-        // `what_undo_does_to`.
-        LastAction::Moved { .. } => Vec::new(),
+        // `what_undo_does_to`, and an item's by `what_undo_does_to_an_item`.
+        LastAction::Moved { .. } | LastAction::OnAnItem(_) => Vec::new(),
     }
 }
 
@@ -526,7 +559,7 @@ pub fn what_redo_does(action: &LastAction) -> Vec<(Before, Mark)> {
             .map(|message| (message.clone(), mark.clone()))
             .collect(),
         LastAction::LabelsRemoved { before } => each_label_carried(before, false),
-        LastAction::Moved { .. } => Vec::new(),
+        LastAction::Moved { .. } | LastAction::OnAnItem(_) => Vec::new(),
     }
 }
 
@@ -613,6 +646,237 @@ pub fn nothing_to_undo(step: Option<&OneStep>) -> &'static str {
 /// What Redo says in the message list when there is nothing to put back.
 pub fn nothing_to_redo(_step: Option<&OneStep>) -> &'static str {
     "There is nothing to redo in this list. Redo puts back what Undo just took away."
+}
+
+// ── An action on a contact, an event, a task, a note or a reminder ──────────
+
+/// Somewhere an item is kept: a calendar, a task list, a note folder, a
+/// contact group, or the account a reminder is in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Place {
+    pub id: String,
+    pub name: String,
+}
+
+/// What an action did to one item, which is what its undo reverses.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ItemDid {
+    /// Marked done, or not done: `now` is what the action left it.
+    MarkedDone { now: bool },
+    /// Pinned, or unpinned.
+    Pinned { now: bool },
+    /// Moved from one place to another.
+    Moved { from: Place, to: Place },
+    /// A second one made in `into`, which is `copy_id`; the item itself
+    /// stayed where it was.
+    Copied { copy_id: String, into: Place },
+    /// Deleted, and everything it was.
+    Deleted(Box<Record>),
+}
+
+/// The last action on one item.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OnAnItem {
+    pub kind: ItemKind,
+    /// Its name as the list showed it.
+    pub name: String,
+    /// Its identifier now: where a move landed it, or the original a copy was
+    /// made from.
+    pub id: String,
+    pub did: ItemDid,
+}
+
+impl ItemDid {
+    /// What the action is called, the way its menu item says it. The item
+    /// for done is "Mark Done or Not Done", one item both ways, so each way
+    /// is named the way Mark as Read and Mark as Unread are.
+    fn name(&self) -> String {
+        match self {
+            ItemDid::MarkedDone { now: true } => "Mark as Done".to_string(),
+            ItemDid::MarkedDone { now: false } => "Mark as Not Done".to_string(),
+            ItemDid::Pinned { now: true } => "Pin".to_string(),
+            ItemDid::Pinned { now: false } => "Unpin".to_string(),
+            ItemDid::Moved { to, .. } => format!("Move to {}", to.name),
+            ItemDid::Copied { into, .. } => format!("Copy to {}", into.name),
+            ItemDid::Deleted(_) => "Delete".to_string(),
+        }
+    }
+}
+
+impl OnAnItem {
+    /// The item's name, or words standing in for one it does not have.
+    fn named(&self) -> String {
+        match self.name.trim() {
+            "" => format!("an untitled {}", self.kind.label().to_lowercase()),
+            name => name.to_string(),
+        }
+    }
+
+    /// The same, where it opens a sentence.
+    fn named_first(&self) -> String {
+        let named = self.named();
+        let mut letters = named.chars();
+        match letters.next() {
+            Some(first) => first.to_uppercase().chain(letters).collect(),
+            None => named,
+        }
+    }
+}
+
+/// What the store says about the item an undo or a redo reads: the item
+/// itself, or the copy for the undo of a copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatTheItemStoreSays {
+    /// It is here.
+    Present,
+    /// It is not here, and nothing says this computer deleted it.
+    Gone,
+    /// Deleted here, and its account has not been told yet.
+    DeletionOwed,
+    /// Deleted here, and its account has taken the deletion.
+    DeletionTaken,
+    /// Its account's sync is running and may be telling the account about it
+    /// at this moment.
+    BeingSyncedNow,
+}
+
+/// What one undo or redo of an action on an item does.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UndoAnItem {
+    /// Mark it done, or not done.
+    MarkDone(bool),
+    /// Pin it, or unpin it.
+    Pin(bool),
+    /// Move it there.
+    MoveTo(Place),
+    /// Put a copy there again.
+    CopyInto(Place),
+    /// Delete the copy the action made, and only the copy.
+    DeleteTheCopy { id: String },
+    /// Delete it again.
+    DeleteIt,
+    /// Put it back as it was, and take back the deletion its account has not
+    /// been told about.
+    TakeTheDeletionBack(Box<Record>),
+    /// Its account has taken the deletion, so make it again as a new item.
+    MakeItAgain(Box<Record>),
+    /// Nothing is done, and this is said.
+    Refused(String),
+}
+
+/// What undoing an action on an item does, given what the store says now.
+///
+/// A delete is taken back as it was only while its account has not been
+/// told: the deletion note is then still work the push owes, and taking it
+/// back is what stops it being sent. Once the account has taken it the thing
+/// is gone there, so it is made again as a new item, never put back under an
+/// identity the account has already let go of. Nothing is decided while the
+/// account's sync is running, because the push may be sending that very
+/// deletion or change at that moment.
+pub fn what_undo_does_to_an_item(item: &OnAnItem, store: WhatTheItemStoreSays) -> UndoAnItem {
+    use WhatTheItemStoreSays::{BeingSyncedNow, DeletionOwed, DeletionTaken, Gone, Present};
+    match (&item.did, store) {
+        (_, BeingSyncedNow) => UndoAnItem::Refused(being_synced_now(item)),
+        (ItemDid::Deleted(record), DeletionOwed | Gone) => {
+            UndoAnItem::TakeTheDeletionBack(record.clone())
+        }
+        (ItemDid::Deleted(record), DeletionTaken) => UndoAnItem::MakeItAgain(record.clone()),
+        (ItemDid::Deleted(_), Present) => UndoAnItem::Refused(format!(
+            "{} is here already, so there is nothing to put back.",
+            item.named_first()
+        )),
+        (ItemDid::Copied { copy_id, .. }, Present) => UndoAnItem::DeleteTheCopy {
+            id: copy_id.clone(),
+        },
+        (ItemDid::Copied { .. }, _) => UndoAnItem::Refused(format!(
+            "The copy of {} is gone already, so there is nothing to take away.",
+            item.named()
+        )),
+        (_, DeletionOwed | DeletionTaken | Gone) => UndoAnItem::Refused(format!(
+            "{} is no longer here, so it cannot be changed back.",
+            item.named_first()
+        )),
+        (ItemDid::MarkedDone { now }, Present) => UndoAnItem::MarkDone(!now),
+        (ItemDid::Pinned { now }, Present) => UndoAnItem::Pin(!now),
+        (ItemDid::Moved { from, .. }, Present) => UndoAnItem::MoveTo(from.clone()),
+    }
+}
+
+/// What redoing an action on an item does, given what the store says now:
+/// the action again, on the item the undo left.
+pub fn what_redo_does_to_an_item(item: &OnAnItem, store: WhatTheItemStoreSays) -> UndoAnItem {
+    use WhatTheItemStoreSays::{BeingSyncedNow, Present};
+    match (&item.did, store) {
+        (_, BeingSyncedNow) => UndoAnItem::Refused(being_synced_now(item)),
+        (ItemDid::Deleted(_), Present) => UndoAnItem::DeleteIt,
+        (ItemDid::Deleted(_), _) => UndoAnItem::Refused(format!(
+            "{} is no longer here, so it cannot be deleted again.",
+            item.named_first()
+        )),
+        (ItemDid::MarkedDone { now }, Present) => UndoAnItem::MarkDone(*now),
+        (ItemDid::Pinned { now }, Present) => UndoAnItem::Pin(*now),
+        (ItemDid::Moved { to, .. }, Present) => UndoAnItem::MoveTo(to.clone()),
+        (ItemDid::Copied { into, .. }, Present) => UndoAnItem::CopyInto(into.clone()),
+        (_, _) => UndoAnItem::Refused(format!(
+            "{} is no longer here, so it cannot be done again.",
+            item.named_first()
+        )),
+    }
+}
+
+/// What an undo says while the item's account is being synced.
+pub fn being_synced_now(item: &OnAnItem) -> String {
+    format!(
+        "{} is being synced with its account right now. Try again shortly.",
+        item.named_first()
+    )
+}
+
+/// What Undo or Redo says in a list whose module did not take the last
+/// action.
+pub fn in_another_module(action: &LastAction, direction: Direction) -> String {
+    let module = action.module().label().replace('&', "");
+    let doing = match direction {
+        Direction::Undo => "undo",
+        Direction::Redo => "redo",
+    };
+    format!("The last thing you did was in {module}. Switch to {module} to {doing} it.")
+}
+
+/// What Undo says when a deleted item comes back as a new one, because its
+/// account had already taken the deletion.
+pub fn made_again(item: &OnAnItem) -> String {
+    format!(
+        "{} had already been deleted at its account, so it comes back here as a new {} and \
+         is sent there as one.",
+        item.named_first(),
+        item.kind.label().to_lowercase()
+    )
+}
+
+/// What Undo asks before it takes away the copy an action made, since taking
+/// it away is a delete and every delete here is asked first.
+pub fn take_away_the_copy(item: &OnAnItem) -> String {
+    let where_it_is = match &item.did {
+        ItemDid::Copied { into, .. } => format!(" in {}", into.name),
+        _ => String::new(),
+    };
+    format!(
+        "Take away the copy of \"{}\"{where_it_is}? The one it was copied from stays where it is.",
+        item.named()
+    )
+}
+
+/// The module whose list holds this kind of item.
+fn the_module_of(kind: ItemKind) -> PimModule {
+    match kind {
+        ItemKind::Mail => PimModule::Mail,
+        ItemKind::Contact => PimModule::Contacts,
+        ItemKind::Event => PimModule::Calendar,
+        ItemKind::Reminder => PimModule::Reminders,
+        ItemKind::Task => PimModule::Tasks,
+        ItemKind::Note => PimModule::Notes,
+    }
 }
 
 #[cfg(test)]
@@ -1442,6 +1706,315 @@ mod tests {
         for sentence in sentences {
             reads_as_a_persons_sentence(&sentence, Voice::Answer)
                 .unwrap_or_else(|why| panic!("{sentence:?}: {why}"));
+        }
+    }
+
+    // ── An action on an item in another module ─────────────────────────────
+
+    use crate::data::message_cache::TaskEntry;
+    use WhatTheItemStoreSays::{BeingSyncedNow, DeletionOwed, DeletionTaken, Gone, Present};
+
+    /// Dentist, a task its account holds, with every field filled in, so a
+    /// record that kept only some of them could not pass for the whole.
+    fn dentist() -> TaskEntry {
+        TaskEntry {
+            id: "google:dentist".to_string(),
+            account_id: "an account".to_string(),
+            task_list_id: Some("home".to_string()),
+            title: "Dentist".to_string(),
+            description: Some("Bring the forms".to_string()),
+            due_date: Some("2026-10-02".to_string()),
+            is_completed: false,
+            completed_at: None,
+            priority: "high".to_string(),
+            display_order: 3,
+            parent_task_id: Some("google:errands".to_string()),
+            created_at: "2026-09-01T09:00:00Z".to_string(),
+            updated_at: "2026-09-20T09:00:00Z".to_string(),
+            remote_updated: Some("2026-09-20T09:00:01Z".to_string()),
+            pending: false,
+            remote_status: Some("inProgress".to_string()),
+        }
+    }
+
+    fn on_the_task(did: ItemDid) -> OnAnItem {
+        OnAnItem {
+            kind: ItemKind::Task,
+            name: "Dentist".to_string(),
+            id: "google:dentist".to_string(),
+            did,
+        }
+    }
+
+    fn place(id: &str, name: &str) -> Place {
+        Place {
+            id: id.to_string(),
+            name: name.to_string(),
+        }
+    }
+
+    fn refused(sentence: &str) -> UndoAnItem {
+        UndoAnItem::Refused(sentence.to_string())
+    }
+
+    /// Dentist's record, as a delete keeps it.
+    fn dentists_record() -> Box<Record> {
+        Box::new(Record::Task(dentist()))
+    }
+
+    #[test]
+    fn test_undoing_a_deleted_task_puts_back_every_field_it_had() {
+        let deleted = on_the_task(ItemDid::Deleted(dentists_record()));
+        let UndoAnItem::TakeTheDeletionBack(record) =
+            what_undo_does_to_an_item(&deleted, DeletionOwed)
+        else {
+            panic!("a deletion its account has not been told about is taken back");
+        };
+        let Record::Task(back) = *record else {
+            panic!("a task's record comes back as a task's");
+        };
+        assert_eq!(back, dentist());
+        // A reminder keeps no note at all, so nothing says it was deleted and
+        // nothing is owed: it comes back as it was too.
+        assert_eq!(
+            what_undo_does_to_an_item(&deleted, Gone),
+            UndoAnItem::TakeTheDeletionBack(dentists_record())
+        );
+        // Already back, by another undo or another path: nothing to do, and said.
+        assert_eq!(
+            what_undo_does_to_an_item(&deleted, Present),
+            refused("Dentist is here already, so there is nothing to put back.")
+        );
+    }
+
+    #[test]
+    fn test_undoing_a_delete_the_provider_took_makes_it_again_and_says_so() {
+        let deleted = on_the_task(ItemDid::Deleted(dentists_record()));
+        assert_eq!(
+            what_undo_does_to_an_item(&deleted, DeletionTaken),
+            UndoAnItem::MakeItAgain(dentists_record())
+        );
+        let said = made_again(&deleted);
+        assert_eq!(
+            said,
+            "Dentist had already been deleted at its account, so it comes back here as a new \
+             task and is sent there as one."
+        );
+        reads_as_a_persons_sentence(&said, Voice::Answer)
+            .unwrap_or_else(|why| panic!("{said:?}: {why}"));
+    }
+
+    #[test]
+    fn test_undoing_mark_done_marks_it_not_done() {
+        let done = on_the_task(ItemDid::MarkedDone { now: true });
+        assert_eq!(
+            what_undo_does_to_an_item(&done, Present),
+            UndoAnItem::MarkDone(false)
+        );
+        assert_eq!(
+            what_redo_does_to_an_item(&done, Present),
+            UndoAnItem::MarkDone(true)
+        );
+        let not_done = on_the_task(ItemDid::MarkedDone { now: false });
+        assert_eq!(
+            what_undo_does_to_an_item(&not_done, Present),
+            UndoAnItem::MarkDone(true)
+        );
+        // Deleted since by somebody else, or by a sync: nothing to change back.
+        for store in [Gone, DeletionOwed, DeletionTaken] {
+            assert_eq!(
+                what_undo_does_to_an_item(&done, store),
+                refused("Dentist is no longer here, so it cannot be changed back.")
+            );
+        }
+    }
+
+    #[test]
+    fn test_undoing_a_pin_unpins() {
+        let pinned = OnAnItem {
+            kind: ItemKind::Note,
+            name: "Shopping".to_string(),
+            id: "note-1".to_string(),
+            did: ItemDid::Pinned { now: true },
+        };
+        assert_eq!(
+            what_undo_does_to_an_item(&pinned, Present),
+            UndoAnItem::Pin(false)
+        );
+        assert_eq!(
+            what_redo_does_to_an_item(&pinned, Present),
+            UndoAnItem::Pin(true)
+        );
+        let unpinned = OnAnItem {
+            did: ItemDid::Pinned { now: false },
+            ..pinned
+        };
+        assert_eq!(
+            what_undo_does_to_an_item(&unpinned, Present),
+            UndoAnItem::Pin(true)
+        );
+    }
+
+    #[test]
+    fn test_undoing_a_move_moves_it_back_to_where_it_was() {
+        let moved = on_the_task(ItemDid::Moved {
+            from: place("home", "Home"),
+            to: place("work", "Work"),
+        });
+        assert_eq!(
+            what_undo_does_to_an_item(&moved, Present),
+            UndoAnItem::MoveTo(place("home", "Home"))
+        );
+        assert_eq!(
+            what_redo_does_to_an_item(&moved, Present),
+            UndoAnItem::MoveTo(place("work", "Work"))
+        );
+        assert_eq!(
+            what_undo_does_to_an_item(&moved, Gone),
+            refused("Dentist is no longer here, so it cannot be changed back.")
+        );
+    }
+
+    #[test]
+    fn test_undoing_a_copy_removes_the_copy_only() {
+        let copied = on_the_task(ItemDid::Copied {
+            copy_id: "task-2".to_string(),
+            into: place("work", "Work"),
+        });
+        // The copy, read by its own row, and never the original it was made
+        // from, which stays where it was.
+        assert_eq!(
+            what_undo_does_to_an_item(&copied, Present),
+            UndoAnItem::DeleteTheCopy {
+                id: "task-2".to_string()
+            }
+        );
+        assert_eq!(
+            what_redo_does_to_an_item(&copied, Present),
+            UndoAnItem::CopyInto(place("work", "Work"))
+        );
+        assert_eq!(
+            what_undo_does_to_an_item(&copied, Gone),
+            refused("The copy of Dentist is gone already, so there is nothing to take away.")
+        );
+        // Taking the copy away is a delete, and asked first, in words that say
+        // which of the two goes.
+        let asked = take_away_the_copy(&copied);
+        assert_eq!(
+            asked,
+            "Take away the copy of \"Dentist\" in Work? The one it was copied from stays where \
+             it is."
+        );
+        reads_as_a_persons_sentence(&asked, Voice::Answer)
+            .unwrap_or_else(|why| panic!("{asked:?}: {why}"));
+    }
+
+    #[test]
+    fn test_an_undo_while_the_sync_is_telling_the_provider_is_refused_saying_try_again() {
+        let again =
+            refused("Dentist is being synced with its account right now. Try again shortly.");
+        for did in [
+            ItemDid::MarkedDone { now: true },
+            ItemDid::Pinned { now: true },
+            ItemDid::Moved {
+                from: place("home", "Home"),
+                to: place("work", "Work"),
+            },
+            ItemDid::Copied {
+                copy_id: "task-2".to_string(),
+                into: place("work", "Work"),
+            },
+            ItemDid::Deleted(dentists_record()),
+        ] {
+            let item = on_the_task(did);
+            assert_eq!(what_undo_does_to_an_item(&item, BeingSyncedNow), again);
+            assert_eq!(what_redo_does_to_an_item(&item, BeingSyncedNow), again);
+        }
+    }
+
+    #[test]
+    fn test_the_menu_names_the_item_and_the_command() {
+        let action = |did| LastAction::OnAnItem(on_the_task(did));
+        let deleted = action(ItemDid::Deleted(dentists_record()));
+        assert_eq!(
+            menu_label(&deleted, Direction::Undo),
+            "&Undo Delete: Dentist\tCtrl+Z"
+        );
+        assert_eq!(
+            menu_label(&action(ItemDid::MarkedDone { now: true }), Direction::Redo),
+            "&Redo Mark as Done: Dentist\tCtrl+Y"
+        );
+        for (did, name) in [
+            (ItemDid::MarkedDone { now: false }, "Mark as Not Done"),
+            (ItemDid::Pinned { now: true }, "Pin"),
+            (ItemDid::Pinned { now: false }, "Unpin"),
+            (
+                ItemDid::Moved {
+                    from: place("home", "Home"),
+                    to: place("work", "Work"),
+                },
+                "Move to Work",
+            ),
+            (
+                ItemDid::Copied {
+                    copy_id: "task-2".to_string(),
+                    into: place("work", "Work"),
+                },
+                "Copy to Work",
+            ),
+        ] {
+            assert_eq!(action(did).name(), name);
+        }
+        // An item with no name is still named, by what it is.
+        let untitled = LastAction::OnAnItem(OnAnItem {
+            kind: ItemKind::Note,
+            name: " ".to_string(),
+            id: "note-1".to_string(),
+            did: ItemDid::Pinned { now: true },
+        });
+        assert_eq!(
+            menu_label(&untitled, Direction::Undo),
+            "&Undo Pin: an untitled note\tCtrl+Z"
+        );
+        // The step belongs to the module that took it, and Undo anywhere else
+        // says where that was.
+        assert_eq!(deleted.module(), PimModule::Tasks);
+        let marked = LastAction::Marked {
+            mark: Mark::Read(true),
+            before: vec![message(1, "Quarterly report", false, false)],
+        };
+        assert_eq!(marked.module(), PimModule::Mail);
+        let sentences = [
+            (
+                in_another_module(&deleted, Direction::Undo),
+                "The last thing you did was in Tasks. Switch to Tasks to undo it.",
+            ),
+            (
+                in_another_module(&marked, Direction::Redo),
+                "The last thing you did was in Mail. Switch to Mail to redo it.",
+            ),
+            (undone(&deleted), "Undid Delete on Dentist."),
+            (undone(&untitled), "Undid Pin on an untitled note."),
+        ];
+        for (said, expected) in sentences {
+            assert_eq!(said, expected);
+            reads_as_a_persons_sentence(&said, Voice::Answer)
+                .unwrap_or_else(|why| panic!("{said:?}: {why}"));
+        }
+    }
+
+    #[test]
+    fn test_redo_of_a_delete_deletes_it_again() {
+        let deleted = on_the_task(ItemDid::Deleted(dentists_record()));
+        assert_eq!(
+            what_redo_does_to_an_item(&deleted, Present),
+            UndoAnItem::DeleteIt
+        );
+        for store in [Gone, DeletionOwed, DeletionTaken] {
+            assert_eq!(
+                what_redo_does_to_an_item(&deleted, store),
+                refused("Dentist is no longer here, so it cannot be deleted again.")
+            );
         }
     }
 }

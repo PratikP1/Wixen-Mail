@@ -641,6 +641,9 @@ last_updated: 2026-09-25T19:00:00.000Z
 | 624 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-08: #47's undo of a move, a delete or a copy, under NVDA and Narrator. What only a person settles: with the message list focused after a move, the Edit menu's Undo heard as "Undo Move to Archive: Invoice", or "Undo Delete: 3 messages" for a set; Ctrl+Z heard saying one sentence, "Undid Move to Archive on Invoice.", and the cursor heard landing on the message back when its folder is on screen; a refusal heard naming the message and what to do, such as "Invoice went to another account, so it cannot be taken back from here. Move it from that account instead."; Ctrl+Y heard doing the move again. application::undoing holds the decisions and the words and tests/undoing_a_mark_names_the_message.rs reads the window's wiring; neither listens | open |  | 2026-09-25T17:00:00.000Z |  |
 | 625 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-08: an undone move, delete or copy has never reached a real mail server. A change the server had not heard of is ended here and nothing is sent; one the server carried out is a new move back, or a copy sent to the trash, made through complete_here_then_tell_the_server, the path the action took, after allowed_for(account).mail is met in move_back_or_again or in where_a_delete_goes_here. What a real IMAP or Gmail server does with a message moved back from where it put it a moment before, whether the number the store recorded after the first move is the one the server still holds, and whether a copy's trash reaches the right message, is phase 14's, with REAL-02's lines for move, copy and delete as the place it belongs. Known and left: a replay that begins between the undo's read of the store and its end of the waiting row can still send the move once more; the window is the few statements of undo_here on the interface thread. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-25T17:00:00.000Z |  |
 | 626 | 13 | todo | src/application/undoing.rs |  | 13-08: undoing a move or a copy to another account is refused in a sentence, by phase 13's decision 11, because the undo would be a second crossing between two servers with the same three steps and held bytes. what_undo_does_to answers every crossing with went_to_another_account, held by test_a_crossing_is_refused_with_a_sentence and the record "an undo refuses a move to another account in words". Building it means a crossing back through mail_across_accounts, remembered with the other account's folder and number; open until Pratik asks for it | open |  | 2026-09-25T17:00:00.000Z |  |
+| 627 | 13 | unrun-verify | src/presentation/managers.rs |  | 13-09: #47's undo in Contacts, Calendar, Reminders, Tasks and Notes, under NVDA and Narrator. What only a person settles, in each of the five lists: the Edit menu's Undo heard naming the action and the item, "Undo Delete: Dentist", "Undo Mark as Done: Dentist" or "Undo Move to Work: Quarterly plan"; Ctrl+Z heard saying one sentence, "Undid Delete on Dentist.", and the cursor heard landing on the item that came back; a deleted item made again heard as "Dentist had already been deleted at its account, so it comes back here as a new task and is sent there as one."; the question before a copy is taken away heard in full; "The last thing you did was in Tasks. Switch to Tasks to undo it." heard in another list; and a delete's question heard ending "Undo brings it back until your next action." application::undoing and data::message_cache::taking_back hold the decisions, the words and the store, and tests/undoing_a_mark_names_the_message.rs reads the wiring; none of them listens | open |  | 2026-09-25T20:00:00.000Z |  |
+| 628 | 13 | unrun-verify | src/data/message_cache/taking_back.rs |  | 13-09: an undone action on a contact, an event, a task or a note has never reached Google, Microsoft or a calendar server. A deletion still owed is taken back with its row in one transaction and nothing is sent; one the account has taken comes back as a new item that the next sync creates there; a toggle, a move and a copy go through the cache calls and file_under the action used, and each goes out through the sync's own push, whose client asks allowed_for(account).personal_information before it may change anything (TasksClient::for_account in tasks_api.rs, the same shape in the other clients). What a real account does with each, the owed case and the taken case both, is phase 14's: REAL-01's lines for Gmail's calendars, contacts and tasks, and no REAL line yet for Microsoft's or a calendar server's, which phase 14's planner decides. Known and left: nothing in the store says a sync is running, so the refusal rests on ASyncUnderWay, counted by the window's four syncs; a sync started any other way would not be counted. The Edit menu's help says undoing at the account is experimental (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-25T20:00:00.000Z |  |
+| 629 | 13 | todo | src/presentation/managers.rs |  | 13-09: two things an item's undo does not bring back. A deleted task's subtasks are taken out from under it by the delete (drop_synced_task sets their parent to nothing) and stay that way after Undo, because the record is the task's own row. And a day taken off a repeating event is a save rather than a delete, so it clears the undo step instead of being undone; undoing it would mean putting the series' exception dates back and taking back the day's change at the provider. Recommendation: build both beside an undo of an item's edit, if Pratik wants edits undoable; open until he asks | open |  | 2026-09-25T20:00:00.000Z |  |
 
 ````json
 [
@@ -8154,6 +8157,42 @@ last_updated: 2026-09-25T19:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-25T17:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 627,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "13-09: #47's undo in Contacts, Calendar, Reminders, Tasks and Notes, under NVDA and Narrator. What only a person settles, in each of the five lists: the Edit menu's Undo heard naming the action and the item, \"Undo Delete: Dentist\", \"Undo Mark as Done: Dentist\" or \"Undo Move to Work: Quarterly plan\"; Ctrl+Z heard saying one sentence, \"Undid Delete on Dentist.\", and the cursor heard landing on the item that came back; a deleted item made again heard as \"Dentist had already been deleted at its account, so it comes back here as a new task and is sent there as one.\"; the question before a copy is taken away heard in full; \"The last thing you did was in Tasks. Switch to Tasks to undo it.\" heard in another list; and a delete's question heard ending \"Undo brings it back until your next action.\" application::undoing and data::message_cache::taking_back hold the decisions, the words and the store, and tests/undoing_a_mark_names_the_message.rs reads the wiring; none of them listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 628,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/data/message_cache/taking_back.rs",
+    "line": null,
+    "description": "13-09: an undone action on a contact, an event, a task or a note has never reached Google, Microsoft or a calendar server. A deletion still owed is taken back with its row in one transaction and nothing is sent; one the account has taken comes back as a new item that the next sync creates there; a toggle, a move and a copy go through the cache calls and file_under the action used, and each goes out through the sync's own push, whose client asks allowed_for(account).personal_information before it may change anything (TasksClient::for_account in tasks_api.rs, the same shape in the other clients). What a real account does with each, the owed case and the taken case both, is phase 14's: REAL-01's lines for Gmail's calendars, contacts and tasks, and no REAL line yet for Microsoft's or a calendar server's, which phase 14's planner decides. Known and left: nothing in the store says a sync is running, so the refusal rests on ASyncUnderWay, counted by the window's four syncs; a sync started any other way would not be counted. The Edit menu's help says undoing at the account is experimental (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 629,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "13-09: two things an item's undo does not bring back. A deleted task's subtasks are taken out from under it by the delete (drop_synced_task sets their parent to nothing) and stay that way after Undo, because the record is the task's own row. And a day taken off a repeating event is a save rather than a delete, so it clears the undo step instead of being undone; undoing it would mean putting the series' exception dates back and taking back the day's change at the provider. Recommendation: build both beside an undo of an item's edit, if Pratik wants edits undoable; open until he asks",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
     "resolved_at": null
   }
 ]

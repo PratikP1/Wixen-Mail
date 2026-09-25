@@ -404,14 +404,17 @@ pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experime
      passphrase, because nothing here asks you for one.";
 
 /// What Undo and Redo say, as their help on the Edit menu, while they name a
-/// mark, a star or a label on messages (13-07), or a move, a delete or a copy
-/// (13-08).
+/// mark, a star or a label on messages (13-07), a move, a delete or a copy
+/// (13-08), or an action on a contact, an event, a task, a note or a reminder
+/// (13-09).
 ///
-/// An undo is a second change at somebody's mail server, sent the way the
-/// action was, and the action itself has never met a real account, so the
-/// undo is no less experimental than what it takes back. Said where the
-/// person choosing it reads, not in a changelog.
-pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your mail server the way the action was, \
+/// An undo is a second change at somebody's account, sent the way the action
+/// was, and the action itself has never met a real account, so the undo is no
+/// less experimental than what it takes back. Said where the person choosing
+/// it reads, not in a changelog. The account rather than the mail server,
+/// since a calendar, an address book, a task list and a notes service are
+/// where the other five modules' changes go.
+pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your account the way the action was, \
      and like every change Wixen Mail sends it is experimental, because none of it has been \
      run against a real account yet.";
 
@@ -705,6 +708,13 @@ mod tests {
             UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("the way the action was"),
             "it does not say the undo is sent like the action: \
              {UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
+        );
+        // Since 13-09 it is Undo's help in the other five modules too, where a
+        // change goes to a calendar, an address book, a task list or a notes
+        // service, so it names the account rather than the mail server.
+        assert!(
+            !UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("mail server"),
+            "{UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
         );
     }
 

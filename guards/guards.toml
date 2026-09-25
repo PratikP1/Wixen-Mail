@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 325 records have arrived since and have not been through it.
+# 330 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12713,12 +12713,14 @@ file = "src/presentation/managers.rs"
 # `Moved` became `Filed` in 05-03, when copy joined move on this arm, and the
 # record was unmeasurable until the text below named the code as it now stands.
 # Re-measured by hand on 2026-09-08 after the rename rather than edited until it
-# applied: the break still reddens exactly the one test named.
+# applied: the break still reddens exactly the one test named. Its `after`
+# rewritten on 2026-09-25 by 13-09, when the arm's answer became the sentence
+# and the undo step together, so the break compiles; measured again.
 before = """                Some(Filed::Refused(why)) => {
                     let _ = tx.try_send(UIUpdate::CommandRefused(why));
                     return;
                 }"""
-after = """                Some(Filed::Refused(why)) => Ok(why),"""
+after = """                Some(Filed::Refused(why)) => Ok((why, None)),"""
 red = [
     "presentation::managers::tests::test_a_refused_move_is_said_where_a_refusal_is_said",
 ]
@@ -30972,7 +30974,7 @@ red = [
     "application::undoing::tests::test_undoing_mark_as_read_over_a_mixed_set_puts_back_each_messages_own_state",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # A set named by its first message's subject, so "Undo Mark as Read" over four
@@ -30995,7 +30997,7 @@ red = [
     "application::undoing::tests::test_what_could_not_come_back_is_said_once_with_the_count",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # The undo of a move in the window letting a waiting change go without
@@ -31016,7 +31018,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # Delete remembering its action before the change is made here, so a delete
@@ -31040,7 +31042,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # A move the server has not heard of answered with a move back, so the server
@@ -31058,7 +31060,7 @@ red = [
     "application::undoing::tests::test_delete_permanently_still_waiting_comes_back",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # An undone copy deleted off the server outright rather than sent to the
@@ -31074,7 +31076,7 @@ red = [
     "application::undoing::tests::test_undoing_a_copy_sends_the_copy_to_the_trash",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # A move to another account let through to an undo, which would send the
@@ -31099,7 +31101,7 @@ red = [
     "application::undoing::tests::test_what_could_not_come_back_is_said_once_with_the_count",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # Mark as Read remembering an action before its writes, so a write the cache
@@ -31121,7 +31123,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # The program's own mark after the reading wait replacing the last action, so
@@ -31143,7 +31145,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # A box in a dialog pressed Ctrl+Z or Ctrl+Y with nothing to take back or put
@@ -31166,4 +31168,147 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
     { file = "tests/several_steps_come_back.rs", tests = 18 },
+]
+
+# An undone delete its account was never told of answered by making the item
+# again, so it comes back under a new identity while the deletion note is
+# still sent and the account deletes the original. Written 2026-09-25 by
+# 13-09, the break measured against the whole library.
+[[guard]]
+name = "an undone delete the account was never told of comes back as it was"
+file = "src/application/undoing.rs"
+before = '''        (ItemDid::Deleted(record), DeletionOwed | Gone) => {
+            UndoAnItem::TakeTheDeletionBack(record.clone())
+        }'''
+after = '''        (ItemDid::Deleted(record), DeletionOwed | Gone) => {
+            UndoAnItem::MakeItAgain(record.clone())
+        }'''
+red = [
+    "application::undoing::tests::test_undoing_a_deleted_task_puts_back_every_field_it_had",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 30 },
+]
+
+# The undo of a copy aimed at the original, which would delete the item
+# somebody copied and leave the copy they meant to take away. Written
+# 2026-09-25 by 13-09, the break measured against the whole library.
+[[guard]]
+name = "an undone copy of an item deletes the copy, never the original"
+file = "src/application/undoing.rs"
+before = '''        (ItemDid::Copied { copy_id, .. }, Present) => UndoAnItem::DeleteTheCopy {
+            id: copy_id.clone(),
+        },'''
+after = '''        (ItemDid::Copied { copy_id: _, .. }, Present) => UndoAnItem::DeleteTheCopy {
+            id: item.id.clone(),
+        },'''
+red = [
+    "application::undoing::tests::test_undoing_a_copy_removes_the_copy_only",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 30 },
+]
+
+# A take-back that drops the deletion note before its transaction begins, so
+# a row that cannot be written back leaves the item gone and its deletion
+# never sent: gone here, still at the account, and nothing saying so
+# (T-13-30). Written 2026-09-25 by 13-09, the break measured against the
+# whole library.
+[[guard]]
+name = "a take-back drops the deletion note only with the row it puts back"
+file = "src/data/message_cache/taking_back.rs"
+before = '''        let taking = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to take a deletion back: {}", e)))?;
+        if self
+            .the_deletion_of(kind, record.id())?
+            .is_some_and(|deletion| deletion.taken)
+        {
+            return Ok(TakenBack::AlreadyTaken);
+        }
+        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute('''
+after = '''        if let Some((table, column)) = the_notes_of(kind) {
+            self.conn
+                .execute(
+                    &format!("DELETE FROM {table} WHERE {column} = ?1 AND taken_at IS NULL"),
+                    params![record.id()],
+                )
+                .map_err(|e| Error::Other(format!("Failed to take a deletion back: {}", e)))?;
+        }
+        let taking = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to take a deletion back: {}", e)))?;
+        if self
+            .the_deletion_of(kind, record.id())?
+            .is_some_and(|deletion| deletion.taken)
+        {
+            return Ok(TakenBack::AlreadyTaken);
+        }
+        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute('''
+red = [
+    "data::message_cache::taking_back::tests::test_a_restore_that_fails_leaves_the_row_and_the_note_as_they_were",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taking_back.rs", tests = 10 },
+]
+
+# A take-back that drops a note the account has already taken, which puts the
+# item back under an identity the account has let go of and leaves nothing to
+# stop a read writing the account's last copy of it back down (T-13-30).
+# Written 2026-09-25 by 13-09, the break measured against the whole library.
+[[guard]]
+name = "a take-back never drops a deletion the account has taken"
+file = "src/data/message_cache/taking_back.rs"
+before = '''        if self
+            .the_deletion_of(kind, record.id())?
+            .is_some_and(|deletion| deletion.taken)
+        {
+            return Ok(TakenBack::AlreadyTaken);
+        }
+        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute(
+                    &format!("DELETE FROM {table} WHERE {column} = ?1 AND taken_at IS NULL"),'''
+after = '''        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute(
+                    &format!("DELETE FROM {table} WHERE {column} = ?1"),'''
+red = [
+    "data::message_cache::taking_back::tests::test_a_taken_task_is_left_untouched_and_answered_already_taken",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taking_back.rs", tests = 10 },
+]
+
+# A delete answered No touching the undo step, here by clearing it, so the
+# last thing somebody did can no longer be taken back because they declined
+# to delete something else. Written 2026-09-25 by 13-09, the break measured
+# against `cargo test --test undoing_a_mark_names_the_message`.
+[[guard]]
+name = "a delete answered No leaves the undo step as it was"
+file = "src/presentation/managers.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''        // The one silence that is right here. The question was answered No,
+        // and the answer to No is that nothing happens.
+        if asked != ID_YES {
+            return;
+        }'''
+after = '''        // The one silence that is right here. The question was answered No,
+        // and the answer to No is that nothing happens.
+        if asked != ID_YES {
+            remember_an_item_action(state, None);
+            return;
+        }'''
+red = [
+    "test_an_action_on_an_item_is_remembered_after_it_is_carried_out",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]

@@ -77,17 +77,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   saying what to do, a Delete Permanently the server already has, a move or copy to another
   account, a message the server moved that this computer has not read back yet, and one whose
   change is reaching the server at that moment. Redo does the move, delete or copy again.
+  **Undo works in Contacts, Calendar, Reminders, Tasks and Notes too**, the tester's "and the
+  same in the other modules": `Ctrl+Z` in the list takes back the last Mark Done or Not Done,
+  Pin or Unpin, Delete, Move to or Copy to, and the menu names it, "Undo Delete: Dentist". A
+  deleted item comes back with everything it had while its account has not been told, and the
+  delete is then never sent; once the account has deleted it, it comes back as a new item and
+  Undo says so. Undoing a copy takes away the copy, after asking, and never the item copied.
+  It is one step for the whole window: the last thing you did anywhere is what Undo takes
+  back, and Undo in another module's list says where that was. Undo refuses, and says why,
+  while the item's account is being synced. **A delete's question no longer says "This cannot
+  be undone"**, since it now can: it says "Undo brings it back until your next action."
   Known limitations: the number
   fields, such as the minutes between checks for mail and an event's hour and minute, and the
   composer's Describe the picture and Insert Link boxes, keep Windows' own single step, where
   pressing Undo twice puts the change back. A password box keeps no steps at all, so a
-  password is never held in memory as steps. Nothing in contacts, the calendar, tasks, notes
-  or reminders can be undone yet. A move to another account cannot be undone, by decision:
-  undoing it would be a second crossing between two servers. An undone mark, star, label,
-  move, delete or copy has not been sent to a real mail server yet, so it is as experimental
-  as every other change this program sends, and the Undo item's help says so. Nobody has
-  heard the greyed items, the sentences, Undo Send's new letter, a step undone, a mark undone
-  or a move undone with a screen reader yet, in the main window or in a dialog.
+  password is never held in memory as steps. A move to another account cannot be undone, by
+  decision: undoing it would be a second crossing between two servers. An undone mark, star,
+  label, move, delete or copy has not been sent to a real mail server yet, and no undo in the
+  other modules has reached Google, Microsoft or a calendar server, so it is as experimental
+  as every other change this program sends, and the Undo item's help says so. A deleted item
+  its account had already deleted comes back as a new item there, not as the one it was. A
+  deleted task's subtasks stay where the delete left them, no longer under it, and a day taken
+  off a repeating event cannot be undone, so it leaves nothing for Undo to take back. Nobody
+  has heard the greyed items, the sentences, Undo Send's new letter, a step undone, a mark
+  undone, a move undone or an item's undo with a screen reader yet, in the main window or in
+  a dialog.
 
 ### Changed
 
