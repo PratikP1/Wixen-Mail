@@ -1,4 +1,5 @@
-//! Cut, copy, paste and select all, and what each means where the cursor is.
+//! Cut, copy, paste, select all, undo and redo, and what each means where the
+//! cursor is.
 //!
 //! # Why this is a decision rather than four calls
 //!
@@ -29,7 +30,10 @@
 //! it. That has happened here before and is written up in `CLAUDE.md`. So above
 //! a limit the answer is a sentence rather than a freeze.
 
-/// One of the four.
+/// One of the six on the Edit menu that act on what has focus.
+///
+/// Undo and Redo act on a text box alone. The box's own one step is what they
+/// take back and put back, which `presentation::text_undo` reaches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditCommand {
     Cut,
@@ -54,8 +58,18 @@ impl EditCommand {
     }
 }
 
-pub const NOTHING_TO_UNDO: &str = "";
-pub const NOTHING_TO_REDO: &str = "";
+/// What Undo says in a box that has nothing to take back.
+///
+/// Said rather than doing nothing, for the reason at the head of this module.
+pub const NOTHING_TO_UNDO: &str = "There is nothing to undo in this box.";
+
+/// What Redo says when there is no Undo to put back.
+///
+/// It says when Redo does work, because a box remembers one step: Redo is
+/// only offered right after an Undo, and somebody who pressed it after typing
+/// needs to know why it refused.
+pub const NOTHING_TO_REDO: &str =
+    "There is nothing to redo in this box. Redo puts back what Undo just took away.";
 
 /// What the cursor is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,14 +109,30 @@ pub const MOST_ROWS_WORTH_SELECTING: usize = 5_000;
 /// What a command should do, given where the cursor is.
 pub fn what_to_do(command: EditCommand, place: Where) -> Doing {
     match (command, place) {
-        // A text box does its own work for all four, which is what every other
+        // A text box does its own work for all six, which is what every other
         // Windows program does and what the native control already knows how
         // to do.
         (_, Where::AText) => Doing::ToTheText,
-        (EditCommand::Undo | EditCommand::Redo, _) => Doing::NotHere(String::new()),
         (EditCommand::Copy | EditCommand::SelectAll, Where::AReadOnlyText) => Doing::ToTheText,
-        (EditCommand::Cut | EditCommand::Paste, Where::AReadOnlyText) => Doing::NotHere(format!(
+        (
+            EditCommand::Cut | EditCommand::Paste | EditCommand::Undo | EditCommand::Redo,
+            Where::AReadOnlyText,
+        ) => Doing::NotHere(format!(
             "{} needs a box you can type in, and this one can only be read.",
+            command.name()
+        )),
+
+        // Undo and Redo take back and put back a change somebody typed, and a
+        // list or the sidebar has none to offer. Nor does the way out Cut and
+        // Copy give below, which would send somebody to a list for Undo.
+        (EditCommand::Undo | EditCommand::Redo, Where::AList { .. } | Where::ATree) => {
+            Doing::NotHere(format!(
+                "{} works in a box you can type in, not in a list or the sidebar.",
+                command.name()
+            ))
+        }
+        (EditCommand::Undo | EditCommand::Redo, Where::SomewhereElse) => Doing::NotHere(format!(
+            "{} works in a box you can type in. Tab or F6 moves between the parts of the window.",
             command.name()
         )),
 
