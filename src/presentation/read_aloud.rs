@@ -193,6 +193,52 @@ fn spoken(parts: &[(&str, &str)]) -> String {
         .join(". ")
 }
 
+/// One thing an item's full reading says: its label, and what it says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    /// Said before the value, or nothing, when the value speaks for itself.
+    pub label: String,
+    pub value: String,
+    /// Whether this is the item's long text: a note's body, an event's
+    /// description, a contact's notes.
+    pub long: bool,
+}
+
+impl ContactItem {
+    /// What the full reading says, in the order it says it.
+    pub fn fields(&self, _out: Reading) -> Vec<Field> {
+        Vec::new()
+    }
+}
+
+impl NoteItem {
+    /// What the full reading says, in the order it says it.
+    pub fn fields(&self, _out: Reading) -> Vec<Field> {
+        Vec::new()
+    }
+}
+
+impl TaskItem {
+    /// What the full reading says, in the order it says it.
+    pub fn fields(&self, _out: Reading) -> Vec<Field> {
+        Vec::new()
+    }
+}
+
+impl ReminderItem {
+    /// What the full reading says, in the order it says it.
+    pub fn fields(&self, _out: Reading) -> Vec<Field> {
+        Vec::new()
+    }
+}
+
+impl CalendarEventItem {
+    /// What the full reading says, in the order it says it.
+    pub fn fields(&self, _out: Reading) -> Vec<Field> {
+        Vec::new()
+    }
+}
+
 /// The word for whether an item is finished.
 ///
 /// The same word the list column uses, so one state is called one thing

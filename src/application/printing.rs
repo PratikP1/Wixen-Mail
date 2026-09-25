@@ -30,7 +30,7 @@
 //! width per letter, and every break is arithmetic.
 
 use crate::presentation::date_display::{DateSettings, DateStyle};
-use crate::presentation::read_aloud::Reading;
+use crate::presentation::read_aloud::{Field, Reading};
 use crate::presentation::reader_text::ReaderDocument;
 
 /// What is being printed, for the name the print job carries.
@@ -113,6 +113,16 @@ pub fn from_document(document: &ReaderDocument) -> Printable {
             .warning
             .as_deref()
             .map(|warning| warning.lines().map(as_text).collect::<Vec<_>>().join("\n")),
+    }
+}
+
+/// An item's fields, one to a line, as a thing to print.
+pub fn from_item(_kind: Kind, title: &str, _fields: &[Field]) -> Printable {
+    Printable {
+        title: title.to_string(),
+        lines: Vec::new(),
+        header_lines: 0,
+        warning: None,
     }
 }
 
@@ -377,8 +387,12 @@ mod tests {
     use crate::presentation::date_display::{
         Clock, DateOrder, DateSettings, DateStyle, DateWording,
     };
+    use crate::presentation::read_aloud::ReadAloud;
     use crate::presentation::reader_text::{ConversationPart, conversation, single_message};
-    use crate::presentation::ui_types::{AttachmentItem, MessageItem};
+    use crate::presentation::ui_types::{
+        AttachmentItem, CalendarEventItem, ContactItem, MessageItem, NoteItem, ReminderItem,
+        TaskItem,
+    };
 
     /// Every letter ten units wide, so a line of `width` 100 holds ten.
     fn ten_units_a_letter(text: &str) -> u32 {
@@ -707,6 +721,253 @@ mod tests {
             pages[0].lines,
             [title],
             "the sender's own dashes are printed as written"
+        );
+    }
+
+    // ── The other five kinds, printed from the fields their reading says ──
+
+    fn event() -> CalendarEventItem {
+        CalendarEventItem {
+            attendees_json: None,
+            id: "e1".to_string(),
+            summary: "Standup".to_string(),
+            description: "Agenda:\n1. Numbers\n2. Plans".to_string(),
+            start: "2026-07-27 09:00".to_string(),
+            end: "2026-07-27 09:15".to_string(),
+            location: "Room 4".to_string(),
+            is_all_day: false,
+            status: "confirmed".to_string(),
+            provider: "local".to_string(),
+            calendar_id: None,
+            calendar_name: Some("Work".to_string()),
+            calendar_color: None,
+            reminder_minutes: None,
+            repeats: String::new(),
+            categories: String::new(),
+            show_as: String::new(),
+            recurrence_rule: None,
+            changed_on_its_own: false,
+        }
+    }
+
+    fn contact() -> ContactItem {
+        ContactItem {
+            id: "c1".to_string(),
+            name: "Grace Hopper".to_string(),
+            email: "grace@example.com".to_string(),
+            phone: "555 0100".to_string(),
+            phone_label: "Mobile".to_string(),
+            company: "Navy".to_string(),
+            address: "1 Main St".to_string(),
+            address_label: "Home".to_string(),
+            birthday: "--03-14".to_string(),
+            favorite: true,
+            notes: "Met at a conference.".to_string(),
+        }
+    }
+
+    fn task() -> TaskItem {
+        TaskItem {
+            id: "t1".to_string(),
+            title: "File the report".to_string(),
+            description: None,
+            due_date: Some("2026-07-24 17:00".to_string()),
+            is_completed: false,
+            priority: "high".to_string(),
+            task_list_id: None,
+            parent_task_id: None,
+        }
+    }
+
+    fn note() -> NoteItem {
+        NoteItem {
+            id: "n1".to_string(),
+            title: "Shopping".to_string(),
+            body: "# Plans\n\n- Milk\n- Bread".to_string(),
+            body_preview: "Plans".to_string(),
+            pinned: true,
+            updated_at: "2026-07-20 08:00".to_string(),
+            folder_id: None,
+        }
+    }
+
+    fn reminder() -> ReminderItem {
+        ReminderItem {
+            id: "r1".to_string(),
+            title: "Call the dentist".to_string(),
+            description: None,
+            due_datetime: Some("2026-07-20 09:30".to_string()),
+            is_completed: true,
+            priority: "normal".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_an_event_prints_its_start_end_place_and_description_one_to_a_line() {
+        let event = event();
+
+        let printed = from_item(
+            Kind::Event,
+            &event.summary,
+            &event.fields(on_paper(reading())),
+        );
+
+        assert_eq!(
+            printed.lines,
+            [
+                "Standup",
+                "July 27, 2026 at 9:00 AM to July 27, 2026 at 9:15 AM",
+                "Location: Room 4",
+                "Calendar: Work",
+                "",
+                "Agenda:",
+                "1. Numbers",
+                "2. Plans",
+            ]
+        );
+        assert_eq!(printed.header_lines, 4, "{printed:#?}");
+        // One list of fields for both: the place printed is the place said.
+        let said = event.read_full(on_paper(reading()));
+        assert!(
+            said.split(". ").any(|part| part == "Location: Room 4"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_prints_every_field_its_reading_names() {
+        let contact = contact();
+
+        let printed = from_item(
+            Kind::Contact,
+            &contact.name,
+            &contact.fields(on_paper(reading())),
+        );
+
+        assert_eq!(
+            printed.lines,
+            [
+                "Grace Hopper",
+                "Email: grace@example.com",
+                "Mobile: 555 0100",
+                "Company: Navy",
+                "Home: 1 Main St",
+                "Birthday: March 14",
+                "Favorite",
+                "",
+                "Notes:",
+                "Met at a conference.",
+            ],
+            "the name once, as the title, and every field the reading says after it"
+        );
+    }
+
+    #[test]
+    fn test_a_task_prints_its_due_date_in_full() {
+        let task = task();
+        // The control: the list's reading says how long ago it was due.
+        let on_screen = from_item(Kind::Task, &task.title, &task.fields(reading()));
+        assert!(
+            on_screen.lines.iter().any(|line| line.contains("ago")),
+            "{on_screen:#?}"
+        );
+
+        let printed = from_item(Kind::Task, &task.title, &task.fields(on_paper(reading())));
+
+        assert_eq!(
+            printed.lines,
+            [
+                "File the report",
+                "Not done",
+                "Priority: high",
+                "Due: July 24, 2026 at 5:00 PM",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_note_prints_its_body_as_written_not_as_spoken() {
+        let note = note();
+
+        let printed = from_item(Kind::Note, &note.title, &note.fields(on_paper(reading())));
+
+        assert_eq!(
+            printed.lines,
+            [
+                "Shopping",
+                "Pinned",
+                "Updated: July 20, 2026 at 8:00 AM",
+                "",
+                "# Plans",
+                "",
+                "- Milk",
+                "- Bread",
+            ]
+        );
+        // The control: the same body spoken says its structure in words, so
+        // the lines above are the text as written and not the reading.
+        let said = note.read_full(on_paper(reading()));
+        assert!(said.contains("heading level 1, Plans"), "{said}");
+    }
+
+    #[test]
+    fn test_a_reminder_prints_whether_it_is_done() {
+        let mut reminder = reminder();
+        let done = from_item(
+            Kind::Reminder,
+            &reminder.title,
+            &reminder.fields(on_paper(reading())),
+        );
+        reminder.is_completed = false;
+        let not_done = from_item(
+            Kind::Reminder,
+            &reminder.title,
+            &reminder.fields(on_paper(reading())),
+        );
+
+        assert_eq!(
+            done.lines,
+            ["Call the dentist", "Done", "Due: July 20, 2026 at 9:30 AM"]
+        );
+        assert_eq!(not_done.lines[1], "Not done", "{not_done:#?}");
+    }
+
+    #[test]
+    fn test_an_empty_field_prints_no_line() {
+        let mut contact = contact();
+        contact.phone.clear();
+        contact.company.clear();
+        contact.address.clear();
+        contact.birthday.clear();
+        contact.favorite = false;
+        contact.notes.clear();
+
+        let printed = from_item(
+            Kind::Contact,
+            &contact.name,
+            &contact.fields(on_paper(reading())),
+        );
+
+        assert_eq!(printed.lines, ["Grace Hopper", "Email: grace@example.com"]);
+        assert_eq!(printed.header_lines, 2, "{printed:#?}");
+
+        // An empty title is an empty field too, and the page still says what
+        // it is rather than starting blank.
+        let titles: Vec<String> = Kind::ALL
+            .into_iter()
+            .map(|kind| from_item(kind, " ", &[]).title)
+            .collect();
+        assert_eq!(
+            titles,
+            [
+                "No subject",
+                "No subject",
+                "Event with no title",
+                "Contact with no name",
+                "Task with no title",
+                "Note with no title",
+                "Reminder with no title",
+            ]
         );
     }
 }
