@@ -96,6 +96,7 @@ pub mod phone_numbers;
 pub mod pictures;
 pub mod pim_command;
 pub mod pop_sync;
+pub mod printing;
 /// What a message shows and says, decided once for every surface that shows one.
 pub mod reading_a_message;
 pub mod reading_habits;
@@ -127,6 +128,7 @@ pub mod summing_up;
 pub mod sync_marker;
 pub mod tagging;
 pub mod tasks_sync;
+pub mod text_history;
 pub mod the_network_coming_and_going;
 pub mod thread_identity;
 pub mod threading;

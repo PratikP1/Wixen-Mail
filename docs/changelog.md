@@ -6,6 +6,53 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ## [Unreleased]
 
+### Added
+
+- **File, Print prints what you are on, everywhere a message or an item is shown.** The tester
+  on 2026-09-15 (#45): "Add print functionality." Press `Ctrl+P`, or choose Print on the File
+  menu (letter P), and Windows' own print dialog opens, where you choose the printer, the
+  copies and the pages. In the message list it prints the message you are on, and on a
+  conversation's row the whole conversation, every message in order. The reader window has
+  Print on its own File menu with the same key and letter, and prints the message,
+  conversation or attachment in the tab you are on; the formatted message window prints what
+  it shows on `Ctrl+P`. In Contacts, Calendar, Tasks, Notes and Reminders it prints the item
+  you are on, with the details `Shift+Space` reads, one to a line, and with nothing chosen it
+  says so in that module's words. A message's page carries the header lines the reader window
+  shows, then its words; a conversation heads each message with who sent it and when; every
+  date is written in full, even where the screen says how long ago. Each page is 11 point
+  black on white, with "Wixen Mail", the subject or name, and the page number at the top.
+  Afterwards one sentence says what was sent, to which printer and how many pages; closing the
+  dialog says nothing was printed. The job is named by its kind in Windows' print queue, such
+  as "Wixen Mail message" or "Wixen Mail contact", never by its subject or a name, and the
+  privacy page says where the text goes. The version does not move for this: no build has been
+  cut since 1.0.0-alpha.1. Known limitations: the page is plain text, with no pictures or
+  formatting, and there is no print preview. A web page opened from a link in a message is not
+  printed. Nobody has worked the print dialog with a screen reader or looked at a printed page
+  from this build yet.
+- **Undo and Redo on the Edit menu.** The tester on 2026-09-15 (#47): "There are no general
+  undo/redo commands that provide corresponding functionality." The Edit menu now opens with
+  Undo (`Ctrl+Z`, letter U) and Redo (`Ctrl+Y`, letter R). They act on the box you are typing
+  in, such as a note's title or body or the contacts search, with "a multi-step history where
+  the native control gives one step", as the tester asked. Each of those boxes remembers up to
+  100 steps, and Undo takes them back one at a time: a word you typed with the space after it,
+  a paste, a cut, or a run of deleting. The cursor goes back to where each step began, and words
+  a step removed come back selected. Redo puts the steps back in turn until you type something
+  new. In the contacts search, each Undo runs the search again on the words it brings back.
+  Choosing a note in the list starts its title and body afresh, so Undo never reaches into the
+  note you had open before. With nothing to undo or redo, the menu shows them greyed and the
+  keys say so in a sentence, spoken
+  and on the status bar; in a list, the sidebar or a message you are reading, they say they
+  work in a box you can type in. Cut now takes words out in a way the box can undo; before
+  this, Undo after Cut put nothing back. **Undo Send moved to third on the Edit menu and its
+  letter moved from U to N**, because U is Undo's; its key is still `Ctrl+Shift+Z`. The version
+  does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: the several steps reach the main window's three boxes, the note title,
+  the note body and the contacts search; the boxes in dialogs keep Windows' own single step
+  and their own `Ctrl+Z` for now, where pressing Undo twice puts the change back, and have no
+  Redo. Undoing an action on messages or items, such as a delete or a move, is later work too.
+  Nobody has heard the greyed items, the sentences, Undo Send's new letter or a step undone
+  with a screen reader yet.
+
 ### Changed
 
 - **Labels can be made, renamed and put in order, and the Label menu shows yours.** The

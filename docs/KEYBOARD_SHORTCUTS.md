@@ -255,6 +255,7 @@ where the caret is.
 | Attachments | `Alt+A` | Moves between the message and the list of attachments, when there is one. Works in the formatted view as well |
 | Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
+| Print this tab | `Ctrl+P` | Prints the message, the conversation or the attachment in this tab through Windows' own print dialog, with every date written in full. The letter is `P` on the reader's File menu. Works in the formatted view as well, where it prints the message or the conversation the window shows |
 
 #### Attachments
 
@@ -508,7 +509,7 @@ can navigate. Making them real headings is being worked on.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Quit Application | `Ctrl+Q` | Exit Wixen Mail |
-| Undo Send | `Ctrl+Shift+Z` | First on the Edit menu. Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
+| Undo Send | `Ctrl+Shift+Z` | Third on the Edit menu, after Undo and Redo. Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
 | Open Settings | `Ctrl+,` | Open settings dialog |
 | Help for what you are looking at | `F1` | Opens the page about the module you are in. Every page is on the Help menu, which is the contents. |
 | Send Feedback | `Ctrl+Shift+F` | On the Help menu, and as a button on About. Tell the people who make Wixen Mail about a problem, an idea or a question, and read the whole message before it goes |
@@ -616,16 +617,21 @@ dialog once you have more than one.
 | Import a Folder of Messages | (none) | Read every saved message and mailbox file in a folder you choose, and in the folders inside it. Same destination. A file picker cannot answer with a folder, which is why this is its own command |
 | Export Mailbox | (none) | Write the folder you are looking at, and everything inside it, into one zip of mailbox files |
 | Import PGP Private Key | (none) | Read a private key in from a file so PGP mail can be opened. Experimental, and the menu says so |
+| Print | `Ctrl+P` | Print the message you are on in the message list, through Windows' own print dialog, where you choose the printer, the copies and the pages. Its header lines and its words are printed, not its pictures or formatting. On a conversation's row it prints the whole conversation, every message in order, each headed with its date in full. The reader window and the formatted message window print what they show the same way. In Contacts, Calendar, Tasks, Notes and Reminders it prints the item you are on, with the fields `Shift+Space` reads, one to a line |
 | Quit | `Ctrl+Q` | Exit the application |
 
 File holds making, saving, fetching and moving mail in and out. Anything that
 acts on the message, event, task, note or contact you are on is on the Action
-menu instead.
+menu instead, except Print, which is on File where every Windows program keeps
+it.
 
 ### Edit Menu
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
+| Undo | `Ctrl+Z` | Take back the last change in the box you are typing in |
+| Redo | `Ctrl+Y` | Put back what Undo just took away |
+| Undo Send | `Ctrl+Shift+Z` | Take back the message you just sent, while it is still being held |
 | Cut | `Ctrl+X` | Move what is selected to the clipboard |
 | Copy | `Ctrl+C` | Put what is selected on the clipboard |
 | Paste | `Ctrl+V` | Put what is on the clipboard where the cursor is |
@@ -633,13 +639,45 @@ menu instead.
 | Search | `Ctrl+F` | Searches whichever module you are looking at |
 | Save This Search | none | Keeps the mail search you just ran, under a name, in the folder tree |
 
+**Undo and Redo work on the box you are typing in**, such as a note's title or
+body, or the contacts search. Each box remembers up to 100 steps, and Undo
+takes them back one at a time. A step is:
+
+- a word you typed, up to and including the space or punctuation mark after it
+- a paste
+- a cut
+- a run of deleting in one direction, with Backspace or with Delete
+
+So if you type "meet at noon" and press `Ctrl+Z` three times, "noon" goes, then
+"at ", then "meet ". Each time the cursor goes back to where that step began,
+and words a step removed come back selected. Redo puts the steps back in turn,
+until you type something new; after that there is nothing for Redo to put back,
+and it says so. In the contacts search, each Undo runs the search again on the
+words it brings back.
+
+Choosing a note in the list starts its title and body afresh: Undo does not
+reach back into the note you had open before. The boxes in dialogs, such as the
+message composer and the account settings, still keep Windows' own single step,
+where pressing Undo a second time puts the change back.
+
+When there is nothing to undo or redo, the menu shows the item greyed out, and
+a screen reader says it is unavailable. The keys still answer: `Ctrl+Z` with
+nothing to undo says "There is nothing to undo in this box." rather than doing
+nothing. In a list, the sidebar or a message you are reading, Undo and Redo
+say they work in a box you can type in.
+
+**`Ctrl+Shift+Z` is Undo Send here, not Redo.** Some programs use it for Redo.
+In Wixen Mail Redo is on `Ctrl+Y`, which is Windows' own key for it, and Undo
+Send kept the key it already had. Its letter on the menu moved from U to N,
+because U is Undo's.
+
 **`Ctrl+A` used to open the Account Manager.** It is Select All now, which is
 what it means in every other Windows program, and the Account Manager moved to
 `Ctrl+Shift+A`. Before this, pressing Select All while editing a note put an
 accounts dialog in front of you.
 
-**What these do depends on where you are.** In a box you can type in, all four
-work as you would expect. In a list or the sidebar, Copy puts the row you are
+**What the clipboard four do depends on where you are.** In a box you can type
+in, all four work as you would expect. In a list or the sidebar, Copy puts the row you are
 on on the clipboard, and Select All selects every row. Cut and Paste need a box
 you can type in, and say so rather than doing nothing.
 
