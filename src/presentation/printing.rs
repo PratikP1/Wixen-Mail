@@ -30,53 +30,310 @@ pub use on_windows::{Sheet, draw_page, print};
 
 #[cfg(target_os = "windows")]
 mod on_windows {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
     use std::path::Path;
 
-    use windows::Win32::Graphics::Gdi::HDC;
+    use windows::Win32::Foundation::{COLORREF, ERROR_CANCELLED, GetLastError, RECT, SIZE};
+    use windows::Win32::Graphics::Gdi::{
+        CreateFontIndirectW, DEFAULT_CHARSET, DT_EXPANDTABS, DT_NOPREFIX, DT_SINGLELINE,
+        DeleteObject, DrawTextW, FW_NORMAL, GetDeviceCaps, GetTextExtentPoint32W, GetTextMetricsW,
+        HDC, HFONT, HGDIOBJ, HORZRES, LOGFONTW, LOGPIXELSX, LOGPIXELSY, SelectObject, SetBkMode,
+        SetTextColor, TEXTMETRICW, TRANSPARENT, VERTRES,
+    };
+    use windows::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
+    use windows::core::PCWSTR;
 
     use crate::application::printing::{NotPrinted, Page, Printed};
 
+    /// The page's size, fixed whatever the screen's reading size: decision 6
+    /// of phase 13, taken so there is no setting to find.
+    const POINTS: i32 = 11;
+
+    const FACE: &str = "Segoe UI";
+
+    /// Black, whatever the screen's theme, because a dark theme printed wastes
+    /// ink and reads badly.
+    const BLACK: COLORREF = COLORREF(0);
+
+    /// The rows above a page's own lines: the stamp and a gap under it.
+    const ABOVE_THE_TEXT: i32 = 2;
+
+    /// A step that failed, logged by what it was and never by what it held.
+    fn failed(step: &str) -> NotPrinted {
+        tracing::warn!("Printing stopped: {step}");
+        NotPrinted::Failed(step.to_string())
+    }
+
+    /// Text as the drawing calls take it: UTF-16, counted rather than ended.
+    fn utf16(text: &str) -> Vec<u16> {
+        text.encode_utf16().collect()
+    }
+
+    /// Text as the job calls take it: UTF-16 ended by a nought.
+    fn ended(text: &OsStr) -> Vec<u16> {
+        text.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    /// The page font, chosen into a device context. Dropped, it puts back the
+    /// font it replaced and deletes itself, so an early return leaks nothing.
+    struct PageFont {
+        hdc: HDC,
+        font: HFONT,
+        replaced: HGDIOBJ,
+    }
+
+    impl PageFont {
+        fn chosen_into(hdc: HDC, dots_per_inch: i32) -> Result<PageFont, NotPrinted> {
+            let mut face = [0u16; 32];
+            face.iter_mut()
+                .zip(FACE.encode_utf16())
+                .for_each(|(slot, letter)| *slot = letter);
+            let design = LOGFONTW {
+                // Negative asks for the height of the letters rather than of
+                // the cell, which is what a point size means in a word
+                // processor. Rounded to the nearest device unit.
+                lfHeight: -((POINTS * dots_per_inch + 36) / 72),
+                lfWeight: FW_NORMAL.0 as i32,
+                lfCharSet: DEFAULT_CHARSET,
+                lfFaceName: face,
+                ..Default::default()
+            };
+            // SAFETY: `design` is a whole LOGFONTW that lives across the call.
+            let font = unsafe { CreateFontIndirectW(&design) };
+            if font.is_invalid() {
+                return Err(failed("the page font could not be made"));
+            }
+            // SAFETY: both handles are live; what SelectObject answers is the
+            // font it replaced, which the drop puts back.
+            let replaced = unsafe { SelectObject(hdc, font.into()) };
+            Ok(PageFont {
+                hdc,
+                font,
+                replaced,
+            })
+        }
+
+        /// Chooses the font again, for a device context that may have been
+        /// handed back with its defaults at the start of a page.
+        fn choose_again(&self) {
+            // SAFETY: both handles are live for as long as `self` is.
+            unsafe { SelectObject(self.hdc, self.font.into()) };
+        }
+    }
+
+    impl Drop for PageFont {
+        fn drop(&mut self) {
+            // SAFETY: the font replaced is chosen back first, so the one made
+            // here is no longer in use when it is deleted, once, here.
+            unsafe {
+                SelectObject(self.hdc, self.replaced);
+                let _ = DeleteObject(self.font.into());
+            }
+        }
+    }
+
     /// A device context with the page font chosen into it, ready to measure
     /// and draw.
-    pub struct Sheet(());
+    pub struct Sheet {
+        font: PageFont,
+        left: i32,
+        top: i32,
+        width: i32,
+        line_height: i32,
+        lines_per_page: usize,
+    }
 
     impl Sheet {
         /// Chooses the page font into `hdc` and reads how much a page holds.
         ///
-        /// `hdc` stays the caller's and must outlive the sheet.
-        pub fn on(_hdc: HDC) -> Result<Sheet, NotPrinted> {
-            Err(NotPrinted::Failed("nothing is drawn yet".to_string()))
+        /// `hdc` stays the caller's and must outlive the sheet. The page is
+        /// what the device can reach, less half an inch on every side.
+        pub fn on(hdc: HDC) -> Result<Sheet, NotPrinted> {
+            // SAFETY: GetDeviceCaps reads a number from a device context the
+            // caller holds open.
+            let caps = |index| unsafe { GetDeviceCaps(Some(hdc), index) };
+            let (across, down) = (caps(HORZRES), caps(VERTRES));
+            let (inch_across, inch_down) = (caps(LOGPIXELSX), caps(LOGPIXELSY));
+            if [across, down, inch_across, inch_down]
+                .iter()
+                .any(|n| *n <= 0)
+            {
+                return Err(failed("the printer did not say how big its page is"));
+            }
+            let font = PageFont::chosen_into(hdc, inch_down)?;
+            let mut metrics = TEXTMETRICW::default();
+            // SAFETY: the page font is chosen into `hdc`, and `metrics` lives
+            // across the call.
+            if !unsafe { GetTextMetricsW(hdc, &mut metrics) }.as_bool() {
+                return Err(failed("the page font could not be measured"));
+            }
+            let line_height = (metrics.tmHeight + metrics.tmExternalLeading).max(1);
+            let (left, top) = (inch_across / 2, inch_down / 2);
+            let width = across - 2 * left;
+            let rows = (down - 2 * top) / line_height - ABOVE_THE_TEXT;
+            if width <= 0 || rows <= 0 {
+                return Err(failed("the page is too small to print on"));
+            }
+            Ok(Sheet {
+                font,
+                left,
+                top,
+                width,
+                line_height,
+                lines_per_page: rows as usize,
+            })
         }
 
         /// How wide `text` is in the page font, in the device's units.
-        pub fn measure(&self, _text: &str) -> u32 {
-            0
+        ///
+        /// A run that cannot be measured is as wide as nothing fits, so the
+        /// failure shows as short lines rather than as words lost off the
+        /// page's edge.
+        pub fn measure(&self, text: &str) -> u32 {
+            let letters = utf16(text);
+            let mut size = SIZE::default();
+            // SAFETY: the page font is chosen into the device context, and
+            // both buffers live across the call.
+            let measured = unsafe { GetTextExtentPoint32W(self.font.hdc, &letters, &mut size) };
+            match measured.as_bool() {
+                true => size.cx.max(0) as u32,
+                false => u32::MAX,
+            }
         }
 
         /// How wide a line may be, in the same units as [`Self::measure`].
         pub fn width(&self) -> u32 {
-            0
+            self.width as u32
         }
 
         /// How many lines fit under the stamp.
         pub fn lines_per_page(&self) -> usize {
-            0
+            self.lines_per_page
+        }
+
+        fn hdc(&self) -> HDC {
+            self.font.hdc
+        }
+
+        /// The font, black text and no background box behind a line, chosen
+        /// again for every page.
+        fn ready_to_draw(&self) {
+            self.font.choose_again();
+            // SAFETY: the device context is live for as long as `self` is.
+            unsafe {
+                SetTextColor(self.hdc(), BLACK);
+                SetBkMode(self.hdc(), TRANSPARENT);
+            }
+        }
+
+        /// One line in row `row` from the top, once. A row with no words on
+        /// it draws nothing.
+        fn draw_line(&self, row: usize, text: &str) -> Result<(), NotPrinted> {
+            if text.trim().is_empty() {
+                return Ok(());
+            }
+            let top = self.top + row as i32 * self.line_height;
+            let mut bounds = RECT {
+                left: self.left,
+                top,
+                right: self.left + self.width,
+                bottom: top + self.line_height,
+            };
+            let mut letters = utf16(text);
+            // SAFETY: the device context is live, `letters` and `bounds` live
+            // across the call, and no flag asks Windows to write into the text.
+            // DT_NOPREFIX because an ampersand in a stranger's text is text and
+            // not a mnemonic.
+            let drawn = unsafe {
+                DrawTextW(
+                    self.hdc(),
+                    &mut letters,
+                    &mut bounds,
+                    DT_SINGLELINE | DT_NOPREFIX | DT_EXPANDTABS,
+                )
+            };
+            match drawn {
+                0 => Err(failed("a line could not be drawn")),
+                _ => Ok(()),
+            }
         }
     }
 
     /// Draws one page: its stamp, a gap, and each of its lines once.
-    pub fn draw_page(_sheet: &Sheet, _page: &Page) -> Result<(), NotPrinted> {
-        Err(NotPrinted::Failed("nothing is drawn yet".to_string()))
+    pub fn draw_page(sheet: &Sheet, page: &Page) -> Result<(), NotPrinted> {
+        sheet.ready_to_draw();
+        std::iter::once(page.stamp.as_str())
+            .chain(std::iter::once(""))
+            .chain(page.lines.iter().map(String::as_str))
+            .enumerate()
+            .try_for_each(|(row, text)| sheet.draw_line(row, text))
     }
 
     /// Sends `pages` to the printer behind `sheet` as one job named
     /// `job_name`, into `into_file` when one is given.
+    ///
+    /// A job that fails part way is abandoned rather than ended, so half a
+    /// message does not come out of the printer looking like the whole of it.
+    /// A file printer's Save dialog closed without a name is
+    /// [`NotPrinted::Cancelled`], told apart from a failure the way wxWidgets
+    /// tells it, by the error `StartDocW` leaves behind.
     pub fn print(
-        _sheet: &Sheet,
-        _job_name: &str,
-        _into_file: Option<&Path>,
-        _pages: &[Page],
+        sheet: &Sheet,
+        job_name: &str,
+        into_file: Option<&Path>,
+        pages: &[Page],
     ) -> Result<Printed, NotPrinted> {
-        Err(NotPrinted::Failed("nothing is drawn yet".to_string()))
+        let name = ended(OsStr::new(job_name));
+        let output = into_file.map(|file| ended(file.as_os_str()));
+        let job = DOCINFOW {
+            cbSize: std::mem::size_of::<DOCINFOW>() as i32,
+            lpszDocName: PCWSTR(name.as_ptr()),
+            lpszOutput: output
+                .as_ref()
+                .map_or(PCWSTR::null(), |file| PCWSTR(file.as_ptr())),
+            ..Default::default()
+        };
+        // SAFETY: `job` and the strings it points at live across the call.
+        if unsafe { StartDocW(sheet.hdc(), &job) } <= 0 {
+            // SAFETY: read straight after the call that set it.
+            return Err(match unsafe { GetLastError() } {
+                ERROR_CANCELLED => NotPrinted::Cancelled,
+                _ => failed("the printer did not accept the job"),
+            });
+        }
+        let sent = pages
+            .iter()
+            .try_for_each(|page| one_page(sheet, page))
+            .and_then(|()| {
+                // SAFETY: ends the job StartDocW began on this device context.
+                match unsafe { EndDoc(sheet.hdc()) } > 0 {
+                    true => Ok(()),
+                    false => Err(failed("the printer did not finish the job")),
+                }
+            });
+        match sent {
+            Ok(()) => Ok(Printed { pages: pages.len() }),
+            Err(why) => {
+                // SAFETY: abandons the job StartDocW began, whatever state it
+                // reached.
+                unsafe { AbortDoc(sheet.hdc()) };
+                Err(why)
+            }
+        }
+    }
+
+    /// One page of a job: begun, drawn and ended.
+    fn one_page(sheet: &Sheet, page: &Page) -> Result<(), NotPrinted> {
+        // SAFETY: begins a page of the job begun on this device context.
+        if unsafe { StartPage(sheet.hdc()) } <= 0 {
+            return Err(failed("a page could not be started"));
+        }
+        draw_page(sheet, page)?;
+        // SAFETY: ends the page begun above.
+        match unsafe { EndPage(sheet.hdc()) } > 0 {
+            true => Ok(()),
+            false => Err(failed("a page could not be finished")),
+        }
     }
 }

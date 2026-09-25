@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 297 records have arrived since and have not been through it.
+# 299 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30533,4 +30533,47 @@ red = [
 tests_last_seen = [
     { file = "src/application/printing.rs", tests = 18 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
+]
+
+# A page drawn without its last line, so a message printed on one page loses
+# its closing words and a longer one loses the line at the foot of every page,
+# with nothing said. The metafile reading compares every string drawn with
+# every line the layout placed. Written 2026-09-25 by 13-03 and measured with
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a printed page draws every line the layout placed on it, the last one too"
+file = "src/presentation/printing.rs"
+suite = "printing_draws_what_the_layout_says"
+before = '''            .chain(std::iter::once(""))
+            .chain(page.lines.iter().map(String::as_str))'''
+after = '''            .chain(std::iter::once(""))
+            .chain(page.lines.iter().take(page.lines.len() - 1).map(String::as_str))'''
+red = [
+    "test_every_line_the_layout_placed_is_drawn_on_its_page",
+]
+tests_last_seen = [
+    { file = "src/presentation/printing.rs", tests = 0 },
+    { file = "tests/printing_draws_what_the_layout_says.rs", tests = 3 },
+]
+
+# An ampersand in a message drawn as a mnemonic: without DT_NOPREFIX, DrawTextW
+# takes "&" as the mark under the next letter, so "Tom & Jerry" is printed as
+# "Tom  Jerry" and the stamp loses the one in the subject too (T-13-09). Written
+# 2026-09-25 by 13-03 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an ampersand in a message is printed as written, not taken as a mnemonic"
+file = "src/presentation/printing.rs"
+suite = "printing_draws_what_the_layout_says"
+before = '''                    &mut bounds,
+                    DT_SINGLELINE | DT_NOPREFIX | DT_EXPANDTABS,'''
+after = '''                    &mut bounds,
+                    DT_SINGLELINE | DT_EXPANDTABS,'''
+red = [
+    "test_every_line_the_layout_placed_is_drawn_on_its_page",
+    "test_an_ampersand_and_accents_are_drawn_as_written",
+    "test_the_reading_refuses_a_page_with_a_line_dropped",
+]
+tests_last_seen = [
+    { file = "src/presentation/printing.rs", tests = 0 },
+    { file = "tests/printing_draws_what_the_layout_says.rs", tests = 3 },
 ]
