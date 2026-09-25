@@ -5784,6 +5784,17 @@ stays at 122.
     last space that fits and stamped page N of M; the job named by kind alone; the five
     items' `fields` shared by their spoken reading and their page. `cargo test --lib
     application::printing::`, 18 tests. Nothing reaches it until 13-03 (ledger 612).
+    13-03 on 2026-09-25: File, Print and `Ctrl+P` on the message list print the message
+    under the cursor through Windows' own print dialog (`PrintDlgExW`), composed the way the
+    reader shows it, drawn with GDI and spooled as one job named "Wixen Mail message". The
+    route the measurement chose is Win32 GDI through three `windows` features, because
+    wxdragon 0.9.17's printing never starts a job on Windows (research 1.2). `cargo test
+    --test printing_draws_what_the_layout_says`, 3 tests, reads every drawn line back from a
+    metafile; `cargo test --test printing_spools_a_document`, 1 test, spools three pages to
+    Microsoft Print to PDF, here and on CI's runner (#104); `cargo test
+    --test print_is_on_the_file_menu`, 4 tests, holds the item, the key and the handler's
+    calls. `cargo test --lib application::printing::`, 24 tests. Ledger 612 closed. The
+    reader window, the conversation window and the other modules are 13-04's.
   - Plans, 2026-09-24: 13-02 (the page layout), 13-03 (File, Print on the message list,
     after answer (b) on three `windows` features), 13-04 (every other surface), which ticks
     this line and closes #45.
@@ -6126,7 +6137,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | EDIT-03 | Phase 12 | Done 2026-09-24, 12-08: the block rules, the setting, the keys taken on the typing field and the opening times, held by `application::time_blocks`' cases and `tests/event_times_move_in_blocks.rs`; a task has no time; the ear is ledger 603 |
 | EDIT-04 | Phase 12 | Done 2026-09-24, 12-09: one set with an assignment per account and one default, chosen on the account's dialog or in a signature's editor through one stored assignment, compose following the From account, held by `application::signatures`' and the store's cases and `tests/a_signature_follows_the_from_account.rs`; the ear is ledger 605 |
 | EDIT-05 | Phase 12 | Done 2026-09-24, 12-10: labels in a stored order, the Label submenu rebuilt from them with the key that applies each and Edit Labels at its end, the Label Manager with a Key column and moves, held by `application::tagging`'s and the store's cases and `tests/the_label_menu_says_the_labels_an_account_has.rs`; the ear is ledger 607 |
-| GAP-01 | Phase 13 | 13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it. Until then "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20" |
+| GAP-01 | Phase 13 | 13-03 built 2026-09-25, File, Print on the message list through Windows' print dialog; 13-04 to come, which ticks it. Until then "13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it". Before that "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-02 | Phase 13 | 13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it. Until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-03 | Phase 13 | Planned 2026-09-24: 13-16, 13-17, 13-17.1, which ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-04 | Phase 13 | Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built. Until then "Not planned, 2026-09-20" |

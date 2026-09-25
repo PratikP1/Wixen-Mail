@@ -701,6 +701,49 @@ account this way; the loopback servers the tests use answer the four ways a
 server can, at each of the two servers, and a real account settles the
 rest.
 
+### Printing a message
+
+Press `Ctrl+P`, or choose File, Print, to print the message you are on in the
+message list. Windows' own print dialog opens, the same one other programs
+use, and you choose the printer, the number of copies and which pages there.
+When you close the dialog, focus goes back to the list.
+
+What is printed:
+
+- The header lines, as the reader window shows them: Subject, From, To, Cc
+  when there is one, the date written in full, and the names of any
+  attachments.
+- The words of the message, as the reader window shows them.
+- A line at the top of every page saying "Wixen Mail", the subject, and the
+  page number out of how many, such as "page 2 of 3".
+
+The page is 11 point Segoe UI, black on white, whatever theme or reading size
+you use on the screen. There is no setting for it.
+
+What is not printed:
+
+- Pictures and formatting. The page carries the words only, as plain text.
+- The rest of a conversation. On a conversation's row, Print prints the one
+  message the row stands for, and says so.
+- A web page opened from a link in a message. That page opens in its own
+  window, and printing it is not part of this.
+
+There is no print preview, because Windows' print dialog does not have one.
+
+After the job is sent, Wixen Mail says one sentence naming the message, the
+printer and how many pages went, for example "Sent Quarterly report to HP
+LaserJet 1022, 2 pages." If you close the dialog without printing, it says
+nothing was printed. If something goes wrong, it says what, and that nothing
+was printed.
+
+In Windows' print queue the job is called "Wixen Mail message", not the
+subject, because other people can see the queue of a shared printer.
+
+Printing works from the message list in this build. In the reader window and
+the conversation window `Ctrl+P` does not print, and in the other modules
+Print says it works on messages. Nobody has yet worked the print dialog with a
+screen reader or looked at a page on paper from this build.
+
 ## Composing Email
 
 ### Creating a New Message

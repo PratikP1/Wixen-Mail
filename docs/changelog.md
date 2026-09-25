@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **File, Print prints the message you are on.** The tester on 2026-09-15 (#45): "Add print
+  functionality." Press `Ctrl+P`, or choose Print on the File menu (letter P), and Windows' own
+  print dialog opens, where you choose the printer, the copies and the pages. The page carries
+  the header lines the reader window shows, with the date written in full, then the message's
+  words, in 11 point black on white, with "Wixen Mail", the subject and the page number at the
+  top of every page. Afterwards one sentence says what was sent, to which printer and how many
+  pages; closing the dialog says nothing was printed. The job is named "Wixen Mail message" in
+  Windows' print queue rather than by its subject, and the privacy page says where the text
+  goes. The version does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: the page is plain text, with no pictures or formatting, and there is no
+  print preview. Print works from the message list only in this build: on a conversation's row
+  it prints the one message the row stands for, the reader window and the conversation window
+  do not print, and in the other modules Print says it works on messages. Nobody has worked the
+  print dialog with a screen reader or looked at a printed page from this build yet.
 - **Undo and Redo on the Edit menu.** The tester on 2026-09-15 (#47): "There are no general
   undo/redo commands that provide corresponding functionality." The Edit menu now opens with
   Undo (`Ctrl+Z`, letter U) and Redo (`Ctrl+Y`, letter R). They act on the box you are typing
