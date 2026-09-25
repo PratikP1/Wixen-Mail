@@ -18,12 +18,6 @@ env:
   # assert; the sound goes to a mixer with nothing listening instead of to a
   # card. src/presentation/accessibility/feedback.rs has the detail.
   WIXEN_NO_AUDIO: "1"
-  # Nor do they have Microsoft Print to PDF, which was taken off the Windows
-  # Server 2025 image (actions/runner-images#12328). The spool test does not
-  # skip on this: it asserts the printer really cannot be opened, so the flag
-  # cannot hide one that works. tests/printing_spools_a_document.rs has the
-  # detail, and the metafile reading beside it checks the drawing here.
-  WIXEN_NO_PDF_PRINTER: "1"
 
 permissions:
   contents: read

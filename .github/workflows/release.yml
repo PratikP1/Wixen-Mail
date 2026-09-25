@@ -35,11 +35,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # The quality gate below runs the tests on a runner with no Microsoft Print
-  # to PDF (actions/runner-images#12328), so the spool test would fail it.
-  # With this set it asserts the printer really cannot be opened instead;
-  # ci.yml says more. This adds a value and changes no trigger, level or step.
-  WIXEN_NO_PDF_PRINTER: "1"
 
 concurrency:
   group: release-${{ github.ref_name }}
