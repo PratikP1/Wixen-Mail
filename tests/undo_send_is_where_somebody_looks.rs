@@ -10,6 +10,10 @@
 //! commands and Search, and has no way to tell a command they walked past from
 //! one that is not there.
 //!
+//! Since 13-01 Edit also has Undo and Redo, which the tester asked for in #47,
+//! so Undo Send is third, after them, on the same `Ctrl+Shift+Z`, and its
+//! letter moved from U to N because U is Undo's on every Windows program.
+//!
 //! `tests/wired.rs` holds the item to its handler by id and says nothing about
 //! which menu it is on, which is why the move broke nothing there and why this
 //! reading exists: the id is what makes the key work, and the menu is what
@@ -64,31 +68,78 @@ fn the_call_appending<'a>(text: &'a str, id: &str) -> Option<&'a str> {
     None
 }
 
+/// The first `how_many` `.append_item(` calls in `text`, in order.
+fn the_first_calls_appending(text: &str, how_many: usize) -> Vec<&str> {
+    let mut calls = Vec::new();
+    let mut rest = text;
+    while calls.len() < how_many {
+        let Some(call) = the_call_appending(rest, "ID_") else {
+            break;
+        };
+        let Some(at) = rest.find(call) else {
+            break;
+        };
+        calls.push(call);
+        rest = &rest[at + call.len()..];
+    }
+    calls
+}
+
+fn one_line(call: &str) -> String {
+    call.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// The one place Undo Send is offered on the menu bar, said as a complaint
 /// when it is not there.
 ///
-/// First on Edit, with its key in the label, and not on Tools. Both halves,
-/// because an item copied rather than moved is offered in two places and the
-/// place it was moved to stops being the only answer.
+/// Third on Edit, after Undo and Redo, which is where they sit on every Edit
+/// menu on this platform, with its key and its letter in the label, and not
+/// on Tools. Both halves, because an item copied rather than moved is offered
+/// in two places and the place it was moved to stops being the only answer.
 fn where_undo_send_is(app: &str) -> Result<(), String> {
     let ship = what_ships(app);
     let edit = menu_chain(&ship, "edit")
         .ok_or("the Edit menu is no longer built by that name, so this reads nothing")?;
-    let first = the_call_appending(edit, "ID_")
-        .ok_or("the Edit menu appends no item at all, so this reads nothing")?;
-    if !first.contains("ID_UNDO_SEND") {
+    let calls = the_first_calls_appending(edit, 3);
+    let &[undo, redo, third] = calls.as_slice() else {
         return Err(format!(
-            "the first item on the Edit menu is not Undo Send, so somebody looking \
-             for the one undo this program has opens Edit and does not find it: {}",
-            first.split_whitespace().collect::<Vec<_>>().join(" ")
+            "the Edit menu appends {} items where Undo, Redo and Undo Send were \
+             expected, so this reads nothing",
+            calls.len()
+        ));
+    };
+    if !undo.contains("ID_EDIT_UNDO") || !undo.contains("Ctrl+Z") {
+        return Err(format!(
+            "the first item on the Edit menu is not Undo on Ctrl+Z, which is where \
+             somebody who has used any other Windows program looks for it: {}",
+            one_line(undo)
         ));
     }
-    if !first.contains("Ctrl+Shift+Z") {
+    if !redo.contains("ID_EDIT_REDO") || !redo.contains("Ctrl+Y") {
+        return Err(format!(
+            "the second item on the Edit menu is not Redo on Ctrl+Y: {}",
+            one_line(redo)
+        ));
+    }
+    if !third.contains("ID_UNDO_SEND") {
+        return Err(format!(
+            "the third item on the Edit menu is not Undo Send, so somebody looking \
+             for it after Undo and Redo opens Edit and does not find it: {}",
+            one_line(third)
+        ));
+    }
+    if !third.contains("Ctrl+Shift+Z") {
         return Err(
-            "Undo Send is first on Edit but its label no longer carries Ctrl+Shift+Z, \
+            "Undo Send is third on Edit but its label no longer carries Ctrl+Shift+Z, \
                     so the menu stops being where somebody learns the key"
                 .to_string(),
         );
+    }
+    if !third.contains("Se&nd") {
+        return Err(format!(
+            "Undo Send's letter is no longer N, and U is Undo's: {}",
+            one_line(third)
+        ));
     }
     let tools = menu_chain(&ship, "tools")
         .ok_or("the Tools menu is no longer built by that name, so this reads nothing")?;
@@ -208,9 +259,10 @@ fn with_undo_send_back_on_tools(app: &str) -> String {
 }
 
 #[test]
-fn test_undo_send_is_the_first_item_on_the_edit_menu_and_not_on_tools() {
-    // The tester's sentence, held. The key is not moving and the handler is
-    // not moving; what moves is where a person finds the command.
+fn test_undo_and_redo_come_first_on_edit_and_undo_send_third_not_on_tools() {
+    // The tester's sentence of #44, held, with #47's beside it: Undo and Redo
+    // where every Windows program has them, and Undo Send straight after on
+    // the same key it always had and the letter N, since U is Undo's.
     let app = the_main_window();
 
     if let Err(why) = where_undo_send_is(&app) {
@@ -228,7 +280,7 @@ fn test_the_reading_complains_when_undo_send_is_put_back_on_tools() {
     let complaint = where_undo_send_is(&planted)
         .expect_err("Undo Send was put back on Tools and the reading did not notice");
     assert!(
-        complaint.contains("first item on the Edit menu"),
+        complaint.contains("third item on the Edit menu"),
         "the reading complained about something other than the missing item: {complaint}"
     );
 }
