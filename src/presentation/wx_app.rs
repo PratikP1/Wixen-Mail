@@ -18374,7 +18374,10 @@ fn do_an_edit_command(
                         page.copy();
                         let _ = a11y.announce("Copied", Priority::Normal);
                     }
-                    EditCommand::Cut | EditCommand::Paste => {}
+                    EditCommand::Cut
+                    | EditCommand::Paste
+                    | EditCommand::Undo
+                    | EditCommand::Redo => {}
                 }
                 return;
             }
@@ -18426,6 +18429,7 @@ fn do_an_edit_command(
                         );
                     }
                 },
+                EditCommand::Undo | EditCommand::Redo => {}
             }
         }
         Doing::ChooseEveryRow => {
