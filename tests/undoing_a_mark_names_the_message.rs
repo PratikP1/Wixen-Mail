@@ -222,6 +222,13 @@ fn the_menu_names_the_step(app: &str) -> Result<(), String> {
     if !words.contains("menu_label(") {
         return Err("the Edit menu's words never ask undoing::menu_label".to_string());
     }
+    if !words.contains("UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL") {
+        return Err(
+            "Undo names a change at the server without saying it is experimental where \
+             the person choosing it reads"
+                .to_string(),
+        );
+    }
     let handlers = body_of(app, THE_MENU_HANDLERS)?;
     if !handlers.contains("name_the_step_on_the_edit_menu(") {
         return Err("the menu's open handler never names the step".to_string());
