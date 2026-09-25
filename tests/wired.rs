@@ -3382,8 +3382,10 @@ fn test_making_renaming_and_removing_a_saved_search_all_read_the_tree_back() {
 fn test_opening_a_message_works_out_what_its_signature_is_worth() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
 
+    // Since 2026-09-25 (13-03) the text reader's composition is its own
+    // function, which File, Print goes through as well.
     assert!(
-        body_of(&app, "fn open_in_the_text_reader(").contains("with_what_is_said("),
+        body_of(&app, "fn a_message_as_the_reader_shows_it(").contains("with_what_is_said("),
         "the text reader composes a message without folding in what is said about it, \
          so signed mail opens there saying nothing about its signature"
     );
@@ -4245,7 +4247,7 @@ fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
          quickest way to read a message is the one that explains nothing"
     );
     assert!(
-        body_of(&app, "fn open_in_the_text_reader(").contains("with_what_is_said("),
+        body_of(&app, "fn a_message_as_the_reader_shows_it(").contains("with_what_is_said("),
         "the reader never says why a PGP message did not open, so all four reasons \
          arrive as the one general sentence"
     );
@@ -4288,10 +4290,12 @@ fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
 /// built every part through the composition and then composed the document
 /// from the bodies alone would open the words and say nothing.
 const THE_SURFACES: [(&str, &[&str], &str); 6] = [
+    // The text reader's composition, which File, Print goes through too
+    // since 2026-09-25 (13-03).
     (
-        "fn open_in_the_text_reader(",
+        "fn a_message_as_the_reader_shows_it(",
         &["what_a_message_shows_and_says("],
-        "the text reader",
+        "the text reader and paper",
     ),
     (
         "fn read_the_whole_message(",

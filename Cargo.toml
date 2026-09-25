@@ -436,6 +436,21 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_Controls",
     # SendMessageW, OBJID_CLIENT and CHILDID_SELF for the same call.
     "Win32_UI_WindowsAndMessaging",
+    # Printing (#45, 13-03): the device context, the page font, DrawTextW and
+    # GetTextExtentPoint32W, and the enhanced metafile the drawing test reads
+    # every line back from. wxdragon's own printing never starts a print job on
+    # Windows, which is why this is Win32 rather than wxWidgets. StartDocW and
+    # PrintDlgExW are gated behind this feature as well as their own.
+    "Win32_Graphics_Gdi",
+    # The print job itself: StartDocW, StartPage, EndPage, EndDoc, AbortDoc and
+    # DOCINFOW.
+    "Win32_Storage_Xps",
+    # Windows' own print dialog, PrintDlgExW, so the printer, the copies and the
+    # pages are chosen where they are in every other program. GlobalLock and
+    # GlobalUnlock, which read the printer's name out of the dialog's answer,
+    # are declared by hand in presentation::printing rather than turning on
+    # Win32_System_Memory for two calls.
+    "Win32_UI_Controls_Dialogs",
 ] }
 
 [target.'cfg(windows)'.build-dependencies]

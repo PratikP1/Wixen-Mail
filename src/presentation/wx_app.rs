@@ -145,6 +145,9 @@ menu_ids!(
     // sets up, and a key nobody presses twice is a key in the way of one
     // somebody presses daily.
     ID_IMPORT_PGP_KEY,
+    // File, Print (#45): the message under the cursor, through Windows' own
+    // print dialog.
+    ID_PRINT,
     ID_GET_OLDER,
     ID_QUIT,
     ID_SEARCH,
@@ -229,6 +232,8 @@ menu_ids!(
     ID_EDIT_COPY,
     ID_EDIT_PASTE,
     ID_EDIT_SELECT_ALL,
+    ID_EDIT_UNDO,
+    ID_EDIT_REDO,
     ID_OPEN_WINDOW,
     ID_VIEW_COLUMNS,
     ID_NEXT_UNREAD,
@@ -4018,7 +4023,13 @@ impl WxMailApp {
             };
             let follow_the_tray_setting = std::rc::Rc::new(follow_the_tray_setting);
 
+            // What the last Edit, Undo took away, so Edit, Redo can tell
+            // whether it is still the step to put back. Shared by the menu's
+            // handler below and by the menu opening, which greys Redo by it.
+            let last_undo: Rc<RefCell<Option<crate::presentation::text_undo::LastUndo>>> =
+                Rc::new(RefCell::new(None));
             let dispatch: std::rc::Rc<dyn Fn(i32)> = std::rc::Rc::new({
+                let last_undo = Rc::clone(&last_undo);
                 let follow_the_tray_setting = std::rc::Rc::clone(&follow_the_tray_setting);
                 let really_quitting = std::rc::Rc::clone(&really_quitting);
                 let state = state.clone();
@@ -4881,6 +4892,8 @@ impl WxMailApp {
                                         trees: &[folder_tree, pim_refs.contacts_tree],
                                         state: &state,
                                         dates,
+                                        last_undo: &last_undo,
+                                        frame: &frame,
                                     },
                                     &a11y,
                                 );
@@ -5614,6 +5627,13 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
+                        _ if id == ID_PRINT => print_the_message_under_the_cursor(
+                            &state,
+                            &message_cache,
+                            &frame,
+                            &ui_tx,
+                            &runtime,
+                        ),
                         _ if id == ID_CHOOSE_WHICH_COPY => {
                             choose_which_copy_to_keep(
                                 &state,
@@ -5977,6 +5997,16 @@ impl WxMailApp {
                 let dispatch = std::rc::Rc::clone(&dispatch);
                 move |event| dispatch(event.get_id())
             });
+            // The same three boxes the Edit commands act on.
+            keep_undo_and_redo_honest_on_the_menu(
+                &frame,
+                vec![
+                    pim_refs.note_title,
+                    pim_refs.note_body,
+                    pim_refs.contacts_search,
+                ],
+                last_undo,
+            );
 
             // ── Closing, which does not always mean closing ───────────────
             //
@@ -6721,6 +6751,15 @@ impl WxMailApp {
                 crate::application::allowed::READING_PGP_MAIL_IS_EXPERIMENTAL,
             )
             .append_separator()
+            // On File, where every Windows program keeps it, though it acts on
+            // the message you are on as the Action menu's items do. P was free
+            // on File, and Ctrl+P was bound nowhere (#45).
+            .append_item(
+                ID_PRINT,
+                "&Print...\tCtrl+P",
+                "Print the message or item you are on, with its header lines",
+            )
+            .append_separator()
             .append_item(ID_QUIT, "&Quit\tCtrl+Q", "Exit Wixen Mail")
             .build();
         // Insert New submenu at top of File menu
@@ -6734,13 +6773,31 @@ impl WxMailApp {
         // promised they were. They are on the Action menu with the rest of what
         // acts on the thing in front of you.
         let edit = Menu::builder()
-            // First, where Undo sits on every Edit menu on this platform. This
-            // is the one undo the program has, and it lived on Tools between
-            // the address book commands and Flush Outbox until the first day
-            // of testing, when the tester said "undo send should be in the
-            // edit menu" (#44). Somebody working by ear opens Edit, hears the
-            // clipboard commands and Search, and cannot tell a command they
-            // walked past from one that is not there.
+            // Undo and Redo first, where they sit on every Edit menu on this
+            // platform, on U and R and the keys Windows gives them (#47). They
+            // act on the box somebody is typing in, through the box's own one
+            // step: `application::editing` decides what they mean everywhere
+            // else and `presentation::text_undo` reaches the box. While this
+            // menu is open they are greyed if the box has nothing to take back
+            // or put back, so the menu reads its state, and as it closes both
+            // are offered again, because wxWidgets swallows a greyed item's key
+            // without a word (`keep_undo_and_redo_honest_on_the_menu`).
+            .append_item(
+                ID_EDIT_UNDO,
+                "&Undo\tCtrl+Z",
+                "Take back the last change in the box you are typing in",
+            )
+            .append_item(
+                ID_EDIT_REDO,
+                "&Redo\tCtrl+Y",
+                "Put back what Undo just took away",
+            )
+            // Undo Send, third, after the undo every program has. It lived on
+            // Tools between the address book commands and Flush Outbox until
+            // the first day of testing, when the tester said "undo send should
+            // be in the edit menu" (#44). Somebody working by ear opens Edit,
+            // hears the clipboard commands and Search, and cannot tell a
+            // command they walked past from one that is not there.
             //
             // It is the command the countdown names. Pressing Send says
             // "Sending in 10 seconds. Undo Send takes it back", and the Outbox
@@ -6755,13 +6812,17 @@ impl WxMailApp {
             // refused every time it was pressed and the sentence above was
             // said to nobody. 04.2-01 made both true at once.
             //
-            // Ctrl+Shift+Z, because Ctrl+Z is the editor's undo and taking that
-            // would mean a key that puts characters back in one window and
-            // stops a message in another. `tests/undo_send_is_where_somebody_looks.rs`
-            // holds it here, first, and off Tools.
+            // Ctrl+Shift+Z, because Ctrl+Z is Undo's, just above, and giving
+            // one key to both would mean a key that puts characters back in
+            // one place and stops a message in another. Some programs give
+            // Ctrl+Shift+Z to Redo; here Redo is on Ctrl+Y, Windows' own, and
+            // this key stays where people who learned it already have it. Its
+            // letter is N, since 13-01, because U is Undo's.
+            // `tests/undo_send_is_where_somebody_looks.rs` holds it here,
+            // third, and off Tools.
             .append_item(
                 ID_UNDO_SEND,
-                "&Undo Send\tCtrl+Shift+Z",
+                "Undo Se&nd\tCtrl+Shift+Z",
                 "Take back the message you just sent, while it is still being held",
             )
             .append_separator()
@@ -14112,18 +14173,104 @@ fn open_in_the_text_reader(
     message: &MessageItem,
     out: read_aloud::Reading,
 ) {
+    reader.open(a_message_as_the_reader_shows_it(cache, message, out));
+}
+
+/// One message composed the way the text reader shows it: its header lines,
+/// its text, its attachments by name, and what is said about it.
+///
+/// The reader and File, Print both go through here, so a page cannot come to
+/// show a different message from the reader. Paper asks with
+/// [`crate::application::printing::on_paper`], which writes every date in
+/// full.
+fn a_message_as_the_reader_shows_it(
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+    out: read_aloud::Reading,
+) -> reader_text::ReaderDocument {
     let stored = cache
         .as_ref()
         .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
     let shown = what_a_message_shows_and_says(cache, message, body_as_written(stored));
     // The list row does not carry the attachments, only whether there are any,
     // because a folder listing that loaded them would do a query per row. The
-    // reader is the one place that needs them.
+    // reader and paper are the places that need them.
     let mut message = message.clone();
     message.attachments = attachments_of(cache, message.message_id);
-    reader.open(
-        reader_text::single_message(&message, &shown.body, out).with_what_is_said(&shown.said),
-    );
+    reader_text::single_message(&message, &shown.body, out).with_what_is_said(&shown.said)
+}
+
+/// File, Print: the message under the cursor in the list, on paper, through
+/// Windows' own print dialog (#45).
+///
+/// Composed through [`a_message_as_the_reader_shows_it`], the reader's own
+/// composition, asked for every date in full. What a page holds is
+/// `application::printing`'s and the dialog, the font and the job are
+/// `presentation::printing`'s; this asks each in turn and says one sentence.
+/// A conversation's row prints the one message the row stands for and says
+/// so. Outside Mail it says this build prints messages.
+///
+/// On the window's thread, because the dialog is modal to the window, and a
+/// message's pages spool in under a second on Microsoft Print to PDF
+/// (`tests/printing_spools_a_document.rs`). The log gets the printer's name
+/// and the page count, never the subject or the text.
+fn print_the_message_under_the_cursor(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+) {
+    use crate::application::printing::{self, Kind, NotPrinted};
+    use crate::application::status_sentences::{Thing, nothing_chosen};
+    use crate::presentation::printing::{ask_for_a_printer, print_on};
+
+    let (module, message, a_conversation_row) = {
+        let held = lock_state(state);
+        (
+            held.active_module,
+            held.selected_message_index
+                .and_then(|row| held.the_loaded_message_the_row_stands_for(row))
+                .cloned(),
+            held.showing.showing_conversations(),
+        )
+    };
+    if module != PimModule::Mail {
+        send_refusal(ui_tx, runtime, &printing::prints_messages_only());
+        return;
+    }
+    let Some(message) = message else {
+        send_refusal(ui_tx, runtime, &nothing_chosen(Thing::MESSAGE));
+        return;
+    };
+    let printable = printing::from_document(&a_message_as_the_reader_shows_it(
+        cache,
+        &message,
+        printing::on_paper(reading_from_settings()),
+    ));
+    let printed = ask_for_a_printer(frame).and_then(|chosen| match chosen {
+        Some(chosen) => print_on(&chosen, &printable, Kind::Message)
+            .map(|printed| (chosen.printer_name().to_string(), printed)),
+        None => Err(NotPrinted::Cancelled),
+    });
+    match printed {
+        Ok((printer, printed)) => {
+            tracing::info!("Printed {} pages on {printer}", printed.pages);
+            let said = match a_conversation_row {
+                true => printing::sent_one_message_of_a_conversation(
+                    &printable.title,
+                    &printer,
+                    printed.pages,
+                ),
+                false => printing::sent_to_the_printer(&printable.title, &printer, printed.pages),
+            };
+            send_status(ui_tx, runtime, &said);
+        }
+        Err(NotPrinted::Cancelled) => {
+            send_status(ui_tx, runtime, &NotPrinted::Cancelled.sentence())
+        }
+        Err(not) => send_refusal(ui_tx, runtime, &not.sentence()),
+    }
 }
 
 /// What one message shows and says, asked the way every surface here asks it.
@@ -18288,7 +18435,43 @@ fn read_the_row_with_its_headings(
     let _ = a11y.announce_content(&text);
 }
 
-/// Which of the four an id is, if it is one of them.
+/// Grey Undo and Redo while a menu is open when the box with focus has
+/// nothing to take back or put back, and offer both again when it closes.
+///
+/// Greyed so the menu reads its state: a screen reader says "unavailable" on
+/// an item somebody arrows onto. Offered again on close because a greyed
+/// item's key never reaches the window at all (`framecmn.cpp` returns early
+/// for it), so Ctrl+Z with nothing to undo would do nothing and say nothing,
+/// which `application::editing` exists to prevent. With the menu closed the
+/// key always arrives, and the handler says there is nothing to undo.
+///
+/// Any menu opening asks, because wxdragon does not say which one opened; the
+/// work is a few questions to three boxes, cheap enough that a menu dropping
+/// does not wait on it. The event is skipped on so wxWidgets' own handling of
+/// a menu opening still runs.
+pub fn keep_undo_and_redo_honest_on_the_menu(
+    frame: &Frame,
+    boxes: Vec<TextCtrl>,
+    last: Rc<RefCell<Option<crate::presentation::text_undo::LastUndo>>>,
+) {
+    use crate::presentation::text_undo::what_the_edit_menu_offers;
+    let opened = *frame;
+    frame.on_menu_opened(move |event| {
+        let focused = boxes.iter().find(|box_| box_.has_focus());
+        let offer = what_the_edit_menu_offers(focused, last.borrow().as_ref());
+        sync_menu_enable(&opened, ID_EDIT_UNDO, offer.undo);
+        sync_menu_enable(&opened, ID_EDIT_REDO, offer.redo);
+        event.skip(true);
+    });
+    let closed = *frame;
+    frame.on_menu_closed(move |event| {
+        sync_menu_enable(&closed, ID_EDIT_UNDO, true);
+        sync_menu_enable(&closed, ID_EDIT_REDO, true);
+        event.skip(true);
+    });
+}
+
+/// Which of the six an id is, if it is one of them.
 fn an_edit_command(id: i32) -> Option<crate::application::editing::EditCommand> {
     use crate::application::editing::EditCommand;
     if id == ID_EDIT_CUT {
@@ -18299,12 +18482,16 @@ fn an_edit_command(id: i32) -> Option<crate::application::editing::EditCommand> 
         Some(EditCommand::Paste)
     } else if id == ID_EDIT_SELECT_ALL {
         Some(EditCommand::SelectAll)
+    } else if id == ID_EDIT_UNDO {
+        Some(EditCommand::Undo)
+    } else if id == ID_EDIT_REDO {
+        Some(EditCommand::Redo)
     } else {
         None
     }
 }
 
-/// Cut, copy, paste or select all, on whatever has focus.
+/// Cut, copy, paste, select all, undo or redo, on whatever has focus.
 ///
 /// wxdragon offers no way to ask which window has focus, so each candidate is
 /// asked whether it has it. That is the whole reason the main window's three
@@ -18329,6 +18516,8 @@ fn do_an_edit_command(
         trees,
         state,
         dates,
+        last_undo,
+        frame,
     } = parts;
 
     // The box with focus, if one has it. Asked first because a text box is
@@ -18374,7 +18563,10 @@ fn do_an_edit_command(
                         page.copy();
                         let _ = a11y.announce("Copied", Priority::Normal);
                     }
-                    EditCommand::Cut | EditCommand::Paste => {}
+                    EditCommand::Cut
+                    | EditCommand::Paste
+                    | EditCommand::Undo
+                    | EditCommand::Redo => {}
                 }
                 return;
             }
@@ -18410,7 +18602,10 @@ fn do_an_edit_command(
                 }
                 EditCommand::Cut => {
                     put_on_the_clipboard(&box_.get_string_selection(), a11y);
-                    box_.replace(from, to, "");
+                    // One step the box can undo. `replace` over the same
+                    // words left Undo nothing to put back, measured in
+                    // `tests/undo_reaches_the_text.rs`.
+                    crate::presentation::text_undo::remove_the_selection(box_);
                 }
                 EditCommand::Paste => match Clipboard::get().get_text() {
                     // `write_text` puts it where the cursor is and replaces
@@ -18426,6 +18621,8 @@ fn do_an_edit_command(
                         );
                     }
                 },
+                EditCommand::Undo => take_back_the_last_change(box_, last_undo, frame, a11y),
+                EditCommand::Redo => put_back_what_undo_took(box_, last_undo, frame, a11y),
             }
         }
         Doing::ChooseEveryRow => {
@@ -18482,6 +18679,71 @@ struct EditParts<'a> {
     trees: &'a [TreeCtrl],
     state: &'a Arc<StdMutex<WxUIState>>,
     dates: crate::presentation::date_display::DateSettings,
+    /// What the last Undo took away, which Redo puts back.
+    last_undo: &'a RefCell<Option<crate::presentation::text_undo::LastUndo>>,
+    /// Where Undo and Redo show what they said, on the status bar.
+    frame: &'a Frame,
+}
+
+/// Say what Undo or Redo did, on the status bar as well as aloud, because the
+/// box changing is all somebody who cannot hear it would otherwise have, and
+/// a refusal changes nothing to see.
+fn say_what_the_undo_did(
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+    said: &str,
+    priority: crate::presentation::accessibility::announcements::Priority,
+) {
+    frame.set_status_text(said, 0);
+    let _ = a11y.announce(said, priority);
+}
+
+/// Edit, Undo in a box you can type in.
+fn take_back_the_last_change(
+    box_: &TextCtrl,
+    last_undo: &RefCell<Option<crate::presentation::text_undo::LastUndo>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::editing::NOTHING_TO_UNDO;
+    use crate::presentation::accessibility::announcements::Priority;
+    use crate::presentation::text_undo::{Undone, undo};
+    match undo(box_) {
+        Undone::Done(record) => {
+            *last_undo.borrow_mut() = Some(record);
+            say_what_the_undo_did(frame, a11y, "Undone", Priority::Normal);
+        }
+        Undone::NothingToUndo => {
+            say_what_the_undo_did(frame, a11y, NOTHING_TO_UNDO, Priority::High)
+        }
+    }
+}
+
+/// Edit, Redo in a box you can type in: only right after an Undo in the same
+/// box with nothing typed since. The record is kept when Redo refuses, since
+/// it may still be right for the box the Undo was in.
+fn put_back_what_undo_took(
+    box_: &TextCtrl,
+    last_undo: &RefCell<Option<crate::presentation::text_undo::LastUndo>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::editing::NOTHING_TO_REDO;
+    use crate::presentation::accessibility::announcements::Priority;
+    use crate::presentation::text_undo::{Redone, redo};
+    let answer = last_undo
+        .borrow()
+        .as_ref()
+        .map_or(Redone::NothingToRedo, |record| redo(box_, record));
+    match answer {
+        Redone::Done => {
+            *last_undo.borrow_mut() = None;
+            say_what_the_undo_did(frame, a11y, "Redone", Priority::Normal);
+        }
+        Redone::NothingToRedo => {
+            say_what_the_undo_did(frame, a11y, NOTHING_TO_REDO, Priority::High)
+        }
+    }
 }
 
 /// Put words on the clipboard and say so, or say why not.
