@@ -252,14 +252,56 @@ pub fn invitation_check_for(
 
 /// Keep what a message downloaded for its text carried, so what is said about
 /// it can be asked when it opens.
+///
+/// The download of everything fetches each whole message for its text and
+/// kept the text alone. The reader fetches nothing for a message whose text is
+/// here, so nothing stored such a message's parts: it listed no attachments,
+/// and a meeting it carried was never said. Found on 2026-09-25 by 13-10.
+///
+/// Every part's name, type and size are kept, and the file only for a
+/// calendar part, which is a few kilobytes of text and is what the meeting is
+/// read from. Every other file stays on the server until somebody opens it,
+/// as it did; keeping those is a question of disk this does not decide.
+///
+/// A message whose parts are recorded already is left alone: the reader keeps
+/// every file of a message somebody opened, and replacing the rows would drop
+/// them.
 pub fn keep_what_a_download_carried(
     cache: &MessageCache,
     message_row_id: i64,
     parts: &[crate::service::mime::AttachmentInfo],
     raw: &[u8],
 ) -> crate::common::Result<()> {
-    let _ = (cache, message_row_id, parts, raw);
-    Ok(())
+    use crate::data::message_cache::attachment_content::AttachmentWithContent;
+
+    if parts.is_empty()
+        || !cache
+            .get_attachments_for_message(message_row_id)?
+            .is_empty()
+    {
+        return Ok(());
+    }
+    // A second walk of the message, and only for one carrying a calendar part:
+    // the parse that gave `parts` does not keep the bytes.
+    let files = if parts
+        .iter()
+        .any(|part| answering::is_a_calendar_part(&part.mime_type))
+    {
+        crate::service::mime::attachments_with_bytes(raw)?
+    } else {
+        Vec::new()
+    };
+    let kept: Vec<AttachmentWithContent> = parts
+        .iter()
+        .enumerate()
+        .map(|(at, part)| {
+            let file = answering::is_a_calendar_part(&part.mime_type)
+                .then(|| files.get(at).map(|file| file.bytes.clone()))
+                .flatten();
+            AttachmentWithContent::from_a_parsed_part(message_row_id, part, file)
+        })
+        .collect();
+    cache.replace_attachments_with_content(message_row_id, &kept)
 }
 
 /// The account a message arrived on, read from its own row.

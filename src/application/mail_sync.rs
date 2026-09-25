@@ -2220,6 +2220,17 @@ async fn fetch_and_store_one<M: Mailbox>(
     if let Err(e) = cache.note_the_form_it_arrived_in(message.message_id, &raw) {
         tracing::warn!("Could not record the form a message arrived in: {e}");
     }
+    // The parts, which the reader never fetches for a message whose text is
+    // here: without them the message lists no attachments and a meeting it
+    // carries is never said. Costs a list, not a message.
+    if let Err(e) = crate::application::reading_a_message::keep_what_a_download_carried(
+        cache,
+        message.message_id,
+        &parsed.attachments,
+        &raw,
+    ) {
+        tracing::warn!("Could not record the parts a downloaded message carried: {e}");
+    }
     Ok(())
 }
 
