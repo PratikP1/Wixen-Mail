@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 323 records have arrived since and have not been through it.
+# 325 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30998,6 +30998,51 @@ tests_last_seen = [
     { file = "src/application/undoing.rs", tests = 21 },
 ]
 
+# The undo of a move in the window letting a waiting change go without
+# putting the row back, so the message is left where the action sent it while
+# the server still holds it where it was, and the reading of the window no
+# longer finds `undo_here` in the arm for a waiting change (T-13-25). Written
+# 2026-09-25 by 13-08, the break measured against the reading.
+[[guard]]
+name = "the window ends a waiting change through undo_here"
+file = "src/presentation/wx_app.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''            (OneChange::EndTheWaitingRow(waiting), _) => {
+                match undo_here(cache, &waiting) {'''
+after = '''            (OneChange::EndTheWaitingRow(waiting), _) => {
+                match cache.stop_waiting_for_a_move(waiting.message_row_id) {'''
+red = [
+    "test_undo_of_a_move_asks_the_store_and_goes_the_way_the_action_went",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+]
+
+# Delete remembering its action before the change is made here, so a delete
+# this computer would not keep is offered to Edit, Undo as done. Written
+# 2026-09-25 by 13-08, the break measured against the reading.
+[[guard]]
+name = "Delete remembers its action after it is made here, not before"
+file = "src/presentation/wx_app.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''                            let made = complete_here_then_tell_the_server(
+                                app,
+                                &msg_list,
+                                &cache_for_deleting,'''
+after = '''                            remember_the_last_action(&state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });
+                            let made = complete_here_then_tell_the_server(
+                                app,
+                                &msg_list,
+                                &cache_for_deleting,'''
+red = [
+    "test_a_delete_remembers_the_action_after_it_is_made_here",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+]
+
 # A move the server has not heard of answered with a move back, so the server
 # is asked to move a message into the folder it still holds it in, and the
 # row waits on a command that means nothing (T-13-25). Written 2026-09-25 by
@@ -31076,7 +31121,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 10 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
 ]
 
 # The program's own mark after the reading wait replacing the last action, so
@@ -31098,7 +31143,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 10 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
 ]
 
 # A box in a dialog pressed Ctrl+Z or Ctrl+Y with nothing to take back or put

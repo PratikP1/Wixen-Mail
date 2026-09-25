@@ -67,16 +67,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   with no time limit; a message marked read by the reading wait never replaces it. In a
   dialog, `Ctrl+Z` and `Ctrl+Y` with nothing left to undo or redo now say so in the same
   sentence the main window's Edit menu says, where before they did nothing and said nothing.
+  **Undo takes back a move, a delete or a copy of messages too**, the rest of the tester's
+  "the last delete, move, copy": the menu names it, "Undo Move to Archive: Invoice" or "Undo
+  Delete: 3 messages", and the messages go back to the folder they came from, with the cursor
+  on the first of them when that folder is on screen. A change the mail server has not heard
+  of yet is taken back on this computer and nothing is sent. One the server has carried out is
+  moved back the way a move goes, here first and then at the server, and an undone copy goes
+  to the Trash, never deleted outright. Undo refuses, in a sentence naming the message and
+  saying what to do, a Delete Permanently the server already has, a move or copy to another
+  account, a message the server moved that this computer has not read back yet, and one whose
+  change is reaching the server at that moment. Redo does the move, delete or copy again.
   Known limitations: the number
   fields, such as the minutes between checks for mail and an event's hour and minute, and the
   composer's Describe the picture and Insert Link boxes, keep Windows' own single step, where
   pressing Undo twice puts the change back. A password box keeps no steps at all, so a
-  password is never held in memory as steps. Undoing a move, a delete or a copy of messages
-  cannot be done yet, and neither can undoing anything in contacts, the calendar, tasks, notes
-  or reminders. An undone mark, star or label has not been sent to a real mail server yet, so
-  it is as experimental as every other change this program sends. Nobody has heard the greyed
-  items, the sentences, Undo Send's new letter, a step undone or a mark undone with a screen
-  reader yet, in the main window or in a dialog.
+  password is never held in memory as steps. Nothing in contacts, the calendar, tasks, notes
+  or reminders can be undone yet. A move to another account cannot be undone, by decision:
+  undoing it would be a second crossing between two servers. An undone mark, star, label,
+  move, delete or copy has not been sent to a real mail server yet, so it is as experimental
+  as every other change this program sends, and the Undo item's help says so. Nobody has
+  heard the greyed items, the sentences, Undo Send's new letter, a step undone, a mark undone
+  or a move undone with a screen reader yet, in the main window or in a dialog.
 
 ### Changed
 

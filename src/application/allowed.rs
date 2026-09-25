@@ -404,7 +404,8 @@ pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experime
      passphrase, because nothing here asks you for one.";
 
 /// What Undo and Redo say, as their help on the Edit menu, while they name a
-/// mark, a star or a label on messages (13-07).
+/// mark, a star or a label on messages (13-07), or a move, a delete or a copy
+/// (13-08).
 ///
 /// An undo is a second change at somebody's mail server, sent the way the
 /// action was, and the action itself has never met a real account, so the
