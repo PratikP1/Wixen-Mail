@@ -30979,12 +30979,13 @@ tests_last_seen = [
 # messages reads as though it were over one, and the sentence after it says the
 # same. Written 2026-09-25 by 13-07, the break taken by hand against the whole
 # library first: the menu case and the sentences case went red and nothing
-# else did.
+# else did. The anchor was rewritten the same day by 13-08, when the subjects
+# came to be read for a move as well as a mark, and the break re-measured.
 [[guard]]
 name = "an undo over several messages names the count, not the first subject"
 file = "src/application/undoing.rs"
-before = '''            [only] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),'''
-after = '''            [only, ..] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),'''
+before = '''            [only] if !only.trim().is_empty() => only.trim().to_string(),'''
+after = '''            [only, ..] if !only.trim().is_empty() => only.trim().to_string(),'''
 red = [
     "application::undoing::tests::test_every_undo_sentence_reads_as_a_persons_sentence",
     "application::undoing::tests::test_the_menu_names_the_message_or_the_count",

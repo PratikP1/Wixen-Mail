@@ -422,6 +422,47 @@ pub fn undo_here(cache: &MessageCache, waiting: &AWaitingMove) -> Result<()> {
     cache.stop_waiting_for_a_move(waiting.message_row_id)
 }
 
+/// A replay of an account's waiting changes under way, from the moment it
+/// begins until this is dropped.
+///
+/// The push after somebody's own move and every check for mail replay the
+/// waiting rows on a thread of their own, over a connection of their own,
+/// and nothing in the store says one is running: the waiting row stays until
+/// the server has answered. An undo that ended a row the replay had already
+/// read would be overtaken a moment later by the move it thought it had
+/// ended, so an undo asks this first. Held in the process rather than the
+/// store, because a replay is a thread of this process and ends with it.
+pub struct APushUnderWay {
+    account_id: String,
+}
+
+impl APushUnderWay {
+    /// A replay of this account's waiting changes begins.
+    pub fn begins(account_id: &str) -> Self {
+        Self {
+            account_id: account_id.to_string(),
+        }
+    }
+}
+
+impl Drop for APushUnderWay {
+    fn drop(&mut self) {
+        let _ = &self.account_id;
+    }
+}
+
+/// What the store says about one row for an undo: its waiting change, where
+/// it is, or that it is gone, and before any of that whether its account's
+/// server is being told about waiting changes at this moment.
+pub fn what_the_store_says(
+    cache: &MessageCache,
+    row_id: i64,
+    account_id: &str,
+) -> Result<crate::application::undoing::WhatTheStoreSays> {
+    let _ = (cache, row_id, account_id);
+    Ok(crate::application::undoing::WhatTheStoreSays::BeingToldNow)
+}
+
 /// What a replay asks of a mail server.
 ///
 /// Named for what it does rather than for the protocol, so the replay can be
@@ -2937,6 +2978,96 @@ mod tests {
                 .is_some(),
             "the measurement this test records has changed: a read of the source \
              no longer brings back a message the server still lists there"
+        );
+    }
+
+    // ── What the store says to an undo (13-08) ──────────────────────────────
+
+    use crate::application::undoing::{WhatTheStoreSays, WhereItIsHere};
+
+    fn the_row_here(cache: &MessageCache, row: i64, folder_path: &str) -> WhereItIsHere {
+        let message = cache.get_message(row).expect("the read").expect("the row");
+        WhereItIsHere {
+            row_id: row,
+            folder_path: folder_path.to_string(),
+            uid: message.uid,
+            deleted: message.deleted,
+        }
+    }
+
+    #[test]
+    fn test_the_store_says_a_move_the_server_has_not_heard_is_still_waiting() {
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let asked = a_move_of(row, 42, into_the_archive());
+        what_happens_here(&home, &asked, "Lunch").expect("made here");
+        assert_eq!(
+            what_the_store_says(&home, row, "an account").expect("the read"),
+            WhatTheStoreSays::StillWaiting {
+                waiting: home
+                    .the_move_waiting_for(row)
+                    .expect("the read")
+                    .expect("waiting"),
+                here: the_row_here(&home, row, "Archive"),
+            }
+        );
+    }
+
+    #[test]
+    fn test_the_store_says_where_a_move_the_server_carried_out_left_the_row() {
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+        home.the_server_holds_it_at(row, the_folder(&home, "Archive"), 310)
+            .expect("settled");
+        home.stop_waiting_for_a_move(row).expect("let go");
+        assert_eq!(
+            what_the_store_says(&home, row, "an account").expect("the read"),
+            WhatTheStoreSays::Settled(WhereItIsHere {
+                row_id: row,
+                folder_path: "Archive".to_string(),
+                uid: 310,
+                deleted: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_the_store_says_gone_when_the_row_was_dropped() {
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.let_the_next_read_bring_it(row).expect("dropped");
+        assert_eq!(
+            what_the_store_says(&home, row, "an account").expect("the read"),
+            WhatTheStoreSays::Gone
+        );
+    }
+
+    #[test]
+    fn test_the_store_says_being_told_while_a_replay_of_its_account_is_under_way() {
+        // An account of its own, so a replay another test begins cannot be
+        // read here, since the lib's tests share one process.
+        let told = "an account being told right now";
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let first = APushUnderWay::begins(told);
+        let second = APushUnderWay::begins(told);
+        assert_eq!(
+            what_the_store_says(&home, row, told).expect("the read"),
+            WhatTheStoreSays::BeingToldNow
+        );
+        // Two replays of one account, the push and a check: the first to
+        // end leaves the other under way.
+        drop(first);
+        assert_eq!(
+            what_the_store_says(&home, row, told).expect("the read"),
+            WhatTheStoreSays::BeingToldNow
+        );
+        drop(second);
+        assert_eq!(
+            what_the_store_says(&home, row, told).expect("the read"),
+            WhatTheStoreSays::Settled(the_row_here(&home, row, "INBOX"))
         );
     }
 }

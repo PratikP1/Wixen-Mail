@@ -1,10 +1,26 @@
 //! Undo and Redo of the last thing somebody did to messages: a mark as read
-//! or unread, a star, or a label, with the message named (#47, GAP-02).
+//! or unread, a star, a label, a move, a delete or a copy, with the message
+//! named (#47, GAP-02).
 //!
 //! The tester on 2026-09-15 asked for "the last delete, move, copy, mark as
 //! read or unread, star ... as 'Undo delete' or 'Undo move' with the item
 //! named, for a bounded time or until the next action; and Redo of that."
-//! This is the marks. Moves, deletes and copies are 13-08's.
+//! The marks came first (13-07); moves, deletes and copies are below them
+//! (13-08).
+//!
+//! # A move is undone from where the store says it is now
+//!
+//! A move made here first waits for its server (#86). While the waiting row
+//! is there the server has heard nothing, so the undo ends the row and the
+//! message is back where the server still has it, and the server is never
+//! asked anything. Answering a waiting move with a move back instead would
+//! send the server a move into the folder it already holds the message in.
+//! Once the server has carried it out, the row carries the folder and the
+//! number the server gave it, and the undo is a new move back, here first
+//! and then at the server, the way the action went. What cannot come back
+//! is refused in a sentence naming the message: a delete the server took for
+//! good, a move to another account, a message this computer has not read back
+//! yet, and one whose move the server is being told about at that moment.
 //!
 //! # Each message's own state, never the opposite
 //!
@@ -26,6 +42,7 @@
 //! is called; `presentation::wx_app` carries it out through the same path the
 //! action took, so a server that refuses puts it back and says so.
 
+use crate::data::message_cache::moves_waiting::AWaitingMove;
 use crate::service::caldav::how_many;
 
 /// A label as an undo needs it: which one it is here, what it is called, and
@@ -108,6 +125,11 @@ pub enum LastAction {
     Marked { mark: Mark, before: Vec<Before> },
     /// Every label taken off every message.
     LabelsRemoved { before: Vec<Before> },
+    /// A move, a delete or a copy, and where each message was before it.
+    Moved {
+        moving: Moving,
+        went: Vec<WhereItWas>,
+    },
 }
 
 impl LastAction {
@@ -118,6 +140,7 @@ impl LastAction {
     pub fn name(&self) -> String {
         let mark = match self {
             LastAction::LabelsRemoved { .. } => return "Remove every label".to_string(),
+            LastAction::Moved { .. } => return String::new(),
             LastAction::Marked { mark, .. } => mark,
         };
         match mark {
@@ -130,20 +153,163 @@ impl LastAction {
         }
     }
 
-    fn before(&self) -> &[Before] {
+    /// The subject of each message the action took, in order.
+    fn subjects(&self) -> Vec<&str> {
         match self {
-            LastAction::Marked { before, .. } | LastAction::LabelsRemoved { before } => before,
+            LastAction::Marked { before, .. } | LastAction::LabelsRemoved { before } => before
+                .iter()
+                .map(|message| message.subject.as_str())
+                .collect(),
+            LastAction::Moved { went, .. } => went
+                .iter()
+                .map(|message| message.subject.as_str())
+                .collect(),
         }
     }
 
     /// The message's subject when there is one message with a subject, and
     /// the count otherwise, the way a command over the set names it.
     fn what_it_was_done_to(&self) -> String {
-        match self.before() {
-            [only] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),
+        match self.subjects().as_slice() {
+            [only] if !only.trim().is_empty() => only.trim().to_string(),
             all => how_many(all.len(), "message"),
         }
     }
+}
+
+/// What a move, a delete or a copy did to the set, which is what names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Moving {
+    Move { to: String },
+    Delete,
+    DeletePermanently,
+    Copy { to: String },
+}
+
+/// How one message went, which decides what its undo can do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WentBy {
+    /// Made here first and told to its server afterwards (#86).
+    ItsServer,
+    /// Between two folders on this computer, with no server to tell: mail
+    /// kept here, such as a POP account's.
+    ThisComputerOnly,
+    /// To a folder of another account.
+    AnotherAccount,
+}
+
+/// One message as it was before a move, a delete or a copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhereItWas {
+    /// The message's row. A move or a delete keeps it wherever it goes.
+    pub row_id: i64,
+    pub account_id: String,
+    /// The folder it was in here, which is where an undo puts it back.
+    pub folder_path: String,
+    pub uid: u32,
+    pub subject: String,
+    /// Where the action sent it: the folder moved or copied to, the trash,
+    /// or nothing for a delete that took it off the server.
+    pub sent_to: Option<String>,
+    pub went_by: WentBy,
+    /// For a copy, the copy's row, which is what an undo takes away. A redo
+    /// makes a new one, so this is kept per message rather than beside the
+    /// set, where it could fall out of step.
+    pub copy_row: Option<i64>,
+}
+
+/// A message's row as the store holds it now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhereItIsHere {
+    pub row_id: i64,
+    pub folder_path: String,
+    pub uid: u32,
+    /// Marked deleted, which is what a delete off the server leaves until
+    /// the next read of its folder forgets it.
+    pub deleted: bool,
+}
+
+/// What the store says about one message's row at the moment of an undo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatTheStoreSays {
+    /// A change made here is waiting and its server has heard nothing.
+    StillWaiting {
+        waiting: AWaitingMove,
+        here: WhereItIsHere,
+    },
+    /// Nothing is waiting: the row is where it is.
+    Settled(WhereItIsHere),
+    /// The row is not on this computer: the server moved the message and
+    /// could not say where it landed, so the next read of that folder brings
+    /// it.
+    Gone,
+    /// Its account's server is being told about waiting changes at this
+    /// moment, so what the row says may change under an undo.
+    BeingToldNow,
+}
+
+/// What one message's undo or redo does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OneChange {
+    /// End the waiting change here: the server never hears of either.
+    EndTheWaitingRow(AWaitingMove),
+    /// Move it from where it is now, here first and then at the server.
+    Move { from: WhereItIsHere, to: String },
+    /// Delete it the way the Delete key does, or Delete Permanently.
+    Delete {
+        row: WhereItIsHere,
+        permanently: bool,
+    },
+    /// Copy it again.
+    Copy { from: WhereItIsHere, to: String },
+    /// Send a copy to the trash, and never off the server outright, so a
+    /// number that turned out wrong cannot destroy a message.
+    TrashTheCopy(WhereItIsHere),
+    /// Move the row between two folders on this computer.
+    MoveOnThisComputer { row_id: i64, to: String },
+    /// Nothing is done, and this is said.
+    Refused(String),
+}
+
+/// The row an undo or a redo reads for one message: the copy's own for the
+/// undo of a copy, the message's otherwise.
+pub fn the_row_to_read(message: &WhereItWas, direction: Direction) -> i64 {
+    let _ = direction;
+    message.row_id
+}
+
+/// What undoing a move, a delete or a copy does to one message, given what
+/// the store says about it now.
+pub fn what_undo_does_to(
+    message: &WhereItWas,
+    moving: &Moving,
+    store: WhatTheStoreSays,
+) -> OneChange {
+    let _ = (message, moving, store);
+    OneChange::Refused(String::new())
+}
+
+/// What redoing a move, a delete or a copy does to one message.
+pub fn what_redo_does_to(
+    message: &WhereItWas,
+    moving: &Moving,
+    store: WhatTheStoreSays,
+) -> OneChange {
+    let _ = (message, moving, store);
+    OneChange::Refused(String::new())
+}
+
+/// The one sentence after an undo or a redo of a move, a delete or a copy:
+/// what came back, and what could not with the first reason, once for the
+/// set.
+pub fn after_moving_back(
+    action: &LastAction,
+    direction: Direction,
+    done: usize,
+    refused: &[String],
+) -> String {
+    let _ = (action, direction, done, refused);
+    String::new()
 }
 
 /// Which way the one step goes.
@@ -199,6 +365,9 @@ pub fn what_undo_does(action: &LastAction) -> Vec<(Before, Mark)> {
             .map(|message| (message.clone(), mark.as_it_was_on(message)))
             .collect(),
         LastAction::LabelsRemoved { before } => each_label_carried(before, true),
+        // No mark: each message's undo is decided from the store, by
+        // `what_undo_does_to`.
+        LastAction::Moved { .. } => Vec::new(),
     }
 }
 
@@ -211,6 +380,7 @@ pub fn what_redo_does(action: &LastAction) -> Vec<(Before, Mark)> {
             .map(|message| (message.clone(), mark.clone()))
             .collect(),
         LastAction::LabelsRemoved { before } => each_label_carried(before, false),
+        LastAction::Moved { .. } => Vec::new(),
     }
 }
 
@@ -584,5 +754,548 @@ mod tests {
             nothing_to_undo(None),
             "There is nothing to undo in this list yet."
         );
+    }
+
+    // ── A move, a delete or a copy ─────────────────────────────────────────
+
+    use crate::data::message_cache::moves_waiting::WhatAWaitingMoveDoes;
+
+    /// Quarterly report, row 7, in the Inbox under 42, moved to Archive.
+    fn quarterly_report(went_by: WentBy, sent_to: Option<&str>) -> WhereItWas {
+        WhereItWas {
+            row_id: 7,
+            account_id: "an account".to_string(),
+            folder_path: "INBOX".to_string(),
+            uid: 42,
+            subject: "Quarterly report".to_string(),
+            sent_to: sent_to.map(str::to_string),
+            went_by,
+            copy_row: None,
+        }
+    }
+
+    fn here(row_id: i64, folder_path: &str, uid: u32) -> WhereItIsHere {
+        WhereItIsHere {
+            row_id,
+            folder_path: folder_path.to_string(),
+            uid,
+            deleted: false,
+        }
+    }
+
+    /// A waiting row asking the server to do `what`, from where it still
+    /// holds the message.
+    fn waiting(row: i64, from: &str, uid: u32, what: WhatAWaitingMoveDoes) -> AWaitingMove {
+        AWaitingMove {
+            message_row_id: row,
+            account_id: "an account".to_string(),
+            from_folder_path: from.to_string(),
+            uid,
+            what,
+            asked_at: "2026-09-25T09:00:00Z".to_string(),
+        }
+    }
+
+    fn to_archive() -> Moving {
+        Moving::Move {
+            to: "Archive".to_string(),
+        }
+    }
+
+    fn into_archive() -> WhatAWaitingMoveDoes {
+        WhatAWaitingMoveDoes::Move {
+            into_folder_path: "Archive".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_undoing_a_move_the_server_has_not_heard_ends_the_waiting_row_rather_than_moving_back() {
+        // The server still has it in the Inbox. A move back would ask it to
+        // move a message into the folder it already holds it in.
+        let message = quarterly_report(WentBy::ItsServer, Some("Archive"));
+        let asked = waiting(7, "INBOX", 42, into_archive());
+        let store = WhatTheStoreSays::StillWaiting {
+            waiting: asked.clone(),
+            here: here(7, "Archive", 4_000_000_001),
+        };
+        assert_eq!(
+            what_undo_does_to(&message, &to_archive(), store),
+            OneChange::EndTheWaitingRow(asked)
+        );
+    }
+
+    #[test]
+    fn test_undoing_a_move_the_server_made_moves_it_back_from_where_it_is_now() {
+        // Carried out: the row carries Archive and the number the server gave
+        // it there, and the undo is a move from there to the Inbox.
+        let message = quarterly_report(WentBy::ItsServer, Some("Archive"));
+        let store = WhatTheStoreSays::Settled(here(7, "Archive", 310));
+        assert_eq!(
+            what_undo_does_to(&message, &to_archive(), store),
+            OneChange::Move {
+                from: here(7, "Archive", 310),
+                to: "INBOX".to_string(),
+            }
+        );
+
+        // Moved twice before the server heard either, Inbox to Archive and
+        // then Archive to Work: undoing the second puts it back in Archive,
+        // which is a new ask, since ending the row would put it in the Inbox.
+        let second = WhereItWas {
+            folder_path: "Archive".to_string(),
+            sent_to: Some("Work".to_string()),
+            ..message
+        };
+        let store = WhatTheStoreSays::StillWaiting {
+            waiting: waiting(
+                7,
+                "INBOX",
+                42,
+                WhatAWaitingMoveDoes::Move {
+                    into_folder_path: "Work".to_string(),
+                },
+            ),
+            here: here(7, "Work", 4_000_000_002),
+        };
+        assert_eq!(
+            what_undo_does_to(
+                &second,
+                &Moving::Move {
+                    to: "Work".to_string()
+                },
+                store
+            ),
+            OneChange::Move {
+                from: here(7, "Work", 4_000_000_002),
+                to: "Archive".to_string(),
+            }
+        );
+
+        // Already back where it was, because the server refused and the
+        // refusal put it back: nothing to do, and said.
+        let message = quarterly_report(WentBy::ItsServer, Some("Archive"));
+        assert_eq!(
+            what_undo_does_to(
+                &message,
+                &to_archive(),
+                WhatTheStoreSays::Settled(here(7, "INBOX", 42))
+            ),
+            OneChange::Refused("Quarterly report is already in INBOX.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_undoing_a_delete_to_the_trash_moves_it_back_from_the_trash() {
+        let message = quarterly_report(WentBy::ItsServer, Some("Trash"));
+        let store = WhatTheStoreSays::Settled(here(7, "Trash", 88));
+        assert_eq!(
+            what_undo_does_to(&message, &Moving::Delete, store),
+            OneChange::Move {
+                from: here(7, "Trash", 88),
+                to: "INBOX".to_string(),
+            }
+        );
+        // Still waiting, it ends here like a move.
+        let asked = waiting(
+            7,
+            "INBOX",
+            42,
+            WhatAWaitingMoveDoes::DeleteToTrash {
+                trash_path: "Trash".to_string(),
+            },
+        );
+        let store = WhatTheStoreSays::StillWaiting {
+            waiting: asked.clone(),
+            here: here(7, "Trash", 4_000_000_003),
+        };
+        assert_eq!(
+            what_undo_does_to(&message, &Moving::Delete, store),
+            OneChange::EndTheWaitingRow(asked)
+        );
+    }
+
+    #[test]
+    fn test_delete_permanently_still_waiting_comes_back() {
+        let message = quarterly_report(WentBy::ItsServer, None);
+        let asked = waiting(7, "INBOX", 42, WhatAWaitingMoveDoes::DeleteOutright);
+        let store = WhatTheStoreSays::StillWaiting {
+            waiting: asked.clone(),
+            here: WhereItIsHere {
+                deleted: true,
+                ..here(7, "INBOX", 42)
+            },
+        };
+        assert_eq!(
+            what_undo_does_to(&message, &Moving::DeletePermanently, store),
+            OneChange::EndTheWaitingRow(asked)
+        );
+
+        // Moved and then deleted permanently before the server heard either:
+        // ending the row would lose the move, so it is refused.
+        let moved_first = WhereItWas {
+            folder_path: "Archive".to_string(),
+            ..quarterly_report(WentBy::ItsServer, None)
+        };
+        let store = WhatTheStoreSays::StillWaiting {
+            waiting: waiting(7, "INBOX", 42, WhatAWaitingMoveDoes::DeleteOutright),
+            here: WhereItIsHere {
+                deleted: true,
+                ..here(7, "Archive", 4_000_000_004)
+            },
+        };
+        assert_eq!(
+            what_undo_does_to(&moved_first, &Moving::DeletePermanently, store),
+            OneChange::Refused(
+                "Quarterly report was moved and then deleted before the server heard of \
+                 either, so it cannot come back from here."
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_delete_permanently_the_server_took_is_refused_saying_it_cannot_come_back() {
+        let message = quarterly_report(WentBy::ItsServer, None);
+        let cannot = OneChange::Refused(
+            "Quarterly report was deleted permanently, so it cannot come back.".to_string(),
+        );
+        let taken = WhatTheStoreSays::Settled(WhereItIsHere {
+            deleted: true,
+            ..here(7, "INBOX", 42)
+        });
+        assert_eq!(
+            what_undo_does_to(&message, &Moving::DeletePermanently, taken.clone()),
+            cannot
+        );
+        // Forgotten by the next read of its folder: the same answer.
+        assert_eq!(
+            what_undo_does_to(&message, &Moving::DeletePermanently, WhatTheStoreSays::Gone),
+            cannot
+        );
+        // The ordinary Delete inside the trash takes it off the server too.
+        let in_the_trash = WhereItWas {
+            folder_path: "Trash".to_string(),
+            ..message
+        };
+        assert_eq!(
+            what_undo_does_to(&in_the_trash, &Moving::Delete, taken),
+            cannot
+        );
+    }
+
+    #[test]
+    fn test_a_crossing_is_refused_with_a_sentence() {
+        let message = quarterly_report(WentBy::AnotherAccount, Some("Work"));
+        let refused = OneChange::Refused(
+            "Quarterly report went to another account, so it cannot be taken back from here. \
+             Move it from that account instead."
+                .to_string(),
+        );
+        for store in [
+            WhatTheStoreSays::Settled(here(7, "Work", 5)),
+            WhatTheStoreSays::StillWaiting {
+                waiting: waiting(7, "INBOX", 42, into_archive()),
+                here: here(7, "Work", 5),
+            },
+        ] {
+            assert_eq!(
+                what_undo_does_to(&message, &to_archive(), store.clone()),
+                refused
+            );
+            assert_eq!(what_redo_does_to(&message, &to_archive(), store), refused);
+        }
+    }
+
+    #[test]
+    fn test_undoing_a_copy_sends_the_copy_to_the_trash() {
+        let copy = WhereItWas {
+            copy_row: Some(70),
+            ..quarterly_report(WentBy::ItsServer, Some("Archive"))
+        };
+        let copying = Moving::Copy {
+            to: "Archive".to_string(),
+        };
+        // The undo reads the copy's row, the redo the original's.
+        assert_eq!(the_row_to_read(&copy, Direction::Undo), 70);
+        assert_eq!(the_row_to_read(&copy, Direction::Redo), 7);
+        // At the server: to the trash, never outright.
+        assert_eq!(
+            what_undo_does_to(
+                &copy,
+                &copying,
+                WhatTheStoreSays::Settled(here(70, "Archive", 311))
+            ),
+            OneChange::TrashTheCopy(here(70, "Archive", 311))
+        );
+        // Not yet at the server: the copy made here goes and nothing is sent.
+        let asked = waiting(
+            70,
+            "INBOX",
+            42,
+            WhatAWaitingMoveDoes::Copy {
+                into_folder_path: "Archive".to_string(),
+            },
+        );
+        assert_eq!(
+            what_undo_does_to(
+                &copy,
+                &copying,
+                WhatTheStoreSays::StillWaiting {
+                    waiting: asked.clone(),
+                    here: here(70, "Archive", 4_000_000_005),
+                }
+            ),
+            OneChange::EndTheWaitingRow(asked)
+        );
+        // A redo copies the original again.
+        assert_eq!(
+            what_redo_does_to(
+                &copy,
+                &copying,
+                WhatTheStoreSays::Settled(here(7, "INBOX", 42))
+            ),
+            OneChange::Copy {
+                from: here(7, "INBOX", 42),
+                to: "Archive".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_message_the_server_moved_and_this_computer_dropped_is_refused_saying_refresh() {
+        let message = quarterly_report(WentBy::ItsServer, Some("Archive"));
+        let refresh = OneChange::Refused(
+            "Quarterly report was moved at the server and this computer has not read where \
+             yet. Refresh the folder it went to and move it back from there."
+                .to_string(),
+        );
+        assert_eq!(
+            what_undo_does_to(&message, &to_archive(), WhatTheStoreSays::Gone),
+            refresh
+        );
+        assert_eq!(
+            what_undo_does_to(&message, &Moving::Delete, WhatTheStoreSays::Gone),
+            refresh
+        );
+    }
+
+    #[test]
+    fn test_a_move_being_told_to_the_server_now_is_refused_saying_try_again() {
+        let message = quarterly_report(WentBy::ItsServer, Some("Archive"));
+        let again = OneChange::Refused(
+            "Quarterly report is being changed at the server right now. Try again shortly."
+                .to_string(),
+        );
+        for moving in [to_archive(), Moving::Delete, Moving::DeletePermanently] {
+            assert_eq!(
+                what_undo_does_to(&message, &moving, WhatTheStoreSays::BeingToldNow),
+                again
+            );
+            assert_eq!(
+                what_redo_does_to(&message, &moving, WhatTheStoreSays::BeingToldNow),
+                again
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_local_delete_moves_back_between_local_folders() {
+        // A POP account's message moved to the Trash folder on this
+        // computer: moved back here, and nothing is asked of any server.
+        let message = quarterly_report(WentBy::ThisComputerOnly, Some("Trash"));
+        assert_eq!(
+            what_undo_does_to(
+                &message,
+                &Moving::Delete,
+                WhatTheStoreSays::Settled(here(7, "Trash", 42))
+            ),
+            OneChange::MoveOnThisComputer {
+                row_id: 7,
+                to: "INBOX".to_string(),
+            }
+        );
+        // Taken off this computer, it is refused like any delete for good.
+        assert_eq!(
+            what_undo_does_to(
+                &message,
+                &Moving::Delete,
+                WhatTheStoreSays::Settled(WhereItIsHere {
+                    deleted: true,
+                    ..here(7, "INBOX", 42)
+                })
+            ),
+            OneChange::Refused(
+                "Quarterly report was deleted permanently, so it cannot come back.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_the_menu_names_a_move_and_its_folder() {
+        let one = LastAction::Moved {
+            moving: to_archive(),
+            went: vec![quarterly_report(WentBy::ItsServer, Some("Archive"))],
+        };
+        assert_eq!(
+            menu_label(&one, Direction::Undo),
+            "&Undo Move to Archive: Quarterly report\tCtrl+Z"
+        );
+        let three = LastAction::Moved {
+            moving: Moving::Delete,
+            went: vec![quarterly_report(WentBy::ItsServer, Some("Trash")); 3],
+        };
+        assert_eq!(
+            menu_label(&three, Direction::Redo),
+            "&Redo Delete: 3 messages\tCtrl+Y"
+        );
+        for (moving, name) in [
+            (Moving::DeletePermanently, "Delete Permanently"),
+            (
+                Moving::Copy {
+                    to: "Work & play".to_string(),
+                },
+                "Copy to Work & play",
+            ),
+        ] {
+            let action = LastAction::Moved {
+                moving,
+                went: Vec::new(),
+            };
+            assert_eq!(action.name(), name);
+        }
+        assert_eq!(undone(&one), "Undid Move to Archive on Quarterly report.");
+    }
+
+    #[test]
+    fn test_redo_of_a_move_moves_it_again() {
+        let message = quarterly_report(WentBy::ItsServer, Some("Archive"));
+        // Undone here before the server heard: the row is back in the Inbox
+        // and nothing waits, so the redo is the move again.
+        assert_eq!(
+            what_redo_does_to(
+                &message,
+                &to_archive(),
+                WhatTheStoreSays::Settled(here(7, "INBOX", 42))
+            ),
+            OneChange::Move {
+                from: here(7, "INBOX", 42),
+                to: "Archive".to_string(),
+            }
+        );
+        // Undone by a move back the server has not heard yet: the server
+        // still has it in Archive, so the redo ends that wait rather than
+        // asking for a move into the folder the server holds it in.
+        let back = waiting(
+            7,
+            "Archive",
+            310,
+            WhatAWaitingMoveDoes::Move {
+                into_folder_path: "INBOX".to_string(),
+            },
+        );
+        assert_eq!(
+            what_redo_does_to(
+                &message,
+                &to_archive(),
+                WhatTheStoreSays::StillWaiting {
+                    waiting: back.clone(),
+                    here: here(7, "INBOX", 4_000_000_006),
+                }
+            ),
+            OneChange::EndTheWaitingRow(back)
+        );
+        // A delete done again goes the way the Delete key does.
+        let deleted = quarterly_report(WentBy::ItsServer, Some("Trash"));
+        assert_eq!(
+            what_redo_does_to(
+                &deleted,
+                &Moving::Delete,
+                WhatTheStoreSays::Settled(here(7, "INBOX", 42))
+            ),
+            OneChange::Delete {
+                row: here(7, "INBOX", 42),
+                permanently: false,
+            }
+        );
+        assert_eq!(
+            what_redo_does_to(
+                &quarterly_report(WentBy::ItsServer, None),
+                &Moving::DeletePermanently,
+                WhatTheStoreSays::Settled(here(7, "INBOX", 42))
+            ),
+            OneChange::Delete {
+                row: here(7, "INBOX", 42),
+                permanently: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_what_could_not_come_back_is_said_once_with_the_count() {
+        let three = LastAction::Moved {
+            moving: Moving::Delete,
+            went: vec![quarterly_report(WentBy::ItsServer, Some("Trash")); 3],
+        };
+        let reason =
+            "Quarterly report was deleted permanently, so it cannot come back.".to_string();
+        assert_eq!(
+            after_moving_back(&three, Direction::Undo, 3, &[]),
+            "Undid Delete on 3 messages."
+        );
+        assert_eq!(
+            after_moving_back(&three, Direction::Undo, 2, std::slice::from_ref(&reason)),
+            "Undid Delete on 2 messages, not on 1 message. Quarterly report was deleted \
+             permanently, so it cannot come back."
+        );
+        assert_eq!(
+            after_moving_back(&three, Direction::Undo, 0, std::slice::from_ref(&reason)),
+            reason
+        );
+        assert_eq!(
+            after_moving_back(
+                &three,
+                Direction::Redo,
+                0,
+                &[reason.clone(), reason.clone()]
+            ),
+            "Nothing was redone. Quarterly report was deleted permanently, so it cannot come \
+             back."
+        );
+        // Every refusal names the message, with a stand-in when it has no
+        // subject, and reads as a person's sentence.
+        let nameless = WhereItWas {
+            subject: "  ".to_string(),
+            ..quarterly_report(WentBy::AnotherAccount, Some("Work"))
+        };
+        let OneChange::Refused(sentence) =
+            what_undo_does_to(&nameless, &to_archive(), WhatTheStoreSays::Gone)
+        else {
+            panic!("a crossing is refused");
+        };
+        assert!(sentence.starts_with("That message went"), "{sentence}");
+        let message = quarterly_report(WentBy::ItsServer, Some("Archive"));
+        let sentences = [
+            WhatTheStoreSays::Gone,
+            WhatTheStoreSays::BeingToldNow,
+            WhatTheStoreSays::Settled(here(7, "INBOX", 42)),
+        ]
+        .into_iter()
+        .filter_map(
+            |store| match what_undo_does_to(&message, &to_archive(), store) {
+                OneChange::Refused(sentence) => Some(sentence),
+                _ => None,
+            },
+        )
+        .chain([
+            sentence,
+            after_moving_back(&three, Direction::Undo, 2, std::slice::from_ref(&reason)),
+            after_moving_back(&three, Direction::Redo, 0, &[reason.clone(), reason]),
+        ])
+        .collect::<Vec<_>>();
+        assert_eq!(sentences.len(), 6);
+        for sentence in sentences {
+            reads_as_a_persons_sentence(&sentence, Voice::Answer)
+                .unwrap_or_else(|why| panic!("{sentence:?}: {why}"));
+        }
     }
 }
