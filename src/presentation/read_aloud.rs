@@ -201,41 +201,144 @@ pub struct Field {
     pub value: String,
     /// Whether this is the item's long text: a note's body, an event's
     /// description, a contact's notes.
+    ///
+    /// Marked rather than transformed, because the two uses want it
+    /// differently: speech says its structure in words through
+    /// [`long_text::spoken`], and paper prints it as written.
     pub long: bool,
+}
+
+impl Field {
+    fn short(label: &str, value: &str) -> Field {
+        Field {
+            label: label.to_string(),
+            value: value.to_string(),
+            long: false,
+        }
+    }
+
+    fn long_text(label: &str, value: &str) -> Field {
+        Field {
+            long: true,
+            ..Field::short(label, value)
+        }
+    }
+}
+
+/// A full reading said from an item's fields: the long one with its structure
+/// in words, then every part joined the way every reading is.
+fn said_aloud(fields: Vec<Field>) -> String {
+    let said: Vec<(String, String)> = fields
+        .into_iter()
+        .map(|field| match field.long {
+            true => (field.label, long_text::spoken(&field.value)),
+            false => (field.label, field.value),
+        })
+        .collect();
+    let parts: Vec<(&str, &str)> = said
+        .iter()
+        .map(|(label, value)| (label.as_str(), value.as_str()))
+        .collect();
+    spoken(&parts)
 }
 
 impl ContactItem {
     /// What the full reading says, in the order it says it.
-    pub fn fields(&self, _out: Reading) -> Vec<Field> {
-        Vec::new()
+    pub fn fields(&self, out: Reading) -> Vec<Field> {
+        // Not `out.date`, deliberately. That measures against now and would
+        // read a birthday falling this week as "2 days ago", which is not
+        // what anybody asked about a birthday, and it answers nothing at all
+        // for one stored without a year.
+        let birthday = crate::presentation::date_display::a_day_in_words(&self.birthday, out.dates);
+        vec![
+            Field::short("", &self.name),
+            Field::short("Email", &self.email),
+            Field::short(&self.phone_label, &self.phone),
+            Field::short("Company", &self.company),
+            Field::short(&self.address_label, &self.address),
+            Field::short("Birthday", &birthday),
+            // Spelled the way the menu item, the tree node and the detail
+            // pane spell it. One record read two ways is two records to
+            // anybody listening.
+            Field::short("", if self.favorite { "Favorite" } else { "" }),
+            // Last, because it is the long one. The short facts come first so
+            // somebody who wanted the phone number is not made to sit through
+            // half a page of notes to reach it.
+            Field::long_text("Notes", &self.notes),
+        ]
     }
 }
 
 impl NoteItem {
     /// What the full reading says, in the order it says it.
-    pub fn fields(&self, _out: Reading) -> Vec<Field> {
-        Vec::new()
+    pub fn fields(&self, out: Reading) -> Vec<Field> {
+        vec![
+            Field::short("", &self.title),
+            Field::short("", if self.pinned { "Pinned" } else { "" }),
+            Field::short("Updated", &out.date(&self.updated_at)),
+            Field::long_text("", &self.body),
+        ]
     }
 }
 
 impl TaskItem {
     /// What the full reading says, in the order it says it.
-    pub fn fields(&self, _out: Reading) -> Vec<Field> {
-        Vec::new()
+    pub fn fields(&self, out: Reading) -> Vec<Field> {
+        vec![
+            Field::short("", &self.title),
+            Field::short("", finished_wording(self.is_completed)),
+            Field::short("Priority", priority_worth_saying(&self.priority)),
+            Field::short("Due", &out.date(self.due_date.as_deref().unwrap_or(""))),
+            Field::long_text("", self.description.as_deref().unwrap_or("")),
+        ]
     }
 }
 
 impl ReminderItem {
     /// What the full reading says, in the order it says it.
-    pub fn fields(&self, _out: Reading) -> Vec<Field> {
-        Vec::new()
+    pub fn fields(&self, out: Reading) -> Vec<Field> {
+        vec![
+            Field::short("", &self.title),
+            Field::short("", finished_wording(self.is_completed)),
+            Field::short("Priority", priority_worth_saying(&self.priority)),
+            Field::short("Due", &out.date(self.due_datetime.as_deref().unwrap_or(""))),
+            Field::long_text("", self.description.as_deref().unwrap_or("")),
+        ]
     }
 }
 
 impl CalendarEventItem {
     /// What the full reading says, in the order it says it.
-    pub fn fields(&self, _out: Reading) -> Vec<Field> {
-        Vec::new()
+    pub fn fields(&self, out: Reading) -> Vec<Field> {
+        let start = out.date(&self.start);
+        let end = out.date(&self.end);
+        // Joined before the empty parts are dropped, so a missing end has to
+        // be handled here: "9:00 AM to" and then silence sounds like the
+        // reading was cut off.
+        let when = if self.is_all_day {
+            format!("{start}, all day")
+        } else if end.trim().is_empty() || end == start {
+            start
+        } else if start.trim().is_empty() {
+            end
+        } else {
+            format!("{start} to {end}")
+        };
+        vec![
+            Field::short("", &self.summary),
+            Field::short("", &when),
+            Field::short("Location", &self.location),
+            Field::short("Status", status_worth_saying(&self.status)),
+            Field::short("Calendar", self.calendar_name.as_deref().unwrap_or("")),
+            // Both empty on an ordinary event, and empty parts are dropped,
+            // so a plain calendar costs nothing to listen to.
+            Field::short("", &self.repeats),
+            Field::short(
+                "",
+                &crate::application::categories::spoken(&self.categories),
+            ),
+            Field::long_text("", &self.description),
+        ]
     }
 }
 
@@ -425,27 +528,7 @@ impl ReadAloud for ContactItem {
     }
 
     fn read_full(&self, out: Reading) -> String {
-        // Not `out.date`, deliberately. That measures against now and would
-        // read a birthday falling this week as "2 days ago", which is not
-        // what anybody asked about a birthday, and it answers nothing at all
-        // for one stored without a year.
-        let birthday = crate::presentation::date_display::a_day_in_words(&self.birthday, out.dates);
-        spoken(&[
-            ("", &self.name),
-            ("Email", &self.email),
-            (&self.phone_label, &self.phone),
-            ("Company", &self.company),
-            (&self.address_label, &self.address),
-            ("Birthday", &birthday),
-            // Spelled the way the menu item, the tree node and the detail
-            // pane spell it. One record read two ways is two records to
-            // anybody listening.
-            ("", if self.favorite { "Favorite" } else { "" }),
-            // Last, because it is the long one. The short facts come first so
-            // somebody who wanted the phone number is not made to sit through
-            // half a page of notes to reach it.
-            ("Notes", &long_text::spoken(&self.notes)),
-        ])
+        said_aloud(self.fields(out))
     }
 }
 
@@ -459,12 +542,7 @@ impl ReadAloud for NoteItem {
     }
 
     fn read_full(&self, out: Reading) -> String {
-        spoken(&[
-            ("", &self.title),
-            ("", if self.pinned { "Pinned" } else { "" }),
-            ("Updated", &out.date(&self.updated_at)),
-            ("", &long_text::spoken(&self.body)),
-        ])
+        said_aloud(self.fields(out))
     }
 }
 
@@ -482,16 +560,7 @@ impl ReadAloud for TaskItem {
     }
 
     fn read_full(&self, out: Reading) -> String {
-        spoken(&[
-            ("", &self.title),
-            ("", finished_wording(self.is_completed)),
-            ("Priority", priority_worth_saying(&self.priority)),
-            ("Due", &out.date(self.due_date.as_deref().unwrap_or(""))),
-            (
-                "",
-                &long_text::spoken(self.description.as_deref().unwrap_or("")),
-            ),
-        ])
+        said_aloud(self.fields(out))
     }
 }
 
@@ -509,16 +578,7 @@ impl ReadAloud for ReminderItem {
     }
 
     fn read_full(&self, out: Reading) -> String {
-        spoken(&[
-            ("", &self.title),
-            ("", finished_wording(self.is_completed)),
-            ("Priority", priority_worth_saying(&self.priority)),
-            ("Due", &out.date(self.due_datetime.as_deref().unwrap_or(""))),
-            (
-                "",
-                &long_text::spoken(self.description.as_deref().unwrap_or("")),
-            ),
-        ])
+        said_aloud(self.fields(out))
     }
 }
 
@@ -563,35 +623,7 @@ impl ReadAloud for CalendarEventItem {
     }
 
     fn read_full(&self, out: Reading) -> String {
-        let start = out.date(&self.start);
-        let end = out.date(&self.end);
-        // Joined before the empty parts are dropped, so a missing end has to
-        // be handled here: "9:00 AM to" and then silence sounds like the
-        // reading was cut off.
-        let when = if self.is_all_day {
-            format!("{start}, all day")
-        } else if end.trim().is_empty() || end == start {
-            start
-        } else if start.trim().is_empty() {
-            end
-        } else {
-            format!("{start} to {end}")
-        };
-        spoken(&[
-            ("", &self.summary),
-            ("", &when),
-            ("Location", &self.location),
-            ("Status", status_worth_saying(&self.status)),
-            ("Calendar", self.calendar_name.as_deref().unwrap_or("")),
-            // Both empty on an ordinary event, and `spoken` drops empty parts,
-            // so a plain calendar costs nothing to listen to.
-            ("", &self.repeats),
-            (
-                "",
-                &crate::application::categories::spoken(&self.categories),
-            ),
-            ("", &long_text::spoken(&self.description)),
-        ])
+        said_aloud(self.fields(out))
     }
 }
 

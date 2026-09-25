@@ -56,6 +56,20 @@ impl Kind {
         Kind::Note,
         Kind::Reminder,
     ];
+
+    /// What a page says it is when the thing on it has no title, so the
+    /// first line and the stamp are never blank. A message says what the
+    /// reader window says for one.
+    fn untitled(self) -> &'static str {
+        match self {
+            Kind::Message | Kind::Conversation => "No subject",
+            Kind::Event => "Event with no title",
+            Kind::Contact => "Contact with no name",
+            Kind::Task => "Task with no title",
+            Kind::Note => "Note with no title",
+            Kind::Reminder => "Reminder with no title",
+        }
+    }
 }
 
 /// A thing ready to be laid out: its title and its lines, as plain text.
@@ -117,12 +131,62 @@ pub fn from_document(document: &ReaderDocument) -> Printable {
 }
 
 /// An item's fields, one to a line, as a thing to print.
-pub fn from_item(_kind: Kind, title: &str, _fields: &[Field]) -> Printable {
+///
+/// The fields are the ones the item's full reading says, in its order, so
+/// paper and speech name the same things. The title is the first line and the
+/// short fields follow it, labelled, as the header block; the long text comes
+/// last, after a gap, as it was written rather than as it is spoken. An empty
+/// field prints no line, the way it says no word.
+pub fn from_item(kind: Kind, title: &str, fields: &[Field]) -> Printable {
+    let title = match title.trim() {
+        "" => kind.untitled().to_string(),
+        named => named.to_string(),
+    };
+    let said: Vec<&Field> = fields
+        .iter()
+        .filter(|field| !field.value.trim().is_empty())
+        .collect();
+    // Every reading opens with the item's name, unlabelled, because a row is
+    // heard by its name first. On paper that name is the title line, and
+    // printing it again under itself would be a stutter.
+    let said = match said.first() {
+        Some(name) if name.label.is_empty() && name.value.trim() == title => &said[1..],
+        _ => &said[..],
+    };
+    let (long, short): (Vec<&Field>, Vec<&Field>) = said.iter().partition(|field| field.long);
+
+    let mut lines = vec![title.clone()];
+    for field in short {
+        lines.extend(labelled(field).lines().map(as_text));
+    }
+    let header_lines = lines.len();
+    for field in long {
+        lines.push(String::new());
+        if !field.label.is_empty() {
+            lines.push(format!("{}:", field.label));
+        }
+        lines.extend(
+            field
+                .value
+                .trim_end()
+                .trim_start_matches(['\r', '\n'])
+                .lines()
+                .map(as_text),
+        );
+    }
     Printable {
-        title: title.to_string(),
-        lines: Vec::new(),
-        header_lines: 0,
+        title,
+        lines,
+        header_lines,
         warning: None,
+    }
+}
+
+/// A short field as its line: "Label: value", or the value alone.
+fn labelled(field: &Field) -> String {
+    match field.label.trim() {
+        "" => field.value.trim().to_string(),
+        label => format!("{label}: {}", field.value.trim()),
     }
 }
 
