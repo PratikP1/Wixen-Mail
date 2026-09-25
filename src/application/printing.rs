@@ -484,6 +484,18 @@ pub fn sent_to_the_printer(title: &str, printer: &str, pages: usize) -> String {
     )
 }
 
+/// What is said once a conversation's row is printed: the one message the
+/// row stands for went, and not the whole conversation.
+pub fn sent_one_message_of_a_conversation(_title: &str, _printer: &str, _pages: usize) -> String {
+    String::new()
+}
+
+/// What Print says where the area you are in is not Mail, since this build
+/// prints messages alone.
+pub fn prints_messages_only() -> String {
+    String::new()
+}
+
 /// What is said when the print dialog was closed without printing.
 ///
 /// Said rather than left to silence, because a dialog closing without a word
@@ -796,6 +808,8 @@ mod tests {
             sent_to_the_printer("Quarterly report", "HP LaserJet 1022", 1),
             nothing_was_printed(),
             printing_failed("the printer did not answer"),
+            sent_one_message_of_a_conversation("Quarterly report", "HP LaserJet 1022", 2),
+            prints_messages_only(),
         ];
 
         assert_eq!(
@@ -806,6 +820,10 @@ mod tests {
                 "Printing was cancelled, so nothing was printed.",
                 "Nothing was printed, because the printer did not answer. Check that the \
                  printer is on and connected, then print again.",
+                "Sent Quarterly report to HP LaserJet 1022, 2 pages. That is the one message \
+                 the conversation's row stands for, not the whole conversation.",
+                "Print works on messages in this build, so nothing was printed. Press \
+                 Ctrl+Shift+1 for Mail and choose a message.",
             ]
         );
         for sentence in &said {
