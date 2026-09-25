@@ -61,15 +61,16 @@
 
 #![cfg(windows)]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
+use wixen_mail::application::editing::{NOTHING_TO_REDO, NOTHING_TO_UNDO};
 use wixen_mail::application::spell_session;
 use wixen_mail::application::words::{TextNode, words_in};
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::text_history_keys::{
-    can_redo_in, can_undo_in, keep_a_history, redo_in, set_anew, undo_in,
+    can_redo_in, can_undo_in, keep_a_history, redo_in, say_nothing_left_through, set_anew, undo_in,
 };
 use wixen_mail::presentation::wx_compose;
 use wixen_mail::presentation::wx_managers::{self, ContactEntry};
@@ -288,6 +289,31 @@ fn take_the_dialog_readings(frame: &Frame, harvest: &mut Harvest) {
     harvest.insert("the dialog's box after Ctrl+Z", box_.get_value());
     press_with_control(&box_, b'Y');
     harvest.insert("the dialog's box after Ctrl+Y", box_.get_value());
+
+    // A box with nothing typed: Ctrl+Z and Ctrl+Y have nothing to do, and
+    // what is said is caught where the main window would hand it to the
+    // screen reader.
+    let said: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    say_nothing_left_through({
+        let said = Rc::clone(&said);
+        move |sentence| said.borrow_mut().push(sentence.to_string())
+    });
+    let fresh = TextCtrl::builder(&dialog).build();
+    keep_a_history(&fresh);
+    for (letter, name) in [
+        (b'Z', "what a dialog says for Ctrl+Z with nothing to undo"),
+        (b'Y', "what a dialog says for Ctrl+Y with nothing to redo"),
+    ] {
+        said.borrow_mut().clear();
+        press_with_control(&fresh, letter);
+        harvest.insert(name, said.borrow().join(" | "));
+    }
+    said.borrow_mut().clear();
+    press_with_control(&box_, b'Z');
+    harvest.insert(
+        "what a dialog says for a Ctrl+Z that undid a step",
+        said.borrow().join(" | "),
+    );
 
     let spelling =
         wx_compose::build_check_spelling_dialog(&dialog, &one_misspelling_of_world(), None);
@@ -553,6 +579,39 @@ fn test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_un
 fn test_a_box_in_a_dialog_takes_ctrl_z_and_ctrl_y_with_no_menu() {
     assert_eq!(reading("the dialog's box after Ctrl+Z"), "first ");
     assert_eq!(reading("the dialog's box after Ctrl+Y"), "first second");
+}
+
+#[test]
+fn test_ctrl_z_and_ctrl_y_with_nothing_left_in_a_dialog_say_what_the_edit_menu_says() {
+    // The same sentences the main window's Edit menu says, so the keys
+    // behave alike everywhere; a key that did nothing in silence could not
+    // be told from one that was broken (ledger 621). A step undone says
+    // nothing, as Windows' own undo does, because the words coming back are
+    // what is read.
+    assert_eq!(
+        reading("what a dialog says for Ctrl+Z with nothing to undo"),
+        NOTHING_TO_UNDO
+    );
+    assert_eq!(
+        reading("what a dialog says for Ctrl+Y with nothing to redo"),
+        NOTHING_TO_REDO
+    );
+    assert_eq!(
+        reading("what a dialog says for a Ctrl+Z that undid a step"),
+        ""
+    );
+}
+
+#[test]
+fn test_the_main_window_gives_the_dialogs_its_voice() {
+    // The sentence reaches a screen reader only through the one the main
+    // window hands over, since a box in a dialog knows nothing of it.
+    let source = wx_app_source();
+    let at = source.find("say_nothing_left_through(").unwrap_or_else(|| {
+        panic!("the main window never hands the dialogs a voice, so they say nothing")
+    });
+    let call = &source[at..source.len().min(at + 400)];
+    assert!(call.contains(".announce("), "{call}");
 }
 
 #[test]

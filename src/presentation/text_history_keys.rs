@@ -143,6 +143,10 @@ pub fn keep_a_history(box_: &impl TextBox) {
     });
 }
 
+/// Who says, in a dialog, that Ctrl+Z or Ctrl+Y had nothing to take back or
+/// put back.
+pub fn say_nothing_left_through(_speaker: impl Fn(&str) + 'static) {}
+
 /// Write `value` into the box as the program's own choice: the box shows it
 /// and the history starts again from it, with nothing to undo.
 pub fn set_anew(box_: &impl TextBox, value: &str) {
