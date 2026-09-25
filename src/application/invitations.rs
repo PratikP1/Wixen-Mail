@@ -41,6 +41,7 @@
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
+use crate::presentation::date_display::DateSettings;
 // Reading a line, and writing one back out, are the calendar service's own
 // answers. They were written a second time here while this module was being
 // built and the two had already drifted apart before either was used: one
@@ -568,13 +569,149 @@ pub enum Standing {
 
 impl WhatTheInvitationSays {
     /// The sentence said before the message, or nothing for ordinary mail.
+    ///
+    /// Every word a stranger wrote in it, the title, the place and the names,
+    /// has already been put on one line by [`plainly`], so nothing in it can
+    /// start a line of the bar that reads as this program's own.
     pub fn said(&self) -> Option<String> {
-        None
+        match self {
+            WhatTheInvitationSays::Nothing => None,
+            WhatTheInvitationSays::Invitation {
+                summary,
+                when,
+                place,
+                organiser,
+                standing,
+            } => Some(format!(
+                "Meeting invitation{}{}{}{}{}.",
+                titled(summary),
+                clause("", when),
+                clause("in ", place.as_deref().unwrap_or_default()),
+                clause("from ", organiser.as_deref().unwrap_or_default()),
+                standing.said(),
+            )),
+            WhatTheInvitationSays::Cancellation {
+                summary,
+                on_the_calendar,
+            } => Some(format!(
+                "Meeting cancelled{}. It is {}on your calendar.",
+                titled(summary),
+                if *on_the_calendar { "" } else { "not " }
+            )),
+            WhatTheInvitationSays::AnAnswer {
+                who,
+                answered,
+                summary,
+            } => Some(format!(
+                "{who} {} your meeting{}.",
+                answered.map_or("answered", Answer::what_somebody_did),
+                titled(summary)
+            )),
+            WhatTheInvitationSays::CalendarFile => {
+                Some("This message carries a calendar file.".to_string())
+            }
+        }
     }
 
     /// What the calendar part's attachment row calls it.
+    ///
+    /// From what the document asks rather than from its media type, which is
+    /// the same for an invitation, a cancellation and a published feed.
     pub fn what_its_part_is(&self) -> &'static str {
-        "calendar invitation"
+        match self {
+            WhatTheInvitationSays::Invitation { .. } => "meeting invitation",
+            WhatTheInvitationSays::Cancellation { .. } => "meeting cancellation",
+            WhatTheInvitationSays::AnAnswer { .. } => "reply to your meeting",
+            WhatTheInvitationSays::CalendarFile | WhatTheInvitationSays::Nothing => "calendar file",
+        }
+    }
+}
+
+impl Standing {
+    /// The clause that ends an invitation's sentence.
+    fn said(&self) -> String {
+        match self {
+            Standing::New => ", and it is new to your calendar".to_string(),
+            Standing::Changed { from } => {
+                format!(", a change to the meeting on your calendar, which was {from}")
+            }
+            Standing::AlreadyAnswered => ", and you have answered this version".to_string(),
+            Standing::AlreadyOnTheCalendar => ", and it is already on your calendar".to_string(),
+        }
+    }
+}
+
+impl Answer {
+    /// The answer a `PARTSTAT` names, when it is one of the three a person
+    /// gives.
+    fn from_partstat(written: &str) -> Option<Answer> {
+        [Answer::Accepted, Answer::Tentative, Answer::Declined]
+            .into_iter()
+            .find(|answer| written.trim().eq_ignore_ascii_case(answer.as_partstat()))
+    }
+
+    /// What somebody else did, said about them.
+    const fn what_somebody_did(self) -> &'static str {
+        match self {
+            Answer::Accepted => "accepted",
+            Answer::Tentative => "said they might come to",
+            Answer::Declined => "declined",
+        }
+    }
+}
+
+/// The meeting's title after the kind of message, or nothing when it has none.
+///
+/// "Meeting cancelled." rather than "Meeting cancelled: ." for a meeting its
+/// organiser named nothing.
+fn titled(summary: &str) -> String {
+    if summary.is_empty() {
+        String::new()
+    } else {
+        format!(": {summary}")
+    }
+}
+
+/// One more clause of a sentence, or nothing when there is nothing to say.
+fn clause(opening: &str, said: &str) -> String {
+    if said.is_empty() {
+        String::new()
+    } else {
+        format!(", {opening}{said}")
+    }
+}
+
+/// The longest run of a stranger's words one clause says.
+///
+/// A title is a line in somebody's calendar, and a line that runs to pages is
+/// one a screen reader has to be interrupted in rather than listened to. Two
+/// hundred characters is a judgement, a long title with room to spare, and not
+/// a measurement.
+const LONGEST_CLAUSE: usize = 200;
+
+/// A stranger's words put on one line, cut to a length somebody can listen to.
+///
+/// A line break in a title would start a line of the bar, and the page renders
+/// each line of the bar as a paragraph, so what followed the break would read as
+/// a sentence of this program's. Control characters go the same way, and runs
+/// of space become one.
+fn plainly(written: &str) -> String {
+    let one_line = written
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    match one_line.char_indices().nth(LONGEST_CLAUSE) {
+        Some((cut, _)) => format!("{}\u{2026}", one_line[..cut].trim_end()),
+        None => one_line,
     }
 }
 
@@ -584,14 +721,163 @@ impl WhatTheInvitationSays {
 /// and `answered_here` the version an answer given here last filed, both
 /// looked up by the caller. `dates` words the times, because how a date is
 /// said depends on settings this layer cannot see.
+///
+/// A document that does not read is a calendar file, never an error a caller
+/// could drop: the part is there, and saying nothing about it would make it
+/// look like no calendar document at all.
 pub fn what_the_invitation_says(
     document: &str,
     on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
     answered_here: Option<u32>,
-    dates: crate::presentation::date_display::DateSettings,
+    dates: DateSettings,
 ) -> WhatTheInvitationSays {
-    let _ = (document, on_the_calendar, answered_here, dates);
-    WhatTheInvitationSays::Nothing
+    match what_it_asks(document) {
+        WhatItAsks::Invitation => read_the_invitation(document)
+            .map_or(WhatTheInvitationSays::CalendarFile, |invitation| {
+                an_invitation_said(&invitation, on_the_calendar, answered_here, dates)
+            }),
+        WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
+            summary: the_title_of(document),
+            on_the_calendar: on_the_calendar.is_some(),
+        },
+        WhatItAsks::SomebodysAnswer => somebodys_answer_said(document),
+        WhatItAsks::SomethingElse => WhatTheInvitationSays::CalendarFile,
+    }
+}
+
+/// An invitation that read, said against the calendar's copy of its meeting.
+fn an_invitation_said(
+    invitation: &Invitation,
+    on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
+    answered_here: Option<u32>,
+    dates: DateSettings,
+) -> WhatTheInvitationSays {
+    let when = when_the_meeting_is(
+        &invitation.starts,
+        invitation.ends.as_deref(),
+        invitation.is_all_day,
+        dates,
+    );
+    let standing = match on_the_calendar {
+        None => Standing::New,
+        Some(copy) => the_standing_against(invitation, &when, copy, answered_here, dates),
+    };
+    WhatTheInvitationSays::Invitation {
+        summary: plainly(&invitation.summary),
+        when,
+        place: invitation
+            .location
+            .as_deref()
+            .map(plainly)
+            .filter(|place| !place.is_empty()),
+        organiser: invitation
+            .organiser
+            .as_ref()
+            .map(|organiser| plainly(how_to_say(organiser))),
+        standing,
+    }
+}
+
+/// What an invitation is to a meeting the calendar already holds.
+///
+/// An answer given here settles it by version, through [`what_changed`], so the
+/// rule that an older invitation moves nothing is written once. With no answer
+/// given here, the copy is a calendar server's, which files invitations as they
+/// arrive, and only a different time makes it a change.
+fn the_standing_against(
+    invitation: &Invitation,
+    when: &str,
+    copy: &crate::data::message_cache::CalendarEventEntry,
+    answered_here: Option<u32>,
+    dates: DateSettings,
+) -> Standing {
+    let was = when_the_meeting_is(
+        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
+        Some(&copy.end_datetime),
+        copy.is_all_day,
+        dates,
+    );
+    let answered = answered_here.map(|version| AlreadyOnTheCalendar {
+        uid: invitation.uid.clone(),
+        version,
+    });
+    match answered {
+        Some(held) => match what_changed(invitation, Some(&held)) {
+            WhatChanged::NothingNew => Standing::AlreadyAnswered,
+            WhatChanged::AChange | WhatChanged::ANewMeeting => Standing::Changed { from: was },
+        },
+        None if was == when => Standing::AlreadyOnTheCalendar,
+        None => Standing::Changed { from: was },
+    }
+}
+
+/// Somebody's answer to a meeting, read off the one guest line a reply carries.
+///
+/// Not through [`read_the_invitation`]: a reply carries no start time, because
+/// it is an answer about a meeting rather than a description of one, and the
+/// reader of meetings refuses it. A reply naming nobody is a calendar file.
+fn somebodys_answer_said(document: &str) -> WhatTheInvitationSays {
+    let its_own = the_meetings_own_lines(document);
+    let Some((who, answered)) = its_own.iter().find_map(|line| {
+        let person = a_person_named_on(line, "ATTENDEE")?;
+        let answered = parameter_named_on(line, "PARTSTAT")
+            .as_deref()
+            .and_then(Answer::from_partstat);
+        Some((plainly(how_to_say(&person)), answered))
+    }) else {
+        return WhatTheInvitationSays::CalendarFile;
+    };
+    WhatTheInvitationSays::AnAnswer {
+        who,
+        answered,
+        summary: the_title_of(document),
+    }
+}
+
+/// The meeting's title, from the meeting's own lines, put on one line.
+fn the_title_of(document: &str) -> String {
+    the_meetings_own_lines(document)
+        .iter()
+        .find_map(|line| value_named_on(line, "SUMMARY"))
+        .map(|written| plainly(&crate::service::caldav::as_typed(written)))
+        .unwrap_or_default()
+}
+
+/// When a meeting is, worded the way this reader words a date.
+///
+/// The whole date and the hour it starts, then the hour it ends when that is
+/// the same day and the whole date again when it is not. Always the whole
+/// date, whatever the reader chose for a list: "3 days ago" says when a message
+/// came and is no way to say when a meeting is. A whole day is its date. A
+/// moment that does not read is said as it was written, which is the date
+/// reading's own answer for the same thing.
+fn when_the_meeting_is(
+    starts: &str,
+    ends: Option<&str>,
+    is_all_day: bool,
+    dates: DateSettings,
+) -> String {
+    use crate::presentation::date_display;
+
+    if is_all_day {
+        return format!("{}, all day", date_display::a_day_in_words(starts, dates));
+    }
+    let Some(start) = on_this_computer(starts) else {
+        return plainly(starts);
+    };
+    let begins = date_display::absolute(start, dates);
+    match ends.and_then(|ends| Some((ends, on_this_computer(ends)?))) {
+        Some((ends, end)) if end.date_naive() == start.date_naive() => {
+            format!("{begins} to {}", date_display::time_of_day(ends, dates))
+        }
+        Some((_, end)) => format!("{begins} to {}", date_display::absolute(end, dates)),
+        None => begins,
+    }
+}
+
+/// Where a stored moment falls on this computer's clock.
+fn on_this_computer(stored: &str) -> Option<chrono::DateTime<chrono::Local>> {
+    crate::common::moment::read(stored)?.on_this_computer()
 }
 
 /// The name the meeting a document describes goes by, when it names one.
@@ -599,8 +885,12 @@ pub fn what_the_invitation_says(
 /// What the caller looks the calendar's copy up by, before asking
 /// [`what_the_invitation_says`].
 pub fn the_meeting_named_in(document: &str) -> Option<String> {
-    let _ = document;
-    None
+    the_meetings_own_lines(document)
+        .iter()
+        .find_map(|line| value_named_on(line, "UID"))
+        .map(str::trim)
+        .filter(|uid| !uid.is_empty())
+        .map(str::to_string)
 }
 
 /// The first meeting's own property lines, put back together and with any

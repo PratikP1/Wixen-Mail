@@ -708,18 +708,23 @@ fn the_guest_answering<'a>(
         })
 }
 
-/// The media type a meeting invitation arrives as.
-const AN_INVITATION_ARRIVES_AS: &str = "text/calendar";
+/// The media types a meeting invitation arrives as.
+///
+/// `text/calendar` is the standard's. `application/ics` is what some senders
+/// write, naming the file's kind rather than the document's, and the part is
+/// still the meeting (#50 point 5).
+const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "application/ics"];
 
 /// Whether a part's media type is one a calendar document arrives as.
 ///
-/// Parameters and case aside, which senders write every way there is.
+/// Parameters and case aside, which senders write every way there is. The one
+/// answer the finder below and the attachment row both ask, so a part the row
+/// calls a meeting is one the finder finds.
 pub fn is_a_calendar_part(kind: &str) -> bool {
-    kind.split(';')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .eq_ignore_ascii_case(AN_INVITATION_ARRIVES_AS)
+    let named = kind.split(';').next().unwrap_or_default().trim();
+    AN_INVITATION_ARRIVES_AS
+        .iter()
+        .any(|calendar| named.eq_ignore_ascii_case(calendar))
 }
 
 /// The invitation a message carries, when it carries one.
@@ -740,13 +745,7 @@ pub fn is_a_calendar_part(kind: &str) -> bool {
 pub fn the_invitation_a_message_carries(parts: &[(String, Vec<u8>)]) -> Option<String> {
     parts
         .iter()
-        .find(|(kind, _)| {
-            kind.split(';')
-                .next()
-                .unwrap_or_default()
-                .trim()
-                .eq_ignore_ascii_case(AN_INVITATION_ARRIVES_AS)
-        })
+        .find(|(kind, _)| is_a_calendar_part(kind))
         .and_then(|(_, bytes)| String::from_utf8(bytes.clone()).ok())
 }
 

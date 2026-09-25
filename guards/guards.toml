@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 330 records have arrived since and have not been through it.
+# 332 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12581,7 +12581,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -16728,7 +16728,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
     { file = "src/application/opening_pgp.rs", tests = 5 },
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
     { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
@@ -17621,7 +17621,7 @@ red = [
     "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
@@ -24385,7 +24385,7 @@ red = [
     "application::answering::tests::test_an_answer_queued_while_offline_says_it_waits_for_a_network",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 37 },
+    { file = "src/application/answering.rs", tests = 38 },
 ]
 
 # A queued meeting answer left off the calendar, which is what the filing
@@ -24713,7 +24713,7 @@ red = [
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
 ]
 
 # The order of the fold: a signature verdict puts "More about this signature:"
@@ -24742,7 +24742,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
     { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
@@ -31311,4 +31311,43 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
+]
+
+# A cancellation read as an invitation: the message says "Meeting
+# invitation" about a meeting that has been called off, with the time it no
+# longer has, and the row calls the part an invitation. Written 2026-09-25 by
+# 13-10, measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a cancellation is said as one and never as an invitation"
+file = "src/application/invitations.rs"
+before = '''        WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
+            summary: the_title_of(document),
+            on_the_calendar: on_the_calendar.is_some(),
+        },'''
+after = '''        WhatItAsks::Cancellation => read_the_invitation(document)
+            .map_or(WhatTheInvitationSays::CalendarFile, |invitation| {
+                an_invitation_said(&invitation, on_the_calendar, answered_here, dates)
+            }),'''
+red = [
+    "application::invitations::tests::test_a_cancellation_says_it_is_one_and_whether_the_meeting_is_on_the_calendar",
+    "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
+]
+tests_last_seen = [
+    { file = "src/application/invitations.rs", tests = 48 },
+]
+
+# The finder back to `text/calendar` alone, which is #50 point 5: an
+# invitation sent as `application/ics` is found by nothing, so it is neither
+# said nor answerable. Written 2026-09-25 by 13-10, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an invitation sent as application/ics is found"
+file = "src/application/answering.rs"
+before = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "application/ics"];'''
+after = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "text/calendar"];'''
+red = [
+    "application::answering::finding_the_invitation::test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 38 },
 ]

@@ -21,9 +21,10 @@
 //! handed on carries the words where the message opened and
 //! [`crate::presentation::reader_text::single_message`] finds no armour to write
 //! a sentence about. And when the answers are folded into a document, the
-//! envelope goes in before the signature: a verdict puts the "More about this
-//! signature:" line into the bar and the reader speaks only what is above that
-//! line, so a sentence folded in after one is on screen and never spoken.
+//! envelope and then the meeting a message carries go in before the signature:
+//! a verdict puts the "More about this signature:" line into the bar and the
+//! reader speaks only what is above that line, so a sentence folded in after
+//! one is on screen and never spoken.
 //! [`crate::presentation::reader_text::ReaderDocument::with_what_is_said`] is
 //! the one place that order is written, for the same reason this is the one
 //! place the questions are asked.
@@ -60,9 +61,10 @@
 //! an enveloped message; a body that arrived after the window opened would be
 //! a blank message that filled itself in afterwards.
 
+use crate::application::answering;
 use crate::application::checking_signatures::{self, SignatureCheck};
 use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
-use crate::application::invitations::WhatTheInvitationSays;
+use crate::application::invitations::{self, WhatTheInvitationSays};
 use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
@@ -186,8 +188,76 @@ pub fn invitation_check_for(
     message_row_id: i64,
     dates: impl FnOnce() -> DateSettings,
 ) -> WhatTheInvitationSays {
-    let _ = (cache, message_row_id, dates);
-    WhatTheInvitationSays::Nothing
+    let Some(cache) = cache else {
+        return WhatTheInvitationSays::Nothing;
+    };
+    // The names first, which is a row per attachment and no file, because
+    // nearly every message carries no calendar part and the files can be
+    // large.
+    let carries_a_calendar_part = cache
+        .get_attachments_for_message(message_row_id)
+        .map(|parts| {
+            parts
+                .iter()
+                .any(|part| answering::is_a_calendar_part(&part.mime_type))
+        })
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's attachments to look for a meeting: {e}");
+            false
+        });
+    if !carries_a_calendar_part {
+        return WhatTheInvitationSays::Nothing;
+    }
+    // The same reading Answer Invitation takes of the same stored parts, so
+    // the meeting said here is the meeting that would be answered.
+    let parts: Vec<(String, Vec<u8>)> = cache
+        .attachments_with_content(message_row_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's calendar part: {e}");
+            Vec::new()
+        })
+        .into_iter()
+        .filter_map(|file| Some((file.described.mime_type, file.content?)))
+        .collect();
+    // A calendar part whose file this computer does not hold is still one,
+    // and saying nothing would make it look like none.
+    let Some(document) = answering::the_invitation_a_message_carries(&parts) else {
+        return WhatTheInvitationSays::CalendarFile;
+    };
+    let on_the_calendar = the_account_it_arrived_on(cache, message_row_id)
+        .zip(invitations::the_meeting_named_in(&document))
+        .and_then(|(account, uid)| {
+            cache
+                .get_event_by_provider_id(&account, &uid)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Could not look a meeting up on the calendar: {e}");
+                    None
+                })
+        });
+    let answered_here = on_the_calendar.as_ref().and_then(|copy| {
+        cache
+            .the_version_answered_here(&copy.id)
+            .unwrap_or_else(|e| {
+                tracing::warn!("Could not read which version of a meeting was answered: {e}");
+                None
+            })
+    });
+    invitations::what_the_invitation_says(
+        &document,
+        on_the_calendar.as_ref(),
+        answered_here,
+        dates(),
+    )
+}
+
+/// The account a message arrived on, read from its own row.
+///
+/// Read here rather than handed in by the surfaces, because a conversation or
+/// All Inboxes shows messages from several accounts at once and a surface's
+/// idea of the current account is the wrong calendar for some of them.
+fn the_account_it_arrived_on(cache: &MessageCache, message_row_id: i64) -> Option<String> {
+    let folder = cache.get_message(message_row_id).ok()??.folder_id;
+    cache.account_of_folder(folder).ok()?
 }
 
 /// What can be said about one message's signature, from what the cache holds.
