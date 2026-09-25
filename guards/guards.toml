@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 315 records have arrived since and have not been through it.
+# 317 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30945,4 +30945,46 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# An undo of a mark reaching the messages the action did not change: Mark as
+# Read over a set where one was read already sends that one a mark it already
+# carries, and a label put on sends a message that already had it a removal,
+# taking off a label it carried before anybody touched it. Written 2026-09-25
+# by 13-07, the break taken by hand against the whole library first: the
+# mixed-set case and the label case went red and nothing else did. T-13-21.
+[[guard]]
+name = "an undo leaves out the messages the action did not change"
+file = "src/application/undoing.rs"
+before = '''        LastAction::Marked { mark, before } => before
+            .iter()
+            .filter(|message| !mark.was_already_on(message))
+            .map(|message| (message.clone(), mark.as_it_was_on(message)))'''
+after = '''        LastAction::Marked { mark, before } => before
+            .iter()
+            .map(|message| (message.clone(), mark.as_it_was_on(message)))'''
+red = [
+    "application::undoing::tests::test_undoing_a_label_put_on_takes_it_off_only_where_it_was_not",
+    "application::undoing::tests::test_undoing_mark_as_read_over_a_mixed_set_puts_back_each_messages_own_state",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 8 },
+]
+
+# A set named by its first message's subject, so "Undo Mark as Read" over four
+# messages reads as though it were over one, and the sentence after it says the
+# same. Written 2026-09-25 by 13-07, the break taken by hand against the whole
+# library first: the menu case and the sentences case went red and nothing
+# else did.
+[[guard]]
+name = "an undo over several messages names the count, not the first subject"
+file = "src/application/undoing.rs"
+before = '''            [only] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),'''
+after = '''            [only, ..] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),'''
+red = [
+    "application::undoing::tests::test_every_undo_sentence_reads_as_a_persons_sentence",
+    "application::undoing::tests::test_the_menu_names_the_message_or_the_count",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 8 },
 ]

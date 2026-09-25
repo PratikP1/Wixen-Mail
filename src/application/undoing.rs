@@ -26,6 +26,8 @@
 //! is called; `presentation::wx_app` carries it out through the same path the
 //! action took, so a server that refuses puts it back and says so.
 
+use crate::service::caldav::how_many;
+
 /// A label as an undo needs it: which one it is here, what it is called, and
 /// what it travels as to the server, when it travels at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +49,12 @@ pub struct Before {
     pub labels: Vec<Label>,
 }
 
+impl Before {
+    fn has(&self, label: &Label) -> bool {
+        self.labels.iter().any(|carried| carried.id == label.id)
+    }
+}
+
 /// A mark going on or coming off one message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mark {
@@ -54,6 +62,34 @@ pub enum Mark {
     Starred(bool),
     Label { label: Label, on: bool },
 }
+
+impl Mark {
+    /// Whether the message already carried this mark before the action, so
+    /// the action did not change it.
+    fn was_already_on(&self, message: &Before) -> bool {
+        match self {
+            Mark::Read(read) => message.read == *read,
+            Mark::Starred(starred) => message.starred == *starred,
+            Mark::Label { label, on } => message.has(label) == *on,
+        }
+    }
+
+    /// The same kind of mark, set to what the message held before.
+    fn as_it_was_on(&self, message: &Before) -> Mark {
+        match self {
+            Mark::Read(_) => Mark::Read(message.read),
+            Mark::Starred(_) => Mark::Starred(message.starred),
+            Mark::Label { label, .. } => Mark::Label {
+                label: label.clone(),
+                on: message.has(label),
+            },
+        }
+    }
+}
+
+/// How long a subject may run on the Edit menu before it is cut short, so
+/// the item stays readable and the menu does not stretch across the screen.
+const MOST_OF_A_SUBJECT_ON_THE_MENU: usize = 60;
 
 /// The last action somebody took on messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,9 +102,37 @@ pub enum LastAction {
 
 impl LastAction {
     /// What the action is called, the way the menu that does it would say
-    /// it: "Mark as Read", "Label Work", "Remove Every Label".
+    /// it: "Mark as Read", "Label Work", and "Remove every label" as the Label
+    /// menu words it. A label taken off one message has no item of its own,
+    /// since the label's item toggles, so it is "Remove label Work".
     pub fn name(&self) -> String {
-        String::new()
+        let mark = match self {
+            LastAction::LabelsRemoved { .. } => return "Remove every label".to_string(),
+            LastAction::Marked { mark, .. } => mark,
+        };
+        match mark {
+            Mark::Read(true) => "Mark as Read".to_string(),
+            Mark::Read(false) => "Mark as Unread".to_string(),
+            Mark::Starred(true) => "Star".to_string(),
+            Mark::Starred(false) => "Unstar".to_string(),
+            Mark::Label { label, on: true } => format!("Label {}", label.name),
+            Mark::Label { label, on: false } => format!("Remove label {}", label.name),
+        }
+    }
+
+    fn before(&self) -> &[Before] {
+        match self {
+            LastAction::Marked { before, .. } | LastAction::LabelsRemoved { before } => before,
+        }
+    }
+
+    /// The message's subject when there is one message with a subject, and
+    /// the count otherwise, the way a command over the set names it.
+    fn what_it_was_done_to(&self) -> String {
+        match self.before() {
+            [only] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),
+            all => how_many(all.len(), "message"),
+        }
     }
 }
 
@@ -83,62 +147,146 @@ pub enum Direction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OneStep {
     action: LastAction,
+    undone: bool,
 }
 
 impl OneStep {
     /// The action just taken, not yet undone.
     pub fn new(action: LastAction) -> Self {
-        Self { action }
+        Self {
+            action,
+            undone: false,
+        }
     }
 
     pub fn action(&self) -> &LastAction {
         &self.action
     }
 
-    /// Whether the step can go this way now.
-    pub fn offers(&self, _direction: Direction) -> bool {
-        false
+    /// Whether the step can go this way now: Undo until it has been undone,
+    /// then Redo until it has been done again.
+    pub fn offers(&self, direction: Direction) -> bool {
+        match direction {
+            Direction::Undo => !self.undone,
+            Direction::Redo => self.undone,
+        }
     }
 
     /// The step went this way.
-    pub fn went(&mut self, _direction: Direction) {}
+    pub fn went(&mut self, direction: Direction) {
+        self.undone = direction == Direction::Undo;
+    }
 }
 
 /// What an undo changes: each message back to its own state before, leaving
-/// out the ones the action did not change.
-pub fn what_undo_does(_action: &LastAction) -> Vec<(Before, Mark)> {
-    Vec::new()
+/// out the ones the action did not change. Labels removed all at once come
+/// back one label at a time, each on the message that carried it.
+pub fn what_undo_does(action: &LastAction) -> Vec<(Before, Mark)> {
+    match action {
+        LastAction::Marked { mark, before } => before
+            .iter()
+            .filter(|message| !mark.was_already_on(message))
+            .map(|message| (message.clone(), mark.as_it_was_on(message)))
+            .collect(),
+        LastAction::LabelsRemoved { before } => each_label_carried(before, true),
+    }
 }
 
 /// What a redo changes: the action again, over the messages it changed.
-pub fn what_redo_does(_action: &LastAction) -> Vec<(Before, Mark)> {
-    Vec::new()
+pub fn what_redo_does(action: &LastAction) -> Vec<(Before, Mark)> {
+    match action {
+        LastAction::Marked { mark, before } => before
+            .iter()
+            .filter(|message| !mark.was_already_on(message))
+            .map(|message| (message.clone(), mark.clone()))
+            .collect(),
+        LastAction::LabelsRemoved { before } => each_label_carried(before, false),
+    }
+}
+
+fn each_label_carried(before: &[Before], on: bool) -> Vec<(Before, Mark)> {
+    before
+        .iter()
+        .flat_map(|message| {
+            message.labels.iter().map(move |label| {
+                (
+                    message.clone(),
+                    Mark::Label {
+                        label: label.clone(),
+                        on,
+                    },
+                )
+            })
+        })
+        .collect()
 }
 
 /// The Edit menu's item for the step, "&Undo Mark as Read: Quarterly
 /// report\tCtrl+Z", keeping Undo's letter and key.
-pub fn menu_label(_action: &LastAction, _direction: Direction) -> String {
-    String::new()
+pub fn menu_label(action: &LastAction, direction: Direction) -> String {
+    let (command, key) = match direction {
+        Direction::Undo => ("&Undo", "Ctrl+Z"),
+        Direction::Redo => ("&Redo", "Ctrl+Y"),
+    };
+    format!(
+        "{command} {}: {}\t{key}",
+        on_a_menu(&action.name()),
+        on_a_menu(&action.what_it_was_done_to())
+    )
+}
+
+/// Words from a message or a label's name, made safe to sit in a menu item.
+/// An ampersand would give the next letter the item's key and a tab would
+/// start its shortcut, so the first is doubled and the second made a space,
+/// and a long subject is cut short.
+fn on_a_menu(words: &str) -> String {
+    let flat: String = words
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let short = match flat.chars().count() > MOST_OF_A_SUBJECT_ON_THE_MENU {
+        true => {
+            let kept: String = flat
+                .chars()
+                .take(MOST_OF_A_SUBJECT_ON_THE_MENU - 3)
+                .collect();
+            format!("{}...", kept.trim_end())
+        }
+        false => flat,
+    };
+    short.replace('&', "&&")
 }
 
 /// The one sentence after an undo.
-pub fn undone(_action: &LastAction) -> String {
-    String::new()
+pub fn undone(action: &LastAction) -> String {
+    format!(
+        "Undid {} on {}.",
+        action.name(),
+        action.what_it_was_done_to()
+    )
 }
 
 /// The one sentence after a redo.
-pub fn redone(_action: &LastAction) -> String {
-    String::new()
+pub fn redone(action: &LastAction) -> String {
+    format!(
+        "Redid {} on {}.",
+        action.name(),
+        action.what_it_was_done_to()
+    )
 }
 
-/// What Undo says in the message list when there is nothing to take back.
-pub fn nothing_to_undo(_step: Option<&OneStep>) -> &'static str {
-    ""
+/// What Undo says in the message list when there is nothing to take back:
+/// nothing done yet, or the one step already undone.
+pub fn nothing_to_undo(step: Option<&OneStep>) -> &'static str {
+    match step {
+        None => "There is nothing to undo in this list yet.",
+        Some(_) => "That was undone already. Redo does it again.",
+    }
 }
 
 /// What Redo says in the message list when there is nothing to put back.
 pub fn nothing_to_redo(_step: Option<&OneStep>) -> &'static str {
-    ""
+    "There is nothing to redo in this list. Redo puts back what Undo just took away."
 }
 
 #[cfg(test)]
@@ -349,7 +497,7 @@ mod tests {
                     label: work,
                     on: false,
                 },
-                "Remove Label Work",
+                "Remove label Work",
             ),
         ];
         for (mark, name) in names {
@@ -361,7 +509,7 @@ mod tests {
         }
         assert_eq!(
             LastAction::LabelsRemoved { before: vec![] }.name(),
-            "Remove Every Label"
+            "Remove every label"
         );
     }
 
@@ -402,7 +550,7 @@ mod tests {
             before: vec![message(1, "A", false, false), message(2, "B", false, false)],
         };
         assert_eq!(undone(&one), "Undid Mark as Read on Quarterly report.");
-        assert_eq!(redone(&several), "Redid Remove Every Label on 2 messages.");
+        assert_eq!(redone(&several), "Redid Remove every label on 2 messages.");
         let undone_step = {
             let mut step = OneStep::new(one.clone());
             step.went(Direction::Undo);

@@ -18775,7 +18775,12 @@ fn do_an_edit_command(
             }
             put_on_the_clipboard(&words, a11y);
         }
-        Doing::TheLastAction => {}
+        Doing::TheLastAction => {
+            let _ = a11y.announce(
+                &crate::application::editing::works_in_a_box_not_here(command),
+                Priority::High,
+            );
+        }
     }
 }
 

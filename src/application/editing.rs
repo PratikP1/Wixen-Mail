@@ -87,6 +87,16 @@ pub enum Where {
     SomewhereElse,
 }
 
+/// What Undo or Redo says in a place with nothing it could take back: the
+/// sidebar, and every list but the message list until the other modules have
+/// an undo of their own.
+pub fn works_in_a_box_not_here(command: EditCommand) -> String {
+    format!(
+        "{} works in a box you can type in, not in a list or the sidebar.",
+        command.name()
+    )
+}
+
 /// What to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Doing {
@@ -127,14 +137,13 @@ pub fn what_to_do(command: EditCommand, place: Where) -> Doing {
             command.name()
         )),
 
-        // Undo and Redo take back and put back a change somebody typed, and a
-        // list or the sidebar has none to offer. Nor does the way out Cut and
-        // Copy give below, which would send somebody to a list for Undo.
-        (EditCommand::Undo | EditCommand::Redo, Where::AList { .. } | Where::ATree) => {
-            Doing::NotHere(format!(
-                "{} works in a box you can type in, not in a list or the sidebar.",
-                command.name()
-            ))
+        // In a list, Undo and Redo take back and do again the last thing done
+        // to its items (#47's second level, 13-07). The sidebar has nothing
+        // anybody could take back. Nor does the way out Cut and Copy give
+        // below, which would send somebody to a list for Undo.
+        (EditCommand::Undo | EditCommand::Redo, Where::AList { .. }) => Doing::TheLastAction,
+        (EditCommand::Undo | EditCommand::Redo, Where::ATree) => {
+            Doing::NotHere(works_in_a_box_not_here(command))
         }
         (EditCommand::Undo | EditCommand::Redo, Where::SomewhereElse) => Doing::NotHere(format!(
             "{} works in a box you can type in. Tab or F6 moves between the parts of the window.",
