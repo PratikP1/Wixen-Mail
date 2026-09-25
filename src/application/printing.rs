@@ -76,8 +76,16 @@ impl Kind {
     }
 
     /// What the item under the cursor in `module` is.
-    pub fn for_module(_module: crate::common::types::PimModule) -> Kind {
-        Kind::Message
+    pub fn for_module(module: crate::common::types::PimModule) -> Kind {
+        use crate::common::types::PimModule;
+        match module {
+            PimModule::Mail => Kind::Message,
+            PimModule::Contacts => Kind::Contact,
+            PimModule::Calendar => Kind::Event,
+            PimModule::Reminders => Kind::Reminder,
+            PimModule::Tasks => Kind::Task,
+            PimModule::Notes => Kind::Note,
+        }
     }
 }
 
@@ -567,14 +575,6 @@ pub fn sent_to_the_printer(title: &str, printer: &str, pages: usize) -> String {
     )
 }
 
-/// What Print says where the area you are in is not Mail, since this build
-/// prints messages alone.
-pub fn prints_messages_only() -> String {
-    "Print works on messages in this build, so nothing was printed. Press Ctrl+Shift+1 for \
-     Mail and choose a message."
-        .to_string()
-}
-
 /// What is said when the print dialog was closed without printing.
 ///
 /// Said rather than left to silence, because a dialog closing without a word
@@ -1029,7 +1029,6 @@ mod tests {
             sent_to_the_printer("Quarterly report", "HP LaserJet 1022", 1),
             nothing_was_printed(),
             printing_failed("the printer did not answer"),
-            prints_messages_only(),
         ];
 
         assert_eq!(
@@ -1040,8 +1039,6 @@ mod tests {
                 "Printing was cancelled, so nothing was printed.",
                 "Nothing was printed, because the printer did not answer. Check that the \
                  printer is on and connected, then print again.",
-                "Print works on messages in this build, so nothing was printed. Press \
-                 Ctrl+Shift+1 for Mail and choose a message.",
             ]
         );
         for sentence in &said {

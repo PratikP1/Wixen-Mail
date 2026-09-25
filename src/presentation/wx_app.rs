@@ -5627,13 +5627,44 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
-                        _ if id == ID_PRINT => print_the_message_under_the_cursor(
-                            &state,
-                            &message_cache,
-                            &frame,
-                            &ui_tx,
-                            &runtime,
-                        ),
+                        _ if id == ID_PRINT => {
+                            use crate::application::status_sentences::Thing;
+                            // The row each module's list is on, and what its
+                            // refusal names when no row is. Mail has its own
+                            // handler, for messages and conversations.
+                            let chosen = match showing {
+                                PimModule::Mail => None,
+                                PimModule::Contacts => {
+                                    Some((selected_row(&contact_list), Thing::CONTACT))
+                                }
+                                PimModule::Calendar => {
+                                    Some((selected_row(&cal_event_list), Thing::EVENT))
+                                }
+                                PimModule::Reminders => {
+                                    Some((selected_row(&reminder_list), Thing::REMINDER))
+                                }
+                                PimModule::Tasks => Some((selected_row(&task_list), Thing::TASK)),
+                                PimModule::Notes => Some((selected_row(&note_list), Thing::NOTE)),
+                            };
+                            match chosen {
+                                None => print_the_message_under_the_cursor(
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                                Some((row, nothing_here)) => print_the_item_under_the_cursor(
+                                    showing,
+                                    row,
+                                    nothing_here,
+                                    &state,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                            }
+                        }
                         _ if id == ID_CHOOSE_WHICH_COPY => {
                             choose_which_copy_to_keep(
                                 &state,
@@ -14224,8 +14255,8 @@ fn a_message_as_the_reader_shows_it(
 /// `presentation::printing`'s; this composes, hands the page to the one path
 /// every surface prints by, and says the sentence that path returns. A
 /// conversation's row prints the whole conversation, every message its Enter
-/// reaches, each headed with its date in full. Outside Mail it says this build
-/// prints messages.
+/// reaches, each headed with its date in full. The other modules' items go to
+/// [`print_the_item_under_the_cursor`].
 fn print_the_message_under_the_cursor(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -14233,15 +14264,14 @@ fn print_the_message_under_the_cursor(
     ui_tx: &Sender<UIUpdate>,
     runtime: &Arc<Runtime>,
 ) {
-    use crate::application::printing::{self, AfterPrinting, Kind, Paper};
+    use crate::application::printing::{self, Kind, Paper};
     use crate::application::status_sentences::{Thing, nothing_chosen};
     use crate::presentation::printing::print_through_the_dialog;
 
-    let (module, message, conversation) = {
+    let (message, conversation) = {
         let held = lock_state(state);
         let row = held.selected_message_index;
         (
-            held.active_module,
             row.and_then(|row| held.the_loaded_message_the_row_stands_for(row))
                 .cloned(),
             row.filter(|_| held.showing.showing_conversations())
@@ -14255,14 +14285,7 @@ fn print_the_message_under_the_cursor(
                 }),
         )
     };
-    if module != PimModule::Mail {
-        send_refusal(ui_tx, runtime, &printing::prints_messages_only());
-        return;
-    }
-    let say = |said: AfterPrinting| match said {
-        AfterPrinting::Answer(said) => send_status(ui_tx, runtime, &said),
-        AfterPrinting::Refusal(said) => send_refusal(ui_tx, runtime, &said),
-    };
+    let say = |said| say_what_came_of_printing(said, ui_tx, runtime);
     // The nodes the row's Enter reaches. A conversation of one is printed as
     // the message it is, the way Enter opens it.
     let whole = conversation
@@ -14292,6 +14315,78 @@ fn print_the_message_under_the_cursor(
             kind: Kind::Message,
         },
     ));
+}
+
+/// File, Print in Contacts, Calendar, Reminders, Tasks or Notes: the item
+/// under the cursor in `module`'s list, `row`, on paper (#45).
+///
+/// The fields the item's full reading says, the ones Shift+Space speaks, one
+/// to a line, with every date in full, through the one path every surface
+/// prints by. No row chosen is refused naming `nothing_here`, the module's own
+/// thing.
+fn print_the_item_under_the_cursor(
+    module: PimModule,
+    row: Option<usize>,
+    nothing_here: crate::application::status_sentences::Thing,
+    state: &Arc<StdMutex<WxUIState>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+) {
+    use crate::application::printing::{self, Kind, Paper};
+    use crate::application::status_sentences::nothing_chosen;
+    use crate::presentation::printing::print_through_the_dialog;
+
+    let out = printing::on_paper(reading_from_settings());
+    let kind = Kind::for_module(module);
+    // Read the way Shift+Space reads it, from state, with the lock let go
+    // before the dialog opens.
+    let item = row.and_then(|row| {
+        let s = lock_state(state);
+        match module {
+            PimModule::Contacts => s.contacts.get(row).map(|c| (c.name.clone(), c.fields(out))),
+            PimModule::Calendar => s
+                .events
+                .get(row)
+                .map(|e| (e.summary.clone(), e.fields(out))),
+            PimModule::Reminders => s
+                .reminders
+                .get(row)
+                .map(|r| (r.title.clone(), r.fields(out))),
+            PimModule::Tasks => s.tasks.get(row).map(|t| (t.title.clone(), t.fields(out))),
+            PimModule::Notes => s.notes.get(row).map(|n| (n.title.clone(), n.fields(out))),
+            PimModule::Mail => None,
+        }
+    });
+    let Some((title, fields)) = item else {
+        send_refusal(ui_tx, runtime, &nothing_chosen(nothing_here));
+        return;
+    };
+    say_what_came_of_printing(
+        print_through_the_dialog(
+            frame,
+            &Paper {
+                printable: printing::from_item(kind, &title, &fields),
+                kind,
+            },
+        ),
+        ui_tx,
+        runtime,
+    );
+}
+
+/// The sentence after Print, on the status bar and spoken: an answer, or a
+/// refusal that says what went wrong.
+fn say_what_came_of_printing(
+    said: crate::application::printing::AfterPrinting,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+) {
+    use crate::application::printing::AfterPrinting;
+    match said {
+        AfterPrinting::Answer(said) => send_status(ui_tx, runtime, &said),
+        AfterPrinting::Refusal(said) => send_refusal(ui_tx, runtime, &said),
+    }
 }
 
 /// What one message shows and says, asked the way every surface here asks it.

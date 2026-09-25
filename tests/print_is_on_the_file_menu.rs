@@ -315,8 +315,18 @@ fn where_the_modules_print(app: &str) -> Result<(), String> {
         .ok_or("nothing answers ID_PRINT, so the item does nothing")?;
     let squashed: String = the_arm.split_whitespace().collect();
     for (module, list, thing) in THE_MODULES {
-        let answered = format!("PimModule::{module}=>Some((selected_row(&{list}),Thing::{thing}))");
-        if !squashed.contains(&answered) {
+        // rustfmt puts an arm too long for its line in braces, so the answer
+        // is read with or without them.
+        let answer = format!("Some((selected_row(&{list}),Thing::{thing}))");
+        let arm = format!("PimModule::{module}=>");
+        let answered = squashed.match_indices(&arm).any(|(at, _)| {
+            let after = &squashed[at + arm.len()..];
+            after
+                .strip_prefix('{')
+                .unwrap_or(after)
+                .starts_with(&answer)
+        });
+        if !answered {
             return Err(format!(
                 "the ID_PRINT arm no longer reads {module}'s row from {list} with a refusal \
                  naming a {thing}, so Print in {module} prints nothing or refuses in another \
