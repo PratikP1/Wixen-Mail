@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 327 records have arrived since and have not been through it.
+# 329 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -31205,4 +31205,81 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/undoing.rs", tests = 30 },
+]
+
+# A take-back that drops the deletion note before its transaction begins, so
+# a row that cannot be written back leaves the item gone and its deletion
+# never sent: gone here, still at the account, and nothing saying so
+# (T-13-30). Written 2026-09-25 by 13-09, the break measured against the
+# whole library.
+[[guard]]
+name = "a take-back drops the deletion note only with the row it puts back"
+file = "src/data/message_cache/taking_back.rs"
+before = '''        let taking = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to take a deletion back: {}", e)))?;
+        if self
+            .the_deletion_of(kind, record.id())?
+            .is_some_and(|deletion| deletion.taken)
+        {
+            return Ok(TakenBack::AlreadyTaken);
+        }
+        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute('''
+after = '''        if let Some((table, column)) = the_notes_of(kind) {
+            self.conn
+                .execute(
+                    &format!("DELETE FROM {table} WHERE {column} = ?1 AND taken_at IS NULL"),
+                    params![record.id()],
+                )
+                .map_err(|e| Error::Other(format!("Failed to take a deletion back: {}", e)))?;
+        }
+        let taking = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to take a deletion back: {}", e)))?;
+        if self
+            .the_deletion_of(kind, record.id())?
+            .is_some_and(|deletion| deletion.taken)
+        {
+            return Ok(TakenBack::AlreadyTaken);
+        }
+        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute('''
+red = [
+    "data::message_cache::taking_back::tests::test_a_restore_that_fails_leaves_the_row_and_the_note_as_they_were",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taking_back.rs", tests = 10 },
+]
+
+# A take-back that drops a note the account has already taken, which puts the
+# item back under an identity the account has let go of and leaves nothing to
+# stop a read writing the account's last copy of it back down (T-13-30).
+# Written 2026-09-25 by 13-09, the break measured against the whole library.
+[[guard]]
+name = "a take-back never drops a deletion the account has taken"
+file = "src/data/message_cache/taking_back.rs"
+before = '''        if self
+            .the_deletion_of(kind, record.id())?
+            .is_some_and(|deletion| deletion.taken)
+        {
+            return Ok(TakenBack::AlreadyTaken);
+        }
+        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute(
+                    &format!("DELETE FROM {table} WHERE {column} = ?1 AND taken_at IS NULL"),'''
+after = '''        if let Some((table, column)) = the_notes_of(kind) {
+            taking
+                .execute(
+                    &format!("DELETE FROM {table} WHERE {column} = ?1"),'''
+red = [
+    "data::message_cache::taking_back::tests::test_a_taken_task_is_left_untouched_and_answered_already_taken",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taking_back.rs", tests = 10 },
 ]

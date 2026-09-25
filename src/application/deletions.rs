@@ -49,6 +49,20 @@
 //! Every one of these refusals exists because a caller decided for itself that
 //! a note was safe to drop and put a deleted thing back on the screen.
 //!
+//! One path may drop a note a provider could still name, and it is not a
+//! caller deciding for itself: `data::message_cache::taking_back`'s
+//! `take_a_deletion_back` (13-09), which is somebody asking for the thing back
+//! with Edit, Undo. It drops a note only while it is still owed, and only in
+//! the transaction that puts the row back from the record the undo kept, so
+//! the row and the note change together and a failure leaves both as they
+//! were. It cannot resurrect anything by mistake: the person asked for it
+//! back, and the deletion it takes back was never sent. A note the provider
+//! has taken is never dropped; the thing comes back as a new item instead,
+//! with no provider identity, and the note goes on masking the reads until
+//! the clock lets it go. It refuses while the account's sync is running, since
+//! that sync may already have read the note it would drop. That is how a
+//! contact's note can now be dropped, and the only way.
+//!
 //! # What lets it go
 //!
 //! The clock, and nothing else. A memory is released once it is older than

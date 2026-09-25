@@ -88,11 +88,27 @@ impl MessageCache {
     /// written in the same transaction, so a contact and what each address
     /// book calls it never disagree.
     pub fn save_contact(&self, contact: &ContactEntry) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
         let saving = self
             .conn
             .unchecked_transaction()
             .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
+        Self::write_the_contact(&saving, contact)?;
+        saving
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
+        Ok(())
+    }
+
+    /// The contact and the names its address books give it, in whatever
+    /// transaction the caller has open. Shared with
+    /// `taking_back::take_a_deletion_back`, which puts a deleted contact back
+    /// in the same transaction that takes back its deletion notes, so the two
+    /// ways a contact is written cannot drift apart on what they write.
+    pub(super) fn write_the_contact(
+        saving: &rusqlite::Transaction<'_>,
+        contact: &ContactEntry,
+    ) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
         saving.execute(
             "INSERT INTO contacts
              (id, account_id, name, email, phone, company, job_title, website, address, birthday,
@@ -171,9 +187,6 @@ impl MessageCache {
                 )
                 .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
         }
-        saving
-            .commit()
-            .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
         Ok(())
     }
 
