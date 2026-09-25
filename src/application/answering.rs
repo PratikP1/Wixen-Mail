@@ -711,6 +711,17 @@ fn the_guest_answering<'a>(
 /// The media type a meeting invitation arrives as.
 const AN_INVITATION_ARRIVES_AS: &str = "text/calendar";
 
+/// Whether a part's media type is one a calendar document arrives as.
+///
+/// Parameters and case aside, which senders write every way there is.
+pub fn is_a_calendar_part(kind: &str) -> bool {
+    kind.split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .eq_ignore_ascii_case(AN_INVITATION_ARRIVES_AS)
+}
+
 /// The invitation a message carries, when it carries one.
 ///
 /// An invitation is an ordinary message with a calendar document attached, so
@@ -768,6 +779,23 @@ mod finding_the_invitation {
         )]);
 
         assert!(found.is_some(), "the type was read as a whole line");
+    }
+
+    #[test]
+    fn test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar() {
+        // Some senders label the calendar part by its file's kind rather than
+        // as text, and the part is still the meeting. Finding only
+        // `text/calendar` left those invitations unsaid and unanswerable
+        // (#50 point 5).
+        let found = the_invitation_a_message_carries(&[
+            ("text/plain".to_string(), b"Are you free?".to_vec()),
+            (
+                "Application/ICS; name=invite.ics".to_string(),
+                an_invitation(),
+            ),
+        ]);
+
+        assert!(found.is_some_and(|document| document.contains("METHOD:REQUEST")));
     }
 
     #[test]

@@ -14574,6 +14574,9 @@ fn what_a_message_shows_and_says(
         message.message_id,
         &message.from,
         body,
+        // Read only for a message carrying a meeting, whose time is said the
+        // way this reader words a date.
+        date_settings_from_stored_config,
     )
 }
 

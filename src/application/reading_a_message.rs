@@ -62,9 +62,11 @@
 
 use crate::application::checking_signatures::{self, SignatureCheck};
 use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
+use crate::application::invitations::WhatTheInvitationSays;
 use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
+use crate::presentation::date_display::DateSettings;
 use crate::service::pgp::WhatOpeningItFound;
 
 /// What one message shows, and what is said about it.
@@ -78,10 +80,10 @@ pub struct WhatAMessageShowsAndSays {
     pub said: WhatIsSaidAboutIt,
 }
 
-/// The three things said about a message beside its body.
+/// The four things said about a message beside its body.
 ///
 /// Each is the answer its own module already gives, carried together so no
-/// surface can take two of the three. Nearly every message has nothing in any
+/// surface can take three of the four. Nearly every message has nothing in any
 /// of them, and then nothing downstream changes at all: no bar where there was
 /// none, no line to listen past.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +93,9 @@ pub struct WhatIsSaidAboutIt {
     pub opened: Option<WhatOpeningItFound>,
     /// What the S/MIME envelope says, for a message that arrived in one.
     pub envelope: WhatTheEnvelopeSays,
+    /// What the calendar document the message carries says, for a message
+    /// that carries one.
+    pub invitation: WhatTheInvitationSays,
     /// What the signature was worth, for a message that said it was signed.
     pub signature: SignatureCheck,
 }
@@ -108,6 +113,7 @@ impl WhatIsSaidAboutIt {
         Self {
             opened: None,
             envelope: WhatTheEnvelopeSays::NotEncrypted,
+            invitation: WhatTheInvitationSays::Nothing,
             signature: SignatureCheck::NotSigned,
         }
     }
@@ -124,20 +130,26 @@ impl WhatIsSaidAboutIt {
 /// With no cache there is nothing to ask, and the answers are the ones
 /// ordinary mail gets. The armour is still offered to the key, because that
 /// question is about the body in hand and not about the cache.
+///
+/// `dates` is how this reader words a date, asked for only when the message
+/// carries a meeting whose time has to be said, so ordinary mail never reads
+/// a setting.
 pub fn for_message(
     cache: Option<&MessageCache>,
     message_row_id: i64,
     from: &str,
     body: MessageBody,
+    dates: impl FnOnce() -> DateSettings,
 ) -> WhatAMessageShowsAndSays {
     put_together(
         body,
         envelope_check_for(cache, message_row_id),
+        invitation_check_for(cache, message_row_id, dates),
         signature_check_for(cache, message_row_id, from),
     )
 }
 
-/// The same, for a caller that has the two answers already.
+/// The same, for a caller that has the three answers already.
 ///
 /// Split out so the opening can be tested without a database: the armour is
 /// offered to the key here, and the body handed on is the words where it
@@ -145,6 +157,7 @@ pub fn for_message(
 pub fn put_together(
     body: MessageBody,
     envelope: WhatTheEnvelopeSays,
+    invitation: WhatTheInvitationSays,
     signature: SignatureCheck,
 ) -> WhatAMessageShowsAndSays {
     // Before any document is built, not after. A message that opens has its
@@ -157,9 +170,24 @@ pub fn put_together(
         said: WhatIsSaidAboutIt {
             opened,
             envelope,
+            invitation,
             signature,
         },
     }
+}
+
+/// What the calendar document a message carries says, from the parts stored
+/// when it was opened and the calendar of the account it arrived on.
+///
+/// `Nothing` with no cache, and for a message whose parts hold no calendar
+/// document, which is nearly all of them.
+pub fn invitation_check_for(
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    dates: impl FnOnce() -> DateSettings,
+) -> WhatTheInvitationSays {
+    let _ = (cache, message_row_id, dates);
+    WhatTheInvitationSays::Nothing
 }
 
 /// What can be said about one message's signature, from what the cache holds.
@@ -230,8 +258,12 @@ mod tests {
         );
     }
 
-    fn nothing_kept() -> (WhatTheEnvelopeSays, SignatureCheck) {
-        (WhatTheEnvelopeSays::NotEncrypted, SignatureCheck::NotSigned)
+    fn nothing_kept() -> (WhatTheEnvelopeSays, WhatTheInvitationSays, SignatureCheck) {
+        (
+            WhatTheEnvelopeSays::NotEncrypted,
+            WhatTheInvitationSays::Nothing,
+            SignatureCheck::NotSigned,
+        )
     }
 
     #[test]
@@ -241,11 +273,12 @@ mod tests {
         // itself. Every surface that asks this gets the words, which is what
         // the default reader and the preview never got (#51).
         with_alices_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
 
         let shown = put_together(
             MessageBody::Plain(a_message_to_alice()),
             envelope,
+            invitation,
             signature,
         );
 
@@ -267,10 +300,10 @@ mod tests {
         // do next, and the body is still the armour, which is what somebody
         // can copy elsewhere or forward to whoever can read it.
         with_no_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
         let arrived = MessageBody::Plain(a_message_to_alice());
 
-        let shown = put_together(arrived.clone(), envelope, signature);
+        let shown = put_together(arrived.clone(), envelope, invitation, signature);
 
         assert_eq!(shown.said.opened, Some(WhatOpeningItFound::NoKeyHere));
         assert_eq!(shown.body, arrived);
@@ -282,10 +315,10 @@ mod tests {
         // three answers are the ones that change nothing downstream, so no
         // surface gains a bar it did not have.
         with_no_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
         let arrived = MessageBody::Html("<p>One o'clock?</p>".to_string());
 
-        let shown = put_together(arrived.clone(), envelope, signature);
+        let shown = put_together(arrived.clone(), envelope, invitation, signature);
 
         assert_eq!(shown.body, arrived);
         assert_eq!(shown.said, WhatIsSaidAboutIt::nothing());
@@ -362,12 +395,14 @@ mod tests {
             signed,
             FROM,
             MessageBody::Plain("The meeting moved to Thursday at ten.".to_string()),
+            written_out_in_full,
         );
         let about_the_enveloped = for_message(
             Some(&cache),
             enveloped,
             FROM,
             MessageBody::Plain(String::new()),
+            written_out_in_full,
         );
 
         assert!(
@@ -391,11 +426,151 @@ mod tests {
         let row = a_message_in(&cache, 1);
         let body = || MessageBody::Plain("One o'clock?".to_string());
 
-        let in_the_cache = for_message(Some(&cache), row, FROM, body());
-        let without_a_cache = for_message(None, row, FROM, body());
+        let in_the_cache = for_message(Some(&cache), row, FROM, body(), written_out_in_full);
+        let without_a_cache = for_message(None, row, FROM, body(), written_out_in_full);
 
         assert_eq!(in_the_cache.said, WhatIsSaidAboutIt::nothing());
         assert_eq!(without_a_cache.said, WhatIsSaidAboutIt::nothing());
+    }
+
+    // ── The invitation, asked of the stored parts and the calendar ────────
+
+    /// Dates written out in full, so a worded time is the same on any
+    /// machine.
+    fn written_out_in_full() -> DateSettings {
+        use crate::presentation::date_display::{Clock, DateOrder, DateStyle, DateWording};
+        DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        }
+    }
+
+    /// An invitation to version 2 of a meeting, at nine on the clock.
+    const AN_INVITATION: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\n\
+        BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSEQUENCE:2\r\nSUMMARY:Quarterly review\r\n\
+        LOCATION:Room 4\r\nDTSTART:20260305T090000\r\nDTEND:20260305T100000\r\n\
+        ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+        ATTENDEE;CN=Me;PARTSTAT=NEEDS-ACTION:mailto:me@example.com\r\n\
+        END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    /// Its parts stored the way opening a message stores them: the covering
+    /// note's attachment, if any, and the calendar document with its bytes.
+    fn carrying_the_invitation(cache: &MessageCache, row: i64) {
+        use crate::data::message_cache::CachedAttachment;
+        use crate::data::message_cache::attachment_content::AttachmentWithContent;
+        cache
+            .replace_attachments_with_content(
+                row,
+                &[AttachmentWithContent {
+                    described: CachedAttachment {
+                        id: 0,
+                        message_id: row,
+                        filename: "invite.ics".to_string(),
+                        mime_type: "text/calendar".to_string(),
+                        size: AN_INVITATION.len() as i64,
+                        content_id: None,
+                        description: crate::service::mime::WhatTheSenderSaid::Nothing,
+                    },
+                    content: Some(AN_INVITATION.as_bytes().to_vec()),
+                }],
+            )
+            .expect("the parts stored");
+    }
+
+    /// The meeting on the calendar of the account the message arrived on, at
+    /// eight, answered here at version 1.
+    fn answered_at_version_one(cache: &MessageCache) {
+        let held = crate::data::message_cache::CalendarEventEntry {
+            id: "evt-1".to_string(),
+            account_id: "acc-1".to_string(),
+            provider_event_id: Some("m-1@example.com".to_string()),
+            calendar_id: None,
+            summary: "Quarterly review".to_string(),
+            description: None,
+            location: None,
+            start_datetime: "2026-03-05T08:00:00".to_string(),
+            end_datetime: "2026-03-05T09:00:00".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: None,
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-03-01T00:00:00Z".to_string(),
+            updated_at: "2026-03-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        };
+        cache.save_calendar_event(&held).expect("the meeting filed");
+        cache
+            .remember_the_version_answered("evt-1", 1)
+            .expect("the answer remembered");
+    }
+
+    #[test]
+    fn test_a_message_carrying_an_invitation_says_the_meeting_before_its_body() {
+        // The part stored when the message was opened is read back, the same
+        // way Answer Invitation reads it, and the calendar has never heard of
+        // the meeting.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+
+        let shown = for_message(
+            Some(&cache),
+            row,
+            FROM,
+            MessageBody::Plain("Are you free?".to_string()),
+            written_out_in_full,
+        );
+
+        assert!(
+            matches!(
+                &shown.said.invitation,
+                WhatTheInvitationSays::Invitation {
+                    standing: crate::application::invitations::Standing::New,
+                    ..
+                }
+            ),
+            "{:?}",
+            shown.said.invitation
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_for_a_meeting_answered_at_an_earlier_version_is_a_change() {
+        // The account is read from the message's own row: its folder is on
+        // "acc-1", and that account's calendar holds version 1 at eight.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+        answered_at_version_one(&cache);
+
+        let said = invitation_check_for(Some(&cache), row, written_out_in_full);
+
+        assert!(
+            matches!(
+                &said,
+                WhatTheInvitationSays::Invitation {
+                    standing: crate::application::invitations::Standing::Changed { from },
+                    ..
+                } if from == "05/03/2026 at 08:00 to 09:00"
+            ),
+            "{said:?}"
+        );
     }
 
     // ── The fold, in the order that keeps each sentence spoken ────────────
@@ -437,6 +612,7 @@ mod tests {
         let said = WhatIsSaidAboutIt {
             opened: None,
             envelope: addressed_to_alice(),
+            invitation: WhatTheInvitationSays::Nothing,
             signature: SignatureCheck::NotKept,
         };
 
@@ -464,10 +640,11 @@ mod tests {
         // its armour, `single_message` writes the general sentence over it,
         // and the fold narrows that sentence to the reason.
         with_no_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
         let shown = put_together(
             MessageBody::Plain(a_message_to_alice()),
             envelope,
+            invitation,
             signature,
         );
 
