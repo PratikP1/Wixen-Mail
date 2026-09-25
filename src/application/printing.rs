@@ -111,6 +111,25 @@ pub enum NotPrinted {
     Failed(String),
     /// Printing is built on Windows' own calls, and this is not Windows.
     NotOnThisPlatform,
+    /// The pages chosen in the print dialog all come after the last page of
+    /// the `pages` there are.
+    PastTheLastPage { pages: usize },
+}
+
+impl NotPrinted {
+    /// The one sentence said about it.
+    pub fn sentence(&self) -> String {
+        String::new()
+    }
+}
+
+/// The pages the print dialog's answer chooses, numbered from 1, in order and
+/// each once.
+///
+/// Every page when `all`; otherwise the pages `ranges` name, a range past the
+/// last page stopping at it and a range wholly past it choosing nothing.
+pub fn pages_chosen(_ranges: &[(u32, u32)], _all: bool, _total: usize) -> Vec<usize> {
+    vec![0]
 }
 
 /// The same reading, with every date written in full.
@@ -774,6 +793,68 @@ mod tests {
                 panic!("{why}");
             }
         }
+    }
+
+    #[test]
+    fn test_every_reason_nothing_was_printed_says_one_sentence_of_its_own() {
+        let said: Vec<String> = [
+            NotPrinted::Cancelled,
+            NotPrinted::Failed("the printer did not accept the job".to_string()),
+            NotPrinted::NotOnThisPlatform,
+            NotPrinted::PastTheLastPage { pages: 3 },
+            NotPrinted::PastTheLastPage { pages: 1 },
+        ]
+        .iter()
+        .map(NotPrinted::sentence)
+        .collect();
+
+        assert_eq!(
+            said,
+            [
+                "Printing was cancelled, so nothing was printed.",
+                "Nothing was printed, because the printer did not accept the job. Check that \
+                 the printer is on and connected, then print again.",
+                "Printing works only on Windows in this build, so nothing was printed.",
+                "Nothing was printed, because the pages you chose come after its last page. \
+                 It has 3 pages.",
+                "Nothing was printed, because the pages you chose come after its last page. \
+                 It has 1 page.",
+            ]
+        );
+        for sentence in &said {
+            if let Err(why) = reads_as_a_persons_sentence(sentence, Voice::Answer) {
+                panic!("{why}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_every_page_is_chosen_when_the_dialog_says_all() {
+        // The ranges are what the dialog last held, and All means they are
+        // not what was asked for.
+        assert_eq!(pages_chosen(&[(2, 2)], true, 3), [1, 2, 3]);
+    }
+
+    #[test]
+    fn test_one_range_chooses_its_pages() {
+        assert_eq!(pages_chosen(&[(2, 3)], false, 5), [2, 3]);
+    }
+
+    #[test]
+    fn test_two_overlapping_ranges_choose_each_page_once_in_order() {
+        // "4-5, 1-4": page 4 is named twice and printed once, and the pages
+        // come out in the order they are numbered.
+        assert_eq!(pages_chosen(&[(4, 5), (1, 4)], false, 6), [1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_a_range_past_the_end_stops_at_the_last_page() {
+        assert_eq!(pages_chosen(&[(2, 9)], false, 3), [2, 3]);
+    }
+
+    #[test]
+    fn test_a_range_wholly_past_the_end_chooses_nothing() {
+        assert_eq!(pages_chosen(&[(5, 7)], false, 3), Vec::<usize>::new());
     }
 
     #[test]

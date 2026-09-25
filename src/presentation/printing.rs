@@ -26,7 +26,10 @@
 //! step that failed.
 
 #[cfg(target_os = "windows")]
-pub use on_windows::{Sheet, draw_page, print};
+pub use on_windows::{Chosen, Sheet, ask_for_a_printer, draw_page, print, print_on};
+
+#[cfg(not(target_os = "windows"))]
+pub use elsewhere::{Chosen, ask_for_a_printer, print_on};
 
 #[cfg(target_os = "windows")]
 mod on_windows {
@@ -44,7 +47,7 @@ mod on_windows {
     use windows::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
     use windows::core::PCWSTR;
 
-    use crate::application::printing::{NotPrinted, Page, Printed};
+    use crate::application::printing::{Kind, NotPrinted, Page, Printable, Printed};
 
     /// The page's size, fixed whatever the screen's reading size: decision 6
     /// of phase 13, taken so there is no setting to find.
@@ -335,5 +338,81 @@ mod on_windows {
             true => Ok(()),
             false => Err(failed("a page could not be finished")),
         }
+    }
+
+    /// A printer somebody chose, with the pages they asked for.
+    pub struct Chosen(());
+
+    impl Chosen {
+        /// The printer called `name`, every page, into `into_file` when one is
+        /// given: the dialog's answer for a caller that already knows which
+        /// printer it wants.
+        pub fn the_printer_named(
+            _name: &str,
+            _into_file: Option<&Path>,
+        ) -> Result<Chosen, NotPrinted> {
+            Err(NotPrinted::Failed("nothing is chosen yet".to_string()))
+        }
+
+        /// The printer's name, as the sentence after printing says it.
+        pub fn printer_name(&self) -> &str {
+            ""
+        }
+
+        /// A sheet on the chosen printer, to measure and draw with.
+        pub fn sheet(&self) -> Result<Sheet, NotPrinted> {
+            Err(NotPrinted::Failed("nothing is chosen yet".to_string()))
+        }
+    }
+
+    /// Windows' own print dialog, owned by `owner` so focus goes back there
+    /// when it closes. `None` when it was closed without printing.
+    pub fn ask_for_a_printer(
+        _owner: &wxdragon::prelude::Frame,
+    ) -> Result<Option<Chosen>, NotPrinted> {
+        Ok(None)
+    }
+
+    /// `printable` laid out for the chosen printer, and the pages chosen of it
+    /// sent as one job named for its `kind`.
+    pub fn print_on(
+        _chosen: &Chosen,
+        _printable: &Printable,
+        _kind: Kind,
+    ) -> Result<Printed, NotPrinted> {
+        Err(NotPrinted::Failed("nothing is chosen yet".to_string()))
+    }
+}
+
+/// Where there is no Win32 there is no printing, and saying so is the one
+/// thing to do. The chosen printer cannot exist here, so nothing that takes
+/// one can be reached.
+#[cfg(not(target_os = "windows"))]
+mod elsewhere {
+    use crate::application::printing::{Kind, NotPrinted, Printable, Printed};
+
+    /// A printer somebody chose, which off Windows nobody can.
+    pub struct Chosen {
+        never: std::convert::Infallible,
+    }
+
+    impl Chosen {
+        pub fn printer_name(&self) -> &str {
+            match self.never {}
+        }
+    }
+
+    pub fn ask_for_a_printer(
+        _owner: &wxdragon::prelude::Frame,
+    ) -> Result<Option<Chosen>, NotPrinted> {
+        Err(NotPrinted::NotOnThisPlatform)
+    }
+
+    pub fn print_on(
+        chosen: &Chosen,
+        _printable: &Printable,
+        _kind: Kind,
+    ) -> Result<Printed, NotPrinted> {
+        match chosen.never {}
     }
 }
