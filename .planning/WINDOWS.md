@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 550
+open_count: 552
 waived_count: 0
 fixed_count: 59
-total_count: 609
-last_updated: 2026-09-24T23:30:00.000Z
+total_count: 611
+last_updated: 2026-09-25T02:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -624,6 +624,8 @@ last_updated: 2026-09-24T23:30:00.000Z
 | 607 | 12 | unrun-verify | src/presentation/wx_app.rs |  | 12-10: #48 under NVDA. What only the tester's ear settles: the Label submenu's items heard with their keys after the labels load and after a rename and a move, Edit Labels at its end, the Label Manager's Key column read row by row, a move said as Later, 2 of 5. after Alt+Shift+Up or Down, the cursor staying on the moved row, and Ctrl+6 with five labels saying there is no label 6 from the message list. tests/the_label_menu_says_the_labels_an_account_has.rs reads the real menu bar and the live manager and cannot hear any of it | open |  | 2026-09-24T21:00:00.000Z |  |
 | 608 | 12 | todo | docs/plans/20260924-pro-licence.md |  | 12-11: the pro licence (#65, ALPHA-03) is a design and nothing in the program is gated. The ten rows of its section 9, Decisions for Pratik, are his: the free and pro line, whether several accounts are gated, the merchant, online revocation, how long a perpetual licence carries updates, a trial with no card, whether the supporter tier delivers a real licence, how priority support is carried, when gating starts and the grace period after a lapse. The answer column is empty. Closed when a phase is planned from his answers | open |  | 2026-09-24T22:00:00.000Z |  |
 | 609 | 12 | unrun-verify | .github/workflows/ci.yml |  | 12-12: main has not been pushed since 6cb8f17c on 2026-09-23, and phase 12 closes 112 commits ahead of origin/main by git rev-list origin/main..HEAD --count at 3791bc9d on 2026-09-24. CI, Accessibility and NVDA have run on main at none of the merges from 12-03.1 to 12-11: nine of those plans ran them on their own pull requests, #94 to #102 (12-03.1, 12-04, 12-05, 12-06, 12-06.1, 12-07, 12-08, 12-09 and 12-10, pushed under Pratik's standing OK), 12-03.2 and 12-11 did not, and no run has read the tree the phase's merges made together. The nine pull requests still read open on GitHub by gh pr list on 2026-09-24, because their merges are local. 12-12's full gate is the local whole suite, release build and audit; it runs no NVDA case and no accessibility scan. The push of main is Pratik's. Closed when the three workflows have run on a push of main holding 12-12's merge and their verdicts are read | open |  | 2026-09-24T23:00:00.000Z |  |
+| 610 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-01: #47 under NVDA. What only the tester's ear settles: Undo and Redo heard first on the Edit menu with Ctrl+Z, Ctrl+Y and the letters U and R; Undo Send found third on the letter N; Undo and Redo read as unavailable while greyed with nothing to do; "Undone", "Redone" and the two nothing-to-do sentences heard after Ctrl+Z and Ctrl+Y in a note and the contacts search; and the read-only and list sentences in the preview and a list. tests/undo_reaches_the_text.rs reads a real box and the real menu bar and cannot hear any of it | open |  | 2026-09-25T02:00:00.000Z |  |
+| 611 | 13 | todo | src/presentation/wx_app.rs |  | 13-01: a greyed menu item's key does nothing and says nothing, because wxWidgets returns early for it (framecmn.cpp:364, if (!item->IsEnabled()) return true;). Mark Done or Not Done (Ctrl+Shift+K) and Pin or Unpin (Ctrl+Shift+P) are greyed by module at wx_app.rs:2131-2140, so either key pressed in a module its command does not apply to, such as Ctrl+Shift+K in Contacts, is silent, against application::editing's rule that a key never does nothing quietly. The fix is the one 13-01 used for Undo and Redo: grey on menu open, offer again on close, and let the handler say why | open |  | 2026-09-25T02:00:00.000Z |  |
 
 ````json
 [
@@ -7933,6 +7935,30 @@ last_updated: 2026-09-24T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 610,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-01: #47 under NVDA. What only the tester's ear settles: Undo and Redo heard first on the Edit menu with Ctrl+Z, Ctrl+Y and the letters U and R; Undo Send found third on the letter N; Undo and Redo read as unavailable while greyed with nothing to do; \"Undone\", \"Redone\" and the two nothing-to-do sentences heard after Ctrl+Z and Ctrl+Y in a note and the contacts search; and the read-only and list sentences in the preview and a list. tests/undo_reaches_the_text.rs reads a real box and the real menu bar and cannot hear any of it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T02:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 611,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-01: a greyed menu item's key does nothing and says nothing, because wxWidgets returns early for it (framecmn.cpp:364, if (!item->IsEnabled()) return true;). Mark Done or Not Done (Ctrl+Shift+K) and Pin or Unpin (Ctrl+Shift+P) are greyed by module at wx_app.rs:2131-2140, so either key pressed in a module its command does not apply to, such as Ctrl+Shift+K in Contacts, is silent, against application::editing's rule that a key never does nothing quietly. The fix is the one 13-01 used for Undo and Redo: grey on menu open, offer again on close, and let the handler say why",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T02:00:00.000Z",
     "resolved_at": null
   }
 ]
