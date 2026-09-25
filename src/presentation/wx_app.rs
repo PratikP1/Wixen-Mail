@@ -18775,6 +18775,7 @@ fn do_an_edit_command(
             }
             put_on_the_clipboard(&words, a11y);
         }
+        Doing::TheLastAction => {}
     }
 }
 

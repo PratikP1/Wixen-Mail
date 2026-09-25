@@ -134,6 +134,7 @@ pub mod thread_identity;
 pub mod threading;
 pub mod time_blocks;
 pub mod trying_again;
+pub mod undoing;
 pub mod what_is_said_while_fetching;
 pub mod when_people_are_free;
 pub mod who_is_coming;
