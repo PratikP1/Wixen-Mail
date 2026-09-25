@@ -5841,8 +5841,14 @@ stays at 122.
     word with its space, a paste, a cut, a run of deleting one way), the Edit menu and its
     greying ask the history, and the one step through `EM_UNDO` is gone; a chosen note starts
     its boxes afresh. `cargo test --test several_steps_come_back`, 11 tests, types three words
-    into a real box and walks them back and forward, and presses Ctrl+Z in the box. Dialogs
-    and items are still to come, so this line stays open.
+    into a real box and walks them back and forward, and presses Ctrl+Z in the box. 13-06 on
+    2026-09-25: every dialog's boxes keep the same history, the editable combo boxes too, a
+    password box none, a value a dialog opens holding where its history starts; the number
+    fields and wxWidgets' two text-entry dialogs keep Windows' step, named (ledger 621).
+    `cargo test --test every_text_box_keeps_a_history`, 10 tests, holds every `TextCtrl` and
+    `ComboBox` builder under `src/presentation` to `keep_a_history`, and
+    `several_steps_come_back`, 16 tests, reads a combo box, a box in a dialog, Check Spelling
+    and a stored contact on real controls. Items are still to come, so this line stays open.
   - Plans, 2026-09-24: 13-01 (Undo and Redo on the Edit menu on the box's own step),
     13-05 and 13-06 (several steps in every text box), 13-07 (marks), 13-08 (moves, deletes
     and copies), which ticks this line, and 13-09 (the other five modules), which closes #47.
@@ -6166,7 +6172,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | EDIT-04 | Phase 12 | Done 2026-09-24, 12-09: one set with an assignment per account and one default, chosen on the account's dialog or in a signature's editor through one stored assignment, compose following the From account, held by `application::signatures`' and the store's cases and `tests/a_signature_follows_the_from_account.rs`; the ear is ledger 605 |
 | EDIT-05 | Phase 12 | Done 2026-09-24, 12-10: labels in a stored order, the Label submenu rebuilt from them with the key that applies each and Edit Labels at its end, the Label Manager with a Key column and moves, held by `application::tagging`'s and the store's cases and `tests/the_label_menu_says_the_labels_an_account_has.rs`; the ear is ledger 607 |
 | GAP-01 | Phase 13 | Done 2026-09-25, 13-04: File, Print on every surface that shows a message or an item, the reader window, a conversation's row, the formatted message window and the five other modules, through one path to Windows' print dialog, held by `tests/print_is_on_the_file_menu.rs`, `application::printing`'s and `presentation::page_jumps`'s cases; the ear and the paper are ledger 613 and 617. Until then "13-03 built 2026-09-25, File, Print on the message list through Windows' print dialog; 13-04 to come, which ticks it". Before that "13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it". Before that "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20" |
-| GAP-02 | Phase 13 | 13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 to 13-09 to come, 13-08 ticks it. Until 13-05 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it", and until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
+| GAP-02 | Phase 13 | 13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 to 13-09 to come, 13-08 ticks it. Until 13-06 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 to 13-09 to come, 13-08 ticks it", and until 13-05 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it", and until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-03 | Phase 13 | Planned 2026-09-24: 13-16, 13-17, 13-17.1, which ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-04 | Phase 13 | Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-05 | Phase 13 | Planned 2026-09-24: 13-14, 13-15, 13-18 to 13-21 (13-20 waits on answer (b)), 13-21 ticks it; not built. Until then "Not planned, 2026-09-20" |

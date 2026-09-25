@@ -57,6 +57,7 @@ use crate::presentation::message_rows;
 use crate::presentation::pim_rows;
 use crate::presentation::read_aloud::{self, ReadAloud};
 use crate::presentation::reader_text;
+use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
 use crate::presentation::wx_reader::{self, GoneBack};
 use async_channel::{Receiver, Sender};
@@ -27341,6 +27342,7 @@ pub fn build_search_dialog(
     let q_field = TextCtrl::builder(&dlg)
         .with_style(TextCtrlStyle::ProcessEnter)
         .build();
+    keep_a_history(&q_field);
     set_accessible_name(&q_field, "Search");
     fields.add(
         &q_label,
@@ -27542,6 +27544,9 @@ pub fn build_ask_for_a_name_dialog(
     let title_label = StaticText::builder(&dlg).with_label(label).build();
     let title_field = TextCtrl::builder(&dlg).build();
     title_field.set_value(filled_in);
+    // Bound after the value filled in, which is where the history starts, so
+    // Undo never empties the box of it.
+    keep_a_history(&title_field);
     // The visible label without its mnemonic marker, so what is seen and what
     // is heard are the same words.
     set_accessible_name(&title_field, &label.replace('&', ""));

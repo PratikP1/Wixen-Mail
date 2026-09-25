@@ -656,9 +656,9 @@ and it says so. In the contacts search, each Undo runs the search again on the
 words it brings back.
 
 Choosing a note in the list starts its title and body afresh: Undo does not
-reach back into the note you had open before. The boxes in dialogs, such as the
-message composer and the account settings, still keep Windows' own single step,
-where pressing Undo a second time puts the change back.
+reach back into the note you had open before. The boxes in dialogs keep the same
+history of several steps, with `Ctrl+Z` and `Ctrl+Y`; see Dialog Navigation
+below for them and for the few boxes that keep Windows' own single step.
 
 When there is nothing to undo or redo, the menu shows the item greyed out, and
 a screen reader says it is unavailable. The keys still answer: `Ctrl+Z` with
@@ -969,8 +969,8 @@ which way they went: pressing `Ctrl+B` to end a run of bold says "Bold off".
 | Numbered List | `Ctrl+Shift+O` | Start or end a numbered list |
 | Quote | `Ctrl+Shift+Q` | Indent the current line as a quotation |
 | Remove Formatting | `Ctrl+Space` | Strip formatting from the selection |
-| Undo | `Ctrl+Z` | Undo last edit |
-| Redo | `Ctrl+Y` | Redo last undo |
+| Undo | `Ctrl+Z` | Undo last edit. In the To, Cc, Bcc and Subject lines it takes back one step at a time, as in every box you type in |
+| Redo | `Ctrl+Y` | Redo last undo, in the message and in the To, Cc, Bcc and Subject lines |
 
 Headings and lists are worth using. They are the structure the person receiving
 your message navigates by, and a long message without them can only be read
@@ -1358,6 +1358,30 @@ the field accelerators for letters without making anything more reachable.
 | Previous Control | `Shift+Tab` | Move to previous control in dialog |
 | Activate Button | `Enter` or `Space` | Click focused button |
 | Cancel Dialog | `Esc` | Close dialog without saving |
+| Undo | `Ctrl+Z` | Take back the last step in the box you are typing in |
+| Redo | `Ctrl+Y` | Put back the step Undo just took away |
+
+**Undo and Redo in a dialog.** Every box you type in, in every window, keeps
+up to 100 steps, the same steps as the Edit menu describes above: the account
+settings, the message composer's address and subject lines, the contact
+editor, the event and task forms, the rules, labels and signatures, Send
+Feedback, Settings, and the boxes that ask for a name or a search. A dialog has
+no Edit menu, so the keys go straight to the box. What a dialog opens holding,
+such as an account's server name or a contact's nickname, is where the history
+starts, so Undo never empties a box of it. When there is nothing left to undo,
+the key does nothing and says nothing, as Windows' own undo does.
+
+Three kinds of box keep Windows' own single step, where pressing Undo a second
+time puts the change back:
+
+- the number fields, such as the minutes between checks for mail, the font
+  size, the rows and columns of a new table, and the hour and minute of an
+  event
+- the Describe the picture and Insert Link boxes in the composer, which are
+  ready-made dialogs this program borrows from the toolkit it is built on,
+  and whose box it cannot reach
+- a password box, which keeps no history at all, so a password is never held
+  in memory as a list of steps
 
 ## Screen Reader Specific
 

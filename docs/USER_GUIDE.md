@@ -1176,9 +1176,18 @@ A task has a due date and no time, so none of this changes the task window.
   contacts search. Each box remembers up to 100 steps, and a step is a word
   you typed with the space after it, a paste, a cut, or a run of deleting.
   Choosing another note starts its boxes afresh. With nothing to undo it
-  says so. Boxes in dialogs still keep Windows' own single step
+  says so. Boxes in dialogs keep the same steps: the composer's address and
+  subject lines, the account settings, the contact editor and every other
+  box you type in. What a dialog opens holding is where Undo stops, and in a
+  dialog, with nothing left to undo, the key does nothing and says nothing
 - `Ctrl+Y` - Redo, putting back the steps Undo took, one at a time. Once you
   type something new, there is nothing to redo, and it says so
+
+A few boxes keep Windows' own single step, where a second Undo puts the
+change back: number fields such as the minutes between checks for mail, and
+the Describe the picture and Insert Link boxes in the composer. A password box
+keeps no steps at all, so your password is never held in memory as a list of
+the ways you typed it.
 - `Ctrl+Shift+Z` - Undo Send, while a message you just sent is still being
   held. It is third on the Edit menu, after Undo and Redo, and its letter is
   N. Some programs use `Ctrl+Shift+Z` for Redo; here Redo is `Ctrl+Y`

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 311 records have arrived since and have not been through it.
+# 315 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30793,12 +30793,18 @@ before = '''            HistoryKey::Redo => redo_in(&pressed),
 after = '''            HistoryKey::Redo => redo_in(&pressed),
         };
         event.skip(true);'''
+#
+# Re-measured 2026-09-25 by 13-06, the break taken by hand again: the combo
+# box's Ctrl+Z reading goes red too, because a combo box's key-down is this
+# same handler. That is the record for "the combo box's key-down is taken",
+# and no second record was written for it.
 red = [
+    "test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again",
     "test_ctrl_z_in_the_box_undoes_one_step_and_the_box_does_not_undo_again",
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 11 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
 ]
 
 # The history not taking the value it hands back, so the box's change on a
@@ -30815,15 +30821,23 @@ suite = "several_steps_come_back"
 before = '''        self.value = restore.value.clone();
         self.sealed = true;'''
 after = '''        self.sealed = true;'''
+#
+# Re-measured 2026-09-25 by 13-06, the break taken by hand again against the
+# widened target: four more readings go red, the combo box's two, the box in
+# a dialog and the Check Spelling box, eight in all.
 red = [
     "test_three_words_typed_come_back_a_word_at_a_time",
     "test_redo_puts_each_word_back_in_turn",
     "test_a_restore_raises_the_change_and_is_not_kept_as_a_step",
     "test_ctrl_y_in_the_box_puts_the_step_back",
+    "test_an_editable_combo_box_gives_back_three_words_a_word_at_a_time",
+    "test_a_box_in_a_dialog_takes_ctrl_z_and_ctrl_y_with_no_menu",
+    "test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again",
+    "test_the_programs_own_dialog_box_walks_back_to_what_it_opened_holding",
 ]
 tests_last_seen = [
     { file = "src/application/text_history.rs", tests = 10 },
-    { file = "tests/several_steps_come_back.rs", tests = 11 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
 ]
 
 # A note chosen in the list written into the editor with `set_value`, which
@@ -30842,5 +30856,93 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_steps_come_back.rs", tests = 11 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# The composer's Subject box built without its history, so it keeps Windows'
+# single step and nothing says so. The reading over src/presentation names it
+# by file and line. Written 2026-09-25 by 13-06, the break taken by hand
+# against `cargo test --test every_text_box_keeps_a_history` first: the
+# reading went red naming the Subject box and none of its companions did.
+[[guard]]
+name = "every box a dialog builds reaches its history: the composer's Subject"
+file = "src/presentation/wx_compose.rs"
+suite = "every_text_box_keeps_a_history"
+before = '''    let subject_field = TextCtrl::builder(&dialog).build();
+    keep_a_history(&subject_field);'''
+after = '''    let subject_field = TextCtrl::builder(&dialog).build();'''
+red = [
+    "test_every_box_a_person_types_into_keeps_a_history",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/every_text_box_keeps_a_history.rs", tests = 10 },
+]
+
+# A combo box's words read as empty, so its history never sees what is typed
+# at its edit and Undo there does nothing. The combo box's half of the
+# `TextBox` trait; its key-down is the text box's handler, held by the record
+# on `event.skip(false)` above. Written 2026-09-25 by 13-06, the break taken by
+# hand against `cargo test --test several_steps_come_back` first: the combo
+# box's two readings went red, and so did the stored contact's, because its
+# Prefix box then records its own opening value as a step.
+[[guard]]
+name = "an editable combo box's words reach its history"
+file = "src/presentation/text_history_keys.rs"
+suite = "several_steps_come_back"
+before = '''impl TextBox for ComboBox {
+    fn words(&self) -> String {
+        self.get_value()'''
+after = '''impl TextBox for ComboBox {
+    fn words(&self) -> String {
+        String::new()'''
+red = [
+    "test_a_value_a_dialog_fills_in_before_it_is_shown_is_not_a_step",
+    "test_an_editable_combo_box_gives_back_three_words_a_word_at_a_time",
+    "test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_history_keys.rs", tests = 0 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# A stored contact's nickname written into the editor with `set_value`, which
+# the history keeps as a step, so the first Ctrl+Z in the box empties it of
+# what the contact already said. Written 2026-09-25 by 13-06, the break taken
+# by hand against `cargo test --test several_steps_come_back` first: the
+# reading of the stored contact's boxes went red and nothing else did.
+[[guard]]
+name = "a value a dialog opens holding is where its history starts, not a step"
+file = "src/presentation/wx_managers.rs"
+suite = "several_steps_come_back"
+before = '''        set_anew(&nick_f, &c.nickname);'''
+after = '''        nick_f.set_value(&c.nickname);'''
+red = [
+    "test_a_value_a_dialog_fills_in_before_it_is_shown_is_not_a_step",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# The Check Spelling box built without its history, so a word typed after the
+# suggestion comes back all at once, Windows' one step, and a second Ctrl+Z
+# puts it back again. Written 2026-09-25 by 13-06, the break taken by hand
+# against `cargo test --test several_steps_come_back` first: the Check
+# Spelling reading went red and nothing else in the target did. The reading
+# over src/presentation names the same break; it is another target, so this
+# record measures the built box.
+[[guard]]
+name = "the program's own dialog box walks back several steps: Check Spelling"
+file = "src/presentation/wx_compose.rs"
+suite = "several_steps_come_back"
+before = '''        .build();
+    keep_a_history(&replacement);'''
+after = '''        .build();'''
+red = [
+    "test_the_programs_own_dialog_box_walks_back_to_what_it_opened_holding",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
 ]

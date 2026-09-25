@@ -25,6 +25,25 @@
 //! whether the character reached the box. If it had, the box's own one-step
 //! undo would have run on top of the history's.
 //!
+//! **An editable combo box**, as the event form's Category and the contact
+//! editor's Prefix and Suffix are, through the same `keep_a_history`. A combo
+//! box is two windows, and the keyboard lands in the edit it holds its words
+//! in, so the words are typed and Ctrl+Z is pressed at that edit, found by its
+//! class under the combo box. Measured 2026-09-25 by 13-06: Ctrl+Z at the edit
+//! reaches a key-down bound on the `ComboBox` itself, because wxWidgets
+//! forwards the edit's keys to it, and taking it there drops the control
+//! character as it does for a text box. So the history binds on the combo box
+//! and never on its edit.
+//!
+//! **Dialogs.** A box in a `Dialog`, which has no menu bar, takes Ctrl+Z and
+//! Ctrl+Y at its own key-down. The program's Check Spelling dialog, built by
+//! its builder and never shown, opens holding the first suggestion, and four
+//! presses of Ctrl+Z after typing walk back a step at a time and stop at the
+//! suggestion; Windows' one step would put the typing back on the second.
+//! And the contact editor opened on a stored contact: every box it fills
+//! before it is shown has nothing to undo, because it is filled with
+//! `set_anew`, and a letter typed in one gives it a step.
+//!
 //! **The note chosen in the list.** Read from `src/presentation/wx_app.rs`,
 //! because building the whole main window here is not needed to ask how it
 //! writes a note into the editor: every write in the handler goes through
@@ -46,9 +65,14 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
+use wixen_mail::application::spell_session;
+use wixen_mail::application::words::{TextNode, words_in};
+use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::text_history_keys::{
     can_redo_in, can_undo_in, keep_a_history, redo_in, set_anew, undo_in,
 };
+use wixen_mail::presentation::wx_compose;
+use wixen_mail::presentation::wx_managers::{self, ContactEntry};
 use wxdragon::prelude::*;
 
 type Harvest = BTreeMap<&'static str, String>;
@@ -58,6 +82,7 @@ unsafe extern "system" {
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn GetKeyboardState(state: *mut u8) -> i32;
     fn SetKeyboardState(state: *const u8) -> i32;
+    fn FindWindowExW(parent: isize, after: isize, class: *const u16, title: *const u16) -> isize;
 }
 
 /// winuser.h.
@@ -69,16 +94,28 @@ const VK_CONTROL: usize = 0x11;
 const PRESSED: isize = 0x0000_0001;
 const RELEASED: isize = 0xC000_0001_u32 as i32 as isize;
 
-fn handle(box_: &TextCtrl) -> isize {
+fn handle(box_: &impl WxWidget) -> isize {
     box_.get_handle() as isize
+}
+
+/// The edit a combo box holds its words in, which is where the keyboard
+/// lands: the combo box's own handle is the frame around it and the list.
+fn edit_of(combo: &ComboBox) -> isize {
+    let class: Vec<u16> = "Edit\0".encode_utf16().collect();
+    // SAFETY: a live combo box on this thread, and a terminated class name.
+    unsafe { FindWindowExW(handle(combo), 0, class.as_ptr(), std::ptr::null()) }
 }
 
 /// Each character sent to the box as a translated key press would be.
 fn type_into(box_: &TextCtrl, words: &str) {
+    type_into_window(handle(box_), words);
+}
+
+fn type_into_window(window: isize, words: &str) {
     for unit in words.encode_utf16() {
-        // SAFETY: a live box on this thread; the message carries a character
-        // and no pointer.
-        unsafe { SendMessageW(handle(box_), WM_CHAR, usize::from(unit), PRESSED) };
+        // SAFETY: a live window on this thread; the message carries a
+        // character and no pointer.
+        unsafe { SendMessageW(window, WM_CHAR, usize::from(unit), PRESSED) };
     }
 }
 
@@ -86,6 +123,10 @@ fn type_into(box_: &TextCtrl, words: &str) {
 /// control character Windows makes of it, then the release. Control is set
 /// in this thread's keyboard state and put back afterwards.
 fn press_with_control(box_: &TextCtrl, letter: u8) {
+    press_with_control_in(handle(box_), letter);
+}
+
+fn press_with_control_in(window: isize, letter: u8) {
     let mut before = [0u8; 256];
     // SAFETY: the buffer is the 256 bytes the call writes.
     unsafe { GetKeyboardState(before.as_mut_ptr()) };
@@ -94,11 +135,11 @@ fn press_with_control(box_: &TextCtrl, letter: u8) {
     // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
     unsafe { SetKeyboardState(held.as_ptr()) };
     let control_character = usize::from(letter - b'A' + 1);
-    // SAFETY: a live box on this thread; the messages carry numbers only.
+    // SAFETY: a live window on this thread; the messages carry numbers only.
     unsafe {
-        SendMessageW(handle(box_), WM_KEYDOWN, usize::from(letter), PRESSED);
-        SendMessageW(handle(box_), WM_CHAR, control_character, PRESSED);
-        SendMessageW(handle(box_), WM_KEYUP, usize::from(letter), RELEASED);
+        SendMessageW(window, WM_KEYDOWN, usize::from(letter), PRESSED);
+        SendMessageW(window, WM_CHAR, control_character, PRESSED);
+        SendMessageW(window, WM_KEYUP, usize::from(letter), RELEASED);
     }
     // SAFETY: as above, the state read at the start.
     unsafe { SetKeyboardState(before.as_ptr()) };
@@ -174,6 +215,171 @@ fn take_the_readings(frame: &Frame, harvest: &mut Harvest) {
     );
     press_with_control(&box_, b'Y');
     harvest.insert("the box after Ctrl+Y", box_.get_value());
+
+    take_the_combo_box_readings(&panel, harvest);
+    take_the_dialog_readings(frame, harvest);
+    if let Err(why) = take_the_contact_editor_readings(frame, harvest) {
+        harvest.insert(
+            "the stored contact's boxes with a step to undo",
+            format!("not read: {why}"),
+        );
+    }
+}
+
+/// An editable combo box, as the event form's Category and the contact
+/// editor's Prefix and Suffix are: typed into and pressed in at its edit,
+/// which is where the keyboard lands.
+fn take_the_combo_box_readings(panel: &Panel, harvest: &mut Harvest) {
+    let combo = ComboBox::builder(panel)
+        .with_string_choices(&["Dr."])
+        .build();
+    let key_downs = counter_on(|count| {
+        combo.on_key_down(move |_| count.set(count.get() + 1));
+    });
+    keep_a_history(&combo);
+    let characters = counter_on(|count| {
+        combo.on_char(move |_| count.set(count.get() + 1));
+    });
+    let edit = edit_of(&combo);
+    harvest.insert("the combo box has an edit", (edit != 0).to_string());
+
+    type_into_window(edit, "one two three");
+    harvest.insert("the combo box typed", combo.get_value());
+    for name in [
+        "the combo box undone once",
+        "the combo box undone twice",
+        "the combo box undone three times",
+    ] {
+        undo_in(&combo);
+        harvest.insert(name, combo.get_value());
+    }
+    redo_in(&combo);
+    harvest.insert("the combo box redone once", combo.get_value());
+
+    set_anew(&combo, "");
+    type_into_window(edit, "alpha beta");
+    key_downs.set(0);
+    characters.set(0);
+    press_with_control_in(edit, b'Z');
+    harvest.insert("the combo box after Ctrl+Z at its edit", combo.get_value());
+    harvest.insert(
+        "the combo box's key-down saw Ctrl+Z",
+        (key_downs.get() > 0).to_string(),
+    );
+    harvest.insert(
+        "the Ctrl+Z character reached the combo box",
+        (characters.get() > 0).to_string(),
+    );
+    press_with_control_in(edit, b'Y');
+    harvest.insert("the combo box after Ctrl+Y at its edit", combo.get_value());
+}
+
+/// A box in a dialog, which has no menu bar and so no Edit menu to take the
+/// keys first: Ctrl+Z and Ctrl+Y reach the box's own key-down. Then the
+/// program's own Check Spelling dialog, built by its builder and never shown:
+/// its box opens holding the first suggestion, which is where its history
+/// starts, and a letter typed after it is one step back to the suggestion.
+fn take_the_dialog_readings(frame: &Frame, harvest: &mut Harvest) {
+    let dialog = Dialog::builder(frame, "Several steps in a dialog").build();
+    let box_ = TextCtrl::builder(&dialog).build();
+    keep_a_history(&box_);
+    type_into(&box_, "first second");
+    press_with_control(&box_, b'Z');
+    harvest.insert("the dialog's box after Ctrl+Z", box_.get_value());
+    press_with_control(&box_, b'Y');
+    harvest.insert("the dialog's box after Ctrl+Y", box_.get_value());
+
+    let spelling =
+        wx_compose::build_check_spelling_dialog(&dialog, &one_misspelling_of_world(), None);
+    let replacement = spelling.replacement;
+    harvest.insert("the spelling box opens holding", replacement.get_value());
+    harvest.insert(
+        "the spelling box can undo as it opens",
+        can_undo_in(&replacement).to_string(),
+    );
+    replacement.set_insertion_point_end();
+    type_into(&replacement, " big bad");
+    for name in [
+        "the spelling box after one Ctrl+Z",
+        "the spelling box after two",
+        "the spelling box after three",
+        "the spelling box after four",
+    ] {
+        press_with_control(&replacement, b'Z');
+        harvest.insert(name, replacement.get_value());
+    }
+    spelling.dialog.destroy();
+    dialog.destroy();
+}
+
+/// The contact editor opened on a stored contact, built by its builder and
+/// never shown. Every box it fills is filled with `set_anew`, so none has a
+/// step to undo; a box that did would be emptied by the first Ctrl+Z.
+fn take_the_contact_editor_readings(frame: &Frame, harvest: &mut Harvest) -> Result<(), String> {
+    let a11y = Arc::new(Accessibility::new().map_err(|why| format!("Accessibility::new: {why}"))?);
+    let stored = ContactEntry {
+        id: "stored".to_string(),
+        name: "Grace van der Berg".to_string(),
+        given_name: "Grace".to_string(),
+        family_name: "van der Berg".to_string(),
+        name_prefix: "Dr.".to_string(),
+        middle_name: String::new(),
+        name_suffix: String::new(),
+        nickname: "Gee".to_string(),
+        company: String::new(),
+        department: String::new(),
+        job_title: String::new(),
+        emails: Vec::new(),
+        phones: Vec::new(),
+        addresses: Vec::new(),
+        birthday: String::new(),
+        website: String::new(),
+        relationship: String::new(),
+        notes: "Met at the library.".to_string(),
+        custom_fields: Vec::new(),
+        avatar_url: String::new(),
+        favorite: false,
+    };
+    let editor = wx_managers::build_contact_edit_dialog(frame, Some(&stored), None, &a11y);
+    let undoable: Vec<&str> = [
+        ("name", can_undo_in(&editor.name_f)),
+        ("prefix", can_undo_in(&editor.prefix_f)),
+        ("given", can_undo_in(&editor.given_f)),
+        ("family", can_undo_in(&editor.family_f)),
+        ("nickname", can_undo_in(&editor.nick_f)),
+        ("notes", can_undo_in(&editor.notes_f)),
+    ]
+    .into_iter()
+    .filter_map(|(field, can)| can.then_some(field))
+    .collect();
+    harvest.insert(
+        "the stored contact's boxes with a step to undo",
+        undoable.join(", "),
+    );
+    editor.nick_f.set_insertion_point_end();
+    type_into(&editor.nick_f, "e");
+    harvest.insert(
+        "the nickname can undo once typed in",
+        can_undo_in(&editor.nick_f).to_string(),
+    );
+    editor.dialog.destroy();
+    Ok(())
+}
+
+/// "wrold" found by the real spell check's own path, offering "world".
+fn one_misspelling_of_world() -> spell_session::Finding {
+    let words = words_in(&[TextNode {
+        text: "the wrold turns".to_string(),
+        block: 0,
+    }]);
+    spell_session::findings(
+        &words,
+        |word| word == "wrold",
+        |_| vec!["world".to_string()],
+    )
+    .into_iter()
+    .next()
+    .expect("\"wrold\" is misspelled by construction")
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -320,6 +526,53 @@ fn test_ctrl_z_in_the_box_undoes_one_step_and_the_box_does_not_undo_again() {
 #[test]
 fn test_ctrl_y_in_the_box_puts_the_step_back() {
     assert_eq!(reading("the box after Ctrl+Y"), "alpha beta");
+}
+
+#[test]
+fn test_an_editable_combo_box_gives_back_three_words_a_word_at_a_time() {
+    assert_eq!(reading("the combo box has an edit"), "true");
+    assert_eq!(reading("the combo box typed"), "one two three");
+    assert_eq!(reading("the combo box undone once"), "one two ");
+    assert_eq!(reading("the combo box undone twice"), "one ");
+    assert_eq!(reading("the combo box undone three times"), "");
+    assert_eq!(reading("the combo box redone once"), "one ");
+}
+
+#[test]
+fn test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again() {
+    assert_eq!(reading("the combo box's key-down saw Ctrl+Z"), "true");
+    assert_eq!(reading("the combo box after Ctrl+Z at its edit"), "alpha ");
+    the_key_was_taken(reading("the Ctrl+Z character reached the combo box")).unwrap();
+    assert_eq!(
+        reading("the combo box after Ctrl+Y at its edit"),
+        "alpha beta"
+    );
+}
+
+#[test]
+fn test_a_box_in_a_dialog_takes_ctrl_z_and_ctrl_y_with_no_menu() {
+    assert_eq!(reading("the dialog's box after Ctrl+Z"), "first ");
+    assert_eq!(reading("the dialog's box after Ctrl+Y"), "first second");
+}
+
+#[test]
+fn test_the_programs_own_dialog_box_walks_back_to_what_it_opened_holding() {
+    assert_eq!(reading("the spelling box opens holding"), "world");
+    assert_eq!(reading("the spelling box can undo as it opens"), "false");
+    // The space typed first ends a step of its own, as a space does.
+    assert_eq!(reading("the spelling box after one Ctrl+Z"), "world big ");
+    assert_eq!(reading("the spelling box after two"), "world ");
+    assert_eq!(reading("the spelling box after three"), "world");
+    assert_eq!(reading("the spelling box after four"), "world");
+}
+
+#[test]
+fn test_a_value_a_dialog_fills_in_before_it_is_shown_is_not_a_step() {
+    assert_eq!(
+        reading("the stored contact's boxes with a step to undo"),
+        ""
+    );
+    assert_eq!(reading("the nickname can undo once typed in"), "true");
 }
 
 #[test]
