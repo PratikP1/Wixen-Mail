@@ -74,6 +74,11 @@ impl Kind {
             Kind::Attachment => "Attachment with no name",
         }
     }
+
+    /// What the item under the cursor in `module` is.
+    pub fn for_module(_module: crate::common::types::PimModule) -> Kind {
+        Kind::Message
+    }
 }
 
 /// A thing to print, and what it is, for the job's name.
@@ -872,6 +877,27 @@ mod tests {
                 "Wixen Mail note",
                 "Wixen Mail reminder",
                 "Wixen Mail attachment",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_every_module_prints_its_own_kind() {
+        use crate::common::types::PimModule;
+
+        let kinds: Vec<Kind> = PimModule::ALL.into_iter().map(Kind::for_module).collect();
+
+        // In the modules' own order: Mail, Contacts, Calendar, Reminders,
+        // Tasks, Notes.
+        assert_eq!(
+            kinds,
+            [
+                Kind::Message,
+                Kind::Contact,
+                Kind::Event,
+                Kind::Reminder,
+                Kind::Task,
+                Kind::Note,
             ]
         );
     }

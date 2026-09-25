@@ -268,6 +268,82 @@ fn where_the_reader_prints(reader: &str, app: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The function the Print arm hands a module's item to.
+const THE_ITEM_HANDLER: &str = "fn print_the_item_under_the_cursor(";
+
+/// Each module but Mail: the list the Print arm reads its row from, and the
+/// thing its refusal names when no row is chosen.
+const THE_MODULES: [(&str, &str, &str); 5] = [
+    ("Contacts", "contact_list", "CONTACT"),
+    ("Calendar", "cal_event_list", "EVENT"),
+    ("Reminders", "reminder_list", "REMINDER"),
+    ("Tasks", "task_list", "TASK"),
+    ("Notes", "note_list", "NOTE"),
+];
+
+/// What the item handler has to call, and why each one matters.
+const THE_ITEM_CALLS: [(&str, &str); 4] = [
+    (
+        "for_module(",
+        "no longer names the job by the module's kind, so an event could be queued \
+         as something else",
+    ),
+    (
+        "from_item(",
+        "no longer prints the fields the item's reading says, so paper and speech \
+         can come to name different things",
+    ),
+    (
+        "print_through_the_dialog(",
+        "no longer goes through the one path every surface prints by",
+    ),
+    (
+        "nothing_chosen(",
+        "no longer says nothing is chosen when no row is, so Print does nothing",
+    ),
+];
+
+/// Where Print in the other five modules goes, said as a complaint when it
+/// goes wrong.
+fn where_the_modules_print(app: &str) -> Result<(), String> {
+    let ship = what_ships(app);
+    let arm = "_ if id == ID_PRINT =>";
+    let the_arm = ship
+        .find(arm)
+        .map(|at| &ship[at + arm.len()..])
+        .map(|rest| &rest[..rest.find("_ if id ==").unwrap_or(rest.len())])
+        .ok_or("nothing answers ID_PRINT, so the item does nothing")?;
+    let squashed: String = the_arm.split_whitespace().collect();
+    for (module, list, thing) in THE_MODULES {
+        let answered = format!("PimModule::{module}=>Some((selected_row(&{list}),Thing::{thing}))");
+        if !squashed.contains(&answered) {
+            return Err(format!(
+                "the ID_PRINT arm no longer reads {module}'s row from {list} with a refusal \
+                 naming a {thing}, so Print in {module} prints nothing or refuses in another \
+                 module's words"
+            ));
+        }
+    }
+    if !calls(the_arm, &THE_ITEM_HANDLER["fn ".len()..]) {
+        return Err(format!(
+            "the ID_PRINT arm no longer hands a module's item to {THE_ITEM_HANDLER}"
+        ));
+    }
+    let handler = body_of(&ship, THE_ITEM_HANDLER)?;
+    for (call, why) in THE_ITEM_CALLS {
+        if !calls(&handler, call) {
+            return Err(format!("Print in a module {why}: {call} is not called"));
+        }
+    }
+    if calls(&ship, "prints_messages_only(") {
+        return Err(
+            "the main window still says Print works on messages only, which it no longer is"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn the_main_window() -> String {
     fs::read_to_string("src/presentation/wx_app.rs").expect("the main window")
 }
@@ -377,4 +453,33 @@ fn test_the_reading_complains_when_a_tab_is_opened_with_nothing_to_print() {
     let complaint = where_the_reader_prints(&the_reader(), &planted)
         .expect_err("a tab was opened with nothing to print and the reading did not notice");
     assert!(complaint.contains("open_in_the_text_reader"), "{complaint}");
+}
+
+#[test]
+fn test_print_in_every_module_prints_the_item_under_the_cursor() {
+    // #45: "In the other modules, Print prints the open event, contact, task,
+    // note or reminder the way it is shown."
+    if let Err(why) = where_the_modules_print(&the_main_window()) {
+        panic!("{why}");
+    }
+}
+
+#[test]
+fn test_the_reading_complains_when_a_module_is_answered_as_mail() {
+    // The shape 13-03 left: one module sent to the messages-only answer, so
+    // Print there says it works on messages.
+    let app = the_main_window();
+    let planted = app.replacen(
+        "Some((selected_row(&cal_event_list), Thing::EVENT))",
+        "None",
+        1,
+    );
+    assert_ne!(
+        planted, app,
+        "Calendar's answer is not written as this expects"
+    );
+
+    let complaint = where_the_modules_print(&planted)
+        .expect_err("Calendar was answered as Mail and the reading did not notice");
+    assert!(complaint.contains("Calendar"), "{complaint}");
 }
