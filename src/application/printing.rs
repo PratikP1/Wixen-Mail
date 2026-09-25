@@ -486,14 +486,20 @@ pub fn sent_to_the_printer(title: &str, printer: &str, pages: usize) -> String {
 
 /// What is said once a conversation's row is printed: the one message the
 /// row stands for went, and not the whole conversation.
-pub fn sent_one_message_of_a_conversation(_title: &str, _printer: &str, _pages: usize) -> String {
-    String::new()
+pub fn sent_one_message_of_a_conversation(title: &str, printer: &str, pages: usize) -> String {
+    format!(
+        "{} That is the one message the conversation's row stands for, not the whole \
+         conversation.",
+        sent_to_the_printer(title, printer, pages)
+    )
 }
 
 /// What Print says where the area you are in is not Mail, since this build
 /// prints messages alone.
 pub fn prints_messages_only() -> String {
-    String::new()
+    "Print works on messages in this build, so nothing was printed. Press Ctrl+Shift+1 for \
+     Mail and choose a message."
+        .to_string()
 }
 
 /// What is said when the print dialog was closed without printing.

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 301 records have arrived since and have not been through it.
+# 303 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30632,4 +30632,51 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/printing.rs", tests = 0 },
     { file = "tests/printing_spools_a_document.rs", tests = 1 },
+]
+
+# File, Print composing the message with the list's own reading rather than
+# with every date in full, so a page says "2 days ago" and is wrong the day
+# after it is printed. The reading requires the handler to ask `on_paper`.
+# Written 2026-09-25 by 13-03 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a printed message carries its date in full, not how long ago it was"
+file = "src/presentation/wx_app.rs"
+suite = "print_is_on_the_file_menu"
+before = '''        &message,
+        printing::on_paper(reading_from_settings()),'''
+after = '''        &message,
+        reading_from_settings(),'''
+red = [
+    "test_print_is_on_file_with_its_key_and_prints_what_the_reader_shows_through_the_dialog",
+    # The companion that plants a handler skipping the dialog reads the calls
+    # in order, and meets the missing on_paper before the missing dialog.
+    "test_the_reading_complains_when_print_skips_the_dialog",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/print_is_on_the_file_menu.rs", tests = 4 },
+]
+
+# Print on File with its key taken out of the label, so Ctrl+P does nothing
+# and the menu stops being where somebody learns the key. Written 2026-09-25 by
+# 13-03 and measured with `scripts/guards.sh --remeasure`; the plan expected
+# tests/wired.rs's agreement readings to redden as well, and what reddened is
+# what is written here.
+[[guard]]
+name = "File, Print carries Ctrl+P in its label"
+file = "src/presentation/wx_app.rs"
+suite = "print_is_on_the_file_menu"
+before = '''                ID_PRINT,
+                "&Print...\tCtrl+P",'''
+after = '''                ID_PRINT,
+                "&Print...",'''
+red = [
+    "test_print_is_on_file_with_its_key_and_prints_what_the_reader_shows_through_the_dialog",
+    "test_the_reading_complains_when_print_loses_its_key",
+    "test_the_reading_complains_when_print_composes_its_own_document",
+    "test_the_reading_complains_when_print_skips_the_dialog",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/print_is_on_the_file_menu.rs", tests = 4 },
 ]

@@ -616,11 +616,13 @@ dialog once you have more than one.
 | Import a Folder of Messages | (none) | Read every saved message and mailbox file in a folder you choose, and in the folders inside it. Same destination. A file picker cannot answer with a folder, which is why this is its own command |
 | Export Mailbox | (none) | Write the folder you are looking at, and everything inside it, into one zip of mailbox files |
 | Import PGP Private Key | (none) | Read a private key in from a file so PGP mail can be opened. Experimental, and the menu says so |
+| Print | `Ctrl+P` | Print the message you are on in the message list, through Windows' own print dialog, where you choose the printer, the copies and the pages. Its header lines and its words are printed, not its pictures or formatting. On a conversation's row it prints the one message the row stands for. The reader window and the conversation window do not print in this build, and in the other modules Print says it works on messages |
 | Quit | `Ctrl+Q` | Exit the application |
 
 File holds making, saving, fetching and moving mail in and out. Anything that
 acts on the message, event, task, note or contact you are on is on the Action
-menu instead.
+menu instead, except Print, which is on File where every Windows program keeps
+it.
 
 ### Edit Menu
 

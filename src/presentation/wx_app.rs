@@ -145,6 +145,9 @@ menu_ids!(
     // sets up, and a key nobody presses twice is a key in the way of one
     // somebody presses daily.
     ID_IMPORT_PGP_KEY,
+    // File, Print (#45): the message under the cursor, through Windows' own
+    // print dialog.
+    ID_PRINT,
     ID_GET_OLDER,
     ID_QUIT,
     ID_SEARCH,
@@ -5624,6 +5627,13 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
+                        _ if id == ID_PRINT => print_the_message_under_the_cursor(
+                            &state,
+                            &message_cache,
+                            &frame,
+                            &ui_tx,
+                            &runtime,
+                        ),
                         _ if id == ID_CHOOSE_WHICH_COPY => {
                             choose_which_copy_to_keep(
                                 &state,
@@ -6739,6 +6749,15 @@ impl WxMailApp {
                 ID_IMPORT_PGP_KEY,
                 "Import PGP Private &Key... (experimental)",
                 crate::application::allowed::READING_PGP_MAIL_IS_EXPERIMENTAL,
+            )
+            .append_separator()
+            // On File, where every Windows program keeps it, though it acts on
+            // the message you are on as the Action menu's items do. P was free
+            // on File, and Ctrl+P was bound nowhere (#45).
+            .append_item(
+                ID_PRINT,
+                "&Print...\tCtrl+P",
+                "Print the message or item you are on, with its header lines",
             )
             .append_separator()
             .append_item(ID_QUIT, "&Quit\tCtrl+Q", "Exit Wixen Mail")
@@ -14179,6 +14198,79 @@ fn a_message_as_the_reader_shows_it(
     let mut message = message.clone();
     message.attachments = attachments_of(cache, message.message_id);
     reader_text::single_message(&message, &shown.body, out).with_what_is_said(&shown.said)
+}
+
+/// File, Print: the message under the cursor in the list, on paper, through
+/// Windows' own print dialog (#45).
+///
+/// Composed through [`a_message_as_the_reader_shows_it`], the reader's own
+/// composition, asked for every date in full. What a page holds is
+/// `application::printing`'s and the dialog, the font and the job are
+/// `presentation::printing`'s; this asks each in turn and says one sentence.
+/// A conversation's row prints the one message the row stands for and says
+/// so. Outside Mail it says this build prints messages.
+///
+/// On the window's thread, because the dialog is modal to the window, and a
+/// message's pages spool in under a second on Microsoft Print to PDF
+/// (`tests/printing_spools_a_document.rs`). The log gets the printer's name
+/// and the page count, never the subject or the text.
+fn print_the_message_under_the_cursor(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+) {
+    use crate::application::printing::{self, Kind, NotPrinted};
+    use crate::application::status_sentences::{Thing, nothing_chosen};
+    use crate::presentation::printing::{ask_for_a_printer, print_on};
+
+    let (module, message, a_conversation_row) = {
+        let held = lock_state(state);
+        (
+            held.active_module,
+            held.selected_message_index
+                .and_then(|row| held.the_loaded_message_the_row_stands_for(row))
+                .cloned(),
+            held.showing.showing_conversations(),
+        )
+    };
+    if module != PimModule::Mail {
+        send_refusal(ui_tx, runtime, &printing::prints_messages_only());
+        return;
+    }
+    let Some(message) = message else {
+        send_refusal(ui_tx, runtime, &nothing_chosen(Thing::MESSAGE));
+        return;
+    };
+    let printable = printing::from_document(&a_message_as_the_reader_shows_it(
+        cache,
+        &message,
+        printing::on_paper(reading_from_settings()),
+    ));
+    let printed = ask_for_a_printer(frame).and_then(|chosen| match chosen {
+        Some(chosen) => print_on(&chosen, &printable, Kind::Message)
+            .map(|printed| (chosen.printer_name().to_string(), printed)),
+        None => Err(NotPrinted::Cancelled),
+    });
+    match printed {
+        Ok((printer, printed)) => {
+            tracing::info!("Printed {} pages on {printer}", printed.pages);
+            let said = match a_conversation_row {
+                true => printing::sent_one_message_of_a_conversation(
+                    &printable.title,
+                    &printer,
+                    printed.pages,
+                ),
+                false => printing::sent_to_the_printer(&printable.title, &printer, printed.pages),
+            };
+            send_status(ui_tx, runtime, &said);
+        }
+        Err(NotPrinted::Cancelled) => {
+            send_status(ui_tx, runtime, &NotPrinted::Cancelled.sentence())
+        }
+        Err(not) => send_refusal(ui_tx, runtime, &not.sentence()),
+    }
 }
 
 /// What one message shows and says, asked the way every surface here asks it.
