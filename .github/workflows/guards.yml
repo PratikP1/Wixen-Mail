@@ -84,6 +84,10 @@ env:
   # and still asserts; the sound goes to a mixer with nothing listening. See
   # ci.yml for what a crash there cost.
   WIXEN_NO_AUDIO: "1"
+  # No Microsoft Print to PDF either (actions/runner-images#12328). The spool
+  # test asserts it really cannot be opened rather than skipping; ci.yml says
+  # more.
+  WIXEN_NO_PDF_PRINTER: "1"
 
 permissions:
   contents: read

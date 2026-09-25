@@ -119,7 +119,18 @@ pub enum NotPrinted {
 impl NotPrinted {
     /// The one sentence said about it.
     pub fn sentence(&self) -> String {
-        String::new()
+        match self {
+            NotPrinted::Cancelled => nothing_was_printed(),
+            NotPrinted::Failed(why) => printing_failed(why),
+            NotPrinted::NotOnThisPlatform => {
+                "Printing works only on Windows in this build, so nothing was printed.".to_string()
+            }
+            NotPrinted::PastTheLastPage { pages } => format!(
+                "Nothing was printed, because the pages you chose come after its last page. \
+                 It has {}.",
+                crate::service::caldav::how_many(*pages, "page")
+            ),
+        }
     }
 }
 
@@ -128,8 +139,17 @@ impl NotPrinted {
 ///
 /// Every page when `all`; otherwise the pages `ranges` name, a range past the
 /// last page stopping at it and a range wholly past it choosing nothing.
-pub fn pages_chosen(_ranges: &[(u32, u32)], _all: bool, _total: usize) -> Vec<usize> {
-    vec![0]
+pub fn pages_chosen(ranges: &[(u32, u32)], all: bool, total: usize) -> Vec<usize> {
+    if all {
+        return (1..=total).collect();
+    }
+    let mut chosen: Vec<usize> = ranges
+        .iter()
+        .flat_map(|&(from, to)| (from.max(1) as usize)..=(to as usize).min(total))
+        .collect();
+    chosen.sort_unstable();
+    chosen.dedup();
+    chosen
 }
 
 /// The same reading, with every date written in full.

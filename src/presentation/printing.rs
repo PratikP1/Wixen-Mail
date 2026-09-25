@@ -26,28 +26,38 @@
 //! step that failed.
 
 #[cfg(target_os = "windows")]
-pub use on_windows::{Chosen, Sheet, ask_for_a_printer, draw_page, print, print_on};
+pub use on_windows::{ChosenPrinter, Sheet, ask_for_a_printer, draw_page, print, print_on};
 
 #[cfg(not(target_os = "windows"))]
-pub use elsewhere::{Chosen, ask_for_a_printer, print_on};
+pub use elsewhere::{ChosenPrinter, ask_for_a_printer, print_on};
 
 #[cfg(target_os = "windows")]
 mod on_windows {
-    use std::ffi::OsStr;
+    use std::ffi::{OsStr, c_void};
     use std::os::windows::ffi::OsStrExt;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
-    use windows::Win32::Foundation::{COLORREF, ERROR_CANCELLED, GetLastError, RECT, SIZE};
+    use windows::Win32::Foundation::{
+        COLORREF, ERROR_CANCELLED, GetLastError, GlobalFree, HGLOBAL, HWND, RECT, SIZE,
+    };
     use windows::Win32::Graphics::Gdi::{
-        CreateFontIndirectW, DEFAULT_CHARSET, DT_EXPANDTABS, DT_NOPREFIX, DT_SINGLELINE,
-        DeleteObject, DrawTextW, FW_NORMAL, GetDeviceCaps, GetTextExtentPoint32W, GetTextMetricsW,
-        HDC, HFONT, HGDIOBJ, HORZRES, LOGFONTW, LOGPIXELSX, LOGPIXELSY, SelectObject, SetBkMode,
-        SetTextColor, TEXTMETRICW, TRANSPARENT, VERTRES,
+        CreateDCW, CreateFontIndirectW, DEFAULT_CHARSET, DT_EXPANDTABS, DT_NOPREFIX, DT_SINGLELINE,
+        DeleteDC, DeleteObject, DrawTextW, FW_NORMAL, GetDeviceCaps, GetTextExtentPoint32W,
+        GetTextMetricsW, HDC, HFONT, HGDIOBJ, HORZRES, LOGFONTW, LOGPIXELSX, LOGPIXELSY,
+        SelectObject, SetBkMode, SetTextColor, TEXTMETRICW, TRANSPARENT, VERTRES,
     };
     use windows::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
+    use windows::Win32::UI::Controls::Dialogs::{
+        DEVNAMES, PD_HIDEPRINTTOFILE, PD_NOCURRENTPAGE, PD_NOSELECTION, PD_PAGENUMS,
+        PD_RESULT_PRINT, PD_RETURNDC, PD_USEDEVMODECOPIESANDCOLLATE, PRINTDLGEXW, PRINTPAGERANGE,
+        PrintDlgExW, START_PAGE_GENERAL,
+    };
     use windows::core::PCWSTR;
+    use wxdragon::prelude::{Frame, WxWidget};
 
-    use crate::application::printing::{Kind, NotPrinted, Page, Printable, Printed};
+    use crate::application::printing::{
+        Kind, NotPrinted, Page, Printable, Printed, job_name, lay_out, pages_chosen,
+    };
 
     /// The page's size, fixed whatever the screen's reading size: decision 6
     /// of phase 13, taken so there is no setting to find.
@@ -340,47 +350,234 @@ mod on_windows {
         }
     }
 
-    /// A printer somebody chose, with the pages they asked for.
-    pub struct Chosen(());
+    /// A device context made here or handed back by the dialog, deleted once
+    /// when dropped.
+    struct OwnedDc(HDC);
 
-    impl Chosen {
+    impl Drop for OwnedDc {
+        fn drop(&mut self) {
+            if !self.0.is_invalid() {
+                // SAFETY: this value owns the device context and deletes it
+                // once, here.
+                unsafe {
+                    let _ = DeleteDC(self.0);
+                }
+            }
+        }
+    }
+
+    // Declared by hand rather than by turning on `Win32_System_Memory` for two
+    // calls, the pattern `date_display.rs` uses for a flat call no feature
+    // gives. Both are kernel32's and have had these signatures since Windows
+    // 3.1.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GlobalLock(memory: HGLOBAL) -> *mut c_void;
+        fn GlobalUnlock(memory: HGLOBAL) -> i32;
+    }
+
+    /// Longer than any printer name Windows allows, so a block missing its
+    /// ending nought is read no further than this.
+    const LONGEST_PRINTER_NAME: usize = 260;
+
+    /// The two blocks of memory the print dialog hands back, freed once when
+    /// dropped, on every path out of the dialog.
+    struct DialogMemory {
+        dev_mode: HGLOBAL,
+        dev_names: HGLOBAL,
+    }
+
+    impl DialogMemory {
+        /// The chosen printer's name, out of the dialog's `DEVNAMES` block.
+        fn printer_name(&self) -> Option<String> {
+            if self.dev_names.0.is_null() {
+                return None;
+            }
+            // SAFETY: the block is the dialog's `DEVNAMES`, not yet freed, and
+            // it is unlocked below before anything returns.
+            let base = unsafe { GlobalLock(self.dev_names) } as *const u16;
+            if base.is_null() {
+                return None;
+            }
+            // SAFETY: a `DEVNAMES` begins the block, and its device offset
+            // counts UTF-16 units from the block's start to a name ended by a
+            // nought, read no further than the longest name there can be.
+            let name = unsafe {
+                let names = std::ptr::read_unaligned(base as *const DEVNAMES);
+                let start = base.add(names.wDeviceOffset as usize);
+                let length = (0..LONGEST_PRINTER_NAME)
+                    .take_while(|&at| *start.add(at) != 0)
+                    .count();
+                String::from_utf16_lossy(std::slice::from_raw_parts(start, length))
+            };
+            // SAFETY: balances the lock above.
+            unsafe { GlobalUnlock(self.dev_names) };
+            Some(name).filter(|name| !name.trim().is_empty())
+        }
+    }
+
+    impl Drop for DialogMemory {
+        fn drop(&mut self) {
+            for memory in [self.dev_mode, self.dev_names] {
+                if !memory.0.is_null() {
+                    // SAFETY: the dialog handed these over to be freed by the
+                    // caller, and this frees each once, here.
+                    unsafe {
+                        let _ = GlobalFree(Some(memory));
+                    }
+                }
+            }
+        }
+    }
+
+    /// A printer somebody chose, with the pages they asked for.
+    pub struct ChosenPrinter {
+        dc: OwnedDc,
+        printer: String,
+        ranges: Vec<(u32, u32)>,
+        all: bool,
+        into_file: Option<PathBuf>,
+    }
+
+    impl ChosenPrinter {
         /// The printer called `name`, every page, into `into_file` when one is
         /// given: the dialog's answer for a caller that already knows which
         /// printer it wants.
         pub fn the_printer_named(
-            _name: &str,
-            _into_file: Option<&Path>,
-        ) -> Result<Chosen, NotPrinted> {
-            Err(NotPrinted::Failed("nothing is chosen yet".to_string()))
+            name: &str,
+            into_file: Option<&Path>,
+        ) -> Result<ChosenPrinter, NotPrinted> {
+            let driver = ended(OsStr::new("WINSPOOL"));
+            let device = ended(OsStr::new(name));
+            // SAFETY: both strings are ended and live across the call, and no
+            // DEVMODE is passed, so the printer's own defaults are used.
+            let hdc = unsafe {
+                CreateDCW(
+                    PCWSTR(driver.as_ptr()),
+                    PCWSTR(device.as_ptr()),
+                    PCWSTR::null(),
+                    None,
+                )
+            };
+            if hdc.is_invalid() {
+                return Err(failed("the printer could not be opened"));
+            }
+            Ok(ChosenPrinter {
+                dc: OwnedDc(hdc),
+                printer: name.to_string(),
+                ranges: Vec::new(),
+                all: true,
+                into_file: into_file.map(Path::to_path_buf),
+            })
         }
 
         /// The printer's name, as the sentence after printing says it.
         pub fn printer_name(&self) -> &str {
-            ""
+            &self.printer
         }
 
         /// A sheet on the chosen printer, to measure and draw with.
         pub fn sheet(&self) -> Result<Sheet, NotPrinted> {
-            Err(NotPrinted::Failed("nothing is chosen yet".to_string()))
+            Sheet::on(self.dc.0)
         }
     }
 
+    /// The most page ranges the dialog takes: "1-2, 4, 6-9" is three.
+    const MOST_RANGES: usize = 32;
+
+    /// The highest page number the dialog accepts. How many pages there are
+    /// is not known until the printer is chosen, because it depends on the
+    /// printer, so this is a bound and a range past the end stops at the last
+    /// page.
+    const HIGHEST_PAGE: u32 = 9999;
+
     /// Windows' own print dialog, owned by `owner` so focus goes back there
     /// when it closes. `None` when it was closed without printing.
-    pub fn ask_for_a_printer(
-        _owner: &wxdragon::prelude::Frame,
-    ) -> Result<Option<Chosen>, NotPrinted> {
-        Ok(None)
+    ///
+    /// The printer, the copies and the pages are chosen there, as in every
+    /// other program. Copies are the printer driver's to make
+    /// (`PD_USEDEVMODECOPIESANDCOLLATE`). Print to File is hidden, because a
+    /// file printer such as Microsoft Print to PDF already asks where.
+    pub fn ask_for_a_printer(owner: &Frame) -> Result<Option<ChosenPrinter>, NotPrinted> {
+        let mut ranges = [PRINTPAGERANGE::default(); MOST_RANGES];
+        let mut asking = PRINTDLGEXW {
+            lStructSize: std::mem::size_of::<PRINTDLGEXW>() as u32,
+            hwndOwner: HWND(owner.get_handle()),
+            Flags: PD_RETURNDC
+                | PD_NOSELECTION
+                | PD_NOCURRENTPAGE
+                | PD_USEDEVMODECOPIESANDCOLLATE
+                | PD_HIDEPRINTTOFILE,
+            nMaxPageRanges: MOST_RANGES as u32,
+            lpPageRanges: ranges.as_mut_ptr(),
+            nMinPage: 1,
+            nMaxPage: HIGHEST_PAGE,
+            nCopies: 1,
+            nStartPage: START_PAGE_GENERAL,
+            ..Default::default()
+        };
+        // SAFETY: `asking` carries its own size, its page ranges point at
+        // `ranges`, which outlives the call, and the owner is a live window on
+        // this thread, where wxWidgets has already started OLE.
+        let asked = unsafe { PrintDlgExW(&mut asking) };
+        let memory = DialogMemory {
+            dev_mode: asking.hDevMode,
+            dev_names: asking.hDevNames,
+        };
+        let dc = OwnedDc(asking.hDC);
+        if let Err(error) = asked {
+            tracing::warn!(
+                "Printing stopped: the print dialog answered {:?}",
+                error.code()
+            );
+            return Err(NotPrinted::Failed(
+                "Windows' print dialog could not be opened".to_string(),
+            ));
+        }
+        if asking.dwResultAction != PD_RESULT_PRINT {
+            return Ok(None);
+        }
+        if dc.0.is_invalid() {
+            return Err(failed("the printer could not be opened"));
+        }
+        let ranges = ranges[..(asking.nPageRanges as usize).min(MOST_RANGES)]
+            .iter()
+            .map(|range| (range.nFromPage, range.nToPage))
+            .collect();
+        Ok(Some(ChosenPrinter {
+            dc,
+            printer: memory
+                .printer_name()
+                .unwrap_or_else(|| "the printer you chose".to_string()),
+            ranges,
+            all: (asking.Flags & PD_PAGENUMS).0 == 0,
+            into_file: None,
+        }))
     }
 
     /// `printable` laid out for the chosen printer, and the pages chosen of it
     /// sent as one job named for its `kind`.
     pub fn print_on(
-        _chosen: &Chosen,
-        _printable: &Printable,
-        _kind: Kind,
+        chosen: &ChosenPrinter,
+        printable: &Printable,
+        kind: Kind,
     ) -> Result<Printed, NotPrinted> {
-        Err(NotPrinted::Failed("nothing is chosen yet".to_string()))
+        let sheet = chosen.sheet()?;
+        let pages = lay_out(
+            printable,
+            |text| sheet.measure(text),
+            sheet.width(),
+            sheet.lines_per_page(),
+        );
+        let wanted: Vec<Page> = pages_chosen(&chosen.ranges, chosen.all, pages.len())
+            .into_iter()
+            .filter_map(|number| number.checked_sub(1).and_then(|at| pages.get(at)))
+            .cloned()
+            .collect();
+        if wanted.is_empty() {
+            return Err(NotPrinted::PastTheLastPage { pages: pages.len() });
+        }
+        print(&sheet, job_name(kind), chosen.into_file.as_deref(), &wanted)
     }
 }
 
@@ -392,11 +589,11 @@ mod elsewhere {
     use crate::application::printing::{Kind, NotPrinted, Printable, Printed};
 
     /// A printer somebody chose, which off Windows nobody can.
-    pub struct Chosen {
+    pub struct ChosenPrinter {
         never: std::convert::Infallible,
     }
 
-    impl Chosen {
+    impl ChosenPrinter {
         pub fn printer_name(&self) -> &str {
             match self.never {}
         }
@@ -404,12 +601,12 @@ mod elsewhere {
 
     pub fn ask_for_a_printer(
         _owner: &wxdragon::prelude::Frame,
-    ) -> Result<Option<Chosen>, NotPrinted> {
+    ) -> Result<Option<ChosenPrinter>, NotPrinted> {
         Err(NotPrinted::NotOnThisPlatform)
     }
 
     pub fn print_on(
-        chosen: &Chosen,
+        chosen: &ChosenPrinter,
         _printable: &Printable,
         _kind: Kind,
     ) -> Result<Printed, NotPrinted> {

@@ -29,7 +29,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use wixen_mail::application::printing::{Kind, Printable, Printed, lay_out};
-use wixen_mail::presentation::printing::{Chosen, print_on};
+use wixen_mail::presentation::printing::{ChosenPrinter, print_on};
 
 const THE_PDF_PRINTER: &str = "Microsoft Print to PDF";
 
@@ -77,7 +77,7 @@ fn pages_in(file: &Path) -> usize {
 fn test_a_message_spooled_to_the_pdf_printer_comes_out_as_the_pages_the_layout_gave() {
     if std::env::var_os("WIXEN_NO_PDF_PRINTER").is_some() {
         assert!(
-            Chosen::the_printer_named(THE_PDF_PRINTER, None).is_err(),
+            ChosenPrinter::the_printer_named(THE_PDF_PRINTER, None).is_err(),
             "WIXEN_NO_PDF_PRINTER is set and {THE_PDF_PRINTER} opened, so the flag is \
              hiding a working printer and this reading is not being made"
         );
@@ -85,12 +85,13 @@ fn test_a_message_spooled_to_the_pdf_printer_comes_out_as_the_pages_the_layout_g
     }
     let folder = tempfile::tempdir().expect("a temporary folder");
     let file = folder.path().join("spooled.pdf");
-    let chosen = Chosen::the_printer_named(THE_PDF_PRINTER, Some(&file)).unwrap_or_else(|why| {
-        panic!(
-            "{THE_PDF_PRINTER} could not be opened ({why:?}). Where it is absent, set \
+    let chosen =
+        ChosenPrinter::the_printer_named(THE_PDF_PRINTER, Some(&file)).unwrap_or_else(|why| {
+            panic!(
+                "{THE_PDF_PRINTER} could not be opened ({why:?}). Where it is absent, set \
              WIXEN_NO_PDF_PRINTER=1 and this asserts that instead"
-        )
-    });
+            )
+        });
 
     // Two and a half pages of text under the header: three pages, whatever
     // the printer's resolution makes a page hold.
