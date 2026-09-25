@@ -386,6 +386,22 @@ research's, for Pratik to overrule like the rest:
 51. This README keeps no `- [ ]` lines. The plan list with its boxes is the
     roadmap's, and a second copy would be one fact written twice.
 
+**Pratik's answers of 2026-09-24**, to the four in the table below, recorded
+by 13-03. His words: "Yes to all questions. Before you file an issue with
+wxDragon, give me more details."
+
+52. (a) `cfb` 0.15.0 for reading `.msg` files is confirmed (13-47).
+53. (b) The three `windows` 0.62.2 features, `Win32_Graphics_Gdi`,
+    `Win32_Storage_Xps` and `Win32_UI_Controls_Dialogs`, are confirmed, and so
+    is `rand` 0.8 as a renamed direct dependency (13-03, 13-20). 13-03 added
+    the three features in `e33f76fc`; `Cargo.lock` did not change.
+54. (c) Microsoft Graph's `People.Read` and the tasks permission are
+    confirmed (13-28).
+55. (d) The wxDragon printing defect: he asked for details before anything is
+    filed, and is running a test program that prints through wxDragon to
+    confirm the defect first. Nothing is posted. 13-03's summary holds the
+    details and a draft, and ledger 614 carries it.
+
 ## Four things that wait on Pratik
 
 Each is a checkpoint that stops only when the executor's brief does not
