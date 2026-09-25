@@ -853,6 +853,12 @@ pub fn made_again(item: &OnAnItem) -> String {
     )
 }
 
+/// What Undo asks before it takes away the copy an action made, since taking
+/// it away is a delete and every delete here is asked first.
+pub fn take_away_the_copy(_item: &OnAnItem) -> String {
+    String::new()
+}
+
 /// The module whose list holds this kind of item.
 fn the_module_of(kind: ItemKind) -> PimModule {
     match kind {
@@ -1883,6 +1889,16 @@ mod tests {
             what_undo_does_to_an_item(&copied, Gone),
             refused("The copy of Dentist is gone already, so there is nothing to take away.")
         );
+        // Taking the copy away is a delete, and asked first, in words that say
+        // which of the two goes.
+        let asked = take_away_the_copy(&copied);
+        assert_eq!(
+            asked,
+            "Take away the copy of \"Dentist\" in Work? The one it was copied from stays where \
+             it is."
+        );
+        reads_as_a_persons_sentence(&asked, Voice::Answer)
+            .unwrap_or_else(|why| panic!("{asked:?}: {why}"));
     }
 
     #[test]

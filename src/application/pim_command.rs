@@ -598,7 +598,14 @@ mod tests {
         let asked = confirm_delete(ItemKind::Task, "File the tax return");
 
         assert!(asked.contains("File the tax return"), "{asked}");
-        assert!(asked.contains("cannot be undone"), "{asked}");
+        // Edit, Undo brings a deleted item back since 13-09, so the question
+        // says so rather than claiming it cannot be undone, which would send
+        // somebody who deleted the wrong row off to type it again.
+        assert!(!asked.contains("cannot be undone"), "{asked}");
+        assert_eq!(
+            asked,
+            "Delete \"File the tax return\"? Undo brings it back until your next action."
+        );
     }
 
     #[test]

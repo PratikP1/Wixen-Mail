@@ -32,6 +32,19 @@
 //!   its server through `undo_here`, and moves back or deletes through the
 //!   path the action took, never answering a waiting change with a move back.
 //!
+//! Since 13-09 it reads the other five modules as well, over
+//! `src/presentation/managers.rs` beside the window:
+//!
+//! - `pim_command` remembers an action on an item only once the command has
+//!   been carried out, never before the delete's question is answered;
+//! - Undo and Redo in a module's list reach the undo of an item, which asks
+//!   the store and `application::undoing`, and takes an owed deletion back
+//!   through `take_a_deletion_back` rather than making the item again;
+//! - each of the four syncs of items counts itself under way, which is what a
+//!   take-back asks before it drops a note the sync may be sending;
+//! - the Edit menu is handed the five lists and asks which module a step was
+//!   taken in.
+//!
 //! Each reading is a function over text, and a companion hands it the fault
 //! planted in a snippet shaped as the window should be, so a reading that
 //! stopped finding its anchor cannot pass by finding nothing.
@@ -55,10 +68,19 @@ use std::fs;
 use wixen_mail::common::what_ships::what_ships;
 
 const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
+const THE_MANAGERS: &str = "src/presentation/managers.rs";
 
 fn the_main_window() -> String {
-    let whole = fs::read_to_string(THE_MAIN_WINDOW)
-        .unwrap_or_else(|why| panic!("{THE_MAIN_WINDOW}: {why}"))
+    what_ships_in(THE_MAIN_WINDOW)
+}
+
+fn the_managers() -> String {
+    what_ships_in(THE_MANAGERS)
+}
+
+fn what_ships_in(path: &str) -> String {
+    let whole = fs::read_to_string(path)
+        .unwrap_or_else(|why| panic!("{path}: {why}"))
         .replace("\r\n", "\n");
     what_ships(&whole)
 }
@@ -140,6 +162,24 @@ const THE_MOVE_PATH: &str = "fn move_or_copy_here_first(";
 const MOVED_BACK: &str = "fn move_back_or_again(";
 const MADE_HERE_FIRST: &str = "complete_here_then_tell_the_server(";
 const ENDED_HERE: &str = "undo_here(";
+const THE_ITEM_COMMAND: &str = "pub fn pim_command(";
+const CARRIED_OUT: &str = "let outcome = match";
+const REMEMBERS_AN_ITEM: &str = "remember_an_item_action(";
+const THE_ITEM_UNDO: &str = "pub fn undo_or_redo_on_an_item(";
+const TAKEN_BACK: &str = "take_a_deletion_back(";
+const THE_SYNCS: [(&str, &str); 4] = [
+    ("fn spawn_contacts_sync(", "ItemKind::Contact"),
+    ("fn spawn_tasks_sync(", "ItemKind::Task"),
+    ("fn spawn_notes_sync(", "ItemKind::Note"),
+    ("pub(crate) fn spawn_calendar_sync(", "ItemKind::Event"),
+];
+const THE_FIVE_LISTS: [&str; 5] = [
+    "(contact_list, PimModule::Contacts)",
+    "(cal_event_list, PimModule::Calendar)",
+    "(reminder_list, PimModule::Reminders)",
+    "(task_list, PimModule::Tasks)",
+    "(note_list, PimModule::Notes)",
+];
 
 // ── The readings ───────────────────────────────────────────────────────────
 
@@ -317,6 +357,120 @@ fn moves_back_the_way_the_action_went(app: &str) -> Result<(), String> {
     }
 }
 
+/// An action on an item is remembered only once its command has been carried
+/// out: never before the delete's question is answered, where a No would
+/// leave an undo for a delete that never happened.
+fn remembers_an_item_once_it_is_done(body: &str) -> Result<(), String> {
+    let carried_out = body.find(CARRIED_OUT).ok_or(format!(
+        "pim_command no longer carries its command out at {CARRIED_OUT:?}, so this reads nothing"
+    ))?;
+    let sites: Vec<usize> = body
+        .match_indices(REMEMBERS_AN_ITEM)
+        .map(|(at, _)| at)
+        .collect();
+    if sites.is_empty() {
+        return Err(
+            "pim_command remembers nothing, so Undo in a module's list has nothing to take back"
+                .to_string(),
+        );
+    }
+    match sites.iter().any(|at| *at < carried_out) {
+        true => Err(
+            "pim_command remembers an action before it is carried out, so a delete answered \
+             No, or a write that failed, leaves an undo for something that never happened"
+                .to_string(),
+        ),
+        false => Ok(()),
+    }
+}
+
+/// An owed deletion is taken back through `take_a_deletion_back`, which
+/// changes the row and the note together, and never answered by making the
+/// item again, which would bring it back new while the deletion is still sent.
+fn takes_an_owed_deletion_back(body: &str) -> Result<(), String> {
+    let (_, from_the_arm) = body.split_once("UndoAnItem::TakeTheDeletionBack(").ok_or(
+        "the undo of an item has no arm for an owed deletion, so this reads nothing".to_string(),
+    )?;
+    let arm = from_the_arm
+        .split("UndoAnItem::")
+        .next()
+        .unwrap_or(from_the_arm);
+    match arm.contains(TAKEN_BACK) {
+        true => Ok(()),
+        false => Err(
+            "an owed deletion is not taken back through take_a_deletion_back, so the item \
+             comes back while its deletion is still sent"
+                .to_string(),
+        ),
+    }
+}
+
+/// Undo and Redo in a module's list reach the undo of an item, which asks the
+/// store and the decision and goes the ways they answer.
+fn undoes_an_item_the_way_the_store_says(app: &str, managers: &str) -> Result<(), String> {
+    let edit = body_of(app, THE_EDIT_COMMAND)?;
+    let (_, arm) = edit.split_once("Doing::TheLastAction =>").ok_or(
+        "the Edit command has no arm for the last action, so this reads nothing".to_string(),
+    )?;
+    if !arm.contains("undo_or_redo_on_an_item(") {
+        return Err("Undo in a module's list never reaches the undo of an item".to_string());
+    }
+    let carrying = body_of(managers, THE_ITEM_UNDO)?;
+    for asked in [
+        "what_the_store_says_of_an_item(",
+        "what_undo_does_to_an_item(",
+        "what_redo_does_to_an_item(",
+        TAKEN_BACK,
+        "make_it_again(",
+    ] {
+        if !carrying.contains(asked) {
+            return Err(format!("the undo of an item never calls {asked}"));
+        }
+    }
+    takes_an_owed_deletion_back(carrying)
+}
+
+/// Each sync of items counts itself under way for its account and kind.
+fn each_sync_counts_itself(app: &str) -> Result<(), String> {
+    for (sync, kind) in THE_SYNCS {
+        let body = body_of(app, sync)?;
+        if !(body.contains("ASyncUnderWay::begins(") && body.contains(kind)) {
+            return Err(format!(
+                "{sync} never counts itself under way for {kind}, so an undo can take back a \
+                 deletion that sync is sending"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The Edit menu is handed the five module lists, and its open handler asks
+/// which module the step was taken in.
+fn the_menu_names_an_items_step(app: &str) -> Result<(), String> {
+    let at = app
+        .find("keep_the_edit_menu_honest(\n                &frame,")
+        .ok_or(
+            "the main window never hands the Edit menu its lists, so this reads nothing"
+                .to_string(),
+        )?;
+    let call = &app[at..];
+    let call = &call[..call.find(");\n").unwrap_or(call.len())];
+    if let Some(missing) = THE_FIVE_LISTS.iter().find(|list| !call.contains(*list)) {
+        return Err(format!(
+            "the Edit menu is not handed {missing}, so it cannot name that list's step"
+        ));
+    }
+    let handlers = body_of(app, THE_MENU_HANDLERS)?;
+    match handlers.contains(".module()") {
+        true => Ok(()),
+        false => Err(
+            "the Edit menu never asks which module the step was taken in, so a list names a \
+             step it cannot take back"
+                .to_string(),
+        ),
+    }
+}
+
 // ── The tests ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -432,6 +586,54 @@ fn test_companion_an_undo_that_speaks_per_message_is_refused() {
 }
 ";
     assert!(says_one_sentence(planted).is_err());
+}
+
+#[test]
+fn test_an_action_on_an_item_is_remembered_after_it_is_carried_out() {
+    let managers = the_managers();
+    let body = body_of(&managers, THE_ITEM_COMMAND).unwrap_or_else(|why| panic!("{why}"));
+    remembers_an_item_once_it_is_done(body).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_undo_in_a_modules_list_asks_the_store_and_takes_an_owed_deletion_back() {
+    undoes_an_item_the_way_the_store_says(&the_main_window(), &the_managers())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_each_sync_of_items_counts_itself_under_way() {
+    each_sync_counts_itself(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_edit_menu_names_the_last_action_on_an_item_when_its_list_has_focus() {
+    the_menu_names_an_items_step(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_companion_an_item_remembered_before_it_is_carried_out_is_refused() {
+    let planted = "pub fn pim_command(action: PimAction) {
+    remember_an_item_action(state, done);
+    let asked = MessageDialog::builder(frame, &confirm_delete(kind, &name), \"Delete\");
+    let outcome = match one_day {
+        None => cache.delete_task(&id),
+    };
+}
+";
+    assert!(remembers_an_item_once_it_is_done(planted).is_err());
+}
+
+#[test]
+fn test_companion_an_undo_that_makes_every_deleted_item_again_is_refused() {
+    let planted = "pub fn undo_or_redo_on_an_item(direction: Direction) {
+    match answer {
+        UndoAnItem::TakeTheDeletionBack(record) => cache.make_it_again(&record, &as_id),
+        UndoAnItem::MakeItAgain(record) => cache.make_it_again(&record, &as_id),
+    }
+}
+";
+    assert!(takes_an_owed_deletion_back(planted).is_err());
 }
 
 #[test]

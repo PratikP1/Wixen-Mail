@@ -706,6 +706,13 @@ mod tests {
             "it does not say the undo is sent like the action: \
              {UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
         );
+        // Since 13-09 it is Undo's help in the other five modules too, where a
+        // change goes to a calendar, an address book, a task list or a notes
+        // service, so it names the account rather than the mail server.
+        assert!(
+            !UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("mail server"),
+            "{UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
+        );
     }
 
     #[test]
