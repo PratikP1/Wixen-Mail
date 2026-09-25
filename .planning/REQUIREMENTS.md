@@ -5828,8 +5828,9 @@ stays at 122.
   - [S] What a printed page looks like is a sighted reader's; whether the dialog is worked by
     keyboard is the tester's ear.
 
-- [ ] **GAP-02**: Edit, Undo and Redo act on the focused text everywhere, and then on actions
+- [x] **GAP-02**: Edit, Undo and Redo act on the focused text everywhere, and then on actions
   on items with the item named.
+  Ticked 2026-09-25 by 13-08.
   - Evidence: `gh issue view 47 --json state` on 2026-09-20: open; the composer's own
     Ctrl+Z and Ctrl+Y exist and the Edit menu holds none (the issue's reading; re-take when
     planned). 13-01 on 2026-09-24: the main window's Edit menu opens with Undo (`Ctrl+Z`) and
@@ -5856,13 +5857,39 @@ stays at 122.
     words, and `cargo test --test undoing_a_mark_names_the_message`, 10 tests, reads the
     window's wiring; a dialog's empty Ctrl+Z and Ctrl+Y now say the Edit menu's sentences,
     read by `several_steps_come_back`, 18 tests. Moves, deletes and copies are 13-08's, so
-    this line stays open.
+    this line stayed open. 13-08 on 2026-09-25: Undo and Redo in the message list take back
+    and do again the last move, delete or copy, each message decided from what the store
+    says about its row now: a change still waiting for its server ended here and nothing
+    sent, one the server carried out moved back the way a move goes, an undone copy sent to
+    the trash, and in words a Delete Permanently the server has, a move to another account, a
+    row the server moved that this computer has not read back, and a change being told to
+    the server at that moment. `cargo test --lib application::undoing::`, 21 tests;
+    `cargo test --lib application::moves_waiting::`, 49 tests, holds the store read and the
+    count of replays under way; `cargo test --test undoing_a_mark_names_the_message`, 15
+    tests, reads the recordings and the undo's wiring. Nothing of it has met a real account
+    (ledger 625).
   - Plans, 2026-09-24: 13-01 (Undo and Redo on the Edit menu on the box's own step),
     13-05 and 13-06 (several steps in every text box), 13-07 (marks), 13-08 (moves, deletes
     and copies), which ticks this line, and 13-09 (the other five modules), which closes #47.
   - [S] #47, the tester on 2026-09-15, "no general Undo/Redo".
-  - [D] Edit, Undo and Redo for the focused control on every surface first; an undo of a
-    delete, a move and a mark with the item named as its own plan; the shortcuts page.
+  - [x] [D] Edit, Undo and Redo for the focused control on every surface first; an undo of a
+    delete, a move and a mark with the item named as its own plan; the shortcuts page. Met
+    2026-09-25 by 13-01 and 13-05 to 13-08. Held by 13-01's
+    `test_undo_takes_back_what_was_typed` in `tests/undo_reaches_the_text.rs`; by 13-05's
+    `application::text_history`, among them
+    `test_three_words_typed_come_back_one_word_at_a_time`, and
+    `test_three_words_typed_come_back_a_word_at_a_time` in
+    `tests/several_steps_come_back.rs`; by 13-06's reading,
+    `test_every_box_a_person_types_into_keeps_a_history` in
+    `tests/every_text_box_keeps_a_history.rs`; by `application::editing`'s
+    `test_a_text_box_does_every_command_itself`; by `application::undoing`'s
+    `test_undoing_mark_as_read_over_a_mixed_set_puts_back_each_messages_own_state` (13-07) and
+    `test_undoing_a_move_the_server_has_not_heard_ends_the_waiting_row_rather_than_moving_back`
+    (13-08); and by the undo reading's
+    `test_undo_of_a_move_asks_the_store_and_goes_the_way_the_action_went` in
+    `tests/undoing_a_mark_names_the_message.rs`. The shortcuts page's Edit Menu and Action
+    Menu say what Undo does in a box and in the message list. #47 stays open for 13-09, the
+    other five modules.
   - [S] Whether the undone action is heard as undone is the tester's ear.
 
 - [ ] **GAP-03**: A PGP key manager lists the keys, imports a public key, removes and exports
@@ -6180,7 +6207,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | EDIT-04 | Phase 12 | Done 2026-09-24, 12-09: one set with an assignment per account and one default, chosen on the account's dialog or in a signature's editor through one stored assignment, compose following the From account, held by `application::signatures`' and the store's cases and `tests/a_signature_follows_the_from_account.rs`; the ear is ledger 605 |
 | EDIT-05 | Phase 12 | Done 2026-09-24, 12-10: labels in a stored order, the Label submenu rebuilt from them with the key that applies each and Edit Labels at its end, the Label Manager with a Key column and moves, held by `application::tagging`'s and the store's cases and `tests/the_label_menu_says_the_labels_an_account_has.rs`; the ear is ledger 607 |
 | GAP-01 | Phase 13 | Done 2026-09-25, 13-04: File, Print on every surface that shows a message or an item, the reader window, a conversation's row, the formatted message window and the five other modules, through one path to Windows' print dialog, held by `tests/print_is_on_the_file_menu.rs`, `application::printing`'s and `presentation::page_jumps`'s cases; the ear and the paper are ledger 613 and 617. Until then "13-03 built 2026-09-25, File, Print on the message list through Windows' print dialog; 13-04 to come, which ticks it". Before that "13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it". Before that "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20" |
-| GAP-02 | Phase 13 | 13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 built 2026-09-25, undo of the last mark, star or label in the message list; 13-08 and 13-09 to come, 13-08 ticks it. Until 13-07 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 to 13-09 to come, 13-08 ticks it". Until 13-06 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 to 13-09 to come, 13-08 ticks it", and until 13-05 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it", and until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
+| GAP-02 | Phase 13 | Done 2026-09-25, 13-08: Edit, Undo and Redo on every box that takes typing, several steps each, and in the message list on the last mark, star, label, move, delete or copy with the item named, held by `tests/undo_reaches_the_text.rs`, `tests/every_text_box_keeps_a_history.rs`, `tests/undoing_a_mark_names_the_message.rs` and `application::undoing`'s cases; the ear and the real server are ledger 622 to 625; 13-09 brings the other five modules and closes #47. Until then "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 built 2026-09-25, undo of the last mark, star or label in the message list; 13-08 and 13-09 to come, 13-08 ticks it". Until 13-07 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 to 13-09 to come, 13-08 ticks it". Until 13-06 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 to 13-09 to come, 13-08 ticks it", and until 13-05 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it", and until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-03 | Phase 13 | Planned 2026-09-24: 13-16, 13-17, 13-17.1, which ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-04 | Phase 13 | Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-05 | Phase 13 | Planned 2026-09-24: 13-14, 13-15, 13-18 to 13-21 (13-20 waits on answer (b)), 13-21 ticks it; not built. Until then "Not planned, 2026-09-20" |

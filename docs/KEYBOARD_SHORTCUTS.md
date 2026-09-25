@@ -668,9 +668,10 @@ work in a box you can type in.
 
 **In the message list, Undo and Redo act on the last thing you did to
 messages**: Mark as Read or Unread, Star or Unstar, a label put on or taken
-off, or Remove every label. With the list focused, the menu names it, such as
-"Undo Mark as Read: Quarterly report", or the count for a set, "Undo Star: 4
-messages". Undo puts each message back the way it was before, so marking a
+off, Remove every label, Delete, Delete Permanently, Move to, or Copy to. With
+the list focused, the menu names it, such as "Undo Mark as Read: Quarterly
+report", "Undo Move to Archive: Invoice", or the count for a set, "Undo Star:
+4 messages". Undo puts each message back the way it was before, so marking a
 mix of read and unread messages read and then undoing it unreads only the
 ones that were unread. The change goes to the mail server the same way the
 action did, and if the server refuses, the message is put back and you are
@@ -682,9 +683,21 @@ replaces it, with no time limit. After an Undo, Redo does the action again,
 and after that Undo is offered again. A message marked read because you
 stayed on it for the reading wait does not count as an action, so it never
 replaces what you did. With nothing to undo, `Ctrl+Z` says "There is nothing
-to undo in this list yet." Moving, deleting and copying messages cannot be
-undone yet, and neither can anything in the other modules, where Undo and
-Redo still say they work in a box you can type in.
+to undo in this list yet." Nothing in the other modules can be undone yet;
+there Undo and Redo still say they work in a box you can type in.
+
+**Undoing a move, a delete or a copy** puts the message back in the folder it
+came from, and the cursor lands on it when that folder is the one on screen.
+If the mail server has not been told yet, nothing is sent: the change is
+simply taken back on this computer. If the server has already done it, the
+message is moved back there too, the same way the move went, and a copy goes
+to the Trash rather than being deleted outright. Some things cannot come back,
+and Undo says which and why: a message deleted permanently once the server has
+it, a message moved or copied to another account, a message the server moved
+that this computer has not read back yet (refresh that folder and move it back
+from there), and a message whose change is reaching the server at that very
+moment (try again shortly). Undoing a move, a delete or a copy at the server
+is experimental, and the Undo item's help says so.
 
 **`Ctrl+Shift+Z` is Undo Send here, not Redo.** Some programs use it for Redo.
 In Wixen Mail Redo is on `Ctrl+Y`, which is Windows' own key for it, and Undo
@@ -733,15 +746,15 @@ anything.
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
 | Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders |
 | Pin or Unpin | `Ctrl+Shift+P` | Notes |
-| Delete | `Delete` | Every module. Deletes whichever item is chosen. In Mail, every selected message: it says "Delete" once and the cursor lands after the last of them once they have gone. A conversation row in the selection asks first, naming how many messages it holds |
-| Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way |
-| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept |
+| Delete | `Delete` | Every module. Deletes whichever item is chosen. In Mail, every selected message: it says "Delete" once and the cursor lands after the last of them once they have gone. A conversation row in the selection asks first, naming how many messages it holds. `Ctrl+Z` in the message list brings the messages back out of the Trash |
+| Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way. `Ctrl+Z` in the message list brings them back only while the mail server has not yet been told; once it has, the message is gone and Undo says so |
+| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, except a move to another account, which Undo refuses and says so. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept |
 
 Five submenus hold the rest:
 
 | Submenu | What is on it |
 |--------|----------|
-| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
+| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. `Ctrl+Z` in the message list sends the copies to the Trash, except a copy into another account, which Undo refuses and says so. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
 | Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation. `Ctrl+Z` in the message list undoes the last label put on or taken off, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |

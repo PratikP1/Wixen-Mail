@@ -673,6 +673,40 @@ In the Move to window, `Enter` on a folder is the move; on a folder that
 holds other folders it still moves there rather than opening it, and on an
 account row it does nothing.
 
+**Undo takes a move, a delete or a copy back.** Since 2026-09-25, `Ctrl+Z`
+in the message list, or Edit, Undo, puts the messages of your last move or
+delete back in the folder they came from, and the cursor lands on the first
+of them when that folder is on screen. The menu names what it will take
+back, "Undo Move to Archive: Invoice" or "Undo Delete: 3 messages", and one
+sentence says what happened: "Undid Move to Archive on Invoice." How it does
+that depends on how far the change got:
+
+- **The server has not been told yet**, because there was no network or the
+  change is still on its way. Undo takes the change back on this computer and
+  sends nothing, so the server never hears of either.
+- **The server has done it.** Undo moves the message back from where the
+  server now holds it, the same way a move goes: here at once, then the
+  server.
+- **A copy.** Undo sends the copy to the Trash, here and at the server. It is
+  never deleted outright, so a copy that turned out to be the wrong message
+  can still be found.
+
+Some things cannot come back, and Undo says so in a sentence naming the
+message:
+
+- A message deleted with Delete Permanently, once the server has it. Before
+  that, Undo brings it back.
+- A message moved or copied to another account. Move it from that account
+  instead.
+- A message the server moved but whose new place this computer has not read
+  yet. Refresh the folder it went to, and move it back from there.
+- A message whose change is reaching the server at that moment. Try again
+  shortly.
+
+Redo (`Ctrl+Y`) does the move, delete or copy again. Undoing a change at the
+server is experimental, and the Undo item's help on the Edit menu says so:
+nobody has undone a move against a real mail server yet.
+
 A move or a copy to a folder on another account completes here at once too,
 and the servers follow: the row leaves, the status bar shows "Moved to
 Work in Home: Invoice", and the message appears in that folder of the other
@@ -1211,12 +1245,13 @@ a screen reader says they are unavailable.
 - `Ctrl+Shift+S` - Star or unstar the selected messages. Until 2026-09-20 this
   line said `S`, which has never been bound
 - `M` - Mark as read or as unread, and hear which
-- `Ctrl+Z` in the message list - Undo the last mark as read or unread, star
-  or label, each message back the way it was. The Edit menu names it, such as
-  "Undo Mark as Read: Quarterly report", and `Ctrl+Y` does it again. It lasts
-  until your next action on messages, with no time limit, and the change goes
-  to the mail server the way the action did. Moves and deletes cannot be undone
-  yet
+- `Ctrl+Z` in the message list - Undo the last mark as read or unread, star,
+  label, delete, move or copy, each message back the way it was. The Edit
+  menu names it, such as "Undo Mark as Read: Quarterly report" or "Undo Move
+  to Archive: Invoice", and `Ctrl+Y` does it again. It lasts until your next
+  action on messages, with no time limit, and the change goes to the mail
+  server the way the action did. What a move, a delete or a copy can and
+  cannot take back is under "Moving, deleting and copying happen here first"
 - `Space` - Read the message aloud
 
 ### Navigation

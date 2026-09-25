@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 558
+open_count: 561
 waived_count: 0
 fixed_count: 60
-total_count: 618
-last_updated: 2026-09-25T18:00:00.000Z
+total_count: 621
+last_updated: 2026-09-25T19:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -638,6 +638,9 @@ last_updated: 2026-09-25T18:00:00.000Z
 | 621 | 13 | todo | src/presentation/wx_compose.rs |  | 13-06: what keeps Windows' single step, named rather than hidden. The composer's Describe the picture and Insert Link boxes are wxWidgets' own text-entry dialog (wx_compose.rs, TextEntryDialog::builder), whose box wxdragon 0.9.17 does not hand back, so keep_a_history cannot reach it; a dialog of this program's own for each would give them the history. The thirteen number fields (SpinCtrl::builder in wx_account_manager.rs, wx_compose.rs, wx_item_form.rs and wx_settings.rs) keep Windows' step too, which is short for a typed number; undo there only if Pratik wants it. Both are left as they are. tests/every_text_box_keeps_a_history.rs names the dialogs and the number fields in KEEPS_WINDOWS_ONE_STEP, and an entry naming a file that no longer builds one is refused. Narrowed 2026-09-25 by 13-07: this entry also asked whether a dialog's Ctrl+Z with nothing left to undo should speak, and it does now, taken as the recommendation that day: Ctrl+Z and Ctrl+Y with nothing to do in a dialog say the sentences the main window's Edit menu says (text_history_keys::say_nothing_left_through, read in tests/several_steps_come_back.rs) | open |  | 2026-09-25T22:00:00.000Z |  |
 | 622 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-07: #47's undo of a mark, a star or a label, under NVDA and Narrator. What only a person settles: with the message list focused, the Edit menu's Undo heard naming the action and the message, "Undo Mark as Read: Quarterly report", or the count, and greyed as unavailable when nothing is kept; the help heard saying it is experimental; Ctrl+Z heard saying one sentence, "Undid Mark as Read on Quarterly report.", and the rows heard read or unread, starred or labelled again after it; Ctrl+Y heard doing it again; and "There is nothing to undo in this list yet." heard with nothing kept. tests/undoing_a_mark_names_the_message.rs reads the window's wiring and application::undoing holds the decisions and the words; neither listens | open |  | 2026-09-26T00:00:00.000Z |  |
 | 623 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-07: an undone mark, star or label has never reached a real mail server. The undo goes through spawn_server_change, the path the action takes, and the session it opens asks allowed_for(account).mail before any change (mail_controller.rs, connect), so it is gated like the action; what a real IMAP or Gmail server does with a flag or keyword put back right after it was set, and whether a refusal puts the row back as the action's does, is phase 14's, with REAL-01's lines for marks as the place it belongs. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-26T00:00:00.000Z |  |
+| 624 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-08: #47's undo of a move, a delete or a copy, under NVDA and Narrator. What only a person settles: with the message list focused after a move, the Edit menu's Undo heard as "Undo Move to Archive: Invoice", or "Undo Delete: 3 messages" for a set; Ctrl+Z heard saying one sentence, "Undid Move to Archive on Invoice.", and the cursor heard landing on the message back when its folder is on screen; a refusal heard naming the message and what to do, such as "Invoice went to another account, so it cannot be taken back from here. Move it from that account instead."; Ctrl+Y heard doing the move again. application::undoing holds the decisions and the words and tests/undoing_a_mark_names_the_message.rs reads the window's wiring; neither listens | open |  | 2026-09-25T17:00:00.000Z |  |
+| 625 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-08: an undone move, delete or copy has never reached a real mail server. A change the server had not heard of is ended here and nothing is sent; one the server carried out is a new move back, or a copy sent to the trash, made through complete_here_then_tell_the_server, the path the action took, after allowed_for(account).mail is met in move_back_or_again or in where_a_delete_goes_here. What a real IMAP or Gmail server does with a message moved back from where it put it a moment before, whether the number the store recorded after the first move is the one the server still holds, and whether a copy's trash reaches the right message, is phase 14's, with REAL-02's lines for move, copy and delete as the place it belongs. Known and left: a replay that begins between the undo's read of the store and its end of the waiting row can still send the move once more; the window is the few statements of undo_here on the interface thread. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-25T17:00:00.000Z |  |
+| 626 | 13 | todo | src/application/undoing.rs |  | 13-08: undoing a move or a copy to another account is refused in a sentence, by phase 13's decision 11, because the undo would be a second crossing between two servers with the same three steps and held bytes. what_undo_does_to answers every crossing with went_to_another_account, held by test_a_crossing_is_refused_with_a_sentence and the record "an undo refuses a move to another account in words". Building it means a crossing back through mail_across_accounts, remembered with the other account's folder and number; open until Pratik asks for it | open |  | 2026-09-25T17:00:00.000Z |  |
 
 ````json
 [
@@ -8115,6 +8118,42 @@ last_updated: 2026-09-25T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-26T00:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 624,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-08: #47's undo of a move, a delete or a copy, under NVDA and Narrator. What only a person settles: with the message list focused after a move, the Edit menu's Undo heard as \"Undo Move to Archive: Invoice\", or \"Undo Delete: 3 messages\" for a set; Ctrl+Z heard saying one sentence, \"Undid Move to Archive on Invoice.\", and the cursor heard landing on the message back when its folder is on screen; a refusal heard naming the message and what to do, such as \"Invoice went to another account, so it cannot be taken back from here. Move it from that account instead.\"; Ctrl+Y heard doing the move again. application::undoing holds the decisions and the words and tests/undoing_a_mark_names_the_message.rs reads the window's wiring; neither listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T17:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 625,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-08: an undone move, delete or copy has never reached a real mail server. A change the server had not heard of is ended here and nothing is sent; one the server carried out is a new move back, or a copy sent to the trash, made through complete_here_then_tell_the_server, the path the action took, after allowed_for(account).mail is met in move_back_or_again or in where_a_delete_goes_here. What a real IMAP or Gmail server does with a message moved back from where it put it a moment before, whether the number the store recorded after the first move is the one the server still holds, and whether a copy's trash reaches the right message, is phase 14's, with REAL-02's lines for move, copy and delete as the place it belongs. Known and left: a replay that begins between the undo's read of the store and its end of the waiting row can still send the move once more; the window is the few statements of undo_here on the interface thread. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T17:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 626,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/undoing.rs",
+    "line": null,
+    "description": "13-08: undoing a move or a copy to another account is refused in a sentence, by phase 13's decision 11, because the undo would be a second crossing between two servers with the same three steps and held bytes. what_undo_does_to answers every crossing with went_to_another_account, held by test_a_crossing_is_refused_with_a_sentence and the record \"an undo refuses a move to another account in words\". Building it means a crossing back through mail_across_accounts, remembered with the other account's folder and number; open until Pratik asks for it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T17:00:00.000Z",
     "resolved_at": null
   }
 ]
