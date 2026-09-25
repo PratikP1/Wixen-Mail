@@ -29,6 +29,7 @@
 //! how wide a line may be, and decides everything else. A test hands it a fixed
 //! width per letter, and every break is arithmetic.
 
+use crate::presentation::date_display::{DateSettings, DateStyle};
 use crate::presentation::read_aloud::Reading;
 use crate::presentation::reader_text::ReaderDocument;
 
@@ -79,48 +80,293 @@ pub struct Page {
 }
 
 /// The same reading, with every date written in full.
+///
+/// Whatever the reader chose for the screen: a list that says "2 days ago"
+/// is right while it is on the screen and wrong on paper the day after.
 pub fn on_paper(out: Reading) -> Reading {
-    out
-}
-
-/// A document the reader composed, as a thing to print.
-pub fn from_document(document: &ReaderDocument) -> Printable {
-    Printable {
-        title: document.title.clone(),
-        lines: Vec::new(),
-        header_lines: 0,
-        warning: None,
+    Reading {
+        dates: DateSettings {
+            style: DateStyle::Absolute,
+            ..out.dates
+        },
+        ..out
     }
 }
 
+/// A document the reader composed, as a thing to print.
+///
+/// The header block is every line above the first empty one, which is where
+/// the reader's composition puts the gap between the header lines and the
+/// text. With no empty line there is no telling where it ends, so nothing is
+/// kept together.
+pub fn from_document(document: &ReaderDocument) -> Printable {
+    let lines: Vec<String> = document.text.lines().map(as_text).collect();
+    let header_lines = lines
+        .iter()
+        .position(|line| line.trim().is_empty())
+        .unwrap_or(0);
+    Printable {
+        title: document.title.clone(),
+        lines,
+        header_lines,
+        warning: document
+            .warning
+            .as_deref()
+            .map(|warning| warning.lines().map(as_text).collect::<Vec<_>>().join("\n")),
+    }
+}
+
+/// How many columns a tab reaches to.
+const TAB_STOP: usize = 4;
+
+/// One line as characters a page can hold: tabs as spaces, and no control
+/// characters, which a printer would draw as boxes or act on.
+///
+/// Nothing else is interpreted. A message body is a stranger's text, and on
+/// paper it is text and nothing more.
+fn as_text(line: &str) -> String {
+    let mut text = String::with_capacity(line.len());
+    let mut column = 0;
+    for letter in line.chars() {
+        match letter {
+            '\t' => {
+                let spaces = TAB_STOP - column % TAB_STOP;
+                text.push_str(&" ".repeat(spaces));
+                column += spaces;
+            }
+            letter if letter.is_control() => {}
+            letter => {
+                text.push(letter);
+                column += 1;
+            }
+        }
+    }
+    text
+}
+
 /// The pages a printable fills.
+///
+/// `measure` says how wide a run of text is, `width` how wide a line may be,
+/// in the same units, and `lines_per_page` how many lines fit under the stamp.
+/// The warning comes first, then the header block, kept on one page unless it
+/// is longer than a page, then the rest. A page never starts with an empty
+/// line and never holds nothing but its stamp.
 pub fn lay_out(
-    _printable: &Printable,
-    _measure: impl Fn(&str) -> u32,
-    _width: u32,
-    _lines_per_page: usize,
+    printable: &Printable,
+    measure: impl Fn(&str) -> u32,
+    width: u32,
+    lines_per_page: usize,
 ) -> Vec<Page> {
-    Vec::new()
+    let wrapped = |line: &str| wrap(line, &measure, width);
+    let mut pages = Filling::new(lines_per_page);
+    if let Some(warning) = &printable.warning {
+        warning
+            .lines()
+            .for_each(|line| pages.place_all(wrapped(line)));
+        pages.place(String::new());
+    }
+    let (header, text) = printable
+        .lines
+        .split_at(printable.header_lines.min(printable.lines.len()));
+    pages.keep_together(header.iter().flat_map(|line| wrapped(line)).collect());
+    text.iter().for_each(|line| pages.place_all(wrapped(line)));
+    pages.stamped(&printable.title)
+}
+
+/// One line broken into the lines a page is wide enough for.
+///
+/// At the last space that fits, so words stay whole; where no space fits, at
+/// the last character that does, so a long address or a run of symbols still
+/// reaches the page. Every line holds at least one character, so a page too
+/// narrow for a letter still moves on rather than stopping.
+fn wrap(line: &str, measure: &impl Fn(&str) -> u32, width: u32) -> Vec<String> {
+    let mut wrapped = Vec::new();
+    let mut rest = line.trim_end();
+    loop {
+        let fits = longest_start_that_fits(rest, measure, width);
+        if fits == rest.len() {
+            wrapped.push(rest.to_string());
+            return wrapped;
+        }
+        // The character that did not fit counts as a place to break when it
+        // is a space: "brown fox" fits and the space after it is where it ends.
+        let reach = fits + rest[fits..].chars().next().map_or(0, char::len_utf8);
+        let last_space_that_fits = rest[..reach].rfind(' ');
+        let (taken, left) = match last_space_that_fits {
+            Some(space) if !rest[..space].trim().is_empty() => {
+                (rest[..space].trim_end(), rest[space..].trim_start())
+            }
+            _ => (&rest[..fits], &rest[fits..]),
+        };
+        wrapped.push(taken.to_string());
+        rest = left;
+    }
+}
+
+/// How many bytes from the start of `text` fit in `width`, and never less
+/// than one character.
+///
+/// Measured a character at a time, so the work is the width of a line and not
+/// the length of the text: a run of thousands of characters is measured a line
+/// at a time.
+fn longest_start_that_fits(text: &str, measure: &impl Fn(&str) -> u32, width: u32) -> usize {
+    let mut fits = 0;
+    for (at, letter) in text.char_indices() {
+        let end = at + letter.len_utf8();
+        if measure(&text[..end]) > width {
+            break;
+        }
+        fits = end;
+    }
+    match fits {
+        0 => text.chars().next().map_or(0, char::len_utf8),
+        fits => fits,
+    }
+}
+
+/// Pages being filled, a line at a time.
+struct Filling {
+    room: usize,
+    filled: Vec<Vec<String>>,
+    page: Vec<String>,
+}
+
+impl Filling {
+    fn new(lines_per_page: usize) -> Self {
+        Filling {
+            room: lines_per_page.max(1),
+            filled: Vec::new(),
+            page: Vec::new(),
+        }
+    }
+
+    fn place(&mut self, line: String) {
+        if self.page.len() == self.room {
+            self.turn();
+        }
+        if self.page.is_empty() && line.trim().is_empty() {
+            return;
+        }
+        self.page.push(line);
+    }
+
+    fn place_all(&mut self, lines: Vec<String>) {
+        lines.into_iter().for_each(|line| self.place(line));
+    }
+
+    /// Lines that go on one page when a page can hold them all.
+    fn keep_together(&mut self, block: Vec<String>) {
+        let left = self.room - self.page.len();
+        if block.len() > left && block.len() <= self.room {
+            self.turn();
+        }
+        self.place_all(block);
+    }
+
+    /// Finish the page being filled, without the empty lines at its foot.
+    fn turn(&mut self) {
+        let mut page = std::mem::take(&mut self.page);
+        while page.last().is_some_and(|line| line.trim().is_empty()) {
+            page.pop();
+        }
+        if !page.is_empty() {
+            self.filled.push(page);
+        }
+    }
+
+    fn stamped(mut self, title: &str) -> Vec<Page> {
+        self.turn();
+        let pages = self.filled.len();
+        self.filled
+            .into_iter()
+            .enumerate()
+            .map(|(at, lines)| Page {
+                stamp: stamp(title, at + 1, pages),
+                lines,
+            })
+            .collect()
+    }
+}
+
+/// The line at the top of every page.
+///
+/// Commas and no dash, the house style, and the title's own dashes turned into
+/// commas too, because the stamp is this program's sentence even where the
+/// title is somebody else's. The text under it keeps every dash it was
+/// written with.
+fn stamp(title: &str, page: usize, pages: usize) -> String {
+    match without_dashes(title) {
+        title if title.is_empty() => format!("Wixen Mail, page {page} of {pages}"),
+        title => format!("Wixen Mail, {title}, page {page} of {pages}"),
+    }
+}
+
+/// The dash characters, from the figure dash to the horizontal bar.
+const DASHES: [char; 4] = ['\u{2012}', '\u{2013}', '\u{2014}', '\u{2015}'];
+
+/// A title with each dash, and each hyphen standing alone between words
+/// where a dash was meant, turned into a comma. A hyphen inside a word stays.
+fn without_dashes(title: &str) -> String {
+    let spaced: String = title
+        .chars()
+        .map(|letter| match DASHES.contains(&letter) {
+            true => " - ".to_string(),
+            false => letter.to_string(),
+        })
+        .collect();
+    let words: Vec<&str> = spaced.split_whitespace().collect();
+    words
+        .split(|word| word.chars().all(|letter| letter == '-'))
+        .filter(|piece| !piece.is_empty())
+        .map(|piece| piece.join(" "))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The name the print job carries in Windows' print queue.
-pub fn job_name(_kind: Kind) -> &'static str {
-    ""
+///
+/// By kind and never by subject. The queue of a shared printer is read by
+/// whoever else is using it, and a subject is private; this takes a kind and
+/// nothing else, so no subject can reach it.
+pub fn job_name(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Message => "Wixen Mail message",
+        Kind::Conversation => "Wixen Mail conversation",
+        Kind::Event => "Wixen Mail event",
+        Kind::Contact => "Wixen Mail contact",
+        Kind::Task => "Wixen Mail task",
+        Kind::Note => "Wixen Mail note",
+        Kind::Reminder => "Wixen Mail reminder",
+    }
 }
 
-/// What is said once the pages are with the printer.
-pub fn sent_to_the_printer(_title: &str, _printer: &str, _pages: usize) -> String {
-    String::new()
+/// What is said once the pages are with the printer: once, and not a word
+/// per page, so a long message is not a long announcement.
+pub fn sent_to_the_printer(title: &str, printer: &str, pages: usize) -> String {
+    format!(
+        "Sent {} to {}, {}.",
+        title.trim(),
+        printer.trim(),
+        crate::service::caldav::how_many(pages, "page")
+    )
 }
 
 /// What is said when the print dialog was closed without printing.
+///
+/// Said rather than left to silence, because a dialog closing without a word
+/// cannot be told apart from a print that failed.
 pub fn nothing_was_printed() -> String {
-    String::new()
+    "Printing was cancelled, so nothing was printed.".to_string()
 }
 
-/// What is said when the pages could not be printed.
-pub fn printing_failed(_why: &str) -> String {
-    String::new()
+/// What is said when the pages could not be printed: what went wrong, and
+/// what to try.
+pub fn printing_failed(why: &str) -> String {
+    format!(
+        "Nothing was printed, because {}. Check that the printer is on and connected, \
+         then print again.",
+        why.trim().trim_end_matches('.')
+    )
 }
 
 #[cfg(test)]
@@ -277,14 +523,17 @@ mod tests {
 
         let pages = lay_out(&two_lines_of_warning, ten_units_a_letter, 1000, 4);
 
-        assert_eq!(pages.len(), 2, "{pages:#?}");
+        // Four lines a page: the warning and the gap under it take three, so
+        // the header's three go to the second page rather than one of them
+        // staying behind, and the gap under the header is the fourth line of
+        // that page, which is its foot and is not printed.
+        assert_eq!(pages.len(), 3, "{pages:#?}");
         assert_eq!(pages[0].lines, ["Be careful", "with this one"]);
         assert_eq!(
             pages[1].lines,
-            ["Subject: Moved", "From: Ada", "Date: today", "Body."],
-            "the header block goes whole to the next page, and the empty \
-             line at the top of what is left is dropped"
+            ["Subject: Moved", "From: Ada", "Date: today"]
         );
+        assert_eq!(pages[2].lines, ["Body."]);
     }
 
     #[test]
