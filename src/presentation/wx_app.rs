@@ -14154,18 +14154,31 @@ fn open_in_the_text_reader(
     message: &MessageItem,
     out: read_aloud::Reading,
 ) {
+    reader.open(a_message_as_the_reader_shows_it(cache, message, out));
+}
+
+/// One message composed the way the text reader shows it: its header lines,
+/// its text, its attachments by name, and what is said about it.
+///
+/// The reader and File, Print both go through here, so a page cannot come to
+/// show a different message from the reader. Paper asks with
+/// [`crate::application::printing::on_paper`], which writes every date in
+/// full.
+fn a_message_as_the_reader_shows_it(
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+    out: read_aloud::Reading,
+) -> reader_text::ReaderDocument {
     let stored = cache
         .as_ref()
         .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
     let shown = what_a_message_shows_and_says(cache, message, body_as_written(stored));
     // The list row does not carry the attachments, only whether there are any,
     // because a folder listing that loaded them would do a query per row. The
-    // reader is the one place that needs them.
+    // reader and paper are the places that need them.
     let mut message = message.clone();
     message.attachments = attachments_of(cache, message.message_id);
-    reader.open(
-        reader_text::single_message(&message, &shown.body, out).with_what_is_said(&shown.said),
-    );
+    reader_text::single_message(&message, &shown.body, out).with_what_is_said(&shown.said)
 }
 
 /// What one message shows and says, asked the way every surface here asks it.
