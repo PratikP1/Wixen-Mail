@@ -32,8 +32,9 @@
 
 /// One of the six on the Edit menu that act on what has focus.
 ///
-/// Undo and Redo act on a text box alone. The box's own one step is what they
-/// take back and put back, which `presentation::text_undo` reaches.
+/// Undo and Redo act on a text box alone. The box's history of several steps
+/// is what they take back and put back, which `presentation::text_undo`
+/// reaches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditCommand {
     Cut,

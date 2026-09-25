@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 310 records have arrived since and have not been through it.
+# 308 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -24293,27 +24293,19 @@ tests_last_seen = [
     { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
 ]
 
-# Edit, Undo sending EM_UNDO without asking EM_CANUNDO first, so a box with
-# nothing to take back answers "undone" and the window says "Undone" over a box
-# that did not change. The break takes the question out. Measured 2026-09-24 by
-# hand against `cargo test --test undo_reaches_the_text` on 13-01's branch: the
-# one reading of a fresh box went red and nothing else in the target did.
-[[guard]]
-name = "Undo asks the box whether it has anything to take back before it acts"
-file = "src/presentation/text_undo.rs"
-suite = "undo_reaches_the_text"
-before = '''pub fn undo(box_: &TextCtrl) -> Undone {
-    if !can_undo(box_) {
-        return Undone::NothingToUndo;
-    }'''
-after = '''pub fn undo(box_: &TextCtrl) -> Undone {'''
-red = [
-    "test_undo_in_a_box_with_nothing_to_undo_says_so",
-]
-tests_last_seen = [
-    { file = "src/presentation/text_undo.rs", tests = 0 },
-    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
-]
+# Two records retired on 2026-09-25 by 13-05, both written by 13-01 on
+# `text_undo.rs`'s one-step path: "Undo asks the box whether it has anything
+# to take back before it acts", whose break took `EM_CANUNDO` out before
+# `EM_UNDO`, and "Redo is refused once something is typed after the Undo",
+# whose break stopped `can_redo` comparing the box's words with the ones the
+# Undo left. 13-05 gave every box the Edit menu reaches a history of several
+# steps, so the `EM_UNDO` path, the `LastUndo` record and both functions went
+# with nothing left to call them. A record whose `before` names no place in
+# the tree is one the runner refuses. What they guarded is held now by the
+# history: nothing to undo in `History::undo` answering `None`, and typing
+# clearing redo in "typing after an undo leaves nothing to redo".
+# Neither was in the sweep of 2026-09-15, so the arrived-since count above
+# fell by two.
 
 # The Edit menu left as its opening left it once it closes, so Undo or Redo
 # greyed while the menu was open stays greyed, and wxWidgets swallows a greyed
@@ -24334,27 +24326,6 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
-]
-
-# Redo offered after typing since the Undo. A box of one step makes Redo the
-# same message as Undo, so Redo then would take the typing back. The break stops
-# `can_redo` comparing the box's words with the ones the Undo left. Measured
-# 2026-09-24 by hand on 13-01's branch: the reading of Redo after typing went
-# red and nothing else in the target did.
-[[guard]]
-name = "Redo is refused once something is typed after the Undo"
-file = "src/presentation/text_undo.rs"
-suite = "undo_reaches_the_text"
-before = '''pub fn can_redo(box_: &TextCtrl, last: &LastUndo) -> bool {
-    last.handle == handle_of(box_) && box_.get_value() == last.value_after && can_undo(box_)'''
-after = '''pub fn can_redo(box_: &TextCtrl, last: &LastUndo) -> bool {
-    last.handle == handle_of(box_) && can_undo(box_)'''
-red = [
-    "test_redo_is_refused_once_something_is_typed_after_the_undo",
-]
-tests_last_seen = [
-    { file = "src/presentation/text_undo.rs", tests = 0 },
     { file = "tests/undo_reaches_the_text.rs", tests = 15 },
 ]
 

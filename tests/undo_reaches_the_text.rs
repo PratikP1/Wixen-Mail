@@ -7,14 +7,22 @@
 //! because nothing on the menu had taken the key.
 //!
 //! **What is read.** A frame given the main window's own menu bar and two real
-//! boxes, one line and several lines. Words typed through `write_text`, which
-//! is how this program's Paste writes, then `text_undo::undo`, `redo` and
-//! `can_redo` as the Edit menu calls them, each answer and each value read
-//! back from the box. Then the menu: the box given focus, `WM_INITMENUPOPUP`
-//! sent to the frame with the Edit menu's handle, which is what Windows sends
-//! as the menu drops, and Undo and Redo read off the bar; then
-//! `WM_UNINITMENUPOPUP` and the two read again. The first items on Edit read by
-//! their labels.
+//! boxes, one line and several lines, each keeping a history through
+//! `text_history_keys::keep_a_history` as the main window's boxes do. Words
+//! typed through `write_text`, which is how this program's Paste writes, then
+//! `text_undo::undo` and `redo` as the Edit menu calls them, each answer and
+//! each value read back from the box. Then the menu: the box given focus,
+//! `WM_INITMENUPOPUP` sent to the frame with the Edit menu's handle, which is
+//! what Windows sends as the menu drops, and Undo and Redo read off the bar;
+//! then `WM_UNINITMENUPOPUP` and the two read again. The first items on Edit
+//! read by their labels.
+//!
+//! Until 13-05 the boxes were read through their own one step. Two readings
+//! changed with the history: after the one step is undone the open menu now
+//! greys Undo, because there is nothing further back, where the box's one
+//! step offered Undo again as a way to redo; and what the program writes goes
+//! through `set_anew`, because a plain write is a change the history keeps.
+//! The several steps themselves are read in `tests/several_steps_come_back.rs`.
 //!
 //! **Measured on a built control, 2026-09-24,** by sending `EM_UNDO` straight
 //! to the box, so the measurement does not lean on the module it describes:
@@ -32,8 +40,10 @@
 //! - Paste as this program makes it, `write_text`, then Undo: the pasted words
 //!   go and the words before them stay.
 //! - Words the program writes itself with `set_value`, such as a note opened
-//!   into the body: the box has nothing to undo afterwards, so Ctrl+Z after
-//!   choosing another note does not put the first note's words back.
+//!   into the body: the box's own one step has nothing to undo afterwards. The
+//!   history keeps no such step either, because those words go through
+//!   `set_anew`, so Ctrl+Z after choosing another note does not put the first
+//!   note's words back.
 //!
 //! **What is not read.** That Ctrl+Z in the running window reaches
 //! `do_an_edit_command` and speaks: that is the menu's accelerator and one
@@ -41,7 +51,8 @@
 //!
 //! **Companions.** The menu left greyed after it closes, which would swallow
 //! Ctrl+Z in silence (`framecmn.cpp` returns early for a greyed item's key),
-//! and Redo offered after typing, which would take the typing back. Each is
+//! and Redo offered after typing, which would put a step back onto words it
+//! was never taken from. Each is
 //! handed to its check and refused, so a check that passes is one that could
 //! have failed.
 //!
@@ -53,11 +64,10 @@
 
 #![cfg(windows)]
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
-use wixen_mail::presentation::text_undo::{self, LastUndo, Redone, Undone};
+use wixen_mail::presentation::text_history_keys::{self, keep_a_history};
+use wixen_mail::presentation::text_undo::{self, Redone, Undone};
 use wixen_mail::presentation::wx_app::{WxMailApp, keep_undo_and_redo_honest_on_the_menu};
 use wxdragon::prelude::*;
 
@@ -141,12 +151,9 @@ fn open_and_close_edit(frame: &Frame) -> (String, String) {
     (open, undo_and_redo_now(frame))
 }
 
-fn undone(answer: &Undone, into: &Rc<RefCell<Option<LastUndo>>>) -> String {
+fn undone(answer: Undone) -> String {
     match answer {
-        Undone::Done(last) => {
-            *into.borrow_mut() = Some(last.clone());
-            "undone".to_string()
-        }
+        Undone::Done => "undone".to_string(),
         Undone::NothingToUndo => "nothing to undo".to_string(),
     }
 }
@@ -198,8 +205,9 @@ fn take_the_readings(frame: &Frame, harvest: &mut Harvest) {
         .with_pos(Point::new(0, 130))
         .with_size(Size::new(300, 30))
         .build();
-    let last: Rc<RefCell<Option<LastUndo>>> = Rc::new(RefCell::new(None));
-    keep_undo_and_redo_honest_on_the_menu(frame, vec![several, one], last.clone());
+    keep_a_history(&several);
+    keep_a_history(&one);
+    keep_undo_and_redo_honest_on_the_menu(frame, vec![several, one]);
     // Shown, because focus is asked of the boxes the way the window asks.
     frame.show(true);
 
@@ -212,51 +220,43 @@ fn take_the_readings(frame: &Frame, harvest: &mut Harvest) {
     harvest.insert("the menu closed after typing", closed);
 
     // Undo, the menu, then Redo.
-    let answer = text_undo::undo(&several);
-    harvest.insert("undo after typing", undone(&answer, &last));
+    harvest.insert("undo after typing", undone(text_undo::undo(&several)));
     harvest.insert("the box after undo", several.get_value());
     let (open, closed) = open_and_close_edit(frame);
     harvest.insert("the menu open after an undo", open);
     harvest.insert("the menu closed after an undo", closed);
-    let answer = match last.borrow_mut().take() {
-        Some(record) => redone(text_undo::redo(&several, &record)),
-        None => "no record to redo from".to_string(),
-    };
-    harvest.insert("redo after undo", answer);
+    harvest.insert("redo after undo", redone(text_undo::redo(&several)));
     harvest.insert("the box after redo", several.get_value());
 
     // Undo, then typing, then Redo.
-    let answer = text_undo::undo(&several);
-    let _ = undone(&answer, &last);
+    let _ = text_undo::undo(&several);
     several.write_text(" three");
     let before = several.get_value();
-    let (can, answer) = match last.borrow().as_ref() {
-        Some(record) => (
-            text_undo::can_redo(&several, record).to_string(),
-            redone(text_undo::redo(&several, record)),
-        ),
-        None => ("no record".to_string(), "no record".to_string()),
-    };
-    harvest.insert("can redo after typing since the undo", can);
-    harvest.insert("redo after typing since the undo", answer);
+    harvest.insert(
+        "can redo after typing since the undo",
+        text_history_keys::can_redo_in(&several).to_string(),
+    );
+    harvest.insert(
+        "redo after typing since the undo",
+        redone(text_undo::redo(&several)),
+    );
     harvest.insert(
         "the box kept its typing",
         (several.get_value() == before).to_string(),
     );
-    *last.borrow_mut() = None;
 
     // A fresh box: nothing to undo, and the menu says so.
     one.set_focus();
-    harvest.insert("undo on a fresh box", undone(&text_undo::undo(&one), &last));
+    harvest.insert("undo on a fresh box", undone(text_undo::undo(&one)));
     let (open, closed) = open_and_close_edit(frame);
     harvest.insert("the menu open on a fresh box", open);
     harvest.insert("the menu closed on a fresh box", closed);
 
     // What the program writes itself starts a box with nothing to undo.
-    several.set_value("a note opened into the body");
+    text_history_keys::set_anew(&several, "a note opened into the body");
     harvest.insert(
         "can undo after the program writes the box",
-        text_undo::can_undo(&several).to_string(),
+        text_history_keys::can_undo_in(&several).to_string(),
     );
 
     // The measurements.
@@ -358,8 +358,8 @@ fn redo_refused_after_typing(can_redo: &str) -> Result<(), String> {
     match can_redo == "false" {
         true => Ok(()),
         false => Err(format!(
-            "Redo was offered after typing since the undo ({can_redo}), and the box's \
-             one step would take the typing back"
+            "Redo was offered after typing since the undo ({can_redo}), and it would \
+             put a step back onto words it was never taken from"
         )),
     }
 }
@@ -424,9 +424,12 @@ fn test_the_open_menu_greys_redo_when_nothing_was_undone() {
 
 #[test]
 fn test_the_open_menu_offers_redo_right_after_an_undo() {
+    // Undo greyed: the one step typed has been taken back and there is
+    // nothing further back. The box's own one step offered Undo here, as a
+    // second way to redo.
     assert_eq!(
         reading("the menu open after an undo"),
-        "Undo offered, Redo offered"
+        "Undo greyed, Redo offered"
     );
 }
 
