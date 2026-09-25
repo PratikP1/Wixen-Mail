@@ -11,8 +11,12 @@
 //! its handler goes through. This reading holds those: Print on File, between
 //! the PGP key item and Quit, with its key and its letter; its arm handing the
 //! message to one function that composes it the way the reader window does,
-//! with dates in full, asking Windows' dialog for the printer, and naming the
-//! job by kind so no subject reaches a shared printer's queue.
+//! with dates in full, a conversation's row as the whole conversation, through
+//! the one path that asks Windows' dialog for the printer, and naming the job
+//! by kind so no subject reaches a shared printer's queue. And the same in the
+//! reader window (13-04): Print on its File menu with the same key, going
+//! through the same path, and every tab the main window opens handed its paper
+//! composition, so the reader's tab prints its dates in full too.
 //!
 //! Read from the source rather than built, because a menu's order is the text
 //! of one builder chain and an arm's calls are the text of one function. Each
@@ -81,6 +85,10 @@ const THE_LABEL: &str = r#""&Print...\tCtrl+P""#;
 /// The function the Print arm hands the message to.
 const THE_HANDLER: &str = "fn print_the_message_under_the_cursor(";
 
+/// The one path every surface prints by: Windows' dialog, then the printer
+/// chosen there.
+const THE_PATH: &str = "pub fn print_through_the_dialog(";
+
 /// What the handler has to call, and why each one matters.
 const THE_CALLS: [(&str, &str); 5] = [
     (
@@ -94,11 +102,15 @@ const THE_CALLS: [(&str, &str); 5] = [
          wrong the day after it is printed",
     ),
     (
-        "ask_for_a_printer(",
-        "no longer asks Windows' own print dialog, so the printer, the copies and \
-         the pages are not chosen where they are in every other program",
+        "conversation_on_paper(",
+        "no longer prints a conversation's row as the whole conversation, so the \
+         row prints one message of several",
     ),
-    ("print_on(", "no longer sends the pages to the printer"),
+    (
+        "print_through_the_dialog(",
+        "no longer goes through the one path every surface prints by, so this \
+         surface can come to print differently from the others",
+    ),
     (
         "Kind::Message",
         "no longer names the job by kind, so a subject could reach a shared \
@@ -106,9 +118,30 @@ const THE_CALLS: [(&str, &str); 5] = [
     ),
 ];
 
+/// What the one path has to call, and why each one matters.
+const THE_PATHS_CALLS: [(&str, &str); 2] = [
+    (
+        "ask_for_a_printer(",
+        "no longer asks Windows' own print dialog, so the printer, the copies and \
+         the pages are not chosen where they are in every other program",
+    ),
+    ("print_on(", "no longer sends the pages to the printer"),
+];
+
+/// Whether the one path asks Windows' dialog and then prints.
+fn the_path_asks_the_dialog(transport: &str) -> Result<(), String> {
+    let path = body_of(transport, THE_PATH)?;
+    for (call, why) in THE_PATHS_CALLS {
+        if !path.contains(call) {
+            return Err(format!("Print {why}: {call} is not called"));
+        }
+    }
+    Ok(())
+}
+
 /// Where Print is and what it goes through, said as a complaint when either
 /// is wrong.
-fn where_print_is(app: &str) -> Result<(), String> {
+fn where_print_is(app: &str, transport: &str) -> Result<(), String> {
     let ship = what_ships(app);
     let file = menu_chain(&ship, "file")
         .ok_or("the File menu is no longer built by that name, so this reads nothing")?;
@@ -149,6 +182,74 @@ fn where_print_is(app: &str) -> Result<(), String> {
             return Err(format!("File, Print {why}: {call} is not called"));
         }
     }
+    the_path_asks_the_dialog(transport)
+}
+
+/// The reader window's Print item.
+const THE_READERS_ITEM: &str = "ID_READER_PRINT";
+
+/// Where each tab the main window opens is handed what it prints, and the
+/// paper composition it is handed.
+const THE_HAND_OVERS: [(&str, &str); 2] = [
+    ("fn open_in_the_text_reader(", "on_paper("),
+    ("fn open_conversation(", "conversation_on_paper("),
+];
+
+/// Where the reader window's Print is and what it goes through, said as a
+/// complaint when either is wrong.
+fn where_the_reader_prints(reader: &str, app: &str) -> Result<(), String> {
+    let ship = what_ships(reader);
+    let file = menu_chain(&ship, "file")
+        .ok_or("the reader's File menu is no longer built by that name, so this reads nothing")?;
+    let print = the_call_appending(file, THE_READERS_ITEM).ok_or(
+        "the reader's File menu appends no Print item, so a message open in the reader \
+         cannot be printed",
+    )?;
+    if !print.contains(THE_LABEL) {
+        return Err(format!(
+            "Print on the reader's File no longer reads {THE_LABEL}, so its key or its \
+             letter is not where somebody learns it: {}",
+            print.split_whitespace().collect::<Vec<_>>().join(" ")
+        ));
+    }
+    let at = |id: &str| file.find(&format!("{id},"));
+    match (
+        at("ID_SAVE_ATTACHMENT"),
+        at(THE_READERS_ITEM),
+        at("ID_CLOSE_TAB"),
+    ) {
+        (Some(save), Some(print), Some(close)) if save < print && print < close => {}
+        _ => {
+            return Err(
+                "Print is no longer between Save Attachment and Close Tab on the reader's \
+                 File menu"
+                    .to_string(),
+            );
+        }
+    }
+    let arm = format!("if id == {THE_READERS_ITEM} {{");
+    let handler = ship
+        .find(&arm)
+        .map(|at| &ship[at + arm.len()..])
+        .map(|rest| &rest[..rest.find("if id ==").unwrap_or(rest.len())])
+        .ok_or("nothing in the reader answers its Print item, so the item does nothing")?;
+    if !handler.contains("print_through_the_dialog(&frame") {
+        return Err(
+            "the reader's Print no longer goes through the one path every surface prints by, \
+             with the reader's own window owning the dialog"
+                .to_string(),
+        );
+    }
+    let app = what_ships(app);
+    for (signature, paper) in THE_HAND_OVERS {
+        let opens = body_of(&app, signature)?;
+        if !opens.contains("open_with_paper(") || !opens.contains(paper) {
+            return Err(format!(
+                "{signature} no longer hands the tab it opens what it prints ({paper}), so \
+                 Print in that tab prints the screen's composition, dates and all"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -156,20 +257,28 @@ fn the_main_window() -> String {
     fs::read_to_string("src/presentation/wx_app.rs").expect("the main window")
 }
 
-/// The main window with `was` replaced by `now` once inside the handler.
-fn with_the_handler_changed(app: &str, was: &str, now: &str) -> String {
-    let handler = body_of(app, THE_HANDLER).expect("the handler");
-    let changed = handler.replacen(was, now, 1);
+fn the_reader() -> String {
+    fs::read_to_string("src/presentation/wx_reader.rs").expect("the reader window")
+}
+
+fn the_transport() -> String {
+    fs::read_to_string("src/presentation/printing.rs").expect("the printing transport")
+}
+
+/// `source` with `was` replaced by `now` once inside the function `signature`.
+fn with_the_body_changed(source: &str, signature: &str, was: &str, now: &str) -> String {
+    let body = body_of(source, signature).expect("the function");
+    let changed = body.replacen(was, now, 1);
     assert_ne!(
-        changed, handler,
-        "the plant changed nothing, so the handler no longer reads {was}"
+        changed, body,
+        "the plant changed nothing, so {signature} no longer reads {was}"
     );
-    app.replacen(&handler, &changed, 1)
+    source.replacen(&body, &changed, 1)
 }
 
 #[test]
 fn test_print_is_on_file_with_its_key_and_prints_what_the_reader_shows_through_the_dialog() {
-    if let Err(why) = where_print_is(&the_main_window()) {
+    if let Err(why) = where_print_is(&the_main_window(), &the_transport()) {
         panic!("{why}");
     }
 }
@@ -180,8 +289,8 @@ fn test_the_reading_complains_when_print_loses_its_key() {
     let planted = app.replacen(THE_LABEL, r#""&Print...""#, 1);
     assert_ne!(planted, app, "the label is not written as this expects");
 
-    let complaint =
-        where_print_is(&planted).expect_err("Print lost its key and the reading did not notice");
+    let complaint = where_print_is(&planted, &the_transport())
+        .expect_err("Print lost its key and the reading did not notice");
     assert!(complaint.contains("key or its letter"), "{complaint}");
 }
 
@@ -189,29 +298,68 @@ fn test_the_reading_complains_when_print_loses_its_key() {
 fn test_the_reading_complains_when_print_composes_its_own_document() {
     // The shape #51 had on four surfaces: a document built by hand beside the
     // one function that composes, so one surface says what the others do not.
-    let planted = with_the_handler_changed(
+    let planted = with_the_body_changed(
         &the_main_window(),
+        THE_HANDLER,
         "a_message_as_the_reader_shows_it(",
         "reader_text::single_message(",
     );
 
-    let complaint = where_print_is(&planted)
+    let complaint = where_print_is(&planted, &the_transport())
         .expect_err("the handler composed its own document and the reading did not notice");
     assert!(complaint.contains("the reader window uses"), "{complaint}");
 }
 
 #[test]
 fn test_the_reading_complains_when_print_skips_the_dialog() {
-    let planted = with_the_handler_changed(
-        &the_main_window(),
+    let planted = with_the_body_changed(
+        &the_transport(),
+        THE_PATH,
         "ask_for_a_printer(",
         "ChosenPrinter::the_printer_named(",
     );
 
-    let complaint = where_print_is(&planted)
-        .expect_err("the handler skipped the dialog and the reading did not notice");
+    let complaint = where_print_is(&the_main_window(), &planted)
+        .expect_err("the path skipped the dialog and the reading did not notice");
     assert!(
         complaint.contains("Windows' own print dialog"),
         "{complaint}"
     );
+}
+
+#[test]
+fn test_the_reader_prints_its_tab_through_the_dialog_with_its_key() {
+    if let Err(why) = where_the_reader_prints(&the_reader(), &the_main_window()) {
+        panic!("{why}");
+    }
+}
+
+#[test]
+fn test_the_reading_complains_when_the_readers_print_loses_its_key() {
+    let reader = the_reader();
+    let planted = reader.replacen(THE_LABEL, r#""&Print...""#, 1);
+    assert_ne!(
+        planted, reader,
+        "the reader's label is not written as this expects"
+    );
+
+    let complaint = where_the_reader_prints(&planted, &the_main_window())
+        .expect_err("the reader's Print lost its key and the reading did not notice");
+    assert!(complaint.contains("key or its letter"), "{complaint}");
+}
+
+#[test]
+fn test_the_reading_complains_when_a_tab_is_opened_with_nothing_to_print() {
+    // A tab opened the old way prints what the screen composed, so its dates
+    // say "2 days ago" on paper.
+    let planted = with_the_body_changed(
+        &the_main_window(),
+        "fn open_in_the_text_reader(",
+        "open_with_paper(",
+        "open(",
+    );
+
+    let complaint = where_the_reader_prints(&the_reader(), &planted)
+        .expect_err("a tab was opened with nothing to print and the reading did not notice");
+    assert!(complaint.contains("open_in_the_text_reader"), "{complaint}");
 }

@@ -31,7 +31,7 @@
 
 use crate::presentation::date_display::{DateSettings, DateStyle};
 use crate::presentation::read_aloud::{Field, Reading};
-use crate::presentation::reader_text::ReaderDocument;
+use crate::presentation::reader_text::{ConversationPart, ReaderDocument};
 
 /// What is being printed, for the name the print job carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,11 +43,13 @@ pub enum Kind {
     Task,
     Note,
     Reminder,
+    /// An attachment read in a tab of the reader window.
+    Attachment,
 }
 
 impl Kind {
     /// Every kind, so a test can ask all of them the same question.
-    pub const ALL: [Kind; 7] = [
+    pub const ALL: [Kind; 8] = [
         Kind::Message,
         Kind::Conversation,
         Kind::Event,
@@ -55,6 +57,7 @@ impl Kind {
         Kind::Task,
         Kind::Note,
         Kind::Reminder,
+        Kind::Attachment,
     ];
 
     /// What a page says it is when the thing on it has no title, so the
@@ -68,8 +71,16 @@ impl Kind {
             Kind::Task => "Task with no title",
             Kind::Note => "Note with no title",
             Kind::Reminder => "Reminder with no title",
+            Kind::Attachment => "",
         }
     }
+}
+
+/// A thing to print, and what it is, for the job's name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Paper {
+    pub printable: Printable,
+    pub kind: Kind,
 }
 
 /// A thing ready to be laid out: its title and its lines, as plain text.
@@ -186,6 +197,19 @@ pub fn from_document(document: &ReaderDocument) -> Printable {
             .warning
             .as_deref()
             .map(|warning| warning.lines().map(as_text).collect::<Vec<_>>().join("\n")),
+    }
+}
+
+/// A conversation as a thing to print.
+pub fn conversation_on_paper(_subject: &str, _parts: &[ConversationPart], _out: Reading) -> Paper {
+    Paper {
+        printable: Printable {
+            title: String::new(),
+            lines: Vec::new(),
+            header_lines: 0,
+            warning: None,
+        },
+        kind: Kind::Message,
     }
 }
 
@@ -470,7 +494,23 @@ pub fn job_name(kind: Kind) -> &'static str {
         Kind::Task => "Wixen Mail task",
         Kind::Note => "Wixen Mail note",
         Kind::Reminder => "Wixen Mail reminder",
+        Kind::Attachment => "",
     }
+}
+
+/// What is said once Print is done, and whether it answers or refuses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterPrinting {
+    Answer(String),
+    Refusal(String),
+}
+
+/// The one sentence said after Print, from what came of it.
+pub fn after_printing(
+    _title: &str,
+    _outcome: Result<(String, Printed), NotPrinted>,
+) -> AfterPrinting {
+    AfterPrinting::Answer(String::new())
 }
 
 /// What is said once the pages are with the printer: once, and not a word
@@ -803,7 +843,128 @@ mod tests {
                 "Wixen Mail task",
                 "Wixen Mail note",
                 "Wixen Mail reminder",
+                "Wixen Mail attachment",
             ]
+        );
+    }
+
+    /// One message of a conversation, from `from`, dated as the list stores it.
+    fn part(from: &str, date: &str, words: &str, depth: usize) -> ConversationPart {
+        let mut said_by = message();
+        said_by.from = from.to_string();
+        said_by.date = date.to_string();
+        ConversationPart {
+            message: said_by,
+            body: body(words),
+            said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+            depth,
+        }
+    }
+
+    #[test]
+    fn test_a_conversation_on_paper_heads_each_message_with_its_date_in_full() {
+        // The reader heads each message with the date as the list stores it,
+        // because its composition takes no reading. Paper writes it in full,
+        // whatever the list shows, so a page is right the day after.
+        let parts = [
+            part(
+                "Ada <ada@example.com>",
+                "2026-07-24 10:00",
+                "First words.",
+                0,
+            ),
+            part(
+                "Grace <grace@example.com>",
+                "2026-07-25 14:30",
+                "Second words.",
+                1,
+            ),
+        ];
+
+        let paper = conversation_on_paper("Plans", &parts, reading());
+
+        assert_eq!(paper.kind, Kind::Conversation);
+        let lines = &paper.printable.lines;
+        let at = |line: &str| {
+            lines
+                .iter()
+                .position(|printed| printed == line)
+                .unwrap_or_else(|| panic!("{line:?} is printed: {lines:#?}"))
+        };
+        let first = at("1. Message from Ada <ada@example.com>, July 24, 2026 at 10:00 AM");
+        let second =
+            at("2. Reply, level 2 from Grace <grace@example.com>, July 25, 2026 at 2:30 PM");
+        assert!(
+            first < at("First words.") && at("First words.") < second,
+            "{lines:#?}"
+        );
+        assert!(second < at("Second words."), "{lines:#?}");
+        assert_eq!(paper.printable.title, "Plans");
+    }
+
+    #[test]
+    fn test_one_message_shown_as_a_conversation_prints_as_that_message() {
+        // The formatted window shows a message on its own as a conversation of
+        // one, and that is how a message opens by default. On paper it is the
+        // message, header lines and all, as File, Print in the list prints it.
+        let parts = [ConversationPart {
+            message: message(),
+            body: body("The numbers are attached."),
+            said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+            depth: 0,
+        }];
+
+        let paper = conversation_on_paper("Quarterly report", &parts, reading());
+
+        assert_eq!(paper.kind, Kind::Message);
+        assert_eq!(
+            paper.printable.lines,
+            [
+                "Subject: Quarterly report",
+                "From: Ada Lovelace <ada@example.com>",
+                "To: me@example.com",
+                "Cc: grace@example.com",
+                "Date: July 24, 2026 at 10:00 AM",
+                "Attachments: numbers.xlsx",
+                "",
+                "The numbers are attached.",
+            ]
+        );
+        assert_eq!(paper.printable.header_lines, 6, "{paper:#?}");
+    }
+
+    #[test]
+    fn test_what_is_said_after_printing_answers_or_refuses() {
+        let said = |outcome| after_printing("Quarterly report", outcome);
+
+        assert_eq!(
+            said(Ok(("HP LaserJet 1022".to_string(), Printed { pages: 2 }))),
+            AfterPrinting::Answer(
+                "Sent Quarterly report to HP LaserJet 1022, 2 pages.".to_string()
+            )
+        );
+        // A cancel is an answer: the person chose it, and nothing went wrong.
+        assert_eq!(
+            said(Err(NotPrinted::Cancelled)),
+            AfterPrinting::Answer("Printing was cancelled, so nothing was printed.".to_string())
+        );
+        assert_eq!(
+            said(Err(NotPrinted::Failed(
+                "the printer did not answer".to_string()
+            ))),
+            AfterPrinting::Refusal(
+                "Nothing was printed, because the printer did not answer. Check that the \
+                 printer is on and connected, then print again."
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            said(Err(NotPrinted::PastTheLastPage { pages: 3 })),
+            AfterPrinting::Refusal(
+                "Nothing was printed, because the pages you chose come after its last page. \
+                 It has 3 pages."
+                    .to_string()
+            )
         );
     }
 
@@ -1176,6 +1337,7 @@ mod tests {
                 "Task with no title",
                 "Note with no title",
                 "Reminder with no title",
+                "Attachment with no name",
             ]
         );
     }
