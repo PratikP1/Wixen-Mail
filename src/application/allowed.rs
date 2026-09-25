@@ -410,7 +410,9 @@ pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experime
 /// action was, and the action itself has never met a real account, so the
 /// undo is no less experimental than what it takes back. Said where the
 /// person choosing it reads, not in a changelog.
-pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "";
+pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your mail server the way the action was, \
+     and like every change Wixen Mail sends it is experimental, because none of it has been \
+     run against a real account yet.";
 
 /// Everything that has an opinion about what may be changed.
 ///

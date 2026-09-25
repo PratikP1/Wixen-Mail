@@ -18724,24 +18724,25 @@ fn put_words_on_the_menu(frame: &Frame, id: i32, (label, help): &(String, String
 }
 
 /// Undo and Redo named for the last action on messages, each offered only
-/// when the one step can go that way, so the menu reads what Ctrl+Z would do.
-/// With nothing kept both keep their plain words and are greyed.
+/// when the one step can go that way, so the menu reads what Ctrl+Z would do,
+/// and each saying in its help that the change is sent to the server and is
+/// experimental. With nothing kept both keep their plain words and are greyed.
 fn name_the_step_on_the_edit_menu(
     frame: &Frame,
     step: Option<&crate::application::undoing::OneStep>,
 ) {
+    use crate::application::allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL;
     use crate::application::undoing::{Direction, menu_label};
     for (id, direction) in [
         (ID_EDIT_UNDO, Direction::Undo),
         (ID_EDIT_REDO, Direction::Redo),
     ] {
-        if let (Some(step), Some((item, _))) = (
-            step,
-            frame
-                .get_menu_bar()
-                .and_then(|bar| bar.find_item_and_menu(id)),
-        ) {
-            item.set_label(&menu_label(step.action(), direction));
+        if let Some(step) = step {
+            let words = (
+                menu_label(step.action(), direction),
+                UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.to_string(),
+            );
+            put_words_on_the_menu(frame, id, &words);
         }
         sync_menu_enable(frame, id, step.is_some_and(|step| step.offers(direction)));
     }
