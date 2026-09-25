@@ -4,10 +4,39 @@
 //! The decision about what an undo means is
 //! [`crate::application::undoing`]'s, which has no database in it. This holds
 //! what a deleted item was, kept by the undo for the one step, in the store's
-//! own shape: a copy of its fields written out again beside the entry types
-//! would drift the first time a column was added.
+//! own shape, and the two writes an undone delete can be.
+//!
+//! # The one caller that may drop a deletion note a provider could name
+//!
+//! [`crate::application::deletions`] refuses every caller that asks to drop a
+//! deletion note while a provider could still name the thing, because each
+//! caller that once decided for itself put a deleted thing back on the screen.
+//! Taking a deletion back is the exception, and there is exactly one of it:
+//! [`MessageCache::take_a_deletion_back`]. It cannot resurrect anything by
+//! mistake, because it is the person asking for the thing back, and because
+//! the row and the note change together. In one transaction it drops the note
+//! only while it is still owed, and puts the row back from the record; a
+//! failure anywhere leaves both as they were, so no read sees neither. A note
+//! the account has already taken is never dropped: the thing is gone at the
+//! account, and it comes back through [`MessageCache::make_it_again`] as a
+//! new item with no identity there, while the old note goes on masking the
+//! reads until the clock lets it go.
+//!
+//! # Never while its sync is running
+//!
+//! A sync opens a connection of its own on a worker thread and reads the notes
+//! it owes before it sends them, so a note taken back after that read would
+//! still be sent, and the account would delete the thing this computer had
+//! just put back. Nothing in the store says a sync is running, so each sync
+//! counts itself here, through [`ASyncUnderWay`], for its account and its kind
+//! of item. A take-back holds the count's lock from its check to its commit,
+//! so a sync cannot begin between the two; one that began first is answered
+//! with [`TakenBack::BeingSyncedNow`] and nothing is changed.
 
-use super::{CalendarEventEntry, ContactEntry, NoteEntry, ReminderEntry, TaskEntry};
+use super::{CalendarEventEntry, ContactEntry, MessageCache, NoteEntry, ReminderEntry, TaskEntry};
+use crate::application::new_item::ItemKind;
+use crate::application::undoing::WhatTheItemStoreSays;
+use crate::common::{Error, Result};
 
 /// Everything a deleted contact, event, task, note or reminder was, as the
 /// store held it the moment before the delete.
@@ -34,5 +63,501 @@ impl Record {
             Record::Note(note) => &note.id,
             Record::Reminder(reminder) => &reminder.id,
         }
+    }
+}
+
+/// What taking a deletion back did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TakenBack {
+    /// The row is back as it was and the deletion will not be sent.
+    AsItWas,
+    /// The account has taken the deletion, so nothing was changed; the item
+    /// can only come back as a new one.
+    AlreadyTaken,
+    /// The account's sync is running, so nothing was changed.
+    BeingSyncedNow,
+}
+
+/// A sync of one account's items of one kind under way, from the moment it
+/// begins until this is dropped.
+pub struct ASyncUnderWay;
+
+impl ASyncUnderWay {
+    /// A sync of this account's items of this kind begins.
+    pub fn begins(_account_id: &str, _kind: ItemKind) -> Self {
+        Self
+    }
+}
+
+impl Drop for ASyncUnderWay {
+    fn drop(&mut self) {}
+}
+
+impl MessageCache {
+    /// Everything an item is now, read before a delete so an undo can put it
+    /// back, or `None` when it is not here.
+    pub fn the_record_of(&self, _kind: ItemKind, _id: &str) -> Result<Option<Record>> {
+        Err(Error::Other("not written yet".to_string()))
+    }
+
+    /// What the store says about an item an undo or a redo reads.
+    pub fn what_the_store_says_of_an_item(
+        &self,
+        _kind: ItemKind,
+        _id: &str,
+    ) -> Result<WhatTheItemStoreSays> {
+        Err(Error::Other("not written yet".to_string()))
+    }
+
+    /// Put a deleted item back as it was, and take back the deletion its
+    /// account has not been told about, together.
+    pub fn take_a_deletion_back(&self, _record: &Record) -> Result<TakenBack> {
+        Err(Error::Other("not written yet".to_string()))
+    }
+
+    /// Make a deleted item again as a new one, under `as_id`, with nothing
+    /// about it an account has seen, and answer it as made.
+    pub fn make_it_again(&self, _record: &Record, _as_id: &str) -> Result<Record> {
+        Err(Error::Other("not written yet".to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{
+        AddressBook, NoteBody, NoteFolderEntry, ProviderIdentity, TaskListEntry,
+    };
+
+    fn a_cache(label: &str) -> TempHome<MessageCache> {
+        TempHome::named(label, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
+    }
+
+    const ACCOUNT: &str = "an account";
+
+    /// Dentist, on the Home list, with every field filled in.
+    fn dentist(cache: &MessageCache) -> TaskEntry {
+        cache
+            .save_task_list(&TaskListEntry {
+                id: "google:home".to_string(),
+                account_id: ACCOUNT.to_string(),
+                name: "Home".to_string(),
+                color: String::new(),
+                display_order: 0,
+                created_at: "2026-09-01T09:00:00Z".to_string(),
+            })
+            .expect("the Home list");
+        let task = TaskEntry {
+            id: "google:dentist".to_string(),
+            account_id: ACCOUNT.to_string(),
+            task_list_id: Some("google:home".to_string()),
+            title: "Dentist".to_string(),
+            description: Some("Bring the forms".to_string()),
+            due_date: Some("2026-10-02".to_string()),
+            is_completed: false,
+            completed_at: None,
+            priority: "high".to_string(),
+            display_order: 3,
+            parent_task_id: Some("google:errands".to_string()),
+            created_at: "2026-09-01T09:00:00Z".to_string(),
+            updated_at: "2026-09-20T09:00:00Z".to_string(),
+            remote_updated: Some("2026-09-20T09:00:01Z".to_string()),
+            pending: false,
+            remote_status: Some("inProgress".to_string()),
+        };
+        cache.save_task(&task).expect("Dentist");
+        task
+    }
+
+    /// Dentist saved, then deleted here, and the record the delete kept.
+    fn dentist_deleted(cache: &MessageCache) -> Record {
+        let record = Record::Task(dentist(cache));
+        cache.delete_task(record.id()).expect("the delete");
+        record
+    }
+
+    fn owed_task_notes(cache: &MessageCache) -> usize {
+        cache
+            .deleted_tasks(ACCOUNT)
+            .expect("the task notes")
+            .iter()
+            .filter(|note| note.so_far.still_owed())
+            .count()
+    }
+
+    #[test]
+    fn test_an_owed_task_is_taken_back_with_every_field_and_its_note_gone() {
+        let cache = a_cache("taking_back_owed_task");
+        let record = dentist_deleted(&cache);
+        assert_eq!(owed_task_notes(&cache), 1, "the delete left a note owed");
+
+        assert_eq!(
+            cache.take_a_deletion_back(&record).expect("the take-back"),
+            TakenBack::AsItWas
+        );
+        let back = cache.find_task("google:dentist").expect("a read");
+        assert_eq!(back.map(Record::Task), Some(record));
+        assert!(
+            cache.deleted_tasks(ACCOUNT).expect("the notes").is_empty(),
+            "the deletion is still there to be sent"
+        );
+    }
+
+    #[test]
+    fn test_a_taken_task_is_left_untouched_and_answered_already_taken() {
+        let cache = a_cache("taking_back_taken_task");
+        let record = dentist_deleted(&cache);
+        cache
+            .the_provider_took_the_deletion_of_a_task("google:dentist", "2026-09-25T10:00:00Z")
+            .expect("the deletion taken");
+
+        assert_eq!(
+            cache.take_a_deletion_back(&record).expect("the take-back"),
+            TakenBack::AlreadyTaken
+        );
+        assert!(cache.find_task("google:dentist").expect("a read").is_none());
+        let notes = cache.deleted_tasks(ACCOUNT).expect("the notes");
+        assert_eq!(notes.len(), 1, "a taken note was dropped: {notes:?}");
+        assert!(!notes[0].so_far.still_owed());
+    }
+
+    #[test]
+    fn test_a_task_made_again_is_new_and_the_taken_note_stays() {
+        let cache = a_cache("taking_back_made_again");
+        let record = dentist_deleted(&cache);
+        cache
+            .the_provider_took_the_deletion_of_a_task("google:dentist", "2026-09-25T10:00:00Z")
+            .expect("the deletion taken");
+
+        let again = cache
+            .make_it_again(&record, "task-again")
+            .expect("made again");
+        let Record::Task(made) = &again else {
+            panic!("a task comes back a task");
+        };
+        assert_eq!(made.id, "task-again");
+        assert!(
+            made.pending,
+            "a new task not waiting to be sent never reaches the account"
+        );
+        assert_eq!(made.remote_updated, None);
+        assert_eq!(made.remote_status, None);
+        assert_eq!(made.title, "Dentist");
+        assert_eq!(made.description.as_deref(), Some("Bring the forms"));
+        assert_eq!(
+            cache
+                .find_task("task-again")
+                .expect("a read")
+                .map(Record::Task),
+            Some(again)
+        );
+        assert_eq!(
+            cache.deleted_tasks(ACCOUNT).expect("the notes").len(),
+            1,
+            "the taken note was dropped, and a read could hand the original back"
+        );
+    }
+
+    #[test]
+    fn test_an_owed_contact_is_taken_back_with_what_its_address_books_call_it() {
+        // Contacts had no way to drop a note at all before this.
+        let cache = a_cache("taking_back_contact");
+        let mut grace = crate::data::message_cache::ContactEntry {
+            id: "contact-grace".to_string(),
+            account_id: ACCOUNT.to_string(),
+            name: "Grace Hopper".to_string(),
+            given_name: Some("Grace".to_string()),
+            family_name: Some("Hopper".to_string()),
+            name_prefix: None,
+            middle_name: None,
+            name_suffix: None,
+            email: "grace@example.com".to_string(),
+            phone: Some("555 0100".to_string()),
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: Some("google".to_string()),
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite: true,
+            created_at: "2026-09-01T09:00:00Z".to_string(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+            pending: false,
+            known_to: Vec::new(),
+        };
+        grace.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: "AAMk1".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
+            },
+        ];
+        cache.save_contact(&grace).expect("Grace");
+        let record = cache
+            .the_record_of(ItemKind::Contact, "contact-grace")
+            .expect("a read")
+            .expect("Grace is here");
+        cache.delete_contact("contact-grace").expect("the delete");
+        assert_eq!(cache.deleted_contacts(ACCOUNT).expect("notes").len(), 2);
+
+        assert_eq!(
+            cache.take_a_deletion_back(&record).expect("the take-back"),
+            TakenBack::AsItWas
+        );
+        let back = cache
+            .the_record_of(ItemKind::Contact, "contact-grace")
+            .expect("a read")
+            .expect("Grace is back");
+        let Record::Contact(back) = back else {
+            panic!("a contact comes back a contact");
+        };
+        assert_eq!(
+            back.known_to.len(),
+            2,
+            "what her address books call her was lost"
+        );
+        assert_eq!(back.email, "grace@example.com");
+        assert!(back.favorite);
+        assert!(cache.deleted_contacts(ACCOUNT).expect("notes").is_empty());
+    }
+
+    #[test]
+    fn test_an_event_with_a_series_is_taken_back_with_its_exceptions() {
+        let cache = a_cache("taking_back_series");
+        let standup = CalendarEventEntry {
+            id: "event-standup".to_string(),
+            account_id: ACCOUNT.to_string(),
+            provider_event_id: Some("google-standup".to_string()),
+            calendar_id: None,
+            summary: "Standup".to_string(),
+            description: Some("Ten minutes".to_string()),
+            location: None,
+            start_datetime: "2026-09-07T09:00:00Z".to_string(),
+            end_datetime: "2026-09-07T09:10:00Z".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: Some("Europe/London".to_string()),
+            status: "confirmed".to_string(),
+            recurrence_rule: Some("FREQ=WEEKLY;BYDAY=MO".to_string()),
+            categories: String::new(),
+            source_provider: Some("gmail".to_string()),
+            etag: Some("\"3\"".to_string()),
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-09-01T09:00:00Z".to_string(),
+            updated_at: "2026-09-01T09:00:00Z".to_string(),
+            pending: false,
+            exception_dates: Some("20261005T090000Z,20261012T090000Z".to_string()),
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        };
+        cache.save_calendar_event(&standup).expect("the series");
+        let record = Record::Event(standup);
+        cache
+            .delete_calendar_event("event-standup")
+            .expect("the delete");
+
+        assert_eq!(
+            cache.take_a_deletion_back(&record).expect("the take-back"),
+            TakenBack::AsItWas
+        );
+        let back = cache
+            .get_event_by_id("event-standup")
+            .expect("a read")
+            .expect("the series is back");
+        assert_eq!(
+            back.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=MO")
+        );
+        assert_eq!(
+            back.exception_dates.as_deref(),
+            Some("20261005T090000Z,20261012T090000Z")
+        );
+        assert_eq!(back.provider_event_id.as_deref(), Some("google-standup"));
+        assert!(!back.pending, "the account still has it as it was");
+        assert!(
+            cache
+                .deleted_calendar_events(ACCOUNT)
+                .expect("notes")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_note_is_taken_back() {
+        let cache = a_cache("taking_back_note");
+        cache
+            .save_note_folder(&NoteFolderEntry {
+                id: "folder-general".to_string(),
+                account_id: ACCOUNT.to_string(),
+                container: None,
+                name: "General".to_string(),
+                display_order: 0,
+                created_at: "2026-09-01T09:00:00Z".to_string(),
+            })
+            .expect("a folder");
+        let shopping = NoteEntry {
+            id: "note-shopping".to_string(),
+            account_id: ACCOUNT.to_string(),
+            folder_id: Some("folder-general".to_string()),
+            title: "Shopping".to_string(),
+            body: "Milk, bread, stamps".to_string(),
+            format: NoteBody::AsTyped,
+            pinned: true,
+            pending: false,
+            known_as: Some("journal/shopping.ics".to_string()),
+            known_version: Some("\"7\"".to_string()),
+            created_at: "2026-09-01T09:00:00Z".to_string(),
+            updated_at: "2026-09-02T09:00:00Z".to_string(),
+        };
+        cache.save_note(&shopping).expect("the note");
+        let record = Record::Note(shopping);
+        cache.delete_note("note-shopping").expect("the delete");
+
+        assert_eq!(
+            cache.take_a_deletion_back(&record).expect("the take-back"),
+            TakenBack::AsItWas
+        );
+        assert_eq!(
+            cache
+                .get_note("note-shopping")
+                .expect("a read")
+                .map(Record::Note),
+            Some(record)
+        );
+        assert!(cache.deleted_notes(ACCOUNT).expect("notes").is_empty());
+    }
+
+    #[test]
+    fn test_a_reminder_is_restored_from_its_record() {
+        // A reminder keeps no deletion note, so there is nothing to drop.
+        let cache = a_cache("taking_back_reminder");
+        let pills = ReminderEntry {
+            id: "reminder-pills".to_string(),
+            account_id: ACCOUNT.to_string(),
+            title: "Pills".to_string(),
+            description: Some("With food".to_string()),
+            due_datetime: Some("2026-09-26T08:00:00Z".to_string()),
+            is_completed: false,
+            priority: "normal".to_string(),
+            repeat_rule: Some("FREQ=DAILY".to_string()),
+            related_event_id: None,
+            created_at: "2026-09-01T09:00:00Z".to_string(),
+            updated_at: "2026-09-01T09:00:00Z".to_string(),
+        };
+        cache.save_reminder(&pills).expect("the reminder");
+        let record = Record::Reminder(pills);
+        cache.delete_reminder("reminder-pills").expect("the delete");
+        assert_eq!(
+            cache
+                .what_the_store_says_of_an_item(ItemKind::Reminder, "reminder-pills")
+                .expect("a read"),
+            WhatTheItemStoreSays::Gone
+        );
+
+        assert_eq!(
+            cache.take_a_deletion_back(&record).expect("the take-back"),
+            TakenBack::AsItWas
+        );
+        assert_eq!(
+            cache
+                .get_reminder("reminder-pills")
+                .expect("a read")
+                .map(Record::Reminder),
+            Some(record)
+        );
+    }
+
+    #[test]
+    fn test_a_take_back_while_its_sync_is_under_way_changes_nothing() {
+        let cache = a_cache("taking_back_syncing");
+        let record = dentist_deleted(&cache);
+
+        let syncing = ASyncUnderWay::begins(ACCOUNT, ItemKind::Task);
+        assert_eq!(
+            cache
+                .what_the_store_says_of_an_item(ItemKind::Task, "google:dentist")
+                .expect("a read"),
+            WhatTheItemStoreSays::BeingSyncedNow
+        );
+        assert_eq!(
+            cache.take_a_deletion_back(&record).expect("the take-back"),
+            TakenBack::BeingSyncedNow
+        );
+        assert!(cache.find_task("google:dentist").expect("a read").is_none());
+        assert_eq!(owed_task_notes(&cache), 1, "the deletion is no longer owed");
+
+        // Another kind's sync, or another account's, is not this one.
+        let _other = ASyncUnderWay::begins(ACCOUNT, ItemKind::Note);
+        drop(syncing);
+        assert_eq!(
+            cache
+                .what_the_store_says_of_an_item(ItemKind::Task, "google:dentist")
+                .expect("a read"),
+            WhatTheItemStoreSays::DeletionOwed
+        );
+    }
+
+    #[test]
+    fn test_a_restore_that_fails_leaves_the_row_and_the_note_as_they_were() {
+        let cache = a_cache("taking_back_rolls_back");
+        let Record::Task(mut task) = dentist_deleted(&cache) else {
+            panic!("Dentist is a task");
+        };
+        // A list nothing holds, so the row cannot be written back.
+        task.task_list_id = Some("google:a list that has gone".to_string());
+
+        assert!(cache.take_a_deletion_back(&Record::Task(task)).is_err());
+        assert!(cache.find_task("google:dentist").expect("a read").is_none());
+        assert_eq!(
+            owed_task_notes(&cache),
+            1,
+            "the note went without the row, so the deletion is never sent and nothing is back"
+        );
+    }
+
+    #[test]
+    fn test_the_store_says_what_became_of_an_item() {
+        let cache = a_cache("taking_back_what_the_store_says");
+        let says = |id: &str| {
+            cache
+                .what_the_store_says_of_an_item(ItemKind::Task, id)
+                .expect("a read")
+        };
+        dentist(&cache);
+        assert_eq!(says("google:dentist"), WhatTheItemStoreSays::Present);
+        cache.delete_task("google:dentist").expect("the delete");
+        assert_eq!(says("google:dentist"), WhatTheItemStoreSays::DeletionOwed);
+        cache
+            .the_provider_took_the_deletion_of_a_task("google:dentist", "2026-09-25T10:00:00Z")
+            .expect("the deletion taken");
+        assert_eq!(says("google:dentist"), WhatTheItemStoreSays::DeletionTaken);
+        assert_eq!(says("google:nobody"), WhatTheItemStoreSays::Gone);
     }
 }
