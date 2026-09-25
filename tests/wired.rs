@@ -350,10 +350,54 @@ fn test_no_two_menu_items_claim_the_same_shortcut() {
     // two items claim one key only the first gets it. The other looks bound,
     // reads as bound to a screen reader announcing the menu, and does
     // nothing, which is the same silent failure as a shortcut nothing raises.
-    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    //
+    // Each window is read on its own, because a key is claimed per window:
+    // Ctrl+S is Save in the main window and Save Attachment in the reader,
+    // which is two windows and no collision. The reader has been read since
+    // 13-04, when it gained Print; before then nothing held its keys.
+    let mut collisions = Vec::new();
+    for (window, path, fewest) in WINDOWS_WITH_MENUS {
+        let source = fs::read_to_string(path).expect("a window with menus");
+        let mut claims = shortcut_claims(&source);
+        // The computed half. New Reminder is Ctrl+Shift+D, and Open Draft was
+        // written as Ctrl+Shift+D too, which this caught before it shipped.
+        if window == "main window" {
+            for kind in wixen_mail::application::new_item::ItemKind::ALL {
+                claims.push((kind.shortcut().to_string(), format!("New {kind:?}")));
+            }
+        }
 
+        assert!(
+            claims.len() >= fewest,
+            "only {} shortcuts found in the {window}, so this is not reading its menus",
+            claims.len()
+        );
+
+        for (at, (key, text)) in claims.iter().enumerate() {
+            for (other_key, other_text) in claims.iter().skip(at + 1) {
+                if key == other_key {
+                    collisions.push(format!(
+                        "in the {window}, {key} is claimed by both {text:?} and {other_text:?}"
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(collisions.is_empty(), "{}", collisions.join("\n  "));
+}
+
+/// Every window whose menus claim keys and letters, with the fewest keys its
+/// menus claim, so a reading that stops finding them says so.
+const WINDOWS_WITH_MENUS: [(&str, &str, usize); 2] = [
+    ("main window", "src/presentation/wx_app.rs", 21),
+    ("reader window", "src/presentation/wx_reader.rs", 9),
+];
+
+/// Every key a window's menu labels claim, with the label claiming it.
+fn shortcut_claims(source: &str) -> Vec<(String, String)> {
     let mut claims: Vec<(String, String)> = Vec::new();
-    for label in app.split('"').skip(1).step_by(2) {
+    for label in source.split('"').skip(1).step_by(2) {
         // A menu label is "Text\tShortcut". The tab is written as an escape
         // in the source, so it is two characters here rather than one.
         let Some((text, key)) = label.split_once("\\t") else {
@@ -365,39 +409,15 @@ fn test_no_two_menu_items_claim_the_same_shortcut() {
             continue;
         }
         // The New submenu writes its keys with a placeholder, filled in from
-        // ItemKind at build time. Those are added below from the same source
-        // the menu reads, rather than skipped: one of them is why this test
-        // exists.
+        // ItemKind at build time. Those are added by the caller from the same
+        // source the menu reads, rather than skipped: one of them is why this
+        // test exists.
         if key.contains('{') {
             continue;
         }
         claims.push((key.to_string(), text.to_string()));
     }
-
-    // The computed half. New Reminder is Ctrl+Shift+D, and Open Draft was
-    // written as Ctrl+Shift+D too, which this caught before it shipped.
-    for kind in wixen_mail::application::new_item::ItemKind::ALL {
-        claims.push((kind.shortcut().to_string(), format!("New {kind:?}")));
-    }
-
-    assert!(
-        claims.len() > 20,
-        "only {} shortcuts found, so this is not reading the menus",
-        claims.len()
-    );
-
-    let mut collisions = Vec::new();
-    for (at, (key, text)) in claims.iter().enumerate() {
-        for (other_key, other_text) in claims.iter().skip(at + 1) {
-            if key == other_key {
-                collisions.push(format!(
-                    "{key} is claimed by both {text:?} and {other_text:?}"
-                ));
-            }
-        }
-    }
-
-    assert!(collisions.is_empty(), "{}", collisions.join("\n  "));
+    claims
 }
 
 #[test]
@@ -1975,52 +1995,65 @@ fn test_the_reading_of_the_main_window_reaches_past_its_first_test_module() {
 /// exist before the items land rather than after.
 #[test]
 fn test_no_two_items_on_one_menu_claim_the_same_letter() {
-    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = what_ships(&app);
+    // Each window on its own, like the keys above: its menus are its own, and
+    // the reader's File menu is not the main window's. The fewest menus each
+    // window builds, so a reading that stops finding them says so.
+    for (window, path, fewest_menus) in [
+        ("main window", "src/presentation/wx_app.rs", 6),
+        ("reader window", "src/presentation/wx_reader.rs", 2),
+    ] {
+        let source = fs::read_to_string(path).expect("a window with menus");
+        let ship = what_ships(&source);
 
-    let mut menus_checked = 0;
-    for (at, _) in ship.match_indices("= Menu::builder()") {
-        let binding = ship[..at].rfind("let ").expect("a menu is bound to a name");
-        let name = ship[binding + "let ".len()..at].trim();
+        let mut menus_checked = 0;
+        for (at, _) in ship.match_indices("= Menu::builder()") {
+            let binding = ship[..at].rfind("let ").expect("a menu is bound to a name");
+            let name = ship[binding + "let ".len()..at].trim();
 
-        // A submenu, or an item appended once the builder has finished, sits on
-        // the menu like any other and claims a letter like any other.
-        let mut labels = menu_labels_claiming_a_letter(&menu_block(&ship, name));
-        // The Help menu appends one item per page, from the list of help
-        // topics, in a loop whose labels are not literals here, so they are
-        // read from the list itself. Until 2026-09-24 nothing read them, and
-        // C and U were each claimed twice on that menu (ledger 591).
-        if name == "help" {
-            labels.extend(
-                TOPICS
-                    .iter()
-                    .map(|topic| topic.title.to_string())
-                    .filter(|title| alt_key_of(title).is_some()),
-            );
-        }
-        if labels.len() < 2 {
-            continue;
-        }
-        menus_checked += 1;
-
-        for (index, label) in labels.iter().enumerate() {
-            let letter = alt_key_of(label).expect("only labels claiming a letter are collected");
-            let clash = labels[..index]
-                .iter()
-                .find(|earlier| alt_key_of(earlier) == Some(letter));
-            if let Some(earlier) = clash {
-                panic!(
-                    "on the {name} menu, \"{label}\" and \"{earlier}\" both claim {letter}, \
-                     so pressing {letter} runs neither and cycles between them instead"
+            // A submenu, or an item appended once the builder has finished,
+            // sits on the menu like any other and claims a letter like any
+            // other.
+            let mut labels = menu_labels_claiming_a_letter(&menu_block(&ship, name));
+            // The main window's Help menu appends one item per page, from the
+            // list of help topics, in a loop whose labels are not literals
+            // here, so they are read from the list itself. Until 2026-09-24
+            // nothing read them, and C and U were each claimed twice on that
+            // menu (ledger 591).
+            if window == "main window" && name == "help" {
+                labels.extend(
+                    TOPICS
+                        .iter()
+                        .map(|topic| topic.title.to_string())
+                        .filter(|title| alt_key_of(title).is_some()),
                 );
             }
-        }
-    }
+            if labels.len() < 2 {
+                continue;
+            }
+            menus_checked += 1;
 
-    assert!(
-        menus_checked >= 6,
-        "only {menus_checked} menus were read, so this guard is measuring almost nothing"
-    );
+            for (index, label) in labels.iter().enumerate() {
+                let letter =
+                    alt_key_of(label).expect("only labels claiming a letter are collected");
+                let clash = labels[..index]
+                    .iter()
+                    .find(|earlier| alt_key_of(earlier) == Some(letter));
+                if let Some(earlier) = clash {
+                    panic!(
+                        "on the {window}'s {name} menu, \"{label}\" and \"{earlier}\" both \
+                         claim {letter}, so pressing {letter} runs neither and cycles between \
+                         them instead"
+                    );
+                }
+            }
+        }
+
+        assert!(
+            menus_checked >= fewest_menus,
+            "only {menus_checked} menus were read in the {window}, so this guard is measuring \
+             almost nothing"
+        );
+    }
 }
 
 /// Everything you can do to the thing in front of you is on the menu bar.

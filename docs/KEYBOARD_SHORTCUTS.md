@@ -255,6 +255,7 @@ where the caret is.
 | Attachments | `Alt+A` | Moves between the message and the list of attachments, when there is one. Works in the formatted view as well |
 | Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
+| Print this tab | `Ctrl+P` | Prints the message, the conversation or the attachment in this tab through Windows' own print dialog, with every date written in full. The letter is `P` on the reader's File menu. Works in the formatted view as well, where it prints the message or the conversation the window shows |
 
 #### Attachments
 
@@ -616,7 +617,7 @@ dialog once you have more than one.
 | Import a Folder of Messages | (none) | Read every saved message and mailbox file in a folder you choose, and in the folders inside it. Same destination. A file picker cannot answer with a folder, which is why this is its own command |
 | Export Mailbox | (none) | Write the folder you are looking at, and everything inside it, into one zip of mailbox files |
 | Import PGP Private Key | (none) | Read a private key in from a file so PGP mail can be opened. Experimental, and the menu says so |
-| Print | `Ctrl+P` | Print the message you are on in the message list, through Windows' own print dialog, where you choose the printer, the copies and the pages. Its header lines and its words are printed, not its pictures or formatting. On a conversation's row it prints the one message the row stands for. The reader window and the conversation window do not print in this build, and in the other modules Print says it works on messages |
+| Print | `Ctrl+P` | Print the message you are on in the message list, through Windows' own print dialog, where you choose the printer, the copies and the pages. Its header lines and its words are printed, not its pictures or formatting. On a conversation's row it prints the whole conversation, every message in order, each headed with its date in full. The reader window and the formatted message window print what they show the same way. In Contacts, Calendar, Tasks, Notes and Reminders it prints the item you are on, with the fields `Shift+Space` reads, one to a line |
 | Quit | `Ctrl+Q` | Exit the application |
 
 File holds making, saving, fetching and moving mail in and out. Anything that

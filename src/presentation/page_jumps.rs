@@ -27,6 +27,9 @@ pub enum Jump {
     Attachments,
     /// F7: the security warning above the message, when there is one.
     Warning,
+    /// Ctrl+P: print what the window shows, through Windows' print dialog.
+    /// Not a move of focus, and still a key the page hands to its window.
+    Print,
 }
 
 /// The listener a page runs to post the jumps, injected after the way out.
@@ -49,6 +52,13 @@ pub const SCRIPT: &str = r#"document.addEventListener('keydown', function(e) {
         e.stopPropagation();
         window.contextMenu.postMessage(JSON.stringify({ kind: 'attachments' }));
     }
+    // Print, the reader window's key for the same command (#45). Taken from
+    // the browser, whose own Ctrl+P would print the page as it draws it.
+    if (e.ctrlKey && !e.altKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'print' }));
+    }
 }, true);"#;
 
 /// The jump a page asked for, read from the message it posted.
@@ -60,6 +70,7 @@ pub fn the_jump_the_page_asked_for(json: &str) -> Option<Jump> {
     match posted.get("kind").and_then(serde_json::Value::as_str)? {
         "attachments" => Some(Jump::Attachments),
         "warning" => Some(Jump::Warning),
+        "print" => Some(Jump::Print),
         _ => None,
     }
 }
@@ -108,6 +119,25 @@ mod tests {
     }
 
     #[test]
+    fn test_ctrl_p_in_the_page_posts_print_and_the_window_reads_it_back() {
+        // Control without Alt, so AltGr on a layout where Control+Alt+P types
+        // a letter is left alone, as Alt+A leaves Control alone.
+        assert!(SCRIPT.contains("e.ctrlKey && !e.altKey"), "{SCRIPT}");
+        assert!(
+            SCRIPT.contains("e.key === 'p' || e.key === 'P'"),
+            "{SCRIPT}"
+        );
+        assert!(SCRIPT.contains("kind: 'print'"), "{SCRIPT}");
+
+        // Named rather than only something, now the jump exists to name: the
+        // red half could ask only whether the window read the kind at all.
+        assert_eq!(
+            the_jump_the_page_asked_for(r#"{"kind":"print"}"#),
+            Some(Jump::Print)
+        );
+    }
+
+    #[test]
     fn test_the_script_takes_the_key_from_the_browser_before_posting_it() {
         // Without this the browser still acts on the key after the window
         // has: F7 is caret browsing in Edge, and Alt+A would reach whatever
@@ -124,7 +154,7 @@ mod tests {
     #[test]
     fn test_every_kind_the_script_posts_is_one_the_window_reads() {
         let kinds = every_kind_the_script_posts();
-        assert_eq!(kinds.len(), 2, "{kinds:?}");
+        assert_eq!(kinds.len(), 3, "{kinds:?}");
         for kind in kinds {
             let posted = format!(r#"{{"kind":"{kind}"}}"#);
             assert!(

@@ -31,6 +31,46 @@ pub use on_windows::{ChosenPrinter, Sheet, ask_for_a_printer, draw_page, print, 
 #[cfg(not(target_os = "windows"))]
 pub use elsewhere::{ChosenPrinter, ask_for_a_printer, print_on};
 
+use crate::application::printing::{AfterPrinting, NotPrinted, Paper, after_printing};
+
+/// Windows' print dialog owned by `owner`, then `paper` on the printer chosen
+/// there, and the one sentence that says what came of it.
+///
+/// The one path every surface that prints goes through: the main window, the
+/// reader window and the formatted conversation window. Each says the sentence
+/// through its own channel and none of them words it, so the surfaces cannot
+/// come to print or answer differently.
+///
+/// On the window's thread, because the dialog is modal to the window, and a
+/// message's pages spool in under a second on Microsoft Print to PDF
+/// (`tests/printing_spools_a_document.rs`). The log gets the printer's name
+/// and the page count, never the title or the text.
+pub fn print_through_the_dialog(owner: &wxdragon::prelude::Frame, paper: &Paper) -> AfterPrinting {
+    let printed = ask_for_a_printer(owner).and_then(|chosen| match chosen {
+        Some(chosen) => print_on(&chosen, &paper.printable, paper.kind)
+            .map(|printed| (chosen.printer_name().to_string(), printed)),
+        None => Err(NotPrinted::Cancelled),
+    });
+    if let Ok((printer, printed)) = &printed {
+        tracing::info!("Printed {} pages on {printer}", printed.pages);
+    }
+    after_printing(&paper.printable.title, printed)
+}
+
+/// The sentence after Print, said by a window with no status bar of its own:
+/// an answer at the ordinary priority and a refusal at the high one, as the
+/// main window's status line and refusals are.
+pub fn say_what_came_of_it(
+    a11y: &crate::presentation::accessibility::Accessibility,
+    said: AfterPrinting,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+    let _ = match said {
+        AfterPrinting::Answer(said) => a11y.announce(&said, Priority::Normal),
+        AfterPrinting::Refusal(said) => a11y.announce(&said, Priority::High),
+    };
+}
+
 #[cfg(target_os = "windows")]
 mod on_windows {
     use std::ffi::{OsStr, c_void};

@@ -5775,8 +5775,9 @@ from Tools to File, where Pratik placed it, and 13-44 reads GAP-12's "rule edito
 Filter Manager, where rules are saved. No requirement was added, so the coverage below
 stays at 122.
 
-- [ ] **GAP-01**: File, Print (Ctrl+P) prints a message or the item under the cursor on
+- [x] **GAP-01**: File, Print (Ctrl+P) prints a message or the item under the cursor on
   every surface that shows one, through the native dialog, the header lines and the text.
+  Ticked 2026-09-25 by 13-04.
   - Evidence: `gh issue view 45 --json title,state` on 2026-09-20: open; `grep -rn 'Ctrl+P'
     src/presentation/wx_app.rs docs/KEYBOARD_SHORTCUTS.md`: nothing bound (re-take when
     planned). 13-02 on 2026-09-25: `application::printing` lays a message, a conversation
@@ -5795,13 +5796,35 @@ stays at 122.
     --test print_is_on_the_file_menu`, 4 tests, holds the item, the key and the handler's
     calls. `cargo test --lib application::printing::`, 24 tests. Ledger 612 closed. The
     reader window, the conversation window and the other modules are 13-04's.
+    13-04 on 2026-09-25: the reader window's File, Print on `Ctrl+P` and P prints its tab,
+    a message or conversation with every date in full and an attachment as shown; a
+    conversation's row prints the whole conversation; `Ctrl+P` in the formatted message
+    window prints what it shows; Contacts, Calendar, Tasks, Notes and Reminders print the
+    item under the cursor with its reading's fields. Every surface goes through
+    `presentation::printing::print_through_the_dialog`. `cargo test --test
+    print_is_on_the_file_menu`, 9 tests; `cargo test --lib application::printing::`, 28;
+    `cargo test --lib presentation::page_jumps::`, 6; `cargo test --test wired`, 77, its
+    letter and key readings widened to the reader window. Ledger 617 and 618 opened.
   - Plans, 2026-09-24: 13-02 (the page layout), 13-03 (File, Print on the message list,
     after answer (b) on three `windows` features), 13-04 (every other surface), which ticks
     this line and closes #45.
   - [S] #45, the tester on 2026-09-15: "Add print functionality."
-  - [D] File, Print on the mail surfaces and the other modules' items; the route (the native
+  - [x] [D] File, Print on the mail surfaces and the other modules' items; the route (the native
     printout or the browser's print) decided by a measurement; the shortcuts page and the
-    guide.
+    guide. Met 2026-09-25 by 13-02 to 13-04. The route is Win32 GDI through Windows' own
+    dialog, chosen by 13-03's measurement that wxdragon 0.9.17 never starts a job. Held by
+    13-02's layout and item cases in `application::printing`, among them
+    `test_a_message_prints_its_header_lines_before_its_text` and
+    `test_an_event_prints_its_start_end_place_and_description_one_to_a_line`; by 13-03's
+    three targets, `tests/printing_draws_what_the_layout_says.rs`,
+    `tests/printing_spools_a_document.rs` and `tests/print_is_on_the_file_menu.rs`; and by
+    13-04's `test_the_reader_prints_its_tab_through_the_dialog_with_its_key`,
+    `test_print_in_every_module_prints_the_item_under_the_cursor`,
+    `test_a_conversation_on_paper_heads_each_message_with_its_date_in_full`,
+    `test_every_module_prints_its_own_kind` and
+    `test_ctrl_p_in_the_page_posts_print_and_the_window_reads_it_back`. The shortcuts page
+    has Print in its File Menu and The Reader Window sections, and the guide's Printing
+    section says what each surface prints.
   - [S] What a printed page looks like is a sighted reader's; whether the dialog is worked by
     keyboard is the tester's ear.
 
@@ -6137,7 +6160,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | EDIT-03 | Phase 12 | Done 2026-09-24, 12-08: the block rules, the setting, the keys taken on the typing field and the opening times, held by `application::time_blocks`' cases and `tests/event_times_move_in_blocks.rs`; a task has no time; the ear is ledger 603 |
 | EDIT-04 | Phase 12 | Done 2026-09-24, 12-09: one set with an assignment per account and one default, chosen on the account's dialog or in a signature's editor through one stored assignment, compose following the From account, held by `application::signatures`' and the store's cases and `tests/a_signature_follows_the_from_account.rs`; the ear is ledger 605 |
 | EDIT-05 | Phase 12 | Done 2026-09-24, 12-10: labels in a stored order, the Label submenu rebuilt from them with the key that applies each and Edit Labels at its end, the Label Manager with a Key column and moves, held by `application::tagging`'s and the store's cases and `tests/the_label_menu_says_the_labels_an_account_has.rs`; the ear is ledger 607 |
-| GAP-01 | Phase 13 | 13-03 built 2026-09-25, File, Print on the message list through Windows' print dialog; 13-04 to come, which ticks it. Until then "13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it". Before that "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20" |
+| GAP-01 | Phase 13 | Done 2026-09-25, 13-04: File, Print on every surface that shows a message or an item, the reader window, a conversation's row, the formatted message window and the five other modules, through one path to Windows' print dialog, held by `tests/print_is_on_the_file_menu.rs`, `application::printing`'s and `presentation::page_jumps`'s cases; the ear and the paper are ledger 613 and 617. Until then "13-03 built 2026-09-25, File, Print on the message list through Windows' print dialog; 13-04 to come, which ticks it". Before that "13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it". Before that "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-02 | Phase 13 | 13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it. Until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-03 | Phase 13 | Planned 2026-09-24: 13-16, 13-17, 13-17.1, which ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-04 | Phase 13 | Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built. Until then "Not planned, 2026-09-20" |
