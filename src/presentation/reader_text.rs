@@ -417,6 +417,7 @@ fn attachments_of(message: &MessageItem) -> Vec<ReaderAttachment> {
             mime_type: item.mime_type.clone(),
             size: item.size,
             description: item.description.clone(),
+            kind_the_message_gave: None,
         })
         .collect()
 }
@@ -1294,6 +1295,14 @@ pub struct ReaderAttachment {
     /// attachment that a person wrote, and for a picture it is the only thing
     /// that can say what is in it.
     pub description: WhatTheSenderSaid,
+    /// What the message's own decision calls this part, where its type
+    /// cannot say.
+    ///
+    /// A calendar part has one type whether it invites somebody to a meeting,
+    /// calls one off, answers one or publishes a calendar, and the row should
+    /// say which. `None` for every other attachment, whose kind is read from
+    /// its type.
+    pub kind_the_message_gave: Option<&'static str>,
 }
 
 impl ReaderAttachment {
@@ -1762,6 +1771,15 @@ impl ReaderDocument {
         self
     }
 
+    /// Say what the meeting a message carries is, before a word of it.
+    pub fn with_invitation(
+        self,
+        says: &crate::application::invitations::WhatTheInvitationSays,
+    ) -> Self {
+        let _ = says;
+        self
+    }
+
     /// Fold in the three things said about a message, in the one order that
     /// keeps each of them spoken.
     ///
@@ -1872,6 +1890,7 @@ mod tests {
             mime_type: mime_type.to_string(),
             size,
             description: WhatTheSenderSaid::Nothing,
+            kind_the_message_gave: None,
         }
     }
 
@@ -1997,7 +2016,12 @@ mod tests {
             ("text/plain", "a.txt", "text file"),
             ("application/zip", "a.zip", "zip archive"),
             ("message/rfc822", "a.eml", "email message"),
-            ("text/calendar", "a.ics", "calendar invitation"),
+            // Not "calendar invitation": the type is the same for a
+            // cancellation and a published feed, so the type alone says only
+            // that it is a calendar file. What the message decided it asks
+            // is said instead where there is a decision.
+            ("text/calendar", "a.ics", "calendar file"),
+            ("application/ics", "a.ics", "calendar file"),
             // Unknown, but the top level still says something useful.
             ("image/x-something-new", "a.bin", "image"),
             ("audio/x-something-new", "a.bin", "audio"),
@@ -4309,6 +4333,7 @@ mod picture_preview_tests {
             mime_type: kind.to_string(),
             size: 240 * 1024,
             description: said,
+            kind_the_message_gave: None,
         }
     }
 
@@ -4500,6 +4525,7 @@ mod picture_shown_tests {
             mime_type: kind.to_string(),
             size: 4096,
             description: said,
+            kind_the_message_gave: None,
         }
     }
 
@@ -4640,5 +4666,213 @@ mod picture_shown_tests {
             .expect("the sentence saying the picture is shown");
         let kind = document.text.find("PNG image").expect("the kind");
         assert!(said < kind, "{}", document.text);
+    }
+}
+
+/// What a message carrying a meeting says before its body, and what its
+/// calendar part's row says.
+#[cfg(test)]
+mod invitation_tests {
+    use super::tests::{aloud, message};
+    use super::*;
+    use crate::application::invitations::{Standing, WhatTheInvitationSays};
+    use crate::application::reading_a_message::WhatIsSaidAboutIt;
+    use crate::presentation::ui_types::AttachmentItem;
+
+    const THE_SENTENCE: &str = "Meeting invitation: Quarterly review, 05/03/2026 at 09:00 to \
+         10:00, in Room 4, from Ada Lovelace, and it is new to your calendar.";
+
+    fn a_meeting() -> WhatTheInvitationSays {
+        WhatTheInvitationSays::Invitation {
+            summary: "Quarterly review".to_string(),
+            when: "05/03/2026 at 09:00 to 10:00".to_string(),
+            place: Some("Room 4".to_string()),
+            organiser: Some("Ada Lovelace".to_string()),
+            standing: Standing::New,
+        }
+    }
+
+    fn called_off() -> WhatTheInvitationSays {
+        WhatTheInvitationSays::Cancellation {
+            summary: "Quarterly review".to_string(),
+            on_the_calendar: true,
+        }
+    }
+
+    fn saying(invitation: WhatTheInvitationSays) -> WhatIsSaidAboutIt {
+        WhatIsSaidAboutIt {
+            invitation,
+            ..WhatIsSaidAboutIt::nothing()
+        }
+    }
+
+    /// The message with a calendar part among its attachments.
+    fn carrying(named: &str, kind: &str) -> MessageItem {
+        MessageItem {
+            has_attachments: true,
+            attachments: vec![AttachmentItem {
+                filename: named.to_string(),
+                mime_type: kind.to_string(),
+                size: 512,
+                description: WhatTheSenderSaid::Nothing,
+            }],
+            ..message()
+        }
+    }
+
+    fn the_top_of(document: &ReaderDocument) -> &str {
+        said_before_the_message(document.warning.as_deref().expect("a bar"))
+    }
+
+    #[test]
+    fn test_an_invitation_is_said_at_the_top_of_the_bar_and_of_the_body() {
+        // The bar is spoken as the message opens; the body is where somebody
+        // reading from the top meets it. Headings in the body still land on
+        // their own words after the sentence goes in above them.
+        let body = MessageBody::Html("<h2>Agenda</h2><p>Figures first.</p>".to_string());
+
+        let document =
+            single_message(&message(), &body, aloud()).with_what_is_said(&saying(a_meeting()));
+
+        assert_eq!(the_top_of(&document), THE_SENTENCE);
+        let said_at = document
+            .text
+            .find(THE_SENTENCE)
+            .expect("the sentence in the body");
+        let agenda_at = document.text.find("Agenda").expect("the body");
+        assert!(
+            document.text.starts_with("Subject:") && said_at < agenda_at,
+            "{}",
+            document.text
+        );
+        let agenda = document
+            .landmarks
+            .iter()
+            .find(|landmark| landmark.label == "Agenda")
+            .expect("the heading is still a landmark");
+        let characters: Vec<char> = document.text.chars().collect();
+        assert_eq!(
+            characters[agenda.offset..agenda.offset + "Agenda".len()]
+                .iter()
+                .collect::<String>(),
+            "Agenda",
+            "the heading's landmark was left where the sentence pushed it from"
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature() {
+        let said = WhatIsSaidAboutIt {
+            signature: SignatureCheck::NotKept,
+            ..saying(a_meeting())
+        };
+
+        let document = single_message(
+            &message(),
+            &MessageBody::Plain("Hello".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(&said);
+
+        assert!(
+            document
+                .warning
+                .as_deref()
+                .is_some_and(|bar| bar.contains(HOW_IT_WAS_CHECKED)),
+            "the fixture did not produce the boundary this is about"
+        );
+        assert!(
+            the_top_of(&document).contains("Meeting invitation: Quarterly review"),
+            "{:?}",
+            document.warning
+        );
+    }
+
+    #[test]
+    fn test_a_cancellations_calendar_part_is_called_a_meeting_cancellation() {
+        let document = single_message(
+            &carrying("invite.ics", "text/calendar"),
+            &MessageBody::Plain("It is off.".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(&saying(called_off()));
+
+        assert_eq!(
+            document.attachments[0].label(),
+            "invite.ics, meeting cancellation, 512 bytes, no description"
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_part_named_like_a_program_is_still_called_a_program() {
+        // The kind the message gave never outranks the one warning that changes
+        // what somebody should do with a file.
+        let document = single_message(
+            &carrying("invite.exe", "text/calendar"),
+            &MessageBody::Plain("Open this.".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(&saying(a_meeting()));
+
+        assert_eq!(
+            document.attachments[0].label(),
+            "invite.exe, program, 512 bytes, no description"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_meeting_gains_no_bar_and_no_line() {
+        // Nearly every message. A bar or a line on every one of them is a bar
+        // people learn to talk past.
+        let body = MessageBody::Plain("One o'clock?".to_string());
+        let alone = single_message(&message(), &body, aloud());
+
+        let folded = alone
+            .clone()
+            .with_what_is_said(&saying(WhatTheInvitationSays::Nothing));
+
+        assert_eq!(folded, alone);
+    }
+
+    #[test]
+    fn test_one_message_of_several_says_its_meeting_under_its_own_heading() {
+        // A bar over a thread is heard as covering all of it, so the meeting
+        // is said where its message begins, and that message's calendar part
+        // is named from its own decision.
+        let first = ConversationPart {
+            message: message(),
+            body: MessageBody::Plain("Shall we meet?".to_string()),
+            said: WhatIsSaidAboutIt::nothing(),
+            depth: 0,
+        };
+        let second = ConversationPart {
+            message: carrying("invite.ics", "text/calendar"),
+            body: MessageBody::Plain("Here is the invitation.".to_string()),
+            said: saying(a_meeting()),
+            depth: 1,
+        };
+        let parts = [first, second];
+
+        let document = conversation("Quarterly report", &parts);
+
+        let heading_at = document.text.find("2. Reply").expect("the second heading");
+        let said_at = document.text.find(THE_SENTENCE).expect("the sentence");
+        let body_at = document
+            .text
+            .find("Here is the invitation.")
+            .expect("the body");
+        assert!(
+            heading_at < said_at && said_at < body_at,
+            "{}",
+            document.text
+        );
+        assert_eq!(document.warning, None);
+        assert!(
+            attachments_in(&parts)[0]
+                .label()
+                .contains(", meeting invitation,"),
+            "{}",
+            attachments_in(&parts)[0].label()
+        );
     }
 }

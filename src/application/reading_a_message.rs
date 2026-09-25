@@ -250,6 +250,18 @@ pub fn invitation_check_for(
     )
 }
 
+/// Keep what a message downloaded for its text carried, so what is said about
+/// it can be asked when it opens.
+pub fn keep_what_a_download_carried(
+    cache: &MessageCache,
+    message_row_id: i64,
+    parts: &[crate::service::mime::AttachmentInfo],
+    raw: &[u8],
+) -> crate::common::Result<()> {
+    let _ = (cache, message_row_id, parts, raw);
+    Ok(())
+}
+
 /// The account a message arrived on, read from its own row.
 ///
 /// Read here rather than handed in by the surfaces, because a conversation or

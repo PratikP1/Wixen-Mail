@@ -994,6 +994,7 @@ mod tests {
             mime_type: "application/pdf".to_string(),
             size: 1024,
             description: crate::service::mime::WhatTheSenderSaid::Nothing,
+            kind_the_message_gave: None,
         }
     }
 

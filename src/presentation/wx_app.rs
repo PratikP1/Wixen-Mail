@@ -33972,6 +33972,7 @@ mod opening_an_attachment_a_second_time {
             mime_type: "application/pdf".to_string(),
             size: 0,
             description: crate::service::mime::WhatTheSenderSaid::Nothing,
+            kind_the_message_gave: None,
         }
     }
 
