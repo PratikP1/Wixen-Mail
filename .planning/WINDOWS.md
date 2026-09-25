@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 556
+open_count: 558
 waived_count: 0
 fixed_count: 60
-total_count: 616
-last_updated: 2026-09-25T12:00:00.000Z
+total_count: 618
+last_updated: 2026-09-25T18:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -631,6 +631,8 @@ last_updated: 2026-09-25T12:00:00.000Z
 | 614 | 13 | todo | src/presentation/printing.rs |  | 13-03: wxdragon 0.9.17's printing never starts a print job on Windows. Its C++ shim's OnBeginDocument and OnEndDocument overrides call the Rust callback and return true without calling wxPrintout's own, which is where StartDoc and EndDoc are called (wxdragon-sys-0.9.17/cpp/src/print.cpp:47-58, wxWidgets prntbase.cpp:597-605), and the Rust proxy always passes both callbacks (wxdragon-0.9.17/src/printing.rs:45-58); upstream main carries the same override (phase 13 research 1.2). Filing it upstream is a public post and Pratik's: on 2026-09-24 he asked for details first and is running a test program that prints through wxDragon to confirm it. The draft is in 13-03-SUMMARY.md and nothing has been posted. Closed when he has filed it or decided not to | open |  | 2026-09-25T12:00:00.000Z |  |
 | 615 | 13 | todo | src/service/pdf.rs |  | 13-03, from phase 13 research 1.3: pdfpurr 0.4.0 does not apply the ToUnicode map a Microsoft Print to PDF file carries, so the text of such a file comes back as glyph numbers and a PDF attachment made that way reads as nonsense in the reader. Probed 2026-09-24: the file's own CMap maps 0029 to 0046, F, and pdfpurr returned the glyph code. The fix belongs in PDFPurr on Pratik's schedule (phase 13 decision 12); tests/printing_spools_a_document.rs counts pages with pdfpurr and reads no text for this reason. Closed when a pdfpurr release applies the map and the reader reads such a file | open |  | 2026-09-25T12:00:00.000Z |  |
 | 616 | 13 | todo | .github/workflows/release.yml |  | 13-03: release.yml's quality gate runs cargo test on windows-latest without WIXEN_NO_AUDIO, which ci.yml, guards.yml, mutants.yml and other-platforms.yml all set because GitHub's Windows runners have no audio driver and rodio 0.22.2 faults on the first write there (ci.yml's comment). It was missing before 13-03, and 13-03 leaves release.yml as main holds it: a WIXEN_NO_PDF_PRINTER line it added there was taken off again when the runner turned out to have the PDF printer. No test 13-03 adds needs WIXEN_NO_AUDIO, so whether the release gate gains it is Pratik's (guardrail 7). Closed when he decides | open |  | 2026-09-25T12:00:00.000Z |  |
+| 617 | 13 | unrun-verify | src/presentation/wx_reader.rs |  | 13-04: #45's other surfaces under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the reader window's letter P and Ctrl+P, and Ctrl+P in the formatted message window; Windows' print dialog worked by keyboard from each, with focus back on the tab's text or on the page when it closes; the one sentence heard after a job, a cancel and a failure in each; Print in Contacts, Calendar, Tasks, Notes and Reminders heard, with the refusal when nothing is chosen; and a conversation's pages and an item's page looked at by a sighted reader. tests/print_is_on_the_file_menu.rs holds every surface's route to the one path and presentation::page_jumps holds the page's key; neither opens the dialog or makes paper | open |  | 2026-09-25T18:00:00.000Z |  |
+| 618 | 13 | todo | src/presentation/reader_text.rs |  | 13-04: the reader window's conversation tab and the formatted conversation page head each message with its date as the list stores it, such as 2026-01-01T00:00:00+00:00, because reader_text::conversation (reader_text.rs:1169) and thread_parts (:729) take no reading. Premise 3 of 13-04 read where it comes from: conversation_nodes copies MessageItem.date into ThreadNode.date, and conversation_parts copies it back. Paper writes each heading's date in full since 13-04 (application::printing::conversation_on_paper); changing what the screen shows was not 13-04's. The fix is a reading handed to both compositions, as single_message already takes one | open |  | 2026-09-25T18:00:00.000Z |  |
 
 ````json
 [
@@ -8024,6 +8026,30 @@ last_updated: 2026-09-25T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-25T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 617,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_reader.rs",
+    "line": null,
+    "description": "13-04: #45's other surfaces under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the reader window's letter P and Ctrl+P, and Ctrl+P in the formatted message window; Windows' print dialog worked by keyboard from each, with focus back on the tab's text or on the page when it closes; the one sentence heard after a job, a cancel and a failure in each; Print in Contacts, Calendar, Tasks, Notes and Reminders heard, with the refusal when nothing is chosen; and a conversation's pages and an item's page looked at by a sighted reader. tests/print_is_on_the_file_menu.rs holds every surface's route to the one path and presentation::page_jumps holds the page's key; neither opens the dialog or makes paper",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 618,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "13-04: the reader window's conversation tab and the formatted conversation page head each message with its date as the list stores it, such as 2026-01-01T00:00:00+00:00, because reader_text::conversation (reader_text.rs:1169) and thread_parts (:729) take no reading. Premise 3 of 13-04 read where it comes from: conversation_nodes copies MessageItem.date into ThreadNode.date, and conversation_parts copies it back. Paper writes each heading's date in full since 13-04 (application::printing::conversation_on_paper); changing what the screen shows was not 13-04's. The fix is a reading handed to both compositions, as single_message already takes one",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T18:00:00.000Z",
     "resolved_at": null
   }
 ]
