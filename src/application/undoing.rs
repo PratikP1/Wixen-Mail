@@ -687,16 +687,39 @@ pub struct OnAnItem {
 }
 
 impl ItemDid {
-    /// What the action is called, the way its menu item says it.
+    /// What the action is called, the way its menu item says it. The item
+    /// for done is "Mark Done or Not Done", one item both ways, so each way
+    /// is named the way Mark as Read and Mark as Unread are.
     fn name(&self) -> String {
-        String::new()
+        match self {
+            ItemDid::MarkedDone { now: true } => "Mark as Done".to_string(),
+            ItemDid::MarkedDone { now: false } => "Mark as Not Done".to_string(),
+            ItemDid::Pinned { now: true } => "Pin".to_string(),
+            ItemDid::Pinned { now: false } => "Unpin".to_string(),
+            ItemDid::Moved { to, .. } => format!("Move to {}", to.name),
+            ItemDid::Copied { into, .. } => format!("Copy to {}", into.name),
+            ItemDid::Deleted(_) => "Delete".to_string(),
+        }
     }
 }
 
 impl OnAnItem {
     /// The item's name, or words standing in for one it does not have.
     fn named(&self) -> String {
-        String::new()
+        match self.name.trim() {
+            "" => format!("an untitled {}", self.kind.label().to_lowercase()),
+            name => name.to_string(),
+        }
+    }
+
+    /// The same, where it opens a sentence.
+    fn named_first(&self) -> String {
+        let named = self.named();
+        let mut letters = named.chars();
+        match letters.next() {
+            Some(first) => first.to_uppercase().chain(letters).collect(),
+            None => named,
+        }
     }
 }
 
@@ -742,24 +765,92 @@ pub enum UndoAnItem {
 }
 
 /// What undoing an action on an item does, given what the store says now.
-pub fn what_undo_does_to_an_item(_item: &OnAnItem, _store: WhatTheItemStoreSays) -> UndoAnItem {
-    UndoAnItem::Refused(String::new())
+///
+/// A delete is taken back as it was only while its account has not been
+/// told: the deletion note is then still work the push owes, and taking it
+/// back is what stops it being sent. Once the account has taken it the thing
+/// is gone there, so it is made again as a new item, never put back under an
+/// identity the account has already let go of. Nothing is decided while the
+/// account's sync is running, because the push may be sending that very
+/// deletion or change at that moment.
+pub fn what_undo_does_to_an_item(item: &OnAnItem, store: WhatTheItemStoreSays) -> UndoAnItem {
+    use WhatTheItemStoreSays::{BeingSyncedNow, DeletionOwed, DeletionTaken, Gone, Present};
+    match (&item.did, store) {
+        (_, BeingSyncedNow) => UndoAnItem::Refused(being_synced_now(item)),
+        (ItemDid::Deleted(record), DeletionOwed | Gone) => {
+            UndoAnItem::TakeTheDeletionBack(record.clone())
+        }
+        (ItemDid::Deleted(record), DeletionTaken) => UndoAnItem::MakeItAgain(record.clone()),
+        (ItemDid::Deleted(_), Present) => UndoAnItem::Refused(format!(
+            "{} is here already, so there is nothing to put back.",
+            item.named_first()
+        )),
+        (ItemDid::Copied { copy_id, .. }, Present) => UndoAnItem::DeleteTheCopy {
+            id: copy_id.clone(),
+        },
+        (ItemDid::Copied { .. }, _) => UndoAnItem::Refused(format!(
+            "The copy of {} is gone already, so there is nothing to take away.",
+            item.named()
+        )),
+        (_, DeletionOwed | DeletionTaken | Gone) => UndoAnItem::Refused(format!(
+            "{} is no longer here, so it cannot be changed back.",
+            item.named_first()
+        )),
+        (ItemDid::MarkedDone { now }, Present) => UndoAnItem::MarkDone(!now),
+        (ItemDid::Pinned { now }, Present) => UndoAnItem::Pin(!now),
+        (ItemDid::Moved { from, .. }, Present) => UndoAnItem::MoveTo(from.clone()),
+    }
 }
 
-/// What redoing an action on an item does, given what the store says now.
-pub fn what_redo_does_to_an_item(_item: &OnAnItem, _store: WhatTheItemStoreSays) -> UndoAnItem {
-    UndoAnItem::Refused(String::new())
+/// What redoing an action on an item does, given what the store says now:
+/// the action again, on the item the undo left.
+pub fn what_redo_does_to_an_item(item: &OnAnItem, store: WhatTheItemStoreSays) -> UndoAnItem {
+    use WhatTheItemStoreSays::{BeingSyncedNow, Present};
+    match (&item.did, store) {
+        (_, BeingSyncedNow) => UndoAnItem::Refused(being_synced_now(item)),
+        (ItemDid::Deleted(_), Present) => UndoAnItem::DeleteIt,
+        (ItemDid::Deleted(_), _) => UndoAnItem::Refused(format!(
+            "{} is no longer here, so it cannot be deleted again.",
+            item.named_first()
+        )),
+        (ItemDid::MarkedDone { now }, Present) => UndoAnItem::MarkDone(*now),
+        (ItemDid::Pinned { now }, Present) => UndoAnItem::Pin(*now),
+        (ItemDid::Moved { to, .. }, Present) => UndoAnItem::MoveTo(to.clone()),
+        (ItemDid::Copied { into, .. }, Present) => UndoAnItem::CopyInto(into.clone()),
+        (_, _) => UndoAnItem::Refused(format!(
+            "{} is no longer here, so it cannot be done again.",
+            item.named_first()
+        )),
+    }
+}
+
+fn being_synced_now(item: &OnAnItem) -> String {
+    format!(
+        "{} is being synced with its account right now. Try again shortly.",
+        item.named_first()
+    )
 }
 
 /// What Undo or Redo says in a list whose module did not take the last
 /// action.
-pub fn in_another_module(_action: &LastAction, _direction: Direction) -> String {
-    String::new()
+pub fn in_another_module(action: &LastAction, direction: Direction) -> String {
+    let module = action.module().label().replace('&', "");
+    let doing = match direction {
+        Direction::Undo => "undo",
+        Direction::Redo => "redo",
+    };
+    format!("The last thing you did was in {module}. Switch to {module} to {doing} it.")
 }
 
-/// What Undo says when a deleted item comes back as a new one.
-pub fn made_again(_item: &OnAnItem) -> String {
-    String::new()
+/// What Undo says when a deleted item comes back as a new one, because its
+/// account had already taken the deletion.
+pub fn made_again(item: &OnAnItem) -> String {
+    format!(
+        "{} had already been deleted at its account, so it comes back here as a new {} and \
+         is sent there as one.",
+        item.named_first(),
+        item.kind.label().to_lowercase()
+    )
 }
 
 /// The module whose list holds this kind of item.
@@ -1827,10 +1918,10 @@ mod tests {
         );
         assert_eq!(
             menu_label(&action(ItemDid::MarkedDone { now: true }), Direction::Redo),
-            "&Redo Mark Done: Dentist\tCtrl+Y"
+            "&Redo Mark as Done: Dentist\tCtrl+Y"
         );
         for (did, name) in [
-            (ItemDid::MarkedDone { now: false }, "Mark Not Done"),
+            (ItemDid::MarkedDone { now: false }, "Mark as Not Done"),
             (ItemDid::Pinned { now: true }, "Pin"),
             (ItemDid::Pinned { now: false }, "Unpin"),
             (

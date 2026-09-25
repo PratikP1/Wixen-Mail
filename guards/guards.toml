@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 325 records have arrived since and have not been through it.
+# 327 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30972,7 +30972,7 @@ red = [
     "application::undoing::tests::test_undoing_mark_as_read_over_a_mixed_set_puts_back_each_messages_own_state",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # A set named by its first message's subject, so "Undo Mark as Read" over four
@@ -30995,7 +30995,7 @@ red = [
     "application::undoing::tests::test_what_could_not_come_back_is_said_once_with_the_count",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # The undo of a move in the window letting a waiting change go without
@@ -31058,7 +31058,7 @@ red = [
     "application::undoing::tests::test_delete_permanently_still_waiting_comes_back",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # An undone copy deleted off the server outright rather than sent to the
@@ -31074,7 +31074,7 @@ red = [
     "application::undoing::tests::test_undoing_a_copy_sends_the_copy_to_the_trash",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # A move to another account let through to an undo, which would send the
@@ -31099,7 +31099,7 @@ red = [
     "application::undoing::tests::test_what_could_not_come_back_is_said_once_with_the_count",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 21 },
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
 
 # Mark as Read remembering an action before its writes, so a write the cache
@@ -31166,4 +31166,43 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
     { file = "tests/several_steps_come_back.rs", tests = 18 },
+]
+
+# An undone delete its account was never told of answered by making the item
+# again, so it comes back under a new identity while the deletion note is
+# still sent and the account deletes the original. Written 2026-09-25 by
+# 13-09, the break measured against the whole library.
+[[guard]]
+name = "an undone delete the account was never told of comes back as it was"
+file = "src/application/undoing.rs"
+before = '''        (ItemDid::Deleted(record), DeletionOwed | Gone) => {
+            UndoAnItem::TakeTheDeletionBack(record.clone())
+        }'''
+after = '''        (ItemDid::Deleted(record), DeletionOwed | Gone) => {
+            UndoAnItem::MakeItAgain(record.clone())
+        }'''
+red = [
+    "application::undoing::tests::test_undoing_a_deleted_task_puts_back_every_field_it_had",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 30 },
+]
+
+# The undo of a copy aimed at the original, which would delete the item
+# somebody copied and leave the copy they meant to take away. Written
+# 2026-09-25 by 13-09, the break measured against the whole library.
+[[guard]]
+name = "an undone copy of an item deletes the copy, never the original"
+file = "src/application/undoing.rs"
+before = '''        (ItemDid::Copied { copy_id, .. }, Present) => UndoAnItem::DeleteTheCopy {
+            id: copy_id.clone(),
+        },'''
+after = '''        (ItemDid::Copied { copy_id: _, .. }, Present) => UndoAnItem::DeleteTheCopy {
+            id: item.id.clone(),
+        },'''
+red = [
+    "application::undoing::tests::test_undoing_a_copy_removes_the_copy_only",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 30 },
 ]
