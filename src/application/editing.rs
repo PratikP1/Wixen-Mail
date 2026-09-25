@@ -1,4 +1,5 @@
-//! Cut, copy, paste and select all, and what each means where the cursor is.
+//! Cut, copy, paste, select all, undo and redo, and what each means where the
+//! cursor is.
 //!
 //! # Why this is a decision rather than four calls
 //!
@@ -29,13 +30,19 @@
 //! it. That has happened here before and is written up in `CLAUDE.md`. So above
 //! a limit the answer is a sentence rather than a freeze.
 
-/// One of the four.
+/// One of the six on the Edit menu that act on what has focus.
+///
+/// Undo and Redo act on a text box alone. The box's history of several steps
+/// is what they take back and put back, which `presentation::text_undo`
+/// reaches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditCommand {
     Cut,
     Copy,
     Paste,
     SelectAll,
+    Undo,
+    Redo,
 }
 
 impl EditCommand {
@@ -46,9 +53,24 @@ impl EditCommand {
             EditCommand::Copy => "Copy",
             EditCommand::Paste => "Paste",
             EditCommand::SelectAll => "Select All",
+            EditCommand::Undo => "Undo",
+            EditCommand::Redo => "Redo",
         }
     }
 }
+
+/// What Undo says in a box that has nothing to take back.
+///
+/// Said rather than doing nothing, for the reason at the head of this module.
+pub const NOTHING_TO_UNDO: &str = "There is nothing to undo in this box.";
+
+/// What Redo says when there is no Undo to put back.
+///
+/// It says when Redo does work, because a box remembers one step: Redo is
+/// only offered right after an Undo, and somebody who pressed it after typing
+/// needs to know why it refused.
+pub const NOTHING_TO_REDO: &str =
+    "There is nothing to redo in this box. Redo puts back what Undo just took away.";
 
 /// What the cursor is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +87,16 @@ pub enum Where {
     SomewhereElse,
 }
 
+/// What Undo or Redo says in a place with nothing it could take back: the
+/// sidebar, and every list but the message list until the other modules have
+/// an undo of their own.
+pub fn works_in_a_box_not_here(command: EditCommand) -> String {
+    format!(
+        "{} works in a box you can type in, not in a list or the sidebar.",
+        command.name()
+    )
+}
+
 /// What to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Doing {
@@ -74,6 +106,10 @@ pub enum Doing {
     CopyWhatIsChosen,
     /// Choose every row.
     ChooseEveryRow,
+    /// Undo or Redo the last action on the list's items. Which lists have one
+    /// is the window's to say, since only it knows what each list last did;
+    /// a list with none says so in a sentence (`application::undoing`).
+    TheLastAction,
     /// Nothing, and this is what to say about it.
     NotHere(String),
 }
@@ -88,13 +124,29 @@ pub const MOST_ROWS_WORTH_SELECTING: usize = 5_000;
 /// What a command should do, given where the cursor is.
 pub fn what_to_do(command: EditCommand, place: Where) -> Doing {
     match (command, place) {
-        // A text box does its own work for all four, which is what every other
+        // A text box does its own work for all six, which is what every other
         // Windows program does and what the native control already knows how
         // to do.
         (_, Where::AText) => Doing::ToTheText,
         (EditCommand::Copy | EditCommand::SelectAll, Where::AReadOnlyText) => Doing::ToTheText,
-        (EditCommand::Cut | EditCommand::Paste, Where::AReadOnlyText) => Doing::NotHere(format!(
+        (
+            EditCommand::Cut | EditCommand::Paste | EditCommand::Undo | EditCommand::Redo,
+            Where::AReadOnlyText,
+        ) => Doing::NotHere(format!(
             "{} needs a box you can type in, and this one can only be read.",
+            command.name()
+        )),
+
+        // In a list, Undo and Redo take back and do again the last thing done
+        // to its items (#47's second level, 13-07). The sidebar has nothing
+        // anybody could take back. Nor does the way out Cut and Copy give
+        // below, which would send somebody to a list for Undo.
+        (EditCommand::Undo | EditCommand::Redo, Where::AList { .. }) => Doing::TheLastAction,
+        (EditCommand::Undo | EditCommand::Redo, Where::ATree) => {
+            Doing::NotHere(works_in_a_box_not_here(command))
+        }
+        (EditCommand::Undo | EditCommand::Redo, Where::SomewhereElse) => Doing::NotHere(format!(
+            "{} works in a box you can type in. Tab or F6 moves between the parts of the window.",
             command.name()
         )),
 
@@ -128,15 +180,20 @@ pub fn what_to_do(command: EditCommand, place: Where) -> Doing {
 mod tests {
     use super::*;
 
-    const EVERY_COMMAND: [EditCommand; 4] = [
+    const EVERY_COMMAND: [EditCommand; 6] = [
         EditCommand::Cut,
         EditCommand::Copy,
         EditCommand::Paste,
         EditCommand::SelectAll,
+        EditCommand::Undo,
+        EditCommand::Redo,
     ];
 
+    /// The two that take a change back or put it back.
+    const TAKING_BACK: [EditCommand; 2] = [EditCommand::Undo, EditCommand::Redo];
+
     #[test]
-    fn test_a_text_box_does_all_four_itself() {
+    fn test_a_text_box_does_every_command_itself() {
         // What every other Windows program does, and what the native control
         // already knows how to do. Anything cleverer here would be this
         // application reimplementing an edit box.
@@ -247,6 +304,96 @@ mod tests {
         };
 
         assert!(said.contains("F6"), "the way out is not named: {said}");
+    }
+
+    #[test]
+    fn test_undo_and_redo_in_a_box_that_can_only_be_read_say_it_can_only_be_read() {
+        // The same refusal Cut and Paste give there, naming the command the
+        // way the menu does.
+        assert_eq!(
+            what_to_do(EditCommand::Undo, Where::AReadOnlyText),
+            Doing::NotHere(
+                "Undo needs a box you can type in, and this one can only be read.".to_string()
+            )
+        );
+        assert_eq!(
+            what_to_do(EditCommand::Redo, Where::AReadOnlyText),
+            Doing::NotHere(
+                "Redo needs a box you can type in, and this one can only be read.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_undo_and_redo_in_the_sidebar_say_they_work_in_a_box() {
+        // Not Cut's "Copy works here", which answers a different question,
+        // and no promise of something that does not exist yet. A list has
+        // its own meaning for them since 13-07; the sidebar changes nothing
+        // anybody could take back.
+        for command in TAKING_BACK {
+            let Doing::NotHere(said) = what_to_do(command, Where::ATree) else {
+                panic!("{command:?} claimed to work in the sidebar");
+            };
+            assert!(said.starts_with(command.name()), "{said}");
+            assert!(said.contains("a box you can type in"), "{said}");
+            assert!(!said.contains("Copy works here"), "{said}");
+            assert!(!said.contains("later"), "{said}");
+        }
+    }
+
+    #[test]
+    fn test_undo_in_a_list_is_the_last_action() {
+        // What was last done to the list's items, a mark or a star or a
+        // label, which the window holds and the list names (#47's second
+        // level). However many rows the list has.
+        for command in TAKING_BACK {
+            for rows in [0, 10, MOST_ROWS_WORTH_SELECTING + 1] {
+                assert_eq!(
+                    what_to_do(command, Where::AList { rows }),
+                    Doing::TheLastAction,
+                    "{command:?} in a list of {rows}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_undo_and_redo_with_focus_nowhere_known_say_how_to_reach_a_box() {
+        // The way out Cut and Copy give names a list and the sidebar as well,
+        // and sending somebody to a list for Undo sends them to a refusal.
+        for command in TAKING_BACK {
+            let Doing::NotHere(said) = what_to_do(command, Where::SomewhereElse) else {
+                panic!("{command:?} claimed to work with focus nowhere known");
+            };
+            assert!(said.starts_with(command.name()), "{said}");
+            assert!(said.contains("a box you can type in"), "{said}");
+            assert!(said.contains("F6"), "the way out is not named: {said}");
+            assert!(!said.contains("a list"), "{said}");
+        }
+    }
+
+    #[test]
+    fn test_having_nothing_to_undo_or_redo_is_said_as_a_persons_sentence() {
+        // The two sentences the window speaks when the box has nothing to
+        // take back or put back. Here beside the rule so the window cannot
+        // word them differently.
+        use crate::application::status_sentences::{Voice, reads_as_a_persons_sentence};
+        for sentence in [NOTHING_TO_UNDO, NOTHING_TO_REDO] {
+            reads_as_a_persons_sentence(sentence, Voice::Answer)
+                .unwrap_or_else(|why| panic!("{sentence:?}: {why}"));
+        }
+        assert!(
+            NOTHING_TO_UNDO.contains("nothing to undo"),
+            "{NOTHING_TO_UNDO}"
+        );
+        assert!(
+            NOTHING_TO_REDO.contains("nothing to redo"),
+            "{NOTHING_TO_REDO}"
+        );
+        assert!(
+            NOTHING_TO_REDO.contains("Redo puts back what Undo just took away"),
+            "the sentence does not say when Redo works: {NOTHING_TO_REDO}"
+        );
     }
 
     #[test]

@@ -255,6 +255,7 @@ where the caret is.
 | Attachments | `Alt+A` | Moves between the message and the list of attachments, when there is one. Works in the formatted view as well |
 | Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
+| Print this tab | `Ctrl+P` | Prints the message, the conversation or the attachment in this tab through Windows' own print dialog, with every date written in full. The letter is `P` on the reader's File menu. Works in the formatted view as well, where it prints the message or the conversation the window shows |
 
 #### Attachments
 
@@ -508,7 +509,7 @@ can navigate. Making them real headings is being worked on.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Quit Application | `Ctrl+Q` | Exit Wixen Mail |
-| Undo Send | `Ctrl+Shift+Z` | First on the Edit menu. Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
+| Undo Send | `Ctrl+Shift+Z` | Third on the Edit menu, after Undo and Redo. Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
 | Open Settings | `Ctrl+,` | Open settings dialog |
 | Help for what you are looking at | `F1` | Opens the page about the module you are in. Every page is on the Help menu, which is the contents. |
 | Send Feedback | `Ctrl+Shift+F` | On the Help menu, and as a button on About. Tell the people who make Wixen Mail about a problem, an idea or a question, and read the whole message before it goes |
@@ -616,16 +617,21 @@ dialog once you have more than one.
 | Import a Folder of Messages | (none) | Read every saved message and mailbox file in a folder you choose, and in the folders inside it. Same destination. A file picker cannot answer with a folder, which is why this is its own command |
 | Export Mailbox | (none) | Write the folder you are looking at, and everything inside it, into one zip of mailbox files |
 | Import PGP Private Key | (none) | Read a private key in from a file so PGP mail can be opened. Experimental, and the menu says so |
+| Print | `Ctrl+P` | Print the message you are on in the message list, through Windows' own print dialog, where you choose the printer, the copies and the pages. Its header lines and its words are printed, not its pictures or formatting. On a conversation's row it prints the whole conversation, every message in order, each headed with its date in full. The reader window and the formatted message window print what they show the same way. In Contacts, Calendar, Tasks, Notes and Reminders it prints the item you are on, with the fields `Shift+Space` reads, one to a line |
 | Quit | `Ctrl+Q` | Exit the application |
 
 File holds making, saving, fetching and moving mail in and out. Anything that
 acts on the message, event, task, note or contact you are on is on the Action
-menu instead.
+menu instead, except Print, which is on File where every Windows program keeps
+it.
 
 ### Edit Menu
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
+| Undo | `Ctrl+Z` | Take back the last change in the box you are typing in |
+| Redo | `Ctrl+Y` | Put back what Undo just took away |
+| Undo Send | `Ctrl+Shift+Z` | Take back the message you just sent, while it is still being held |
 | Cut | `Ctrl+X` | Move what is selected to the clipboard |
 | Copy | `Ctrl+C` | Put what is selected on the clipboard |
 | Paste | `Ctrl+V` | Put what is on the clipboard where the cursor is |
@@ -633,13 +639,78 @@ menu instead.
 | Search | `Ctrl+F` | Searches whichever module you are looking at |
 | Save This Search | none | Keeps the mail search you just ran, under a name, in the folder tree |
 
+**Undo and Redo work on the box you are typing in**, such as a note's title or
+body, or the contacts search. Each box remembers up to 100 steps, and Undo
+takes them back one at a time. A step is:
+
+- a word you typed, up to and including the space or punctuation mark after it
+- a paste
+- a cut
+- a run of deleting in one direction, with Backspace or with Delete
+
+So if you type "meet at noon" and press `Ctrl+Z` three times, "noon" goes, then
+"at ", then "meet ". Each time the cursor goes back to where that step began,
+and words a step removed come back selected. Redo puts the steps back in turn,
+until you type something new; after that there is nothing for Redo to put back,
+and it says so. In the contacts search, each Undo runs the search again on the
+words it brings back.
+
+Choosing a note in the list starts its title and body afresh: Undo does not
+reach back into the note you had open before. The boxes in dialogs keep the same
+history of several steps, with `Ctrl+Z` and `Ctrl+Y`; see Dialog Navigation
+below for them and for the few boxes that keep Windows' own single step.
+
+When there is nothing to undo or redo, the menu shows the item greyed out, and
+a screen reader says it is unavailable. The keys still answer: `Ctrl+Z` with
+nothing to undo says "There is nothing to undo in this box." rather than doing
+nothing. In the sidebar or a message you are reading, Undo and Redo say they
+work in a box you can type in.
+
+**In the message list, Undo and Redo act on the last thing you did to
+messages**: Mark as Read or Unread, Star or Unstar, a label put on or taken
+off, Remove every label, Delete, Delete Permanently, Move to, or Copy to. With
+the list focused, the menu names it, such as "Undo Mark as Read: Quarterly
+report", "Undo Move to Archive: Invoice", or the count for a set, "Undo Star:
+4 messages". Undo puts each message back the way it was before, so marking a
+mix of read and unread messages read and then undoing it unreads only the
+ones that were unread. The change goes to the mail server the same way the
+action did, and if the server refuses, the message is put back and you are
+told why. One sentence is said for the undo, however many messages it
+covers.
+
+Only the last action is kept. It lasts until your next action on messages
+replaces it, with no time limit. After an Undo, Redo does the action again,
+and after that Undo is offered again. A message marked read because you
+stayed on it for the reading wait does not count as an action, so it never
+replaces what you did. With nothing to undo, `Ctrl+Z` says "There is nothing
+to undo in this list yet." Nothing in the other modules can be undone yet;
+there Undo and Redo still say they work in a box you can type in.
+
+**Undoing a move, a delete or a copy** puts the message back in the folder it
+came from, and the cursor lands on it when that folder is the one on screen.
+If the mail server has not been told yet, nothing is sent: the change is
+simply taken back on this computer. If the server has already done it, the
+message is moved back there too, the same way the move went, and a copy goes
+to the Trash rather than being deleted outright. Some things cannot come back,
+and Undo says which and why: a message deleted permanently once the server has
+it, a message moved or copied to another account, a message the server moved
+that this computer has not read back yet (refresh that folder and move it back
+from there), and a message whose change is reaching the server at that very
+moment (try again shortly). Undoing a move, a delete or a copy at the server
+is experimental, and the Undo item's help says so.
+
+**`Ctrl+Shift+Z` is Undo Send here, not Redo.** Some programs use it for Redo.
+In Wixen Mail Redo is on `Ctrl+Y`, which is Windows' own key for it, and Undo
+Send kept the key it already had. Its letter on the menu moved from U to N,
+because U is Undo's.
+
 **`Ctrl+A` used to open the Account Manager.** It is Select All now, which is
 what it means in every other Windows program, and the Account Manager moved to
 `Ctrl+Shift+A`. Before this, pressing Select All while editing a note put an
 accounts dialog in front of you.
 
-**What these do depends on where you are.** In a box you can type in, all four
-work as you would expect. In a list or the sidebar, Copy puts the row you are
+**What the clipboard four do depends on where you are.** In a box you can type
+in, all four work as you would expect. In a list or the sidebar, Copy puts the row you are
 on on the clipboard, and Select All selects every row. Cut and Paste need a box
 you can type in, and say so rather than doing nothing.
 
@@ -670,21 +741,21 @@ anything.
 | Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail. The message the cursor is on, whatever else is selected |
 | Next Unread, Previous Unread | `Ctrl+U`, `Ctrl+Shift+U` | Mail |
 | Read the Row's Headings and Text | `Ctrl+Shift+;` | Mail, with the message list focused. The row under the cursor column by column, each heading then its text, once; muted by `Ctrl+M` like any other reading of mail. See Reading the Item Under the Cursor, above |
-| Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read" |
-| Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many |
+| Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read". `Ctrl+Z` in the message list undoes it, each message back as it was |
+| Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many. `Ctrl+Z` in the message list undoes it |
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
 | Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders |
 | Pin or Unpin | `Ctrl+Shift+P` | Notes |
-| Delete | `Delete` | Every module. Deletes whichever item is chosen. In Mail, every selected message: it says "Delete" once and the cursor lands after the last of them once they have gone. A conversation row in the selection asks first, naming how many messages it holds |
-| Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way |
-| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept |
+| Delete | `Delete` | Every module. Deletes whichever item is chosen. In Mail, every selected message: it says "Delete" once and the cursor lands after the last of them once they have gone. A conversation row in the selection asks first, naming how many messages it holds. `Ctrl+Z` in the message list brings the messages back out of the Trash |
+| Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way. `Ctrl+Z` in the message list brings them back only while the mail server has not yet been told; once it has, the message is gone and Undo says so |
+| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, except a move to another account, which Undo refuses and says so. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept |
 
 Five submenus hold the rest:
 
 | Submenu | What is on it |
 |--------|----------|
-| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
-| Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation |
+| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. `Ctrl+Z` in the message list sends the copies to the Trash, except a copy into another account, which Undo refuses and says so. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
+| Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation. `Ctrl+Z` in the message list undoes the last label put on or taken off, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
@@ -931,8 +1002,8 @@ which way they went: pressing `Ctrl+B` to end a run of bold says "Bold off".
 | Numbered List | `Ctrl+Shift+O` | Start or end a numbered list |
 | Quote | `Ctrl+Shift+Q` | Indent the current line as a quotation |
 | Remove Formatting | `Ctrl+Space` | Strip formatting from the selection |
-| Undo | `Ctrl+Z` | Undo last edit |
-| Redo | `Ctrl+Y` | Redo last undo |
+| Undo | `Ctrl+Z` | Undo last edit. In the To, Cc, Bcc and Subject lines it takes back one step at a time, as in every box you type in |
+| Redo | `Ctrl+Y` | Redo last undo, in the message and in the To, Cc, Bcc and Subject lines |
 
 Headings and lists are worth using. They are the structure the person receiving
 your message navigates by, and a long message without them can only be read
@@ -1320,6 +1391,33 @@ the field accelerators for letters without making anything more reachable.
 | Previous Control | `Shift+Tab` | Move to previous control in dialog |
 | Activate Button | `Enter` or `Space` | Click focused button |
 | Cancel Dialog | `Esc` | Close dialog without saving |
+| Undo | `Ctrl+Z` | Take back the last step in the box you are typing in |
+| Redo | `Ctrl+Y` | Put back the step Undo just took away |
+
+**Undo and Redo in a dialog.** Every box you type in, in every window, keeps
+up to 100 steps, the same steps as the Edit menu describes above: the account
+settings, the message composer's address and subject lines, the contact
+editor, the event and task forms, the rules, labels and signatures, Send
+Feedback, Settings, and the boxes that ask for a name or a search. A dialog has
+no Edit menu, so the keys go straight to the box. What a dialog opens holding,
+such as an account's server name or a contact's nickname, is where the history
+starts, so Undo never empties a box of it. When there is nothing left to undo,
+`Ctrl+Z` says "There is nothing to undo in this box.", the same sentence the
+main window's Edit menu says, and `Ctrl+Y` with nothing to redo says so too,
+so the keys behave the same everywhere. A step that is undone says nothing:
+you hear the words that come back.
+
+Three kinds of box keep Windows' own single step, where pressing Undo a second
+time puts the change back:
+
+- the number fields, such as the minutes between checks for mail, the font
+  size, the rows and columns of a new table, and the hour and minute of an
+  event
+- the Describe the picture and Insert Link boxes in the composer, which are
+  ready-made dialogs this program borrows from the toolkit it is built on,
+  and whose box it cannot reach
+- a password box, which keeps no history at all, so a password is never held
+  in memory as a list of steps
 
 ## Screen Reader Specific
 

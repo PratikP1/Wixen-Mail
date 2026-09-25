@@ -3,7 +3,7 @@
 //! This panel lives inside the main window content area (not a dialog).
 
 use crate::presentation::accessibility::names::set_accessible_name;
-use crate::presentation::theme;
+use crate::presentation::{text_history_keys, theme};
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the contacts content panel.
@@ -44,6 +44,10 @@ pub fn build_contacts_panel(
     let search_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     let search_label = StaticText::builder(&panel).with_label("&Search:").build();
     let search_input = TextCtrl::builder(&panel).build();
+    // Several steps of undo, where Windows' own box keeps one. An undone step
+    // raises the box's change, so the search runs again on the words it
+    // brings back.
+    text_history_keys::keep_a_history(&search_input);
     set_accessible_name(&search_input, "Search contacts");
     search_sizer.add(
         &search_label,

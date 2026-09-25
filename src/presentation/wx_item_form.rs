@@ -101,6 +101,7 @@ use crate::presentation::accessibility::names::{
 use crate::presentation::date_display::{self, Clock, DateOrder, DateSettings};
 use crate::presentation::spin_field_keys::{Arrow, take_the_arrows};
 use crate::presentation::status_line::said_and_shown;
+use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
 use crate::presentation::wx_app::date_settings_from;
 use std::cell::{Cell, RefCell};
@@ -1065,6 +1066,7 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
             if let Some(text) = existing_text {
                 c.set_value(text);
             }
+            keep_a_history(&c);
             Control::Line(c)
         }
         Entry::Paragraph => {
@@ -1075,6 +1077,7 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
             if let Some(text) = existing_text {
                 c.set_value(text);
             }
+            keep_a_history(&c);
             Control::Paragraph(c)
         }
         // Several lines, like a paragraph, and a control of its own so that
@@ -1088,6 +1091,7 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
             if let Some(text) = existing_text {
                 c.set_value(text);
             }
+            keep_a_history(&c);
             Control::People(c)
         }
         Entry::Date => Control::Date(build_date_fields(
@@ -1142,6 +1146,7 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
             if let Some(text) = existing_text {
                 box_.set_value(text);
             }
+            keep_a_history(&box_);
             Control::Category(box_)
         }
         Entry::Whole { least, most } => {

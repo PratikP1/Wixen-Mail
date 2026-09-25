@@ -32,6 +32,7 @@ use crate::data::account::Account;
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -427,6 +428,7 @@ pub fn build_feedback_dialog<W: WxWidget>(
                 .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
                 .with_size(Size::new(520, 90))
                 .build();
+            keep_a_history(&field);
             sizer.add(&label, 0, SizerFlag::All, 4);
             sizer.add(&field, 0, SizerFlag::Expand | SizerFlag::All, 4);
             (label, field)
@@ -459,6 +461,7 @@ pub fn build_feedback_dialog<W: WxWidget>(
                 .unwrap_or_default(),
         )
         .build();
+    keep_a_history(&reply_to);
     set_accessible_name_and_description(
         &reply_to,
         "How to reach you",
