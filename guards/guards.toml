@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 308 records have arrived since and have not been through it.
+# 311 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -24293,27 +24293,19 @@ tests_last_seen = [
     { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
 ]
 
-# Edit, Undo sending EM_UNDO without asking EM_CANUNDO first, so a box with
-# nothing to take back answers "undone" and the window says "Undone" over a box
-# that did not change. The break takes the question out. Measured 2026-09-24 by
-# hand against `cargo test --test undo_reaches_the_text` on 13-01's branch: the
-# one reading of a fresh box went red and nothing else in the target did.
-[[guard]]
-name = "Undo asks the box whether it has anything to take back before it acts"
-file = "src/presentation/text_undo.rs"
-suite = "undo_reaches_the_text"
-before = '''pub fn undo(box_: &TextCtrl) -> Undone {
-    if !can_undo(box_) {
-        return Undone::NothingToUndo;
-    }'''
-after = '''pub fn undo(box_: &TextCtrl) -> Undone {'''
-red = [
-    "test_undo_in_a_box_with_nothing_to_undo_says_so",
-]
-tests_last_seen = [
-    { file = "src/presentation/text_undo.rs", tests = 0 },
-    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
-]
+# Two records retired on 2026-09-25 by 13-05, both written by 13-01 on
+# `text_undo.rs`'s one-step path: "Undo asks the box whether it has anything
+# to take back before it acts", whose break took `EM_CANUNDO` out before
+# `EM_UNDO`, and "Redo is refused once something is typed after the Undo",
+# whose break stopped `can_redo` comparing the box's words with the ones the
+# Undo left. 13-05 gave every box the Edit menu reaches a history of several
+# steps, so the `EM_UNDO` path, the `LastUndo` record and both functions went
+# with nothing left to call them. A record whose `before` names no place in
+# the tree is one the runner refuses. What they guarded is held now by the
+# history: nothing to undo in `History::undo` answering `None`, and typing
+# clearing redo in "typing after an undo leaves nothing to redo".
+# Neither was in the sweep of 2026-09-15, so the arrived-since count above
+# fell by two.
 
 # The Edit menu left as its opening left it once it closes, so Undo or Redo
 # greyed while the menu was open stays greyed, and wxWidgets swallows a greyed
@@ -24334,27 +24326,6 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
-]
-
-# Redo offered after typing since the Undo. A box of one step makes Redo the
-# same message as Undo, so Redo then would take the typing back. The break stops
-# `can_redo` comparing the box's words with the ones the Undo left. Measured
-# 2026-09-24 by hand on 13-01's branch: the reading of Redo after typing went
-# red and nothing else in the target did.
-[[guard]]
-name = "Redo is refused once something is typed after the Undo"
-file = "src/presentation/text_undo.rs"
-suite = "undo_reaches_the_text"
-before = '''pub fn can_redo(box_: &TextCtrl, last: &LastUndo) -> bool {
-    last.handle == handle_of(box_) && box_.get_value() == last.value_after && can_undo(box_)'''
-after = '''pub fn can_redo(box_: &TextCtrl, last: &LastUndo) -> bool {
-    last.handle == handle_of(box_) && can_undo(box_)'''
-red = [
-    "test_redo_is_refused_once_something_is_typed_after_the_undo",
-]
-tests_last_seen = [
-    { file = "src/presentation/text_undo.rs", tests = 0 },
     { file = "tests/undo_reaches_the_text.rs", tests = 15 },
 ]
 
@@ -30768,4 +30739,108 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/page_jumps.rs", tests = 6 },
+]
+
+# A space joining the run of typing it ends, so a whole sentence typed is one
+# step and Undo takes all of it back at once where somebody expects a word.
+# Written 2026-09-25 by 13-05, the break taken by hand against
+# `cargo test --lib application::` first: the three cases that type words
+# went red and nothing else did.
+[[guard]]
+name = "a space ends the step of typing it is typed in"
+file = "src/application/text_history.rs"
+before = '''    typed.is_whitespace() || typed.is_ascii_punctuation()'''
+after = '''    typed.is_ascii_punctuation()'''
+red = [
+    "application::text_history::tests::test_three_words_typed_come_back_one_word_at_a_time",
+    "application::text_history::tests::test_redo_puts_back_each_word_in_turn",
+    "application::text_history::tests::test_typing_after_an_undo_leaves_nothing_to_redo",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
+]
+
+# Redo kept after something new is typed, so Redo would put back a step onto
+# words it was never taken from. Written 2026-09-25 by 13-05, the break taken
+# by hand against `cargo test --lib application::` first: the one case went
+# red and nothing else did.
+[[guard]]
+name = "typing after an undo leaves nothing to redo"
+file = "src/application/text_history.rs"
+before = '''        self.value = after.to_string();
+        self.forward.clear();'''
+after = '''        self.value = after.to_string();'''
+red = [
+    "application::text_history::tests::test_typing_after_an_undo_leaves_nothing_to_redo",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
+]
+
+# Ctrl+Z in a box passed on after the history acted, so wxWidgets hands the
+# box the control character too and its own one-step undo runs on top of the
+# history's. The reading counts the characters that reach the box. Written
+# 2026-09-25 by 13-05, the break taken by hand against
+# `cargo test --test several_steps_come_back` first: the Ctrl+Z reading went
+# red and nothing else in the target did.
+[[guard]]
+name = "Ctrl+Z in a box is taken after the history acts, so the box does not undo again"
+file = "src/presentation/text_history_keys.rs"
+suite = "several_steps_come_back"
+before = '''            HistoryKey::Redo => redo_in(&pressed),
+        };
+        event.skip(false);'''
+after = '''            HistoryKey::Redo => redo_in(&pressed),
+        };
+        event.skip(true);'''
+red = [
+    "test_ctrl_z_in_the_box_undoes_one_step_and_the_box_does_not_undo_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_history_keys.rs", tests = 0 },
+    { file = "tests/several_steps_come_back.rs", tests = 11 },
+]
+
+# The history not taking the value it hands back, so the box's change on a
+# restore reads as a new step: Redo is cleared by the restore itself and the
+# next Undo takes the restore back. This is what keeps a history from
+# recording its own restore; the plan's flag in the registry turned out to
+# guard nothing, because with this line the change is empty. Written
+# 2026-09-25 by 13-05, the break taken by hand against
+# `cargo test --test several_steps_come_back` first.
+[[guard]]
+name = "a restore is not kept as a step, because the history already holds what it handed back"
+file = "src/application/text_history.rs"
+suite = "several_steps_come_back"
+before = '''        self.value = restore.value.clone();
+        self.sealed = true;'''
+after = '''        self.sealed = true;'''
+red = [
+    "test_three_words_typed_come_back_a_word_at_a_time",
+    "test_redo_puts_each_word_back_in_turn",
+    "test_a_restore_raises_the_change_and_is_not_kept_as_a_step",
+    "test_ctrl_y_in_the_box_puts_the_step_back",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
+    { file = "tests/several_steps_come_back.rs", tests = 11 },
+]
+
+# A note chosen in the list written into the editor with `set_value`, which
+# the history keeps as a step, so Ctrl+Z after choosing a note would bring the
+# last note's words back into this one. Written 2026-09-25 by 13-05, the break
+# taken by hand against `cargo test --test several_steps_come_back` first: the
+# reading of the note selection went red and nothing else in the target did.
+[[guard]]
+name = "a chosen note is written as the program's own value, not as a step"
+file = "src/presentation/wx_app.rs"
+suite = "several_steps_come_back"
+before = '''                                    set_anew(&title_input, &note.title);'''
+after = '''                                    title_input.set_value(&note.title);'''
+red = [
+    "test_a_chosen_note_is_written_as_the_programs_own_value",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_steps_come_back.rs", tests = 11 },
 ]

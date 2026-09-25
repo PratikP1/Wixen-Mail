@@ -2695,6 +2695,7 @@ impl WxMailApp {
                 let state = state.clone();
                 let note_cache = message_cache.clone();
                 move |event| {
+                    use crate::presentation::text_history_keys::set_anew;
                     let idx = event.get_item_index() as usize;
                     let selected = lock_state(&state).notes.get(idx).cloned();
                     match selected {
@@ -2706,23 +2707,26 @@ impl WxMailApp {
                             let full = note_cache
                                 .as_ref()
                                 .and_then(|cache| cache.get_note(&item.id).ok().flatten());
+                            // Each write starts the box's history afresh, so
+                            // Ctrl+Z after choosing a note cannot bring the
+                            // last note's words back into this one.
                             match full {
                                 Some(note) => {
-                                    title_input.set_value(&note.title);
-                                    body_input.set_value(&note.body);
+                                    set_anew(&title_input, &note.title);
+                                    set_anew(&body_input, &note.body);
                                     lock_state(&state).selected_note_id = Some(note.id);
                                 }
                                 None => {
-                                    title_input.set_value(&item.title);
-                                    body_input.set_value("");
+                                    set_anew(&title_input, &item.title);
+                                    set_anew(&body_input, "");
                                     lock_state(&state).selected_note_id = None;
                                     tracing::warn!("Note {} could not be read back", item.id);
                                 }
                             }
                         }
                         None => {
-                            title_input.set_value("");
-                            body_input.set_value("");
+                            set_anew(&title_input, "");
+                            set_anew(&body_input, "");
                             lock_state(&state).selected_note_id = None;
                         }
                     }
@@ -4023,13 +4027,7 @@ impl WxMailApp {
             };
             let follow_the_tray_setting = std::rc::Rc::new(follow_the_tray_setting);
 
-            // What the last Edit, Undo took away, so Edit, Redo can tell
-            // whether it is still the step to put back. Shared by the menu's
-            // handler below and by the menu opening, which greys Redo by it.
-            let last_undo: Rc<RefCell<Option<crate::presentation::text_undo::LastUndo>>> =
-                Rc::new(RefCell::new(None));
             let dispatch: std::rc::Rc<dyn Fn(i32)> = std::rc::Rc::new({
-                let last_undo = Rc::clone(&last_undo);
                 let follow_the_tray_setting = std::rc::Rc::clone(&follow_the_tray_setting);
                 let really_quitting = std::rc::Rc::clone(&really_quitting);
                 let state = state.clone();
@@ -4892,7 +4890,6 @@ impl WxMailApp {
                                         trees: &[folder_tree, pim_refs.contacts_tree],
                                         state: &state,
                                         dates,
-                                        last_undo: &last_undo,
                                         frame: &frame,
                                     },
                                     &a11y,
@@ -6036,7 +6033,6 @@ impl WxMailApp {
                     pim_refs.note_body,
                     pim_refs.contacts_search,
                 ],
-                last_undo,
             );
 
             // ── Closing, which does not always mean closing ───────────────
@@ -6806,13 +6802,14 @@ impl WxMailApp {
         let edit = Menu::builder()
             // Undo and Redo first, where they sit on every Edit menu on this
             // platform, on U and R and the keys Windows gives them (#47). They
-            // act on the box somebody is typing in, through the box's own one
-            // step: `application::editing` decides what they mean everywhere
-            // else and `presentation::text_undo` reaches the box. While this
-            // menu is open they are greyed if the box has nothing to take back
-            // or put back, so the menu reads its state, and as it closes both
-            // are offered again, because wxWidgets swallows a greyed item's key
-            // without a word (`keep_undo_and_redo_honest_on_the_menu`).
+            // act on the box somebody is typing in, through the box's history
+            // of several steps: `application::editing` decides what they mean
+            // everywhere else and `presentation::text_undo` reaches the box.
+            // While this menu is open they are greyed if the box has nothing
+            // to take back or put back, so the menu reads its state, and as it
+            // closes both are offered again, because wxWidgets swallows a
+            // greyed item's key without a word
+            // (`keep_undo_and_redo_honest_on_the_menu`).
             .append_item(
                 ID_EDIT_UNDO,
                 "&Undo\tCtrl+Z",
@@ -18572,16 +18569,12 @@ fn read_the_row_with_its_headings(
 /// work is a few questions to three boxes, cheap enough that a menu dropping
 /// does not wait on it. The event is skipped on so wxWidgets' own handling of
 /// a menu opening still runs.
-pub fn keep_undo_and_redo_honest_on_the_menu(
-    frame: &Frame,
-    boxes: Vec<TextCtrl>,
-    last: Rc<RefCell<Option<crate::presentation::text_undo::LastUndo>>>,
-) {
+pub fn keep_undo_and_redo_honest_on_the_menu(frame: &Frame, boxes: Vec<TextCtrl>) {
     use crate::presentation::text_undo::what_the_edit_menu_offers;
     let opened = *frame;
     frame.on_menu_opened(move |event| {
         let focused = boxes.iter().find(|box_| box_.has_focus());
-        let offer = what_the_edit_menu_offers(focused, last.borrow().as_ref());
+        let offer = what_the_edit_menu_offers(focused);
         sync_menu_enable(&opened, ID_EDIT_UNDO, offer.undo);
         sync_menu_enable(&opened, ID_EDIT_REDO, offer.redo);
         event.skip(true);
@@ -18639,7 +18632,6 @@ fn do_an_edit_command(
         trees,
         state,
         dates,
-        last_undo,
         frame,
     } = parts;
 
@@ -18744,8 +18736,8 @@ fn do_an_edit_command(
                         );
                     }
                 },
-                EditCommand::Undo => take_back_the_last_change(box_, last_undo, frame, a11y),
-                EditCommand::Redo => put_back_what_undo_took(box_, last_undo, frame, a11y),
+                EditCommand::Undo => take_back_the_last_step(box_, frame, a11y),
+                EditCommand::Redo => put_back_what_undo_took(box_, frame, a11y),
             }
         }
         Doing::ChooseEveryRow => {
@@ -18802,8 +18794,6 @@ struct EditParts<'a> {
     trees: &'a [TreeCtrl],
     state: &'a Arc<StdMutex<WxUIState>>,
     dates: crate::presentation::date_display::DateSettings,
-    /// What the last Undo took away, which Redo puts back.
-    last_undo: &'a RefCell<Option<crate::presentation::text_undo::LastUndo>>,
     /// Where Undo and Redo show what they said, on the status bar.
     frame: &'a Frame,
 }
@@ -18821,48 +18811,27 @@ fn say_what_the_undo_did(
     let _ = a11y.announce(said, priority);
 }
 
-/// Edit, Undo in a box you can type in.
-fn take_back_the_last_change(
-    box_: &TextCtrl,
-    last_undo: &RefCell<Option<crate::presentation::text_undo::LastUndo>>,
-    frame: &Frame,
-    a11y: &Arc<Accessibility>,
-) {
+/// Edit, Undo in a box you can type in: the box's last step taken back.
+fn take_back_the_last_step(box_: &TextCtrl, frame: &Frame, a11y: &Arc<Accessibility>) {
     use crate::application::editing::NOTHING_TO_UNDO;
     use crate::presentation::accessibility::announcements::Priority;
     use crate::presentation::text_undo::{Undone, undo};
     match undo(box_) {
-        Undone::Done(record) => {
-            *last_undo.borrow_mut() = Some(record);
-            say_what_the_undo_did(frame, a11y, "Undone", Priority::Normal);
-        }
+        Undone::Done => say_what_the_undo_did(frame, a11y, "Undone", Priority::Normal),
         Undone::NothingToUndo => {
             say_what_the_undo_did(frame, a11y, NOTHING_TO_UNDO, Priority::High)
         }
     }
 }
 
-/// Edit, Redo in a box you can type in: only right after an Undo in the same
-/// box with nothing typed since. The record is kept when Redo refuses, since
-/// it may still be right for the box the Undo was in.
-fn put_back_what_undo_took(
-    box_: &TextCtrl,
-    last_undo: &RefCell<Option<crate::presentation::text_undo::LastUndo>>,
-    frame: &Frame,
-    a11y: &Arc<Accessibility>,
-) {
+/// Edit, Redo in a box you can type in: the last step undone put back, until
+/// something new is typed there.
+fn put_back_what_undo_took(box_: &TextCtrl, frame: &Frame, a11y: &Arc<Accessibility>) {
     use crate::application::editing::NOTHING_TO_REDO;
     use crate::presentation::accessibility::announcements::Priority;
     use crate::presentation::text_undo::{Redone, redo};
-    let answer = last_undo
-        .borrow()
-        .as_ref()
-        .map_or(Redone::NothingToRedo, |record| redo(box_, record));
-    match answer {
-        Redone::Done => {
-            *last_undo.borrow_mut() = None;
-            say_what_the_undo_did(frame, a11y, "Redone", Priority::Normal);
-        }
+    match redo(box_) {
+        Redone::Done => say_what_the_undo_did(frame, a11y, "Redone", Priority::Normal),
         Redone::NothingToRedo => {
             say_what_the_undo_did(frame, a11y, NOTHING_TO_REDO, Priority::High)
         }

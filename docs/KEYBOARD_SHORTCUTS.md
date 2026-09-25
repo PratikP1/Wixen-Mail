@@ -640,12 +640,25 @@ it.
 | Save This Search | none | Keeps the mail search you just ran, under a name, in the folder tree |
 
 **Undo and Redo work on the box you are typing in**, such as a note's title or
-body, or the contacts search. In these builds a box remembers one change, so
-Undo takes back the last thing you typed, pasted or cut, and pressing Undo a
-second time puts it back again. Several steps of undo in every box are coming
-later in this round of testing. Redo works right after an Undo in the same
-box. Once you type something after the Undo, there is nothing for Redo to put
-back, and it says so.
+body, or the contacts search. Each box remembers up to 100 steps, and Undo
+takes them back one at a time. A step is:
+
+- a word you typed, up to and including the space or punctuation mark after it
+- a paste
+- a cut
+- a run of deleting in one direction, with Backspace or with Delete
+
+So if you type "meet at noon" and press `Ctrl+Z` three times, "noon" goes, then
+"at ", then "meet ". Each time the cursor goes back to where that step began,
+and words a step removed come back selected. Redo puts the steps back in turn,
+until you type something new; after that there is nothing for Redo to put back,
+and it says so. In the contacts search, each Undo runs the search again on the
+words it brings back.
+
+Choosing a note in the list starts its title and body afresh: Undo does not
+reach back into the note you had open before. The boxes in dialogs, such as the
+message composer and the account settings, still keep Windows' own single step,
+where pressing Undo a second time puts the change back.
 
 When there is nothing to undo or redo, the menu shows the item greyed out, and
 a screen reader says it is unavailable. The keys still answer: `Ctrl+Z` with
