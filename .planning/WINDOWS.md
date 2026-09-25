@@ -634,6 +634,8 @@ last_updated: 2026-09-25T18:00:00.000Z
 | 617 | 13 | unrun-verify | src/presentation/wx_reader.rs |  | 13-04: #45's other surfaces under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the reader window's letter P and Ctrl+P, and Ctrl+P in the formatted message window; Windows' print dialog worked by keyboard from each, with focus back on the tab's text or on the page when it closes; the one sentence heard after a job, a cancel and a failure in each; Print in Contacts, Calendar, Tasks, Notes and Reminders heard, with the refusal when nothing is chosen; and a conversation's pages and an item's page looked at by a sighted reader. tests/print_is_on_the_file_menu.rs holds every surface's route to the one path and presentation::page_jumps holds the page's key; neither opens the dialog or makes paper | open |  | 2026-09-25T18:00:00.000Z |  |
 | 618 | 13 | todo | src/presentation/reader_text.rs |  | 13-04: the reader window's conversation tab and the formatted conversation page head each message with its date as the list stores it, such as 2026-01-01T00:00:00+00:00, because reader_text::conversation (reader_text.rs:1169) and thread_parts (:729) take no reading. Premise 3 of 13-04 read where it comes from: conversation_nodes copies MessageItem.date into ThreadNode.date, and conversation_parts copies it back. Paper writes each heading's date in full since 13-04 (application::printing::conversation_on_paper); changing what the screen shows was not 13-04's. The fix is a reading handed to both compositions, as single_message already takes one | open |  | 2026-09-25T18:00:00.000Z |  |
 | 619 | 13 | unrun-verify | src/presentation/text_history_keys.rs |  | 13-05: several steps of undo in the main window's three boxes, under NVDA and Narrator. What only a person settles: each Ctrl+Z in the note title, the note body and the contacts search heard as the words of one step coming back, with the caret where that step began and a removed word heard as selected; Redo heard putting each step back; the contacts list heard changing as the search runs again on restored words; and choosing another note leaving nothing to undo. tests/several_steps_come_back.rs holds the steps, the caret, the restore raising the change and Ctrl+Z taken in the box on a real control; application::text_history holds the grouping; neither listens | open |  | 2026-09-25T20:00:00.000Z |  |
+| 620 | 13 | unrun-verify | src/presentation/wx_compose.rs |  | 13-06: several steps of undo in every dialog's boxes, under NVDA and Narrator. What only a person settles: in the composer's To, Cc, Bcc and Subject lines and in the account editor's boxes, each Ctrl+Z heard as the words of one step coming back and each Ctrl+Y putting one back; a box a dialog opened holding, such as a reply's Subject or an account's server, stopping at what it opened with; the contact editor's Prefix and Suffix combo boxes doing the same; and Ctrl+Z with nothing left to undo in a dialog, which says nothing, heard as nothing rather than as something broken. tests/several_steps_come_back.rs holds a box in a dialog, a combo box pressed at its edit, the Check Spelling box and the stored contact's boxes on real controls; tests/every_text_box_keeps_a_history.rs holds every box to the history; neither listens | open |  | 2026-09-25T22:00:00.000Z |  |
+| 621 | 13 | todo | src/presentation/wx_compose.rs |  | 13-06: what keeps Windows' single step, named rather than hidden. The composer's Describe the picture and Insert Link boxes are wxWidgets' own text-entry dialog (wx_compose.rs, TextEntryDialog::builder), whose box wxdragon 0.9.17 does not hand back, so keep_a_history cannot reach it; a dialog of this program's own for each would give them the history. The thirteen number fields (SpinCtrl::builder in wx_account_manager.rs, wx_compose.rs, wx_item_form.rs and wx_settings.rs) keep Windows' step too, which is short for a typed number; undo there only if Pratik wants it. And in a dialog, Ctrl+Z with nothing left to undo says nothing, as Windows' own does, where the main window's Edit menu says "There is nothing to undo in this box."; whether a dialog should say it too is his. tests/every_text_box_keeps_a_history.rs names the dialogs and the number fields in KEEPS_WINDOWS_ONE_STEP, and an entry naming a file that no longer builds one is refused | open |  | 2026-09-25T22:00:00.000Z |  |
 
 ````json
 [
@@ -8063,6 +8065,30 @@ last_updated: 2026-09-25T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 620,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13-06: several steps of undo in every dialog's boxes, under NVDA and Narrator. What only a person settles: in the composer's To, Cc, Bcc and Subject lines and in the account editor's boxes, each Ctrl+Z heard as the words of one step coming back and each Ctrl+Y putting one back; a box a dialog opened holding, such as a reply's Subject or an account's server, stopping at what it opened with; the contact editor's Prefix and Suffix combo boxes doing the same; and Ctrl+Z with nothing left to undo in a dialog, which says nothing, heard as nothing rather than as something broken. tests/several_steps_come_back.rs holds a box in a dialog, a combo box pressed at its edit, the Check Spelling box and the stored contact's boxes on real controls; tests/every_text_box_keeps_a_history.rs holds every box to the history; neither listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 621,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13-06: what keeps Windows' single step, named rather than hidden. The composer's Describe the picture and Insert Link boxes are wxWidgets' own text-entry dialog (wx_compose.rs, TextEntryDialog::builder), whose box wxdragon 0.9.17 does not hand back, so keep_a_history cannot reach it; a dialog of this program's own for each would give them the history. The thirteen number fields (SpinCtrl::builder in wx_account_manager.rs, wx_compose.rs, wx_item_form.rs and wx_settings.rs) keep Windows' step too, which is short for a typed number; undo there only if Pratik wants it. And in a dialog, Ctrl+Z with nothing left to undo says nothing, as Windows' own does, where the main window's Edit menu says \"There is nothing to undo in this box.\"; whether a dialog should say it too is his. tests/every_text_box_keeps_a_history.rs names the dialogs and the number fields in KEEPS_WINDOWS_ONE_STEP, and an entry naming a file that no longer builds one is refused",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T22:00:00.000Z",
     "resolved_at": null
   }
 ]
