@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 315 records have arrived since and have not been through it.
+# 320 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30787,12 +30787,16 @@ tests_last_seen = [
 name = "Ctrl+Z in a box is taken after the history acts, so the box does not undo again"
 file = "src/presentation/text_history_keys.rs"
 suite = "several_steps_come_back"
-before = '''            HistoryKey::Redo => redo_in(&pressed),
-        };
+before = '''            say_there_was_nothing(history_key);
+        }
         event.skip(false);'''
-after = '''            HistoryKey::Redo => redo_in(&pressed),
-        };
+after = '''            say_there_was_nothing(history_key);
+        }
         event.skip(true);'''
+#
+# Anchor moved 2026-09-25 by 13-07, which put the sentence for a key with
+# nothing to do between the history's answer and the skip; the break taken
+# by hand on the new text reddened the same two readings.
 #
 # Re-measured 2026-09-25 by 13-06, the break taken by hand again: the combo
 # box's Ctrl+Z reading goes red too, because a combo box's key-down is this
@@ -30804,7 +30808,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # The history not taking the value it hands back, so the box's change on a
@@ -30837,7 +30841,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/text_history.rs", tests = 10 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # A note chosen in the list written into the editor with `set_value`, which
@@ -30856,7 +30860,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # The composer's Subject box built without its history, so it keeps Windows'
@@ -30903,7 +30907,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # A stored contact's nickname written into the editor with `set_value`, which
@@ -30922,7 +30926,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # The Check Spelling box built without its history, so a word typed after the
@@ -30944,5 +30948,113 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
+]
+
+# An undo of a mark reaching the messages the action did not change: Mark as
+# Read over a set where one was read already sends that one a mark it already
+# carries, and a label put on sends a message that already had it a removal,
+# taking off a label it carried before anybody touched it. Written 2026-09-25
+# by 13-07, the break taken by hand against the whole library first: the
+# mixed-set case and the label case went red and nothing else did. T-13-21.
+[[guard]]
+name = "an undo leaves out the messages the action did not change"
+file = "src/application/undoing.rs"
+before = '''        LastAction::Marked { mark, before } => before
+            .iter()
+            .filter(|message| !mark.was_already_on(message))
+            .map(|message| (message.clone(), mark.as_it_was_on(message)))'''
+after = '''        LastAction::Marked { mark, before } => before
+            .iter()
+            .map(|message| (message.clone(), mark.as_it_was_on(message)))'''
+red = [
+    "application::undoing::tests::test_undoing_a_label_put_on_takes_it_off_only_where_it_was_not",
+    "application::undoing::tests::test_undoing_mark_as_read_over_a_mixed_set_puts_back_each_messages_own_state",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 8 },
+]
+
+# A set named by its first message's subject, so "Undo Mark as Read" over four
+# messages reads as though it were over one, and the sentence after it says the
+# same. Written 2026-09-25 by 13-07, the break taken by hand against the whole
+# library first: the menu case and the sentences case went red and nothing
+# else did.
+[[guard]]
+name = "an undo over several messages names the count, not the first subject"
+file = "src/application/undoing.rs"
+before = '''            [only] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),'''
+after = '''            [only, ..] if !only.subject.trim().is_empty() => only.subject.trim().to_string(),'''
+red = [
+    "application::undoing::tests::test_every_undo_sentence_reads_as_a_persons_sentence",
+    "application::undoing::tests::test_the_menu_names_the_message_or_the_count",
+]
+tests_last_seen = [
+    { file = "src/application/undoing.rs", tests = 8 },
+]
+
+# Mark as Read remembering an action before its writes, so a write the cache
+# refuses part way through a set leaves Edit, Undo offering to take back
+# changes that were never made. Written 2026-09-25 by 13-07, the break taken
+# by hand against `cargo test --test undoing_a_mark_names_the_message` first:
+# the Mark as Read reading went red and nothing else in the target did.
+[[guard]]
+name = "Mark as Read remembers its action after its writes, not before"
+file = "src/presentation/wx_app.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''    let new_read = what_mark_read_does(&chosen);
+    for message in &chosen.messages {'''
+after = '''    let new_read = what_mark_read_does(&chosen);
+    remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });
+    for message in &chosen.messages {'''
+red = [
+    "test_marking_read_remembers_the_action_after_its_writes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 10 },
+]
+
+# The program's own mark after the reading wait replacing the last action, so
+# Edit, Undo would unread a message nobody marked and lose what somebody did.
+# Written 2026-09-25 by 13-07, the break taken by hand against `cargo test
+# --test undoing_a_mark_names_the_message` first: the reading of the program's
+# own mark went red and nothing else in the target did.
+[[guard]]
+name = "the mark after the reading wait is not remembered as somebody's action"
+file = "src/presentation/wx_app.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''fn mark_what_was_read(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;'''
+after = '''fn mark_what_was_read(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;
+    remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });'''
+red = [
+    "test_the_programs_own_mark_after_the_reading_wait_is_not_remembered",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 10 },
+]
+
+# A box in a dialog pressed Ctrl+Z or Ctrl+Y with nothing to take back or put
+# back, and nothing said, which cannot be told from a key that is broken
+# (ledger 621). Written 2026-09-25 by 13-07, the break taken by hand against
+# `cargo test --test several_steps_come_back` first: the reading of a dialog's
+# empty keys went red and nothing else in the target did.
+[[guard]]
+name = "a dialog's Ctrl+Z with nothing to undo says so in the Edit menu's words"
+file = "src/presentation/text_history_keys.rs"
+suite = "several_steps_come_back"
+before = '''        if !acted {
+            say_there_was_nothing(history_key);
+        }'''
+after = '''        if !acted {
+        }'''
+red = [
+    "test_ctrl_z_and_ctrl_y_with_nothing_left_in_a_dialog_say_what_the_edit_menu_says",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_history_keys.rs", tests = 0 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]

@@ -87,6 +87,16 @@ pub enum Where {
     SomewhereElse,
 }
 
+/// What Undo or Redo says in a place with nothing it could take back: the
+/// sidebar, and every list but the message list until the other modules have
+/// an undo of their own.
+pub fn works_in_a_box_not_here(command: EditCommand) -> String {
+    format!(
+        "{} works in a box you can type in, not in a list or the sidebar.",
+        command.name()
+    )
+}
+
 /// What to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Doing {
@@ -96,6 +106,10 @@ pub enum Doing {
     CopyWhatIsChosen,
     /// Choose every row.
     ChooseEveryRow,
+    /// Undo or Redo the last action on the list's items. Which lists have one
+    /// is the window's to say, since only it knows what each list last did;
+    /// a list with none says so in a sentence (`application::undoing`).
+    TheLastAction,
     /// Nothing, and this is what to say about it.
     NotHere(String),
 }
@@ -123,14 +137,13 @@ pub fn what_to_do(command: EditCommand, place: Where) -> Doing {
             command.name()
         )),
 
-        // Undo and Redo take back and put back a change somebody typed, and a
-        // list or the sidebar has none to offer. Nor does the way out Cut and
-        // Copy give below, which would send somebody to a list for Undo.
-        (EditCommand::Undo | EditCommand::Redo, Where::AList { .. } | Where::ATree) => {
-            Doing::NotHere(format!(
-                "{} works in a box you can type in, not in a list or the sidebar.",
-                command.name()
-            ))
+        // In a list, Undo and Redo take back and do again the last thing done
+        // to its items (#47's second level, 13-07). The sidebar has nothing
+        // anybody could take back. Nor does the way out Cut and Copy give
+        // below, which would send somebody to a list for Undo.
+        (EditCommand::Undo | EditCommand::Redo, Where::AList { .. }) => Doing::TheLastAction,
+        (EditCommand::Undo | EditCommand::Redo, Where::ATree) => {
+            Doing::NotHere(works_in_a_box_not_here(command))
         }
         (EditCommand::Undo | EditCommand::Redo, Where::SomewhereElse) => Doing::NotHere(format!(
             "{} works in a box you can type in. Tab or F6 moves between the parts of the window.",
@@ -312,18 +325,34 @@ mod tests {
     }
 
     #[test]
-    fn test_undo_and_redo_in_a_list_or_the_sidebar_say_they_work_in_a_box() {
+    fn test_undo_and_redo_in_the_sidebar_say_they_work_in_a_box() {
         // Not Cut's "Copy works here", which answers a different question,
-        // and no promise of something that does not exist yet.
+        // and no promise of something that does not exist yet. A list has
+        // its own meaning for them since 13-07; the sidebar changes nothing
+        // anybody could take back.
         for command in TAKING_BACK {
-            for place in [Where::AList { rows: 10 }, Where::ATree] {
-                let Doing::NotHere(said) = what_to_do(command, place) else {
-                    panic!("{command:?} claimed to work in {place:?}");
-                };
-                assert!(said.starts_with(command.name()), "{said}");
-                assert!(said.contains("a box you can type in"), "{said}");
-                assert!(!said.contains("Copy works here"), "{said}");
-                assert!(!said.contains("later"), "{said}");
+            let Doing::NotHere(said) = what_to_do(command, Where::ATree) else {
+                panic!("{command:?} claimed to work in the sidebar");
+            };
+            assert!(said.starts_with(command.name()), "{said}");
+            assert!(said.contains("a box you can type in"), "{said}");
+            assert!(!said.contains("Copy works here"), "{said}");
+            assert!(!said.contains("later"), "{said}");
+        }
+    }
+
+    #[test]
+    fn test_undo_in_a_list_is_the_last_action() {
+        // What was last done to the list's items, a mark or a star or a
+        // label, which the window holds and the list names (#47's second
+        // level). However many rows the list has.
+        for command in TAKING_BACK {
+            for rows in [0, 10, MOST_ROWS_WORTH_SELECTING + 1] {
+                assert_eq!(
+                    what_to_do(command, Where::AList { rows }),
+                    Doing::TheLastAction,
+                    "{command:?} in a list of {rows}"
+                );
             }
         }
     }

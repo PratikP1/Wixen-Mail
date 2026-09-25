@@ -1179,7 +1179,8 @@ A task has a due date and no time, so none of this changes the task window.
   says so. Boxes in dialogs keep the same steps: the composer's address and
   subject lines, the account settings, the contact editor and every other
   box you type in. What a dialog opens holding is where Undo stops, and in a
-  dialog, with nothing left to undo, the key does nothing and says nothing
+  dialog, with nothing left to undo, the key says so in the same words as the
+  main window
 - `Ctrl+Y` - Redo, putting back the steps Undo took, one at a time. Once you
   type something new, there is nothing to redo, and it says so
 
@@ -1210,6 +1211,12 @@ a screen reader says they are unavailable.
 - `Ctrl+Shift+S` - Star or unstar the selected messages. Until 2026-09-20 this
   line said `S`, which has never been bound
 - `M` - Mark as read or as unread, and hear which
+- `Ctrl+Z` in the message list - Undo the last mark as read or unread, star
+  or label, each message back the way it was. The Edit menu names it, such as
+  "Undo Mark as Read: Quarterly report", and `Ctrl+Y` does it again. It lasts
+  until your next action on messages, with no time limit, and the change goes
+  to the mail server the way the action did. Moves and deletes cannot be undone
+  yet
 - `Space` - Read the message aloud
 
 ### Navigation

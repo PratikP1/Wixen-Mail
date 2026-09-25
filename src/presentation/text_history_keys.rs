@@ -38,8 +38,12 @@ use std::collections::HashMap;
 use wxdragon::event::KeyboardEvent;
 use wxdragon::prelude::*;
 
+/// What says a dialog's key had nothing to do; see `say_nothing_left_through`.
+type Voice = Box<dyn Fn(&str)>;
+
 thread_local! {
     static KEPT: RefCell<HashMap<isize, History>> = RefCell::new(HashMap::new());
+    static VOICE: RefCell<Option<Voice>> = const { RefCell::new(None) };
 }
 
 /// Which of the two history keys a key press is, if either.
@@ -130,16 +134,44 @@ pub fn keep_a_history(box_: &impl TextBox) {
             return;
         };
         // Taken whether or not there was a step, so the box's own undo never
-        // runs on top. Saying what came of it is the Edit menu's in the main
-        // window, which takes these keys before the box does.
-        let _acted = match history_key {
+        // runs on top. In the main window the Edit menu takes these keys
+        // before the box does and says what came of them; in a dialog this
+        // is what answers, and a key with nothing to do says so rather than
+        // nothing (ledger 621). A step undone is heard as the words coming
+        // back.
+        let acted = match history_key {
             HistoryKey::Undo => undo_in(&pressed),
             HistoryKey::Redo => redo_in(&pressed),
         };
+        if !acted {
+            say_there_was_nothing(history_key);
+        }
         event.skip(false);
     });
     box_.on_destroy(move |_| {
         KEPT.with_borrow_mut(|histories| histories.remove(&handle));
+    });
+}
+
+/// Who says, in a dialog, that Ctrl+Z or Ctrl+Y had nothing to take back or
+/// put back: the main window hands over its screen reader voice once, when it
+/// is built, since a box in a dialog knows nothing of it. Until then, and in
+/// a test that hands over nothing, the keys say nothing.
+pub fn say_nothing_left_through(speaker: impl Fn(&str) + 'static) {
+    VOICE.with_borrow_mut(|voice| *voice = Some(Box::new(speaker)));
+}
+
+/// Say, in the Edit menu's words, that the key had nothing to do.
+fn say_there_was_nothing(key: HistoryKey) {
+    use crate::application::editing::{NOTHING_TO_REDO, NOTHING_TO_UNDO};
+    let said = match key {
+        HistoryKey::Undo => NOTHING_TO_UNDO,
+        HistoryKey::Redo => NOTHING_TO_REDO,
+    };
+    VOICE.with_borrow(|voice| {
+        if let Some(speak) = voice {
+            speak(said);
+        }
     });
 }
 

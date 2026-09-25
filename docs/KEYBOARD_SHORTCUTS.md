@@ -663,8 +663,28 @@ below for them and for the few boxes that keep Windows' own single step.
 When there is nothing to undo or redo, the menu shows the item greyed out, and
 a screen reader says it is unavailable. The keys still answer: `Ctrl+Z` with
 nothing to undo says "There is nothing to undo in this box." rather than doing
-nothing. In a list, the sidebar or a message you are reading, Undo and Redo
-say they work in a box you can type in.
+nothing. In the sidebar or a message you are reading, Undo and Redo say they
+work in a box you can type in.
+
+**In the message list, Undo and Redo act on the last thing you did to
+messages**: Mark as Read or Unread, Star or Unstar, a label put on or taken
+off, or Remove every label. With the list focused, the menu names it, such as
+"Undo Mark as Read: Quarterly report", or the count for a set, "Undo Star: 4
+messages". Undo puts each message back the way it was before, so marking a
+mix of read and unread messages read and then undoing it unreads only the
+ones that were unread. The change goes to the mail server the same way the
+action did, and if the server refuses, the message is put back and you are
+told why. One sentence is said for the undo, however many messages it
+covers.
+
+Only the last action is kept. It lasts until your next action on messages
+replaces it, with no time limit. After an Undo, Redo does the action again,
+and after that Undo is offered again. A message marked read because you
+stayed on it for the reading wait does not count as an action, so it never
+replaces what you did. With nothing to undo, `Ctrl+Z` says "There is nothing
+to undo in this list yet." Moving, deleting and copying messages cannot be
+undone yet, and neither can anything in the other modules, where Undo and
+Redo still say they work in a box you can type in.
 
 **`Ctrl+Shift+Z` is Undo Send here, not Redo.** Some programs use it for Redo.
 In Wixen Mail Redo is on `Ctrl+Y`, which is Windows' own key for it, and Undo
@@ -708,8 +728,8 @@ anything.
 | Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail. The message the cursor is on, whatever else is selected |
 | Next Unread, Previous Unread | `Ctrl+U`, `Ctrl+Shift+U` | Mail |
 | Read the Row's Headings and Text | `Ctrl+Shift+;` | Mail, with the message list focused. The row under the cursor column by column, each heading then its text, once; muted by `Ctrl+M` like any other reading of mail. See Reading the Item Under the Cursor, above |
-| Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read" |
-| Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many |
+| Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read". `Ctrl+Z` in the message list undoes it, each message back as it was |
+| Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many. `Ctrl+Z` in the message list undoes it |
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
 | Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders |
 | Pin or Unpin | `Ctrl+Shift+P` | Notes |
@@ -722,7 +742,7 @@ Five submenus hold the rest:
 | Submenu | What is on it |
 |--------|----------|
 | Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
-| Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation |
+| Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation. `Ctrl+Z` in the message list undoes the last label put on or taken off, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
@@ -1369,7 +1389,10 @@ Feedback, Settings, and the boxes that ask for a name or a search. A dialog has
 no Edit menu, so the keys go straight to the box. What a dialog opens holding,
 such as an account's server name or a contact's nickname, is where the history
 starts, so Undo never empties a box of it. When there is nothing left to undo,
-the key does nothing and says nothing, as Windows' own undo does.
+`Ctrl+Z` says "There is nothing to undo in this box.", the same sentence the
+main window's Edit menu says, and `Ctrl+Y` with nothing to redo says so too,
+so the keys behave the same everywhere. A step that is undone says nothing:
+you hear the words that come back.
 
 Three kinds of box keep Windows' own single step, where pressing Undo a second
 time puts the change back:
