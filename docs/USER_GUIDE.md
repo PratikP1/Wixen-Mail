@@ -1210,6 +1210,12 @@ a screen reader says they are unavailable.
 - `Ctrl+Shift+S` - Star or unstar the selected messages. Until 2026-09-20 this
   line said `S`, which has never been bound
 - `M` - Mark as read or as unread, and hear which
+- `Ctrl+Z` in the message list - Undo the last mark as read or unread, star
+  or label, each message back the way it was. The Edit menu names it, such as
+  "Undo Mark as Read: Quarterly report", and `Ctrl+Y` does it again. It lasts
+  until your next action on messages, with no time limit, and the change goes
+  to the mail server the way the action did. Moves and deletes cannot be undone
+  yet
 - `Space` - Read the message aloud
 
 ### Navigation

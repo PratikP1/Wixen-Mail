@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 317 records have arrived since and have not been through it.
+# 319 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30987,4 +30987,48 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/undoing.rs", tests = 8 },
+]
+
+# Mark as Read remembering an action before its writes, so a write the cache
+# refuses part way through a set leaves Edit, Undo offering to take back
+# changes that were never made. Written 2026-09-25 by 13-07, the break taken
+# by hand against `cargo test --test undoing_a_mark_names_the_message` first:
+# the Mark as Read reading went red and nothing else in the target did.
+[[guard]]
+name = "Mark as Read remembers its action after its writes, not before"
+file = "src/presentation/wx_app.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''    let new_read = what_mark_read_does(&chosen);
+    for message in &chosen.messages {'''
+after = '''    let new_read = what_mark_read_does(&chosen);
+    remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });
+    for message in &chosen.messages {'''
+red = [
+    "test_marking_read_remembers_the_action_after_its_writes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 10 },
+]
+
+# The program's own mark after the reading wait replacing the last action, so
+# Edit, Undo would unread a message nobody marked and lose what somebody did.
+# Written 2026-09-25 by 13-07, the break taken by hand against `cargo test
+# --test undoing_a_mark_names_the_message` first: the reading of the program's
+# own mark went red and nothing else in the target did.
+[[guard]]
+name = "the mark after the reading wait is not remembered as somebody's action"
+file = "src/presentation/wx_app.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''fn mark_what_was_read(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;'''
+after = '''fn mark_what_was_read(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;
+    remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });'''
+red = [
+    "test_the_programs_own_mark_after_the_reading_wait_is_not_remembered",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 10 },
 ]

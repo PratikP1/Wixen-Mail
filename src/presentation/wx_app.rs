@@ -416,6 +416,14 @@ pub struct WxUIState {
     /// started the moment a row was selected, and a walk through a folder by
     /// ear marked every message stopped on.
     pub reading_began: Option<(i64, std::time::Instant)>,
+    /// The last thing somebody did to messages, a mark, a star or a label,
+    /// which Edit, Undo takes back in the message list (#47, 13-07).
+    ///
+    /// Written once by each of the three commands after its writes, and
+    /// replaced by the next; never by the program's own mark after the reading
+    /// wait, which nobody did. It holds no time: it lasts until the next
+    /// action, because a limit would be a timing trap (WCAG 2.2.1).
+    pub last_action: Option<crate::application::undoing::OneStep>,
     /// Folder name to database id, so selecting a folder can read it.
     pub folder_ids: std::collections::HashMap<String, i64>,
     /// The watch on each account's inbox, by account id: the connection when
@@ -689,6 +697,7 @@ impl Default for WxUIState {
             selected_folder: None,
             receipt_offered: None,
             reading_began: None,
+            last_action: None,
             folder_ids: std::collections::HashMap::new(),
             mail_watches: std::collections::HashMap::new(),
             last_checked: std::collections::HashMap::new(),
@@ -4259,6 +4268,13 @@ impl WxMailApp {
                                     ServerChange::Flag(FlagChange::Flagged(starred)),
                                 );
                             }
+                            remember_the_last_action(
+                                app.state,
+                                crate::application::undoing::LastAction::Marked {
+                                    mark: crate::application::undoing::Mark::Starred(starred),
+                                    before: as_they_were(&chosen.messages, &[]),
+                                },
+                            );
                             msg_list.refresh(true, None);
                             let outcome = if starred {
                                 Outcome::Starred
@@ -4892,6 +4908,11 @@ impl WxMailApp {
                                         state: &state,
                                         dates,
                                         frame: &frame,
+                                        messages: TheMessageList {
+                                            app,
+                                            cache: &message_cache,
+                                            toolbar: toolbar_handle,
+                                        },
                                     },
                                     &a11y,
                                 );
@@ -6026,14 +6047,16 @@ impl WxMailApp {
                 let dispatch = std::rc::Rc::clone(&dispatch);
                 move |event| dispatch(event.get_id())
             });
-            // The same three boxes the Edit commands act on.
-            keep_undo_and_redo_honest_on_the_menu(
+            // The same three boxes the Edit commands act on, and the message
+            // list, whose Undo names the last action on messages.
+            keep_the_edit_menu_honest(
                 &frame,
                 vec![
                     pim_refs.note_title,
                     pim_refs.note_body,
                     pim_refs.contacts_search,
                 ],
+                Some((msg_list, state.clone())),
             );
 
             // ── Closing, which does not always mean closing ───────────────
@@ -11159,6 +11182,13 @@ fn toggle_read_state(
             ServerChange::Flag(FlagChange::Read(new_read)),
         );
     }
+    remember_the_last_action(
+        state,
+        crate::application::undoing::LastAction::Marked {
+            mark: crate::application::undoing::Mark::Read(new_read),
+            before: as_they_were(&chosen.messages, &[]),
+        },
+    );
     list.refresh(true, None);
     let word = crate::application::marking_read::what_the_key_says(new_read);
     let outcome = if new_read {
@@ -11243,6 +11273,44 @@ fn refresh_mark_read_wording(
         crate::presentation::toolbar_text::relabel(&toolbar, ID_MARK_READ, wording.spoken);
         toolbar.set_tool_short_help(ID_MARK_READ, wording.help);
     }
+}
+
+/// Keep what somebody just did to messages as the one step Edit, Undo takes
+/// back in the message list, replacing whatever was kept (#47, 13-07).
+///
+/// Called once by each command that marks, after its writes, so a command
+/// that stopped part way through a set is never remembered as done. An action
+/// that changed nothing, such as Remove every label over messages with none,
+/// leaves the step that was there, since there is nothing in it to take back.
+fn remember_the_last_action(
+    state: &Arc<StdMutex<WxUIState>>,
+    action: crate::application::undoing::LastAction,
+) {
+    use crate::application::undoing::{OneStep, what_redo_does};
+    if what_redo_does(&action).is_empty() {
+        return;
+    }
+    lock_state(state).last_action = Some(OneStep::new(action));
+}
+
+/// Each chosen message as it was before a command, with the labels it
+/// carried when the command is about labels and none otherwise.
+fn as_they_were(
+    messages: &[crate::application::choosing_messages::MessageRef],
+    labels_on_each: &[Vec<crate::application::undoing::Label>],
+) -> Vec<crate::application::undoing::Before> {
+    messages
+        .iter()
+        .enumerate()
+        .map(|(at, message)| crate::application::undoing::Before {
+            row_id: message.row_id,
+            uid: message.uid,
+            subject: message.subject.clone(),
+            read: message.read,
+            starred: message.starred,
+            labels: labels_on_each.get(at).cloned().unwrap_or_default(),
+        })
+        .collect()
 }
 
 /// Mark the message somebody read, once the wait the setting names has run
@@ -11600,8 +11668,22 @@ fn label_the_message(
                 .collect()
         })
         .collect();
+    // Each message's labels as they were, for Edit, Undo to put back.
+    let before = {
+        let labels_on_each: Vec<Vec<crate::application::undoing::Label>> = on_each
+            .iter()
+            .map(|on_it| {
+                labels
+                    .iter()
+                    .filter(|tag| on_it.contains(&tag.name))
+                    .map(crate::application::undoing::Label::from)
+                    .collect()
+            })
+            .collect();
+        as_they_were(&chosen.messages, &labels_on_each)
+    };
 
-    let outcome = match number {
+    let (outcome, action) = match number {
         None => {
             let mut removed = 0;
             for (message, on_it) in chosen.messages.iter().zip(&on_each) {
@@ -11631,7 +11713,10 @@ fn label_the_message(
                     }
                 }
             }
-            Outcome::LabelsRemoved(removed)
+            (
+                Outcome::LabelsRemoved(removed),
+                crate::application::undoing::LastAction::LabelsRemoved { before },
+            )
         }
         Some(number) => {
             let Some(label) = tagging::at_number(&labels, number) else {
@@ -11677,13 +11762,22 @@ fn label_the_message(
                     ),
                 }
             }
-            if turning_on {
+            let outcome = if turning_on {
                 Outcome::Labelled(label.name.clone())
             } else {
                 Outcome::Unlabelled(label.name.clone())
-            }
+            };
+            let mark = crate::application::undoing::Mark::Label {
+                label: crate::application::undoing::Label::from(label),
+                on: turning_on,
+            };
+            (
+                outcome,
+                crate::application::undoing::LastAction::Marked { mark, before },
+            )
         }
     };
+    remember_the_last_action(state, action);
 
     // Spoken rather than left in the status line. A label is not visible from
     // the row it is on, so somebody who pressed the wrong number has no other
@@ -18571,21 +18665,86 @@ fn read_the_row_with_its_headings(
 /// does not wait on it. The event is skipped on so wxWidgets' own handling of
 /// a menu opening still runs.
 pub fn keep_undo_and_redo_honest_on_the_menu(frame: &Frame, boxes: Vec<TextCtrl>) {
+    keep_the_edit_menu_honest(frame, boxes, None);
+}
+
+/// The same, and with the message list focused Undo and Redo name the last
+/// action on messages instead, "Undo Mark as Read: Quarterly report", greyed
+/// by which way the one step can go (13-07). Closing puts back the words the
+/// menu was built with, read off the bar when this is bound, so the two
+/// cannot drift apart.
+fn keep_the_edit_menu_honest(
+    frame: &Frame,
+    boxes: Vec<TextCtrl>,
+    messages: Option<(ListCtrl, Arc<StdMutex<WxUIState>>)>,
+) {
     use crate::presentation::text_undo::what_the_edit_menu_offers;
+    let plain = [ID_EDIT_UNDO, ID_EDIT_REDO].map(|id| words_on_the_menu(frame, id));
     let opened = *frame;
     frame.on_menu_opened(move |event| {
-        let focused = boxes.iter().find(|box_| box_.has_focus());
-        let offer = what_the_edit_menu_offers(focused);
-        sync_menu_enable(&opened, ID_EDIT_UNDO, offer.undo);
-        sync_menu_enable(&opened, ID_EDIT_REDO, offer.redo);
+        match messages.as_ref().filter(|(list, _)| list.has_focus()) {
+            Some((_, state)) => {
+                name_the_step_on_the_edit_menu(&opened, lock_state(state).last_action.as_ref());
+            }
+            None => {
+                let focused = boxes.iter().find(|box_| box_.has_focus());
+                let offer = what_the_edit_menu_offers(focused);
+                sync_menu_enable(&opened, ID_EDIT_UNDO, offer.undo);
+                sync_menu_enable(&opened, ID_EDIT_REDO, offer.redo);
+            }
+        }
         event.skip(true);
     });
     let closed = *frame;
     frame.on_menu_closed(move |event| {
-        sync_menu_enable(&closed, ID_EDIT_UNDO, true);
-        sync_menu_enable(&closed, ID_EDIT_REDO, true);
+        for (id, words) in [ID_EDIT_UNDO, ID_EDIT_REDO].into_iter().zip(&plain) {
+            if let Some(words) = words {
+                put_words_on_the_menu(&closed, id, words);
+            }
+            sync_menu_enable(&closed, id, true);
+        }
         event.skip(true);
     });
+}
+
+/// An item's label and help as the bar holds them.
+fn words_on_the_menu(frame: &Frame, id: i32) -> Option<(String, String)> {
+    let (item, menu) = frame.get_menu_bar()?.find_item_and_menu(id)?;
+    Some((item.get_label(), menu.get_help_string(id)))
+}
+
+fn put_words_on_the_menu(frame: &Frame, id: i32, (label, help): &(String, String)) {
+    if let Some((item, menu)) = frame
+        .get_menu_bar()
+        .and_then(|bar| bar.find_item_and_menu(id))
+    {
+        item.set_label(label);
+        menu.set_help_string(id, help);
+    }
+}
+
+/// Undo and Redo named for the last action on messages, each offered only
+/// when the one step can go that way, so the menu reads what Ctrl+Z would do.
+/// With nothing kept both keep their plain words and are greyed.
+fn name_the_step_on_the_edit_menu(
+    frame: &Frame,
+    step: Option<&crate::application::undoing::OneStep>,
+) {
+    use crate::application::undoing::{Direction, menu_label};
+    for (id, direction) in [
+        (ID_EDIT_UNDO, Direction::Undo),
+        (ID_EDIT_REDO, Direction::Redo),
+    ] {
+        if let (Some(step), Some((item, _))) = (
+            step,
+            frame
+                .get_menu_bar()
+                .and_then(|bar| bar.find_item_and_menu(id)),
+        ) {
+            item.set_label(&menu_label(step.action(), direction));
+        }
+        sync_menu_enable(frame, id, step.is_some_and(|step| step.offers(direction)));
+    }
 }
 
 /// Which of the six an id is, if it is one of them.
@@ -18634,6 +18793,7 @@ fn do_an_edit_command(
         state,
         dates,
         frame,
+        messages,
     } = parts;
 
     // The box with focus, if one has it. Asked first because a text box is
@@ -18775,12 +18935,20 @@ fn do_an_edit_command(
             }
             put_on_the_clipboard(&words, a11y);
         }
-        Doing::TheLastAction => {
-            let _ = a11y.announce(
-                &crate::application::editing::works_in_a_box_not_here(command),
-                Priority::High,
-            );
-        }
+        // The message list keeps the last mark, star or label. The other five
+        // lists have nothing to take back until their own undo arrives, and
+        // say so as they did before.
+        Doing::TheLastAction => match focused_list {
+            Some((list, PimModule::Mail)) => {
+                take_back_or_do_again(command, list, messages, frame, a11y);
+            }
+            _ => {
+                let _ = a11y.announce(
+                    &crate::application::editing::works_in_a_box_not_here(command),
+                    Priority::High,
+                );
+            }
+        },
     }
 }
 
@@ -18803,6 +18971,18 @@ struct EditParts<'a> {
     dates: crate::presentation::date_display::DateSettings,
     /// Where Undo and Redo show what they said, on the status bar.
     frame: &'a Frame,
+    /// What Undo and Redo in the message list carry the last action out with.
+    messages: TheMessageList<'a>,
+}
+
+/// What Undo and Redo in the message list need to put marks back the way the
+/// action put them on: the handles it went through, the cache it wrote, and
+/// the toolbar whose Mark as Read words follow the rows.
+#[derive(Clone, Copy)]
+struct TheMessageList<'a> {
+    app: AppHandles<'a>,
+    cache: &'a Option<Arc<MessageCache>>,
+    toolbar: Option<ToolBar>,
 }
 
 /// Say what Undo or Redo did, on the status bar as well as aloud, because the
@@ -18842,6 +19022,168 @@ fn put_back_what_undo_took(box_: &TextCtrl, frame: &Frame, a11y: &Arc<Accessibil
         Redone::NothingToRedo => {
             say_what_the_undo_did(frame, a11y, NOTHING_TO_REDO, Priority::High)
         }
+    }
+}
+
+/// Edit, Undo or Redo in the message list: the last mark, star or label taken
+/// back, or done again, each message as it was, and one sentence for the lot.
+///
+/// What changes is `application::undoing`'s answer; this puts each mark on the
+/// way the command that made it did, so a server that refuses puts it back
+/// and says why, as it always has. The step goes back and forth: after an
+/// Undo only Redo is offered, after a Redo only Undo.
+fn take_back_or_do_again(
+    command: crate::application::editing::EditCommand,
+    list: &ListCtrl,
+    messages: TheMessageList<'_>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::editing::EditCommand;
+    use crate::application::undoing::{
+        Direction, nothing_to_redo, nothing_to_undo, redone, undone, what_redo_does, what_undo_does,
+    };
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let TheMessageList {
+        app,
+        cache,
+        toolbar,
+    } = messages;
+    let direction = match command {
+        EditCommand::Redo => Direction::Redo,
+        _ => Direction::Undo,
+    };
+    let Some(cache) = cache.as_ref() else {
+        return say_what_the_undo_did(
+            frame,
+            a11y,
+            "The mail on this computer is not open.",
+            Priority::High,
+        );
+    };
+    let taken = {
+        let mut s = lock_state(app.state);
+        match s.last_action.as_mut() {
+            Some(step) if step.offers(direction) => {
+                step.went(direction);
+                let action = step.action();
+                Ok(match direction {
+                    Direction::Undo => (what_undo_does(action), undone(action)),
+                    Direction::Redo => (what_redo_does(action), redone(action)),
+                })
+            }
+            step => {
+                let step = step.map(|step| &*step);
+                Err(match direction {
+                    Direction::Undo => nothing_to_undo(step),
+                    Direction::Redo => nothing_to_redo(step),
+                })
+            }
+        }
+    };
+    let (changes, said) = match taken {
+        Ok(taken) => taken,
+        Err(why) => return say_what_the_undo_did(frame, a11y, why, Priority::High),
+    };
+    for (message, mark) in &changes {
+        // A write this computer refused has put its row back and said why;
+        // the rest would be refused the same way.
+        if !put_a_mark_on(app, cache, message, mark) {
+            list.refresh(true, None);
+            return;
+        }
+    }
+    list.refresh(true, None);
+    refresh_mark_read_wording(frame, toolbar, app.state, list);
+    say_what_the_undo_did(frame, a11y, &said, Priority::Normal);
+}
+
+/// Put one mark on one message the way the command that made it does: the row
+/// on screen and the cache first, then the server through the one queue, which
+/// puts it back and says why if the server refuses. False when this computer
+/// would not keep it, which has already been said.
+fn put_a_mark_on(
+    app: AppHandles<'_>,
+    cache: &MessageCache,
+    message: &crate::application::undoing::Before,
+    mark: &crate::application::undoing::Mark,
+) -> bool {
+    use crate::application::undoing::Mark;
+    let AppHandles { tx, rt, .. } = app;
+    let kept = match mark {
+        Mark::Read(read) => write_the_flags(app, cache, message, Some(*read), None),
+        Mark::Starred(starred) => write_the_flags(app, cache, message, None, Some(*starred)),
+        Mark::Label { label, on } => {
+            let written = match on {
+                true => cache.add_tag_to_message(message.row_id, &label.id),
+                false => cache.remove_tag_from_message(message.row_id, &label.id),
+            };
+            match written {
+                Ok(()) => true,
+                Err(e) => {
+                    send_status(tx, rt, &format!("The label did not stick: {e}."));
+                    false
+                }
+            }
+        }
+    };
+    if !kept {
+        return false;
+    }
+    if let Some(change) = the_server_hears(mark) {
+        spawn_server_change(
+            app,
+            message.row_id,
+            message.uid,
+            message.subject.clone(),
+            ServerChange::Flag(change),
+        );
+    }
+    true
+}
+
+/// Set a message's read or starred state, whichever is given, on the row on
+/// screen and in the cache, keeping the other as the row holds it now; a row
+/// not on screen, under conversation view, keeps it as it was before.
+fn write_the_flags(
+    app: AppHandles<'_>,
+    cache: &MessageCache,
+    message: &crate::application::undoing::Before,
+    read: Option<bool>,
+    starred: Option<bool>,
+) -> bool {
+    let AppHandles { state, tx, .. } = app;
+    let (was, wanted) = {
+        let mut s = lock_state(state);
+        let row = s
+            .messages
+            .iter_mut()
+            .find(|row| row.message_id == message.row_id);
+        let was = row.as_ref().map_or((message.read, message.starred), |row| {
+            (row.read, row.starred)
+        });
+        let wanted = (read.unwrap_or(was.0), starred.unwrap_or(was.1));
+        if let Some(row) = row {
+            (row.read, row.starred) = wanted;
+        }
+        (was, wanted)
+    };
+    write_flags_or_put_the_row_back(cache, state, tx, message.row_id, wanted, was)
+}
+
+/// A mark as the server hears it. A label with no keyword has nothing it could
+/// travel as and stays on this computer, as it did when it was put on.
+fn the_server_hears(mark: &crate::application::undoing::Mark) -> Option<FlagChange> {
+    use crate::application::undoing::Mark;
+    match mark {
+        Mark::Read(read) => Some(FlagChange::Read(*read)),
+        Mark::Starred(starred) => Some(FlagChange::Flagged(*starred)),
+        Mark::Label { label, on } => label.keyword.clone().map(|keyword| FlagChange::Labelled {
+            keyword,
+            on: *on,
+            name: label.name.clone(),
+        }),
     }
 }
 

@@ -41,7 +41,7 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Choosing a note in the list starts its title and body afresh, so Undo never reaches into the
   note you had open before. With nothing to undo or redo, the menu shows them greyed and the
   keys say so in a sentence, spoken
-  and on the status bar; in a list, the sidebar or a message you are reading, they say they
+  and on the status bar; in the sidebar or a message you are reading, they say they
   work in a box you can type in. Cut now takes words out in a way the box can undo; before
   this, Undo after Cut put nothing back. **Undo Send moved to third on the Edit menu and its
   letter moved from U to N**, because U is Undo's; its key is still `Ctrl+Shift+Z`. The version
@@ -55,15 +55,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   opens holding, such as an account's server or a contact's nickname, is where Undo stops, so
   it never empties a box of it. A check over the source now names any box built without the
   history, so a new dialog cannot quietly go back to one step.
+  **In the message list, Undo takes back the last mark, star or label**, the tester's "undo
+  for actions on items ... mark as read or unread, star ... with the item named": Mark as Read
+  or Unread, Star or Unstar, a label put on or taken off, and Remove every label. With the list
+  focused, the Edit menu names what Undo will take back, "Undo Mark as Read: Quarterly report",
+  or the count for a set, "Undo Star: 4 messages". Each message goes back to the way it was
+  before, so undoing Mark as Read over a mix of read and unread messages unreads only the ones
+  that were unread, and one sentence is said for the lot. The change goes to the mail server
+  the way the action did, and a server that refuses puts it back and says why. Redo does the
+  action again. Only the last action is kept, until your next action on messages replaces it,
+  with no time limit; a message marked read by the reading wait never replaces it.
   Known limitations: in a dialog, `Ctrl+Z` with nothing left to undo does nothing and says
   nothing, as Windows' own undo does, where the main window says so in a sentence. The number
   fields, such as the minutes between checks for mail and an event's hour and minute, and the
   composer's Describe the picture and Insert Link boxes, keep Windows' own single step, where
   pressing Undo twice puts the change back. A password box keeps no steps at all, so a
-  password is never held in memory as steps. Undoing an action on messages or items, such as
-  a delete or a move, is later work too. Nobody has heard the greyed items, the sentences,
-  Undo Send's new letter or a step undone with a screen reader yet, in the main window or in
-  a dialog.
+  password is never held in memory as steps. Undoing a move, a delete or a copy of messages
+  cannot be done yet, and neither can undoing anything in contacts, the calendar, tasks, notes
+  or reminders. An undone mark, star or label has not been sent to a real mail server yet, so
+  it is as experimental as every other change this program sends. Nobody has heard the greyed
+  items, the sentences, Undo Send's new letter, a step undone or a mark undone with a screen
+  reader yet, in the main window or in a dialog.
 
 ### Changed
 

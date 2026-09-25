@@ -37,6 +37,16 @@ pub struct Label {
     pub keyword: Option<String>,
 }
 
+impl From<&crate::data::message_cache::Tag> for Label {
+    fn from(tag: &crate::data::message_cache::Tag) -> Self {
+        Self {
+            id: tag.id.clone(),
+            name: tag.name.clone(),
+            keyword: tag.keyword.clone(),
+        }
+    }
+}
+
 /// One message as it was before the action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Before {

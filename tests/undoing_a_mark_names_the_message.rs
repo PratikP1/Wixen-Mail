@@ -119,6 +119,7 @@ const THE_PROGRAMS_OWN_MARK: &str = "fn mark_what_was_read(";
 const THE_EDIT_COMMAND: &str = "fn do_an_edit_command(";
 const THE_CARRYING_OUT: &str = "fn take_back_or_do_again(";
 const ONE_MARK_PUT_ON: &str = "fn put_a_mark_on(";
+const THE_FLAGS_WRITTEN: &str = "fn write_the_flags(";
 const THE_MENU_WORDS: &str = "fn name_the_step_on_the_edit_menu(";
 const THE_MENU_HANDLERS: &str = "fn keep_the_edit_menu_honest(";
 const REMEMBERS: &str = "remember_the_last_action(";
@@ -179,8 +180,13 @@ fn goes_the_way_the_action_went(app: &str) -> Result<(), String> {
         }
     }
     let one = body_of(app, ONE_MARK_PUT_ON)?;
-    for path in [A_WRITE_TO_THE_SERVER, "write_flags_or_put_the_row_back("] {
-        if !one.contains(path) {
+    let flags = body_of(app, THE_FLAGS_WRITTEN)?;
+    for (body, path) in [
+        (one, A_WRITE_TO_THE_SERVER),
+        (one, "write_the_flags("),
+        (flags, "write_flags_or_put_the_row_back("),
+    ] {
+        if !body.contains(path) {
             return Err(format!(
                 "a mark put back does not go through {path}, the path the action took, \
                  so a refusal would not put it back"
