@@ -84,8 +84,9 @@ on.
 delete, with the server behind it. Everywhere else it is the row you are on.
 
 **Deleting always asks, and the question names the row.** "Delete \"File the tax
-return\"? This cannot be undone." Somebody who arrowed onto the wrong row finds
-out from the question, which only works because the question says which row.
+return\"? Undo brings it back until your next action." Somebody who arrowed onto
+the wrong row finds out from the question, which only works because the question
+says which row, and `Ctrl+Z` in the list brings it back if they answered Yes.
 
 The two toggles say which way they went: "Buy milk, done" or "Buy milk, not
 done". A toggle you cannot see is a toggle you have to be told about. They are
@@ -683,8 +684,28 @@ replaces it, with no time limit. After an Undo, Redo does the action again,
 and after that Undo is offered again. A message marked read because you
 stayed on it for the reading wait does not count as an action, so it never
 replaces what you did. With nothing to undo, `Ctrl+Z` says "There is nothing
-to undo in this list yet." Nothing in the other modules can be undone yet;
-there Undo and Redo still say they work in a box you can type in.
+to undo in this list yet."
+
+**In Contacts, Calendar, Reminders, Tasks and Notes, Undo and Redo act on the
+last thing you did to an item there**: Mark Done or Not Done, Pin or Unpin,
+Delete, Move to, or Copy to. With the list focused, the menu names it, such as
+"Undo Delete: Dentist" or "Undo Move to Work: Quarterly plan". Mark Done and
+Pin go back to what the item was. A move goes back to the calendar, list,
+folder, group or account it came from. Undoing a copy takes away the copy and
+never the item it was copied from, and asks first, since taking a copy away is
+a delete. A deleted item comes back with everything it had while its account
+has not yet been told about the delete, and the delete is then never sent. If
+the account has already deleted it, it comes back as a new item and Undo says
+so, and the account receives it as new. While that account is being synced,
+Undo says so and asks you to try again shortly. Redo does the action again,
+and a delete done again asks first like any delete.
+
+It is the same one step as in the message list. Your last action on anything,
+a message or an item, is the one Undo takes back, with no time limit, until
+your next action replaces it. In a list whose module did not take that last
+action, Undo says where it was taken, such as "The last thing you did was in
+Tasks. Switch to Tasks to undo it." Undoing at your account is experimental,
+and the Undo item's help says so.
 
 **Undoing a move, a delete or a copy** puts the message back in the folder it
 came from, and the cursor lands on it when that folder is the one on screen.
@@ -744,17 +765,17 @@ anything.
 | Mark as Read, or Mark as Unread | `M` in the message list | Mail. Every selected message, and it says how many. The item says which way it will go for the messages you have selected, read when any of them is unread, and the toolbar button says the same. On a conversation row it marks every message in the conversation and says so, "1 conversation, 5 messages marked read". `Ctrl+Z` in the message list undoes it, each message back as it was |
 | Star or Unstar | `Ctrl+Shift+S` | Mail. Every selected message, starred when any of them is not, and it says how many. `Ctrl+Z` in the message list undoes it |
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
-| Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders |
-| Pin or Unpin | `Ctrl+Shift+P` | Notes |
-| Delete | `Delete` | Every module. Deletes whichever item is chosen. In Mail, every selected message: it says "Delete" once and the cursor lands after the last of them once they have gone. A conversation row in the selection asks first, naming how many messages it holds. `Ctrl+Z` in the message list brings the messages back out of the Trash |
+| Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders. `Ctrl+Z` in the list undoes it |
+| Pin or Unpin | `Ctrl+Shift+P` | Notes. `Ctrl+Z` in the list undoes it |
+| Delete | `Delete` | Every module. Deletes whichever item is chosen. In Mail, every selected message: it says "Delete" once and the cursor lands after the last of them once they have gone. A conversation row in the selection asks first, naming how many messages it holds. `Ctrl+Z` in the message list brings the messages back out of the Trash. In the other modules `Ctrl+Z` in the list brings the item back, as it was while its account has not been told and as a new item once it has |
 | Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way. `Ctrl+Z` in the message list brings them back only while the mail server has not yet been told; once it has, the message is gone and Undo says so |
-| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, except a move to another account, which Undo refuses and says so. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept |
+| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, except a move to another account, which Undo refuses and says so. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept. In every module `Ctrl+Z` in the list moves the item back |
 
 Five submenus hold the rest:
 
 | Submenu | What is on it |
 |--------|----------|
-| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. `Ctrl+Z` in the message list sends the copies to the Trash, except a copy into another account, which Undo refuses and says so. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in |
+| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. In Mail, Somewhere else copies every selected message and says how many, "2 messages copied to Work"; a task, the calendar or a note take the message the cursor is on. The first copy stays where it is. `Ctrl+Z` in the message list sends the copies to the Trash, except a copy into another account, which Undo refuses and says so. On a contact it puts the contact in another group and leaves every group it is already in alone. On a reminder it makes a second reminder in the account you choose, which can be the one it is already in. In the other modules `Ctrl+Z` in the list takes the copy away, or the contact out of the group, and leaves the first where it is |
 | Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation. `Ctrl+Z` in the message list undoes the last label put on or taken off, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |

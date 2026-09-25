@@ -174,11 +174,11 @@ const THE_SYNCS: [(&str, &str); 4] = [
     ("pub(crate) fn spawn_calendar_sync(", "ItemKind::Event"),
 ];
 const THE_FIVE_LISTS: [&str; 5] = [
-    "(contact_list, PimModule::Contacts)",
-    "(cal_event_list, PimModule::Calendar)",
-    "(reminder_list, PimModule::Reminders)",
-    "(task_list, PimModule::Tasks)",
-    "(note_list, PimModule::Notes)",
+    "contact_list, PimModule::Contacts)",
+    "cal_event_list, PimModule::Calendar)",
+    "reminder_list, PimModule::Reminders)",
+    "task_list, PimModule::Tasks)",
+    "note_list, PimModule::Notes)",
 ];
 
 // ── The readings ───────────────────────────────────────────────────────────

@@ -1123,6 +1123,39 @@ is for; `Delete` removes the one you are on, asking first and naming what it
 will delete. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) has every key for
 every module in full.
 
+### Undo in the other modules
+
+`Ctrl+Z` in a module's list takes back the last thing you did to an item
+there, and `Ctrl+Y` does it again. With the list focused, the Edit menu names
+it, such as "Undo Delete: Dentist".
+
+| What you did | What Undo does |
+| --- | --- |
+| Mark Done or Not Done | Puts the task or reminder back the way it was |
+| Pin or Unpin | Puts the note back the way it was |
+| Move to | Moves it back to the calendar, list, folder, group or account it came from |
+| Copy to | Takes away the copy, after asking, and leaves the one you copied |
+| Delete | Brings the item back |
+
+A deleted item comes back in one of two ways, and Undo says which:
+
+- **As it was.** Your account has not been told about the delete yet, so the
+  item comes back with everything it had and the delete is never sent. This
+  is the usual case when you undo straight away, or when the network is off.
+- **As a new item.** Your account has already deleted it, so there is nothing
+  there to put back. The item is made again here from what it held, and your
+  account receives it as a new one on the next sync, with a new identity
+  there.
+
+While that account is syncing, Undo changes nothing: it says the item is being
+synced and asks you to try again shortly, rather than racing the sync.
+
+Undo lasts until your next action, on anything, with no time limit. There is
+one step for the whole window, so undoing in Tasks after marking a message
+read says the last thing you did was in Mail. Undoing at your account is
+experimental: nothing in these modules has been tried against a real account
+yet.
+
 ### The contact editor
 
 The Basic Info tab asks for a name in this order: Name, Prefix, Given name,

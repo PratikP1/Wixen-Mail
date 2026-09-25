@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 329 records have arrived since and have not been through it.
+# 330 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12713,12 +12713,14 @@ file = "src/presentation/managers.rs"
 # `Moved` became `Filed` in 05-03, when copy joined move on this arm, and the
 # record was unmeasurable until the text below named the code as it now stands.
 # Re-measured by hand on 2026-09-08 after the rename rather than edited until it
-# applied: the break still reddens exactly the one test named.
+# applied: the break still reddens exactly the one test named. Its `after`
+# rewritten on 2026-09-25 by 13-09, when the arm's answer became the sentence
+# and the undo step together, so the break compiles; measured again.
 before = """                Some(Filed::Refused(why)) => {
                     let _ = tx.try_send(UIUpdate::CommandRefused(why));
                     return;
                 }"""
-after = """                Some(Filed::Refused(why)) => Ok(why),"""
+after = """                Some(Filed::Refused(why)) => Ok((why, None)),"""
 red = [
     "presentation::managers::tests::test_a_refused_move_is_said_where_a_refusal_is_said",
 ]
@@ -31016,7 +31018,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # Delete remembering its action before the change is made here, so a delete
@@ -31040,7 +31042,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # A move the server has not heard of answered with a move back, so the server
@@ -31121,7 +31123,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # The program's own mark after the reading wait replacing the last action, so
@@ -31143,7 +31145,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 15 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
 # A box in a dialog pressed Ctrl+Z or Ctrl+Y with nothing to take back or put
@@ -31282,4 +31284,31 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taking_back.rs", tests = 10 },
+]
+
+# A delete answered No touching the undo step, here by clearing it, so the
+# last thing somebody did can no longer be taken back because they declined
+# to delete something else. Written 2026-09-25 by 13-09, the break measured
+# against `cargo test --test undoing_a_mark_names_the_message`.
+[[guard]]
+name = "a delete answered No leaves the undo step as it was"
+file = "src/presentation/managers.rs"
+suite = "undoing_a_mark_names_the_message"
+before = '''        // The one silence that is right here. The question was answered No,
+        // and the answer to No is that nothing happens.
+        if asked != ID_YES {
+            return;
+        }'''
+after = '''        // The one silence that is right here. The question was answered No,
+        // and the answer to No is that nothing happens.
+        if asked != ID_YES {
+            remember_an_item_action(state, None);
+            return;
+        }'''
+red = [
+    "test_an_action_on_an_item_is_remembered_after_it_is_carried_out",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]

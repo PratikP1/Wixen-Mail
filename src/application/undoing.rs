@@ -824,7 +824,8 @@ pub fn what_redo_does_to_an_item(item: &OnAnItem, store: WhatTheItemStoreSays) -
     }
 }
 
-fn being_synced_now(item: &OnAnItem) -> String {
+/// What an undo says while the item's account is being synced.
+pub fn being_synced_now(item: &OnAnItem) -> String {
     format!(
         "{} is being synced with its account right now. Try again shortly.",
         item.named_first()
@@ -855,8 +856,15 @@ pub fn made_again(item: &OnAnItem) -> String {
 
 /// What Undo asks before it takes away the copy an action made, since taking
 /// it away is a delete and every delete here is asked first.
-pub fn take_away_the_copy(_item: &OnAnItem) -> String {
-    String::new()
+pub fn take_away_the_copy(item: &OnAnItem) -> String {
+    let where_it_is = match &item.did {
+        ItemDid::Copied { into, .. } => format!(" in {}", into.name),
+        _ => String::new(),
+    };
+    format!(
+        "Take away the copy of \"{}\"{where_it_is}? The one it was copied from stays where it is.",
+        item.named()
+    )
 }
 
 /// The module whose list holds this kind of item.
