@@ -2695,6 +2695,7 @@ impl WxMailApp {
                 let state = state.clone();
                 let note_cache = message_cache.clone();
                 move |event| {
+                    use crate::presentation::text_history_keys::set_anew;
                     let idx = event.get_item_index() as usize;
                     let selected = lock_state(&state).notes.get(idx).cloned();
                     match selected {
@@ -2706,23 +2707,26 @@ impl WxMailApp {
                             let full = note_cache
                                 .as_ref()
                                 .and_then(|cache| cache.get_note(&item.id).ok().flatten());
+                            // Each write starts the box's history afresh, so
+                            // Ctrl+Z after choosing a note cannot bring the
+                            // last note's words back into this one.
                             match full {
                                 Some(note) => {
-                                    title_input.set_value(&note.title);
-                                    body_input.set_value(&note.body);
+                                    set_anew(&title_input, &note.title);
+                                    set_anew(&body_input, &note.body);
                                     lock_state(&state).selected_note_id = Some(note.id);
                                 }
                                 None => {
-                                    title_input.set_value(&item.title);
-                                    body_input.set_value("");
+                                    set_anew(&title_input, &item.title);
+                                    set_anew(&body_input, "");
                                     lock_state(&state).selected_note_id = None;
                                     tracing::warn!("Note {} could not be read back", item.id);
                                 }
                             }
                         }
                         None => {
-                            title_input.set_value("");
-                            body_input.set_value("");
+                            set_anew(&title_input, "");
+                            set_anew(&body_input, "");
                             lock_state(&state).selected_note_id = None;
                         }
                     }

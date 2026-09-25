@@ -6,9 +6,9 @@
 //! cursor is, and what it says when it cannot act, is
 //! `application::editing`'s; this only reaches the box.
 //!
-//! Until 13-05 this sent the box `EM_CANUNDO` and `EM_UNDO`, its own one
-//! step, and Redo was offered only straight after an Undo, because on a box of
-//! one step Redo is Undo again. With a history of its own in every box the
+//! Until 13-05 this sent the box the two messages that ask for and act on its
+//! own one step, and Redo was offered only straight after an Undo, because on
+//! a box of one step Redo is Undo again. With a history of its own in every box the
 //! menu reaches, that path had no caller left and went.
 //!
 //! # What one step means for Cut
