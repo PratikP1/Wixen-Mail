@@ -25,6 +25,7 @@ use crate::presentation::accessibility::names::{
     name_the_spin_control, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::manager_words;
+use crate::presentation::text_history_keys::{keep_a_history, set_anew};
 use crate::presentation::theme;
 use crate::service::directory::Directory;
 
@@ -1576,6 +1577,7 @@ pub fn build_account_edit_dialog(
     let tf = |label: &str, default: &str| -> (StaticText, TextCtrl) {
         let l = StaticText::builder(&dlg).with_label(label).build();
         let f = TextCtrl::builder(&dlg).with_value(default).build();
+        keep_a_history(&f);
         set_accessible_name(&f, &name_from_label(label));
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -1592,6 +1594,7 @@ pub fn build_account_edit_dialog(
         |label: &str, default: &str, description: &str| -> (StaticText, TextCtrl) {
             let l = StaticText::builder(&dlg).with_label(label).build();
             let f = TextCtrl::builder(&dlg).with_value(default).build();
+            keep_a_history(&f);
             set_accessible_name_and_description(&f, &name_from_label(label), description);
             fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
             fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -2046,15 +2049,17 @@ pub fn build_account_edit_dialog(
         password_fields,
     };
 
+    // The account's own values are where each box's history starts, so Undo
+    // never empties a box the dialog opened holding them.
     if let Some(a) = existing {
-        name_f.set_value(&a.name);
-        sender_name_f.set_value(&a.sender_name);
-        email_f.set_value(&a.email);
-        imap_f.set_value(&a.imap_server);
-        imap_port_f.set_value(&a.imap_port);
+        set_anew(&name_f, &a.name);
+        set_anew(&sender_name_f, &a.sender_name);
+        set_anew(&email_f, &a.email);
+        set_anew(&imap_f, &a.imap_server);
+        set_anew(&imap_port_f, &a.imap_port);
         imap_tls.set_value(a.imap_use_tls);
-        pop_f.set_value(&a.pop_server);
-        pop_port_f.set_value(&a.pop_port);
+        set_anew(&pop_f, &a.pop_server);
+        set_anew(&pop_port_f, &a.pop_port);
         pop_tls.set_value(a.pop_use_tls);
         pop_leave.set_value(a.pop_leave_on_server);
         pop_days.set_value(a.pop_remove_after_days as i32);
@@ -2065,10 +2070,10 @@ pub fn build_account_edit_dialog(
                 .position(|protocol| *protocol == a.protocol())
                 .unwrap_or(0) as u32,
         );
-        smtp_f.set_value(&a.smtp_server);
-        smtp_port_f.set_value(&a.smtp_port);
+        set_anew(&smtp_f, &a.smtp_server);
+        set_anew(&smtp_port_f, &a.smtp_port);
         smtp_tls.set_value(a.smtp_use_tls);
-        user_f.set_value(&a.username);
+        set_anew(&user_f, &a.username);
         pass_f.set_value(&a.password);
         let (least, most) = CHECK_INTERVAL_MINUTES;
         interval_f.set_value(
@@ -2082,8 +2087,8 @@ pub fn build_account_edit_dialog(
         // the settings file rather than on the account, so it is read from
         // there; see `data::config`'s `directories`.
         if let Some(directory) = the_directory_this_account_names(&a.id) {
-            directory_url_f.set_value(&directory.url);
-            directory_base_f.set_value(&directory.search_under);
+            set_anew(&directory_url_f, &directory.url);
+            set_anew(&directory_base_f, &directory.search_under);
         }
         if a.use_oauth {
             auth_hint.set_label("Signs in through the browser when you save.");

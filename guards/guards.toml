@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 291 records have arrived since and have not been through it.
+# 315 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -659,6 +659,14 @@ red = [
     "application::choosing_messages::tests::test_each_outcome_has_its_words",
     "application::choosing_messages::tests::test_the_sentence_counts_the_messages_with_the_singular_right",
     "application::choosing_messages::tests::test_the_sentence_names_the_conversations_when_one_was_in_the_set",
+    # Added 2026-09-24 by 13-02: the sentence said once a print job is sent
+    # counts its pages through `how_many`, and under this break reads
+    # "1 pages".
+    "application::printing::tests::test_every_printing_sentence_reads_as_a_persons_sentence",
+    # Added 2026-09-25 by 13-03, found by --remeasure rather than predicted:
+    # the sentence for pages chosen past the end says "It has 1 page." through
+    # `how_many`, and under this break reads "It has 1 pages."
+    "application::printing::tests::test_every_reason_nothing_was_printed_says_one_sentence_of_its_own",
 ]
 tests_last_seen = [
     { file = "src/application/bringing_everything_down.rs", tests = 23 },
@@ -668,6 +676,7 @@ tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/mail_sync.rs", tests = 149 },
     { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -24251,9 +24260,10 @@ tests_last_seen = [
 # 2026-09-15 (#44): the one undo this program has was on Tools, between the
 # address book commands and Flush Outbox, and Edit opened on Cut. The break
 # removes the item and the separator after it, so the chain still builds and
-# the first item on Edit is Cut again. The reading goes red on that, and both
-# companions go red with it, because each plants by finding the item's call
-# and there is no call to find.
+# the third item on Edit, after Undo and Redo since 13-01, is Cut. The reading
+# goes red on that, and both companions go red with it, because each plants by
+# finding the item's call and there is no call to find. Rewritten by 13-01,
+# which relabelled the item "Undo Se&nd" and put Undo and Redo above it.
 #
 # `suite` names the target that reads the menu chains, which couples the
 # target to this file for `check.sh --suites-for`; `tests/wired.rs` holds the
@@ -24262,25 +24272,61 @@ tests_last_seen = [
 # Measured 2026-09-16 by hand on the branch the record was written on,
 # `cargo test --test undo_send_is_where_somebody_looks`.
 [[guard]]
-name = "Undo Send is first on the Edit menu, not off it and back where the tester found it"
+name = "Undo Send is on the Edit menu after Undo and Redo, not off it and back where the tester found it"
 file = "src/presentation/wx_app.rs"
 suite = "undo_send_is_where_somebody_looks"
 before = '''            .append_item(
                 ID_UNDO_SEND,
-                "&Undo Send\tCtrl+Shift+Z",
+                "Undo Se&nd\tCtrl+Shift+Z",
                 "Take back the message you just sent, while it is still being held",
             )
             .append_separator()
             // The four every Windows program has.'''
 after = '''            // The four every Windows program has.'''
 red = [
-    "test_undo_send_is_the_first_item_on_the_edit_menu_and_not_on_tools",
+    "test_undo_and_redo_come_first_on_edit_and_undo_send_third_not_on_tools",
     "test_the_reading_complains_when_undo_send_is_put_back_on_tools",
     "test_the_reading_complains_when_undo_send_is_offered_on_both_menus",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
+]
+
+# Two records retired on 2026-09-25 by 13-05, both written by 13-01 on
+# `text_undo.rs`'s one-step path: "Undo asks the box whether it has anything
+# to take back before it acts", whose break took `EM_CANUNDO` out before
+# `EM_UNDO`, and "Redo is refused once something is typed after the Undo",
+# whose break stopped `can_redo` comparing the box's words with the ones the
+# Undo left. 13-05 gave every box the Edit menu reaches a history of several
+# steps, so the `EM_UNDO` path, the `LastUndo` record and both functions went
+# with nothing left to call them. A record whose `before` names no place in
+# the tree is one the runner refuses. What they guarded is held now by the
+# history: nothing to undo in `History::undo` answering `None`, and typing
+# clearing redo in "typing after an undo leaves nothing to redo".
+# Neither was in the sweep of 2026-09-15, so the arrived-since count above
+# fell by two.
+
+# The Edit menu left as its opening left it once it closes, so Undo or Redo
+# greyed while the menu was open stays greyed, and wxWidgets swallows a greyed
+# item's key without a word (`framecmn.cpp`): Ctrl+Z with nothing to undo would
+# do nothing and say nothing. The break takes the two re-enabling calls out of
+# the close handler. Measured 2026-09-24 by hand on 13-01's branch: the closed
+# readings went red and nothing else in the target did.
+[[guard]]
+name = "Undo and Redo are offered again whenever a menu closes, so their keys always speak"
+file = "src/presentation/wx_app.rs"
+suite = "undo_reaches_the_text"
+before = '''    frame.on_menu_closed(move |event| {
+        sync_menu_enable(&closed, ID_EDIT_UNDO, true);
+        sync_menu_enable(&closed, ID_EDIT_REDO, true);'''
+after = '''    frame.on_menu_closed(move |event| {'''
+red = [
+    "test_both_are_offered_again_whenever_the_menu_closes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
 ]
 
 # The composer's schedule routine described as reached by Alt+E, which is what
@@ -26264,7 +26310,7 @@ red = [
     "test_the_reading_complains_when_the_script_or_the_wiring_loses_a_jump",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 5 },
+    { file = "src/presentation/page_jumps.rs", tests = 6 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
 ]
 
@@ -26287,7 +26333,7 @@ red = [
     "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 5 },
+    { file = "src/presentation/page_jumps.rs", tests = 6 },
 ]
 
 # ── Alt+A in the page window moves focus to the attachments list ────────────
@@ -30404,4 +30450,499 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_label_menu_says_the_labels_an_account_has.rs", tests = 16 },
+]
+
+# ── What a printed page holds (13-02, GAP-01, #45) ──────────────────────────
+#
+# A line too wide for the page broken at the first space rather than the last
+# that fits, so "the quick brown fox" is printed a word to a line and a page
+# of text becomes three. Measured 2026-09-24 by hand on 13-02's branch with
+# `cargo test --lib`: the long-line case went red and nothing else did.
+[[guard]]
+name = "a printed line breaks at the last space that fits, not the first"
+file = "src/application/printing.rs"
+before = '''        let last_space_that_fits = rest[..reach].rfind(' ');'''
+after = '''        let last_space_that_fits = rest[..reach].find(' ');'''
+red = [
+    "application::printing::tests::test_a_line_longer_than_the_page_breaks_at_the_last_space_that_fits",
+]
+tests_last_seen = [
+    { file = "src/application/printing.rs", tests = 28 },
+]
+
+# Every page stamped with its own number as the count, so the first of three
+# says "page 1 of 1" and somebody holding it thinks it is the whole message;
+# the last page says "page 3 of 3" either way, which is why the case reads every
+# stamp. Measured 2026-09-24 by hand on 13-02's branch with `cargo test --lib`:
+# the two cases that read a stamp on a job of several pages went red and
+# nothing else did.
+[[guard]]
+name = "every page's stamp counts every page, not its own number"
+file = "src/application/printing.rs"
+before = '''                stamp: stamp(title, at + 1, pages),'''
+after = '''                stamp: stamp(title, at + 1, at + 1),'''
+red = [
+    "application::printing::tests::test_no_stamp_holds_a_dash_character",
+    "application::printing::tests::test_the_last_page_says_page_n_of_n",
+]
+tests_last_seen = [
+    { file = "src/application/printing.rs", tests = 28 },
+]
+
+# The event's place dropped from the one list of fields that both its spoken
+# reading and its printed page are made from, so neither says where the
+# meeting is. The plan expected a spoken event case naming the place to go red
+# as well; none of the 51 in `read_aloud.rs` sets a place, so the printed case
+# asserts the spoken reading's place beside the page's, and that one case is
+# what goes red. Measured 2026-09-24 by hand on 13-02's branch with
+# `cargo test --lib`: that case went red and nothing else did.
+[[guard]]
+name = "an event's place is one of the fields both its reading and its page say"
+file = "src/presentation/read_aloud.rs"
+before = '''            Field::short("", &when),
+            Field::short("Location", &self.location),'''
+after = '''            Field::short("", &when),'''
+red = [
+    "application::printing::tests::test_an_event_prints_its_start_end_place_and_description_one_to_a_line",
+]
+tests_last_seen = [
+    { file = "src/application/printing.rs", tests = 28 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
+]
+
+# A page drawn without its last line, so a message printed on one page loses
+# its closing words and a longer one loses the line at the foot of every page,
+# with nothing said. The metafile reading compares every string drawn with
+# every line the layout placed. Written 2026-09-25 by 13-03 and measured with
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a printed page draws every line the layout placed on it, the last one too"
+file = "src/presentation/printing.rs"
+suite = "printing_draws_what_the_layout_says"
+before = '''            .chain(std::iter::once(""))
+            .chain(page.lines.iter().map(String::as_str))'''
+after = '''            .chain(std::iter::once(""))
+            .chain(page.lines.iter().take(page.lines.len() - 1).map(String::as_str))'''
+red = [
+    "test_every_line_the_layout_placed_is_drawn_on_its_page",
+]
+tests_last_seen = [
+    { file = "src/presentation/printing.rs", tests = 0 },
+    { file = "tests/printing_draws_what_the_layout_says.rs", tests = 3 },
+]
+
+# An ampersand in a message drawn as a mnemonic: without DT_NOPREFIX, DrawTextW
+# takes "&" as the mark under the next letter, so "Tom & Jerry" is printed as
+# "Tom  Jerry" and the stamp loses the one in the subject too (T-13-09). Written
+# 2026-09-25 by 13-03 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an ampersand in a message is printed as written, not taken as a mnemonic"
+file = "src/presentation/printing.rs"
+suite = "printing_draws_what_the_layout_says"
+before = '''                    &mut bounds,
+                    DT_SINGLELINE | DT_NOPREFIX | DT_EXPANDTABS,'''
+after = '''                    &mut bounds,
+                    DT_SINGLELINE | DT_EXPANDTABS,'''
+red = [
+    "test_every_line_the_layout_placed_is_drawn_on_its_page",
+    "test_an_ampersand_and_accents_are_drawn_as_written",
+    "test_the_reading_refuses_a_page_with_a_line_dropped",
+]
+tests_last_seen = [
+    { file = "src/presentation/printing.rs", tests = 0 },
+    { file = "tests/printing_draws_what_the_layout_says.rs", tests = 3 },
+]
+
+# Two page ranges that both name a page, "4-5, 1-4", printing page 4 twice,
+# which wastes paper and puts a second copy of one page in the middle of the
+# message. Written 2026-09-25 by 13-03 and measured with
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a page two ranges both name is printed once"
+file = "src/application/printing.rs"
+before = '''    chosen.sort_unstable();
+    chosen.dedup();
+    chosen'''
+after = '''    chosen.sort_unstable();
+    chosen'''
+red = [
+    "application::printing::tests::test_two_overlapping_ranges_choose_each_page_once_in_order",
+]
+tests_last_seen = [
+    { file = "src/application/printing.rs", tests = 28 },
+]
+
+# The job's pages ended and never the job, so the spooler never hands it to
+# the driver and no PDF is written; the reading waits its minute for the file
+# and says so. A machine with WIXEN_NO_PDF_PRINTER set cannot judge this record,
+# because the spool test then asserts the printer cannot be opened and starts
+# no job. GitHub's runner opened and spooled to Microsoft Print to PDF on pull
+# request #104, so no workflow sets it. Written 2026-09-25 by 13-03 and
+# measured here with `scripts/guards.sh --remeasure`, the flag unset.
+[[guard]]
+name = "a print job is ended, so the spooler hands it to the printer"
+file = "src/presentation/printing.rs"
+suite = "printing_spools_a_document"
+before = '''            .and_then(|()| {
+                // SAFETY: ends the job StartDocW began on this device context.
+                match unsafe { EndDoc(sheet.hdc()) } > 0 {
+                    true => Ok(()),
+                    false => Err(failed("the printer did not finish the job")),
+                }
+            });'''
+after = '''            .and_then(|()| Ok(()));'''
+red = [
+    "test_a_message_spooled_to_the_pdf_printer_comes_out_as_the_pages_the_layout_gave",
+]
+tests_last_seen = [
+    { file = "src/presentation/printing.rs", tests = 0 },
+    { file = "tests/printing_spools_a_document.rs", tests = 1 },
+]
+
+# File, Print composing the message with the list's own reading rather than
+# with every date in full, so a page says "2 days ago" and is wrong the day
+# after it is printed. The reading requires the handler to ask `on_paper`.
+# Written 2026-09-25 by 13-03 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a printed message carries its date in full, not how long ago it was"
+file = "src/presentation/wx_app.rs"
+suite = "print_is_on_the_file_menu"
+before = '''        &message,
+        printing::on_paper(reading_from_settings()),'''
+after = '''        &message,
+        reading_from_settings(),'''
+red = [
+    "test_print_is_on_file_with_its_key_and_prints_what_the_reader_shows_through_the_dialog",
+    # The companion that plants a handler skipping the dialog reads the calls
+    # in order, and meets the missing on_paper before the missing dialog.
+    "test_the_reading_complains_when_print_skips_the_dialog",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/print_is_on_the_file_menu.rs", tests = 9 },
+]
+
+# Print on File with its key taken out of the label, so Ctrl+P does nothing
+# and the menu stops being where somebody learns the key. Written 2026-09-25 by
+# 13-03 and measured with `scripts/guards.sh --remeasure`; the plan expected
+# tests/wired.rs's agreement readings to redden as well, and what reddened is
+# what is written here.
+[[guard]]
+name = "File, Print carries Ctrl+P in its label"
+file = "src/presentation/wx_app.rs"
+suite = "print_is_on_the_file_menu"
+before = '''                ID_PRINT,
+                "&Print...\tCtrl+P",'''
+after = '''                ID_PRINT,
+                "&Print...",'''
+red = [
+    "test_print_is_on_file_with_its_key_and_prints_what_the_reader_shows_through_the_dialog",
+    "test_the_reading_complains_when_print_loses_its_key",
+    "test_the_reading_complains_when_print_composes_its_own_document",
+    "test_the_reading_complains_when_print_skips_the_dialog",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/print_is_on_the_file_menu.rs", tests = 9 },
+]
+
+# Two items on the reader window's File menu claiming one letter, so pressing
+# C there cycles between them. Until 13-04 the letter reading read the main
+# window alone and this would have passed; the break is planted on Close
+# Window rather than on Print, so nothing but the widened reading can see it.
+# Written 2026-09-25 by 13-04 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the reader window's menu letters are held like the main window's"
+file = "src/presentation/wx_reader.rs"
+suite = "wired"
+before = '''            .append_item(ID_CANCEL, "Close &Window\tEsc", "Close the reader window")'''
+after = '''            .append_item(ID_CANCEL, "&Close Window\tEsc", "Close the reader window")'''
+red = [
+    "test_no_two_items_on_one_menu_claim_the_same_letter",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "tests/wired.rs", tests = 77 },
+]
+
+# Two items in the reader window claiming Ctrl+W, so the second looks bound and
+# does nothing. Until 13-04 the key reading read the main window alone. Planted
+# on Close Window for the reason the record above gives. Written 2026-09-25 by
+# 13-04 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the reader window's keys are held like the main window's"
+file = "src/presentation/wx_reader.rs"
+suite = "wired"
+before = '''            .append_item(ID_CANCEL, "Close &Window\tEsc", "Close the reader window")'''
+after = '''            .append_item(ID_CANCEL, "Close &Window\tCtrl+W", "Close the reader window")'''
+red = [
+    "test_no_two_menu_items_claim_the_same_shortcut",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "tests/wired.rs", tests = 77 },
+]
+
+# A message opened in the reader with nothing composed for paper, so Print in
+# its tab prints the screen's composition and a date says "2 days ago" on a
+# page. `paper` is left unused, which is a warning and not an error. Written
+# 2026-09-25 by 13-04 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a message tab in the reader is handed what it prints"
+file = "src/presentation/wx_app.rs"
+suite = "print_is_on_the_file_menu"
+before = '''    reader.open_with_paper(a_message_as_the_reader_shows_it(cache, message, out), paper);'''
+after = '''    reader.open(a_message_as_the_reader_shows_it(cache, message, out));'''
+red = [
+    "test_the_reader_prints_its_tab_through_the_dialog_with_its_key",
+    "test_the_reading_complains_when_a_tab_is_opened_with_nothing_to_print",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/print_is_on_the_file_menu.rs", tests = 9 },
+]
+
+# Print in Calendar with nothing chosen refusing in the Tasks module's words,
+# "Choose a task first.", so somebody in their calendar is told about a list
+# they are not in. The reading holds each module's row to its own list and its own
+# refusal. Written 2026-09-25 by 13-04 and measured with
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "print in calendar refuses in calendar's words"
+file = "src/presentation/wx_app.rs"
+suite = "print_is_on_the_file_menu"
+before = '''                                    Some((selected_row(&cal_event_list), Thing::EVENT))'''
+after = '''                                    Some((selected_row(&cal_event_list), Thing::TASK))'''
+red = [
+    "test_print_in_every_module_prints_the_item_under_the_cursor",
+    # Its plant is Calendar's answer as written, so a changed answer leaves it
+    # nothing to plant.
+    "test_the_reading_complains_when_a_module_is_answered_as_mail",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/print_is_on_the_file_menu.rs", tests = 9 },
+]
+
+# The formatted conversation window reading the page's Ctrl+P as nothing, so
+# the key the page takes from the browser prints nothing and says nothing.
+# `Jump::Print` is then never made, which is a warning and not an error.
+# Written 2026-09-25 by 13-04 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the conversation window reads the print kind the page's script posts"
+file = "src/presentation/page_jumps.rs"
+before = '''        "print" => Some(Jump::Print),'''
+after = '''        "print" => None,'''
+red = [
+    "presentation::page_jumps::tests::test_ctrl_p_in_the_page_posts_print_and_the_window_reads_it_back",
+    "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_jumps.rs", tests = 6 },
+]
+
+# A space joining the run of typing it ends, so a whole sentence typed is one
+# step and Undo takes all of it back at once where somebody expects a word.
+# Written 2026-09-25 by 13-05, the break taken by hand against
+# `cargo test --lib application::` first: the three cases that type words
+# went red and nothing else did.
+[[guard]]
+name = "a space ends the step of typing it is typed in"
+file = "src/application/text_history.rs"
+before = '''    typed.is_whitespace() || typed.is_ascii_punctuation()'''
+after = '''    typed.is_ascii_punctuation()'''
+red = [
+    "application::text_history::tests::test_three_words_typed_come_back_one_word_at_a_time",
+    "application::text_history::tests::test_redo_puts_back_each_word_in_turn",
+    "application::text_history::tests::test_typing_after_an_undo_leaves_nothing_to_redo",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
+]
+
+# Redo kept after something new is typed, so Redo would put back a step onto
+# words it was never taken from. Written 2026-09-25 by 13-05, the break taken
+# by hand against `cargo test --lib application::` first: the one case went
+# red and nothing else did.
+[[guard]]
+name = "typing after an undo leaves nothing to redo"
+file = "src/application/text_history.rs"
+before = '''        self.value = after.to_string();
+        self.forward.clear();'''
+after = '''        self.value = after.to_string();'''
+red = [
+    "application::text_history::tests::test_typing_after_an_undo_leaves_nothing_to_redo",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
+]
+
+# Ctrl+Z in a box passed on after the history acted, so wxWidgets hands the
+# box the control character too and its own one-step undo runs on top of the
+# history's. The reading counts the characters that reach the box. Written
+# 2026-09-25 by 13-05, the break taken by hand against
+# `cargo test --test several_steps_come_back` first: the Ctrl+Z reading went
+# red and nothing else in the target did.
+[[guard]]
+name = "Ctrl+Z in a box is taken after the history acts, so the box does not undo again"
+file = "src/presentation/text_history_keys.rs"
+suite = "several_steps_come_back"
+before = '''            HistoryKey::Redo => redo_in(&pressed),
+        };
+        event.skip(false);'''
+after = '''            HistoryKey::Redo => redo_in(&pressed),
+        };
+        event.skip(true);'''
+#
+# Re-measured 2026-09-25 by 13-06, the break taken by hand again: the combo
+# box's Ctrl+Z reading goes red too, because a combo box's key-down is this
+# same handler. That is the record for "the combo box's key-down is taken",
+# and no second record was written for it.
+red = [
+    "test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again",
+    "test_ctrl_z_in_the_box_undoes_one_step_and_the_box_does_not_undo_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_history_keys.rs", tests = 0 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# The history not taking the value it hands back, so the box's change on a
+# restore reads as a new step: Redo is cleared by the restore itself and the
+# next Undo takes the restore back. This is what keeps a history from
+# recording its own restore; the plan's flag in the registry turned out to
+# guard nothing, because with this line the change is empty. Written
+# 2026-09-25 by 13-05, the break taken by hand against
+# `cargo test --test several_steps_come_back` first.
+[[guard]]
+name = "a restore is not kept as a step, because the history already holds what it handed back"
+file = "src/application/text_history.rs"
+suite = "several_steps_come_back"
+before = '''        self.value = restore.value.clone();
+        self.sealed = true;'''
+after = '''        self.sealed = true;'''
+#
+# Re-measured 2026-09-25 by 13-06, the break taken by hand again against the
+# widened target: four more readings go red, the combo box's two, the box in
+# a dialog and the Check Spelling box, eight in all.
+red = [
+    "test_three_words_typed_come_back_a_word_at_a_time",
+    "test_redo_puts_each_word_back_in_turn",
+    "test_a_restore_raises_the_change_and_is_not_kept_as_a_step",
+    "test_ctrl_y_in_the_box_puts_the_step_back",
+    "test_an_editable_combo_box_gives_back_three_words_a_word_at_a_time",
+    "test_a_box_in_a_dialog_takes_ctrl_z_and_ctrl_y_with_no_menu",
+    "test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again",
+    "test_the_programs_own_dialog_box_walks_back_to_what_it_opened_holding",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# A note chosen in the list written into the editor with `set_value`, which
+# the history keeps as a step, so Ctrl+Z after choosing a note would bring the
+# last note's words back into this one. Written 2026-09-25 by 13-05, the break
+# taken by hand against `cargo test --test several_steps_come_back` first: the
+# reading of the note selection went red and nothing else in the target did.
+[[guard]]
+name = "a chosen note is written as the program's own value, not as a step"
+file = "src/presentation/wx_app.rs"
+suite = "several_steps_come_back"
+before = '''                                    set_anew(&title_input, &note.title);'''
+after = '''                                    title_input.set_value(&note.title);'''
+red = [
+    "test_a_chosen_note_is_written_as_the_programs_own_value",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# The composer's Subject box built without its history, so it keeps Windows'
+# single step and nothing says so. The reading over src/presentation names it
+# by file and line. Written 2026-09-25 by 13-06, the break taken by hand
+# against `cargo test --test every_text_box_keeps_a_history` first: the
+# reading went red naming the Subject box and none of its companions did.
+[[guard]]
+name = "every box a dialog builds reaches its history: the composer's Subject"
+file = "src/presentation/wx_compose.rs"
+suite = "every_text_box_keeps_a_history"
+before = '''    let subject_field = TextCtrl::builder(&dialog).build();
+    keep_a_history(&subject_field);'''
+after = '''    let subject_field = TextCtrl::builder(&dialog).build();'''
+red = [
+    "test_every_box_a_person_types_into_keeps_a_history",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/every_text_box_keeps_a_history.rs", tests = 10 },
+]
+
+# A combo box's words read as empty, so its history never sees what is typed
+# at its edit and Undo there does nothing. The combo box's half of the
+# `TextBox` trait; its key-down is the text box's handler, held by the record
+# on `event.skip(false)` above. Written 2026-09-25 by 13-06, the break taken by
+# hand against `cargo test --test several_steps_come_back` first: the combo
+# box's two readings went red, and so did the stored contact's, because its
+# Prefix box then records its own opening value as a step.
+[[guard]]
+name = "an editable combo box's words reach its history"
+file = "src/presentation/text_history_keys.rs"
+suite = "several_steps_come_back"
+before = '''impl TextBox for ComboBox {
+    fn words(&self) -> String {
+        self.get_value()'''
+after = '''impl TextBox for ComboBox {
+    fn words(&self) -> String {
+        String::new()'''
+red = [
+    "test_a_value_a_dialog_fills_in_before_it_is_shown_is_not_a_step",
+    "test_an_editable_combo_box_gives_back_three_words_a_word_at_a_time",
+    "test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_history_keys.rs", tests = 0 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# A stored contact's nickname written into the editor with `set_value`, which
+# the history keeps as a step, so the first Ctrl+Z in the box empties it of
+# what the contact already said. Written 2026-09-25 by 13-06, the break taken
+# by hand against `cargo test --test several_steps_come_back` first: the
+# reading of the stored contact's boxes went red and nothing else did.
+[[guard]]
+name = "a value a dialog opens holding is where its history starts, not a step"
+file = "src/presentation/wx_managers.rs"
+suite = "several_steps_come_back"
+before = '''        set_anew(&nick_f, &c.nickname);'''
+after = '''        nick_f.set_value(&c.nickname);'''
+red = [
+    "test_a_value_a_dialog_fills_in_before_it_is_shown_is_not_a_step",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
+]
+
+# The Check Spelling box built without its history, so a word typed after the
+# suggestion comes back all at once, Windows' one step, and a second Ctrl+Z
+# puts it back again. Written 2026-09-25 by 13-06, the break taken by hand
+# against `cargo test --test several_steps_come_back` first: the Check
+# Spelling reading went red and nothing else in the target did. The reading
+# over src/presentation names the same break; it is another target, so this
+# record measures the built box.
+[[guard]]
+name = "the program's own dialog box walks back several steps: Check Spelling"
+file = "src/presentation/wx_compose.rs"
+suite = "several_steps_come_back"
+before = '''        .build();
+    keep_a_history(&replacement);'''
+after = '''        .build();'''
+red = [
+    "test_the_programs_own_dialog_box_walks_back_to_what_it_opened_holding",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/several_steps_come_back.rs", tests = 16 },
 ]

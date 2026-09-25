@@ -701,6 +701,70 @@ account this way; the loopback servers the tests use answer the four ways a
 server can, at each of the two servers, and a real account settles the
 rest.
 
+### Printing
+
+Press `Ctrl+P`, or choose File, Print, to print what you are on. Windows' own
+print dialog opens, the same one other programs use, and you choose the
+printer, the number of copies and which pages there. The dialog belongs to
+the window you printed from, so closing it takes you back to that window.
+
+What each place prints:
+
+| Where you are | What `Ctrl+P` prints |
+|---------------|----------------------|
+| A message in the message list | That message |
+| A conversation's row in the message list | The whole conversation, every message in order |
+| The reader window | What the tab you are on holds: a message, a conversation, or an attachment you opened there |
+| The formatted message window | The message or the conversation it shows |
+| Contacts, Calendar, Tasks, Notes or Reminders | The contact, event, task, note or reminder you are on |
+
+In the reader window, Print is on its own File menu too, with the letter `P`.
+
+What is printed for a message:
+
+- The header lines, as the reader window shows them: Subject, From, To, Cc
+  when there is one, the date written in full, and the names of any
+  attachments.
+- The words of the message, as the reader window shows them.
+
+A conversation prints each message under a heading that says its place in
+the conversation, who sent it and when, with the date written in full, even
+where the screen shows how long ago it was. An attachment prints as its tab
+shows it.
+
+A contact, event, task, note or reminder prints the same details `Shift+Space`
+reads aloud, one to a line, with its name or title first and every date
+written in full. A note's text prints as you wrote it. If nothing is chosen
+in the list, Print says so, for example "Choose an event first.", and
+nothing is printed.
+
+At the top of every page is a line saying "Wixen Mail", the subject or the
+name, and the page number out of how many, such as "page 2 of 3". The page is
+11 point Segoe UI, black on white, whatever theme or reading size you use on
+the screen. There is no setting for it.
+
+What is not printed:
+
+- Pictures and formatting. The page carries the words only, as plain text.
+- A web page opened from a link in a message. That page opens in a window of
+  its own, and `Ctrl+P` does not print it.
+
+There is no print preview, because Windows' print dialog does not have one.
+
+After the job is sent, Wixen Mail says one sentence naming what was printed,
+the printer and how many pages went, for example "Sent Quarterly report to HP
+LaserJet 1022, 2 pages." If you close the dialog without printing, it says
+nothing was printed. If something goes wrong, it says what, and that nothing
+was printed.
+
+In Windows' print queue the job is named by what it is, such as "Wixen Mail
+message", "Wixen Mail conversation" or "Wixen Mail contact", and never by its
+subject or a name, because other people can see the queue of a shared
+printer.
+
+Nobody has yet worked the print dialog with a screen reader from any of these
+places, or looked at a page on paper from this build.
+
 ## Composing Email
 
 ### Creating a New Message
@@ -1106,6 +1170,30 @@ A task has a due date and no time, so none of this changes the task window.
 - `Ctrl+,` - Open settings
 - `F1` - Help documentation
 - `Esc` - Close dialogs
+
+### Editing
+- `Ctrl+Z` - Undo a step in the box you are typing in, such as a note or the
+  contacts search. Each box remembers up to 100 steps, and a step is a word
+  you typed with the space after it, a paste, a cut, or a run of deleting.
+  Choosing another note starts its boxes afresh. With nothing to undo it
+  says so. Boxes in dialogs keep the same steps: the composer's address and
+  subject lines, the account settings, the contact editor and every other
+  box you type in. What a dialog opens holding is where Undo stops, and in a
+  dialog, with nothing left to undo, the key does nothing and says nothing
+- `Ctrl+Y` - Redo, putting back the steps Undo took, one at a time. Once you
+  type something new, there is nothing to redo, and it says so
+
+A few boxes keep Windows' own single step, where a second Undo puts the
+change back: number fields such as the minutes between checks for mail, and
+the Describe the picture and Insert Link boxes in the composer. A password box
+keeps no steps at all, so your password is never held in memory as a list of
+the ways you typed it.
+- `Ctrl+Shift+Z` - Undo Send, while a message you just sent is still being
+  held. It is third on the Edit menu, after Undo and Redo, and its letter is
+  N. Some programs use `Ctrl+Shift+Z` for Redo; here Redo is `Ctrl+Y`
+
+The Edit menu greys Undo and Redo when there is nothing for them to do, and
+a screen reader says they are unavailable.
 
 ### Window Navigation
 - `F6` - Cycle through panes (folders → messages → preview)
