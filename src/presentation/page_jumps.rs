@@ -49,6 +49,13 @@ pub const SCRIPT: &str = r#"document.addEventListener('keydown', function(e) {
         e.stopPropagation();
         window.contextMenu.postMessage(JSON.stringify({ kind: 'attachments' }));
     }
+    // Print, the reader window's key for the same command (#45). Taken from
+    // the browser, whose own Ctrl+P would print the page as it draws it.
+    if (e.ctrlKey && !e.altKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'print' }));
+    }
 }, true);"#;
 
 /// The jump a page asked for, read from the message it posted.
@@ -108,6 +115,23 @@ mod tests {
     }
 
     #[test]
+    fn test_ctrl_p_in_the_page_posts_print_and_the_window_reads_it_back() {
+        // Control without Alt, so AltGr on a layout where Control+Alt+P types
+        // a letter is left alone, as Alt+A leaves Control alone.
+        assert!(SCRIPT.contains("e.ctrlKey && !e.altKey"), "{SCRIPT}");
+        assert!(
+            SCRIPT.contains("e.key === 'p' || e.key === 'P'"),
+            "{SCRIPT}"
+        );
+        assert!(SCRIPT.contains("kind: 'print'"), "{SCRIPT}");
+
+        assert!(
+            the_jump_the_page_asked_for(r#"{"kind":"print"}"#).is_some(),
+            "the page posts print and the window reads it as nothing"
+        );
+    }
+
+    #[test]
     fn test_the_script_takes_the_key_from_the_browser_before_posting_it() {
         // Without this the browser still acts on the key after the window
         // has: F7 is caret browsing in Edge, and Alt+A would reach whatever
@@ -124,7 +148,7 @@ mod tests {
     #[test]
     fn test_every_kind_the_script_posts_is_one_the_window_reads() {
         let kinds = every_kind_the_script_posts();
-        assert_eq!(kinds.len(), 2, "{kinds:?}");
+        assert_eq!(kinds.len(), 3, "{kinds:?}");
         for kind in kinds {
             let posted = format!(r#"{{"kind":"{kind}"}}"#);
             assert!(
