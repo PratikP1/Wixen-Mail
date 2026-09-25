@@ -403,6 +403,17 @@ pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experime
      Mail holds one key at a time, and it has to be exported without a \
      passphrase, because nothing here asks you for one.";
 
+/// What Undo and Redo say, as their help on the Edit menu, while they name a
+/// mark, a star or a label on messages (13-07).
+///
+/// An undo is a second change at somebody's mail server, sent the way the
+/// action was, and the action itself has never met a real account, so the
+/// undo is no less experimental than what it takes back. Said where the
+/// person choosing it reads, not in a changelog.
+pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your mail server the way the action was, \
+     and like every change Wixen Mail sends it is experimental, because none of it has been \
+     run against a real account yet.";
+
 /// Everything that has an opinion about what may be changed.
 ///
 /// Kept as one value so the answer is worked out in one place and every
@@ -682,9 +693,18 @@ mod tests {
     fn test_anything_that_writes_says_it_is_experimental() {
         // The warning has to reach the person using it, not sit in a note.
         // None of these paths has run against a real account, and this is the
-        // sentence beside the two boxes that turn them on.
-        assert!(EXPERIMENTAL_WARNING.contains("experimental"));
-        assert!(EXPERIMENTAL_WARNING.contains("real account"));
+        // sentence beside the two boxes that turn them on. An undo of a mark
+        // is one more of them, said where Undo is chosen.
+        for said in [EXPERIMENTAL_WARNING, UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL] {
+            assert!(said.contains("experimental"), "{said:?}");
+            assert!(said.contains("real account"), "{said:?}");
+            assert!(!said.contains("  "), "{said:?}");
+        }
+        assert!(
+            UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("the way the action was"),
+            "it does not say the undo is sent like the action: \
+             {UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
+        );
     }
 
     #[test]

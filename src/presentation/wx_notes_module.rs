@@ -3,7 +3,7 @@
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
-use crate::presentation::theme;
+use crate::presentation::{text_history_keys, theme};
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the notes content panel.
@@ -77,6 +77,8 @@ pub fn build_notes_panel(parent: &Panel, palette: Option<theme::Palette>) -> Not
         .with_label("Title")
         .build();
     let title_input = TextCtrl::builder(&editor_panel).build();
+    // Several steps of undo, where Windows' own box keeps one.
+    text_history_keys::keep_a_history(&title_input);
 
     set_accessible_name(&title_input, "Note title");
     let body_label = StaticText::builder(&editor_panel)
@@ -85,6 +87,7 @@ pub fn build_notes_panel(parent: &Panel, palette: Option<theme::Palette>) -> Not
     let body_input = TextCtrl::builder(&editor_panel)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
+    text_history_keys::keep_a_history(&body_input);
 
     // The description, not the name, so it is said once on arrival rather than
     // on every visit to a field somebody is typing in.

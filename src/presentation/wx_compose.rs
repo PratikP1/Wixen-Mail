@@ -16,6 +16,7 @@ use crate::presentation::compose_toolbar;
 use crate::presentation::editor_document;
 use crate::presentation::editor_document::Reached;
 use crate::presentation::html_renderer::HtmlRenderer;
+use crate::presentation::text_history_keys::{keep_a_history, set_anew};
 use crate::presentation::theme;
 use crate::presentation::ui_types::CompositionData;
 use std::cell::RefCell;
@@ -938,6 +939,7 @@ pub fn build_compose_dialog(
         .with_label(Reached::To.label())
         .build();
     let to_field = TextCtrl::builder(&dialog).build();
+    keep_a_history(&to_field);
     set_accessible_name(&to_field, "To");
     fields_sizer.add(
         &to_label,
@@ -952,6 +954,7 @@ pub fn build_compose_dialog(
         .with_label(Reached::Cc.label())
         .build();
     let cc_field = TextCtrl::builder(&dialog).build();
+    keep_a_history(&cc_field);
     set_accessible_name(&cc_field, "Cc");
     fields_sizer.add(
         &cc_label,
@@ -966,6 +969,7 @@ pub fn build_compose_dialog(
         .with_label(Reached::Bcc.label())
         .build();
     let bcc_field = TextCtrl::builder(&dialog).build();
+    keep_a_history(&bcc_field);
     set_accessible_name(&bcc_field, "Bcc");
     fields_sizer.add(
         &bcc_label,
@@ -1013,6 +1017,7 @@ pub fn build_compose_dialog(
         .with_label(Reached::Subject.label())
         .build();
     let subject_field = TextCtrl::builder(&dialog).build();
+    keep_a_history(&subject_field);
     set_accessible_name(&subject_field, "Subject");
     fields_sizer.add(
         &subject_label,
@@ -1272,7 +1277,9 @@ pub fn show_compose_dialog_full(
 
     // ── Pre-populate fields based on mode ────────────────────────────────
     // Filled before the copy lines are hidden or kept, because whether a reply
-    // already copies somebody is what decides it.
+    // already copies somebody is what decides it. Each line is written with
+    // `set_anew`, so what the window opens with is where its history starts and
+    // Undo never empties a line of it.
     match &mode {
         ComposeMode::New => {
             if !signature.trim().is_empty() {
@@ -1288,8 +1295,8 @@ pub fn show_compose_dialog_full(
             quoted_body,
             ..
         } => {
-            to_field.set_value(to);
-            subject_field.set_value(&format_reply_subject(subject));
+            set_anew(&to_field, to);
+            set_anew(&subject_field, &format_reply_subject(subject));
             set_body(&with_signature(&format_reply_body(quoted_body), signature));
         }
         ComposeMode::ReplyAll {
@@ -1299,13 +1306,13 @@ pub fn show_compose_dialog_full(
             quoted_body,
             ..
         } => {
-            to_field.set_value(to);
-            cc_field.set_value(cc);
-            subject_field.set_value(&format_reply_subject(subject));
+            set_anew(&to_field, to);
+            set_anew(&cc_field, cc);
+            set_anew(&subject_field, &format_reply_subject(subject));
             set_body(&with_signature(&format_reply_body(quoted_body), signature));
         }
         ComposeMode::Forward { subject, body } => {
-            subject_field.set_value(&format_forward_subject(subject));
+            set_anew(&subject_field, &format_forward_subject(subject));
             set_body(&with_signature(&format_forward_body(body), signature));
             to_field.set_focus();
         }
@@ -1313,7 +1320,7 @@ pub fn show_compose_dialog_full(
         // is the subject, and that is where focus goes. The To line is still
         // one Shift+Tab away for anybody who wants to check or change it.
         ComposeMode::WriteTo { to } => {
-            to_field.set_value(to);
+            set_anew(&to_field, to);
             if !signature.trim().is_empty() {
                 set_body(&with_signature(
                     &MessageBody::Plain(String::new()),
@@ -1341,10 +1348,10 @@ pub fn show_compose_dialog_full(
             subject,
             body,
         } => {
-            to_field.set_value(to);
-            cc_field.set_value(cc);
-            bcc_field.set_value(bcc);
-            subject_field.set_value(subject);
+            set_anew(&to_field, to);
+            set_anew(&cc_field, cc);
+            set_anew(&bcc_field, bcc);
+            set_anew(&subject_field, subject);
             set_body(&with_signature(
                 &MessageBody::Plain(body.clone()),
                 signature,
@@ -1358,10 +1365,10 @@ pub fn show_compose_dialog_full(
         // A draft carries whatever signature it was saved with. Adding one
         // here would put a second on every reopen.
         ComposeMode::Draft(data) => {
-            to_field.set_value(&data.to);
-            cc_field.set_value(&data.cc);
-            bcc_field.set_value(&data.bcc);
-            subject_field.set_value(&data.subject);
+            set_anew(&to_field, &data.to);
+            set_anew(&cc_field, &data.cc);
+            set_anew(&bcc_field, &data.bcc);
+            set_anew(&subject_field, &data.subject);
             // A draft was written here, so it is this editor's own markup
             // coming back. Escaping it would show somebody their tags.
             set_body(&MessageBody::Html(data.body.clone()));
@@ -3165,6 +3172,7 @@ pub fn build_check_spelling_dialog(
             finding.suggestions.first().map_or("", String::as_str)
         })
         .build();
+    keep_a_history(&replacement);
     set_accessible_name(&replacement, "Change to");
     sizer.add(
         &label,
