@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 307 records have arrived since and have not been through it.
+# 308 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26339,7 +26339,7 @@ red = [
     "test_the_reading_complains_when_the_script_or_the_wiring_loses_a_jump",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 5 },
+    { file = "src/presentation/page_jumps.rs", tests = 6 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
 ]
 
@@ -26362,7 +26362,7 @@ red = [
     "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 5 },
+    { file = "src/presentation/page_jumps.rs", tests = 6 },
 ]
 
 # ── Alt+A in the page window moves focus to the attachments list ────────────
@@ -30751,4 +30751,21 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/print_is_on_the_file_menu.rs", tests = 9 },
+]
+
+# The formatted conversation window reading the page's Ctrl+P as nothing, so
+# the key the page takes from the browser prints nothing and says nothing.
+# `Jump::Print` is then never made, which is a warning and not an error.
+# Written 2026-09-25 by 13-04 and measured with `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the conversation window reads the print kind the page's script posts"
+file = "src/presentation/page_jumps.rs"
+before = '''        "print" => Some(Jump::Print),'''
+after = '''        "print" => None,'''
+red = [
+    "presentation::page_jumps::tests::test_ctrl_p_in_the_page_posts_print_and_the_window_reads_it_back",
+    "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_jumps.rs", tests = 6 },
 ]

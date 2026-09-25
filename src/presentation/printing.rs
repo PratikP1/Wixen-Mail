@@ -57,6 +57,20 @@ pub fn print_through_the_dialog(owner: &wxdragon::prelude::Frame, paper: &Paper)
     after_printing(&paper.printable.title, printed)
 }
 
+/// The sentence after Print, said by a window with no status bar of its own:
+/// an answer at the ordinary priority and a refusal at the high one, as the
+/// main window's status line and refusals are.
+pub fn say_what_came_of_it(
+    a11y: &crate::presentation::accessibility::Accessibility,
+    said: AfterPrinting,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+    let _ = match said {
+        AfterPrinting::Answer(said) => a11y.announce(&said, Priority::Normal),
+        AfterPrinting::Refusal(said) => a11y.announce(&said, Priority::High),
+    };
+}
+
 #[cfg(target_os = "windows")]
 mod on_windows {
     use std::ffi::{OsStr, c_void};

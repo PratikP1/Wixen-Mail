@@ -24336,6 +24336,14 @@ pub fn show_conversation_as_page(
     // composer folds them, for one message; for a thread it says each finding
     // at the message it is about.
     let above = reader_text::conversation(subject, parts);
+    // What Ctrl+P prints: the same parts, every date in full. A message on
+    // its own, which is how a message opens by default, prints as that
+    // message with its header lines.
+    let paper = crate::application::printing::conversation_on_paper(
+        subject,
+        parts,
+        reading_from_settings(),
+    );
 
     // A sizer, because the window is no longer only the page: anything hanging
     // off these messages gets a list below it, and a warning goes above it.
@@ -24541,6 +24549,15 @@ pub fn show_conversation_as_page(
                         let _ = a11y.announce("No warning", Priority::Normal);
                     }
                 },
+                // The dialog is owned by this window, so focus comes back
+                // here when it closes, and the one sentence is said here.
+                Some(page_jumps::Jump::Print) => {
+                    use crate::presentation::printing;
+                    printing::say_what_came_of_it(
+                        &a11y,
+                        printing::print_through_the_dialog(&frame, &paper),
+                    );
+                }
                 None => {
                     if crate::presentation::panes::leaving_which_way(&json).is_some() {
                         // Closing is what going back means here. The close

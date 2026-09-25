@@ -17,11 +17,12 @@
 //! that shape for the same reasons, and there was no sense in learning them
 //! twice.
 
-use crate::application::printing::{AfterPrinting, Kind, Paper};
+use crate::application::printing::{Kind, Paper};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::printing;
 use crate::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use crate::presentation::theme;
 use std::cell::{Cell, RefCell};
@@ -844,12 +845,8 @@ impl ReaderWindow {
                 let Some(paper) = paper else {
                     return;
                 };
-                let said =
-                    crate::presentation::printing::print_through_the_dialog(&frame, &paper());
-                let _ = match said {
-                    AfterPrinting::Answer(said) => a11y.announce(&said, Priority::Normal),
-                    AfterPrinting::Refusal(said) => a11y.announce(&said, Priority::High),
-                };
+                let said = printing::print_through_the_dialog(&frame, &paper());
+                printing::say_what_came_of_it(&a11y, said);
                 return;
             }
             if id == ID_SAVE_ATTACHMENT || id == ID_READ_ATTACHMENT {

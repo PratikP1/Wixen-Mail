@@ -27,6 +27,9 @@ pub enum Jump {
     Attachments,
     /// F7: the security warning above the message, when there is one.
     Warning,
+    /// Ctrl+P: print what the window shows, through Windows' print dialog.
+    /// Not a move of focus, and still a key the page hands to its window.
+    Print,
 }
 
 /// The listener a page runs to post the jumps, injected after the way out.
@@ -67,6 +70,7 @@ pub fn the_jump_the_page_asked_for(json: &str) -> Option<Jump> {
     match posted.get("kind").and_then(serde_json::Value::as_str)? {
         "attachments" => Some(Jump::Attachments),
         "warning" => Some(Jump::Warning),
+        "print" => Some(Jump::Print),
         _ => None,
     }
 }
@@ -125,9 +129,11 @@ mod tests {
         );
         assert!(SCRIPT.contains("kind: 'print'"), "{SCRIPT}");
 
-        assert!(
-            the_jump_the_page_asked_for(r#"{"kind":"print"}"#).is_some(),
-            "the page posts print and the window reads it as nothing"
+        // Named rather than only something, now the jump exists to name: the
+        // red half could ask only whether the window read the kind at all.
+        assert_eq!(
+            the_jump_the_page_asked_for(r#"{"kind":"print"}"#),
+            Some(Jump::Print)
         );
     }
 
