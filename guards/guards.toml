@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 308 records have arrived since and have not been through it.
+# 310 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30768,4 +30768,40 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/page_jumps.rs", tests = 6 },
+]
+
+# A space joining the run of typing it ends, so a whole sentence typed is one
+# step and Undo takes all of it back at once where somebody expects a word.
+# Written 2026-09-25 by 13-05, the break taken by hand against
+# `cargo test --lib application::` first: the three cases that type words
+# went red and nothing else did.
+[[guard]]
+name = "a space ends the step of typing it is typed in"
+file = "src/application/text_history.rs"
+before = '''    typed.is_whitespace() || typed.is_ascii_punctuation()'''
+after = '''    typed.is_ascii_punctuation()'''
+red = [
+    "application::text_history::tests::test_three_words_typed_come_back_one_word_at_a_time",
+    "application::text_history::tests::test_redo_puts_back_each_word_in_turn",
+    "application::text_history::tests::test_typing_after_an_undo_leaves_nothing_to_redo",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
+]
+
+# Redo kept after something new is typed, so Redo would put back a step onto
+# words it was never taken from. Written 2026-09-25 by 13-05, the break taken
+# by hand against `cargo test --lib application::` first: the one case went
+# red and nothing else did.
+[[guard]]
+name = "typing after an undo leaves nothing to redo"
+file = "src/application/text_history.rs"
+before = '''        self.value = after.to_string();
+        self.forward.clear();'''
+after = '''        self.value = after.to_string();'''
+red = [
+    "application::text_history::tests::test_typing_after_an_undo_leaves_nothing_to_redo",
+]
+tests_last_seen = [
+    { file = "src/application/text_history.rs", tests = 10 },
 ]

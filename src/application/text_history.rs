@@ -27,6 +27,8 @@
 //! everything is counted in characters, so no string is ever cut through the
 //! middle of one.
 
+use std::collections::VecDeque;
+
 /// At most this many steps are kept for one box; the oldest goes first.
 pub const MOST_STEPS: usize = 100;
 
@@ -40,37 +42,272 @@ pub struct Restore {
 
 /// One box's steps, back and forward.
 #[derive(Debug, Clone, Default)]
-pub struct History {}
+pub struct History {
+    /// What the box holds, as far as this history knows.
+    value: String,
+    back: VecDeque<Step>,
+    forward: Vec<Step>,
+    /// The next change starts a step of its own, after an undo or a redo.
+    sealed: bool,
+}
 
 impl History {
     /// A history for a box holding `value`, with nothing to undo.
-    pub fn new(_value: &str) -> Self {
-        Self {}
+    pub fn new(value: &str) -> Self {
+        Self {
+            value: value.to_string(),
+            ..Self::default()
+        }
     }
 
     /// The box now holds `after`, with the caret at `caret_after`.
-    pub fn record(&mut self, _after: &str, _caret_after: usize) {}
+    pub fn record(&mut self, after: &str, caret_after: usize) {
+        let Some(change) = Change::between(&self.value, after, caret_after) else {
+            return;
+        };
+        self.value = after.to_string();
+        self.forward.clear();
+        let joined = match self.back.back() {
+            Some(last) if !self.sealed => last.joined_with(&change),
+            _ => None,
+        };
+        self.sealed = false;
+        let step = match joined {
+            Some(joined) => {
+                self.back.pop_back();
+                joined
+            }
+            None => Step::of(change),
+        };
+        self.back.push_back(step);
+        if self.back.len() > MOST_STEPS {
+            self.back.pop_front();
+        }
+    }
 
     /// Take the last step back.
     pub fn undo(&mut self) -> Option<Restore> {
-        None
+        let step = self.back.pop_back()?;
+        let restore = step.change.taken_back_from(&self.value);
+        self.forward.push(step);
+        Some(self.shown(restore))
     }
 
     /// Put the last step undone back.
     pub fn redo(&mut self) -> Option<Restore> {
-        None
+        let step = self.forward.pop()?;
+        let restore = step.change.put_back_into(&self.value);
+        self.back.push_back(step);
+        Some(self.shown(restore))
     }
 
     pub fn can_undo(&self) -> bool {
-        false
+        !self.back.is_empty()
     }
 
     pub fn can_redo(&self) -> bool {
-        false
+        !self.forward.is_empty()
     }
 
     /// The program wrote `value` into the box: a new start, nothing to undo.
-    pub fn set_anew(&mut self, _value: &str) {}
+    pub fn set_anew(&mut self, value: &str) {
+        *self = Self::new(value);
+    }
+
+    /// The box is about to show `restore`, and the next change starts a step
+    /// of its own.
+    fn shown(&mut self, restore: Restore) -> Restore {
+        self.value = restore.value.clone();
+        self.sealed = true;
+        restore
+    }
+}
+
+/// One step: the change it made, and what kind of run it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Step {
+    change: Change,
+    kind: Kind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// Characters typed one at a time; `word_ended` once a space or a
+    /// punctuation mark was typed, which closes the step.
+    Typing { word_ended: bool },
+    /// Characters deleted one at a time, and which way once a second one
+    /// says so.
+    Deleting(Option<Direction>),
+    /// A paste, a cut, a replacement: anything more than one character at
+    /// once. Always a step of its own.
+    Whole,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    /// Backspace: each character is the one before the last.
+    Back,
+    /// Delete: each character is the one after the caret, which stays put.
+    Forward,
+}
+
+impl Step {
+    fn of(change: Change) -> Self {
+        let kind = change.kind();
+        Self { change, kind }
+    }
+
+    /// This step with `next` joined to it, if `next` continues it.
+    fn joined_with(&self, next: &Change) -> Option<Step> {
+        let at = self.change.at;
+        let joined = match (self.kind, next.kind()) {
+            (Kind::Typing { word_ended: false }, Kind::Typing { word_ended })
+                if next.at == at + char_count(&self.change.inserted) =>
+            {
+                Step {
+                    change: Change {
+                        inserted: format!("{}{}", self.change.inserted, next.inserted),
+                        ..self.change.clone()
+                    },
+                    kind: Kind::Typing { word_ended },
+                }
+            }
+            (Kind::Deleting(None | Some(Direction::Back)), Kind::Deleting(_))
+                if next.at + 1 == at =>
+            {
+                Step {
+                    change: Change {
+                        at: next.at,
+                        removed: format!("{}{}", next.removed, self.change.removed),
+                        inserted: String::new(),
+                    },
+                    kind: Kind::Deleting(Some(Direction::Back)),
+                }
+            }
+            (Kind::Deleting(None | Some(Direction::Forward)), Kind::Deleting(_))
+                if next.at == at =>
+            {
+                Step {
+                    change: Change {
+                        removed: format!("{}{}", self.change.removed, next.removed),
+                        ..self.change.clone()
+                    },
+                    kind: Kind::Deleting(Some(Direction::Forward)),
+                }
+            }
+            _ => return None,
+        };
+        Some(joined)
+    }
+}
+
+/// What one change did: at `at`, counted in characters, `removed` went and
+/// `inserted` came.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Change {
+    at: usize,
+    removed: String,
+    inserted: String,
+}
+
+impl Change {
+    /// The change that turned `before` into `after`, if anything changed.
+    ///
+    /// The part both share at the start and at the end is not part of it.
+    /// Where that is ambiguous, as when an "a" is typed into "aa", the end of
+    /// the change is put at the caret, because a typed or pasted run ends
+    /// where the caret is left and a deletion leaves the caret where it was.
+    fn between(before: &str, after: &str, caret_after: usize) -> Option<Change> {
+        let old: Vec<char> = before.chars().collect();
+        let new: Vec<char> = after.chars().collect();
+        if old == new {
+            return None;
+        }
+        let caret = chars_before(after, caret_after).min(new.len());
+        let shorter = old.len().min(new.len());
+        let common_end = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take_while(|(a, b)| a == b)
+            .count()
+            .min(shorter);
+        let end = common_end.min(new.len() - caret);
+        let common_start = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+        let start = common_start.min(shorter - end);
+        Some(Change {
+            at: start,
+            removed: old[start..old.len() - end].iter().collect(),
+            inserted: new[start..new.len() - end].iter().collect(),
+        })
+    }
+
+    fn kind(&self) -> Kind {
+        let mut inserted = self.inserted.chars();
+        match (inserted.next(), inserted.next(), char_count(&self.removed)) {
+            (Some(typed), None, 0) => Kind::Typing {
+                word_ended: ends_a_word(typed),
+            },
+            (None, _, 1) => Kind::Deleting(None),
+            _ => Kind::Whole,
+        }
+    }
+
+    /// `value` with this change undone: what was removed comes back chosen,
+    /// or the caret goes where the typing began.
+    fn taken_back_from(&self, value: &str) -> Restore {
+        let restored = spliced(value, self.at, char_count(&self.inserted), &self.removed);
+        let from = units_before(&restored, self.at);
+        let to = units_before(&restored, self.at + char_count(&self.removed));
+        Restore {
+            value: restored,
+            selection: (from, to),
+        }
+    }
+
+    /// `value` with this change made again, the caret after what it put in.
+    fn put_back_into(&self, value: &str) -> Restore {
+        let restored = spliced(value, self.at, char_count(&self.removed), &self.inserted);
+        let caret = units_before(&restored, self.at + char_count(&self.inserted));
+        Restore {
+            value: restored,
+            selection: (caret, caret),
+        }
+    }
+}
+
+/// A space or a punctuation mark, which ends the step it is typed in.
+fn ends_a_word(typed: char) -> bool {
+    typed.is_whitespace() || typed.is_ascii_punctuation()
+}
+
+fn char_count(text: &str) -> usize {
+    text.chars().count()
+}
+
+/// `text` with `removing` characters at `at` replaced by `putting`.
+fn spliced(text: &str, at: usize, removing: usize, putting: &str) -> String {
+    let mut characters = text.chars();
+    let mut spliced: String = characters.by_ref().take(at).collect();
+    spliced.push_str(putting);
+    spliced.extend(characters.skip(removing));
+    spliced
+}
+
+/// How the box counts the first `characters` characters of `text`.
+fn units_before(text: &str, characters: usize) -> usize {
+    text.chars().take(characters).map(char::len_utf16).sum()
+}
+
+/// How many whole characters of `text` the box's first `units` positions hold.
+fn chars_before(text: &str, units: usize) -> usize {
+    text.chars()
+        .scan(0, |counted, character| {
+            *counted += character.len_utf16();
+            Some(*counted)
+        })
+        .take_while(|&end| end <= units)
+        .count()
 }
 
 #[cfg(test)]
