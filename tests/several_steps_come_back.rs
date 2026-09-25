@@ -58,6 +58,7 @@ unsafe extern "system" {
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn GetKeyboardState(state: *mut u8) -> i32;
     fn SetKeyboardState(state: *const u8) -> i32;
+    fn FindWindowExW(parent: isize, after: isize, class: *const u16, title: *const u16) -> isize;
 }
 
 /// winuser.h.
@@ -69,16 +70,28 @@ const VK_CONTROL: usize = 0x11;
 const PRESSED: isize = 0x0000_0001;
 const RELEASED: isize = 0xC000_0001_u32 as i32 as isize;
 
-fn handle(box_: &TextCtrl) -> isize {
+fn handle(box_: &impl WxWidget) -> isize {
     box_.get_handle() as isize
+}
+
+/// The edit a combo box holds its words in, which is where the keyboard
+/// lands: the combo box's own handle is the frame around it and the list.
+fn edit_of(combo: &ComboBox) -> isize {
+    let class: Vec<u16> = "Edit\0".encode_utf16().collect();
+    // SAFETY: a live combo box on this thread, and a terminated class name.
+    unsafe { FindWindowExW(handle(combo), 0, class.as_ptr(), std::ptr::null()) }
 }
 
 /// Each character sent to the box as a translated key press would be.
 fn type_into(box_: &TextCtrl, words: &str) {
+    type_into_window(handle(box_), words);
+}
+
+fn type_into_window(window: isize, words: &str) {
     for unit in words.encode_utf16() {
-        // SAFETY: a live box on this thread; the message carries a character
-        // and no pointer.
-        unsafe { SendMessageW(handle(box_), WM_CHAR, usize::from(unit), PRESSED) };
+        // SAFETY: a live window on this thread; the message carries a
+        // character and no pointer.
+        unsafe { SendMessageW(window, WM_CHAR, usize::from(unit), PRESSED) };
     }
 }
 
@@ -86,6 +99,10 @@ fn type_into(box_: &TextCtrl, words: &str) {
 /// control character Windows makes of it, then the release. Control is set
 /// in this thread's keyboard state and put back afterwards.
 fn press_with_control(box_: &TextCtrl, letter: u8) {
+    press_with_control_in(handle(box_), letter);
+}
+
+fn press_with_control_in(window: isize, letter: u8) {
     let mut before = [0u8; 256];
     // SAFETY: the buffer is the 256 bytes the call writes.
     unsafe { GetKeyboardState(before.as_mut_ptr()) };
@@ -94,11 +111,11 @@ fn press_with_control(box_: &TextCtrl, letter: u8) {
     // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
     unsafe { SetKeyboardState(held.as_ptr()) };
     let control_character = usize::from(letter - b'A' + 1);
-    // SAFETY: a live box on this thread; the messages carry numbers only.
+    // SAFETY: a live window on this thread; the messages carry numbers only.
     unsafe {
-        SendMessageW(handle(box_), WM_KEYDOWN, usize::from(letter), PRESSED);
-        SendMessageW(handle(box_), WM_CHAR, control_character, PRESSED);
-        SendMessageW(handle(box_), WM_KEYUP, usize::from(letter), RELEASED);
+        SendMessageW(window, WM_KEYDOWN, usize::from(letter), PRESSED);
+        SendMessageW(window, WM_CHAR, control_character, PRESSED);
+        SendMessageW(window, WM_KEYUP, usize::from(letter), RELEASED);
     }
     // SAFETY: as above, the state read at the start.
     unsafe { SetKeyboardState(before.as_ptr()) };
@@ -174,6 +191,72 @@ fn take_the_readings(frame: &Frame, harvest: &mut Harvest) {
     );
     press_with_control(&box_, b'Y');
     harvest.insert("the box after Ctrl+Y", box_.get_value());
+
+    take_the_combo_box_readings(&panel, harvest);
+    take_the_dialog_readings(frame, harvest);
+}
+
+/// An editable combo box, as the event form's Category and the contact
+/// editor's Prefix and Suffix are: typed into and pressed in at its edit,
+/// which is where the keyboard lands.
+fn take_the_combo_box_readings(panel: &Panel, harvest: &mut Harvest) {
+    let combo = ComboBox::builder(panel)
+        .with_string_choices(&["Dr."])
+        .build();
+    let key_downs = counter_on(|count| {
+        combo.on_key_down(move |_| count.set(count.get() + 1));
+    });
+    keep_a_history(&combo);
+    let characters = counter_on(|count| {
+        combo.on_char(move |_| count.set(count.get() + 1));
+    });
+    let edit = edit_of(&combo);
+    harvest.insert("the combo box has an edit", (edit != 0).to_string());
+
+    type_into_window(edit, "one two three");
+    harvest.insert("the combo box typed", combo.get_value());
+    for name in [
+        "the combo box undone once",
+        "the combo box undone twice",
+        "the combo box undone three times",
+    ] {
+        undo_in(&combo);
+        harvest.insert(name, combo.get_value());
+    }
+    redo_in(&combo);
+    harvest.insert("the combo box redone once", combo.get_value());
+
+    set_anew(&combo, "");
+    type_into_window(edit, "alpha beta");
+    key_downs.set(0);
+    characters.set(0);
+    press_with_control_in(edit, b'Z');
+    harvest.insert("the combo box after Ctrl+Z at its edit", combo.get_value());
+    harvest.insert(
+        "the combo box's key-down saw Ctrl+Z",
+        (key_downs.get() > 0).to_string(),
+    );
+    harvest.insert(
+        "the Ctrl+Z character reached the combo box",
+        (characters.get() > 0).to_string(),
+    );
+    press_with_control_in(edit, b'Y');
+    harvest.insert("the combo box after Ctrl+Y at its edit", combo.get_value());
+}
+
+/// A box in a dialog, which has no menu bar and so no Edit menu to take the
+/// keys first: Ctrl+Z and Ctrl+Y reach the box's own key-down.
+fn take_the_dialog_readings(frame: &Frame, harvest: &mut Harvest) {
+    let dialog = Dialog::builder(frame, "Several steps in a dialog").build();
+    let box_ = TextCtrl::builder(&dialog).build();
+    keep_a_history(&box_);
+    dialog.show(true);
+    type_into(&box_, "first second");
+    press_with_control(&box_, b'Z');
+    harvest.insert("the dialog's box after Ctrl+Z", box_.get_value());
+    press_with_control(&box_, b'Y');
+    harvest.insert("the dialog's box after Ctrl+Y", box_.get_value());
+    dialog.destroy();
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -320,6 +403,33 @@ fn test_ctrl_z_in_the_box_undoes_one_step_and_the_box_does_not_undo_again() {
 #[test]
 fn test_ctrl_y_in_the_box_puts_the_step_back() {
     assert_eq!(reading("the box after Ctrl+Y"), "alpha beta");
+}
+
+#[test]
+fn test_an_editable_combo_box_gives_back_three_words_a_word_at_a_time() {
+    assert_eq!(reading("the combo box has an edit"), "true");
+    assert_eq!(reading("the combo box typed"), "one two three");
+    assert_eq!(reading("the combo box undone once"), "one two ");
+    assert_eq!(reading("the combo box undone twice"), "one ");
+    assert_eq!(reading("the combo box undone three times"), "");
+    assert_eq!(reading("the combo box redone once"), "one ");
+}
+
+#[test]
+fn test_ctrl_z_at_a_combo_boxs_edit_reaches_the_history_and_the_edit_does_not_undo_again() {
+    assert_eq!(reading("the combo box's key-down saw Ctrl+Z"), "true");
+    assert_eq!(reading("the combo box after Ctrl+Z at its edit"), "alpha ");
+    the_key_was_taken(reading("the Ctrl+Z character reached the combo box")).unwrap();
+    assert_eq!(
+        reading("the combo box after Ctrl+Y at its edit"),
+        "alpha beta"
+    );
+}
+
+#[test]
+fn test_a_box_in_a_dialog_takes_ctrl_z_and_ctrl_y_with_no_menu() {
+    assert_eq!(reading("the dialog's box after Ctrl+Z"), "first ");
+    assert_eq!(reading("the dialog's box after Ctrl+Y"), "first second");
 }
 
 #[test]

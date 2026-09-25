@@ -64,21 +64,58 @@ impl HistoryKey {
     }
 }
 
-fn handle_of(box_: &TextCtrl) -> isize {
+/// A box somebody types into, as far as its history needs it: the words it
+/// holds, where its caret is, a selection shown, and the events it raises.
+/// A text box meets it, and so does an editable combo box, whose words sit in
+/// an edit of its own.
+pub trait TextBox: WxWidget + TextEvents + WindowEvents + Copy + 'static {
+    fn words(&self) -> String;
+    fn show_words(&self, words: &str);
+    fn caret(&self) -> i64;
+    fn select(&self, from: i64, to: i64);
+}
+
+impl TextBox for TextCtrl {
+    fn words(&self) -> String {
+        self.get_value()
+    }
+    fn show_words(&self, words: &str) {
+        self.set_value(words);
+    }
+    fn caret(&self) -> i64 {
+        self.get_insertion_point()
+    }
+    fn select(&self, from: i64, to: i64) {
+        self.set_selection(from, to);
+    }
+}
+
+impl TextBox for ComboBox {
+    fn words(&self) -> String {
+        String::new()
+    }
+    fn show_words(&self, _words: &str) {}
+    fn caret(&self) -> i64 {
+        0
+    }
+    fn select(&self, _from: i64, _to: i64) {}
+}
+
+fn handle_of(box_: &impl TextBox) -> isize {
     box_.get_handle() as isize
 }
 
 /// Keep a history of several steps for `box_`, and answer Ctrl+Z and Ctrl+Y
 /// in it.
-pub fn keep_a_history(box_: &TextCtrl) {
+pub fn keep_a_history(box_: &impl TextBox) {
     let handle = handle_of(box_);
-    let history = History::new(&box_.get_value());
+    let history = History::new(&box_.words());
     KEPT.with_borrow_mut(|histories| histories.insert(handle, history));
 
     let changed = *box_;
-    box_.on_text_changed(move |event| {
+    box_.on_text_updated(move |event| {
         record_the_change(&changed);
-        event.skip(true);
+        event.event.skip(true);
     });
     let pressed = *box_;
     box_.on_key_down(move |event| {
@@ -104,55 +141,55 @@ pub fn keep_a_history(box_: &TextCtrl) {
 
 /// Write `value` into the box as the program's own choice: the box shows it
 /// and the history starts again from it, with nothing to undo.
-pub fn set_anew(box_: &TextCtrl, value: &str) {
+pub fn set_anew(box_: &impl TextBox, value: &str) {
     with_history(box_, |history| history.set_anew(value));
-    box_.set_value(value);
+    box_.show_words(value);
 }
 
 /// Take the last step back in the box. False when there was none, or when the
 /// box keeps no history.
-pub fn undo_in(box_: &TextCtrl) -> bool {
+pub fn undo_in(box_: &impl TextBox) -> bool {
     restore(box_, History::undo)
 }
 
 /// Put back the last step undone in the box. False when there was none.
-pub fn redo_in(box_: &TextCtrl) -> bool {
+pub fn redo_in(box_: &impl TextBox) -> bool {
     restore(box_, History::redo)
 }
 
 /// Whether Undo has a step to take back in the box.
-pub fn can_undo_in(box_: &TextCtrl) -> bool {
+pub fn can_undo_in(box_: &impl TextBox) -> bool {
     with_history(box_, |history| history.can_undo()).unwrap_or(false)
 }
 
 /// Whether Redo has a step to put back in the box.
-pub fn can_redo_in(box_: &TextCtrl) -> bool {
+pub fn can_redo_in(box_: &impl TextBox) -> bool {
     with_history(box_, |history| history.can_redo()).unwrap_or(false)
 }
 
 /// Ask the box's history something. The registry is borrowed only for the
 /// question, never while the box writes, because the box's change arrives
 /// inside the write and asks the registry itself.
-fn with_history<T>(box_: &TextCtrl, ask: impl FnOnce(&mut History) -> T) -> Option<T> {
+fn with_history<T>(box_: &impl TextBox, ask: impl FnOnce(&mut History) -> T) -> Option<T> {
     let handle = handle_of(box_);
     KEPT.with_borrow_mut(|histories| histories.get_mut(&handle).map(ask))
 }
 
 /// The box changed: tell its history.
-fn record_the_change(box_: &TextCtrl) {
-    let caret = usize::try_from(box_.get_insertion_point()).unwrap_or(0);
-    let value = box_.get_value();
+fn record_the_change(box_: &impl TextBox) {
+    let caret = usize::try_from(box_.caret()).unwrap_or(0);
+    let value = box_.words();
     with_history(box_, |history| history.record(&value, caret));
 }
 
 /// Ask the history for a step and show it in the box, which raises the box's
 /// change for every other handler.
-fn restore(box_: &TextCtrl, step: fn(&mut History) -> Option<Restore>) -> bool {
+fn restore(box_: &impl TextBox, step: fn(&mut History) -> Option<Restore>) -> bool {
     let Some(Restore { value, selection }) = with_history(box_, step).flatten() else {
         return false;
     };
-    box_.set_value(&value);
+    box_.show_words(&value);
     let (from, to) = selection;
-    box_.set_selection(from as i64, to as i64);
+    box_.select(from as i64, to as i64);
     true
 }
