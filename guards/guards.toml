@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 319 records have arrived since and have not been through it.
+# 320 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30787,12 +30787,16 @@ tests_last_seen = [
 name = "Ctrl+Z in a box is taken after the history acts, so the box does not undo again"
 file = "src/presentation/text_history_keys.rs"
 suite = "several_steps_come_back"
-before = '''            HistoryKey::Redo => redo_in(&pressed),
-        };
+before = '''            say_there_was_nothing(history_key);
+        }
         event.skip(false);'''
-after = '''            HistoryKey::Redo => redo_in(&pressed),
-        };
+after = '''            say_there_was_nothing(history_key);
+        }
         event.skip(true);'''
+#
+# Anchor moved 2026-09-25 by 13-07, which put the sentence for a key with
+# nothing to do between the history's answer and the skip; the break taken
+# by hand on the new text reddened the same two readings.
 #
 # Re-measured 2026-09-25 by 13-06, the break taken by hand again: the combo
 # box's Ctrl+Z reading goes red too, because a combo box's key-down is this
@@ -30804,7 +30808,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # The history not taking the value it hands back, so the box's change on a
@@ -30837,7 +30841,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/text_history.rs", tests = 10 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # A note chosen in the list written into the editor with `set_value`, which
@@ -30856,7 +30860,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # The composer's Subject box built without its history, so it keeps Windows'
@@ -30903,7 +30907,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # A stored contact's nickname written into the editor with `set_value`, which
@@ -30922,7 +30926,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # The Check Spelling box built without its history, so a word typed after the
@@ -30944,7 +30948,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/several_steps_come_back.rs", tests = 16 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]
 
 # An undo of a mark reaching the messages the action did not change: Mark as
@@ -31031,4 +31035,26 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/undoing_a_mark_names_the_message.rs", tests = 10 },
+]
+
+# A box in a dialog pressed Ctrl+Z or Ctrl+Y with nothing to take back or put
+# back, and nothing said, which cannot be told from a key that is broken
+# (ledger 621). Written 2026-09-25 by 13-07, the break taken by hand against
+# `cargo test --test several_steps_come_back` first: the reading of a dialog's
+# empty keys went red and nothing else in the target did.
+[[guard]]
+name = "a dialog's Ctrl+Z with nothing to undo says so in the Edit menu's words"
+file = "src/presentation/text_history_keys.rs"
+suite = "several_steps_come_back"
+before = '''        if !acted {
+            say_there_was_nothing(history_key);
+        }'''
+after = '''        if !acted {
+        }'''
+red = [
+    "test_ctrl_z_and_ctrl_y_with_nothing_left_in_a_dialog_say_what_the_edit_menu_says",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_history_keys.rs", tests = 0 },
+    { file = "tests/several_steps_come_back.rs", tests = 18 },
 ]

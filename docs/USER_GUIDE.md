@@ -1179,7 +1179,8 @@ A task has a due date and no time, so none of this changes the task window.
   says so. Boxes in dialogs keep the same steps: the composer's address and
   subject lines, the account settings, the contact editor and every other
   box you type in. What a dialog opens holding is where Undo stops, and in a
-  dialog, with nothing left to undo, the key does nothing and says nothing
+  dialog, with nothing left to undo, the key says so in the same words as the
+  main window
 - `Ctrl+Y` - Redo, putting back the steps Undo took, one at a time. Once you
   type something new, there is nothing to redo, and it says so
 

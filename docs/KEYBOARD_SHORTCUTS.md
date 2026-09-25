@@ -1389,7 +1389,10 @@ Feedback, Settings, and the boxes that ask for a name or a search. A dialog has
 no Edit menu, so the keys go straight to the box. What a dialog opens holding,
 such as an account's server name or a contact's nickname, is where the history
 starts, so Undo never empties a box of it. When there is nothing left to undo,
-the key does nothing and says nothing, as Windows' own undo does.
+`Ctrl+Z` says "There is nothing to undo in this box.", the same sentence the
+main window's Edit menu says, and `Ctrl+Y` with nothing to redo says so too,
+so the keys behave the same everywhere. A step that is undone says nothing:
+you hear the words that come back.
 
 Three kinds of box keep Windows' own single step, where pressing Undo a second
 time puts the change back:

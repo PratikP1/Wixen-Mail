@@ -6058,6 +6058,18 @@ impl WxMailApp {
                 ],
                 Some((msg_list, state.clone())),
             );
+            // A box in a dialog has no Edit menu and answers Ctrl+Z and
+            // Ctrl+Y itself. With nothing to take back or put back it says
+            // so, in the Edit menu's words, through this screen reader voice.
+            crate::presentation::text_history_keys::say_nothing_left_through({
+                let a11y = Arc::clone(&a11y);
+                move |said| {
+                    let _ = a11y.announce(
+                        said,
+                        crate::presentation::accessibility::announcements::Priority::High,
+                    );
+                }
+            });
 
             // ── Closing, which does not always mean closing ───────────────
             //

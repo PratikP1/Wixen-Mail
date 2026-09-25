@@ -64,9 +64,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   that were unread, and one sentence is said for the lot. The change goes to the mail server
   the way the action did, and a server that refuses puts it back and says why. Redo does the
   action again. Only the last action is kept, until your next action on messages replaces it,
-  with no time limit; a message marked read by the reading wait never replaces it.
-  Known limitations: in a dialog, `Ctrl+Z` with nothing left to undo does nothing and says
-  nothing, as Windows' own undo does, where the main window says so in a sentence. The number
+  with no time limit; a message marked read by the reading wait never replaces it. In a
+  dialog, `Ctrl+Z` and `Ctrl+Y` with nothing left to undo or redo now say so in the same
+  sentence the main window's Edit menu says, where before they did nothing and said nothing.
+  Known limitations: the number
   fields, such as the minutes between checks for mail and an event's hour and minute, and the
   composer's Describe the picture and Insert Link boxes, keep Windows' own single step, where
   pressing Undo twice puts the change back. A password box keeps no steps at all, so a

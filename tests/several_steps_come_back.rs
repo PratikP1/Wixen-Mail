@@ -36,7 +36,10 @@
 //! and never on its edit.
 //!
 //! **Dialogs.** A box in a `Dialog`, which has no menu bar, takes Ctrl+Z and
-//! Ctrl+Y at its own key-down. The program's Check Spelling dialog, built by
+//! Ctrl+Y at its own key-down. Pressed on a box with nothing to take back or
+//! put back, each says the Edit menu's sentence (ledger 621), caught by a
+//! voice this file hands over where the main window hands over the screen
+//! reader's; a step undone says nothing. The program's Check Spelling dialog, built by
 //! its builder and never shown, opens holding the first suggestion, and four
 //! presses of Ctrl+Z after typing walk back a step at a time and stop at the
 //! suggestion; Windows' one step would put the typing back on the second.
