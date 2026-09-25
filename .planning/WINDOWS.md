@@ -633,6 +633,7 @@ last_updated: 2026-09-25T18:00:00.000Z
 | 616 | 13 | todo | .github/workflows/release.yml |  | 13-03: release.yml's quality gate runs cargo test on windows-latest without WIXEN_NO_AUDIO, which ci.yml, guards.yml, mutants.yml and other-platforms.yml all set because GitHub's Windows runners have no audio driver and rodio 0.22.2 faults on the first write there (ci.yml's comment). It was missing before 13-03, and 13-03 leaves release.yml as main holds it: a WIXEN_NO_PDF_PRINTER line it added there was taken off again when the runner turned out to have the PDF printer. No test 13-03 adds needs WIXEN_NO_AUDIO, so whether the release gate gains it is Pratik's (guardrail 7). Closed when he decides | open |  | 2026-09-25T12:00:00.000Z |  |
 | 617 | 13 | unrun-verify | src/presentation/wx_reader.rs |  | 13-04: #45's other surfaces under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the reader window's letter P and Ctrl+P, and Ctrl+P in the formatted message window; Windows' print dialog worked by keyboard from each, with focus back on the tab's text or on the page when it closes; the one sentence heard after a job, a cancel and a failure in each; Print in Contacts, Calendar, Tasks, Notes and Reminders heard, with the refusal when nothing is chosen; and a conversation's pages and an item's page looked at by a sighted reader. tests/print_is_on_the_file_menu.rs holds every surface's route to the one path and presentation::page_jumps holds the page's key; neither opens the dialog or makes paper | open |  | 2026-09-25T18:00:00.000Z |  |
 | 618 | 13 | todo | src/presentation/reader_text.rs |  | 13-04: the reader window's conversation tab and the formatted conversation page head each message with its date as the list stores it, such as 2026-01-01T00:00:00+00:00, because reader_text::conversation (reader_text.rs:1169) and thread_parts (:729) take no reading. Premise 3 of 13-04 read where it comes from: conversation_nodes copies MessageItem.date into ThreadNode.date, and conversation_parts copies it back. Paper writes each heading's date in full since 13-04 (application::printing::conversation_on_paper); changing what the screen shows was not 13-04's. The fix is a reading handed to both compositions, as single_message already takes one | open |  | 2026-09-25T18:00:00.000Z |  |
+| 619 | 13 | unrun-verify | src/presentation/text_history_keys.rs |  | 13-05: several steps of undo in the main window's three boxes, under NVDA and Narrator. What only a person settles: each Ctrl+Z in the note title, the note body and the contacts search heard as the words of one step coming back, with the caret where that step began and a removed word heard as selected; Redo heard putting each step back; the contacts list heard changing as the search runs again on restored words; and choosing another note leaving nothing to undo. tests/several_steps_come_back.rs holds the steps, the caret, the restore raising the change and Ctrl+Z taken in the box on a real control; application::text_history holds the grouping; neither listens | open |  | 2026-09-25T20:00:00.000Z |  |
 
 ````json
 [
@@ -8050,6 +8051,18 @@ last_updated: 2026-09-25T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-25T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 619,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/text_history_keys.rs",
+    "line": null,
+    "description": "13-05: several steps of undo in the main window's three boxes, under NVDA and Narrator. What only a person settles: each Ctrl+Z in the note title, the note body and the contacts search heard as the words of one step coming back, with the caret where that step began and a removed word heard as selected; Redo heard putting each step back; the contacts list heard changing as the search runs again on restored words; and choosing another note leaving nothing to undo. tests/several_steps_come_back.rs holds the steps, the caret, the restore raising the change and Ctrl+Z taken in the box on a real control; application::text_history holds the grouping; neither listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
     "resolved_at": null
   }
 ]

@@ -32,20 +32,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 - **Undo and Redo on the Edit menu.** The tester on 2026-09-15 (#47): "There are no general
   undo/redo commands that provide corresponding functionality." The Edit menu now opens with
   Undo (`Ctrl+Z`, letter U) and Redo (`Ctrl+Y`, letter R). They act on the box you are typing
-  in, such as a note's title or body or the contacts search: Undo takes back the last thing you
-  typed, pasted or cut, and Redo, right after an Undo in the same box, puts it back. With
-  nothing to undo or redo, the menu shows them greyed and the keys say so in a sentence, spoken
+  in, such as a note's title or body or the contacts search, with "a multi-step history where
+  the native control gives one step", as the tester asked. Each of those boxes remembers up to
+  100 steps, and Undo takes them back one at a time: a word you typed with the space after it,
+  a paste, a cut, or a run of deleting. The cursor goes back to where each step began, and words
+  a step removed come back selected. Redo puts the steps back in turn until you type something
+  new. In the contacts search, each Undo runs the search again on the words it brings back.
+  Choosing a note in the list starts its title and body afresh, so Undo never reaches into the
+  note you had open before. With nothing to undo or redo, the menu shows them greyed and the
+  keys say so in a sentence, spoken
   and on the status bar; in a list, the sidebar or a message you are reading, they say they
   work in a box you can type in. Cut now takes words out in a way the box can undo; before
   this, Undo after Cut put nothing back. **Undo Send moved to third on the Edit menu and its
   letter moved from U to N**, because U is Undo's; its key is still `Ctrl+Shift+Z`. The version
   does not move for this: no build has been cut since 1.0.0-alpha.1.
-  Known limitations: a box remembers one change in this build, so pressing Undo twice puts the
-  change back; several steps of undo in every box are later work in this round. Undo and Redo
-  on the main window reach the note title, the note body and the contacts search; the boxes in
-  dialogs keep their own `Ctrl+Z` for now and have no Redo. Undoing an action on messages or
-  items, such as a delete or a move, is later work too. Nobody has heard the greyed items, the
-  sentences or Undo Send's new letter with a screen reader yet.
+  Known limitations: the several steps reach the main window's three boxes, the note title,
+  the note body and the contacts search; the boxes in dialogs keep Windows' own single step
+  and their own `Ctrl+Z` for now, where pressing Undo twice puts the change back, and have no
+  Redo. Undoing an action on messages or items, such as a delete or a move, is later work too.
+  Nobody has heard the greyed items, the sentences, Undo Send's new letter or a step undone
+  with a screen reader yet.
 
 ### Changed
 

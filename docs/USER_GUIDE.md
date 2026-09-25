@@ -1172,12 +1172,13 @@ A task has a due date and no time, so none of this changes the task window.
 - `Esc` - Close dialogs
 
 ### Editing
-- `Ctrl+Z` - Undo the last change in the box you are typing in, such as a
-  note or the contacts search. A box remembers one change in these builds,
-  so pressing Undo twice puts the change back. With nothing to undo it says
-  so
-- `Ctrl+Y` - Redo, right after an Undo in the same box. Once you type after
-  the Undo, there is nothing to redo, and it says so
+- `Ctrl+Z` - Undo a step in the box you are typing in, such as a note or the
+  contacts search. Each box remembers up to 100 steps, and a step is a word
+  you typed with the space after it, a paste, a cut, or a run of deleting.
+  Choosing another note starts its boxes afresh. With nothing to undo it
+  says so. Boxes in dialogs still keep Windows' own single step
+- `Ctrl+Y` - Redo, putting back the steps Undo took, one at a time. Once you
+  type something new, there is nothing to redo, and it says so
 - `Ctrl+Shift+Z` - Undo Send, while a message you just sent is still being
   held. It is third on the Edit menu, after Undo and Redo, and its letter is
   N. Some programs use `Ctrl+Shift+Z` for Redo; here Redo is `Ctrl+Y`
