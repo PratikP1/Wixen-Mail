@@ -22,6 +22,16 @@
 //! - one sentence per undo, never one per message (guardrail 5);
 //! - the Edit menu, with the message list focused, names the step.
 //!
+//! Since 13-08 it reads a move, a delete and a copy as well:
+//!
+//! - the delete arm and the move and copy path each remember the action once,
+//!   after the changes are made here, so a change this computer would not
+//!   keep is never remembered as done;
+//! - the undo of one asks the store what each message's row says now and
+//!   `application::undoing` what that means, ends a change still waiting for
+//!   its server through `undo_here`, and moves back or deletes through the
+//!   path the action took, never answering a waiting change with a move back.
+//!
 //! Each reading is a function over text, and a companion hands it the fault
 //! planted in a snippet shaped as the window should be, so a reading that
 //! stopped finding its anchor cannot pass by finding nothing.
@@ -125,6 +135,11 @@ const THE_MENU_HANDLERS: &str = "fn keep_the_edit_menu_honest(";
 const REMEMBERS: &str = "remember_the_last_action(";
 const A_WRITE_TO_THE_SERVER: &str = "spawn_server_change(";
 const SAYS: [&str; 2] = ["say_what_the_undo_did(", ".announce("];
+const THE_DELETE_ARM: &str = "_ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT =>";
+const THE_MOVE_PATH: &str = "fn move_or_copy_here_first(";
+const MOVED_BACK: &str = "fn move_back_or_again(";
+const MADE_HERE_FIRST: &str = "complete_here_then_tell_the_server(";
+const ENDED_HERE: &str = "undo_here(";
 
 // ── The readings ───────────────────────────────────────────────────────────
 
@@ -132,6 +147,11 @@ const SAYS: [&str; 2] = ["say_what_the_undo_did(", ".announce("];
 /// sends to the server, so a command that stopped part way through a set
 /// remembers nothing it did not finish.
 fn remembers_after_its_writes(body: &str, what: &str) -> Result<(), String> {
+    remembers_after(body, A_WRITE_TO_THE_SERVER, what)
+}
+
+/// The same for a command whose last write is `write`.
+fn remembers_after(body: &str, write: &str, what: &str) -> Result<(), String> {
     let times = body.matches(REMEMBERS).count();
     if times != 1 {
         return Err(format!(
@@ -139,8 +159,8 @@ fn remembers_after_its_writes(body: &str, what: &str) -> Result<(), String> {
         ));
     }
     let remembered = body.find(REMEMBERS).unwrap_or_default();
-    let last_write = body.rfind(A_WRITE_TO_THE_SERVER).ok_or(format!(
-        "{what} sends nothing to the server, so this reads nothing"
+    let last_write = body.rfind(write).ok_or(format!(
+        "{what} never reaches {write}, so this reads nothing"
     ))?;
     match remembered > last_write {
         true => Ok(()),
@@ -241,6 +261,62 @@ fn the_menu_names_the_step(app: &str) -> Result<(), String> {
     }
 }
 
+/// A change still waiting for its server is ended here through `undo_here`,
+/// and never answered with a new ask, which would send the server a move
+/// into the folder it still holds the message in.
+fn ends_a_waiting_change_here(body: &str) -> Result<(), String> {
+    let (_, from_the_arm) = body.split_once("OneChange::EndTheWaitingRow(").ok_or(
+        "the carrying out has no arm for a change still waiting, so this reads nothing".to_string(),
+    )?;
+    let arm = from_the_arm
+        .split("OneChange::")
+        .next()
+        .unwrap_or(from_the_arm);
+    if !arm.contains(ENDED_HERE) {
+        return Err(
+            "a change still waiting for its server is not ended through undo_here".to_string(),
+        );
+    }
+    match arm.contains(MADE_HERE_FIRST) {
+        true => Err(
+            "a change still waiting for its server is answered with a move back, so the \
+             server is asked to move a message into the folder it holds it in"
+                .to_string(),
+        ),
+        false => Ok(()),
+    }
+}
+
+/// Undo and Redo over a move, a delete or a copy reach the carrying out,
+/// which asks the store and the decision for each message and goes the ways
+/// the action went, saying nothing inside its loop.
+fn moves_back_the_way_the_action_went(app: &str) -> Result<(), String> {
+    let carrying = body_of(app, THE_CARRYING_OUT)?;
+    if !carrying.contains("move_back_or_again(") {
+        return Err("Undo in a list never reaches the undo of a move".to_string());
+    }
+    let moved = body_of(app, MOVED_BACK)?;
+    for asked in [
+        "what_the_store_says(",
+        "what_undo_does_to(",
+        "what_redo_does_to(",
+        ENDED_HERE,
+        MADE_HERE_FIRST,
+    ] {
+        if !moved.contains(asked) {
+            return Err(format!("the undo of a move never calls {asked}"));
+        }
+    }
+    ends_a_waiting_change_here(moved)?;
+    match loop_bodies(moved)
+        .iter()
+        .any(|looped| SAYS.iter().any(|say| looped.contains(say)))
+    {
+        true => Err("the undo of a move says something once per message".to_string()),
+        false => Ok(()),
+    }
+}
+
 // ── The tests ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -288,6 +364,50 @@ fn test_undo_says_one_sentence_however_many_messages() {
 #[test]
 fn test_the_edit_menu_names_the_last_action_when_the_list_has_focus() {
     the_menu_names_the_step(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_delete_remembers_the_action_after_it_is_made_here() {
+    let app = the_main_window();
+    let arm = the_id_arm(&app, THE_DELETE_ARM).unwrap_or_else(|why| panic!("{why}"));
+    remembers_after(arm, MADE_HERE_FIRST, "Delete").unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_move_or_a_copy_remembers_the_action_after_it_is_made_here() {
+    let app = the_main_window();
+    let body = body_of(&app, THE_MOVE_PATH).unwrap_or_else(|why| panic!("{why}"));
+    remembers_after(body, MADE_HERE_FIRST, "Move to and Copy to")
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_undo_of_a_move_asks_the_store_and_goes_the_way_the_action_went() {
+    moves_back_the_way_the_action_went(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_companion_an_undo_that_moves_back_a_waiting_change_is_refused() {
+    let planted = "fn move_back_or_again(app: AppHandles<'_>) {
+    for message in went {
+        match change {
+            OneChange::EndTheWaitingRow(waiting) => asks.push(a_move_back(&waiting)),
+            OneChange::Move { from, to } => asks.push(a_move(from, to)),
+        }
+    }
+    complete_here_then_tell_the_server(app, list, cache, asks, None, refuse);
+}
+";
+    assert!(ends_a_waiting_change_here(planted).is_err());
+}
+
+#[test]
+fn test_companion_a_delete_that_remembers_before_it_is_made_is_refused() {
+    let planted = "
+        remember_the_last_action(&state, action);
+        complete_here_then_tell_the_server(app, &msg_list, &cache, asks, None, server_first);
+";
+    assert!(remembers_after(planted, MADE_HERE_FIRST, "the planted delete").is_err());
 }
 
 #[test]
