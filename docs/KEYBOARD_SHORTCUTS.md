@@ -508,7 +508,7 @@ can navigate. Making them real headings is being worked on.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Quit Application | `Ctrl+Q` | Exit Wixen Mail |
-| Undo Send | `Ctrl+Shift+Z` | First on the Edit menu. Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
+| Undo Send | `Ctrl+Shift+Z` | Third on the Edit menu, after Undo and Redo. Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
 | Open Settings | `Ctrl+,` | Open settings dialog |
 | Help for what you are looking at | `F1` | Opens the page about the module you are in. Every page is on the Help menu, which is the contents. |
 | Send Feedback | `Ctrl+Shift+F` | On the Help menu, and as a button on About. Tell the people who make Wixen Mail about a problem, an idea or a question, and read the whole message before it goes |
@@ -626,6 +626,9 @@ menu instead.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
+| Undo | `Ctrl+Z` | Take back the last change in the box you are typing in |
+| Redo | `Ctrl+Y` | Put back what Undo just took away |
+| Undo Send | `Ctrl+Shift+Z` | Take back the message you just sent, while it is still being held |
 | Cut | `Ctrl+X` | Move what is selected to the clipboard |
 | Copy | `Ctrl+C` | Put what is selected on the clipboard |
 | Paste | `Ctrl+V` | Put what is on the clipboard where the cursor is |
@@ -633,13 +636,32 @@ menu instead.
 | Search | `Ctrl+F` | Searches whichever module you are looking at |
 | Save This Search | none | Keeps the mail search you just ran, under a name, in the folder tree |
 
+**Undo and Redo work on the box you are typing in**, such as a note's title or
+body, or the contacts search. In these builds a box remembers one change, so
+Undo takes back the last thing you typed, pasted or cut, and pressing Undo a
+second time puts it back again. Several steps of undo in every box are coming
+later in this round of testing. Redo works right after an Undo in the same
+box. Once you type something after the Undo, there is nothing for Redo to put
+back, and it says so.
+
+When there is nothing to undo or redo, the menu shows the item greyed out, and
+a screen reader says it is unavailable. The keys still answer: `Ctrl+Z` with
+nothing to undo says "There is nothing to undo in this box." rather than doing
+nothing. In a list, the sidebar or a message you are reading, Undo and Redo
+say they work in a box you can type in.
+
+**`Ctrl+Shift+Z` is Undo Send here, not Redo.** Some programs use it for Redo.
+In Wixen Mail Redo is on `Ctrl+Y`, which is Windows' own key for it, and Undo
+Send kept the key it already had. Its letter on the menu moved from U to N,
+because U is Undo's.
+
 **`Ctrl+A` used to open the Account Manager.** It is Select All now, which is
 what it means in every other Windows program, and the Account Manager moved to
 `Ctrl+Shift+A`. Before this, pressing Select All while editing a note put an
 accounts dialog in front of you.
 
-**What these do depends on where you are.** In a box you can type in, all four
-work as you would expect. In a list or the sidebar, Copy puts the row you are
+**What the clipboard four do depends on where you are.** In a box you can type
+in, all four work as you would expect. In a list or the sidebar, Copy puts the row you are
 on on the clipboard, and Select All selects every row. Cut and Paste need a box
 you can type in, and say so rather than doing nothing.
 
