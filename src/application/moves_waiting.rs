@@ -436,9 +436,26 @@ pub struct APushUnderWay {
     account_id: String,
 }
 
+/// How many replays of each account are under way. Counted rather than
+/// flagged, because the push after a move and a check for mail can replay
+/// one account at once, and the first to end must not clear the other.
+static PUSHES_UNDER_WAY: std::sync::Mutex<std::collections::BTreeMap<String, usize>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// The count, read even after a replay panicked while holding it: a count
+/// left behind is a refusal to undo, which says so, never a lost change.
+fn pushes_under_way() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<String, usize>> {
+    PUSHES_UNDER_WAY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 impl APushUnderWay {
     /// A replay of this account's waiting changes begins.
     pub fn begins(account_id: &str) -> Self {
+        *pushes_under_way()
+            .entry(account_id.to_string())
+            .or_default() += 1;
         Self {
             account_id: account_id.to_string(),
         }
@@ -447,8 +464,19 @@ impl APushUnderWay {
 
 impl Drop for APushUnderWay {
     fn drop(&mut self) {
-        let _ = &self.account_id;
+        let mut under_way = pushes_under_way();
+        let ended = under_way.get_mut(&self.account_id).is_some_and(|count| {
+            *count = count.saturating_sub(1);
+            *count == 0
+        });
+        if ended {
+            under_way.remove(&self.account_id);
+        }
     }
+}
+
+fn a_push_is_under_way_for(account_id: &str) -> bool {
+    pushes_under_way().contains_key(account_id)
 }
 
 /// What the store says about one row for an undo: its waiting change, where
@@ -459,8 +487,29 @@ pub fn what_the_store_says(
     row_id: i64,
     account_id: &str,
 ) -> Result<crate::application::undoing::WhatTheStoreSays> {
-    let _ = (cache, row_id, account_id);
-    Ok(crate::application::undoing::WhatTheStoreSays::BeingToldNow)
+    use crate::application::undoing::{WhatTheStoreSays, WhereItIsHere};
+    if a_push_is_under_way_for(account_id) {
+        return Ok(WhatTheStoreSays::BeingToldNow);
+    }
+    let (Some(message), Some(folder_path)) = (
+        cache.get_message(row_id)?,
+        cache.folder_path_for_message(row_id)?,
+    ) else {
+        return Ok(WhatTheStoreSays::Gone);
+    };
+    let here = WhereItIsHere {
+        row_id,
+        folder_path,
+        uid: message.uid,
+        deleted: message.deleted,
+    };
+    Ok(match cache.the_move_waiting_for(row_id)? {
+        Some(waiting) if a_push_is_under_way_for(&waiting.account_id) => {
+            WhatTheStoreSays::BeingToldNow
+        }
+        Some(waiting) => WhatTheStoreSays::StillWaiting { waiting, here },
+        None => WhatTheStoreSays::Settled(here),
+    })
 }
 
 /// What a replay asks of a mail server.

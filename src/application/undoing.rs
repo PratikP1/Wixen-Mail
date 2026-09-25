@@ -140,7 +140,7 @@ impl LastAction {
     pub fn name(&self) -> String {
         let mark = match self {
             LastAction::LabelsRemoved { .. } => return "Remove every label".to_string(),
-            LastAction::Moved { .. } => return String::new(),
+            LastAction::Moved { moving, .. } => return moving.name(),
             LastAction::Marked { mark, .. } => mark,
         };
         match mark {
@@ -271,32 +271,165 @@ pub enum OneChange {
     Refused(String),
 }
 
+impl Moving {
+    /// What the action is called, the way the menu that does it says it.
+    fn name(&self) -> String {
+        match self {
+            Moving::Move { to } => format!("Move to {to}"),
+            Moving::Delete => "Delete".to_string(),
+            Moving::DeletePermanently => "Delete Permanently".to_string(),
+            Moving::Copy { to } => format!("Copy to {to}"),
+        }
+    }
+}
+
 /// The row an undo or a redo reads for one message: the copy's own for the
 /// undo of a copy, the message's otherwise.
 pub fn the_row_to_read(message: &WhereItWas, direction: Direction) -> i64 {
-    let _ = direction;
-    message.row_id
+    match (direction, message.copy_row) {
+        (Direction::Undo, Some(copy)) => copy,
+        _ => message.row_id,
+    }
 }
 
 /// What undoing a move, a delete or a copy does to one message, given what
 /// the store says about it now.
+///
+/// A waiting change the server has heard nothing of is ended here, never
+/// answered with a move back, because the server still holds the message
+/// where it was and a move back would name the folder it is already in. The
+/// exception is a message moved twice before the server heard either: ending
+/// the row would undo both, so the second is taken back with a new ask.
 pub fn what_undo_does_to(
     message: &WhereItWas,
     moving: &Moving,
     store: WhatTheStoreSays,
 ) -> OneChange {
-    let _ = (message, moving, store);
-    OneChange::Refused(String::new())
+    use WhatTheStoreSays::{BeingToldNow, Gone, Settled, StillWaiting};
+    let who = named(&message.subject);
+    if message.went_by == WentBy::AnotherAccount {
+        return OneChange::Refused(went_to_another_account(who));
+    }
+    let copying = matches!(moving, Moving::Copy { .. });
+    let permanently = *moving == Moving::DeletePermanently;
+    let back = &message.folder_path;
+    match store {
+        BeingToldNow => OneChange::Refused(being_told_now(who)),
+        Gone if permanently => OneChange::Refused(cannot_come_back(who)),
+        Gone => OneChange::Refused(not_read_back_yet(who)),
+        StillWaiting { waiting, .. } if copying => OneChange::EndTheWaitingRow(waiting),
+        Settled(copy) if copying => OneChange::TrashTheCopy(copy),
+        StillWaiting { waiting, .. } if waiting.from_folder_path == *back => {
+            OneChange::EndTheWaitingRow(waiting)
+        }
+        StillWaiting { .. } if permanently => OneChange::Refused(moved_and_then_deleted(who)),
+        StillWaiting { here, .. } => OneChange::Move {
+            from: here,
+            to: back.clone(),
+        },
+        Settled(here) if here.deleted => OneChange::Refused(cannot_come_back(who)),
+        Settled(here) if here.folder_path == *back => OneChange::Refused(already_in(who, back)),
+        Settled(here) if message.went_by == WentBy::ThisComputerOnly => {
+            OneChange::MoveOnThisComputer {
+                row_id: here.row_id,
+                to: back.clone(),
+            }
+        }
+        Settled(here) => OneChange::Move {
+            from: here,
+            to: back.clone(),
+        },
+    }
 }
 
-/// What redoing a move, a delete or a copy does to one message.
+/// What redoing a move, a delete or a copy does to one message: the action
+/// again, from where the undo left it.
+///
+/// An undo that moved a message back and is still waiting for the server
+/// left the server holding it where the action sent it, so the redo ends
+/// that wait rather than asking for a move into the folder the server holds
+/// it in.
 pub fn what_redo_does_to(
     message: &WhereItWas,
     moving: &Moving,
     store: WhatTheStoreSays,
 ) -> OneChange {
-    let _ = (message, moving, store);
-    OneChange::Refused(String::new())
+    use WhatTheStoreSays::{BeingToldNow, Gone, Settled, StillWaiting};
+    let who = named(&message.subject);
+    if message.went_by == WentBy::AnotherAccount {
+        return OneChange::Refused(went_to_another_account(who));
+    }
+    let copying = matches!(moving, Moving::Copy { .. });
+    let here = match store {
+        BeingToldNow => return OneChange::Refused(being_told_now(who)),
+        Gone => return OneChange::Refused(not_read_back_yet(who)),
+        StillWaiting { waiting, .. }
+            if !copying && message.sent_to.as_ref() == Some(&waiting.from_folder_path) =>
+        {
+            return OneChange::EndTheWaitingRow(waiting);
+        }
+        StillWaiting { here, .. } | Settled(here) => here,
+    };
+    match moving {
+        Moving::Move { to } if here.folder_path == *to => OneChange::Refused(already_in(who, to)),
+        Moving::Move { to } => OneChange::Move {
+            from: here,
+            to: to.clone(),
+        },
+        Moving::Delete => OneChange::Delete {
+            row: here,
+            permanently: false,
+        },
+        Moving::DeletePermanently => OneChange::Delete {
+            row: here,
+            permanently: true,
+        },
+        Moving::Copy { to } => OneChange::Copy {
+            from: here,
+            to: to.clone(),
+        },
+    }
+}
+
+/// The message's subject, or words standing in for one it does not have.
+fn named(subject: &str) -> &str {
+    match subject.trim() {
+        "" => "That message",
+        subject => subject,
+    }
+}
+
+fn went_to_another_account(who: &str) -> String {
+    format!(
+        "{who} went to another account, so it cannot be taken back from here. Move it from \
+         that account instead."
+    )
+}
+
+fn being_told_now(who: &str) -> String {
+    format!("{who} is being changed at the server right now. Try again shortly.")
+}
+
+fn not_read_back_yet(who: &str) -> String {
+    format!(
+        "{who} was moved at the server and this computer has not read where yet. Refresh the \
+         folder it went to and move it back from there."
+    )
+}
+
+fn cannot_come_back(who: &str) -> String {
+    format!("{who} was deleted permanently, so it cannot come back.")
+}
+
+fn moved_and_then_deleted(who: &str) -> String {
+    format!(
+        "{who} was moved and then deleted before the server heard of either, so it cannot \
+         come back from here."
+    )
+}
+
+fn already_in(who: &str, folder: &str) -> String {
+    format!("{who} is already in {folder}.")
 }
 
 /// The one sentence after an undo or a redo of a move, a delete or a copy:
@@ -308,8 +441,21 @@ pub fn after_moving_back(
     done: usize,
     refused: &[String],
 ) -> String {
-    let _ = (action, direction, done, refused);
-    String::new()
+    let (did, nothing, all_of_it) = match direction {
+        Direction::Undo => ("Undid", "Nothing was undone.", undone(action)),
+        Direction::Redo => ("Redid", "Nothing was redone.", redone(action)),
+    };
+    match (done, refused) {
+        (_, []) => all_of_it,
+        (0, [only]) => only.clone(),
+        (0, [first, ..]) => format!("{nothing} {first}"),
+        (_, [first, ..]) => format!(
+            "{did} {} on {}, not on {}. {first}",
+            action.name(),
+            how_many(done, "message"),
+            how_many(refused.len(), "message")
+        ),
+    }
 }
 
 /// Which way the one step goes.
