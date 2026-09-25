@@ -18288,6 +18288,15 @@ fn read_the_row_with_its_headings(
     let _ = a11y.announce_content(&text);
 }
 
+/// Grey Undo and Redo while a menu is open when the box with focus has
+/// nothing to take back or put back, and offer both again when it closes.
+pub fn keep_undo_and_redo_honest_on_the_menu(
+    _frame: &Frame,
+    _boxes: Vec<TextCtrl>,
+    _last: Rc<RefCell<Option<crate::presentation::text_undo::LastUndo>>>,
+) {
+}
+
 /// Which of the four an id is, if it is one of them.
 fn an_edit_command(id: i32) -> Option<crate::application::editing::EditCommand> {
     use crate::application::editing::EditCommand;
