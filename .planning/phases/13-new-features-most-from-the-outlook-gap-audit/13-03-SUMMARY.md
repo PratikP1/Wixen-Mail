@@ -10,7 +10,7 @@ provides:
   - application::printing's Printed, NotPrinted with one sentence each, pages_chosen, and the sentences for a conversation's row and for Print outside Mail
   - a_message_as_the_reader_shows_it, the one composition the text reader and paper share
   - File, Print on Ctrl+P and the letter P in the main window, on the message under the cursor
-  - WIXEN_NO_PDF_PRINTER on every workflow that runs the tests on a Windows runner
+  - a spool target that sends a real job to Microsoft Print to PDF here and on CI's runner, and asserts the printer is absent where WIXEN_NO_PDF_PRINTER says so
 affects: [13-04, 13-51]
 tech-stack:
   added:
@@ -32,10 +32,6 @@ key-files:
     - src/application/printing.rs
     - src/presentation/wx_app.rs
     - tests/wired.rs
-    - .github/workflows/ci.yml
-    - .github/workflows/guards.yml
-    - .github/workflows/mutants.yml
-    - .github/workflows/release.yml
     - guards/guards.toml
     - docs/KEYBOARD_SHORTCUTS.md
     - docs/USER_GUIDE.md
@@ -49,13 +45,14 @@ decisions:
   - "Print to File is hidden in the dialog (PD_HIDEPRINTTOFILE), because a file printer such as Microsoft Print to PDF already asks where."
   - "A cancel says \"Printing was cancelled, so nothing was printed.\" on the answer channel; a failure and every refusal go through send_refusal."
   - "GlobalLock and GlobalUnlock stay declared by hand; Win32_System_Memory is not worth turning on for two calls (below)."
+  - "No workflow sets WIXEN_NO_PDF_PRINTER: GitHub's windows-2025-vs2026 runner opened and spooled to Microsoft Print to PDF on #104, against the research's premise, so the four workflows are back to main's text and CI runs the spool."
 metrics:
   duration: about 2 hours 30 minutes
   completed: 2026-09-25
 actuals:
   tokens: 18372
   tasks: 3
-  commits: 9
+  commits: 11
 ---
 
 # Phase 13 Plan 03: File, Print through Windows' own dialog Summary
@@ -85,7 +82,9 @@ and the other modules are 13-04's.
 | `4908d11c` | refactor | `a_message_as_the_reader_shows_it` extracted; `wired.rs`'s three readings name it; the PGP composition record re-measured | 154 s |
 | `4a8edd78` | red | `tests/print_is_on_the_file_menu.rs` and the two new sentences answering nothing; 5 named | 104 s |
 | `73138324` | green | `ID_PRINT`, the File item, the arm, the handler, the sentences, the shortcuts page's row; two records | 210 s |
-| this commit | docs | The guide, the privacy page, the changelog, the ledger, the README's four answers, this summary, the four marks | |
+| `3c982864` | docs | The guide, the privacy page, the changelog, the ledger, the README's four answers, this summary, the four marks | 93 s |
+| `a299032f` | fix | `WIXEN_NO_PDF_PRINTER` taken off the four workflows after CI's runner opened the printer (below) | 546 s, `all` |
+| this commit | fix | The sentences that said the runners have no PDF printer: two test headers, one record's comment, ledger 613 and 616, this summary, STATE and GAP-01's evidence | |
 
 **Test counts, taken again.** `cargo test --test printing_draws_what_the_layout_says` 3.
 `cargo test --test printing_spools_a_document` 1, passing here in 0.8 s with the flag unset.
@@ -108,10 +107,19 @@ With the flag unset the same target passed: three pages laid out, `Printed { pag
 `pdfpurr` counted three pages in the file the driver wrote under a temporary folder. Nothing
 was printed to any other printer, and no dialog was opened by any test.
 
+**And on CI, where the same check found the premise wrong.** Run 36102778701's Test Suite on
+#104, with the flag set in `ci.yml`, failed that one test with the same sentence: the runner,
+image `windows-2025-vs2026`, Windows Server 2025 10.0.26100, provisioner 20260828.587, opened
+Microsoft Print to PDF. The flag came off the four workflows in `a299032f`, and run
+36105233215's Test Suite passed with the spool target reading "ok" in about two seconds, so
+the runner spooled the three pages too.
+
 **Acceptance readings.** `grep -c SAFETY` 15 and `grep -c 'unsafe {'` 15 in
 `src/presentation/printing.rs` at the task 1 green, and 22 and 22 at the end, each pair read
-in one command. `grep -c WIXEN_NO_PDF_PRINTER` is 1 in each
-of `ci.yml`, `guards.yml`, `mutants.yml` and `release.yml`. The letters on File, read with
+in one command. `grep -c WIXEN_NO_PDF_PRINTER` was 1 in each of
+`ci.yml`, `guards.yml`, `mutants.yml` and `release.yml` at `094db3d4`, as the plan asked, and is
+0 in each since `a299032f`, because CI showed the criterion's premise false (deviation 7). The
+letters on File, read with
 premise 2's command: N, S, A, M, D, I, O, E, K, P, Q, each once. `grep -c 'fn
 a_message_as_the_reader_shows_it' src/presentation/wx_app.rs` 1; `grep -c
 a_message_as_the_reader_shows_it tests/wired.rs` 3. The File Menu section of the shortcuts
@@ -129,7 +137,7 @@ Six new, one widened, and every record the count check flagged re-measured, each
 | a printed page draws every line the layout placed on it, the last one too (new) | the every-line reading | task 1, 19 s |
 | an ampersand in a message is printed as written, not taken as a mnemonic (new) | all three metafile readings | task 1, 20 s |
 | a page two ranges both name is printed once (new) | the overlapping-ranges case | task 2, 100 s |
-| a print job is ended, so the spooler hands it to the printer (new, with the register's "a runner cannot judge this record" comment) | the spool reading, after its minute's wait | task 2, 79 s |
+| a print job is ended, so the spooler hands it to the printer (new; written with the register's "a runner cannot judge this record" comment, rewritten once CI's runner spooled) | the spool reading, after its minute's wait | task 2, 79 s |
 | a count and the thing it counts agree in number (widened) | its 28 and the past-the-last-page sentence case, 29 | task 2, found by the run and re-run |
 | a printed line breaks at the last space that fits; every page's stamp counts every page; an event's place is one of the fields (re-measured, their file gained tests) | as recorded | task 2 |
 | a PGP message the reader window never offers to the key (re-measured after its anchor moved into the extracted function) | its two | task 3 |
@@ -182,6 +190,18 @@ Print outside Mail and on a conversation's row needed wording, now `prints_messa
 **6. [Rule 2] Print to File is hidden** (`PD_HIDEPRINTTOFILE`); with it shown, a person
 could tick it and the job would need a file name this code does not ask for.
 
+**7. [Rule 1 - Premise] CI's runner has Microsoft Print to PDF, so no workflow sets the
+flag.** Premise 5 and research 1.3 said the printer was taken off the Server 2025 image
+(actions/runner-images#12328, a maintainer's answer of June 2025). The flag's own check
+refused that on #104's first CI run, as quoted above, and with the flag taken off the runner
+spooled the job. So `a299032f` put `ci.yml`, `guards.yml`, `mutants.yml` and `release.yml`
+back to main's text, the plan's `WIXEN_NO_PDF_PRINTER` truth and its acceptance line no longer
+hold as written, and the flag lives on in the test for a machine that really has no PDF
+printer. Two consequences: this plan changes nothing in `release.yml`, and the spool guard
+record is one a runner can judge. The ledger, the test headers and the record's comment were
+corrected in a second fix commit after the documents commit, which is one commit more than
+the brief's single documents commit.
+
 ### Found and left
 
 The metafile and spool readings run on the hook through their records' `suite`, since each
@@ -199,11 +219,11 @@ served by the feature, and it was not added.
 
 ## The release workflow
 
-`release.yml` gained one line in its workflow-level `env`, `WIXEN_NO_PDF_PRINTER: "1"`, with
-a comment, so the release gate's `cargo test` does not go red on the spool target. It changes
-no trigger, no level and no step, and it is the only change this plan made to the release
-workflow. `WIXEN_NO_AUDIO` is still missing there, as it was before this plan; ledger 616
-says so for you to decide.
+`release.yml` gained one line in its workflow-level `env`, `WIXEN_NO_PDF_PRINTER: "1"`, in
+`094db3d4`, and lost it again in `a299032f` once CI showed the runner has the printer
+(deviation 7). The branch's `release.yml` is main's, byte for byte, so this plan changes
+nothing in the release workflow. `WIXEN_NO_AUDIO` is still missing there, as it was before
+this plan; ledger 616 says so for you to decide.
 
 ## The wxDragon defect: details, and a draft
 

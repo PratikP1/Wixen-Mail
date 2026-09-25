@@ -7,11 +7,11 @@
 //! its own, and the strings are read out of those records and compared with
 //! the page the layout gave: the stamp, then each line, in order, as written.
 //!
-//! A metafile rather than a printer, because it needs no printer: GitHub's
-//! Windows runners have none, not even Microsoft Print to PDF
-//! (actions/runner-images#12328), so this is the reading CI can make. The
-//! spool through a real printer driver is
-//! `tests/printing_spools_a_document.rs`, which runs where the PDF printer is.
+//! A metafile rather than a printer, because it needs no printer and reads
+//! the words: the spool through a real printer driver is
+//! `tests/printing_spools_a_document.rs`, which counts pages and cannot read
+//! the text of the PDF it makes, and which asserts rather than spools on a
+//! machine with no PDF printer. This runs on every machine.
 //!
 //! What this cannot see: how a printer's own driver renders the page, whether
 //! the words are legible on paper, or where the page's edges fall on a sheet.

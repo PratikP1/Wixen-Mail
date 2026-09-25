@@ -5791,7 +5791,7 @@ stays at 122.
     wxdragon 0.9.17's printing never starts a job on Windows (research 1.2). `cargo test
     --test printing_draws_what_the_layout_says`, 3 tests, reads every drawn line back from a
     metafile; `cargo test --test printing_spools_a_document`, 1 test, spools three pages to
-    Microsoft Print to PDF here and holds `WIXEN_NO_PDF_PRINTER` honest on CI; `cargo test
+    Microsoft Print to PDF, here and on CI's runner (#104); `cargo test
     --test print_is_on_the_file_menu`, 4 tests, holds the item, the key and the handler's
     calls. `cargo test --lib application::printing::`, 24 tests. Ledger 612 closed. The
     reader window, the conversation window and the other modules are 13-04's.

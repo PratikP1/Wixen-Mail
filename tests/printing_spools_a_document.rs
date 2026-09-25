@@ -14,11 +14,16 @@
 //! as glyph numbers (phase 13's research, section 1.3); the metafile reading is
 //! the one that checks words.
 //!
-//! GitHub's Windows runners have no Microsoft Print to PDF: it was taken off
-//! the Windows Server 2025 image (actions/runner-images#12328). CI says so by
-//! setting `WIXEN_NO_PDF_PRINTER`, the way it says there is no sound card with
+//! A machine with no Microsoft Print to PDF says so by setting
+//! `WIXEN_NO_PDF_PRINTER`, the way one with no sound card sets
 //! `WIXEN_NO_AUDIO`. With the flag set this does not skip: it asserts the
 //! printer really cannot be opened, so the flag cannot hide one that works.
+//! That assertion earned its place on its first day. The research said the
+//! printer was taken off GitHub's Windows Server 2025 image
+//! (actions/runner-images#12328, June 2025), so 13-03 set the flag in every
+//! workflow, and on pull request #104 the runner, `windows-2025-vs2026`,
+//! opened the printer and this failed. With the flag taken off again, the same
+//! runner spooled the three pages. So CI sets nothing and runs the spool.
 //!
 //! What this cannot see: Windows' print dialog, which needs a person, and a
 //! page on paper.

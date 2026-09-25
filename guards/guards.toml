@@ -30601,19 +30601,13 @@ tests_last_seen = [
     { file = "src/application/printing.rs", tests = 24 },
 ]
 
-# ── A runner cannot judge this record, and that is written here rather than
-#    only at the top of the file, where the last two sweeps did not read it ──
-#
-# What a runner cannot see: GitHub's Windows runners have no Microsoft Print
-# to PDF (actions/runner-images#12328), so every workflow that runs the tests
-# sets WIXEN_NO_PDF_PRINTER, and with it set the spool test asserts the printer
-# cannot be opened and never starts a job. The break changes nothing there. On
-# a machine with the printer and the flag unset it reddens.
-#
-# The break ends the job's pages and never the job, so the spooler never hands
-# it to the driver and no PDF is written; the reading waits its minute for the
-# file and says so. Written 2026-09-25 by 13-03 and measured here with
-# `scripts/guards.sh --remeasure`, the flag unset.
+# The job's pages ended and never the job, so the spooler never hands it to
+# the driver and no PDF is written; the reading waits its minute for the file
+# and says so. A machine with WIXEN_NO_PDF_PRINTER set cannot judge this record,
+# because the spool test then asserts the printer cannot be opened and starts
+# no job. GitHub's runner opened and spooled to Microsoft Print to PDF on pull
+# request #104, so no workflow sets it. Written 2026-09-25 by 13-03 and
+# measured here with `scripts/guards.sh --remeasure`, the flag unset.
 [[guard]]
 name = "a print job is ended, so the spooler hands it to the printer"
 file = "src/presentation/printing.rs"
