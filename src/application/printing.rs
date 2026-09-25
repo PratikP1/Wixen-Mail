@@ -71,7 +71,7 @@ impl Kind {
             Kind::Task => "Task with no title",
             Kind::Note => "Note with no title",
             Kind::Reminder => "Reminder with no title",
-            Kind::Attachment => "",
+            Kind::Attachment => "Attachment with no name",
         }
     }
 }
@@ -200,16 +200,42 @@ pub fn from_document(document: &ReaderDocument) -> Printable {
     }
 }
 
-/// A conversation as a thing to print.
-pub fn conversation_on_paper(_subject: &str, _parts: &[ConversationPart], _out: Reading) -> Paper {
-    Paper {
-        printable: Printable {
-            title: String::new(),
-            lines: Vec::new(),
-            header_lines: 0,
-            warning: None,
+/// A conversation as a thing to print: every message in order under its
+/// heading, each heading's date written in full.
+///
+/// The reader's composition heads each message with the date as the list
+/// stores it, because it takes no reading, so the dates are written here
+/// before it composes. A conversation of one is how the formatted window shows
+/// a message on its own, and on paper it is that message, header lines and
+/// all, as File, Print in the list prints it.
+pub fn conversation_on_paper(subject: &str, parts: &[ConversationPart], out: Reading) -> Paper {
+    use crate::presentation::reader_text::{conversation, single_message};
+    let out = on_paper(out);
+    match parts {
+        [only] => Paper {
+            printable: from_document(
+                &single_message(&only.message, &only.body, out).with_what_is_said(&only.said),
+            ),
+            kind: Kind::Message,
         },
-        kind: Kind::Message,
+        several => {
+            let dated: Vec<ConversationPart> = several
+                .iter()
+                .cloned()
+                .map(|mut part| {
+                    part.message.date = crate::presentation::date_display::spoken(
+                        &part.message.date,
+                        out.now,
+                        out.dates,
+                    );
+                    part
+                })
+                .collect();
+            Paper {
+                printable: from_document(&conversation(subject, &dated)),
+                kind: Kind::Conversation,
+            }
+        }
     }
 }
 
@@ -494,23 +520,35 @@ pub fn job_name(kind: Kind) -> &'static str {
         Kind::Task => "Wixen Mail task",
         Kind::Note => "Wixen Mail note",
         Kind::Reminder => "Wixen Mail reminder",
-        Kind::Attachment => "",
+        Kind::Attachment => "Wixen Mail attachment",
     }
 }
 
 /// What is said once Print is done, and whether it answers or refuses.
+///
+/// Every surface that prints says it through its own channel, the status bar
+/// or its window's announcement, and none of them words it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AfterPrinting {
+    /// The pages went, or the person closed the dialog: nothing went wrong.
     Answer(String),
+    /// Something stopped the pages, said with what to try.
     Refusal(String),
 }
 
-/// The one sentence said after Print, from what came of it.
+/// The one sentence said after Print of `title`, from what came of it: the
+/// printer's name and what went there, or why nothing did.
 pub fn after_printing(
-    _title: &str,
-    _outcome: Result<(String, Printed), NotPrinted>,
+    title: &str,
+    outcome: Result<(String, Printed), NotPrinted>,
 ) -> AfterPrinting {
-    AfterPrinting::Answer(String::new())
+    match outcome {
+        Ok((printer, printed)) => {
+            AfterPrinting::Answer(sent_to_the_printer(title, &printer, printed.pages))
+        }
+        Err(NotPrinted::Cancelled) => AfterPrinting::Answer(NotPrinted::Cancelled.sentence()),
+        Err(not) => AfterPrinting::Refusal(not.sentence()),
+    }
 }
 
 /// What is said once the pages are with the printer: once, and not a word
@@ -521,16 +559,6 @@ pub fn sent_to_the_printer(title: &str, printer: &str, pages: usize) -> String {
         title.trim(),
         printer.trim(),
         crate::service::caldav::how_many(pages, "page")
-    )
-}
-
-/// What is said once a conversation's row is printed: the one message the
-/// row stands for went, and not the whole conversation.
-pub fn sent_one_message_of_a_conversation(title: &str, printer: &str, pages: usize) -> String {
-    format!(
-        "{} That is the one message the conversation's row stands for, not the whole \
-         conversation.",
-        sent_to_the_printer(title, printer, pages)
     )
 }
 
@@ -975,7 +1003,6 @@ mod tests {
             sent_to_the_printer("Quarterly report", "HP LaserJet 1022", 1),
             nothing_was_printed(),
             printing_failed("the printer did not answer"),
-            sent_one_message_of_a_conversation("Quarterly report", "HP LaserJet 1022", 2),
             prints_messages_only(),
         ];
 
@@ -987,8 +1014,6 @@ mod tests {
                 "Printing was cancelled, so nothing was printed.",
                 "Nothing was printed, because the printer did not answer. Check that the \
                  printer is on and connected, then print again.",
-                "Sent Quarterly report to HP LaserJet 1022, 2 pages. That is the one message \
-                 the conversation's row stands for, not the whole conversation.",
                 "Print works on messages in this build, so nothing was printed. Press \
                  Ctrl+Shift+1 for Mail and choose a message.",
             ]

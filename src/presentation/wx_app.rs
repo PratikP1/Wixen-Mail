@@ -14173,7 +14173,22 @@ fn open_in_the_text_reader(
     message: &MessageItem,
     out: read_aloud::Reading,
 ) {
-    reader.open(a_message_as_the_reader_shows_it(cache, message, out));
+    use crate::application::printing::{self, Kind, Paper};
+    // Composed when Print is pressed, from the same function, with every
+    // date in full.
+    let paper = {
+        let cache = cache.clone();
+        let message = message.clone();
+        Rc::new(move || Paper {
+            printable: printing::from_document(&a_message_as_the_reader_shows_it(
+                &cache,
+                &message,
+                printing::on_paper(out),
+            )),
+            kind: Kind::Message,
+        })
+    };
+    reader.open_with_paper(a_message_as_the_reader_shows_it(cache, message, out), paper);
 }
 
 /// One message composed the way the text reader shows it: its header lines,
@@ -14206,14 +14221,11 @@ fn a_message_as_the_reader_shows_it(
 /// Composed through [`a_message_as_the_reader_shows_it`], the reader's own
 /// composition, asked for every date in full. What a page holds is
 /// `application::printing`'s and the dialog, the font and the job are
-/// `presentation::printing`'s; this asks each in turn and says one sentence.
-/// A conversation's row prints the one message the row stands for and says
-/// so. Outside Mail it says this build prints messages.
-///
-/// On the window's thread, because the dialog is modal to the window, and a
-/// message's pages spool in under a second on Microsoft Print to PDF
-/// (`tests/printing_spools_a_document.rs`). The log gets the printer's name
-/// and the page count, never the subject or the text.
+/// `presentation::printing`'s; this composes, hands the page to the one path
+/// every surface prints by, and says the sentence that path returns. A
+/// conversation's row prints the whole conversation, every message its Enter
+/// reaches, each headed with its date in full. Outside Mail it says this build
+/// prints messages.
 fn print_the_message_under_the_cursor(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -14221,22 +14233,47 @@ fn print_the_message_under_the_cursor(
     ui_tx: &Sender<UIUpdate>,
     runtime: &Arc<Runtime>,
 ) {
-    use crate::application::printing::{self, Kind, NotPrinted};
+    use crate::application::printing::{self, AfterPrinting, Kind, Paper};
     use crate::application::status_sentences::{Thing, nothing_chosen};
-    use crate::presentation::printing::{ask_for_a_printer, print_on};
+    use crate::presentation::printing::print_through_the_dialog;
 
-    let (module, message, a_conversation_row) = {
+    let (module, message, conversation) = {
         let held = lock_state(state);
+        let row = held.selected_message_index;
         (
             held.active_module,
-            held.selected_message_index
-                .and_then(|row| held.the_loaded_message_the_row_stands_for(row))
+            row.and_then(|row| held.the_loaded_message_the_row_stands_for(row))
                 .cloned(),
-            held.showing.showing_conversations(),
+            row.filter(|_| held.showing.showing_conversations())
+                .and_then(|row| held.conversations.get(row))
+                .map(|c| {
+                    (
+                        c.read_in.account_id.clone(),
+                        c.thread_id.clone(),
+                        c.subject.clone(),
+                    )
+                }),
         )
     };
     if module != PimModule::Mail {
         send_refusal(ui_tx, runtime, &printing::prints_messages_only());
+        return;
+    }
+    let say = |said: AfterPrinting| match said {
+        AfterPrinting::Answer(said) => send_status(ui_tx, runtime, &said),
+        AfterPrinting::Refusal(said) => send_refusal(ui_tx, runtime, &said),
+    };
+    // The nodes the row's Enter reaches. A conversation of one is printed as
+    // the message it is, the way Enter opens it.
+    let whole = conversation
+        .map(|(account, thread, subject)| (conversation_nodes(state, &account, &thread), subject))
+        .filter(|(nodes, _)| nodes.len() > 1);
+    if let Some((nodes, subject)) = whole {
+        let parts = conversation_parts(cache, &nodes);
+        say(print_through_the_dialog(
+            frame,
+            &printing::conversation_on_paper(&subject, &parts, reading_from_settings()),
+        ));
         return;
     }
     let Some(message) = message else {
@@ -14248,29 +14285,13 @@ fn print_the_message_under_the_cursor(
         &message,
         printing::on_paper(reading_from_settings()),
     ));
-    let printed = ask_for_a_printer(frame).and_then(|chosen| match chosen {
-        Some(chosen) => print_on(&chosen, &printable, Kind::Message)
-            .map(|printed| (chosen.printer_name().to_string(), printed)),
-        None => Err(NotPrinted::Cancelled),
-    });
-    match printed {
-        Ok((printer, printed)) => {
-            tracing::info!("Printed {} pages on {printer}", printed.pages);
-            let said = match a_conversation_row {
-                true => printing::sent_one_message_of_a_conversation(
-                    &printable.title,
-                    &printer,
-                    printed.pages,
-                ),
-                false => printing::sent_to_the_printer(&printable.title, &printer, printed.pages),
-            };
-            send_status(ui_tx, runtime, &said);
-        }
-        Err(NotPrinted::Cancelled) => {
-            send_status(ui_tx, runtime, &NotPrinted::Cancelled.sentence())
-        }
-        Err(not) => send_refusal(ui_tx, runtime, &not.sentence()),
-    }
+    say(print_through_the_dialog(
+        frame,
+        &Paper {
+            printable,
+            kind: Kind::Message,
+        },
+    ));
 }
 
 /// What one message shows and says, asked the way every surface here asks it.
@@ -14319,10 +14340,17 @@ fn open_conversation(
     subject: &str,
     nodes: &[wx_thread_view::ThreadNode],
 ) {
-    reader.open(reader_text::conversation(
+    let parts = conversation_parts(cache, nodes);
+    // From the parts already fetched, so nothing is fetched twice.
+    let paper = crate::application::printing::conversation_on_paper(
         subject,
-        &conversation_parts(cache, nodes),
-    ));
+        &parts,
+        reading_from_settings(),
+    );
+    reader.open_with_paper(
+        reader_text::conversation(subject, &parts),
+        Rc::new(move || paper.clone()),
+    );
 }
 
 /// One conversation's messages with their bodies, ready to compose.

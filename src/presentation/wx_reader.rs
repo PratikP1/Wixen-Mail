@@ -17,6 +17,7 @@
 //! that shape for the same reasons, and there was no sense in learning them
 //! twice.
 
+use crate::application::printing::{AfterPrinting, Kind, Paper};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
@@ -35,6 +36,7 @@ const ID_READER_FIND: Id = ID_HIGHEST + 903;
 const ID_SAVE_ATTACHMENT: Id = ID_HIGHEST + 904;
 const ID_GO_ATTACHMENTS: Id = ID_HIGHEST + 905;
 const ID_READ_ATTACHMENT: Id = ID_HIGHEST + 906;
+const ID_READER_PRINT: Id = ID_HIGHEST + 907;
 
 /// What the window does when somebody asks to save an attachment.
 ///
@@ -48,6 +50,14 @@ type SaveHandler = Box<dyn Fn(&ReaderAttachment)>;
 /// Set by the application for the same reason as the save handler: reading one
 /// means fetching the message again first.
 type ReadHandler = Box<dyn Fn(&ReaderAttachment)>;
+
+/// What one tab prints, composed when Print is pressed.
+///
+/// Composed then rather than when the tab opens, so a message is fetched and
+/// composed for paper only when somebody prints it. The main window composes
+/// it, because paper wants the dates in full and the window knows how to ask
+/// for that; a tab opened with nothing composed for it prints what it shows.
+pub type PaperFor = Rc<dyn Fn() -> Paper>;
 
 /// A reader window, kept alive for as long as it is open.
 /// Where closing a reading window goes back to, if anywhere.
@@ -63,6 +73,8 @@ pub struct ReaderWindow {
     notebook: Notebook,
     /// One entry per tab, in tab order.
     documents: Rc<RefCell<Vec<ReaderDocument>>>,
+    /// What each tab prints, in tab order beside `documents`.
+    papers: Rc<RefCell<Vec<PaperFor>>>,
     /// Which tab is showing. Tracked here because the notebook reports its
     /// selection on the page-changed event and not on demand.
     current: Rc<std::cell::Cell<usize>>,
@@ -288,13 +300,20 @@ impl ReaderWindow {
         let file = Menu::builder()
             .append_item(
                 ID_READ_ATTACHMENT,
-                "&Read Attachment	Ctrl+O",
+                "&Read Attachment\tCtrl+O",
                 "Read the chosen attachment in a tab of its own",
             )
             .append_item(
                 ID_SAVE_ATTACHMENT,
                 "&Save Attachment...\tCtrl+S",
                 "Save the chosen attachment to a file",
+            )
+            .append_separator()
+            // The main window's key and letter for the same command (#45).
+            .append_item(
+                ID_READER_PRINT,
+                "&Print...\tCtrl+P",
+                "Print the message or attachment in this tab, with its header lines",
             )
             .append_separator()
             .append_item(ID_CLOSE_TAB, "&Close Tab\tCtrl+W", "Close this message")
@@ -357,6 +376,7 @@ impl ReaderWindow {
             frame,
             notebook,
             documents: Rc::new(RefCell::new(Vec::new())),
+            papers: Rc::new(RefCell::new(Vec::new())),
             current,
             attachment_lists: Rc::new(RefCell::new(Vec::new())),
             save_attachment: Rc::new(RefCell::new(None)),
@@ -416,13 +436,27 @@ impl ReaderWindow {
         *self.read_attachment.borrow_mut() = Some(Box::new(handler));
     }
 
-    /// Add a document as a new tab and show the window.
+    /// Add a document as a new tab and show the window. Print in the tab
+    /// prints what it shows, which is right for an attachment read here.
     ///
     /// Returns handles to the tab's own widgets. Production code has no use
     /// for them, since the window keeps its own records of what it built;
     /// they exist so a test can reach a live control and read back what it
     /// was painted.
     pub fn open(&self, document: ReaderDocument) -> ReaderTabHandles {
+        let as_shown = Paper {
+            printable: crate::application::printing::from_document(&document),
+            kind: Kind::Attachment,
+        };
+        self.open_with_paper(document, Rc::new(move || as_shown.clone()))
+    }
+
+    /// Add a document as a new tab, with what Print in that tab prints.
+    ///
+    /// A message or a conversation opened from the main window is shown with
+    /// the dates the person chose for the screen, "2 days ago" among them, and
+    /// printed with every date in full, so the window hands both.
+    pub fn open_with_paper(&self, document: ReaderDocument, paper: PaperFor) -> ReaderTabHandles {
         let panel = Panel::builder(&self.notebook).build();
         if let Some(palette) = self.palette.get() {
             theme::paint(&panel, palette.main_surface());
@@ -554,6 +588,7 @@ impl ReaderWindow {
         let label = tab_label(&document.title);
         self.notebook.add_page(&panel, &label, true, None);
         self.documents.borrow_mut().push(document.clone());
+        self.papers.borrow_mut().push(paper);
         self.attachment_lists.borrow_mut().push(attachments);
 
         let index = self.documents.borrow().len().saturating_sub(1);
@@ -789,6 +824,7 @@ impl ReaderWindow {
         let frame = self.frame;
         let notebook = self.notebook;
         let documents = self.documents.clone();
+        let papers = self.papers.clone();
         let current = self.current.clone();
         let a11y = self.a11y.clone();
         let lists = self.attachment_lists.clone();
@@ -799,6 +835,21 @@ impl ReaderWindow {
             let id = event.get_id();
             if id == ID_CANCEL {
                 frame.show(false);
+                return;
+            }
+            if id == ID_READER_PRINT {
+                // Cloned out before the dialog opens, so no borrow is held
+                // across a modal loop that could close a tab under it.
+                let paper = papers.borrow().get(current.get()).cloned();
+                let Some(paper) = paper else {
+                    return;
+                };
+                let said =
+                    crate::presentation::printing::print_through_the_dialog(&frame, &paper());
+                let _ = match said {
+                    AfterPrinting::Answer(said) => a11y.announce(&said, Priority::Normal),
+                    AfterPrinting::Refusal(said) => a11y.announce(&said, Priority::High),
+                };
                 return;
             }
             if id == ID_SAVE_ATTACHMENT || id == ID_READ_ATTACHMENT {
@@ -851,6 +902,11 @@ impl ReaderWindow {
                 if page < open.len() {
                     open.remove(page);
                 }
+                let mut open_papers = papers.borrow_mut();
+                if page < open_papers.len() {
+                    open_papers.remove(page);
+                }
+                drop(open_papers);
                 let mut open_lists = lists.borrow_mut();
                 if page < open_lists.len() {
                     open_lists.remove(page);

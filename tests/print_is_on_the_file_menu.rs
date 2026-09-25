@@ -128,11 +128,24 @@ const THE_PATHS_CALLS: [(&str, &str); 2] = [
     ("print_on(", "no longer sends the pages to the printer"),
 ];
 
+/// Whether `text` names `call` as a whole name, not as the end of a longer
+/// one: `on_paper(` inside `conversation_on_paper(` is not a call to
+/// `on_paper`, and reading it as one let a handler that stopped asking for
+/// the dates in full pass (found by this plan's guard re-measure, 2026-09-25).
+fn calls(text: &str, call: &str) -> bool {
+    text.match_indices(call).any(|(at, _)| {
+        !text[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|before| before.is_alphanumeric() || before == '_')
+    })
+}
+
 /// Whether the one path asks Windows' dialog and then prints.
 fn the_path_asks_the_dialog(transport: &str) -> Result<(), String> {
     let path = body_of(transport, THE_PATH)?;
     for (call, why) in THE_PATHS_CALLS {
-        if !path.contains(call) {
+        if !calls(&path, call) {
             return Err(format!("Print {why}: {call} is not called"));
         }
     }
@@ -178,7 +191,7 @@ fn where_print_is(app: &str, transport: &str) -> Result<(), String> {
     }
     let handler = body_of(&ship, THE_HANDLER)?;
     for (call, why) in THE_CALLS {
-        if !handler.contains(call) {
+        if !calls(&handler, call) {
             return Err(format!("File, Print {why}: {call} is not called"));
         }
     }
@@ -233,7 +246,9 @@ fn where_the_reader_prints(reader: &str, app: &str) -> Result<(), String> {
         .map(|at| &ship[at + arm.len()..])
         .map(|rest| &rest[..rest.find("if id ==").unwrap_or(rest.len())])
         .ok_or("nothing in the reader answers its Print item, so the item does nothing")?;
-    if !handler.contains("print_through_the_dialog(&frame") {
+    // Without spaces, so the call reads the same however rustfmt wraps it.
+    let squashed: String = handler.split_whitespace().collect();
+    if !calls(&squashed, "print_through_the_dialog(&frame") {
         return Err(
             "the reader's Print no longer goes through the one path every surface prints by, \
              with the reader's own window owning the dialog"
@@ -243,7 +258,7 @@ fn where_the_reader_prints(reader: &str, app: &str) -> Result<(), String> {
     let app = what_ships(app);
     for (signature, paper) in THE_HAND_OVERS {
         let opens = body_of(&app, signature)?;
-        if !opens.contains("open_with_paper(") || !opens.contains(paper) {
+        if !calls(&opens, "open_with_paper(") || !calls(&opens, paper) {
             return Err(format!(
                 "{signature} no longer hands the tab it opens what it prints ({paper}), so \
                  Print in that tab prints the screen's composition, dates and all"
