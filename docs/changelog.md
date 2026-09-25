@@ -46,12 +46,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   this, Undo after Cut put nothing back. **Undo Send moved to third on the Edit menu and its
   letter moved from U to N**, because U is Undo's; its key is still `Ctrl+Shift+Z`. The version
   does not move for this: no build has been cut since 1.0.0-alpha.1.
-  Known limitations: the several steps reach the main window's three boxes, the note title,
-  the note body and the contacts search; the boxes in dialogs keep Windows' own single step
-  and their own `Ctrl+Z` for now, where pressing Undo twice puts the change back, and have no
-  Redo. Undoing an action on messages or items, such as a delete or a move, is later work too.
-  Nobody has heard the greyed items, the sentences, Undo Send's new letter or a step undone
-  with a screen reader yet.
+  **Every dialog's boxes keep the same several steps**, as the tester asked for "every dialog
+  with a text field": the composer's To, Cc, Bcc and Subject lines, the account settings, Add
+  Address Book and Add Calendar, the contact editor with its Prefix and Suffix boxes, the event
+  and task forms with the event's Category, the rules, labels and signatures, Send Feedback,
+  Settings' download folder, Check Spelling, and the boxes that ask for a search or a name.
+  A dialog has no Edit menu, so `Ctrl+Z` and `Ctrl+Y` go straight to the box. What a dialog
+  opens holding, such as an account's server or a contact's nickname, is where Undo stops, so
+  it never empties a box of it. A check over the source now names any box built without the
+  history, so a new dialog cannot quietly go back to one step.
+  Known limitations: in a dialog, `Ctrl+Z` with nothing left to undo does nothing and says
+  nothing, as Windows' own undo does, where the main window says so in a sentence. The number
+  fields, such as the minutes between checks for mail and an event's hour and minute, and the
+  composer's Describe the picture and Insert Link boxes, keep Windows' own single step, where
+  pressing Undo twice puts the change back. A password box keeps no steps at all, so a
+  password is never held in memory as steps. Undoing an action on messages or items, such as
+  a delete or a move, is later work too. Nobody has heard the greyed items, the sentences,
+  Undo Send's new letter or a step undone with a screen reader yet, in the main window or in
+  a dialog.
 
 ### Changed
 

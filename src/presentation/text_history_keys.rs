@@ -92,13 +92,17 @@ impl TextBox for TextCtrl {
 
 impl TextBox for ComboBox {
     fn words(&self) -> String {
-        String::new()
+        self.get_value()
     }
-    fn show_words(&self, _words: &str) {}
+    fn show_words(&self, words: &str) {
+        self.set_value(words);
+    }
     fn caret(&self) -> i64 {
-        0
+        self.get_insertion_point()
     }
-    fn select(&self, _from: i64, _to: i64) {}
+    fn select(&self, from: i64, to: i64) {
+        self.set_text_selection(from, to);
+    }
 }
 
 fn handle_of(box_: &impl TextBox) -> isize {
