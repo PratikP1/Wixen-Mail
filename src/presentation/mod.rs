@@ -44,6 +44,7 @@ pub mod scan_fixtures;
 pub mod scan_target;
 pub mod spin_field_keys;
 pub mod status_line;
+pub mod text_undo;
 pub mod theme;
 pub mod toolbar_text;
 pub mod tree_walk;

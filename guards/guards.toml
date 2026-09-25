@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 291 records have arrived since and have not been through it.
+# 294 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -24251,9 +24251,10 @@ tests_last_seen = [
 # 2026-09-15 (#44): the one undo this program has was on Tools, between the
 # address book commands and Flush Outbox, and Edit opened on Cut. The break
 # removes the item and the separator after it, so the chain still builds and
-# the first item on Edit is Cut again. The reading goes red on that, and both
-# companions go red with it, because each plants by finding the item's call
-# and there is no call to find.
+# the third item on Edit, after Undo and Redo since 13-01, is Cut. The reading
+# goes red on that, and both companions go red with it, because each plants by
+# finding the item's call and there is no call to find. Rewritten by 13-01,
+# which relabelled the item "Undo Se&nd" and put Undo and Redo above it.
 #
 # `suite` names the target that reads the menu chains, which couples the
 # target to this file for `check.sh --suites-for`; `tests/wired.rs` holds the
@@ -24262,25 +24263,90 @@ tests_last_seen = [
 # Measured 2026-09-16 by hand on the branch the record was written on,
 # `cargo test --test undo_send_is_where_somebody_looks`.
 [[guard]]
-name = "Undo Send is first on the Edit menu, not off it and back where the tester found it"
+name = "Undo Send is on the Edit menu after Undo and Redo, not off it and back where the tester found it"
 file = "src/presentation/wx_app.rs"
 suite = "undo_send_is_where_somebody_looks"
 before = '''            .append_item(
                 ID_UNDO_SEND,
-                "&Undo Send\tCtrl+Shift+Z",
+                "Undo Se&nd\tCtrl+Shift+Z",
                 "Take back the message you just sent, while it is still being held",
             )
             .append_separator()
             // The four every Windows program has.'''
 after = '''            // The four every Windows program has.'''
 red = [
-    "test_undo_send_is_the_first_item_on_the_edit_menu_and_not_on_tools",
+    "test_undo_and_redo_come_first_on_edit_and_undo_send_third_not_on_tools",
     "test_the_reading_complains_when_undo_send_is_put_back_on_tools",
     "test_the_reading_complains_when_undo_send_is_offered_on_both_menus",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
+]
+
+# Edit, Undo sending EM_UNDO without asking EM_CANUNDO first, so a box with
+# nothing to take back answers "undone" and the window says "Undone" over a box
+# that did not change. The break takes the question out. Measured 2026-09-24 by
+# hand against `cargo test --test undo_reaches_the_text` on 13-01's branch: the
+# one reading of a fresh box went red and nothing else in the target did.
+[[guard]]
+name = "Undo asks the box whether it has anything to take back before it acts"
+file = "src/presentation/text_undo.rs"
+suite = "undo_reaches_the_text"
+before = '''pub fn undo(box_: &TextCtrl) -> Undone {
+    if !can_undo(box_) {
+        return Undone::NothingToUndo;
+    }'''
+after = '''pub fn undo(box_: &TextCtrl) -> Undone {'''
+red = [
+    "test_undo_in_a_box_with_nothing_to_undo_says_so",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_undo.rs", tests = 0 },
+    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
+]
+
+# The Edit menu left as its opening left it once it closes, so Undo or Redo
+# greyed while the menu was open stays greyed, and wxWidgets swallows a greyed
+# item's key without a word (`framecmn.cpp`): Ctrl+Z with nothing to undo would
+# do nothing and say nothing. The break takes the two re-enabling calls out of
+# the close handler. Measured 2026-09-24 by hand on 13-01's branch: the closed
+# readings went red and nothing else in the target did.
+[[guard]]
+name = "Undo and Redo are offered again whenever a menu closes, so their keys always speak"
+file = "src/presentation/wx_app.rs"
+suite = "undo_reaches_the_text"
+before = '''    frame.on_menu_closed(move |event| {
+        sync_menu_enable(&closed, ID_EDIT_UNDO, true);
+        sync_menu_enable(&closed, ID_EDIT_REDO, true);'''
+after = '''    frame.on_menu_closed(move |event| {'''
+red = [
+    "test_both_are_offered_again_whenever_the_menu_closes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
+]
+
+# Redo offered after typing since the Undo. A box of one step makes Redo the
+# same message as Undo, so Redo then would take the typing back. The break stops
+# `can_redo` comparing the box's words with the ones the Undo left. Measured
+# 2026-09-24 by hand on 13-01's branch: the reading of Redo after typing went
+# red and nothing else in the target did.
+[[guard]]
+name = "Redo is refused once something is typed after the Undo"
+file = "src/presentation/text_undo.rs"
+suite = "undo_reaches_the_text"
+before = '''pub fn can_redo(box_: &TextCtrl, last: &LastUndo) -> bool {
+    last.handle == handle_of(box_) && box_.get_value() == last.value_after && can_undo(box_)'''
+after = '''pub fn can_redo(box_: &TextCtrl, last: &LastUndo) -> bool {
+    last.handle == handle_of(box_) && can_undo(box_)'''
+red = [
+    "test_redo_is_refused_once_something_is_typed_after_the_undo",
+]
+tests_last_seen = [
+    { file = "src/presentation/text_undo.rs", tests = 0 },
+    { file = "tests/undo_reaches_the_text.rs", tests = 15 },
 ]
 
 # The composer's schedule routine described as reached by Alt+E, which is what

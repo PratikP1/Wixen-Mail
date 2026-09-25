@@ -5764,11 +5764,25 @@ the group is the planner's for Pratik to confirm before planning. Each `[D]` lin
 issue's own "what closes it" condensed, and each is re-read against the tree when the phase
 is planned. Nothing here has met a real provider.
 
+**Planned 2026-09-24** against `main` at `630e2a67`, after Pratik confirmed the order inside
+the group that day and said to plan and implement it: fifty-three plans in
+`.planning/phases/13-new-features-most-from-the-outlook-gap-audit/`, whose README carries the
+plan table, the decisions taken from the research for him to overrule and the four answers
+that wait on him. Each requirement below gains a line naming its plans and the plan that
+ticks it. The `[D]` lines were re-read by the plans against the tree, and a plan that found
+one out of step corrects it in its own commit rather than here: 13-17 moves GAP-03's manager
+from Tools to File, where Pratik placed it, and 13-44 reads GAP-12's "rule editor" as the
+Filter Manager, where rules are saved. No requirement was added, so the coverage below
+stays at 122.
+
 - [ ] **GAP-01**: File, Print (Ctrl+P) prints a message or the item under the cursor on
   every surface that shows one, through the native dialog, the header lines and the text.
   - Evidence: `gh issue view 45 --json title,state` on 2026-09-20: open; `grep -rn 'Ctrl+P'
     src/presentation/wx_app.rs docs/KEYBOARD_SHORTCUTS.md`: nothing bound (re-take when
     planned).
+  - Plans, 2026-09-24: 13-02 (the page layout), 13-03 (File, Print on the message list,
+    after answer (b) on three `windows` features), 13-04 (every other surface), which ticks
+    this line and closes #45.
   - [S] #45, the tester on 2026-09-15: "Add print functionality."
   - [D] File, Print on the mail surfaces and the other modules' items; the route (the native
     printout or the browser's print) decided by a measurement; the shortcuts page and the
@@ -5780,7 +5794,15 @@ is planned. Nothing here has met a real provider.
   on items with the item named.
   - Evidence: `gh issue view 47 --json state` on 2026-09-20: open; the composer's own
     Ctrl+Z and Ctrl+Y exist and the Edit menu holds none (the issue's reading; re-take when
-    planned).
+    planned). 13-01 on 2026-09-24: the main window's Edit menu opens with Undo (`Ctrl+Z`) and
+    Redo (`Ctrl+Y`), acting on the note title, the note body and the contacts search through
+    the box's own one step, greyed while the menu is open when there is nothing to do and
+    speaking when pressed; Undo Send third on N. `cargo test --test undo_reaches_the_text`,
+    15 tests, reads it on a real box and the real menu bar. Dialogs and items are still to
+    come, so this line stays open.
+  - Plans, 2026-09-24: 13-01 (Undo and Redo on the Edit menu on the box's own step),
+    13-05 and 13-06 (several steps in every text box), 13-07 (marks), 13-08 (moves, deletes
+    and copies), which ticks this line, and 13-09 (the other five modules), which closes #47.
   - [S] #47, the tester on 2026-09-15, "no general Undo/Redo".
   - [D] Edit, Undo and Redo for the focused control on every surface first; an undo of a
     delete, a move and a mark with the item named as its own plan; the shortcuts page.
@@ -5790,6 +5812,10 @@ is planned. Nothing here has met a real provider.
   one, and says where a person reads it what the keys can and cannot do here.
   - Evidence: `gh issue view 49 --json state` on 2026-09-20: open; one private key with no
     passphrase, used only to open inline PGP (the issue's reading; re-take when planned).
+  - Plans, 2026-09-24: 13-16 (keys that fit the credential store, several, and public keys),
+    13-17 (the manager, on File since Pratik's placement of that day), 13-17.1 (keys locked
+    with a passphrase, the decision this line listed for him, taken from the research's
+    recommendation), which ticks this line and comments on #49.
   - [S] #49, the tester on 2026-09-15, "no way to manage PGP keys".
   - [D] The manager under Tools; the limits said on the manager and the pages; passphrase
     keys a decision of their own, listed for Pratik.
@@ -5798,6 +5824,9 @@ is planned. Nothing here has met a real provider.
 - [ ] **GAP-04**: The reader shows and announces a meeting invitation with its answers, and a
   cancellation or an update reaches the calendar.
   - Evidence: `gh issue view 50 --json state` on 2026-09-20: open.
+  - Plans, 2026-09-24: 13-10 (the invitation said before the body), 13-11 (the answer
+    buttons in both reader windows), 13-12 (synced events carry their UID), 13-13 (updates
+    and cancellations reach the calendar), which ticks this line and comments on #50.
   - [S] #50, from the Outlook gap audit of 2026-09-15, in the tester's list.
   - [D] The invitation's part shown and said before the body with Accept, Tentative and
     Decline; a cancellation removing and an update moving the event; the answer sent through
@@ -5807,6 +5836,12 @@ is planned. Nothing here has met a real provider.
 - [ ] **GAP-05**: S/MIME-encrypted and PGP/MIME mail is read, a PGP signature is verified and
   said, and a message can be sent signed and encrypted.
   - Evidence: `gh issue view 52 --json state` on 2026-09-20: open.
+  - Plans, 2026-09-24: 13-14 (S/MIME read), 13-15 (PGP/MIME read), 13-18 (PGP signatures
+    checked), 13-19 and 13-20 (the two sending halves, 13-20 after answer (b) on `rand` 0.8),
+    13-21 (Sign and Encrypt in the composer), which ticks this line and comments on #52.
+    GAP-03's plans run after reading and before verifying (13-14's decision 2, the research's
+    question 5, confirmed by Pratik's order), where the `[D]` line below put the key manager
+    before all of it.
   - [S] #52, from the audit, in the tester's list.
   - [D] Reading first, then verifying, then sending; each said in the reader's sentence the
     way the unverified-signature sentence is said today; the key manager (GAP-03) before it.
@@ -5815,6 +5850,9 @@ is planned. Nothing here has met a real provider.
 - [ ] **GAP-06**: A sender can be reported as junk to a provider that takes reports, and a
   block moves the sender's existing mail.
   - Evidence: `gh issue view 54 --json state` on 2026-09-20: open.
+  - Plans, 2026-09-24: 13-22 (Report as Junk), 13-24 and 13-24.1 (the quiet do-halves and
+    the runner a block moves mail through), 13-25 (a block moves the mail already here, with
+    the count), which ticks this line and comments on #54.
   - [S] #54, from the audit, in the tester's list.
   - [D] Report Junk on the Action menu for a provider with an endpoint, said when there is
     none; a block that moves what is already here, said with the count; through the gate.
@@ -5824,6 +5862,10 @@ is planned. Nothing here has met a real provider.
   directory that needs a sign-in.
   - Evidence: `gh issue view 55 --json state` on 2026-09-20: open; `ldap3` is in
     `Cargo.toml` with rustls.
+  - Plans, 2026-09-24: 13-26 (the directory sign-in in the credential store, and the
+    `ldap3` panic fix), 13-27 (the sign-in window), 13-28 (Microsoft's people search, after
+    answer (c) on Graph's People.Read and the tasks permission), which ticks this line and
+    comments on #55.
   - [S] #55, from the audit, in the tester's list.
   - [D] Graph people search while typing an address on a Microsoft account; an LDAP
     directory with a bind, its sign-in kept in the credential store; the privacy page's row.
@@ -5833,6 +5875,9 @@ is planned. Nothing here has met a real provider.
   guests' times in their zones.
   - Evidence: `gh issue view 57 --json state` on 2026-09-20: open; free/busy asks one
     source per account today (#65's reading of the tree).
+  - Plans, 2026-09-24: 13-29 (Google as a source), 13-30 (every source an account has),
+    13-31 (a guest's zone), which ticks this line and comments on #57, and 13-32 (Edit Event
+    scrolls at 768 pixels and 200%, the conditional plan, in).
   - [S] #57, from the audit, in the tester's list.
   - [D] The Google free/busy endpoint; every calendar source an account has asked; a guest's
     zone shown beside the time.
@@ -5841,6 +5886,9 @@ is planned. Nothing here has met a real provider.
 - [ ] **GAP-09**: Saved searches can be reordered, given a key, and saved from scratch, and
   the two pages that drifted are corrected.
   - Evidence: `gh issue view 58 --json state` on 2026-09-20: open.
+  - Plans, 2026-09-24: 13-37 (a chosen order), 13-38 (Alt+4 to Alt+9 and the menu), 13-39
+    (a search from nothing, and the drifted pages dated), which ticks this line and closes
+    #58.
   - [S] #58, from the audit, in the tester's list.
   - [D] The reordering gesture the tree has; a key per search on the pattern labels take in
     EDIT-05; Save as Search from an empty box; the pages corrected by dating.
@@ -5849,6 +5897,10 @@ is planned. Nothing here has met a real provider.
 - [ ] **GAP-10**: Several identities per account, the first step to shared mailboxes and
   delegation.
   - Evidence: `gh issue view 59 --json state` on 2026-09-20: open.
+  - Plans, 2026-09-24: 13-33 (other addresses stored and managed), 13-34 (the outbox and
+    drafts keep the address), 13-35 (the From list offers them), 13-36 (a reply from the
+    address it was sent to), which ticks this line and comments on #59, left open for shared
+    mailboxes and delegation.
   - [S] #59, from the audit, in the tester's list.
   - [D] An identity (a From name and address) per account beyond the first, offered in
     compose's From list; shared mailboxes and delegation as their own later work, said.
@@ -5858,6 +5910,10 @@ is planned. Nothing here has met a real provider.
   messages.
   - Evidence: `gh issue view 60 --json state` on 2026-09-20: open; the selection and the
     set commands exist since 11-07.
+  - Plans, 2026-09-24: 13-23 (a rule's label action made real), 13-24 and 13-24.1 (the
+    runner), 13-40 (steps as data), 13-41 (the manager), 13-42 (the steps on Action with
+    Ctrl+Shift+7 to Ctrl+Shift+9, run over the selection), which ticks this line and closes
+    #60.
   - [S] #60, from the audit, in the tester's list.
   - [D] A Quick Step as a rule's actions run by hand over the selection, named, with a key,
     on the pattern 11-07's set commands use; one sentence saying what it did.
@@ -5867,6 +5923,9 @@ is planned. Nothing here has met a real provider.
   would touch.
   - Evidence: `gh issue view 61 --json state` on 2026-09-20: open; rules run once when mail
     arrives (11-10's comment on #62).
+  - Plans, 2026-09-24: 13-23 and 13-24 to 13-24.1 (the label fix and the runner), 13-43
+    (the count and its words), 13-44 (the two doors, This Folder and the Filter Manager),
+    which ticks this line and closes #61.
   - [S] #61, from the audit, in the tester's list.
   - [D] Run Rule Now on the rule editor and the Action menu; the count said before the run
     with a way to stop; the run through the same arms a check uses.
@@ -5877,6 +5936,10 @@ is planned. Nothing here has met a real provider.
   - Evidence: `gh issue view 53 --json state` on 2026-09-20: open; Pratik's comments of
     2026-09-17: points 1 to 3 and 7 landed in `06fdc9b7` and `8eba6a38`, "4 to 6 are later
     work".
+  - Plans, 2026-09-24: 13-45 (a bare mailbox file), 13-46 (loose message files), 13-47 (the
+    `.msg` reader, after answer (a) on `cfb` 0.15.0), 13-48 (`.msg` through both imports),
+    13-49 (the pages, and `.pst` export said to be out), which ticks this line and closes
+    #53, and 13-50 (imported messages keep their files, the conditional plan, in).
   - [S] #53, from the audit, in the tester's list; Pratik on 2026-09-17: "Points 4 to 6 (a
     bare .mbox or loose .eml export, .msg, .pst export) are later work."
   - [D] Each of the three built or refused with a sentence on the page saying which and why;
@@ -6059,19 +6122,19 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | EDIT-03 | Phase 12 | Done 2026-09-24, 12-08: the block rules, the setting, the keys taken on the typing field and the opening times, held by `application::time_blocks`' cases and `tests/event_times_move_in_blocks.rs`; a task has no time; the ear is ledger 603 |
 | EDIT-04 | Phase 12 | Done 2026-09-24, 12-09: one set with an assignment per account and one default, chosen on the account's dialog or in a signature's editor through one stored assignment, compose following the From account, held by `application::signatures`' and the store's cases and `tests/a_signature_follows_the_from_account.rs`; the ear is ledger 605 |
 | EDIT-05 | Phase 12 | Done 2026-09-24, 12-10: labels in a stored order, the Label submenu rebuilt from them with the key that applies each and Edit Labels at its end, the Label Manager with a Key column and moves, held by `application::tagging`'s and the store's cases and `tests/the_label_menu_says_the_labels_an_account_has.rs`; the ear is ledger 607 |
-| GAP-01 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-02 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-03 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-04 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-05 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-06 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-07 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-08 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-09 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-10 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-11 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-12 | Phase 13 | Not planned, 2026-09-20 |
-| GAP-13 | Phase 13 | Not planned, 2026-09-20 |
+| GAP-01 | Phase 13 | Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built. Until then this row read "Not planned, 2026-09-20" |
+| GAP-02 | Phase 13 | 13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it. Until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
+| GAP-03 | Phase 13 | Planned 2026-09-24: 13-16, 13-17, 13-17.1, which ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-04 | Phase 13 | Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-05 | Phase 13 | Planned 2026-09-24: 13-14, 13-15, 13-18 to 13-21 (13-20 waits on answer (b)), 13-21 ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-06 | Phase 13 | Planned 2026-09-24: 13-22, 13-24, 13-24.1, 13-25, which ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-07 | Phase 13 | Planned 2026-09-24: 13-26, 13-27, 13-28 (waits on answer (c)), which ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-08 | Phase 13 | Planned 2026-09-24: 13-29 to 13-32, 13-31 ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-09 | Phase 13 | Planned 2026-09-24: 13-37 to 13-39, 13-39 ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-10 | Phase 13 | Planned 2026-09-24: 13-33 to 13-36, 13-36 ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-11 | Phase 13 | Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-12 | Phase 13 | Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-13 | Phase 13 | Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
 | REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |
 

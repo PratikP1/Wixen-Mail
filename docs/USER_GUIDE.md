@@ -1107,6 +1107,20 @@ A task has a due date and no time, so none of this changes the task window.
 - `F1` - Help documentation
 - `Esc` - Close dialogs
 
+### Editing
+- `Ctrl+Z` - Undo the last change in the box you are typing in, such as a
+  note or the contacts search. A box remembers one change in these builds,
+  so pressing Undo twice puts the change back. With nothing to undo it says
+  so
+- `Ctrl+Y` - Redo, right after an Undo in the same box. Once you type after
+  the Undo, there is nothing to redo, and it says so
+- `Ctrl+Shift+Z` - Undo Send, while a message you just sent is still being
+  held. It is third on the Edit menu, after Undo and Redo, and its letter is
+  N. Some programs use `Ctrl+Shift+Z` for Redo; here Redo is `Ctrl+Y`
+
+The Edit menu greys Undo and Redo when there is nothing for them to do, and
+a screen reader says they are unavailable.
+
 ### Window Navigation
 - `F6` - Cycle through panes (folders → messages → preview)
 - `Tab` - Navigate within pane
