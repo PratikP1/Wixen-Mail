@@ -37,6 +37,7 @@ pub mod page_links;
 pub mod page_window;
 pub mod panes;
 pub mod pim_rows;
+pub mod printing;
 pub mod read_aloud;
 pub mod reader_text;
 pub mod sample_mailbox;

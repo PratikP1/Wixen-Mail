@@ -93,6 +93,26 @@ pub struct Page {
     pub lines: Vec<String>,
 }
 
+/// What reached the printer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Printed {
+    /// How many pages went to the spooler.
+    pub pages: usize,
+}
+
+/// Why nothing reached the printer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotPrinted {
+    /// Somebody closed a dialog without printing: Windows' print dialog, or
+    /// the Save dialog a file printer such as Microsoft Print to PDF opens.
+    Cancelled,
+    /// A step failed, said in words that follow "Nothing was printed,
+    /// because".
+    Failed(String),
+    /// Printing is built on Windows' own calls, and this is not Windows.
+    NotOnThisPlatform,
+}
+
 /// The same reading, with every date written in full.
 ///
 /// Whatever the reader chose for the screen: a list that says "2 days ago"
