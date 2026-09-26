@@ -945,3 +945,53 @@ fn test_the_reading_complains_when_the_answer_keys_reach_nothing() {
         .expect_err("answer keys reaching nothing were passed over");
     assert!(why.contains("answers nothing"), "{why}");
 }
+
+// ── What answering says, said once ────────────────────────────────────────
+//
+// Ledger 155 asked whether accepting was heard twice. It was: every outcome
+// went to the status line, which speaks what it shows, and was announced
+// beside it as well. Read from the source because the path sends mail from an
+// account and files a meeting, neither of which this file starts.
+
+fn answering_says_each_outcome_once(app: &str) -> Result<(), String> {
+    let body = body_of(app, "fn answer_the_invitation(")?;
+    if body.contains(".announce(") {
+        return Err(
+            "answer_the_invitation announces an outcome beside the status line, which speaks \
+             it too, so it is heard twice (ledger 155)"
+                .to_string(),
+        );
+    }
+    for (channel, what) in [
+        ("send_status(", "what answering did"),
+        ("send_refusal(", "why it could not answer"),
+    ] {
+        if !body.contains(channel) {
+            return Err(format!(
+                "answer_the_invitation no longer says {what} through {channel}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_answering_says_each_outcome_once() {
+    answering_says_each_outcome_once(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_reading_complains_when_an_outcome_is_also_announced() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let body = body_of(&app, "fn answer_the_invitation(").expect("the answer path");
+    let planted_body = body.replacen(
+        "send_status(",
+        "let _ = a11y.announce(\"Accepted\", Priority::Normal);\n    send_status(",
+        1,
+    );
+    assert_ne!(planted_body, body, "the companion planted nothing");
+    let why = answering_says_each_outcome_once(&app.replacen(&body, &planted_body, 1))
+        .expect_err("an outcome said twice was passed over");
+    assert!(why.contains("heard twice"), "{why}");
+}

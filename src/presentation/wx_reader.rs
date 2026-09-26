@@ -725,22 +725,43 @@ impl ReaderWindow {
         sizer: &BoxSizer,
         offered: &TheButtons,
     ) -> Vec<Button> {
+        let handler = self.answer.clone();
+        Self::answer_buttons_on(
+            panel,
+            sizer,
+            offered,
+            Rc::new(move |message_row_id, answer| {
+                if let Some(answer_it) = handler.borrow().as_ref() {
+                    answer_it(message_row_id, answer);
+                }
+            }),
+        )
+    }
+
+    /// The three buttons in a row on `parent`, added to `sizer`, each
+    /// pressing `press` with the row the buttons answer and its answer.
+    ///
+    /// One builder for both message windows, the reader's tab and the
+    /// formatted window, so the two cannot come to name, describe or letter
+    /// them differently.
+    pub fn answer_buttons_on(
+        parent: &dyn WxWidget,
+        sizer: &BoxSizer,
+        offered: &TheButtons,
+        press: Rc<dyn Fn(i64, Answer)>,
+    ) -> Vec<Button> {
         let row = BoxSizer::builder(Orientation::Horizontal).build();
         let built = THE_ANSWER_BUTTONS
             .iter()
             .map(|&(answer, label, name)| {
-                let button = Button::builder(panel).with_label(label).build();
+                let button = Button::builder(parent).with_label(label).build();
                 // Not painted: a button keeps the colours Windows gives it, as
                 // every other button in this program does.
                 set_accessible_name_and_description(&button, name, offered.what_pressing(answer));
                 button.on_click({
-                    let handler = self.answer.clone();
+                    let press = press.clone();
                     let message_row_id = offered.message_row_id;
-                    move |_| {
-                        if let Some(answer_it) = handler.borrow().as_ref() {
-                            answer_it(message_row_id, answer);
-                        }
-                    }
+                    move |_| press(message_row_id, answer)
                 });
                 row.add(&button, 0, SizerFlag::All, 4);
                 button

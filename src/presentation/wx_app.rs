@@ -3652,12 +3652,30 @@ impl WxMailApp {
                 // range grows and as M toggles.
                 wire_context_menu(&msg_list, {
                     let state = state.clone();
+                    let message_cache = message_cache.clone();
                     let list = msg_list;
                     move || {
+                        use crate::application::context_menu::entries_for_a_message_carrying_an_invitation;
+                        use crate::application::reading_a_message::carries_a_calendar_part;
                         let rows = chosen_rows(&list);
-                        let any_unread =
-                            the_chosen_rows_have_unread(&lock_state(&state), &rows).unwrap_or(true);
-                        Some(entries_for_messages(any_unread))
+                        let (any_unread, under_the_cursor) = {
+                            let held = lock_state(&state);
+                            (
+                                the_chosen_rows_have_unread(&held, &rows).unwrap_or(true),
+                                held.what_the_cursor_stands_for().map(|row| row.id),
+                            )
+                        };
+                        // The three answers on a message with a calendar part
+                        // recorded, read by its kind and not parsed: pressing
+                        // one on a cancellation says why it cannot be answered.
+                        let carries_an_invitation = under_the_cursor
+                            .zip(message_cache.as_deref())
+                            .is_some_and(|(row, cache)| carries_a_calendar_part(cache, row));
+                        Some(if carries_an_invitation {
+                            entries_for_a_message_carrying_an_invitation(any_unread)
+                        } else {
+                            entries_for_messages(any_unread)
+                        })
                     }
                 });
                 // The one control here holding twelve kinds of row. Which menu
@@ -25335,6 +25353,25 @@ pub fn show_conversation_as_page(
     // and the host's second line, wired below once the host exists, are how
     // (#80). A veto stood here until 2026-09-20 and never fired.
 
+    // An invitation's three buttons, for a window showing one message whose
+    // invitation can be answered, built after the page so the browser stays
+    // the first control that takes the keyboard, and before the list. The
+    // browser keeps every key once it has focus, so their letters are heard
+    // from the page through its listener, in the arm below (#84). One
+    // handler behind both windows, the reader's, set once by the main window.
+    let answering = above.answering.clone();
+    if let Some(offered) = &answering {
+        wx_reader::ReaderWindow::answer_buttons_on(
+            &frame,
+            &sizer,
+            offered,
+            Rc::new({
+                let reader = reader.clone();
+                move |message_row_id, answer| reader.answer_now(message_row_id, answer)
+            }),
+        );
+    }
+
     // Anything hanging off these messages, in a list of its own. Without it,
     // reading formatted would quietly cost somebody their attachments: the page
     // renders bodies and nothing else, so the only sign there had been a file
@@ -25455,6 +25492,8 @@ pub fn show_conversation_as_page(
     page.on_script_message_received({
         let a11y = a11y.clone();
         let host = host.clone();
+        let reader = reader.clone();
+        let answering = answering.clone();
         move |event: WebViewEventData| {
             use crate::presentation::accessibility::announcements::Priority;
             let Some(json) = event.get_string() else {
@@ -25508,7 +25547,16 @@ pub fn show_conversation_as_page(
                         printing::print_through_the_dialog(&frame, &paper),
                     );
                 }
-                Some(page_jumps::Jump::Answer(_)) => {}
+                // What the buttons do, with the window's own message; with
+                // nothing to answer, said rather than left silent.
+                Some(page_jumps::Jump::Answer(answer)) => {
+                    if let Some(offered) = &answering {
+                        reader.answer_now(offered.message_row_id, answer);
+                    } else {
+                        let _ = a11y
+                            .announce("There is no invitation here to answer.", Priority::Normal);
+                    }
+                }
                 None => {
                     if crate::presentation::panes::leaving_which_way(&json).is_some() {
                         // Closing is what going back means here. The close

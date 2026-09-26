@@ -62,6 +62,15 @@ pub const SCRIPT: &str = r#"document.addEventListener('keydown', function(e) {
         e.stopPropagation();
         window.contextMenu.postMessage(JSON.stringify({ kind: 'print' }));
     }
+    // Accept, Tentative and Decline on a meeting invitation, the letters its
+    // three buttons carry (13-11). The window answers only when its one
+    // message can be answered, and says so when it cannot.
+    var answer = { c: 'accept', t: 'tentative', d: 'decline' }[String(e.key).toLowerCase()];
+    if (e.altKey && !e.ctrlKey && answer) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'answer', answer: answer }));
+    }
 }, true);"#;
 
 /// The jump a page asked for, read from the message it posted.
@@ -74,6 +83,21 @@ pub fn the_jump_the_page_asked_for(json: &str) -> Option<Jump> {
         "attachments" => Some(Jump::Attachments),
         "warning" => Some(Jump::Warning),
         "print" => Some(Jump::Print),
+        "answer" => the_answer_posted(&posted).map(Jump::Answer),
+        _ => None,
+    }
+}
+
+/// Which answer an answer key posted, or nothing for one the window cannot
+/// name: a guess at which answer was meant would send it to the organiser.
+fn the_answer_posted(
+    posted: &serde_json::Value,
+) -> Option<crate::application::invitations::Answer> {
+    use crate::application::invitations::Answer;
+    match posted.get("answer").and_then(serde_json::Value::as_str)? {
+        "accept" => Some(Answer::Accepted),
+        "tentative" => Some(Answer::Tentative),
+        "decline" => Some(Answer::Declined),
         _ => None,
     }
 }

@@ -320,8 +320,66 @@ pub fn entries_for_messages(any_unread: bool) -> &'static [Entry] {
 /// message's calendar document to raise a menu is work the menu key should
 /// not wait on; pressing one on a cancellation says why it cannot be answered.
 pub fn entries_for_a_message_carrying_an_invitation(any_unread: bool) -> &'static [Entry] {
-    entries_for_messages(any_unread)
+    if any_unread {
+        MESSAGES_CARRYING_AN_INVITATION
+    } else {
+        MESSAGES_CARRYING_AN_INVITATION_THE_ONE_UNDER_THE_CURSOR_READ
+    }
 }
+
+/// The message list's menu on a message carrying an invitation, unread: the
+/// list below, then the three answers, which the test over the message menu
+/// holds to being exactly that.
+static MESSAGES_CARRYING_AN_INVITATION: &[Entry] = &[
+    entry("&Reply", Action::Reply),
+    entry("Reply &all", Action::ReplyAll),
+    entry("&Forward", Action::Forward),
+    entry(
+        crate::application::marking_read::what_the_command_says(true).context,
+        Action::MarkRead,
+    ),
+    entry("&Star or unstar", Action::ToggleStar),
+    entry("&Delete", Action::DeleteMessage),
+    entry("Delete &permanently", Action::DeleteMessageOutright),
+    entry("Mo&ve to folder", Action::MoveToFolder),
+    entry("Cop&y to folder", Action::CopyToFolder),
+    entry("Copy to a &task", Action::CopyToTask),
+    entry("Copy to the &calendar", Action::CopyToEvent),
+    entry("Copy to a &note", Action::CopyToNote),
+    // The Action menu's Answer Invitation, on the letters this menu had
+    // free: I, E and L. J stays free for Report as Junk.
+    entry("Accept &invitation", Action::AcceptInvitation),
+    entry(
+        "T&entatively accept invitation",
+        Action::TentativeInvitation,
+    ),
+    entry("Dec&line invitation", Action::DeclineInvitation),
+];
+
+/// The same when the message under the cursor is read.
+static MESSAGES_CARRYING_AN_INVITATION_THE_ONE_UNDER_THE_CURSOR_READ: &[Entry] = &[
+    entry("&Reply", Action::Reply),
+    entry("Reply &all", Action::ReplyAll),
+    entry("&Forward", Action::Forward),
+    entry(
+        crate::application::marking_read::what_the_command_says(false).context,
+        Action::MarkRead,
+    ),
+    entry("&Star or unstar", Action::ToggleStar),
+    entry("&Delete", Action::DeleteMessage),
+    entry("Delete &permanently", Action::DeleteMessageOutright),
+    entry("Mo&ve to folder", Action::MoveToFolder),
+    entry("Cop&y to folder", Action::CopyToFolder),
+    entry("Copy to a &task", Action::CopyToTask),
+    entry("Copy to the &calendar", Action::CopyToEvent),
+    entry("Copy to a &note", Action::CopyToNote),
+    entry("Accept &invitation", Action::AcceptInvitation),
+    entry(
+        "T&entatively accept invitation",
+        Action::TentativeInvitation,
+    ),
+    entry("Dec&line invitation", Action::DeclineInvitation),
+];
 
 /// The message list's menu when the message under the cursor is unread, and
 /// the form [`entries_for`] answers for the focus.

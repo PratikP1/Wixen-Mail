@@ -257,7 +257,7 @@ where the caret is.
 | Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
 | Print this tab | `Ctrl+P` | Prints the message, the conversation or the attachment in this tab through Windows' own print dialog, with every date written in full. The letter is `P` on the reader's File menu. Works in the formatted view as well, where it prints the message or the conversation the window shows |
-| Accept a meeting invitation | `Alt+C` | Presses the Accept button of a message whose invitation can be answered |
+| Accept a meeting invitation | `Alt+C` | Presses the Accept button of a message whose invitation can be answered. Works in the formatted view as well, from the message |
 | Say you might attend | `Alt+T` | Presses the Tentative button, the same way |
 | Decline a meeting invitation | `Alt+D` | Presses the Decline button, the same way |
 
@@ -265,8 +265,10 @@ where the caret is.
 
 A message whose invitation you can answer has three buttons, Accept, Tentative
 and Decline. In the plain-text reader they come after the security warning and
-before the message. Each button says what pressing it will do, and who will be
-told, after its name. Accept is on `Alt+C` rather than `Alt+A`, because
+before the message; in the formatted view they come after the message and
+before the list of attachments, and the keys work from inside the message.
+Each button says what pressing it will do, and who will be told, after its
+name. Accept is on `Alt+C` rather than `Alt+A`, because
 `Alt+A` is the attachments.
 
 The buttons are there only when the invitation can be answered. When it
@@ -278,8 +280,10 @@ buttons; open the message on its own to answer it.
 
 After you press one, the status line says what happened, once. `Alt+C`,
 `Alt+T` and `Alt+D` work from the message itself, so you can answer without
-leaving what you were reading. The Action menu's Answer Invitation answers the
-same way.
+leaving what you were reading. In the formatted view, pressing one of them
+where there is nothing to answer says "There is no invitation here to
+answer." The Action menu's Answer Invitation and the message list's context
+menu answer the same way.
 
 #### Attachments
 
@@ -1404,6 +1408,19 @@ The Add Signature and Edit Signature dialog, opened with Add or Edit in the Sign
 | Navigate Menu | `↑` `↓` | Move through menu items |
 | Select Menu Item | `Enter` | Activate highlighted menu item |
 | Close Menu | `Esc` | Close context menu |
+
+On a message that carries a meeting invitation, the message list's context
+menu ends with three more entries:
+
+| Entry | Letter | What it does |
+|-------|--------|--------------|
+| Accept invitation | `I` | The same as the Accept button and Action, Answer Invitation, Accept |
+| Tentatively accept invitation | `E` | The same as the Tentative button |
+| Decline invitation | `L` | The same as the Decline button |
+
+They are offered on any message with a calendar file attached, before
+anything has read it, so on a cancellation they say why there is nothing to
+answer rather than doing nothing.
 
 ### Search Dialog
 

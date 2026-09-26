@@ -245,21 +245,7 @@ pub fn invitation_check_for(
     let Some(cache) = cache else {
         return WhatTheInvitationSays::Nothing;
     };
-    // The names first, which is a row per attachment and no file, because
-    // nearly every message carries no calendar part and the files can be
-    // large.
-    let carries_a_calendar_part = cache
-        .get_attachments_for_message(message_row_id)
-        .map(|parts| {
-            parts
-                .iter()
-                .any(|part| answering::is_a_calendar_part(&part.mime_type))
-        })
-        .unwrap_or_else(|e| {
-            tracing::warn!("Could not read a message's attachments to look for a meeting: {e}");
-            false
-        });
-    if !carries_a_calendar_part {
+    if !carries_a_calendar_part(cache, message_row_id) {
         return WhatTheInvitationSays::Nothing;
     }
     // The same reading Answer Invitation takes of the same stored parts, so
@@ -302,6 +288,27 @@ pub fn invitation_check_for(
     )
 }
 
+/// Whether a stored message has a calendar part recorded, by the kind of each
+/// part and without reading any file.
+///
+/// The names first, which is a row per attachment and no file, because nearly
+/// every message carries no calendar part and the files can be large. Asked by
+/// the sentence about a meeting, by its buttons, and by the message list's
+/// menu, which offers the three answers on such a message.
+pub fn carries_a_calendar_part(cache: &MessageCache, message_row_id: i64) -> bool {
+    cache
+        .get_attachments_for_message(message_row_id)
+        .map(|parts| {
+            parts
+                .iter()
+                .any(|part| answering::is_a_calendar_part(&part.mime_type))
+        })
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's attachments to look for a meeting: {e}");
+            false
+        })
+}
+
 /// Whether the invitation a stored message carries is offered the three
 /// buttons, from the parts stored when it was opened and the account it
 /// arrived on.
@@ -318,17 +325,7 @@ pub fn answer_buttons_for(
     let Some(cache) = cache else {
         return not_asked;
     };
-    // The names first, as the sentence's check reads them, because nearly no
-    // message carries a calendar part and the rest of this reads the row.
-    let carries_a_calendar_part =
-        cache
-            .get_attachments_for_message(message_row_id)
-            .is_ok_and(|parts| {
-                parts
-                    .iter()
-                    .any(|part| answering::is_a_calendar_part(&part.mime_type))
-            });
-    if !carries_a_calendar_part {
+    if !carries_a_calendar_part(cache, message_row_id) {
         return not_asked;
     }
     // The same reading pressing a button takes, so the buttons offered are

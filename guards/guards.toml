@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 342 records have arrived since and have not been through it.
+# 346 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -19302,7 +19302,7 @@ red = [
     "application::context_menu::tests::test_a_copy_sits_beside_the_move_it_is_the_twin_of",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]
 
 # ── A contact left in a group it was only passing through ───────────────────
@@ -19847,7 +19847,7 @@ red = [
     "application::context_menu::tests::test_the_note_folder_menu_offers_a_sync_exactly_where_the_seam_says_one_exists",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]
 
 # ── Two places deciding where one account's notes go ────────────────────────
@@ -19893,7 +19893,7 @@ red = [
     "application::notes_backend::tests::test_an_account_with_no_provider_at_all_keeps_its_notes_here",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
     { file = "src/application/new_item.rs", tests = 42 },
     { file = "src/application/notes_backend.rs", tests = 25 },
 ]
@@ -26343,7 +26343,7 @@ red = [
     "test_the_reading_complains_when_the_script_or_the_wiring_loses_a_jump",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 6 },
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
 ]
 
@@ -26366,7 +26366,7 @@ red = [
     "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 6 },
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
 ]
 
 # ── Alt+A in the page window moves focus to the attachments list ────────────
@@ -26572,7 +26572,7 @@ red = [
     "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
     { file = "src/application/marking_read.rs", tests = 5 },
 ]
 
@@ -26596,9 +26596,13 @@ after = """    } else {
     }"""
 red = [
     "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+    # 13-11's case holds the invitation's menus to being the message menus
+    # followed by the three answers, so the read form answering the unread
+    # one breaks it as well.
+    "application::context_menu::tests::test_a_message_carrying_an_invitation_is_offered_the_three_answers",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]
 
 # ── A letter bound on a list is consumed, so the search never gets it ───────
@@ -30771,7 +30775,7 @@ red = [
     "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 6 },
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
 ]
 
 # A space joining the run of typing it ends, so a whole sentence typed is one
@@ -31575,7 +31579,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 14 },
-    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 5 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
 ]
 
 # The buttons named and not described, which is #50 point 4 again: nothing
@@ -31590,8 +31594,93 @@ before = """                set_accessible_name_and_description(&button, name, o
 after = """                set_accessible_name(&button, name);"""
 red = [
     "test_an_answerable_invitation_has_three_named_described_buttons",
+    # The formatted window's buttons are built by the same function since
+    # 13-11's third task, so they lose their descriptions with the reader's.
+    "test_the_formatted_window_has_the_three_buttons_after_the_page",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 14 },
-    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 5 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
+]
+
+# The page's listener posting nothing for Alt+C, Alt+T and Alt+D, which leaves
+# the formatted window, the default way a message opens, with buttons whose
+# letters never fire from the page (#84's shape). Written 2026-09-26 by 13-11,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the page's script posts the answer for alt+c, alt+t and alt+d, not nothing"
+file = "src/presentation/page_jumps.rs"
+before = """        window.contextMenu.postMessage(JSON.stringify({ kind: 'answer', answer: answer }));"""
+after = """        // posts nothing"""
+red = [
+    "presentation::page_jumps::tests::test_alt_c_t_and_d_in_the_page_post_the_answers_and_the_window_reads_them_back",
+    "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
+]
+
+# The formatted window's answer arm reaching nothing: the page posts the key
+# and the window drops it. Written 2026-09-26 by 13-11, measured through
+# `scripts/guards.sh --remeasure` against the new target, whose reading of the
+# arm is the one that goes red.
+[[guard]]
+name = "the formatted window's answer keys press the buttons' handler with its own message"
+file = "src/presentation/wx_app.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """                        reader.answer_now(offered.message_row_id, answer);"""
+after = """                        let _ = (offered, answer);"""
+red = [
+    "test_the_pages_answer_keys_press_the_buttons_handler_with_the_windows_message",
+    # The companion plants the same fault in the arm, and with the arm
+    # already broken it finds nothing to plant.
+    "test_the_reading_complains_when_the_answer_keys_reach_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
+]
+
+# The formatted window building no buttons for a message that can be answered,
+# which leaves its keys the only way and nothing to Tab to. Written 2026-09-26
+# by 13-11, measured through `scripts/guards.sh --remeasure` against the new
+# target.
+[[guard]]
+name = "the formatted window offers the three buttons for a message that can be answered"
+file = "src/presentation/wx_app.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """    if let Some(offered) = &answering {
+        wx_reader::ReaderWindow::answer_buttons_on("""
+after = """    if let Some(offered) = answering.as_ref().filter(|_| false) {
+        wx_reader::ReaderWindow::answer_buttons_on("""
+red = [
+    "test_the_formatted_window_has_the_three_buttons_after_the_page",
+    "test_a_press_in_the_formatted_window_answers_the_message_it_shows",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
+]
+
+# The three answers offered on every message, which is a menu entry that
+# answers nothing on ordinary mail and three letters taken from it. Written
+# 2026-09-26 by 13-11, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "the three answers are offered only on a message carrying an invitation"
+file = "src/application/context_menu.rs"
+before = """    if any_unread {
+        MESSAGES
+    } else {"""
+after = """    if any_unread {
+        MESSAGES_CARRYING_AN_INVITATION
+    } else {"""
+red = [
+    "application::context_menu::tests::test_a_message_carrying_an_invitation_is_offered_the_three_answers",
+    # The focus form is the unread form by pointer, and the break hands the
+    # message menu's focus a different list.
+    "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]
