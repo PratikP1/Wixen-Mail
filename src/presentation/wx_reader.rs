@@ -64,6 +64,25 @@ type ReadHandler = Box<dyn Fn(&ReaderAttachment)>;
 /// the answer goes to that meeting and not to whatever the list has selected.
 type AnswerHandler = Box<dyn Fn(i64, Answer)>;
 
+/// What the window does when somebody presses Remove from Calendar.
+///
+/// Set by the application for the reason the answer handler is: marking a
+/// meeting belongs to the calendar, not to a window whose job is to show text.
+/// Handed the calendar row the organiser's cancellation named, which was
+/// offered only because the organiser sent it (13-13).
+type RemoveHandler = Box<dyn Fn(&str)>;
+
+/// Remove from Calendar: the label with its letter, the name, and what
+/// pressing it does.
+///
+/// R, which nothing else in the reader's tab, on its menu bar (File, Go) or in
+/// the formatted window's page answers.
+pub const THE_REMOVE_BUTTON: (&str, &str, &str) = (
+    "&Remove from Calendar",
+    "Remove from Calendar",
+    "Marks this meeting cancelled on your calendar. Nothing is sent to the organiser.",
+);
+
 /// The three answer buttons: the answer, the label with its letter, the name.
 ///
 /// Accept takes C, not A: Alt+A is the attachments in both message windows.
@@ -108,6 +127,7 @@ pub struct ReaderWindow {
     save_attachment: Rc<RefCell<Option<SaveHandler>>>,
     read_attachment: Rc<RefCell<Option<ReadHandler>>>,
     answer: Rc<RefCell<Option<AnswerHandler>>>,
+    remove: Rc<RefCell<Option<RemoveHandler>>>,
     /// What to do when this window is closed, if anything.
     ///
     /// Set when the reader was opened from somewhere a person should come back
@@ -162,6 +182,9 @@ pub struct ReaderTabHandles {
     /// Accept, Tentative and Decline, in that order, for a message whose
     /// invitation can be answered; empty for every other tab.
     pub answer_buttons: Vec<Button>,
+    /// Remove from Calendar, for a message whose organiser called off a
+    /// meeting on the calendar; `None` for every other tab.
+    pub remove_button: Option<Button>,
 }
 
 /// Hand one attachment to whatever the application said to do with it.
@@ -410,6 +433,7 @@ impl ReaderWindow {
             save_attachment: Rc::new(RefCell::new(None)),
             read_attachment: Rc::new(RefCell::new(None)),
             answer: Rc::new(RefCell::new(None)),
+            remove: Rc::new(RefCell::new(None)),
             closed,
             go_back,
             a11y: a11y.clone(),
@@ -478,6 +502,46 @@ impl ReaderWindow {
         if let Some(handler) = self.answer.borrow().as_ref() {
             handler(message_row_id, answer);
         }
+    }
+
+    /// Say what to do when somebody presses Remove from Calendar: mark the
+    /// meeting on that calendar row called off.
+    pub fn on_remove(&self, handler: impl Fn(&str) + 'static) {
+        *self.remove.borrow_mut() = Some(Box::new(handler));
+    }
+
+    /// Do the removal the application set up, for the formatted window, which
+    /// has the same button and key: one handler, so the two cannot come to
+    /// remove differently.
+    pub fn remove_now(&self, event_id: &str) {
+        if let Some(handler) = self.remove.borrow().as_ref() {
+            handler(event_id);
+        }
+    }
+
+    /// Remove from Calendar on `parent`, added to `sizer`, pressing `press`
+    /// with the calendar row it marks.
+    ///
+    /// One builder for both message windows, so the two cannot come to name,
+    /// describe or letter it differently. No key is bound for it, for the
+    /// reason [`Self::the_answer_buttons`] gives.
+    pub fn remove_button_on(
+        parent: &dyn WxWidget,
+        sizer: &BoxSizer,
+        event_id: &str,
+        press: Rc<dyn Fn(&str)>,
+    ) -> Button {
+        let (label, name, what_pressing_does) = THE_REMOVE_BUTTON;
+        let button = Button::builder(parent).with_label(label).build();
+        // Not painted: a button keeps the colours Windows gives it, as every
+        // other button in this program does.
+        set_accessible_name_and_description(&button, name, what_pressing_does);
+        button.on_click({
+            let event_id = event_id.to_string();
+            move |_| press(&event_id)
+        });
+        sizer.add(&button, 0, SizerFlag::All, 4);
+        button
     }
 
     /// Add a document as a new tab and show the window. Print in the tab
@@ -549,6 +613,21 @@ impl ReaderWindow {
             .map_or_else(Vec::new, |offered| {
                 self.the_answer_buttons(&panel, &sizer, offered)
             });
+        // Remove from Calendar goes where the answers go, for the same reason,
+        // and only for a meeting its organiser called off (13-13).
+        let remove_button = document.removal.as_deref().map(|event_id| {
+            let handler = self.remove.clone();
+            Self::remove_button_on(
+                &panel,
+                &sizer,
+                event_id,
+                Rc::new(move |event_id| {
+                    if let Some(remove_it) = handler.borrow().as_ref() {
+                        remove_it(event_id);
+                    }
+                }),
+            )
+        });
 
         // Rich2 because the plain multiline control on Windows has a text
         // length limit that a long conversation reaches, and because it is the
@@ -707,6 +786,7 @@ impl ReaderWindow {
             picture,
             attachments,
             answer_buttons,
+            remove_button,
         }
     }
 

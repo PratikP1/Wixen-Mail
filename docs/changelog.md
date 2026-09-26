@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **An organiser's update moves the meeting, and a cancellation can be taken off the
+  calendar.** The audit of 2026-09-15 (#50 points 2, 3 and 9) found that a cancellation was
+  said and did nothing to the calendar, that an update moved the meeting only if it was
+  answered again, and that the backlog called invitations done. Now, opening an update in the
+  reader window or the formatted window moves the meeting on your calendar and the bar says
+  "Moved on your calendar from 05/03/2026 at 09:00 to 06/03/2026 at 14:00." A cancellation
+  gets one button, Remove from Calendar, on `Alt+R` in both windows, which marks the meeting
+  cancelled and free rather than deleting it and sends nothing to the organiser. Both happen
+  only when the message comes from the organiser your calendar records for the meeting,
+  because anybody can send a message naming one; from anybody else, or for a meeting that
+  records no organiser, the bar says why and nothing changes. A repeating meeting is said and
+  not changed, because a message about one day of it would change every day. The preview
+  never changes the calendar, and the account's Allow Changes answer applies. A later version
+  at the time your calendar already holds is now said to be already on your calendar rather
+  than "a change ... which was" that same time. The version does not move for this: no build
+  has been cut since 1.0.0-alpha.1. Known limitations: no real organiser's update or
+  cancellation has been through this, and a change pushed to Google or Microsoft after they
+  applied the same update themselves is untried. A sender's address can be forged, and the
+  provider's own verdict on it is not read yet. Nobody has heard the new sentences or the
+  button with a screen reader.
 - **Accept, Tentative and Decline where an invitation is said.** The audit of 2026-09-15
   (#50 points 4, 7 and 8) found that a meeting could be answered only from Action, Answer
   Invitation, that the sentence saying what an answer would do before it went was written and
@@ -52,7 +72,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   the server until you open one, as they did. The version does not move for this: no build has
   been cut since 1.0.0-alpha.1. Known limitations: no invitation from a real Outlook, Google or
   calendar server organiser has been read here, and nobody has heard the sentence with a
-  screen reader. Nothing on the calendar changes yet when a message is opened. A time an
+  screen reader. Opening a message left your calendar as it was; the entry above changes
+  that. A time an
   invitation names in the sender's own time zone is read as that time on your clock, as the
   calendar already reads one, so a meeting from somebody in another zone is said at the hour
   they wrote. A message whose text the download brought before this version still has no

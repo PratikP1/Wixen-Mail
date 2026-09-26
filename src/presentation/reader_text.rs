@@ -86,6 +86,11 @@ pub struct ReaderDocument {
     /// all rather than greyed ones: an invitation that cannot be answered has
     /// its reason in the bar instead (#50 point 7).
     pub answering: Option<crate::application::answering::TheButtons>,
+    /// The calendar row a Remove from Calendar button marks called off, for
+    /// one message whose organiser cancelled a meeting on the calendar.
+    ///
+    /// `None` for everything else, and then the window builds no such button.
+    pub removal: Option<String>,
 }
 
 /// A decoded picture, ready for a window to draw.
@@ -339,6 +344,7 @@ pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -
         // Offered by `with_answer_buttons` when what is said about the
         // message is folded in, never by the composition of its text.
         answering: None,
+        removal: None,
         attachments: attachments_of(message),
     }
     // Before a caller folds in a signature verdict, and that ordering is
@@ -851,6 +857,7 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
         picture: None,
         looks_unsafe: false,
         answering: None,
+        removal: None,
         landmarks,
         // A PDF gets no warning bar of its own. The bar says what the mail
         // provider's filter made of the message, and that verdict belongs to
@@ -898,6 +905,7 @@ pub fn text_document(
         picture: None,
         looks_unsafe: false,
         answering: None,
+        removal: None,
         warning: None,
         // Nothing hangs off a text file, so no list and nothing extra to tab
         // past.
@@ -1000,6 +1008,7 @@ pub fn image_document(attachment: &ReaderAttachment, bytes: &[u8]) -> ReaderDocu
         // mattered.
         looks_unsafe: false,
         answering: None,
+        removal: None,
         warning: None,
         picture,
         attachments: Vec::new(),
@@ -1279,6 +1288,7 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         picture: None,
         looks_unsafe: warning.is_some(),
         answering: None,
+        removal: None,
         landmarks,
         warning,
         // Every message's attachments, in the order the messages are read, so
@@ -1935,7 +1945,32 @@ impl ReaderDocument {
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)
+    }
+
+    /// What opening the message changed on the calendar, and Remove from
+    /// Calendar where a cancellation is offered for removal.
+    ///
+    /// # Why this must be folded in before a signature verdict
+    ///
+    /// [`with_encryption`](Self::with_encryption)'s reason exactly: a sentence
+    /// folded in below "More about this signature:" is on screen and never
+    /// spoken, and "Moved on your calendar" is the one sentence here that says
+    /// something was done.
+    pub fn with_meeting_change(
+        mut self,
+        change: &crate::application::meeting_changes::MeetingChange,
+    ) -> Self {
+        if let Some(sentence) = change.said() {
+            // Under the meeting's own sentence, which is what it is about.
+            self.warning = Some(match self.warning.take() {
+                Some(already) => format!("{already}\n{sentence}"),
+                None => sentence,
+            });
+        }
+        self.removal = change.offered_removal().map(str::to_string);
+        self
     }
 }
 
@@ -3309,6 +3344,7 @@ mod warning_tests {
             picture: None,
             looks_unsafe: false,
             answering: None,
+            removal: None,
         }
     }
 
@@ -5121,5 +5157,114 @@ mod answer_button_tests {
         let document = conversation("Quarterly review", &[part(0), part(1)]);
 
         assert_eq!(document.answering, None);
+    }
+}
+
+#[cfg(test)]
+mod meeting_change_tests {
+    use super::tests::{aloud, message};
+    use super::*;
+    use crate::application::meeting_changes::{MeetingChange, Why};
+    use crate::application::reading_a_message::WhatIsSaidAboutIt;
+
+    fn one_message(said: &WhatIsSaidAboutIt) -> ReaderDocument {
+        single_message(
+            &message(),
+            &MessageBody::Plain("The review has moved.".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(said)
+    }
+
+    fn a_removal_offered() -> WhatIsSaidAboutIt {
+        WhatIsSaidAboutIt {
+            change: MeetingChange::OfferRemoval {
+                event_id: "evt-1".to_string(),
+            },
+            ..WhatIsSaidAboutIt::nothing()
+        }
+    }
+
+    #[test]
+    fn test_a_move_made_on_opening_is_said_above_the_signature() {
+        // "Moved on your calendar" is the one sentence that says something was
+        // done, and on a signed message it has to sit above "More about this
+        // signature:" or it is on screen and never heard.
+        let said = WhatIsSaidAboutIt {
+            change: MeetingChange::Move {
+                event_id: "evt-1".to_string(),
+                from: "05/03/2026 at 09:00".to_string(),
+                to: "06/03/2026 at 14:00".to_string(),
+            },
+            signature: crate::application::checking_signatures::SignatureCheck::NotKept,
+            ..WhatIsSaidAboutIt::nothing()
+        };
+
+        let document = one_message(&said);
+
+        let spoken = said_before_the_message(document.warning.as_deref().expect("a bar"));
+        assert!(
+            spoken.contains(
+                "Moved on your calendar from 05/03/2026 at 09:00 to 06/03/2026 at 14:00."
+            ),
+            "{spoken}"
+        );
+        assert_eq!(document.removal, None);
+    }
+
+    #[test]
+    fn test_why_a_change_was_not_applied_is_said_in_the_bar() {
+        let document = one_message(&WhatIsSaidAboutIt {
+            change: MeetingChange::SaidNotApplied(Why::NoOrganiserRecorded),
+            ..WhatIsSaidAboutIt::nothing()
+        });
+
+        assert!(
+            document
+                .warning
+                .as_deref()
+                .is_some_and(|bar| bar.contains("does not say who organised it")),
+            "{:?}",
+            document.warning
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_offered_for_removal_carries_its_meeting_into_the_document() {
+        // The window builds the button from the document, so the document is
+        // what has to carry the row it marks.
+        let document = one_message(&a_removal_offered());
+
+        assert_eq!(document.removal.as_deref(), Some("evt-1"));
+        assert!(
+            document
+                .warning
+                .as_deref()
+                .is_some_and(|bar| bar.contains("Remove from Calendar takes it off yours.")),
+            "{:?}",
+            document.warning
+        );
+    }
+
+    #[test]
+    fn test_a_conversation_of_several_messages_offers_no_removal() {
+        // One button over a thread of two is heard as removing both.
+        let part = |depth| ConversationPart {
+            message: message(),
+            body: MessageBody::Plain("It is off.".to_string()),
+            said: a_removal_offered(),
+            depth,
+        };
+
+        assert_eq!(
+            conversation("Quarterly review", &[part(0), part(1)]).removal,
+            None
+        );
+        assert_eq!(
+            conversation("Quarterly review", &[part(0)])
+                .removal
+                .as_deref(),
+            Some("evt-1")
+        );
     }
 }

@@ -65,6 +65,7 @@ use crate::application::answering;
 use crate::application::checking_signatures::{self, SignatureCheck};
 use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
 use crate::application::invitations::{self, WhatTheInvitationSays};
+use crate::application::meeting_changes::MeetingChange;
 use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
@@ -103,6 +104,10 @@ pub struct WhatIsSaidAboutIt {
     pub answering: answering::AnswerButtons,
     /// What the signature was worth, for a message that said it was signed.
     pub signature: SignatureCheck,
+    /// What opening the message changed on the calendar, which only a reader
+    /// window asks: nothing for every other surface, and for nearly every
+    /// message (#50 points 2 and 3).
+    pub change: MeetingChange,
 }
 
 /// Who answers an invitation that arrived on one account, and whether that
@@ -163,6 +168,7 @@ impl WhatIsSaidAboutIt {
             invitation: WhatTheInvitationSays::Nothing,
             answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotSigned,
+            change: MeetingChange::Nothing,
         }
     }
 }
@@ -228,6 +234,8 @@ pub fn put_together(
             invitation,
             answering,
             signature,
+            // Asked by a reader window after this, and by nothing else.
+            change: MeetingChange::Nothing,
         },
     }
 }
@@ -371,6 +379,95 @@ fn the_answer_given_to(
             None
         })?
         .answer
+}
+
+/// What opening a stored message in a reader window changes on the calendar,
+/// with a move already saved.
+///
+/// Asked by the two reader windows and by nothing else, before the message's
+/// document is built. The preview is left out on purpose: it opens a message
+/// as the cursor moves over it, and a calendar change made by arrowing past a
+/// message is a change nobody asked for. A cancellation is only offered here;
+/// Remove from Calendar marks it.
+///
+/// Reads the stored parts, which are never decrypted, so a meeting inside
+/// decrypted content cannot change the calendar through this (question 9).
+/// `from` is the sender as the header carried it; `answering_as` says what the
+/// account the message arrived on may change.
+pub fn what_opening_it_in_a_reader_changed(
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    from: &str,
+    dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
+) -> MeetingChange {
+    use crate::application::meeting_changes::{self, TheCalendarsCopy, Why};
+
+    let Some(cache) = cache else {
+        return MeetingChange::Nothing;
+    };
+    if !carries_a_calendar_part(cache, message_row_id) {
+        return MeetingChange::Nothing;
+    }
+    // The same reading the sentence and the buttons take, so the meeting
+    // changed is the meeting said.
+    let found = crate::application::answered_meetings::the_invitation_on(cache, message_row_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's invitation to see what it changes: {e}");
+            None
+        });
+    let Some(found) = found else {
+        return MeetingChange::Nothing;
+    };
+    let Ok(invitation) = invitations::read_the_invitation(&found.document) else {
+        return MeetingChange::Nothing;
+    };
+    let copy = cache
+        .get_event_by_ical_uid(&found.account, &invitation.uid)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not look a meeting up on the calendar: {e}");
+            None
+        });
+    let organiser = copy.as_ref().and_then(|copy| {
+        cache
+            .the_organiser_on_the_calendar(&copy.id)
+            .unwrap_or_else(|e| {
+                tracing::warn!("Could not read who organised a meeting: {e}");
+                None
+            })
+    });
+    let answered_version = copy.as_ref().and_then(|copy| {
+        cache
+            .the_answer_given_here(&copy.id)
+            .unwrap_or_else(|e| {
+                tracing::warn!("Could not read which version of a meeting was answered: {e}");
+                None
+            })
+            .map(|here| here.version)
+    });
+    let change = meeting_changes::what_opening_it_changes(
+        invitations::what_it_asks(&found.document),
+        &invitation,
+        copy.as_ref().map(|copy| TheCalendarsCopy {
+            copy,
+            organiser: organiser.as_deref(),
+            answered_version,
+        }),
+        from,
+        answering_as(&found.account).allowed,
+        dates(),
+    );
+    // A move is saved here, before the document is built, so what is said
+    // about the meeting is said against the calendar as it now is. A
+    // cancellation is only offered: Remove from Calendar marks it.
+    if let (MeetingChange::Move { .. }, Some(copy)) = (&change, copy.as_ref())
+        && let Err(e) =
+            cache.save_calendar_event(&meeting_changes::the_copy_moved(copy, &invitation))
+    {
+        tracing::warn!("Could not move a meeting on the calendar: {e}");
+        return MeetingChange::SaidNotApplied(Why::CouldNotBeSaved);
+    }
+    change
 }
 
 /// Keep what a message downloaded for its text carried, so what is said about
@@ -1111,6 +1208,7 @@ mod tests {
             invitation: WhatTheInvitationSays::Nothing,
             answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotKept,
+            change: MeetingChange::Nothing,
         };
 
         let document =

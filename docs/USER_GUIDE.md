@@ -588,7 +588,7 @@ four:
 | a change to the meeting on your calendar, which was ... | Your calendar holds the meeting at another time, or you answered an earlier version of it, and the sentence says when it was. |
 | and you accepted this version, and you said you might attend this version, or and you declined this version | You answered this version here already, or a later one, and that was your answer. |
 | and you have answered this version | The same, for an answer given before Wixen Mail kept which answer it was. |
-| and it is already on your calendar | Your calendar holds the meeting at this time and nobody answered it here. Google puts an invitation on your calendar when it arrives, which is how this happens. |
+| and it is already on your calendar | Your calendar holds the meeting at this time: Google put it there when the invitation arrived, or the organiser's update already moved it there, when you opened the update or at the provider. |
 
 Other messages about meetings say:
 
@@ -649,10 +649,34 @@ meeting is put
 on your calendar, and your answer is kept beside it, so the next time the
 invitation is opened the sentence says which way you answered.
 
-What this does not do yet: opening a message leaves your calendar as it was,
-and no invitation from a real Outlook, Google or calendar server
-organiser has been read here, nor has any answer reached one. Nobody has
-listened to the buttons with a screen reader yet. A time an invitation names in the sender's own
+#### When the organiser moves or cancels a meeting
+
+Opening an update or a cancellation in the reader window or the formatted
+window can change your calendar, but only when it comes from the organiser
+your calendar records for that meeting. Anybody can send a message that names
+a meeting, so a change from anybody else is said and never applied.
+
+| The message | What happens |
+|---|---|
+| An update from the organiser that moves the meeting | The meeting moves on your calendar when you open the message, and the bar says so: "Moved on your calendar from 05/03/2026 at 09:00 to 06/03/2026 at 14:00." |
+| A cancellation from the organiser | The bar says "The organiser has called this meeting off. Remove from Calendar takes it off yours." and there is one button, Remove from Calendar, on `Alt+R`. Pressing it marks the meeting cancelled, so the time is free, and keeps it on your calendar marked that way. Nothing is sent to the organiser. |
+| Either, from somebody other than the organiser | Nothing on your calendar changes, and the bar says who it came from and who the organiser is. |
+| Either, for a meeting your calendar does not record an organiser for | Nothing changes, and the bar says the meeting on your calendar does not say who organised it. A meeting put on your calendar by an earlier version records nobody until your calendar provider sends it again, or you answer it here. |
+| Either, for a repeating meeting | Nothing changes, and the bar says changing one day of a repeating meeting is not done here yet, because applied to the series it would change every day. |
+
+The preview pane never changes your calendar. It says what the message is,
+as above, because it opens a message just by moving past it, and a meeting
+should not move because the cursor did. The account's Allow Changes answer
+applies: with changes to calendars switched off for the account, the bar says
+so and nothing moves. A change made here is sent to your calendar provider
+like any other change to an event, the next time the calendar is checked.
+
+What this does not do yet: no invitation, update or cancellation from a real
+Outlook, Google or calendar server organiser has been read here, nor has any
+answer reached one, and a move or a removal sent back to Google or Microsoft
+after they applied the same update themselves has not been tried. A sender's
+address can be forged, and nothing here checks the provider's own verdict on
+it yet. Nobody has listened to the buttons with a screen reader yet. A time an invitation names in the sender's own
 time zone is read as that time on your clock, as the calendar reads one, so a
 meeting from somebody in another zone is said at the hour they wrote. A
 message whose text was downloaded in the background before this version has no

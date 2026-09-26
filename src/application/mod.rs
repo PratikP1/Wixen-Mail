@@ -79,6 +79,7 @@ pub mod mail_session;
 pub mod mail_sync;
 pub mod mailto;
 pub mod marking_read;
+pub mod meeting_changes;
 pub mod message_files;
 pub mod message_id;
 pub mod messages;

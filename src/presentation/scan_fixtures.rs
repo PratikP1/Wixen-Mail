@@ -38,6 +38,10 @@ pub const THE_ADDRESS_WRITTEN_OUT: &str = "https://example.org/written-out";
 /// A meeting invitation Somebody sends the scan's reader target, with the
 /// guest it names able to answer, so the scan reaches the three buttons at
 /// their own handles (13-11).
+///
+/// And Remove from Calendar beside them (13-13). No real message is both an
+/// invitation and a cancellation, and the scan opens one reader tab, so this
+/// is how the scan reaches the fourth button at its own handle.
 pub fn an_answerable_invitation(
     message_row_id: i64,
 ) -> crate::application::reading_a_message::WhatIsSaidAboutIt {
@@ -64,6 +68,9 @@ pub fn an_answerable_invitation(
             None,
             dates,
         ),
+        change: crate::application::meeting_changes::MeetingChange::OfferRemoval {
+            event_id: "scan-target".to_string(),
+        },
         ..WhatIsSaidAboutIt::nothing()
     }
 }
@@ -373,6 +380,19 @@ mod tests {
             ),
             "{:?}",
             an_answerable_invitation(1).answering
+        );
+    }
+
+    #[test]
+    fn test_the_invitation_is_offered_remove_from_calendar_as_well() {
+        // No real message is both an invitation and a cancellation. The scan
+        // opens one reader tab, and this is how it reaches Remove from Calendar
+        // at its own handle beside the three answers (13-13).
+        assert_eq!(
+            an_answerable_invitation(1).change.offered_removal(),
+            Some("scan-target"),
+            "{:?}",
+            an_answerable_invitation(1).change
         );
     }
 

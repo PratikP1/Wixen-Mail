@@ -693,6 +693,31 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Mark a meeting its organiser called off: cancelled, taking up no time,
+    /// and waiting to be sent like any change made here.
+    ///
+    /// Marked rather than deleted. A deletion here is carried to the provider
+    /// on the next push, and a meeting called off by a message is taken off a
+    /// provider's calendar on nobody's word but the message's. Answers whether
+    /// there was a meeting under `event_id` to mark.
+    pub fn mark_the_meeting_called_off(&self, event_id: &str) -> Result<bool> {
+        let marked = self
+            .conn
+            .execute(
+                "UPDATE calendar_events
+                 SET status = 'cancelled', show_as = 'free', pending = 1, updated_at = ?2
+                 WHERE id = ?1",
+                params![event_id, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to mark a meeting called off on the calendar: {}",
+                    e
+                ))
+            })?;
+        Ok(marked > 0)
+    }
+
     /// Delete an event somebody deleted here, and note that the provider still
     /// has it.
     ///
@@ -2259,6 +2284,48 @@ mod tests {
                 .pending_calendar_events("acct")
                 .expect("what is waiting")
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_meeting_called_off_is_marked_and_kept_and_waits_to_be_sent() {
+        // Remove from Calendar marks the meeting cancelled and free rather
+        // than deleting it: a provider's row deleted here would be deleted at
+        // the provider on the next push, on the word of a message (13-13).
+        let cache = temp_cache("cal_called_off");
+        let mut event = make_event("evt-1", "acct", "uid-1", "Quarterly review");
+        event.status = "confirmed".to_string();
+        event.show_as = "busy".to_string();
+        cache.save_calendar_event(&event).expect("the event");
+
+        let marked = cache
+            .mark_the_meeting_called_off("evt-1")
+            .expect("the calendar to be written");
+
+        assert!(marked, "a meeting on the calendar was not marked");
+        let stored = cache
+            .get_event_by_id("evt-1")
+            .expect("the calendar to be readable")
+            .expect("the meeting to still be there");
+        assert_eq!(stored.status, "cancelled");
+        assert_eq!(stored.show_as, "free");
+        assert!(
+            stored.pending,
+            "a change nobody sends never reaches the provider"
+        );
+        assert_eq!(stored.summary, "Quarterly review");
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty(),
+            "the meeting was noted as deleted"
+        );
+        assert!(
+            !cache
+                .mark_the_meeting_called_off("evt-gone")
+                .expect("the calendar to be written"),
+            "a meeting that is not there was reported as marked"
         );
     }
 

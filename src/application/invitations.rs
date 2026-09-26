@@ -733,7 +733,7 @@ const LONGEST_CLAUSE: usize = 200;
 /// each line of the bar as a paragraph, so what followed the break would read as
 /// a sentence of this program's. Control characters go the same way, and runs
 /// of space become one.
-fn plainly(written: &str) -> String {
+pub(crate) fn plainly(written: &str) -> String {
     let one_line = written
         .chars()
         .map(|character| {
@@ -814,9 +814,12 @@ fn an_invitation_said(
 /// What an invitation is to a meeting the calendar already holds.
 ///
 /// An answer given here settles it by version, through [`what_changed`], so the
-/// rule that an older invitation moves nothing is written once. With no answer
-/// given here, the copy is a calendar server's, which files invitations as they
-/// arrive, and only a different time makes it a change.
+/// rule that an older invitation moves nothing is written once. Past that, only
+/// a different time makes it a change. With no answer given here, the copy is a
+/// calendar server's, which files invitations as they arrive. With one, a later
+/// version at the time the calendar already holds is a move already made, by
+/// the provider or by opening the organiser's update here (13-13), and "which
+/// was" that same time would describe it as one still to come.
 fn the_standing_against(
     invitation: &Invitation,
     when: &str,
@@ -824,12 +827,7 @@ fn the_standing_against(
     answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> Standing {
-    let was = when_the_meeting_is(
-        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
-        Some(&copy.end_datetime),
-        copy.is_all_day,
-        dates,
-    );
+    let was = when_the_copy_is(copy, dates);
     let answered = answered_here.map(|here| {
         (
             AlreadyOnTheCalendar {
@@ -840,12 +838,13 @@ fn the_standing_against(
         )
     });
     match answered {
-        Some((held, answer)) => match what_changed(invitation, Some(&held)) {
-            WhatChanged::NothingNew => Standing::AlreadyAnswered { answer },
-            WhatChanged::AChange | WhatChanged::ANewMeeting => Standing::Changed { from: was },
-        },
-        None if was == when => Standing::AlreadyOnTheCalendar,
-        None => Standing::Changed { from: was },
+        Some((held, answer))
+            if what_changed(invitation, Some(&held)) == WhatChanged::NothingNew =>
+        {
+            Standing::AlreadyAnswered { answer }
+        }
+        _ if was == when => Standing::AlreadyOnTheCalendar,
+        _ => Standing::Changed { from: was },
     }
 }
 
@@ -922,6 +921,26 @@ pub fn when_the_invitation_is(invitation: &Invitation, dates: DateSettings) -> S
         invitation.is_all_day,
         dates,
     )
+}
+
+/// When the calendar's copy of a meeting is, in the words an invitation's
+/// time is said in, so the two can be compared and neither said differently.
+pub fn when_the_copy_is(
+    copy: &crate::data::message_cache::CalendarEventEntry,
+    dates: DateSettings,
+) -> String {
+    when_the_meeting_is(
+        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
+        Some(&copy.end_datetime),
+        copy.is_all_day,
+        dates,
+    )
+}
+
+/// When a meeting starts, and nothing about when it ends: the whole date and
+/// the hour, or the date alone for a meeting of whole days.
+pub fn when_it_starts(starts: &str, is_all_day: bool, dates: DateSettings) -> String {
+    when_the_meeting_is(starts, None, is_all_day, dates)
 }
 
 /// Where a stored moment falls on this computer's clock.
@@ -2133,6 +2152,26 @@ mod tests {
         assert!(
             says.said()
                 .is_some_and(|said| said.ends_with(", and you have answered this version.")),
+            "{:?}",
+            says.said()
+        );
+    }
+
+    #[test]
+    fn test_a_later_version_at_the_time_the_calendar_already_holds_is_said_to_be_there() {
+        // Answered here at version 1, and the calendar already at version 2's
+        // hour: because the organiser's update moved it when the message was
+        // opened (13-13), or because the provider moved it. "A change to the
+        // meeting on your calendar, which was" the very time the sentence has
+        // just said would describe a move that has already happened as one
+        // still to come.
+        let copy = the_calendar_holding("2026-03-05T09:00:00", "2026-03-05T10:00:00");
+
+        let says = said_about(&an_invitation_at_nine(), Some(&copy), Some(1));
+
+        assert!(
+            says.said()
+                .is_some_and(|said| said.ends_with(", and it is already on your calendar.")),
             "{:?}",
             says.said()
         );

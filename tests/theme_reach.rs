@@ -924,6 +924,9 @@ fn document_that_exercises_every_optional_widget() -> ReaderDocument {
         }),
         looks_unsafe: true,
         answering: None,
+        // A button keeps the colours Windows gives it, so Remove from
+        // Calendar has nothing here to read, as the answer buttons have not.
+        removal: None,
         attachments: vec![ReaderAttachment {
             message_row_id: 1,
             uid: 1,
