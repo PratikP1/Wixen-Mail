@@ -268,7 +268,7 @@ pub fn invitation_check_for(
         .zip(invitations::the_meeting_named_in(&document))
         .and_then(|(account, uid)| {
             cache
-                .get_event_by_provider_id(&account, &uid)
+                .get_event_by_ical_uid(&account, &uid)
                 .unwrap_or_else(|e| {
                     tracing::warn!("Could not look a meeting up on the calendar: {e}");
                     None
@@ -359,7 +359,7 @@ fn the_answer_given_to(
     uid: &str,
 ) -> Option<invitations::Answer> {
     let copy = cache
-        .get_event_by_provider_id(account, uid)
+        .get_event_by_ical_uid(account, uid)
         .unwrap_or_else(|e| {
             tracing::warn!("Could not look a meeting up on the calendar: {e}");
             None

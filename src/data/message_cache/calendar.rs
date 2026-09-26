@@ -497,28 +497,82 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Stub for the red commit.
+    /// Write down the meeting's iCalendar UID and who called it, as whoever
+    /// filed the row said.
+    ///
+    /// Kept off [`CalendarEventEntry`] for the reason [`Self::the_answer_given_here`]
+    /// gives, and written by its own statement after the save, so a save never
+    /// clears them. Written whole: the provider's copy is the authority on both.
     pub fn remember_where_it_came_from(
         &self,
-        _event_id: &str,
-        _ical_uid: Option<&str>,
-        _organiser: Option<&str>,
+        event_id: &str,
+        ical_uid: Option<&str>,
+        organiser: Option<&str>,
     ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendar_events SET ical_uid = ?2, organiser = ?3 WHERE id = ?1",
+                params![event_id, ical_uid, organiser],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to record where a meeting came from: {}", e))
+            })?;
         Ok(())
     }
 
-    /// Stub for the red commit.
+    /// The meeting an invitation names, by the UID every calendar shares.
+    ///
+    /// A row that knows its UID is found by it. A row that does not is found
+    /// by its provider identifier, which is the UID for every calendar
+    /// server's row, every meeting an answer filed here, and every row stored
+    /// before the UID was kept. A row that knows its UID is preferred, and is
+    /// never found by an identifier that only happens to match its provider's.
     pub fn get_event_by_ical_uid(
         &self,
-        _account_id: &str,
-        _ical_uid: &str,
+        account_id: &str,
+        ical_uid: &str,
     ) -> Result<Option<CalendarEventEntry>> {
-        Ok(None)
+        let sql = format!(
+            "SELECT {} FROM calendar_events
+             WHERE account_id = ?1
+               AND (ical_uid = ?2 OR (ical_uid IS NULL AND provider_event_id = ?2))
+             ORDER BY ical_uid IS NULL
+             LIMIT 1",
+            EVENT_COLS
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare the meeting lookup: {}", e)))?;
+
+        let mut rows = stmt
+            .query_map(params![account_id, ical_uid], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to look the meeting up: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read the meeting: {}", e))),
+            None => Ok(None),
+        }
     }
 
-    /// Stub for the red commit.
-    pub fn the_organiser_on_the_calendar(&self, _event_id: &str) -> Result<Option<String>> {
-        Ok(None)
+    /// Who called the meeting, as whoever filed it said; nothing when nobody
+    /// said, which is every row stored before this was kept.
+    pub fn the_organiser_on_the_calendar(&self, event_id: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT organiser FROM calendar_events WHERE id = ?1")
+            .map_err(|e| Error::Other(format!("Failed to prepare the organiser lookup: {}", e)))?;
+
+        let mut rows = stmt
+            .query_map(params![event_id], |row| row.get::<_, Option<String>>(0))
+            .map_err(|e| Error::Other(format!("Failed to query the organiser: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(organiser)) => Ok(organiser),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read the organiser: {}", e))),
+            None => Ok(None),
+        }
     }
 
     /// Get a single event by the identity it carries on this computer.

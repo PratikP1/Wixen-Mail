@@ -173,8 +173,9 @@ pub fn file_the_answer(
 
     // Scoped to this account, so an invitation naming itself after a meeting on
     // somebody else's calendar in this program finds nothing and replaces
-    // nothing.
-    let already = cache.get_event_by_provider_id(account_id, &invitation.uid)?;
+    // nothing. By the meeting's UID, so a meeting a provider filed under an
+    // identifier of its own is found rather than filed a second time.
+    let already = cache.get_event_by_ical_uid(account_id, &invitation.uid)?;
     let answered_before = match &already {
         Some(row) => cache.the_answer_given_here(&row.id)?,
         None => None,
@@ -207,21 +208,55 @@ pub fn file_the_answer(
         None => "confirmed".to_string(),
     };
 
-    let the_row = the_row_an_answer_leaves(
-        &holding,
-        invitation,
-        WhereItGoes {
-            account_id,
-            calendar_id: &calendar_id,
-            id: &id,
-            status: &status,
-        },
+    let the_row = still_where_it_came_from(
+        the_row_an_answer_leaves(
+            &holding,
+            invitation,
+            WhereItGoes {
+                account_id,
+                calendar_id: &calendar_id,
+                id: &id,
+                status: &status,
+            },
+        ),
+        already.as_ref(),
     );
     cache.save_calendar_event(&the_row)?;
     // After the save, because a version written against a row that is not there
     // records an answer to a meeting nobody can see.
     cache.remember_the_answer(&the_row.id, holding.version, answer)?;
+    // The organiser already on the calendar's copy wins over the invitation's.
+    // A stranger can send an invitation carrying a real meeting's UID, and the
+    // rule that only the organiser may move or cancel a meeting trusts this.
+    let organiser = match already.as_ref() {
+        Some(row) => cache.the_organiser_on_the_calendar(&row.id)?,
+        None => None,
+    }
+    .or_else(|| invitation.organiser.as_ref().map(|who| who.address.clone()));
+    cache.remember_where_it_came_from(&the_row.id, Some(&invitation.uid), organiser.as_deref())?;
     Ok(())
+}
+
+/// The answer's row, still filed where the calendar's copy came from.
+///
+/// A provider's row keeps the provider's identifier and its version marker,
+/// or the next sync finds nothing under that identifier and files the meeting
+/// again beside the answer. A row an answer filed carries nothing of the kind,
+/// and a meeting the calendar has never held has no row to keep them from.
+fn still_where_it_came_from(
+    answered: CalendarEventEntry,
+    already: Option<&CalendarEventEntry>,
+) -> CalendarEventEntry {
+    match already {
+        Some(held) => CalendarEventEntry {
+            provider_event_id: held.provider_event_id.clone(),
+            source_provider: held.source_provider.clone(),
+            etag: held.etag.clone(),
+            web_link: held.web_link.clone(),
+            ..answered
+        },
+        None => answered,
+    }
 }
 
 /// The message an invitation is answered from, as the answer needs it.

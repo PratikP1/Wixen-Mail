@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 346 records have arrived since and have not been through it.
+# 348 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -1532,7 +1532,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/data/message_cache/calendar.rs", tests = 42 },
+    { file = "src/data/message_cache/calendar.rs", tests = 46 },
 ]
 
 [[guard]]
@@ -1550,7 +1550,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/data/message_cache/calendar.rs", tests = 42 },
+    { file = "src/data/message_cache/calendar.rs", tests = 46 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -12581,7 +12581,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
-    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -16731,7 +16731,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
     { file = "src/application/opening_pgp.rs", tests = 5 },
-    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
     { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
@@ -17624,7 +17624,7 @@ red = [
     "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
@@ -17964,9 +17964,13 @@ red = [
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
     "application::answered_meetings::tests::test_a_held_answer_is_filed_on_the_calendar_while_it_waits_to_go",
     "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
+    # 13-12's: the organiser is written against the saved row, and Google's
+    # row is found by its UID and answered on.
+    "application::answered_meetings::tests::test_an_answer_filed_as_a_new_row_records_who_called_the_meeting",
+    "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 19 },
+    { file = "src/application/answered_meetings.rs", tests = 22 },
 ]
 
 # ── The version answered is written against the row that is really here ─────
@@ -18002,9 +18006,11 @@ after = """    let id = uuid::Uuid::new_v4().to_string();"""
 red = [
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
     "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
+    # 13-12's: a fresh identity writes a second row beside Google's.
+    "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 19 },
+    { file = "src/application/answered_meetings.rs", tests = 22 },
 ]
 
 # ── The count of held-back pictures, kept and said ──────────────────────────
@@ -24440,9 +24446,12 @@ red = [
     "application::answered_meetings::tests::test_the_meetings_own_status_is_not_the_guests_answer",
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
     "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
+    # 13-12's, which answer through the same fixture.
+    "application::answered_meetings::tests::test_an_answer_filed_as_a_new_row_records_who_called_the_meeting",
+    "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 19 },
+    { file = "src/application/answered_meetings.rs", tests = 22 },
 ]
 
 # Answering a meeting with the hold off told "Sending to ..." and handed to
@@ -24734,7 +24743,7 @@ red = [
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
 ]
 
 # The order of the fold: a signature verdict puts "More about this signature:"
@@ -24773,7 +24782,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
     { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
@@ -31487,7 +31496,7 @@ red = [
     "test_a_download_leaves_the_files_the_reader_kept_where_they_are",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]
 
@@ -31504,10 +31513,16 @@ red = [
     "data::message_cache::calendar::tests::test_the_answer_given_is_remembered_beside_the_version",
     "data::message_cache::calendar::tests::test_a_database_that_kept_only_the_version_reads_as_no_answer_and_learns_one",
     "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
+    # Found by 13-12's re-measure: the buttons read the answer back, and
+    # Google's row asserts the answer written on it.
+    "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
+    "application::reading_a_message::tests::test_each_button_says_what_it_does_to_an_answer_already_given_here",
+    "application::reading_a_message::tests::test_the_buttons_say_the_answer_given_to_a_meeting_google_filed",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 19 },
-    { file = "src/data/message_cache/calendar.rs", tests = 42 },
+    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/data/message_cache/calendar.rs", tests = 46 },
 ]
 
 # The answer to a meeting sent with no In-Reply-To and no References, which is
@@ -31683,4 +31698,43 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 19 },
+]
+
+# A meeting a Google or Microsoft sync filed under the provider's own
+# identifier, looked up by the UID an invitation names it by. Without the
+# UID clause the lookup is the provider-id one it replaced, the reader says
+# the meeting is new while it is on the calendar, and an answer files it a
+# second time (research finding 2, ledger 154). Written 2026-09-26 by 13-12,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a meeting a provider filed is found by the UID its invitation names"
+file = "src/data/message_cache/calendar.rs"
+before = """               AND (ical_uid = ?2 OR (ical_uid IS NULL AND provider_event_id = ?2))"""
+after = """               AND provider_event_id = ?2"""
+red = [
+    "data::message_cache::calendar::tests::test_a_meeting_a_provider_filed_is_found_by_its_uid_and_not_by_its_provider_id",
+    "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
+    "application::reading_a_message::tests::test_an_invitation_for_a_meeting_google_already_filed_is_said_to_be_on_the_calendar",
+    "application::reading_a_message::tests::test_the_buttons_say_the_answer_given_to_a_meeting_google_filed",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/data/message_cache/calendar.rs", tests = 46 },
+]
+
+# The answer looking its meeting up by the provider's identifier again, which
+# finds nothing a Google or Microsoft sync filed and puts the meeting on the
+# calendar a second time beside the provider's copy. Written 2026-09-26 by
+# 13-12, measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "answering a meeting a provider holds writes on that row and adds none"
+file = "src/application/answered_meetings.rs"
+before = """    let already = cache.get_event_by_ical_uid(account_id, &invitation.uid)?;"""
+after = """    let already = cache.get_event_by_provider_id(account_id, &invitation.uid)?;"""
+red = [
+    "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 22 },
 ]

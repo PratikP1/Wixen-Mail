@@ -3187,6 +3187,15 @@ impl MessageCache {
         // and a row with a version and nothing here reads as answered without
         // saying which way, which is all anything before this knew.
         self.ensure_column_exists("calendar_events", "answered_with", "TEXT")?;
+        // The meeting's iCalendar UID, the name an invitation calls it by,
+        // when the provider files it under an identifier of its own. Nothing
+        // for every event already stored, which fills in on the next sync; a
+        // row without one is found by its provider identifier as before.
+        self.ensure_column_exists("calendar_events", "ical_uid", "TEXT")?;
+        // Who called the meeting, as the provider or the invitation filed with
+        // it said. Nothing for every event already stored, which is nobody
+        // known rather than a guess.
+        self.ensure_column_exists("calendar_events", "organiser", "TEXT")?;
         // Where an event was at the calendar server that held it. Nothing for
         // every note already written, which is the right answer for all of
         // them: until this shipped no deletion had ever been sent anywhere, so
@@ -4017,6 +4026,11 @@ impl MessageCache {
                 -- Named here for the reason `answered_version` is, and after
                 -- it because that is the order the two are added in above.
                 answered_with TEXT,
+                -- Named here for the reason `answered_version` is: a database
+                -- old enough to need this rebuild predates any sync keeping a
+                -- meeting's UID or organiser, so there is nothing to copy.
+                ical_uid TEXT,
+                organiser TEXT,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],
