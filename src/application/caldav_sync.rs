@@ -1956,6 +1956,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_calendar_server_read_records_who_called_each_meeting() {
+        // The rule that only the organiser may move or cancel a meeting reads
+        // the organiser off the calendar's copy, and a calendar server's copy
+        // names it on the document's ORGANIZER line, a created meeting and an
+        // updated one alike.
+        let cache = temp_cache("caldav_organiser");
+        let mut calendar = container("cal-organiser", "acct");
+        cache
+            .save_calendar_event(&held_event("local-1", "already-here", &calendar.id, "acct"))
+            .expect("the event the cache already holds");
+        let called_by = |uid: &str, organiser: &str| {
+            vevent(uid).replace(
+                "STATUS:CONFIRMED",
+                &format!("ORGANIZER;CN=Ada:mailto:{organiser}\nSTATUS:CONFIRMED"),
+            )
+        };
+        let mut body = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">",
+        );
+        for (uid, organiser) in [
+            ("already-here", "ada@example.com"),
+            ("brand-new", "kit@example.com"),
+        ] {
+            body.push_str(&format!(
+                "<d:response><d:href>/cal/{uid}.ics</d:href><d:propstat><d:prop>\
+                 <d:getetag>\"tag-{uid}\"</d:getetag>\
+                 <c:calendar-data>{}</c:calendar-data>\
+                 </d:prop></d:propstat></d:response>",
+                called_by(uid, organiser)
+            ));
+        }
+        body.push_str("</d:multistatus>");
+        let (address, _heard) =
+            answering("207 Multi-Status", "application/xml; charset=utf-8", body).await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        for (uid, organiser) in [
+            ("already-here", "ada@example.com"),
+            ("brand-new", "kit@example.com"),
+        ] {
+            let row = cache
+                .get_event_by_ical_uid("acct", uid)
+                .expect("the calendar to be readable")
+                .unwrap_or_else(|| panic!("{uid} is not on the calendar"));
+            assert_eq!(
+                cache
+                    .the_organiser_on_the_calendar(&row.id)
+                    .expect("the organiser to be readable")
+                    .as_deref(),
+                Some(organiser),
+                "{uid}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_an_event_the_server_still_has_survives_and_one_it_dropped_is_removed() {
         let cache = temp_cache("removal");
         let mut calendar = container("cal-removal", "acct");

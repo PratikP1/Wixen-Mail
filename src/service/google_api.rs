@@ -317,6 +317,19 @@ pub struct GoogleEvent {
     /// and Google refuses a change that names it.
     #[serde(default, skip_serializing)]
     pub original_start_time: Option<GoogleEventDateTime>,
+    /// Stub for the red commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ical_uid: Option<String>,
+    /// Stub for the red commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organizer: Option<GoogleOrganizer>,
+}
+
+/// Stub for the red commit.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GoogleOrganizer {
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 impl GoogleEvent {
@@ -332,6 +345,11 @@ impl GoogleEvent {
             .as_deref()
             .map(str::trim)
             .filter(|named| !named.is_empty())
+    }
+
+    /// Stub for the red commit.
+    pub fn the_organisers_address(&self) -> Option<&str> {
+        None
     }
 }
 
@@ -1021,6 +1039,47 @@ mod tests {
             !named.contains(&"originalStartTime"),
             "a change would name a day it stands in for, which Google refuses: {named:?}"
         );
+    }
+
+    #[test]
+    fn test_google_names_the_meetings_uid_and_who_called_it() {
+        // An invitation names its meeting by the UID every calendar shares,
+        // and Google files it under an identifier of its own. `iCalUID` is
+        // the field name on Google's own reference page, read on 2026-09-24.
+        let answered = r#"{"id":"google-123","status":"confirmed",
+            "iCalUID":"m-1@example.com",
+            "organizer":{"email":"ada@example.com","displayName":"Ada Lovelace"}}"#;
+
+        let read: GoogleEvent = serde_json::from_str(answered).expect("Google's event to read");
+
+        assert_eq!(read.ical_uid.as_deref(), Some("m-1@example.com"));
+        assert_eq!(read.the_organisers_address(), Some("ada@example.com"));
+    }
+
+    #[test]
+    fn test_the_meetings_uid_and_organiser_are_never_sent_back_to_google() {
+        // Both are read for finding the meeting and never written: Google's
+        // reference says the UID is not writable, and nothing edited here is
+        // about who called a meeting, so a change sent back is byte for byte
+        // what it was before these were read.
+        let read = GoogleEvent {
+            summary: Some("Quarterly review".to_string()),
+            ical_uid: Some("m-1@example.com".to_string()),
+            organizer: Some(GoogleOrganizer {
+                email: Some("ada@example.com".to_string()),
+            }),
+            ..GoogleEvent::default()
+        };
+
+        let going_out = serde_json::to_value(&read).expect("a body");
+
+        let named: Vec<&str> = going_out
+            .as_object()
+            .expect("an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(named, ["summary"], "{going_out}");
     }
 
     #[test]

@@ -7375,6 +7375,123 @@ mod tests {
         );
     }
 
+    /// Whether the calendar holds a row for the meeting named `uid` under the
+    /// provider's own `provider_event_id`, and who it says called it.
+    fn found_by_its_uid(
+        cache: &MessageCache,
+        uid: &str,
+        provider_event_id: &str,
+    ) -> Option<String> {
+        let row = cache
+            .get_event_by_ical_uid("acct", uid)
+            .expect("the calendar to be readable")
+            .unwrap_or_else(|| panic!("nothing on the calendar goes by the UID {uid}"));
+        assert_eq!(row.provider_event_id.as_deref(), Some(provider_event_id));
+        cache
+            .the_organiser_on_the_calendar(&row.id)
+            .expect("the organiser to be readable")
+    }
+
+    /// A Google read of one meeting the calendar already holds and one it
+    /// does not leaves both findable by the UID an invitation names them by,
+    /// with who called each, because the answer and the reader look a meeting
+    /// up that way (research finding 2).
+    #[tokio::test]
+    async fn test_a_google_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser() {
+        let cache = temp_cache("google_read_keeps_the_uid");
+        an_event_already_synced_in(
+            &cache,
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            "evt1",
+            "",
+            "confirmed",
+        );
+        let with_uids = r#"{"items":[
+            {"id":"evt1","status":"confirmed","summary":"Standup","etag":"\"e1\"",
+             "iCalUID":"standup@example.com","organizer":{"email":"ada@example.com"},
+             "start":{"dateTime":"2026-03-06T09:00:00Z"},"end":{"dateTime":"2026-03-06T09:15:00Z"}},
+            {"id":"evt2","status":"confirmed","summary":"Review","etag":"\"e2\"",
+             "iCalUID":"review@example.com","organizer":{"email":"kit@example.com"},
+             "start":{"dateTime":"2026-03-07T09:00:00Z"},"end":{"dateTime":"2026-03-07T10:00:00Z"}}
+            ],"nextSyncToken":"marker-1"}"#;
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec![with_uids.to_string()]).await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "one read").await.expect("one request");
+
+        assert_eq!(
+            found_by_its_uid(&cache, "standup@example.com", "evt1").as_deref(),
+            Some("ada@example.com"),
+            "a meeting the read updated"
+        );
+        assert_eq!(
+            found_by_its_uid(&cache, "review@example.com", "evt2").as_deref(),
+            Some("kit@example.com"),
+            "a meeting the read created"
+        );
+    }
+
+    /// The same for Outlook, whose field is spelled `iCalUId`.
+    #[tokio::test]
+    async fn test_an_outlook_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser() {
+        let cache = temp_cache("outlook_read_keeps_the_uid");
+        an_event_already_synced_in(
+            &cache,
+            MICROSOFT,
+            MICROSOFT_CALENDAR_NAME,
+            "evt1",
+            "",
+            "confirmed",
+        );
+        let with_uid = |id: &str, uid: &str, organiser: &str| {
+            let mut event = graph_event(id, "Meeting");
+            event["iCalUId"] = serde_json::json!(uid);
+            event["organizer"] = serde_json::json!({"emailAddress": {"address": organiser}});
+            event
+        };
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![delta_reply(&[
+                with_uid("evt1", "standup@example.com", "ada@example.com"),
+                with_uid("evt2", "review@example.com", "kit@example.com"),
+            ])],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "one read").await.expect("one request");
+
+        assert_eq!(
+            found_by_its_uid(&cache, "standup@example.com", "evt1").as_deref(),
+            Some("ada@example.com"),
+            "a meeting the read updated"
+        );
+        assert_eq!(
+            found_by_its_uid(&cache, "review@example.com", "evt2").as_deref(),
+            Some("kit@example.com"),
+            "a meeting the read created"
+        );
+    }
+
     /// The keys a captured request's body carries, in a settled order.
     fn body_keys(request: &str) -> Vec<String> {
         let body = request

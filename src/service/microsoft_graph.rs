@@ -235,9 +235,28 @@ pub struct MsGraphEvent {
     pub is_reminder_on: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reminder_minutes_before_start: Option<i32>,
+    /// Stub for the red commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ical_uid: Option<String>,
+    /// Stub for the red commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organizer: Option<MsOrganizer>,
+}
+
+/// Stub for the red commit.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOrganizer {
+    #[serde(default)]
+    pub email_address: Option<MsEmailAddress>,
 }
 
 impl MsGraphEvent {
+    /// Stub for the red commit.
+    pub fn the_organisers_address(&self) -> Option<&str> {
+        None
+    }
+
     /// The series this item is one day of, or nothing when it is a meeting in
     /// its own right.
     ///
@@ -2321,6 +2340,52 @@ mod tests {
             !named.contains(&"isCancelled"),
             "a change would claim to know whether Graph considers this cancelled: {named:?}"
         );
+    }
+
+    #[test]
+    fn test_graph_names_the_meetings_uid_and_who_called_it() {
+        // `iCalUId`, with the lower-case d, is the field name on Graph's own
+        // reference page, read on 2026-09-24; the organiser is a recipient,
+        // an address inside `emailAddress`.
+        let answered = r#"{
+            "id": "outlook-123",
+            "iCalUId": "m-1@example.com",
+            "organizer": {"emailAddress": {"name": "Ada Lovelace", "address": "ada@example.com"}}
+        }"#;
+
+        let event: MsGraphEvent =
+            serde_json::from_str(answered).expect("Graph's answer to be readable");
+
+        assert_eq!(event.ical_uid.as_deref(), Some("m-1@example.com"));
+        assert_eq!(event.the_organisers_address(), Some("ada@example.com"));
+    }
+
+    #[test]
+    fn test_the_meetings_uid_and_organiser_are_never_sent_back_to_graph() {
+        // Graph's reference says the UID is read-only, and nothing edited here
+        // is about who called a meeting, so a change sent back is byte for
+        // byte what it was before these were read.
+        let read = MsGraphEvent {
+            subject: Some("Quarterly review".to_string()),
+            ical_uid: Some("m-1@example.com".to_string()),
+            organizer: Some(MsOrganizer {
+                email_address: Some(MsEmailAddress {
+                    name: "Ada Lovelace".to_string(),
+                    address: "ada@example.com".to_string(),
+                }),
+            }),
+            ..MsGraphEvent::default()
+        };
+
+        let going_out = serde_json::to_value(&read).expect("a body");
+
+        let named: Vec<&str> = going_out
+            .as_object()
+            .expect("an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(named, ["subject"], "{going_out}");
     }
 
     #[test]
