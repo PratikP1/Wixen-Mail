@@ -79,6 +79,13 @@ pub struct ReaderDocument {
     /// that the cue means nothing, and then it means nothing on the message
     /// where it mattered.
     pub looks_unsafe: bool,
+    /// The three answer buttons, for one message whose invitation can be
+    /// answered here.
+    ///
+    /// `None` for everything else, and then the window builds no buttons at
+    /// all rather than greyed ones: an invitation that cannot be answered has
+    /// its reason in the bar instead (#50 point 7).
+    pub answering: Option<crate::application::answering::TheButtons>,
 }
 
 /// A decoded picture, ready for a window to draw.
@@ -329,6 +336,9 @@ pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -
         // verdict and what the message says about its own form, ever sets this.
         picture: None,
         looks_unsafe: warning_for(message.safety, &message.safety_reasons).is_some(),
+        // Offered by `with_answer_buttons` when what is said about the
+        // message is folded in, never by the composition of its text.
+        answering: None,
         attachments: attachments_of(message),
     }
     // Before a caller folds in a signature verdict, and that ordering is
@@ -840,6 +850,7 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
         // A document read out of a file, which nothing has judged.
         picture: None,
         looks_unsafe: false,
+        answering: None,
         landmarks,
         // A PDF gets no warning bar of its own. The bar says what the mail
         // provider's filter made of the message, and that verdict belongs to
@@ -886,6 +897,7 @@ pub fn text_document(
         // open behind this one.
         picture: None,
         looks_unsafe: false,
+        answering: None,
         warning: None,
         // Nothing hangs off a text file, so no list and nothing extra to tab
         // past.
@@ -987,6 +999,7 @@ pub fn image_document(attachment: &ReaderAttachment, bytes: &[u8]) -> ReaderDocu
         // cue means nothing, and then it means nothing on the message where it
         // mattered.
         looks_unsafe: false,
+        answering: None,
         warning: None,
         picture,
         attachments: Vec::new(),
@@ -1265,6 +1278,7 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         // `with_encryption`, never set this.
         picture: None,
         looks_unsafe: warning.is_some(),
+        answering: None,
         landmarks,
         warning,
         // Every message's attachments, in the order the messages are read, so
@@ -1841,6 +1855,21 @@ impl ReaderDocument {
             Some(already) => format!("{already}\n{sentence}"),
             None => sentence,
         });
+        self
+    }
+
+    /// Whether this message's invitation is answered here: the three buttons
+    /// when it can be, and the reason in the bar when it cannot.
+    ///
+    /// # Why this must be folded in before a signature verdict
+    ///
+    /// [`with_encryption`](Self::with_encryption)'s reason exactly: a reason
+    /// folded in below "More about this signature:" is on screen and never
+    /// spoken.
+    pub fn with_answer_buttons(
+        self,
+        _answering: &crate::application::answering::AnswerButtons,
+    ) -> Self {
         self
     }
 
@@ -3263,6 +3292,7 @@ mod warning_tests {
             attachments: Vec::new(),
             picture: None,
             looks_unsafe: false,
+            answering: None,
         }
     }
 
@@ -4972,5 +5002,108 @@ mod invitation_tests {
             "{}",
             attachments_in(&parts)[0].label()
         );
+    }
+}
+
+#[cfg(test)]
+mod answer_button_tests {
+    use super::tests::{aloud, message};
+    use super::*;
+    use crate::application::answering::{AnswerButtons, CannotAnswer, TheButtons};
+    use crate::application::invitations::{Standing, WhatTheInvitationSays};
+    use crate::application::reading_a_message::WhatIsSaidAboutIt;
+
+    fn a_meeting() -> WhatTheInvitationSays {
+        WhatTheInvitationSays::Invitation {
+            summary: "Quarterly review".to_string(),
+            when: "05/03/2026 at 09:00 to 10:00".to_string(),
+            place: None,
+            organiser: Some("Ada Lovelace".to_string()),
+            standing: Standing::New,
+        }
+    }
+
+    fn the_buttons() -> TheButtons {
+        TheButtons {
+            message_row_id: 42,
+            accept: "Accept Quarterly review.".to_string(),
+            tentative: "Say you might come to Quarterly review.".to_string(),
+            decline: "Decline Quarterly review.".to_string(),
+        }
+    }
+
+    fn saying(answering: AnswerButtons) -> WhatIsSaidAboutIt {
+        WhatIsSaidAboutIt {
+            invitation: a_meeting(),
+            answering,
+            ..WhatIsSaidAboutIt::nothing()
+        }
+    }
+
+    fn one_message(said: &WhatIsSaidAboutIt) -> ReaderDocument {
+        single_message(
+            &message(),
+            &MessageBody::Plain("Are you free?".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(said)
+    }
+
+    #[test]
+    fn test_an_answerable_invitation_carries_its_buttons_into_the_document() {
+        // The window builds the three buttons from the document, so the
+        // document is what has to carry them, and the row they answer.
+        let document = one_message(&saying(AnswerButtons::Offered(the_buttons())));
+
+        assert_eq!(document.answering, Some(the_buttons()));
+    }
+
+    #[test]
+    fn test_why_an_invitation_cannot_be_answered_is_said_above_the_signature() {
+        // No buttons, and the reason in the bar where it is spoken: on a
+        // signed message that is above "More about this signature:", or it is
+        // on screen and never heard (#50 point 7).
+        let said = WhatIsSaidAboutIt {
+            signature: crate::application::checking_signatures::SignatureCheck::NotKept,
+            ..saying(AnswerButtons::CannotBeAnswered(
+                CannotAnswer::SendingIsSwitchedOff,
+            ))
+        };
+
+        let document = one_message(&said);
+
+        assert_eq!(document.answering, None);
+        let spoken = said_before_the_message(document.warning.as_deref().expect("a bar"));
+        assert!(
+            spoken.contains(&CannotAnswer::SendingIsSwitchedOff.why()),
+            "{spoken}"
+        );
+    }
+
+    #[test]
+    fn test_nothing_asked_adds_nothing_to_the_bar_or_the_buttons() {
+        // A cancellation, an answer to your meeting, a calendar file: what it
+        // is has been said, and nothing more is.
+        let document = one_message(&saying(AnswerButtons::NotAsked));
+        let with_the_buttons = one_message(&saying(AnswerButtons::Offered(the_buttons())));
+
+        assert_eq!(document.answering, None);
+        assert_eq!(document.warning, with_the_buttons.warning);
+    }
+
+    #[test]
+    fn test_a_conversation_of_several_messages_offers_no_buttons() {
+        // One set of buttons over a thread of two is heard as answering both;
+        // each message's sentence still says what it is.
+        let part = |depth| ConversationPart {
+            message: message(),
+            body: MessageBody::Plain("Are you free?".to_string()),
+            said: saying(AnswerButtons::Offered(the_buttons())),
+            depth,
+        };
+
+        let document = conversation("Quarterly review", &[part(0), part(1)]);
+
+        assert_eq!(document.answering, None);
     }
 }

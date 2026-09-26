@@ -14582,6 +14582,9 @@ fn what_a_message_shows_and_says(
         // Read only for a message carrying a meeting, whose time is said the
         // way this reader words a date.
         date_settings_from_stored_config,
+        // Read only for a message carrying an invitation, which is offered
+        // its buttons or told why not.
+        |account| crate::application::reading_a_message::AnsweringAs::on(cache.as_deref(), account),
     )
 }
 

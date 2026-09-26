@@ -17,6 +17,7 @@
 //! that shape for the same reasons, and there was no sense in learning them
 //! twice.
 
+use crate::application::invitations::Answer;
 use crate::application::printing::{Kind, Paper};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
@@ -52,6 +53,14 @@ type SaveHandler = Box<dyn Fn(&ReaderAttachment)>;
 /// means fetching the message again first.
 type ReadHandler = Box<dyn Fn(&ReaderAttachment)>;
 
+/// What the window does when somebody presses Accept, Tentative or Decline.
+///
+/// Set by the application for the reason the save handler is: answering sends
+/// mail from an account and files the meeting, and neither belongs to a window
+/// whose job is to show text. Handed the row of the message the tab shows, so
+/// the answer goes to that meeting and not to whatever the list has selected.
+type AnswerHandler = Box<dyn Fn(i64, Answer)>;
+
 /// What one tab prints, composed when Print is pressed.
 ///
 /// Composed then rather than when the tab opens, so a message is fetched and
@@ -84,6 +93,7 @@ pub struct ReaderWindow {
     attachment_lists: Rc<RefCell<Vec<Option<ListBox>>>>,
     save_attachment: Rc<RefCell<Option<SaveHandler>>>,
     read_attachment: Rc<RefCell<Option<ReadHandler>>>,
+    answer: Rc<RefCell<Option<AnswerHandler>>>,
     /// What to do when this window is closed, if anything.
     ///
     /// Set when the reader was opened from somewhere a person should come back
@@ -135,6 +145,9 @@ pub struct ReaderTabHandles {
     pub attachments: Option<ListBox>,
     /// `None` for every tab but a picture that was decoded.
     pub picture: Option<StaticBitmap>,
+    /// Accept, Tentative and Decline, in that order, for a message whose
+    /// invitation can be answered; empty for every other tab.
+    pub answer_buttons: Vec<Button>,
 }
 
 /// Hand one attachment to whatever the application said to do with it.
@@ -382,6 +395,7 @@ impl ReaderWindow {
             attachment_lists: Rc::new(RefCell::new(Vec::new())),
             save_attachment: Rc::new(RefCell::new(None)),
             read_attachment: Rc::new(RefCell::new(None)),
+            answer: Rc::new(RefCell::new(None)),
             closed,
             go_back,
             a11y: a11y.clone(),
@@ -435,6 +449,21 @@ impl ReaderWindow {
     /// Say what to do when somebody asks to read an attachment here.
     pub fn on_read_attachment(&self, handler: impl Fn(&ReaderAttachment) + 'static) {
         *self.read_attachment.borrow_mut() = Some(Box::new(handler));
+    }
+
+    /// Say what to do when somebody presses one of a meeting invitation's
+    /// three buttons: answer the message on that row, that way.
+    pub fn on_answer(&self, handler: impl Fn(i64, Answer) + 'static) {
+        *self.answer.borrow_mut() = Some(Box::new(handler));
+    }
+
+    /// Do the answer the application set up, for a window that is not this
+    /// one: the formatted window has the same three buttons and keys, and one
+    /// handler means the two cannot come to answer differently.
+    pub fn answer_now(&self, message_row_id: i64, answer: Answer) {
+        if let Some(handler) = self.answer.borrow().as_ref() {
+            handler(message_row_id, answer);
+        }
     }
 
     /// Add a document as a new tab and show the window. Print in the tab
@@ -651,6 +680,7 @@ impl ReaderWindow {
             warning,
             picture,
             attachments,
+            answer_buttons: Vec::new(),
         }
     }
 

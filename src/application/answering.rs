@@ -362,6 +362,65 @@ impl Answering {
     }
 }
 
+/// The three buttons an invitation that can be answered is offered, each with
+/// the sentence its accessible description carries (#50 point 4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TheButtons {
+    /// The message the buttons answer, handed back when one is pressed, so
+    /// the answer goes to the meeting the window shows and not to whatever the
+    /// message list has selected.
+    pub message_row_id: i64,
+    /// What pressing Accept will do.
+    pub accept: String,
+    /// What pressing Tentative will do.
+    pub tentative: String,
+    /// What pressing Decline will do.
+    pub decline: String,
+}
+
+impl TheButtons {
+    /// What pressing the button for `answer` will do.
+    pub fn what_pressing(&self, answer: Answer) -> &str {
+        match answer {
+            Answer::Accepted => &self.accept,
+            Answer::Tentative => &self.tentative,
+            Answer::Declined => &self.decline,
+        }
+    }
+}
+
+/// Whether a message's calendar document is offered the three buttons.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnswerButtons {
+    /// Nothing asks for an answer: no calendar document, a cancellation,
+    /// somebody's answer to your meeting, or a calendar file. What the
+    /// document is has been said already, so nothing more is.
+    NotAsked,
+    /// The three buttons.
+    Offered(TheButtons),
+    /// An invitation that asks for an answer and cannot be given one here,
+    /// and why. No buttons at all rather than greyed ones: Tab passes a
+    /// greyed button by, and its reason with it.
+    CannotBeAnswered(CannotAnswer),
+}
+
+/// The buttons a message carrying `document` is offered, or why it is offered
+/// none.
+///
+/// `said_before` is the answer this account last gave the meeting here, so
+/// each button can say it replaces or repeats it. `dates` words the meeting's
+/// time, because how a date is said depends on settings this layer cannot see.
+pub fn the_answer_buttons(
+    _document: &str,
+    _answering_as: &str,
+    _allowed: Allowed,
+    _message_row_id: i64,
+    _said_before: Option<Answer>,
+    _dates: crate::presentation::date_display::DateSettings,
+) -> AnswerButtons {
+    AnswerButtons::NotAsked
+}
+
 /// How the sending went, so the sentence afterwards can say what really
 /// happened on this machine rather than what was meant to.
 ///

@@ -217,6 +217,13 @@ fn asked(cache: &MessageCache, item: &MessageItem, body: MessageBody) -> WhatAMe
         &item.from,
         body,
         written_out_in_full,
+        // The guest the invitations here name, with sending switched on, so
+        // the bar holds the meeting's sentence and nothing about answering:
+        // why a meeting cannot be answered is 13-11's target's to read.
+        |_| reading_a_message::AnsweringAs {
+            address: "me@example.com".to_string(),
+            allowed: wixen_mail::application::allowed::Allowed::EVERYTHING,
+        },
     )
 }
 

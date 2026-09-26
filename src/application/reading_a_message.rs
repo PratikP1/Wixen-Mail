@@ -98,8 +98,53 @@ pub struct WhatIsSaidAboutIt {
     /// What the calendar document the message carries says, for a message
     /// that carries one.
     pub invitation: WhatTheInvitationSays,
+    /// Whether that invitation can be answered here: the three buttons, why
+    /// it cannot, or nothing asked of anybody (#50 points 4 and 7).
+    pub answering: answering::AnswerButtons,
     /// What the signature was worth, for a message that said it was signed.
     pub signature: SignatureCheck,
+}
+
+/// Who answers an invitation that arrived on one account, and whether that
+/// account may send.
+///
+/// Asked of the caller, by the account's identity, because the address lives
+/// with the account and the setting in the stored settings, and neither is
+/// this module's to read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnsweringAs {
+    /// The account's own address, the one the invitation has to name.
+    pub address: String,
+    /// What the account is allowed to change, of which sending is the part
+    /// answering needs.
+    pub allowed: crate::application::allowed::Allowed,
+}
+
+impl AnsweringAs {
+    /// Who answers on `account`: the address on the account's own row and what
+    /// the stored settings and the command line allow it.
+    ///
+    /// No address for an account this computer does not hold, which no
+    /// invitation names, so the answer is "not addressed to" rather than a
+    /// guess.
+    pub fn on(cache: Option<&MessageCache>, account: &str) -> Self {
+        let address = cache
+            .map(|cache| {
+                cache.load_accounts().unwrap_or_else(|e| {
+                    tracing::warn!("Could not read the accounts to answer a meeting as: {e}");
+                    Vec::new()
+                })
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .find(|held| held.id == account)
+            .map(|held| held.email)
+            .unwrap_or_default();
+        Self {
+            address,
+            allowed: crate::application::allowed::allowed_for(account),
+        }
+    }
 }
 
 impl WhatIsSaidAboutIt {
@@ -116,6 +161,7 @@ impl WhatIsSaidAboutIt {
             opened: None,
             envelope: WhatTheEnvelopeSays::NotEncrypted,
             invitation: WhatTheInvitationSays::Nothing,
+            answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotSigned,
         }
     }
@@ -135,23 +181,29 @@ impl WhatIsSaidAboutIt {
 ///
 /// `dates` is how this reader words a date, asked for only when the message
 /// carries a meeting whose time has to be said, so ordinary mail never reads
-/// a setting.
+/// a setting. `answering_as` is who answers on the account a message arrived
+/// on, asked for only when it carries an invitation.
 pub fn for_message(
     cache: Option<&MessageCache>,
     message_row_id: i64,
     from: &str,
     body: MessageBody,
     dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
 ) -> WhatAMessageShowsAndSays {
+    // Asked at most once, by whichever of the two questions about a meeting
+    // needs it first, and never for ordinary mail.
+    let dates = std::cell::LazyCell::new(dates);
     put_together(
         body,
         envelope_check_for(cache, message_row_id),
-        invitation_check_for(cache, message_row_id, dates),
+        invitation_check_for(cache, message_row_id, || *dates),
+        answer_buttons_for(cache, message_row_id, || *dates, answering_as),
         signature_check_for(cache, message_row_id, from),
     )
 }
 
-/// The same, for a caller that has the three answers already.
+/// The same, for a caller that has the answers already.
 ///
 /// Split out so the opening can be tested without a database: the armour is
 /// offered to the key here, and the body handed on is the words where it
@@ -160,6 +212,7 @@ pub fn put_together(
     body: MessageBody,
     envelope: WhatTheEnvelopeSays,
     invitation: WhatTheInvitationSays,
+    answering: answering::AnswerButtons,
     signature: SignatureCheck,
 ) -> WhatAMessageShowsAndSays {
     // Before any document is built, not after. A message that opens has its
@@ -173,6 +226,7 @@ pub fn put_together(
             opened,
             envelope,
             invitation,
+            answering,
             signature,
         },
     }
@@ -246,6 +300,21 @@ pub fn invitation_check_for(
         answered_here,
         dates(),
     )
+}
+
+/// Whether the invitation a stored message carries is offered the three
+/// buttons, from the parts stored when it was opened and the account it
+/// arrived on.
+///
+/// `NotAsked` with no cache, and for every message whose calendar document
+/// asks nobody anything, which is all mail but invitations.
+pub fn answer_buttons_for(
+    _cache: Option<&MessageCache>,
+    _message_row_id: i64,
+    _dates: impl FnOnce() -> DateSettings,
+    _answering_as: impl FnOnce(&str) -> AnsweringAs,
+) -> answering::AnswerButtons {
+    answering::AnswerButtons::NotAsked
 }
 
 /// Keep what a message downloaded for its text carried, so what is said about
@@ -401,6 +470,7 @@ mod tests {
             MessageBody::Plain(a_message_to_alice()),
             envelope,
             invitation,
+            answering::AnswerButtons::NotAsked,
             signature,
         );
 
@@ -425,7 +495,13 @@ mod tests {
         let (envelope, invitation, signature) = nothing_kept();
         let arrived = MessageBody::Plain(a_message_to_alice());
 
-        let shown = put_together(arrived.clone(), envelope, invitation, signature);
+        let shown = put_together(
+            arrived.clone(),
+            envelope,
+            invitation,
+            answering::AnswerButtons::NotAsked,
+            signature,
+        );
 
         assert_eq!(shown.said.opened, Some(WhatOpeningItFound::NoKeyHere));
         assert_eq!(shown.body, arrived);
@@ -440,7 +516,13 @@ mod tests {
         let (envelope, invitation, signature) = nothing_kept();
         let arrived = MessageBody::Html("<p>One o'clock?</p>".to_string());
 
-        let shown = put_together(arrived.clone(), envelope, invitation, signature);
+        let shown = put_together(
+            arrived.clone(),
+            envelope,
+            invitation,
+            answering::AnswerButtons::NotAsked,
+            signature,
+        );
 
         assert_eq!(shown.body, arrived);
         assert_eq!(shown.said, WhatIsSaidAboutIt::nothing());
@@ -518,6 +600,7 @@ mod tests {
             FROM,
             MessageBody::Plain("The meeting moved to Thursday at ten.".to_string()),
             written_out_in_full,
+            answering_as_me,
         );
         let about_the_enveloped = for_message(
             Some(&cache),
@@ -525,6 +608,7 @@ mod tests {
             FROM,
             MessageBody::Plain(String::new()),
             written_out_in_full,
+            answering_as_me,
         );
 
         assert!(
@@ -548,8 +632,22 @@ mod tests {
         let row = a_message_in(&cache, 1);
         let body = || MessageBody::Plain("One o'clock?".to_string());
 
-        let in_the_cache = for_message(Some(&cache), row, FROM, body(), written_out_in_full);
-        let without_a_cache = for_message(None, row, FROM, body(), written_out_in_full);
+        let in_the_cache = for_message(
+            Some(&cache),
+            row,
+            FROM,
+            body(),
+            written_out_in_full,
+            answering_as_me,
+        );
+        let without_a_cache = for_message(
+            None,
+            row,
+            FROM,
+            body(),
+            written_out_in_full,
+            answering_as_me,
+        );
 
         assert_eq!(in_the_cache.said, WhatIsSaidAboutIt::nothing());
         assert_eq!(without_a_cache.said, WhatIsSaidAboutIt::nothing());
@@ -569,6 +667,15 @@ mod tests {
         }
     }
 
+    /// The account every message here arrived on answering as the guest the
+    /// invitation names, with sending switched on.
+    fn answering_as_me(_account: &str) -> AnsweringAs {
+        AnsweringAs {
+            address: "me@example.com".to_string(),
+            allowed: crate::application::allowed::Allowed::EVERYTHING,
+        }
+    }
+
     /// An invitation to version 2 of a meeting, at nine on the clock.
     const AN_INVITATION: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\n\
         BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSEQUENCE:2\r\nSUMMARY:Quarterly review\r\n\
@@ -580,6 +687,11 @@ mod tests {
     /// Its parts stored the way opening a message stores them: the covering
     /// note's attachment, if any, and the calendar document with its bytes.
     fn carrying_the_invitation(cache: &MessageCache, row: i64) {
+        carrying(cache, row, AN_INVITATION);
+    }
+
+    /// A message's parts stored with `document` as its calendar part.
+    fn carrying(cache: &MessageCache, row: i64, document: &str) {
         use crate::data::message_cache::CachedAttachment;
         use crate::data::message_cache::attachment_content::AttachmentWithContent;
         cache
@@ -591,11 +703,11 @@ mod tests {
                         message_id: row,
                         filename: "invite.ics".to_string(),
                         mime_type: "text/calendar".to_string(),
-                        size: AN_INVITATION.len() as i64,
+                        size: document.len() as i64,
                         content_id: None,
                         description: crate::service::mime::WhatTheSenderSaid::Nothing,
                     },
-                    content: Some(AN_INVITATION.as_bytes().to_vec()),
+                    content: Some(document.as_bytes().to_vec()),
                 }],
             )
             .expect("the parts stored");
@@ -661,6 +773,7 @@ mod tests {
             FROM,
             MessageBody::Plain("Are you free?".to_string()),
             written_out_in_full,
+            answering_as_me,
         );
 
         assert!(
@@ -696,6 +809,108 @@ mod tests {
                 } if from == "05/03/2026 at 08:00 to 09:00"
             ),
             "{said:?}"
+        );
+    }
+
+    // ── Whether it is offered the three buttons ───────────────────────────
+
+    /// What pressing each button says for the stored invitation, answered
+    /// nowhere before.
+    fn the_three_sentences(row: i64) -> answering::TheButtons {
+        let told = ", 05/03/2026 at 09:00 to 10:00. Ada Lovelace will be told.";
+        answering::TheButtons {
+            message_row_id: row,
+            accept: format!("Accept Quarterly review{told}"),
+            tentative: format!("Say you might come to Quarterly review{told}"),
+            decline: format!("Decline Quarterly review{told}"),
+        }
+    }
+
+    #[test]
+    fn test_an_answerable_invitation_is_offered_three_buttons_for_its_own_row() {
+        // The buttons carry the message they were offered on, so pressing one
+        // answers this meeting whatever the list has selected, and each says
+        // before it is pressed what it does and who will hear (#50 point 4).
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+
+        let offered = answer_buttons_for(Some(&cache), row, written_out_in_full, answering_as_me);
+
+        assert_eq!(
+            offered,
+            answering::AnswerButtons::Offered(the_three_sentences(row))
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_that_cannot_be_answered_says_why_and_is_offered_no_buttons() {
+        // Sending switched off, which is how a new installation is: no
+        // buttons at all, and the reason, rather than three greyed buttons
+        // that Tab passes by with it (#50 point 7).
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+
+        let offered = answer_buttons_for(Some(&cache), row, written_out_in_full, |_| AnsweringAs {
+            address: "me@example.com".to_string(),
+            allowed: crate::application::allowed::Allowed::NOTHING,
+        });
+
+        assert_eq!(
+            offered,
+            answering::AnswerButtons::CannotBeAnswered(
+                answering::CannotAnswer::SendingIsSwitchedOff
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_asks_nobody_for_an_answer() {
+        // "Meeting cancelled" is already said; a second sentence saying it
+        // cannot be answered would be the same fact twice.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying(
+            &cache,
+            row,
+            &AN_INVITATION.replace("METHOD:REQUEST", "METHOD:CANCEL"),
+        );
+
+        let offered = answer_buttons_for(Some(&cache), row, written_out_in_full, answering_as_me);
+
+        assert_eq!(offered, answering::AnswerButtons::NotAsked);
+    }
+
+    #[test]
+    fn test_each_button_says_what_it_does_to_an_answer_already_given_here() {
+        // Answered here before, as Accept: pressing Accept again says the
+        // same again and pressing Decline replaces it, and somebody who cannot
+        // see the calendar hears which before pressing.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+        answered_at_version_one(&cache);
+
+        let answering::AnswerButtons::Offered(buttons) =
+            answer_buttons_for(Some(&cache), row, written_out_in_full, answering_as_me)
+        else {
+            panic!("an invitation answered before is still offered the buttons");
+        };
+
+        assert!(
+            buttons
+                .accept
+                .ends_with("You have already accepted this, and this says the same again."),
+            "{}",
+            buttons.accept
+        );
+        assert!(
+            buttons
+                .decline
+                .ends_with("You have already accepted this, and this replaces that answer."),
+            "{}",
+            buttons.decline
         );
     }
 
@@ -739,6 +954,7 @@ mod tests {
             opened: None,
             envelope: addressed_to_alice(),
             invitation: WhatTheInvitationSays::Nothing,
+            answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotKept,
         };
 
@@ -771,6 +987,7 @@ mod tests {
             MessageBody::Plain(a_message_to_alice()),
             envelope,
             invitation,
+            answering::AnswerButtons::NotAsked,
             signature,
         );
 
