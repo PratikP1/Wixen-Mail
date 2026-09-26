@@ -70,6 +70,7 @@ use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::presentation::date_display::DateSettings;
+use crate::service::mime::AttachmentWithBytes;
 use crate::service::pgp::WhatOpeningItFound;
 
 /// What one message shows, and what is said about it.
@@ -296,6 +297,54 @@ pub fn invitation_check_for(
     )
 }
 
+/// What the calendar document a message carries says, asked of the files
+/// inside its opened envelope as well as of the ones it carried in the clear.
+pub fn invitation_check_among(
+    cache: &MessageCache,
+    message_row_id: i64,
+    _inside: &[AttachmentWithBytes],
+    dates: impl FnOnce() -> DateSettings,
+) -> WhatTheInvitationSays {
+    invitation_check_for(Some(cache), message_row_id, dates)
+}
+
+/// Whether the invitation a message carries is offered the three buttons,
+/// asked of the files inside its opened envelope as well.
+pub fn answer_buttons_among(
+    cache: &MessageCache,
+    message_row_id: i64,
+    _inside: &[AttachmentWithBytes],
+    dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
+) -> answering::AnswerButtons {
+    answer_buttons_for(Some(cache), message_row_id, dates, answering_as)
+}
+
+/// What opening a message in a reader window changes on the calendar, asked of
+/// the files inside its opened envelope as well.
+pub fn what_opening_it_changed_among(
+    cache: &MessageCache,
+    message_row_id: i64,
+    _inside: &[AttachmentWithBytes],
+    from: &str,
+    dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
+) -> MeetingChange {
+    what_opening_it_in_a_reader_changed(Some(cache), message_row_id, from, dates, answering_as)
+}
+
+/// What can be said about a message's signature: the one inside its opened
+/// envelope, where it was signed and then sealed, and otherwise the one the
+/// cache kept.
+pub fn signature_for(
+    _envelope: &WhatTheEnvelopeSays,
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    from: &str,
+) -> SignatureCheck {
+    signature_check_for(cache, message_row_id, from)
+}
+
 /// Whether a stored message has a calendar part recorded, by the kind of each
 /// part and without reading any file.
 ///
@@ -401,7 +450,7 @@ pub fn what_opening_it_in_a_reader_changed(
     dates: impl FnOnce() -> DateSettings,
     answering_as: impl FnOnce(&str) -> AnsweringAs,
 ) -> MeetingChange {
-    use crate::application::meeting_changes::{self, TheCalendarsCopy, Why};
+    use crate::application::meeting_changes::{self, TheCalendarsCopy, WhereItWasFound, Why};
 
     let Some(cache) = cache else {
         return MeetingChange::Nothing;
@@ -454,6 +503,7 @@ pub fn what_opening_it_in_a_reader_changed(
             answered_version,
         }),
         from,
+        WhereItWasFound::InTheMessage,
         answering_as(&found.account).allowed,
         dates(),
     );
@@ -1254,6 +1304,143 @@ mod tests {
         assert!(
             bar.contains("no private key on this computer"),
             "the general sentence was never narrowed to the reason: {bar}"
+        );
+    }
+
+    // ── An envelope that opened here ─────────────────────────────────────
+
+    /// What an envelope that opened says, with `inside` as all that was in it.
+    fn opened_to(body: MessageBody, inside: Vec<u8>) -> WhatTheEnvelopeSays {
+        WhatTheEnvelopeSays::Opened {
+            body,
+            parts: crate::service::mime::attachments_with_bytes(&inside).unwrap_or_default(),
+            inside,
+        }
+    }
+
+    /// A covering note and `AN_INVITATION`, the way an envelope holds them.
+    fn a_note_and_the_invitation() -> Vec<u8> {
+        format!(
+            "Content-Type: multipart/mixed; boundary=\"sealed\"\r\n\r\n--sealed\r\n\
+             Content-Type: text/plain; charset=utf-8\r\n\r\nAre you free?\r\n--sealed\r\n\
+             Content-Type: text/calendar; charset=utf-8; method=REQUEST\r\n\
+             Content-Disposition: attachment; filename=\"invite.ics\"\r\n\r\n\
+             {AN_INVITATION}--sealed--\r\n"
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn test_an_opened_envelope_is_shown_as_its_words_and_nothing_in_the_clear_joins_them() {
+        // The words inside take the place of the body the message arrived
+        // with, the way opened armour does. Nothing the message carried in the
+        // clear is joined to them: a clear part written to wrap decrypted
+        // words in a picture's address is EFAIL's first shape, and a body that
+        // is only the decrypted words cannot be wrapped (T-13-14-01).
+        with_no_key();
+        let sealed = MessageBody::Plain("The meeting moves to Thursday.".to_string());
+        let in_the_clear = MessageBody::Html("<img src=\"https://example.com/?".to_string());
+
+        let shown = put_together(
+            in_the_clear,
+            opened_to(sealed.clone(), Vec::new()),
+            WhatTheInvitationSays::Nothing,
+            answering::AnswerButtons::NotAsked,
+            SignatureCheck::NotSigned,
+        );
+
+        assert_eq!(shown.body, sealed);
+    }
+
+    #[test]
+    fn test_an_invitation_inside_an_opened_envelope_is_said_and_offered_its_buttons() {
+        // Decision 14: shown and offered the answer buttons. The message
+        // carries nothing in the clear but its envelope, so the meeting is
+        // only there to be found inside it.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        let inside = opened_to(
+            MessageBody::Plain("Are you free?".to_string()),
+            a_note_and_the_invitation(),
+        );
+
+        let said = invitation_check_among(&cache, row, inside.parts_inside(), written_out_in_full);
+        let buttons = answer_buttons_among(
+            &cache,
+            row,
+            inside.parts_inside(),
+            written_out_in_full,
+            answering_as_me,
+        );
+
+        assert!(
+            matches!(
+                &said,
+                WhatTheInvitationSays::Invitation {
+                    standing: crate::application::invitations::Standing::New,
+                    ..
+                }
+            ),
+            "{said:?}"
+        );
+        assert!(
+            matches!(buttons, answering::AnswerButtons::Offered(_)),
+            "{buttons:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_change_inside_an_opened_envelope_is_said_and_the_calendar_is_left_as_it_was() {
+        // The same update from the organiser the calendar records moves the
+        // meeting when it arrives in the clear. Inside an envelope it moves
+        // nothing and says why (T-13-14-02).
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        answered_at_version_one(&cache);
+        cache
+            .remember_where_it_came_from("evt-1", Some("m-1@example.com"), Some("ada@example.com"))
+            .expect("the organiser remembered");
+        let inside = opened_to(
+            MessageBody::Plain("Are you free?".to_string()),
+            a_note_and_the_invitation(),
+        );
+
+        let change = what_opening_it_changed_among(
+            &cache,
+            row,
+            inside.parts_inside(),
+            "Ada Lovelace <ada@example.com>",
+            written_out_in_full,
+            answering_as_me,
+        );
+
+        assert_eq!(
+            change,
+            MeetingChange::SaidNotApplied(
+                crate::application::meeting_changes::Why::InsideEncryptedMail
+            )
+        );
+        let still = cache
+            .get_event_by_ical_uid("acc-1", "m-1@example.com")
+            .expect("the calendar read")
+            .expect("the meeting still there");
+        assert_eq!(still.start_datetime, "2026-03-05T08:00:00");
+    }
+
+    #[test]
+    fn test_the_signature_inside_an_opened_envelope_is_the_one_checked() {
+        // Signed and then sealed: the signature travels inside, and it is
+        // checked and said as any other signature is.
+        let envelope = opened_to(
+            MessageBody::Plain("The meeting moved to Thursday at ten.".to_string()),
+            signed_beside(),
+        );
+
+        let signature = signature_for(&envelope, None, 1, FROM);
+
+        assert!(
+            matches!(signature, SignatureCheck::Checked(_)),
+            "{signature:?}"
         );
     }
 }

@@ -15293,11 +15293,14 @@ fn answer_the_invitation(
             tracing::warn!("Could not read the message an answer was pressed on: {e}");
             None
         });
+    // Where it was found does not change the answer: a meeting inside an
+    // envelope opened here is answered by pressing, as any other is.
     let Some(TheInvitationMessage {
         account,
         document,
         message_id,
         references,
+        inside_encrypted_mail: _,
     }) = found
     else {
         refused(
@@ -34170,6 +34173,7 @@ mod opening_an_attachment_a_second_time {
             size: 0,
             description: crate::service::mime::WhatTheSenderSaid::Nothing,
             kind_the_message_gave: None,
+            inside_the_envelope: false,
         }
     }
 

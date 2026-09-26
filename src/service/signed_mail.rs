@@ -4126,6 +4126,37 @@ pub(crate) mod for_tests {
         let (headers, body) = super::split_headers_from_body(&raw);
         super::decode_body(headers, body).expect("a fixture that decodes")
     }
+
+    /// An envelope OpenSSL sealed for the keyholder, around a short plain
+    /// note, as DER, the form the cache keeps an envelope in.
+    pub(crate) fn the_envelope_for_the_keyholder() -> Vec<u8> {
+        super::tests::message(super::tests::ENVELOPE_FOR_THE_KEYHOLDER)
+    }
+
+    /// The note inside it, as OpenSSL was given it.
+    pub(crate) fn what_the_keyholders_envelope_holds() -> Vec<u8> {
+        super::tests::WHAT_THE_KEYHOLDERS_ENVELOPE_HOLDS.to_vec()
+    }
+
+    /// A message the keyholder signed, then sealed for the keyholder.
+    pub(crate) fn a_signed_message_sealed_for_the_keyholder() -> Vec<u8> {
+        super::tests::message(super::tests::SIGNED_THEN_SEALED_FOR_THE_KEYHOLDER)
+    }
+
+    /// A covering note and an invitation, sealed for the keyholder.
+    pub(crate) fn an_invitation_sealed_for_the_keyholder() -> Vec<u8> {
+        super::tests::message(super::tests::AN_INVITATION_SEALED_FOR_THE_KEYHOLDER)
+    }
+
+    /// A store holding the keyholder's key, in this process only.
+    ///
+    /// The person's own store is never touched, which
+    /// `test_importing_a_key_for_a_test_writes_nothing_to_the_persons_own_store`
+    /// holds.
+    #[cfg(target_os = "windows")]
+    pub(crate) fn a_store_holding_the_keyholders_key() -> Box<dyn super::CertificateStore> {
+        Box::new(super::tests::the_keyholders_store())
+    }
 }
 
 #[cfg(test)]
@@ -4776,7 +4807,7 @@ mod tests {
 
     /// What the envelope below was made from: a short `text/plain` MIME entity,
     /// with the carriage returns a message carries.
-    const WHAT_THE_KEYHOLDERS_ENVELOPE_HOLDS: &[u8] =
+    pub(super) const WHAT_THE_KEYHOLDERS_ENVELOPE_HOLDS: &[u8] =
         b"Content-Type: text/plain; charset=utf-8\r\n\r\nThe meeting moves to Thursday. Bring the figures.\r\n";
 
     /// An envelope sealed for the keyholder's certificate by OpenSSL 3.5.7 on
@@ -4795,7 +4826,7 @@ mod tests {
     /// research's probe also opened the same words sealed with RSA-OAEP and as
     /// `authEnvelopedData` with AES-GCM; this is the first of the three because
     /// it is what OpenSSL and most mail programs write when nothing is asked.
-    const ENVELOPE_FOR_THE_KEYHOLDER: &str = "
+    pub(super) const ENVELOPE_FOR_THE_KEYHOLDER: &str = "
         MIICFwYJKoZIhvcNAQcDoIICCDCCAgQCAQAxggFuMIIBagIBADBSMDoxHTAbBgNVBAMMFFdpeGVu
         IFRlc3QgQXV0aG9yaXR5MRkwFwYDVQQKDBBXaXhlbiBNYWlsIFRlc3RzAhRSwENM6oa/b6Do66ne
         oaK95G5tjzANBgkqhkiG9w0BAQEFAASCAQAEiaT1LQMyB8lt7eEdo35z72XmTrcrUyBr6HfH9hAH
@@ -4823,7 +4854,7 @@ mod tests {
     /// signed part came out with each carriage return doubled. Those were put
     /// back to one each, and `openssl smime -verify -noverify -binary` checked
     /// the result before it was sealed.
-    const SIGNED_THEN_SEALED_FOR_THE_KEYHOLDER: &str = "
+    pub(super) const SIGNED_THEN_SEALED_FOR_THE_KEYHOLDER: &str = "
         MIIMigYJKoZIhvcNAQcDoIIMezCCDHcCAQAxggFuMIIBagIBADBSMDoxHTAbBgNVBAMMFFdpeGVu
         IFRlc3QgQXV0aG9yaXR5MRkwFwYDVQQKDBBXaXhlbiBNYWlsIFRlc3RzAhRSwENM6oa/b6Do66ne
         oaK95G5tjzANBgkqhkiG9w0BAQEFAASCAQAsefse66Fh5ZaBl3TI1BobTz0Cz5RlV8xr43Eq+4Um
@@ -4881,6 +4912,40 @@ mod tests {
         XNIhrfLqKTxL2D+AJxvNAtczVVmGSTqRlNT9g9aWI0+s2IdYwsp0Ma9DCg/8R5EDhi2ZizEHhACo
         9ghwOOutogddCr9TDu+Wh75Jd7u9D7ea+k2URaFHgEJgSYoBoVu9URwAjT4XkHBGTi2xChOgHRV5
         aOqk+C6oWrx1Kq5MMPNPTj9mjNEoLw==";
+
+    /// A covering note and an invitation, sealed together for the keyholder by
+    /// OpenSSL 3.5.7 on 2026-09-26, as DER.
+    ///
+    /// Inside, a `multipart/mixed` of "Are you free?" and `invite.ics`, a
+    /// `REQUEST` for version 2 of meeting `m-1@example.com` at nine on
+    /// 2026-03-05, organised by ada@example.com and addressed to
+    /// me@example.com: the invitation `reading_a_message`'s own tests store in
+    /// the clear, so the two can be told apart only by where it was found.
+    /// Sealed the same way as the envelope above:
+    ///
+    /// ```text
+    /// openssl smime -encrypt -aes256 -binary -outform DER -in invite.eml -out sealed.p7m keyholder.pem
+    /// ```
+    pub(super) const AN_INVITATION_SEALED_FOR_THE_KEYHOLDER: &str = "
+        MIIECgYJKoZIhvcNAQcDoIID+zCCA/cCAQAxggFuMIIBagIBADBSMDoxHTAbBgNVBAMMFFdpeGVu
+        IFRlc3QgQXV0aG9yaXR5MRkwFwYDVQQKDBBXaXhlbiBNYWlsIFRlc3RzAhRSwENM6oa/b6Do66ne
+        oaK95G5tjzANBgkqhkiG9w0BAQEFAASCAQA4vRpIsq321RkGWim/+SuixtIjSwjh8UaBgL7muzxJ
+        7BSB/izjvPCKixb+NNSgSmMPO+RroKIbTmUs+yHQLGy8db+5bXGxiPmlhVVE7s6N7wyH+IHcs//d
+        Y2qkfNpIvqcS8iNa49N5ZArk+wa8HUdRWOClMP3FU20o38Wv7n7ffT7bS2HRa4KtuHGOZezsiMuc
+        iyC5ovzLl2zZv0XcUSDqiAdEObnwQRJiRHFgVv1p3lAnUAZ5A7Oo70FDiu/B8vAn/lqYqu7XXzzd
+        7Zwwu8cHkGejh12lfR1sJ1c66Wc+u30S2e0P1G+XkhQsKTlxb7YOTevI3x7Ro10mzPCt4YQTMIIC
+        fgYJKoZIhvcNAQcBMB0GCWCGSAFlAwQBKgQQpmq4h4QwAdExfm6/E6TboICCAlA1VhYMm6mUHQ2N
+        pbx1bNWYD0vskApsDFvx/lulLBaEppdyFrZqVdrl8s/+Ae/PRT4QGiRxSOsZkCR4m3v/Mgeb7OFx
+        FEV5C0MNpc9sDsLXYF11yQ7hWw2UvSHp/eb0uaEyDli8vcHcb93jTz/FdvG5vSChl7ur38s2nm03
+        uF4/wUZ0bBeutLCRJRrGYCRv/NJB0MCV7oQegmvgsIWud35uVxFrdflfJ6o/f1Iwd7axwQTLZHCN
+        NOUzgiePwRRxSdNYBnO464bRJg98+Wgg85YbX9SE2wSkRR8x7OJojtYAjiXNfqsrmYBCAavXQhiP
+        5iUE2+Rk/7EICUPC6Deug61W8e6eqQ1NB8/nWKnAedB8B6upBBn/tnrORZ8SLzLu3l3rVoPz85Pl
+        CsaRq2+HxDgv0AzJTbO3l/nqAtogdxtvhQLzPpvmN2ZzRVPOzb/UdFZ6xqoWX8L4wntxSKit8qwN
+        jLtAEaIJczA5WPzakfOgTRAfrChyIW/qGK3w3yEtobdrR2siW6LU7XrbfbAx+ynqiGqrT1OBvOQV
+        L0h+q+fEsIOsXsT1tP1S7MAXwIJ8dNfRf4L3ZnXIe0PnNy9ACg9Ruo7zKmTt5+C5Y83bXjsPG44w
+        bMH0Rral090FJL112xh/MHSUYqbOstBY/jeFQsEUXZWCDPOXA2xtc5NDv3McsS+WLmvr/h4IhEfC
+        BX+qV+7ahAO4ME0Uu5O3dxUQ58TNpiuCQDEdLT1fMez8NhFpoP9lTigcJlnJOQYTyR+Fw7Ks5tli
+        tnU+sAQw3Lg7SM6S";
 
     /// The bytes a fixture stands for.
     pub(super) fn message(encoded: &str) -> Vec<u8> {
@@ -5923,7 +5988,7 @@ mod tests {
 
     /// The keyholder's key, in a store that lives in this process only.
     #[cfg(target_os = "windows")]
-    fn the_keyholders_store() -> windows_store::WindowsCertificateStore {
+    pub(super) fn the_keyholders_store() -> windows_store::WindowsCertificateStore {
         windows_store::WindowsCertificateStore::holding_only_in_memory(
             &message(A_KEY_AND_ITS_CERTIFICATE),
             THE_TEST_KEYS_PASSWORD,

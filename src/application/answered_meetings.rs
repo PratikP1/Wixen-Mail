@@ -275,6 +275,11 @@ pub struct TheInvitationMessage {
     pub message_id: String,
     /// The `References` the message carried, which the answer carries on.
     pub references: Option<String>,
+    /// Whether the invitation was found inside an envelope opened here rather
+    /// than among the files the message carried in the clear. Such a meeting is
+    /// said and offered its buttons, and opening it changes nothing on the
+    /// calendar on its own (decision 14 of phase 13).
+    pub inside_encrypted_mail: bool,
 }
 
 /// The invitation a stored message carries, with its account and the headers a
@@ -283,6 +288,29 @@ pub struct TheInvitationMessage {
 pub fn the_invitation_on(
     cache: &MessageCache,
     message_row_id: i64,
+) -> Result<Option<TheInvitationMessage>> {
+    the_invitation_opened_with(
+        cache,
+        message_row_id,
+        crate::service::signed_mail::this_computers_certificates().as_ref(),
+    )
+}
+
+/// The same, with the keys a store the caller names holds, for an invitation
+/// sealed inside an envelope.
+pub fn the_invitation_opened_with(
+    cache: &MessageCache,
+    message_row_id: i64,
+    _store: &dyn crate::service::signed_mail::CertificateStore,
+) -> Result<Option<TheInvitationMessage>> {
+    the_invitation_among(cache, message_row_id, &[])
+}
+
+/// The same, for a caller holding the files inside an envelope already.
+pub fn the_invitation_among(
+    cache: &MessageCache,
+    message_row_id: i64,
+    _inside: &[crate::service::mime::AttachmentWithBytes],
 ) -> Result<Option<TheInvitationMessage>> {
     let Some(message) = cache.get_message(message_row_id)? else {
         return Ok(None);
@@ -307,6 +335,7 @@ pub fn the_invitation_on(
         document,
         message_id: message.message_id,
         references: cache.the_references_of(message_row_id)?,
+        inside_encrypted_mail: false,
     }))
 }
 
@@ -1068,6 +1097,7 @@ mod tests {
                 // As the store keeps them, bare: the brackets are the reply
                 // builder's to add, as `threading::continuing` says.
                 references: Some("root-1@example.com".to_string()),
+                inside_encrypted_mail: false,
             })
         );
     }

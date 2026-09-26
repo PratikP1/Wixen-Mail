@@ -812,6 +812,12 @@ pub enum WhoseMessage {
     /// browser and would fetch them; what is not said is that a sender learned
     /// anything, because the sender is them.
     BeingWrittenHere,
+    /// Mail that arrived encrypted and was opened here. Its pictures are held
+    /// back whatever the switch says, because a fetch whose presence depends
+    /// on the message having opened tells whoever sealed it that it did, and
+    /// that is how EFAIL reads a message. So the sentence cannot point at the
+    /// switch: turning it off would fetch nothing here.
+    SomebodyElseSentEncrypted,
 }
 
 /// How many of a message's pictures were not fetched, and why.

@@ -519,6 +519,12 @@ impl HtmlRenderer {
         }
     }
 
+    /// The same renderer, for a page holding mail that was opened from its
+    /// encryption here.
+    pub fn for_mail_opened_from_encryption(self) -> Self {
+        self
+    }
+
     /// A renderer told outright about both picture answers.
     ///
     /// For tests of the announcing seam, which have to drive both directions.
@@ -1307,6 +1313,40 @@ mod tests {
             said < body_starts,
             "the count is read after the message it is about: {document}"
         );
+    }
+
+    #[test]
+    fn test_mail_opened_from_encryption_fetches_no_picture_whatever_the_setting_says() {
+        // EFAIL's other shape, and the RSA advisory's condition: a fetch whose
+        // presence depends on a message having opened says it opened. So with
+        // fetching allowed, a renderer for decrypted mail still fetches
+        // nothing, and the sentence says why without sending anybody to a
+        // switch that would change nothing here (T-13-14-01).
+        use crate::application::pictures::Fetching;
+        let body = MessageBody::Html(
+            "<p>The figures are below.</p>\
+             <img src=\"https://tracker.example.com/chart.png\" alt=\"chart\" width=\"400\">"
+                .to_string(),
+        );
+
+        let fetched = HtmlRenderer::with_fetching(Fetching::Allowed).wrap_body(&body);
+        let opened = HtmlRenderer::with_fetching(Fetching::Allowed)
+            .for_mail_opened_from_encryption()
+            .wrap_body(&body);
+
+        assert!(
+            fetched.contains("src=\"https://tracker.example.com/chart.png\""),
+            "the fixture's picture is not one this renderer would fetch: {fetched}"
+        );
+        assert!(!opened.contains("tracker.example.com"), "{opened}");
+        assert!(
+            opened.contains(
+                "1 picture was not shown. Pictures in encrypted mail are never fetched, because \
+                 fetching one would tell the sender this message was opened."
+            ),
+            "{opened}"
+        );
+        assert!(!opened.contains("Settings, Reading"), "{opened}");
     }
 
     #[test]
