@@ -20,7 +20,7 @@ mod messages;
 pub mod moves_in_flight;
 pub mod moves_waiting;
 pub use address_books::AddressBookContainer;
-pub use calendar::DeletedCalendarEvent;
+pub use calendar::{AnsweredHere, DeletedCalendarEvent};
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
@@ -40,6 +40,7 @@ pub mod shared_folders;
 mod signatures;
 pub mod signed_original;
 mod tags;
+pub mod taking_back;
 pub mod tasks;
 pub mod waiting_flag_changes;
 
@@ -1006,7 +1007,7 @@ pub struct CalendarContainer {
 }
 
 /// Calendar event entry for local cache
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CalendarEventEntry {
     pub id: String,
     pub account_id: String,
@@ -1097,7 +1098,7 @@ pub struct CalendarEventEntry {
 }
 
 /// Reminder entry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReminderEntry {
     pub id: String,
     pub account_id: String,
@@ -1124,7 +1125,7 @@ pub struct TaskListEntry {
 }
 
 /// Task entry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TaskEntry {
     pub id: String,
     pub account_id: String,
@@ -1239,7 +1240,7 @@ pub struct NoteFolderEntry {
 }
 
 /// Note entry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NoteEntry {
     pub id: String,
     pub account_id: String,
@@ -3180,6 +3181,12 @@ impl MessageCache {
         // is the right answer for all of them: until this shipped, answering a
         // meeting wrote nothing to the calendar at all.
         self.ensure_column_exists("calendar_events", "answered_version", "INTEGER")?;
+        // Which answer that was, as `Answer::as_stored` writes it, so the
+        // reader can say "you declined this version" rather than only that it
+        // was answered (#50 point 4). Nothing for every event already stored,
+        // and a row with a version and nothing here reads as answered without
+        // saying which way, which is all anything before this knew.
+        self.ensure_column_exists("calendar_events", "answered_with", "TEXT")?;
         // Where an event was at the calendar server that held it. Nothing for
         // every note already written, which is the right answer for all of
         // them: until this shipped no deletion had ever been sent anywhere, so
@@ -4007,6 +4014,9 @@ impl MessageCache {
                 -- rebuild predates answering a meeting writing anything to the
                 -- calendar, so no event in it was ever answered here.
                 answered_version INTEGER,
+                -- Named here for the reason `answered_version` is, and after
+                -- it because that is the order the two are added in above.
+                answered_with TEXT,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],

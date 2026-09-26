@@ -2930,6 +2930,7 @@ pub fn pim_command(
         PimCommand, confirm_delete, confirmed_detail, deleted, did_not_happen, no_longer_there,
         toggled,
     };
+    use crate::application::undoing::{ItemDid, OnAnItem};
 
     let crate::application::pim_command::PimAction { command, kind, row } = action;
 
@@ -2959,8 +2960,9 @@ pub fn pim_command(
     let mut one_day: Option<crate::common::Result<String>> = None;
 
     if command == PimCommand::Delete {
-        // Confirmed, always. Nothing here can be undone, and a Delete key is
-        // one row away from every other key somebody might have meant.
+        // Confirmed, always. Edit, Undo brings it back only until the next
+        // action, and a Delete key is one row away from every other key
+        // somebody might have meant.
         //
         // Enter answers No. It answered Yes until now, which meant somebody who
         // pressed it partway through hearing the question had deleted the
@@ -3020,8 +3022,25 @@ pub fn pim_command(
         }
     }
 
+    // Everything the item is, read before a delete, because afterwards there
+    // is nothing left for Edit, Undo to put back. Held by the one step in
+    // memory and nowhere else (T-13-33).
+    let record = match (command, &one_day) {
+        (PimCommand::Delete, None) => cache.the_record_of(kind, &id).ok().flatten(),
+        _ => None,
+    };
+    // The action as the one step keeps it, once it has been carried out.
+    let done_to = |id: &str, did: ItemDid| OnAnItem {
+        kind,
+        name: name.clone(),
+        id: id.to_string(),
+        did,
+    };
+
     let outcome = match one_day {
-        Some(written) => written,
+        // A day taken off a series is a save nothing here can take back, so
+        // it leaves no step, rather than an older one for Ctrl+Z to undo.
+        Some(written) => written.map(|said| (said, None)),
         None => match command {
             PimCommand::Delete => match kind {
                 ItemKind::Contact => cache.delete_contact(&id),
@@ -3031,18 +3050,27 @@ pub fn pim_command(
                 ItemKind::Note => cache.delete_note(&id),
                 ItemKind::Mail => return,
             }
-            .map(|()| deleted(kind, &name)),
+            .map(|()| {
+                let did = record.map(|record| done_to(&id, ItemDid::Deleted(Box::new(record))));
+                (deleted(kind, &name), did)
+            }),
             PimCommand::ToggleComplete => match kind {
                 ItemKind::Task => cache.toggle_task_complete(&id),
                 ItemKind::Reminder => cache.toggle_reminder_complete(&id),
                 _ => return,
             }
-            .map(|()| toggled(command, &name, now)),
+            .map(|()| {
+                let did = done_to(&id, ItemDid::MarkedDone { now });
+                (toggled(command, &name, now), Some(did))
+            }),
             PimCommand::TogglePin => match kind {
                 ItemKind::Note => cache.toggle_note_pin(&id),
                 _ => return,
             }
-            .map(|()| toggled(command, &name, now)),
+            .map(|()| {
+                let did = done_to(&id, ItemDid::Pinned { now });
+                (toggled(command, &name, now), Some(did))
+            }),
             // Their own path: there is a window in the middle of it, and
             // somebody can leave that window without choosing, which is not a
             // failure and must not be announced as one.
@@ -3063,9 +3091,9 @@ pub fn pim_command(
                 // one piece of code that puts a contact in a group and one set
                 // of words for it.
                 let cache = Some(cache);
-                match command {
+                let did = match command {
                     PimCommand::Move => {
-                        move_a_contact_between_groups(Some(row), state, &cache, frame, tx, rt);
+                        move_a_contact_between_groups(Some(row), state, &cache, frame, tx, rt)
                     }
                     _ => change_the_group_a_contact_is_in(
                         Membership::PutIn,
@@ -3075,7 +3103,16 @@ pub fn pim_command(
                         frame,
                         tx,
                         rt,
-                    ),
+                    )
+                    .map(|into| ItemDid::Copied {
+                        copy_id: id.clone(),
+                        into,
+                    }),
+                };
+                // Remembered only when the membership changed: a chooser left
+                // without an answer, or a refusal, changed nothing to undo.
+                if let Some(did) = did {
+                    remember_an_item_action(state, Some(done_to(&id, did)));
                 }
                 return;
             }
@@ -3094,7 +3131,7 @@ pub fn pim_command(
                 // acts go through one function because the question is the same
                 // one. Which act it is comes from the command rather than from
                 // a flag read here.
-                if let Some(filing) = command.filing() {
+                let did = command.filing().and_then(|filing| {
                     move_a_reminder_to_another_account(
                         filing,
                         Some(row),
@@ -3103,7 +3140,10 @@ pub fn pim_command(
                         frame,
                         tx,
                         rt,
-                    );
+                    )
+                });
+                if let Some(did) = did {
+                    remember_an_item_action(state, Some(done_to(&id, did)));
                 }
                 return;
             }
@@ -3111,7 +3151,9 @@ pub fn pim_command(
                 .filing()
                 .and_then(|filing| file_it(&cache, state, frame, filing, kind, &id, &name))
             {
-                Some(Filed::Into(said)) => Ok(said),
+                Some(Filed::Into { said, now_at, did }) => {
+                    Ok((said, did.map(|did| done_to(&now_at, did))))
+                }
                 Some(Filed::Failed(why)) => Err(why),
                 // Down the refusal channel rather than the status line. A
                 // status announcement carries the topic "status", and a newer
@@ -3130,7 +3172,7 @@ pub fn pim_command(
     };
 
     match outcome {
-        Ok(said) => {
+        Ok((said, done)) => {
             send_status(tx, rt, &said);
             // Delete and Move say nothing here: a delete already asked
             // first, and a move is announced by its own destination-naming
@@ -3139,6 +3181,7 @@ pub fn pim_command(
             if let Some(detail) = confirmed_detail(command, now) {
                 let _ = a11y.signal(FeedbackEvent::Confirmed, detail);
             }
+            remember_an_item_action(state, done);
             let account_id = lock_state(state).active_account_id.clone();
             crate::presentation::wx_app::load_module_data(
                 module_for(kind),
@@ -3156,6 +3199,420 @@ pub fn pim_command(
                 &e.to_string(),
             )));
         }
+    }
+}
+
+/// Keep the action just carried out on an item as the one step Edit, Undo
+/// takes back, replacing the last action on messages or on items (13-09).
+///
+/// Called only once a command has been carried out, so a delete answered No,
+/// or a write that failed, leaves the step as it was. `None` is an action
+/// nothing can take back, a day taken off a series, which clears the step
+/// rather than leaving an older one for Ctrl+Z to undo.
+fn remember_an_item_action(
+    state: &Arc<StdMutex<WxUIState>>,
+    done: Option<crate::application::undoing::OnAnItem>,
+) {
+    use crate::application::undoing::{LastAction, OneStep};
+    lock_state(state).last_action = done.map(|item| OneStep::new(LastAction::OnAnItem(item)));
+}
+
+/// How an undo or a redo of an action on an item was carried out.
+enum Carried {
+    /// As `application::undoing` answered.
+    AsAsked,
+    /// A deleted item its account had already let go of, made again as new.
+    MadeAgain,
+    /// A delete was asked about and answered No, so nothing happened.
+    NotAsked,
+}
+
+/// Edit, Undo or Redo in a module's list: the last action on an item taken
+/// back, or done again (13-09).
+///
+/// What it means is `application::undoing`'s, from what the store says about
+/// the item now; this carries it out through the same cache calls and the same
+/// paths the action went through, so the next sync sends it as it sends any
+/// change and Allow Changes holds it as it holds any. A deletion still owed is
+/// taken back with its row through `take_a_deletion_back`; one the account has
+/// taken is made again as new. Answers the one sentence to say, nothing after
+/// a question answered No, or the refusal.
+pub fn undo_or_redo_on_an_item(
+    direction: crate::application::undoing::Direction,
+    here: crate::common::types::PimModule,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+) -> Result<Option<String>, String> {
+    use crate::application::undoing::{
+        Direction, ItemDid, LastAction, OneStep, UndoAnItem, being_synced_now, in_another_module,
+        made_again, nothing_to_redo, nothing_to_undo, redone, undone, what_redo_does_to_an_item,
+        what_undo_does_to_an_item,
+    };
+    use crate::data::message_cache::taking_back::{Record, TakenBack};
+
+    let Some(cache) = cache.as_ref() else {
+        return Err("The mail on this computer is not open.".to_string());
+    };
+    let kept = lock_state(state).last_action.clone();
+    let item = match kept.as_ref() {
+        Some(step) if step.action().module() != here => {
+            return Err(in_another_module(step.action(), direction));
+        }
+        Some(step) if step.offers(direction) => match step.action() {
+            LastAction::OnAnItem(item) => item.clone(),
+            elsewhere => return Err(in_another_module(elsewhere, direction)),
+        },
+        step => {
+            return Err(match direction {
+                Direction::Undo => nothing_to_undo(step),
+                Direction::Redo => nothing_to_redo(step),
+            }
+            .to_string());
+        }
+    };
+    let read = match (&item.did, direction) {
+        (ItemDid::Copied { copy_id, .. }, Direction::Undo) => copy_id.as_str(),
+        _ => item.id.as_str(),
+    };
+    let store = cache
+        .what_the_store_says_of_an_item(item.kind, read)
+        .map_err(|why| format!("{} could not be read on this computer: {why}.", item.name))?;
+    let answer = match direction {
+        Direction::Undo => what_undo_does_to_an_item(&item, store),
+        Direction::Redo => what_redo_does_to_an_item(&item, store),
+    };
+    let make_it_again = |record: &Record, after: &mut crate::application::undoing::OnAnItem| {
+        let as_id = new_id(an_identifier_prefix(item.kind));
+        let again = cache
+            .make_it_again(record, &as_id)
+            .map_err(|why| format!("{} could not be made again: {why}.", item.name))?;
+        after.id = as_id;
+        after.did = ItemDid::Deleted(Box::new(again));
+        Ok(Carried::MadeAgain)
+    };
+
+    let mut after = item.clone();
+    let carried = match answer {
+        UndoAnItem::Refused(why) => Err(why),
+        UndoAnItem::MarkDone(done) => {
+            set_done_or_pinned(cache, &item, done).map(|()| Carried::AsAsked)
+        }
+        UndoAnItem::Pin(pinned) => {
+            set_done_or_pinned(cache, &item, pinned).map(|()| Carried::AsAsked)
+        }
+        UndoAnItem::MoveTo(to) => move_an_item(cache, &item, &to).map(|now_at| {
+            after.id = now_at;
+            Carried::AsAsked
+        }),
+        UndoAnItem::CopyInto(into) => copy_an_item(cache, &item, &into).map(|copy_id| {
+            after.did = ItemDid::Copied { copy_id, into };
+            Carried::AsAsked
+        }),
+        UndoAnItem::DeleteTheCopy { id } => take_the_copy_away(cache, frame, &item, &id),
+        UndoAnItem::DeleteIt => delete_it_again(cache, frame, &mut after),
+        UndoAnItem::TakeTheDeletionBack(record) => match cache.take_a_deletion_back(&record) {
+            Ok(TakenBack::AsItWas) => Ok(Carried::AsAsked),
+            // Its sync began between the read above and the transaction.
+            Ok(TakenBack::BeingSyncedNow) => Err(being_synced_now(&item)),
+            // Taken by its account between the read and the transaction: it
+            // can only come back as new.
+            Ok(TakenBack::AlreadyTaken) => make_it_again(&record, &mut after),
+            Err(why) => Err(format!("{} could not be put back: {why}.", item.name)),
+        },
+        UndoAnItem::MakeItAgain(record) => make_it_again(&record, &mut after),
+    };
+    let said = match carried? {
+        Carried::NotAsked => return Ok(None),
+        Carried::MadeAgain => made_again(&after),
+        Carried::AsAsked => match direction {
+            Direction::Undo => undone(&LastAction::OnAnItem(after.clone())),
+            Direction::Redo => redone(&LastAction::OnAnItem(after.clone())),
+        },
+    };
+    // Where the cursor goes once the list is read back: the item that came
+    // back, the copy made again, and nowhere after a delete done again.
+    let land_on = match (&after.did, direction) {
+        (ItemDid::Deleted(_), Direction::Redo) => None,
+        (ItemDid::Copied { copy_id, .. }, Direction::Redo) => Some(copy_id.clone()),
+        _ => Some(after.id.clone()),
+    };
+    let kind = after.kind;
+    let mut step = OneStep::new(LastAction::OnAnItem(after));
+    if direction == Direction::Undo {
+        step.went(Direction::Undo);
+    }
+    let account_id = {
+        let mut s = lock_state(state);
+        s.last_action = Some(step);
+        s.land_on_the_item_when_listed = land_on.map(|id| (here, id));
+        s.active_account_id.clone()
+    };
+    crate::presentation::wx_app::load_module_data(
+        module_for(kind),
+        &Some(Arc::clone(cache)),
+        account_id,
+        tx,
+        the_calendar_on_screen(state),
+    );
+    Ok(Some(said))
+}
+
+/// What a new identifier of this kind starts with, the prefix `new_id` is
+/// given everywhere else such a thing is made.
+fn an_identifier_prefix(kind: crate::application::new_item::ItemKind) -> &'static str {
+    use crate::application::new_item::ItemKind;
+    match kind {
+        ItemKind::Contact => "contact",
+        ItemKind::Event => "event",
+        ItemKind::Task => "task",
+        ItemKind::Note => "note",
+        ItemKind::Reminder => "reminder",
+        ItemKind::Mail => "message",
+    }
+}
+
+/// Mark a task or a reminder done or not, or pin a note or not, through the
+/// toggle the command itself uses, and only when it is not that already, so an
+/// undo after somebody else changed it does not turn it the wrong way.
+fn set_done_or_pinned(
+    cache: &MessageCache,
+    item: &crate::application::undoing::OnAnItem,
+    wanted: bool,
+) -> Result<(), String> {
+    use crate::data::message_cache::taking_back::Record;
+    /// The cache's own toggle for the kind, the call the command itself made.
+    type Toggle = fn(&MessageCache, &str) -> crate::common::Result<()>;
+    let not_here = || {
+        format!(
+            "{} is no longer here, so it cannot be changed back.",
+            item.name
+        )
+    };
+    let (now, toggle): (bool, Toggle) = match cache.the_record_of(item.kind, &item.id) {
+        Ok(Some(Record::Task(task))) => (task.is_completed, MessageCache::toggle_task_complete),
+        Ok(Some(Record::Reminder(reminder))) => (
+            reminder.is_completed,
+            MessageCache::toggle_reminder_complete,
+        ),
+        Ok(Some(Record::Note(note))) => (note.pinned, MessageCache::toggle_note_pin),
+        Ok(_) => return Err(not_here()),
+        Err(why) => {
+            return Err(format!(
+                "{} could not be read on this computer: {why}.",
+                item.name
+            ));
+        }
+    };
+    if now == wanted {
+        return Ok(());
+    }
+    toggle(cache, &item.id).map_err(|why| format!("{} could not be changed: {why}.", item.name))
+}
+
+/// Move an item back, or again, through the path its move took: a calendar,
+/// a list or a folder through `file_under`, a contact between two groups, a
+/// reminder between two accounts. Answers the row it is now.
+fn move_an_item(
+    cache: &MessageCache,
+    item: &crate::application::undoing::OnAnItem,
+    to: &crate::application::undoing::Place,
+) -> Result<String, String> {
+    use crate::application::contact_groups;
+    use crate::application::new_item::ItemKind;
+    use crate::application::undoing::ItemDid;
+    use crate::data::message_cache::{MovedBetweenGroups, MovedToAnotherAccount};
+    match item.kind {
+        ItemKind::Contact => {
+            let ItemDid::Moved { from, to: went } = &item.did else {
+                return Err(format!("{} was not moved.", item.name));
+            };
+            let out_of = if to.id == from.id { went } else { from };
+            match cache.move_contact_between_groups(&item.id, &out_of.id, &to.id) {
+                Ok(MovedBetweenGroups::Moved) => Ok(item.id.clone()),
+                Ok(MovedBetweenGroups::NotInTheGroupItWouldLeave) => {
+                    Err(contact_groups::not_in(&item.name, &out_of.name))
+                }
+                Ok(MovedBetweenGroups::IntoTheOneItIsLeaving) => {
+                    Err(contact_groups::already_in(&item.name, &to.name))
+                }
+                Err(why) => Err(format!("{} could not be moved: {why}.", item.name)),
+            }
+        }
+        ItemKind::Reminder => {
+            match cache.move_reminder_to_account(&item.id, &to.id, &now_stamp()) {
+                Ok(MovedToAnotherAccount::Moved) => Ok(item.id.clone()),
+                Ok(MovedToAnotherAccount::AlreadyThere) => Err(
+                    crate::application::pim_command::already_in_that_account(&item.name, &to.name),
+                ),
+                Ok(MovedToAnotherAccount::NoSuchReminder) => Err(
+                    crate::application::pim_command::no_longer_there(item.kind, &item.name),
+                ),
+                Err(why) => Err(format!("{} could not be moved: {why}.", item.name)),
+            }
+        }
+        _ => file_it_again(
+            cache,
+            item,
+            to,
+            crate::application::destinations::Filing::Moving,
+        ),
+    }
+}
+
+/// Put a copy of an item there again, through the path the copy took, and
+/// answer the copy's row.
+fn copy_an_item(
+    cache: &MessageCache,
+    item: &crate::application::undoing::OnAnItem,
+    into: &crate::application::undoing::Place,
+) -> Result<String, String> {
+    use crate::application::new_item::ItemKind;
+    match item.kind {
+        ItemKind::Contact => cache
+            .add_contact_to_group(&into.id, &item.id)
+            .map(|()| item.id.clone())
+            .map_err(|why| format!("{} could not be put in {}: {why}.", item.name, into.name)),
+        ItemKind::Reminder => {
+            match cache.copy_reminder_to_account(
+                &item.id,
+                &into.id,
+                &new_id("reminder"),
+                &now_stamp(),
+            ) {
+                Ok(Some(copy)) => Ok(copy),
+                Ok(None) => Err(crate::application::pim_command::no_longer_there(
+                    item.kind, &item.name,
+                )),
+                Err(why) => Err(format!("{} could not be copied: {why}.", item.name)),
+            }
+        }
+        _ => file_it_again(
+            cache,
+            item,
+            into,
+            crate::application::destinations::Filing::Copying,
+        ),
+    }
+}
+
+/// `file_under`, for an event, a task or a note, in the account the item is in.
+fn file_it_again(
+    cache: &MessageCache,
+    item: &crate::application::undoing::OnAnItem,
+    into: &crate::application::undoing::Place,
+    filing: crate::application::destinations::Filing,
+) -> Result<String, String> {
+    let account_id = match cache.the_record_of(item.kind, &item.id) {
+        Ok(Some(record)) => record.account_id().to_string(),
+        Ok(None) => {
+            return Err(crate::application::pim_command::no_longer_there(
+                item.kind, &item.name,
+            ));
+        }
+        Err(why) => {
+            return Err(format!(
+                "{} could not be read on this computer: {why}.",
+                item.name
+            ));
+        }
+    };
+    file_under(cache, item.kind, &item.id, &into.id, &account_id, filing)
+        .map_err(|why| why.to_string())
+}
+
+/// Take away the copy an action made. A contact's copy is a place in a group,
+/// so she comes out of it; any other copy is a delete, asked first as every
+/// delete here is, in words that say which of the two goes.
+fn take_the_copy_away(
+    cache: &MessageCache,
+    frame: &Frame,
+    item: &crate::application::undoing::OnAnItem,
+    copy_id: &str,
+) -> Result<Carried, String> {
+    use crate::application::new_item::ItemKind;
+    use crate::application::undoing::{ItemDid, take_away_the_copy};
+    if item.kind == ItemKind::Contact {
+        let ItemDid::Copied { into, .. } = &item.did else {
+            return Err(format!("{} was not put in a group.", item.name));
+        };
+        return cache
+            .remove_contact_from_group(&into.id, copy_id)
+            .map(|()| Carried::AsAsked)
+            .map_err(|why| {
+                format!(
+                    "{} could not be taken out of {}: {why}.",
+                    item.name, into.name
+                )
+            });
+    }
+    if !asked_yes(frame, &take_away_the_copy(item), "Undo Copy") {
+        return Ok(Carried::NotAsked);
+    }
+    delete_one(cache, item.kind, copy_id)
+        .map(|()| Carried::AsAsked)
+        .map_err(|why| format!("The copy of {} could not be deleted: {why}.", item.name))
+}
+
+/// Delete an item again, asked first as every delete here is, keeping what it
+/// is now so the next undo can put it back.
+fn delete_it_again(
+    cache: &MessageCache,
+    frame: &Frame,
+    after: &mut crate::application::undoing::OnAnItem,
+) -> Result<Carried, String> {
+    use crate::application::undoing::ItemDid;
+    let record = match cache.the_record_of(after.kind, &after.id) {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            return Err(format!(
+                "{} is no longer here, so it cannot be deleted again.",
+                after.name
+            ));
+        }
+        Err(why) => {
+            return Err(format!(
+                "{} could not be read on this computer: {why}.",
+                after.name
+            ));
+        }
+    };
+    let question = crate::application::pim_command::confirm_delete(after.kind, &after.name);
+    if !asked_yes(frame, &question, "Delete") {
+        return Ok(Carried::NotAsked);
+    }
+    delete_one(cache, after.kind, &after.id)
+        .map_err(|why| format!("{} could not be deleted: {why}.", after.name))?;
+    after.did = ItemDid::Deleted(Box::new(record));
+    Ok(Carried::AsAsked)
+}
+
+/// The question before a delete, where Enter answers No, as `pim_command`
+/// asks it (`presentation::asking`).
+fn asked_yes(frame: &Frame, question: &str, title: &str) -> bool {
+    MessageDialog::builder(frame, question, title)
+        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+        .build()
+        .show_modal()
+        == ID_YES
+}
+
+/// One item deleted through its kind's own delete, which leaves the deletion
+/// note its account is owed, exactly as the Delete command does.
+fn delete_one(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ItemKind,
+    id: &str,
+) -> crate::common::Result<()> {
+    use crate::application::new_item::ItemKind;
+    match kind {
+        ItemKind::Contact => cache.delete_contact(id),
+        ItemKind::Event => cache.delete_calendar_event(id),
+        ItemKind::Reminder => cache.delete_reminder(id),
+        ItemKind::Task => cache.delete_task(id),
+        ItemKind::Note => cache.delete_note(id),
+        ItemKind::Mail => Ok(()),
     }
 }
 
@@ -6812,7 +7269,7 @@ fn file_it(
     id: &str,
     name: &str,
 ) -> Option<Filed> {
-    use crate::application::destinations::Moving;
+    use crate::application::destinations::{Filing, Moving};
 
     let Offered {
         holder,
@@ -6859,12 +7316,37 @@ fn file_it(
             || a_removal_will_have_to_be_sent(cache, kind, filing, id),
         crate::application::allowed::allowed_for(&account_id).personal_information,
     );
+    // Where it was, read before it moves, so Edit, Undo can put it back.
+    let was_in = held_in(cache, kind, id, &account_id)
+        .map(|held| the_place_called(cache, holder, &account_id, held));
+    let went_to = crate::application::undoing::Place {
+        id: into.id.clone(),
+        name: landed.clone(),
+    };
 
     Some(
         match file_under(cache, kind, id, &into.id, &account_id, filing) {
-            Ok(_) => Filed::Into(crate::application::pim_command::filed(
-                filing, name, &landed, waiting,
-            )),
+            Ok(landed_as) => {
+                let said = crate::application::pim_command::filed(filing, name, &landed, waiting);
+                match filing {
+                    Filing::Moving => Filed::Into {
+                        said,
+                        did: was_in.map(|from| crate::application::undoing::ItemDid::Moved {
+                            from,
+                            to: went_to,
+                        }),
+                        now_at: landed_as,
+                    },
+                    Filing::Copying => Filed::Into {
+                        said,
+                        did: Some(crate::application::undoing::ItemDid::Copied {
+                            copy_id: landed_as,
+                            into: went_to,
+                        }),
+                        now_at: id.to_string(),
+                    },
+                }
+            }
             // The other route to the same refusals, taken when the chooser was
             // bypassed. It arrives as a failed write rather than as a refusal
             // because that is what it is here: something was asked for that
@@ -6872,6 +7354,21 @@ fn file_it(
             Err(why) => Filed::Failed(why),
         },
     )
+}
+
+/// A container as an undo names it: found among its kind's containers, or by
+/// its identifier when it is no longer among them.
+fn the_place_called(
+    cache: &MessageCache,
+    holder: crate::application::new_item::ContainerKind,
+    account_id: &str,
+    id: String,
+) -> crate::application::undoing::Place {
+    let name = containers_in(cache, holder, account_id)
+        .into_iter()
+        .find(|(held, _, _)| *held == id)
+        .map_or_else(|| id.clone(), |(_, name, _)| name);
+    crate::application::undoing::Place { id, name }
 }
 
 /// How a Move or a Copy ended.
@@ -6882,8 +7379,13 @@ fn file_it(
 /// replaces, so the sentence explaining why nothing happened could be dropped
 /// by the next thing a sync wrote there.
 enum Filed {
-    /// It happened. The sentence names where it went.
-    Into(String),
+    /// It happened. The sentence names where it went; `now_at` is the row the
+    /// item is now, and `did` what Edit, Undo takes back, when it can.
+    Into {
+        said: String,
+        now_at: String,
+        did: Option<crate::application::undoing::ItemDid>,
+    },
     /// It did not happen and nothing was written. The sentence says why.
     Refused(String),
     /// The write itself failed.
@@ -7807,6 +8309,9 @@ pub fn rename_group(
 /// contact in every group has nowhere to go and the remedy is to make one. Both
 /// happen before a window opens, so nobody answers a question whose answer is
 /// thrown away.
+///
+/// Answers the move it made, from one group to the other, for Edit, Undo to
+/// take back, and nothing when nothing moved.
 pub fn move_a_contact_between_groups(
     row: Option<usize>,
     state: &Arc<StdMutex<WxUIState>>,
@@ -7814,23 +8319,27 @@ pub fn move_a_contact_between_groups(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
-) {
+) -> Option<crate::application::undoing::ItemDid> {
     use crate::application::contact_groups;
     use crate::application::new_item::ItemKind;
+    use crate::application::undoing::{ItemDid, Place};
     use crate::data::message_cache::MovedBetweenGroups;
 
+    let refused = |said: &str| {
+        send_refusal(tx, rt, said);
+        None
+    };
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "The mail on this computer is not open.");
+        return refused("The mail on this computer is not open.");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, &nothing_chosen(Thing::CONTACT));
+        return refused(&nothing_chosen(Thing::CONTACT));
     };
     let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
-        return send_refusal(
-            tx,
-            rt,
-            &crate::application::pim_command::no_longer_there(ItemKind::Contact, ""),
-        );
+        return refused(&crate::application::pim_command::no_longer_there(
+            ItemKind::Contact,
+            "",
+        ));
     };
     let account_id = active_or_local(state);
     let person = the_person_called(&cache, &account_id, &contact_id);
@@ -7838,11 +8347,11 @@ pub fn move_a_contact_between_groups(
     let groups = every_group_here(&cache, &account_id);
     let leaving = contact_groups::could_leave(&contact_id, &groups);
     if leaving.is_empty() {
-        return send_refusal(tx, rt, &contact_groups::in_no_group(&person));
+        return refused(&contact_groups::in_no_group(&person));
     }
     let joining = contact_groups::could_join(&contact_id, &groups);
     if joining.is_empty() {
-        return send_refusal(tx, rt, &contact_groups::in_every_group(&person));
+        return refused(&contact_groups::in_every_group(&person));
     }
 
     // The one answer is taken rather than asked for. A chooser holding a single
@@ -7851,24 +8360,19 @@ pub fn move_a_contact_between_groups(
     let out_of = if let [only] = leaving.as_slice() {
         (only.id.clone(), only.name.clone())
     } else {
-        let Some(chosen) = which_of_these_groups(
+        which_of_these_groups(
             frame,
             &leaving,
             "Which group should this contact come out of?",
             "Move out of a group",
-        ) else {
-            return;
-        };
-        chosen
+        )?
     };
-    let Some((into_id, _)) = which_of_these_groups(
+    let (into_id, _) = which_of_these_groups(
         frame,
         &joining,
         "Which group should this contact go in?",
         "Move into a group",
-    ) else {
-        return;
-    };
+    )?;
 
     match cache.move_contact_between_groups(&contact_id, &out_of.0, &into_id) {
         Ok(MovedBetweenGroups::Moved) => {
@@ -7896,19 +8400,30 @@ pub fn move_a_contact_between_groups(
                 ),
             );
             refill_the_contacts_panel(&cache, &account_id, tx);
+            Some(ItemDid::Moved {
+                from: Place {
+                    id: out_of.0,
+                    name: out_of.1,
+                },
+                to: Place {
+                    id: into_id,
+                    name: into_name,
+                },
+            })
         }
         // Both are answers the chooser cannot produce, because it is built from
         // the groups the contact really is in and the ones it is not. They
         // arrive when a sync changes a membership between the question and the
         // answer, and each already has a sentence of its own.
         Ok(MovedBetweenGroups::NotInTheGroupItWouldLeave) => {
-            send_refusal(tx, rt, &contact_groups::not_in(&person, &out_of.1));
+            refused(&contact_groups::not_in(&person, &out_of.1))
         }
         Ok(MovedBetweenGroups::IntoTheOneItIsLeaving) => {
-            send_refusal(tx, rt, &contact_groups::already_in(&person, &out_of.1));
+            refused(&contact_groups::already_in(&person, &out_of.1))
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+            None
         }
     }
 }
@@ -7954,6 +8469,9 @@ fn the_accounts_here(
 ///
 /// Nobody has heard whether a flat list, where every other move in this program
 /// opens a tree, reads as a different command or as the same one.
+///
+/// Answers the move or the copy it made, for Edit, Undo to take back, and
+/// nothing when nothing was filed.
 pub fn move_a_reminder_to_another_account(
     filing: crate::application::destinations::Filing,
     row: Option<usize>,
@@ -7962,43 +8480,53 @@ pub fn move_a_reminder_to_another_account(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
-) {
+) -> Option<crate::application::undoing::ItemDid> {
     use crate::application::destinations::Filing;
     use crate::application::new_item::ItemKind;
     use crate::application::pim_command::{
         accounts_a_reminder_could_go_to, already_in_that_account, filed, no_longer_there,
         the_only_account_there_is,
     };
+    use crate::application::undoing::{ItemDid, Place};
     use crate::data::message_cache::MovedToAnotherAccount;
 
+    let refused = |said: &str| {
+        send_refusal(tx, rt, said);
+        None
+    };
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "The mail on this computer is not open.");
+        return refused("The mail on this computer is not open.");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, &nothing_chosen(Thing::REMINDER));
+        return refused(&nothing_chosen(Thing::REMINDER));
     };
     let Some((id, name, _)) = selected_item(state, ItemKind::Reminder, row) else {
-        return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, ""));
+        return refused(&no_longer_there(ItemKind::Reminder, ""));
     };
     // Which account it is in is read from the store rather than taken from the
     // panel. The panel was filled for the account being looked at, which is the
     // same answer almost always and is an inference either way.
     let Some(reminder) = cache.get_reminder(&id).ok().flatten() else {
-        return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, &name));
+        return refused(&no_longer_there(ItemKind::Reminder, &name));
     };
     let in_now = reminder.account_id;
 
-    let could_go = accounts_a_reminder_could_go_to(
-        filing,
-        &the_accounts_here(&cache, &active_or_local(state)),
-        &in_now,
-    );
+    let every_account = the_accounts_here(&cache, &active_or_local(state));
+    let could_go = accounts_a_reminder_could_go_to(filing, &every_account, &in_now);
+    // Where it was, as the accounts are spoken, so Edit, Undo can name it.
+    let was_in = Place {
+        name: every_account
+            .iter()
+            .find(|account| account.id == in_now)
+            .map_or_else(|| in_now.clone(), |account| account.spoken.clone()),
+        id: in_now,
+    };
     // Said before any window opens. A chooser with nothing in it is a window
     // somebody arrows through to find out there was never an answer. Only a
     // move can get here: a copy is offered at least the account the reminder is
     // in, so its list is never empty.
     let [first, ..] = could_go.as_slice() else {
-        return send_refusal(tx, rt, &the_only_account_there_is(&name));
+        return refused(&the_only_account_there_is(&name));
     };
     // The one answer is taken rather than asked for, the way a contact's move
     // takes the only group it could be leaving. A chooser holding a single row
@@ -8021,11 +8549,13 @@ pub fn move_a_reminder_to_another_account(
                     "Copy to another account",
                 ),
             };
-            let Some(chosen) = pick_one(frame, question, window, &names) else {
-                return;
-            };
+            let chosen = pick_one(frame, question, window, &names)?;
             could_go[chosen].clone()
         }
+    };
+    let went_to = Place {
+        id: into.id.clone(),
+        name: into.spoken.clone(),
     };
 
     let stamp = now_stamp();
@@ -8039,30 +8569,43 @@ pub fn move_a_reminder_to_another_account(
             // Outlook nor Exchange has a standalone reminder to sync one to,
             // so there is no account for this to have failed to reach and
             // nothing a setting could be holding.
-            Ok(MovedToAnotherAccount::Moved) => Ok(filed(
-                filing,
-                &name,
-                &into.spoken,
-                crate::application::pim_command::Waiting::StaysHere,
-            )),
-            Ok(MovedToAnotherAccount::AlreadyThere) => {
-                return send_refusal(tx, rt, &already_in_that_account(&name, &into.spoken));
-            }
-            Ok(MovedToAnotherAccount::NoSuchReminder) => {
-                return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, &name));
-            }
-            Err(e) => Err(e),
-        },
-        Filing::Copying => {
-            match cache.copy_reminder_to_account(&id, &into.id, &new_id("reminder"), &stamp) {
-                Ok(Some(_)) => Ok(filed(
+            Ok(MovedToAnotherAccount::Moved) => Ok((
+                filed(
                     filing,
                     &name,
                     &into.spoken,
                     crate::application::pim_command::Waiting::StaysHere,
+                ),
+                ItemDid::Moved {
+                    from: was_in,
+                    to: went_to,
+                },
+            )),
+            Ok(MovedToAnotherAccount::AlreadyThere) => {
+                return refused(&already_in_that_account(&name, &into.spoken));
+            }
+            Ok(MovedToAnotherAccount::NoSuchReminder) => {
+                return refused(&no_longer_there(ItemKind::Reminder, &name));
+            }
+            Err(e) => Err(e),
+        },
+        Filing::Copying => {
+            let copy_id = new_id("reminder");
+            match cache.copy_reminder_to_account(&id, &into.id, &copy_id, &stamp) {
+                Ok(Some(_)) => Ok((
+                    filed(
+                        filing,
+                        &name,
+                        &into.spoken,
+                        crate::application::pim_command::Waiting::StaysHere,
+                    ),
+                    ItemDid::Copied {
+                        copy_id,
+                        into: went_to,
+                    },
                 )),
                 Ok(None) => {
-                    return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, &name));
+                    return refused(&no_longer_there(ItemKind::Reminder, &name));
                 }
                 Err(e) => Err(e),
             }
@@ -8070,7 +8613,7 @@ pub fn move_a_reminder_to_another_account(
     };
 
     match said {
-        Ok(sentence) => {
+        Ok((sentence, did)) => {
             send_status(tx, rt, &sentence);
             crate::presentation::wx_app::load_module_data(
                 crate::common::types::PimModule::Reminders,
@@ -8079,9 +8622,11 @@ pub fn move_a_reminder_to_another_account(
                 tx,
                 the_calendar_on_screen(state),
             );
+            Some(did)
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+            None
         }
     }
 }
@@ -8109,6 +8654,9 @@ fn the_person_called(cache: &MessageCache, account_id: &str, contact_id: &str) -
 ///
 /// The two are one function because everything but the direction is the same:
 /// which contact, which group, and what the group holds afterwards.
+///
+/// Answers the group it changed, for Edit, Undo to take back, and nothing
+/// when nothing changed.
 pub fn change_the_group_a_contact_is_in(
     which_way: Membership,
     row: Option<usize>,
@@ -8117,21 +8665,24 @@ pub fn change_the_group_a_contact_is_in(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
-) {
+) -> Option<crate::application::undoing::Place> {
     use crate::application::new_item::ItemKind;
 
+    let refused = |said: &str| {
+        send_refusal(tx, rt, said);
+        None
+    };
     let Some(cache) = cache.clone() else {
-        return send_refusal(tx, rt, "The mail on this computer is not open.");
+        return refused("The mail on this computer is not open.");
     };
     let Some(row) = row else {
-        return send_refusal(tx, rt, &nothing_chosen(Thing::CONTACT));
+        return refused(&nothing_chosen(Thing::CONTACT));
     };
     let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
-        return send_refusal(
-            tx,
-            rt,
-            &crate::application::pim_command::no_longer_there(ItemKind::Contact, ""),
-        );
+        return refused(&crate::application::pim_command::no_longer_there(
+            ItemKind::Contact,
+            "",
+        ));
     };
     let account_id = active_or_local(state);
 
@@ -8143,20 +8694,32 @@ pub fn change_the_group_a_contact_is_in(
         ),
     };
     let Some((group_id, _)) = which_group(frame, &cache, &account_id, question, window) else {
-        return send_refusal(
-            tx,
-            rt,
+        return refused(
             "There are no contact groups yet. Make one from the contacts sidebar first.",
         );
     };
+    // Whether the membership will change, read before it does: putting her in
+    // a group she is already in changes nothing, and nothing is there to undo.
+    let group = a_group_here(&cache, &account_id, &group_id);
+    let changes = group.as_ref().is_some_and(|group| {
+        let was_in = group.member_ids.contains(&contact_id);
+        was_in == matches!(which_way, Membership::TakeOut)
+    });
 
     match change_membership(&cache, which_way, &group_id, &account_id, &contact_id) {
         Ok(said) => {
             send_status(tx, rt, &said);
             refill_the_contacts_panel(&cache, &account_id, tx);
+            group
+                .filter(|_| changes)
+                .map(|group| crate::application::undoing::Place {
+                    id: group.id,
+                    name: group.name,
+                })
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+            None
         }
     }
 }

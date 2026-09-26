@@ -21,9 +21,10 @@
 //! handed on carries the words where the message opened and
 //! [`crate::presentation::reader_text::single_message`] finds no armour to write
 //! a sentence about. And when the answers are folded into a document, the
-//! envelope goes in before the signature: a verdict puts the "More about this
-//! signature:" line into the bar and the reader speaks only what is above that
-//! line, so a sentence folded in after one is on screen and never spoken.
+//! envelope and then the meeting a message carries go in before the signature:
+//! a verdict puts the "More about this signature:" line into the bar and the
+//! reader speaks only what is above that line, so a sentence folded in after
+//! one is on screen and never spoken.
 //! [`crate::presentation::reader_text::ReaderDocument::with_what_is_said`] is
 //! the one place that order is written, for the same reason this is the one
 //! place the questions are asked.
@@ -60,11 +61,14 @@
 //! an enveloped message; a body that arrived after the window opened would be
 //! a blank message that filled itself in afterwards.
 
+use crate::application::answering;
 use crate::application::checking_signatures::{self, SignatureCheck};
 use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
+use crate::application::invitations::{self, WhatTheInvitationSays};
 use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
+use crate::presentation::date_display::DateSettings;
 use crate::service::pgp::WhatOpeningItFound;
 
 /// What one message shows, and what is said about it.
@@ -78,10 +82,10 @@ pub struct WhatAMessageShowsAndSays {
     pub said: WhatIsSaidAboutIt,
 }
 
-/// The three things said about a message beside its body.
+/// The four things said about a message beside its body.
 ///
 /// Each is the answer its own module already gives, carried together so no
-/// surface can take two of the three. Nearly every message has nothing in any
+/// surface can take three of the four. Nearly every message has nothing in any
 /// of them, and then nothing downstream changes at all: no bar where there was
 /// none, no line to listen past.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,8 +95,56 @@ pub struct WhatIsSaidAboutIt {
     pub opened: Option<WhatOpeningItFound>,
     /// What the S/MIME envelope says, for a message that arrived in one.
     pub envelope: WhatTheEnvelopeSays,
+    /// What the calendar document the message carries says, for a message
+    /// that carries one.
+    pub invitation: WhatTheInvitationSays,
+    /// Whether that invitation can be answered here: the three buttons, why
+    /// it cannot, or nothing asked of anybody (#50 points 4 and 7).
+    pub answering: answering::AnswerButtons,
     /// What the signature was worth, for a message that said it was signed.
     pub signature: SignatureCheck,
+}
+
+/// Who answers an invitation that arrived on one account, and whether that
+/// account may send.
+///
+/// Asked of the caller, by the account's identity, because the address lives
+/// with the account and the setting in the stored settings, and neither is
+/// this module's to read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnsweringAs {
+    /// The account's own address, the one the invitation has to name.
+    pub address: String,
+    /// What the account is allowed to change, of which sending is the part
+    /// answering needs.
+    pub allowed: crate::application::allowed::Allowed,
+}
+
+impl AnsweringAs {
+    /// Who answers on `account`: the address on the account's own row and what
+    /// the stored settings and the command line allow it.
+    ///
+    /// No address for an account this computer does not hold, which no
+    /// invitation names, so the answer is "not addressed to" rather than a
+    /// guess.
+    pub fn on(cache: Option<&MessageCache>, account: &str) -> Self {
+        let address = cache
+            .map(|cache| {
+                cache.load_accounts().unwrap_or_else(|e| {
+                    tracing::warn!("Could not read the accounts to answer a meeting as: {e}");
+                    Vec::new()
+                })
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .find(|held| held.id == account)
+            .map(|held| held.email)
+            .unwrap_or_default();
+        Self {
+            address,
+            allowed: crate::application::allowed::allowed_for(account),
+        }
+    }
 }
 
 impl WhatIsSaidAboutIt {
@@ -108,6 +160,8 @@ impl WhatIsSaidAboutIt {
         Self {
             opened: None,
             envelope: WhatTheEnvelopeSays::NotEncrypted,
+            invitation: WhatTheInvitationSays::Nothing,
+            answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotSigned,
         }
     }
@@ -124,20 +178,32 @@ impl WhatIsSaidAboutIt {
 /// With no cache there is nothing to ask, and the answers are the ones
 /// ordinary mail gets. The armour is still offered to the key, because that
 /// question is about the body in hand and not about the cache.
+///
+/// `dates` is how this reader words a date, asked for only when the message
+/// carries a meeting whose time has to be said, so ordinary mail never reads
+/// a setting. `answering_as` is who answers on the account a message arrived
+/// on, asked for only when it carries an invitation.
 pub fn for_message(
     cache: Option<&MessageCache>,
     message_row_id: i64,
     from: &str,
     body: MessageBody,
+    dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
 ) -> WhatAMessageShowsAndSays {
+    // Asked at most once, by whichever of the two questions about a meeting
+    // needs it first, and never for ordinary mail.
+    let dates = std::cell::LazyCell::new(dates);
     put_together(
         body,
         envelope_check_for(cache, message_row_id),
+        invitation_check_for(cache, message_row_id, || *dates),
+        answer_buttons_for(cache, message_row_id, || *dates, answering_as),
         signature_check_for(cache, message_row_id, from),
     )
 }
 
-/// The same, for a caller that has the two answers already.
+/// The same, for a caller that has the answers already.
 ///
 /// Split out so the opening can be tested without a database: the armour is
 /// offered to the key here, and the body handed on is the words where it
@@ -145,6 +211,8 @@ pub fn for_message(
 pub fn put_together(
     body: MessageBody,
     envelope: WhatTheEnvelopeSays,
+    invitation: WhatTheInvitationSays,
+    answering: answering::AnswerButtons,
     signature: SignatureCheck,
 ) -> WhatAMessageShowsAndSays {
     // Before any document is built, not after. A message that opens has its
@@ -157,9 +225,216 @@ pub fn put_together(
         said: WhatIsSaidAboutIt {
             opened,
             envelope,
+            invitation,
+            answering,
             signature,
         },
     }
+}
+
+/// What the calendar document a message carries says, from the parts stored
+/// when it was opened and the calendar of the account it arrived on.
+///
+/// `Nothing` with no cache, and for a message whose parts hold no calendar
+/// document, which is nearly all of them.
+pub fn invitation_check_for(
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    dates: impl FnOnce() -> DateSettings,
+) -> WhatTheInvitationSays {
+    let Some(cache) = cache else {
+        return WhatTheInvitationSays::Nothing;
+    };
+    if !carries_a_calendar_part(cache, message_row_id) {
+        return WhatTheInvitationSays::Nothing;
+    }
+    // The same reading Answer Invitation takes of the same stored parts, so
+    // the meeting said here is the meeting that would be answered.
+    let parts: Vec<(String, Vec<u8>)> = cache
+        .attachments_with_content(message_row_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's calendar part: {e}");
+            Vec::new()
+        })
+        .into_iter()
+        .filter_map(|file| Some((file.described.mime_type, file.content?)))
+        .collect();
+    // A calendar part whose file this computer does not hold is still one,
+    // and saying nothing would make it look like none.
+    let Some(document) = answering::the_invitation_a_message_carries(&parts) else {
+        return WhatTheInvitationSays::CalendarFile;
+    };
+    let on_the_calendar = the_account_it_arrived_on(cache, message_row_id)
+        .zip(invitations::the_meeting_named_in(&document))
+        .and_then(|(account, uid)| {
+            cache
+                .get_event_by_provider_id(&account, &uid)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Could not look a meeting up on the calendar: {e}");
+                    None
+                })
+        });
+    let answered_here = on_the_calendar.as_ref().and_then(|copy| {
+        cache.the_answer_given_here(&copy.id).unwrap_or_else(|e| {
+            tracing::warn!("Could not read which version of a meeting was answered: {e}");
+            None
+        })
+    });
+    invitations::what_the_invitation_says(
+        &document,
+        on_the_calendar.as_ref(),
+        answered_here,
+        dates(),
+    )
+}
+
+/// Whether a stored message has a calendar part recorded, by the kind of each
+/// part and without reading any file.
+///
+/// The names first, which is a row per attachment and no file, because nearly
+/// every message carries no calendar part and the files can be large. Asked by
+/// the sentence about a meeting, by its buttons, and by the message list's
+/// menu, which offers the three answers on such a message.
+pub fn carries_a_calendar_part(cache: &MessageCache, message_row_id: i64) -> bool {
+    cache
+        .get_attachments_for_message(message_row_id)
+        .map(|parts| {
+            parts
+                .iter()
+                .any(|part| answering::is_a_calendar_part(&part.mime_type))
+        })
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's attachments to look for a meeting: {e}");
+            false
+        })
+}
+
+/// Whether the invitation a stored message carries is offered the three
+/// buttons, from the parts stored when it was opened and the account it
+/// arrived on.
+///
+/// `NotAsked` with no cache, and for every message whose calendar document
+/// asks nobody anything, which is all mail but invitations.
+pub fn answer_buttons_for(
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
+) -> answering::AnswerButtons {
+    let not_asked = answering::AnswerButtons::NotAsked;
+    let Some(cache) = cache else {
+        return not_asked;
+    };
+    if !carries_a_calendar_part(cache, message_row_id) {
+        return not_asked;
+    }
+    // The same reading pressing a button takes, so the buttons offered are
+    // the ones that can be pressed.
+    let found = crate::application::answered_meetings::the_invitation_on(cache, message_row_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's invitation to offer its buttons: {e}");
+            None
+        });
+    let Some(found) = found else {
+        return not_asked;
+    };
+    let said_before = invitations::the_meeting_named_in(&found.document)
+        .and_then(|uid| the_answer_given_to(cache, &found.account, &uid));
+    let who = answering_as(&found.account);
+    answering::the_answer_buttons(
+        &found.document,
+        &who.address,
+        who.allowed,
+        message_row_id,
+        said_before,
+        dates(),
+    )
+}
+
+/// What this account last answered the meeting named `uid`, here, if it did
+/// and the answer was kept.
+fn the_answer_given_to(
+    cache: &MessageCache,
+    account: &str,
+    uid: &str,
+) -> Option<invitations::Answer> {
+    let copy = cache
+        .get_event_by_provider_id(account, uid)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not look a meeting up on the calendar: {e}");
+            None
+        })?;
+    cache
+        .the_answer_given_here(&copy.id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read which answer a meeting was given: {e}");
+            None
+        })?
+        .answer
+}
+
+/// Keep what a message downloaded for its text carried, so what is said about
+/// it can be asked when it opens.
+///
+/// The download of everything fetches each whole message for its text and
+/// kept the text alone. The reader fetches nothing for a message whose text is
+/// here, so nothing stored such a message's parts: it listed no attachments,
+/// and a meeting it carried was never said. Found on 2026-09-25 by 13-10.
+///
+/// Every part's name, type and size are kept, and the file only for a
+/// calendar part, which is a few kilobytes of text and is what the meeting is
+/// read from. Every other file stays on the server until somebody opens it,
+/// as it did; keeping those is a question of disk this does not decide.
+///
+/// A message whose parts are recorded already is left alone: the reader keeps
+/// every file of a message somebody opened, and replacing the rows would drop
+/// them.
+pub fn keep_what_a_download_carried(
+    cache: &MessageCache,
+    message_row_id: i64,
+    parts: &[crate::service::mime::AttachmentInfo],
+    raw: &[u8],
+) -> crate::common::Result<()> {
+    use crate::data::message_cache::attachment_content::AttachmentWithContent;
+
+    if parts.is_empty()
+        || !cache
+            .get_attachments_for_message(message_row_id)?
+            .is_empty()
+    {
+        return Ok(());
+    }
+    // A second walk of the message, and only for one carrying a calendar part:
+    // the parse that gave `parts` does not keep the bytes.
+    let files = if parts
+        .iter()
+        .any(|part| answering::is_a_calendar_part(&part.mime_type))
+    {
+        crate::service::mime::attachments_with_bytes(raw)?
+    } else {
+        Vec::new()
+    };
+    let kept: Vec<AttachmentWithContent> = parts
+        .iter()
+        .enumerate()
+        .map(|(at, part)| {
+            let file = answering::is_a_calendar_part(&part.mime_type)
+                .then(|| files.get(at).map(|file| file.bytes.clone()))
+                .flatten();
+            AttachmentWithContent::from_a_parsed_part(message_row_id, part, file)
+        })
+        .collect();
+    cache.replace_attachments_with_content(message_row_id, &kept)
+}
+
+/// The account a message arrived on, read from its own row.
+///
+/// Read here rather than handed in by the surfaces, because a conversation or
+/// All Inboxes shows messages from several accounts at once and a surface's
+/// idea of the current account is the wrong calendar for some of them.
+fn the_account_it_arrived_on(cache: &MessageCache, message_row_id: i64) -> Option<String> {
+    let folder = cache.get_message(message_row_id).ok()??.folder_id;
+    cache.account_of_folder(folder).ok()?
 }
 
 /// What can be said about one message's signature, from what the cache holds.
@@ -230,8 +505,12 @@ mod tests {
         );
     }
 
-    fn nothing_kept() -> (WhatTheEnvelopeSays, SignatureCheck) {
-        (WhatTheEnvelopeSays::NotEncrypted, SignatureCheck::NotSigned)
+    fn nothing_kept() -> (WhatTheEnvelopeSays, WhatTheInvitationSays, SignatureCheck) {
+        (
+            WhatTheEnvelopeSays::NotEncrypted,
+            WhatTheInvitationSays::Nothing,
+            SignatureCheck::NotSigned,
+        )
     }
 
     #[test]
@@ -241,11 +520,13 @@ mod tests {
         // itself. Every surface that asks this gets the words, which is what
         // the default reader and the preview never got (#51).
         with_alices_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
 
         let shown = put_together(
             MessageBody::Plain(a_message_to_alice()),
             envelope,
+            invitation,
+            answering::AnswerButtons::NotAsked,
             signature,
         );
 
@@ -267,10 +548,16 @@ mod tests {
         // do next, and the body is still the armour, which is what somebody
         // can copy elsewhere or forward to whoever can read it.
         with_no_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
         let arrived = MessageBody::Plain(a_message_to_alice());
 
-        let shown = put_together(arrived.clone(), envelope, signature);
+        let shown = put_together(
+            arrived.clone(),
+            envelope,
+            invitation,
+            answering::AnswerButtons::NotAsked,
+            signature,
+        );
 
         assert_eq!(shown.said.opened, Some(WhatOpeningItFound::NoKeyHere));
         assert_eq!(shown.body, arrived);
@@ -282,10 +569,16 @@ mod tests {
         // three answers are the ones that change nothing downstream, so no
         // surface gains a bar it did not have.
         with_no_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
         let arrived = MessageBody::Html("<p>One o'clock?</p>".to_string());
 
-        let shown = put_together(arrived.clone(), envelope, signature);
+        let shown = put_together(
+            arrived.clone(),
+            envelope,
+            invitation,
+            answering::AnswerButtons::NotAsked,
+            signature,
+        );
 
         assert_eq!(shown.body, arrived);
         assert_eq!(shown.said, WhatIsSaidAboutIt::nothing());
@@ -362,12 +655,16 @@ mod tests {
             signed,
             FROM,
             MessageBody::Plain("The meeting moved to Thursday at ten.".to_string()),
+            written_out_in_full,
+            answering_as_me,
         );
         let about_the_enveloped = for_message(
             Some(&cache),
             enveloped,
             FROM,
             MessageBody::Plain(String::new()),
+            written_out_in_full,
+            answering_as_me,
         );
 
         assert!(
@@ -391,11 +688,286 @@ mod tests {
         let row = a_message_in(&cache, 1);
         let body = || MessageBody::Plain("One o'clock?".to_string());
 
-        let in_the_cache = for_message(Some(&cache), row, FROM, body());
-        let without_a_cache = for_message(None, row, FROM, body());
+        let in_the_cache = for_message(
+            Some(&cache),
+            row,
+            FROM,
+            body(),
+            written_out_in_full,
+            answering_as_me,
+        );
+        let without_a_cache = for_message(
+            None,
+            row,
+            FROM,
+            body(),
+            written_out_in_full,
+            answering_as_me,
+        );
 
         assert_eq!(in_the_cache.said, WhatIsSaidAboutIt::nothing());
         assert_eq!(without_a_cache.said, WhatIsSaidAboutIt::nothing());
+    }
+
+    // ── The invitation, asked of the stored parts and the calendar ────────
+
+    /// Dates written out in full, so a worded time is the same on any
+    /// machine.
+    fn written_out_in_full() -> DateSettings {
+        use crate::presentation::date_display::{Clock, DateOrder, DateStyle, DateWording};
+        DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        }
+    }
+
+    /// The account every message here arrived on answering as the guest the
+    /// invitation names, with sending switched on.
+    fn answering_as_me(_account: &str) -> AnsweringAs {
+        AnsweringAs {
+            address: "me@example.com".to_string(),
+            allowed: crate::application::allowed::Allowed::EVERYTHING,
+        }
+    }
+
+    /// An invitation to version 2 of a meeting, at nine on the clock.
+    const AN_INVITATION: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\n\
+        BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSEQUENCE:2\r\nSUMMARY:Quarterly review\r\n\
+        LOCATION:Room 4\r\nDTSTART:20260305T090000\r\nDTEND:20260305T100000\r\n\
+        ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+        ATTENDEE;CN=Me;PARTSTAT=NEEDS-ACTION:mailto:me@example.com\r\n\
+        END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    /// Its parts stored the way opening a message stores them: the covering
+    /// note's attachment, if any, and the calendar document with its bytes.
+    fn carrying_the_invitation(cache: &MessageCache, row: i64) {
+        carrying(cache, row, AN_INVITATION);
+    }
+
+    /// A message's parts stored with `document` as its calendar part.
+    fn carrying(cache: &MessageCache, row: i64, document: &str) {
+        use crate::data::message_cache::CachedAttachment;
+        use crate::data::message_cache::attachment_content::AttachmentWithContent;
+        cache
+            .replace_attachments_with_content(
+                row,
+                &[AttachmentWithContent {
+                    described: CachedAttachment {
+                        id: 0,
+                        message_id: row,
+                        filename: "invite.ics".to_string(),
+                        mime_type: "text/calendar".to_string(),
+                        size: document.len() as i64,
+                        content_id: None,
+                        description: crate::service::mime::WhatTheSenderSaid::Nothing,
+                    },
+                    content: Some(document.as_bytes().to_vec()),
+                }],
+            )
+            .expect("the parts stored");
+    }
+
+    /// The meeting on the calendar of the account the message arrived on, at
+    /// eight, answered here at version 1.
+    fn answered_at_version_one(cache: &MessageCache) {
+        let held = crate::data::message_cache::CalendarEventEntry {
+            id: "evt-1".to_string(),
+            account_id: "acc-1".to_string(),
+            provider_event_id: Some("m-1@example.com".to_string()),
+            calendar_id: None,
+            summary: "Quarterly review".to_string(),
+            description: None,
+            location: None,
+            start_datetime: "2026-03-05T08:00:00".to_string(),
+            end_datetime: "2026-03-05T09:00:00".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: None,
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-03-01T00:00:00Z".to_string(),
+            updated_at: "2026-03-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        };
+        cache.save_calendar_event(&held).expect("the meeting filed");
+        cache
+            .remember_the_answer(
+                "evt-1",
+                1,
+                crate::application::invitations::Answer::Accepted,
+            )
+            .expect("the answer remembered");
+    }
+
+    #[test]
+    fn test_a_message_carrying_an_invitation_says_the_meeting_before_its_body() {
+        // The part stored when the message was opened is read back, the same
+        // way Answer Invitation reads it, and the calendar has never heard of
+        // the meeting.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+
+        let shown = for_message(
+            Some(&cache),
+            row,
+            FROM,
+            MessageBody::Plain("Are you free?".to_string()),
+            written_out_in_full,
+            answering_as_me,
+        );
+
+        assert!(
+            matches!(
+                &shown.said.invitation,
+                WhatTheInvitationSays::Invitation {
+                    standing: crate::application::invitations::Standing::New,
+                    ..
+                }
+            ),
+            "{:?}",
+            shown.said.invitation
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_for_a_meeting_answered_at_an_earlier_version_is_a_change() {
+        // The account is read from the message's own row: its folder is on
+        // "acc-1", and that account's calendar holds version 1 at eight.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+        answered_at_version_one(&cache);
+
+        let said = invitation_check_for(Some(&cache), row, written_out_in_full);
+
+        assert!(
+            matches!(
+                &said,
+                WhatTheInvitationSays::Invitation {
+                    standing: crate::application::invitations::Standing::Changed { from },
+                    ..
+                } if from == "05/03/2026 at 08:00 to 09:00"
+            ),
+            "{said:?}"
+        );
+    }
+
+    // ── Whether it is offered the three buttons ───────────────────────────
+
+    /// What pressing each button says for the stored invitation, answered
+    /// nowhere before.
+    fn the_three_sentences(row: i64) -> answering::TheButtons {
+        let told = ", 05/03/2026 at 09:00 to 10:00. Ada Lovelace will be told.";
+        answering::TheButtons {
+            message_row_id: row,
+            accept: format!("Accept Quarterly review{told}"),
+            tentative: format!("Say you might come to Quarterly review{told}"),
+            decline: format!("Decline Quarterly review{told}"),
+        }
+    }
+
+    #[test]
+    fn test_an_answerable_invitation_is_offered_three_buttons_for_its_own_row() {
+        // The buttons carry the message they were offered on, so pressing one
+        // answers this meeting whatever the list has selected, and each says
+        // before it is pressed what it does and who will hear (#50 point 4).
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+
+        let offered = answer_buttons_for(Some(&cache), row, written_out_in_full, answering_as_me);
+
+        assert_eq!(
+            offered,
+            answering::AnswerButtons::Offered(the_three_sentences(row))
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_that_cannot_be_answered_says_why_and_is_offered_no_buttons() {
+        // Sending switched off, which is how a new installation is: no
+        // buttons at all, and the reason, rather than three greyed buttons
+        // that Tab passes by with it (#50 point 7).
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+
+        let offered = answer_buttons_for(Some(&cache), row, written_out_in_full, |_| AnsweringAs {
+            address: "me@example.com".to_string(),
+            allowed: crate::application::allowed::Allowed::NOTHING,
+        });
+
+        assert_eq!(
+            offered,
+            answering::AnswerButtons::CannotBeAnswered(
+                answering::CannotAnswer::SendingIsSwitchedOff
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_asks_nobody_for_an_answer() {
+        // "Meeting cancelled" is already said; a second sentence saying it
+        // cannot be answered would be the same fact twice.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying(
+            &cache,
+            row,
+            &AN_INVITATION.replace("METHOD:REQUEST", "METHOD:CANCEL"),
+        );
+
+        let offered = answer_buttons_for(Some(&cache), row, written_out_in_full, answering_as_me);
+
+        assert_eq!(offered, answering::AnswerButtons::NotAsked);
+    }
+
+    #[test]
+    fn test_each_button_says_what_it_does_to_an_answer_already_given_here() {
+        // Answered here before, as Accept: pressing Accept again says the
+        // same again and pressing Decline replaces it, and somebody who cannot
+        // see the calendar hears which before pressing.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+        answered_at_version_one(&cache);
+
+        let answering::AnswerButtons::Offered(buttons) =
+            answer_buttons_for(Some(&cache), row, written_out_in_full, answering_as_me)
+        else {
+            panic!("an invitation answered before is still offered the buttons");
+        };
+
+        assert!(
+            buttons
+                .accept
+                .ends_with("You have already accepted this, and this says the same again."),
+            "{}",
+            buttons.accept
+        );
+        assert!(
+            buttons
+                .decline
+                .ends_with("You have already accepted this, and this replaces that answer."),
+            "{}",
+            buttons.decline
+        );
     }
 
     // ── The fold, in the order that keeps each sentence spoken ────────────
@@ -437,6 +1009,8 @@ mod tests {
         let said = WhatIsSaidAboutIt {
             opened: None,
             envelope: addressed_to_alice(),
+            invitation: WhatTheInvitationSays::Nothing,
+            answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotKept,
         };
 
@@ -464,10 +1038,12 @@ mod tests {
         // its armour, `single_message` writes the general sentence over it,
         // and the fold narrows that sentence to the reason.
         with_no_key();
-        let (envelope, signature) = nothing_kept();
+        let (envelope, invitation, signature) = nothing_kept();
         let shown = put_together(
             MessageBody::Plain(a_message_to_alice()),
             envelope,
+            invitation,
+            answering::AnswerButtons::NotAsked,
             signature,
         );
 

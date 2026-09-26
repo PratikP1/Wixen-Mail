@@ -41,6 +41,8 @@
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
+use crate::data::message_cache::AnsweredHere;
+use crate::presentation::date_display::DateSettings;
 // Reading a line, and writing one back out, are the calendar service's own
 // answers. They were written a second time here while this module was being
 // built and the two had already drifted apart before either was used: one
@@ -198,6 +200,27 @@ impl Answer {
             Answer::Tentative => "TENTATIVE",
             Answer::Declined => "DECLINED",
         }
+    }
+
+    /// The word the calendar keeps this answer as, beside the version answered.
+    ///
+    /// Its own spelling rather than the `PARTSTAT` one, because the column is
+    /// this program's record of what somebody pressed and not a copy of a
+    /// calendar document.
+    pub const fn as_stored(self) -> &'static str {
+        match self {
+            Answer::Accepted => "accepted",
+            Answer::Tentative => "tentative",
+            Answer::Declined => "declined",
+        }
+    }
+
+    /// The answer a stored word names, or nothing for a word this program never
+    /// wrote, which is read as no answer kept rather than guessed at.
+    pub fn from_stored(stored: &str) -> Option<Answer> {
+        [Answer::Accepted, Answer::Tentative, Answer::Declined]
+            .into_iter()
+            .find(|answer| answer.as_stored() == stored)
     }
 
     /// What answering this way does, as a sentence begins it.
@@ -502,6 +525,421 @@ pub fn what_changed(
     } else {
         WhatChanged::NothingNew
     }
+}
+
+/// What a message carrying a calendar document says about it, before a word
+/// of its body.
+///
+/// Decided here, once, from the document and what the calendar already holds,
+/// so every surface that opens a message says the same thing about the same
+/// meeting (#50 point 1). Until this existed a message carrying an invitation
+/// opened as its covering note, with the meeting itself one attachment row
+/// further down, and nothing said what it asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatTheInvitationSays {
+    /// The message carries no calendar document, which is nearly all mail.
+    Nothing,
+    /// Somebody is asking you to a meeting.
+    Invitation {
+        /// What the meeting is called, or a stand-in when it is called
+        /// nothing.
+        summary: String,
+        /// When it is, already worded the way this reader words a date.
+        when: String,
+        /// Where it is, as the organiser wrote it.
+        place: Option<String>,
+        /// Who called it, as they are said aloud.
+        organiser: Option<String>,
+        /// What it means for the calendar here.
+        standing: Standing,
+    },
+    /// A meeting is called off.
+    Cancellation {
+        summary: String,
+        /// Whether the calendar here holds the meeting being called off.
+        on_the_calendar: bool,
+    },
+    /// Somebody answering a meeting you called.
+    AnAnswer {
+        /// Who answered, as they are said aloud.
+        who: String,
+        /// What they answered, when it is one of the three a person gives.
+        answered: Option<Answer>,
+        summary: String,
+    },
+    /// A calendar document that asks nothing, or one that would not read.
+    CalendarFile,
+}
+
+/// What an invitation means for the calendar here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Standing {
+    /// Nothing on the calendar goes by this meeting's name.
+    New,
+    /// The calendar holds the meeting and this moves or changes it.
+    Changed {
+        /// When the calendar has it now, worded as `when` is.
+        from: String,
+    },
+    /// The version already answered here, or an older one.
+    AlreadyAnswered {
+        /// What was answered, or nothing for an answer filed before the
+        /// answer itself was kept beside the version.
+        answer: Option<Answer>,
+    },
+    /// The calendar holds the meeting at this time and nobody answered it
+    /// here, which is how a calendar server that files invitations itself
+    /// leaves one.
+    AlreadyOnTheCalendar,
+}
+
+impl WhatTheInvitationSays {
+    /// The sentence said before the message, or nothing for ordinary mail.
+    ///
+    /// Every word a stranger wrote in it, the title, the place and the names,
+    /// has already been put on one line by [`plainly`], so nothing in it can
+    /// start a line of the bar that reads as this program's own.
+    pub fn said(&self) -> Option<String> {
+        match self {
+            WhatTheInvitationSays::Nothing => None,
+            WhatTheInvitationSays::Invitation {
+                summary,
+                when,
+                place,
+                organiser,
+                standing,
+            } => Some(format!(
+                "Meeting invitation{}{}{}{}{}.",
+                titled(summary),
+                clause("", when),
+                clause("in ", place.as_deref().unwrap_or_default()),
+                clause("from ", organiser.as_deref().unwrap_or_default()),
+                standing.said(),
+            )),
+            WhatTheInvitationSays::Cancellation {
+                summary,
+                on_the_calendar,
+            } => Some(format!(
+                "Meeting cancelled{}. It is {}on your calendar.",
+                titled(summary),
+                if *on_the_calendar { "" } else { "not " }
+            )),
+            WhatTheInvitationSays::AnAnswer {
+                who,
+                answered,
+                summary,
+            } => Some(format!(
+                "{who} {} your meeting{}.",
+                answered.map_or("answered", Answer::what_somebody_did),
+                titled(summary)
+            )),
+            WhatTheInvitationSays::CalendarFile => {
+                Some("This message carries a calendar file.".to_string())
+            }
+        }
+    }
+
+    /// What the calendar part's attachment row calls it.
+    ///
+    /// From what the document asks rather than from its media type, which is
+    /// the same for an invitation, a cancellation and a published feed.
+    pub fn what_its_part_is(&self) -> &'static str {
+        match self {
+            WhatTheInvitationSays::Invitation { .. } => "meeting invitation",
+            WhatTheInvitationSays::Cancellation { .. } => "meeting cancellation",
+            WhatTheInvitationSays::AnAnswer { .. } => "reply to your meeting",
+            WhatTheInvitationSays::CalendarFile | WhatTheInvitationSays::Nothing => "calendar file",
+        }
+    }
+}
+
+impl Standing {
+    /// The clause that ends an invitation's sentence.
+    fn said(&self) -> String {
+        match self {
+            Standing::New => ", and it is new to your calendar".to_string(),
+            Standing::Changed { from } => {
+                format!(", a change to the meeting on your calendar, which was {from}")
+            }
+            Standing::AlreadyAnswered { answer } => format!(
+                ", and you {} this version",
+                answer.map_or("have answered", Answer::what_you_did)
+            ),
+            Standing::AlreadyOnTheCalendar => ", and it is already on your calendar".to_string(),
+        }
+    }
+}
+
+impl Answer {
+    /// The answer a `PARTSTAT` names, when it is one of the three a person
+    /// gives.
+    fn from_partstat(written: &str) -> Option<Answer> {
+        [Answer::Accepted, Answer::Tentative, Answer::Declined]
+            .into_iter()
+            .find(|answer| written.trim().eq_ignore_ascii_case(answer.as_partstat()))
+    }
+
+    /// What you did, said to you about a version you answered.
+    const fn what_you_did(self) -> &'static str {
+        match self {
+            Answer::Accepted => "accepted",
+            Answer::Tentative => "said you might attend",
+            Answer::Declined => "declined",
+        }
+    }
+
+    /// What somebody else did, said about them.
+    const fn what_somebody_did(self) -> &'static str {
+        match self {
+            Answer::Accepted => "accepted",
+            Answer::Tentative => "said they might come to",
+            Answer::Declined => "declined",
+        }
+    }
+}
+
+/// The meeting's title after the kind of message, or nothing when it has none.
+///
+/// "Meeting cancelled." rather than "Meeting cancelled: ." for a meeting its
+/// organiser named nothing.
+fn titled(summary: &str) -> String {
+    if summary.is_empty() {
+        String::new()
+    } else {
+        format!(": {summary}")
+    }
+}
+
+/// One more clause of a sentence, or nothing when there is nothing to say.
+fn clause(opening: &str, said: &str) -> String {
+    if said.is_empty() {
+        String::new()
+    } else {
+        format!(", {opening}{said}")
+    }
+}
+
+/// The longest run of a stranger's words one clause says.
+///
+/// A title is a line in somebody's calendar, and a line that runs to pages is
+/// one a screen reader has to be interrupted in rather than listened to. Two
+/// hundred characters is a judgement, a long title with room to spare, and not
+/// a measurement.
+const LONGEST_CLAUSE: usize = 200;
+
+/// A stranger's words put on one line, cut to a length somebody can listen to.
+///
+/// A line break in a title would start a line of the bar, and the page renders
+/// each line of the bar as a paragraph, so what followed the break would read as
+/// a sentence of this program's. Control characters go the same way, and runs
+/// of space become one.
+fn plainly(written: &str) -> String {
+    let one_line = written
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    match one_line.char_indices().nth(LONGEST_CLAUSE) {
+        Some((cut, _)) => format!("{}\u{2026}", one_line[..cut].trim_end()),
+        None => one_line,
+    }
+}
+
+/// What a message's calendar document says, against what the calendar holds.
+///
+/// `on_the_calendar` is the calendar's copy of the meeting the document names,
+/// and `answered_here` the version an answer given here last filed and what it
+/// was, both looked up by the caller. `dates` words the times, because how a date is
+/// said depends on settings this layer cannot see.
+///
+/// A document that does not read is a calendar file, never an error a caller
+/// could drop: the part is there, and saying nothing about it would make it
+/// look like no calendar document at all.
+pub fn what_the_invitation_says(
+    document: &str,
+    on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
+    answered_here: Option<AnsweredHere>,
+    dates: DateSettings,
+) -> WhatTheInvitationSays {
+    match what_it_asks(document) {
+        WhatItAsks::Invitation => read_the_invitation(document)
+            .map_or(WhatTheInvitationSays::CalendarFile, |invitation| {
+                an_invitation_said(&invitation, on_the_calendar, answered_here, dates)
+            }),
+        WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
+            summary: the_title_of(document),
+            on_the_calendar: on_the_calendar.is_some(),
+        },
+        WhatItAsks::SomebodysAnswer => somebodys_answer_said(document),
+        WhatItAsks::SomethingElse => WhatTheInvitationSays::CalendarFile,
+    }
+}
+
+/// An invitation that read, said against the calendar's copy of its meeting.
+fn an_invitation_said(
+    invitation: &Invitation,
+    on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
+    answered_here: Option<AnsweredHere>,
+    dates: DateSettings,
+) -> WhatTheInvitationSays {
+    let when = when_the_invitation_is(invitation, dates);
+    let standing = match on_the_calendar {
+        None => Standing::New,
+        Some(copy) => the_standing_against(invitation, &when, copy, answered_here, dates),
+    };
+    WhatTheInvitationSays::Invitation {
+        summary: plainly(&invitation.summary),
+        when,
+        place: invitation
+            .location
+            .as_deref()
+            .map(plainly)
+            .filter(|place| !place.is_empty()),
+        organiser: invitation
+            .organiser
+            .as_ref()
+            .map(|organiser| plainly(how_to_say(organiser))),
+        standing,
+    }
+}
+
+/// What an invitation is to a meeting the calendar already holds.
+///
+/// An answer given here settles it by version, through [`what_changed`], so the
+/// rule that an older invitation moves nothing is written once. With no answer
+/// given here, the copy is a calendar server's, which files invitations as they
+/// arrive, and only a different time makes it a change.
+fn the_standing_against(
+    invitation: &Invitation,
+    when: &str,
+    copy: &crate::data::message_cache::CalendarEventEntry,
+    answered_here: Option<AnsweredHere>,
+    dates: DateSettings,
+) -> Standing {
+    let was = when_the_meeting_is(
+        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
+        Some(&copy.end_datetime),
+        copy.is_all_day,
+        dates,
+    );
+    let answered = answered_here.map(|here| {
+        (
+            AlreadyOnTheCalendar {
+                uid: invitation.uid.clone(),
+                version: here.version,
+            },
+            here.answer,
+        )
+    });
+    match answered {
+        Some((held, answer)) => match what_changed(invitation, Some(&held)) {
+            WhatChanged::NothingNew => Standing::AlreadyAnswered { answer },
+            WhatChanged::AChange | WhatChanged::ANewMeeting => Standing::Changed { from: was },
+        },
+        None if was == when => Standing::AlreadyOnTheCalendar,
+        None => Standing::Changed { from: was },
+    }
+}
+
+/// Somebody's answer to a meeting, read off the one guest line a reply carries.
+///
+/// Not through [`read_the_invitation`]: a reply carries no start time, because
+/// it is an answer about a meeting rather than a description of one, and the
+/// reader of meetings refuses it. A reply naming nobody is a calendar file.
+fn somebodys_answer_said(document: &str) -> WhatTheInvitationSays {
+    let its_own = the_meetings_own_lines(document);
+    let Some((who, answered)) = its_own.iter().find_map(|line| {
+        let person = a_person_named_on(line, "ATTENDEE")?;
+        let answered = parameter_named_on(line, "PARTSTAT")
+            .as_deref()
+            .and_then(Answer::from_partstat);
+        Some((plainly(how_to_say(&person)), answered))
+    }) else {
+        return WhatTheInvitationSays::CalendarFile;
+    };
+    WhatTheInvitationSays::AnAnswer {
+        who,
+        answered,
+        summary: the_title_of(document),
+    }
+}
+
+/// The meeting's title, from the meeting's own lines, put on one line.
+fn the_title_of(document: &str) -> String {
+    the_meetings_own_lines(document)
+        .iter()
+        .find_map(|line| value_named_on(line, "SUMMARY"))
+        .map(|written| plainly(&crate::service::caldav::as_typed(written)))
+        .unwrap_or_default()
+}
+
+/// When a meeting is, worded the way this reader words a date.
+///
+/// The whole date and the hour it starts, then the hour it ends when that is
+/// the same day and the whole date again when it is not. Always the whole
+/// date, whatever the reader chose for a list: "3 days ago" says when a message
+/// came and is no way to say when a meeting is. A whole day is its date. A
+/// moment that does not read is said as it was written, which is the date
+/// reading's own answer for the same thing.
+fn when_the_meeting_is(
+    starts: &str,
+    ends: Option<&str>,
+    is_all_day: bool,
+    dates: DateSettings,
+) -> String {
+    use crate::presentation::date_display;
+
+    if is_all_day {
+        return format!("{}, all day", date_display::a_day_in_words(starts, dates));
+    }
+    let Some(start) = on_this_computer(starts) else {
+        return plainly(starts);
+    };
+    let begins = date_display::absolute(start, dates);
+    match ends.and_then(|ends| Some((ends, on_this_computer(ends)?))) {
+        Some((ends, end)) if end.date_naive() == start.date_naive() => {
+            format!("{begins} to {}", date_display::time_of_day(ends, dates))
+        }
+        Some((_, end)) => format!("{begins} to {}", date_display::absolute(end, dates)),
+        None => begins,
+    }
+}
+
+/// When an invitation's meeting is, worded the way this reader words a date:
+/// the same words the sentence before the message says.
+pub fn when_the_invitation_is(invitation: &Invitation, dates: DateSettings) -> String {
+    when_the_meeting_is(
+        &invitation.starts,
+        invitation.ends.as_deref(),
+        invitation.is_all_day,
+        dates,
+    )
+}
+
+/// Where a stored moment falls on this computer's clock.
+fn on_this_computer(stored: &str) -> Option<chrono::DateTime<chrono::Local>> {
+    crate::common::moment::read(stored)?.on_this_computer()
+}
+
+/// The name the meeting a document describes goes by, when it names one.
+///
+/// What the caller looks the calendar's copy up by, before asking
+/// [`what_the_invitation_says`].
+pub fn the_meeting_named_in(document: &str) -> Option<String> {
+    the_meetings_own_lines(document)
+        .iter()
+        .find_map(|line| value_named_on(line, "UID"))
+        .map(str::trim)
+        .filter(|uid| !uid.is_empty())
+        .map(str::to_string)
 }
 
 /// The first meeting's own property lines, put back together and with any
@@ -1501,6 +1939,348 @@ mod tests {
         assert!(
             replies > 500,
             "only {replies} replies were built, so most of this checked nothing"
+        );
+    }
+
+    // ── What the message says about its invitation before the body ────────
+
+    /// The invitation above, at an hour on the clock rather than in universal
+    /// time, so what is said does not depend on the zone the test runs in.
+    fn an_invitation_at_nine() -> String {
+        an_invitation_that_arrived()
+            .replace("DTSTART:20260305T090000Z", "DTSTART:20260305T090000")
+            .replace("DTEND:20260305T100000Z", "DTEND:20260305T100000")
+    }
+
+    /// Dates written out in full, day first, in numbers, on a 24-hour clock:
+    /// one reading chosen so every sentence below is the same on any machine.
+    fn written_out_in_full() -> crate::presentation::date_display::DateSettings {
+        use crate::presentation::date_display::{
+            Clock, DateOrder, DateSettings, DateStyle, DateWording,
+        };
+        DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        }
+    }
+
+    /// The calendar's copy of the meeting, at the hours given.
+    fn the_calendar_holding(
+        starts: &str,
+        ends: &str,
+    ) -> crate::data::message_cache::CalendarEventEntry {
+        crate::data::message_cache::CalendarEventEntry {
+            id: "evt-1".to_string(),
+            account_id: "acct".to_string(),
+            provider_event_id: Some("m-1@example.com".to_string()),
+            calendar_id: Some("cal".to_string()),
+            summary: "Quarterly review".to_string(),
+            description: None,
+            location: Some("Room 3".to_string()),
+            start_datetime: starts.to_string(),
+            end_datetime: ends.to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: None,
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        }
+    }
+
+    /// Said against the calendar, with an answer filed here at `answered_here`
+    /// the way one filed before the answer itself was kept reads: the version
+    /// and nothing about what was said.
+    fn said_about(
+        document: &str,
+        on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
+        answered_here: Option<u32>,
+    ) -> WhatTheInvitationSays {
+        what_the_invitation_says(
+            document,
+            on_the_calendar,
+            answered_here.map(|version| AnsweredHere {
+                version,
+                answer: None,
+            }),
+            written_out_in_full(),
+        )
+    }
+
+    #[test]
+    fn test_an_invitation_answered_here_says_which_answer_was_given() {
+        // "You have answered this version" leaves somebody who cannot see the
+        // calendar asking which way. The answer is kept beside the version
+        // now, so it is said (#50 point 4).
+        let copy = the_calendar_holding("2026-03-05T09:00:00", "2026-03-05T10:00:00");
+
+        for (answer, ending) in [
+            (Answer::Accepted, ", and you accepted this version."),
+            (
+                Answer::Tentative,
+                ", and you said you might attend this version.",
+            ),
+            (Answer::Declined, ", and you declined this version."),
+        ] {
+            let says = what_the_invitation_says(
+                &an_invitation_at_nine(),
+                Some(&copy),
+                Some(AnsweredHere {
+                    version: 2,
+                    answer: Some(answer),
+                }),
+                written_out_in_full(),
+            );
+
+            assert!(
+                says.said().is_some_and(|said| said.ends_with(ending)),
+                "{answer:?}: {:?}",
+                says.said()
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_invitation_the_calendar_has_never_held_is_said_with_its_time_place_and_organiser() {
+        // The first thing somebody needs from a message carrying a meeting is
+        // the meeting: what, when, where and who asked, before a word of the
+        // covering note. Until this, the reader said the covering note and one
+        // attachment row called "calendar invitation" (#50 point 1).
+        let says = said_about(&an_invitation_at_nine(), None, None);
+
+        assert_eq!(
+            says,
+            WhatTheInvitationSays::Invitation {
+                summary: "Quarterly review".to_string(),
+                when: "05/03/2026 at 09:00 to 10:00".to_string(),
+                place: Some("Room 3".to_string()),
+                organiser: Some("Ada Lovelace".to_string()),
+                standing: Standing::New,
+            }
+        );
+        assert_eq!(
+            says.said().as_deref(),
+            Some(
+                "Meeting invitation: Quarterly review, 05/03/2026 at 09:00 to 10:00, in Room 3, \
+                 from Ada Lovelace, and it is new to your calendar."
+            )
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_moving_a_meeting_on_the_calendar_says_when_it_was() {
+        // Version 2 of a meeting answered here at version 1, an hour later
+        // than the calendar has it. "A change" alone would leave somebody
+        // opening the calendar to find out what moved.
+        let copy = the_calendar_holding("2026-03-05T08:00:00", "2026-03-05T09:00:00");
+
+        let says = said_about(&an_invitation_at_nine(), Some(&copy), Some(1));
+
+        assert!(
+            matches!(
+                &says,
+                WhatTheInvitationSays::Invitation { standing: Standing::Changed { from }, .. }
+                    if from == "05/03/2026 at 08:00 to 09:00"
+            ),
+            "{says:?}"
+        );
+        assert!(
+            says.said().is_some_and(|said| said.ends_with(
+                "from Ada Lovelace, a change to the meeting on your calendar, which was \
+                 05/03/2026 at 08:00 to 09:00."
+            )),
+            "{:?}",
+            says.said()
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_at_the_version_already_answered_says_so() {
+        // Mail arrives twice and out of order. The version answered here, or
+        // an older one, is not news, and saying it is new would invite a
+        // second answer to a question already answered.
+        let copy = the_calendar_holding("2026-03-05T09:00:00", "2026-03-05T10:00:00");
+
+        let says = said_about(&an_invitation_at_nine(), Some(&copy), Some(2));
+
+        assert!(
+            says.said()
+                .is_some_and(|said| said.ends_with(", and you have answered this version.")),
+            "{:?}",
+            says.said()
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_a_calendar_server_filed_itself_is_said_to_be_there_already() {
+        // Google files an invitation on the calendar when it arrives, and
+        // nobody answered it here. Calling it new to the calendar would be
+        // false about a meeting somebody can already see there.
+        let copy = the_calendar_holding("2026-03-05T09:00:00", "2026-03-05T10:00:00");
+
+        let says = said_about(&an_invitation_at_nine(), Some(&copy), None);
+
+        assert!(
+            says.said()
+                .is_some_and(|said| said.ends_with(", and it is already on your calendar.")),
+            "{:?}",
+            says.said()
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_says_it_is_one_and_whether_the_meeting_is_on_the_calendar() {
+        // Two different things to do next: take it off, or nothing at all.
+        let called_off = an_invitation_at_nine().replace("METHOD:REQUEST", "METHOD:CANCEL");
+        let copy = the_calendar_holding("2026-03-05T09:00:00", "2026-03-05T10:00:00");
+
+        let held = said_about(&called_off, Some(&copy), None);
+        let not_held = said_about(&called_off, None, None);
+
+        assert_eq!(
+            held.said().as_deref(),
+            Some("Meeting cancelled: Quarterly review. It is on your calendar.")
+        );
+        assert_eq!(
+            not_held.said().as_deref(),
+            Some("Meeting cancelled: Quarterly review. It is not on your calendar.")
+        );
+    }
+
+    /// Somebody's answer to a meeting this account called.
+    fn graces_answer(partstat: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REPLY\r\nBEGIN:VEVENT\r\n\
+             UID:m-1@example.com\r\nSEQUENCE:2\r\nSUMMARY:Quarterly review\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Grace Hopper;PARTSTAT={partstat}:mailto:grace@example.com\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    #[test]
+    fn test_an_answer_to_your_meeting_says_who_answered_and_what() {
+        // A reply carries no start time, so it is not read as a meeting; it is
+        // read as one person's answer, in their own name.
+        let accepted = said_about(&graces_answer("ACCEPTED"), None, None);
+        let declined = said_about(&graces_answer("DECLINED"), None, None);
+        let maybe = said_about(&graces_answer("TENTATIVE"), None, None);
+
+        assert_eq!(
+            accepted.said().as_deref(),
+            Some("Grace Hopper accepted your meeting: Quarterly review.")
+        );
+        assert_eq!(
+            declined.said().as_deref(),
+            Some("Grace Hopper declined your meeting: Quarterly review.")
+        );
+        assert_eq!(
+            maybe.said().as_deref(),
+            Some("Grace Hopper said they might come to your meeting: Quarterly review.")
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_document_that_asks_nothing_reads_as_a_calendar_file() {
+        // A published feed, a free-busy query: real documents that ask nothing
+        // of the person reading them.
+        let feed = an_invitation_at_nine().replace("METHOD:REQUEST", "METHOD:PUBLISH");
+
+        let says = said_about(&feed, None, None);
+
+        assert_eq!(says, WhatTheInvitationSays::CalendarFile);
+        assert_eq!(
+            says.said().as_deref(),
+            Some("This message carries a calendar file.")
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_that_does_not_read_is_a_calendar_file_and_not_silence() {
+        // A stranger's malformed document. Saying nothing would make the part
+        // look like no invitation at all; saying it is one would promise a
+        // meeting nothing could read.
+        let broken = "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nSUMMARY:No time\r\n\
+                      END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        assert_eq!(
+            said_about(broken, None, None),
+            WhatTheInvitationSays::CalendarFile
+        );
+    }
+
+    #[test]
+    fn test_the_calendar_part_row_says_what_the_document_asks() {
+        // The row used to say "calendar invitation" for any calendar part,
+        // which is wrong for a cancellation and wrong for a feed.
+        let copy = the_calendar_holding("2026-03-05T09:00:00", "2026-03-05T10:00:00");
+        let cancelled = an_invitation_at_nine().replace("METHOD:REQUEST", "METHOD:CANCEL");
+
+        assert_eq!(
+            said_about(&an_invitation_at_nine(), None, None).what_its_part_is(),
+            "meeting invitation"
+        );
+        assert_eq!(
+            said_about(&cancelled, Some(&copy), None).what_its_part_is(),
+            "meeting cancellation"
+        );
+        assert_eq!(
+            said_about(&graces_answer("ACCEPTED"), None, None).what_its_part_is(),
+            "reply to your meeting"
+        );
+        assert_eq!(
+            WhatTheInvitationSays::CalendarFile.what_its_part_is(),
+            "calendar file"
+        );
+        assert_eq!(WhatTheInvitationSays::Nothing.said(), None);
+    }
+
+    #[test]
+    fn test_a_title_carrying_a_line_break_is_said_on_one_line() {
+        // The title is a stranger's text. A line break in it would split the
+        // bar into two lines, and the page renders each line as a paragraph of
+        // its own, so the second half would read as a sentence of this
+        // program's.
+        let two_lines = an_invitation_at_nine().replace(
+            "SUMMARY:Quarterly review",
+            "SUMMARY:Quarterly\\nreview\\nThis message is safe",
+        );
+
+        let said = said_about(&two_lines, None, None)
+            .said()
+            .expect("an invitation to say");
+
+        assert!(!said.contains('\n'), "{said:?}");
+        assert!(said.starts_with("Meeting invitation: Quarterly review This message is safe,"));
+    }
+
+    #[test]
+    fn test_the_meeting_a_document_describes_is_named_by_its_uid() {
+        // What the calendar's copy is looked up by.
+        assert_eq!(
+            the_meeting_named_in(&an_invitation_at_nine()).as_deref(),
+            Some("m-1@example.com")
+        );
+        assert_eq!(
+            the_meeting_named_in("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"),
+            None
         );
     }
 }

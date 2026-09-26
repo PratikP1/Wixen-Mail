@@ -242,10 +242,17 @@ impl Answering {
     ///
     /// `answered_at` is passed in rather than read off the clock, so the whole
     /// message a test builds can be read.
+    ///
+    /// `invitation_id` and `its_references` are the `Message-ID` and the
+    /// `References` of the message the invitation came in, so the answer
+    /// arrives in the organiser's mailbox under the invitation it answers
+    /// rather than as a conversation of its own (#50 point 8).
     pub fn the_answer_to_send(
         &self,
         answer: Answer,
         answered_at: chrono::DateTime<chrono::Utc>,
+        invitation_id: &str,
+        its_references: Option<&str>,
     ) -> crate::common::Result<TheAnswerToSend> {
         // Built first, because it is the only step here that can refuse, and
         // every reason it has to refuse was asked already by
@@ -262,6 +269,9 @@ impl Answering {
             subject: the_subject_line(&self.invitation, answer),
             body: the_body(&self.invitation, &self.answering, answer),
             calendar_document,
+            // The rule every reply here is threaded by, so an answer and a
+            // reply to the same invitation sit in the same place.
+            threading: crate::application::threading::continuing(invitation_id, its_references),
         })
     }
 
@@ -350,6 +360,83 @@ impl Answering {
             the_meeting_itself: what_changed(&self.invitation, already_here),
         }
     }
+}
+
+/// The three buttons an invitation that can be answered is offered, each with
+/// the sentence its accessible description carries (#50 point 4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TheButtons {
+    /// The message the buttons answer, handed back when one is pressed, so
+    /// the answer goes to the meeting the window shows and not to whatever the
+    /// message list has selected.
+    pub message_row_id: i64,
+    /// What pressing Accept will do.
+    pub accept: String,
+    /// What pressing Tentative will do.
+    pub tentative: String,
+    /// What pressing Decline will do.
+    pub decline: String,
+}
+
+impl TheButtons {
+    /// What pressing the button for `answer` will do.
+    pub fn what_pressing(&self, answer: Answer) -> &str {
+        match answer {
+            Answer::Accepted => &self.accept,
+            Answer::Tentative => &self.tentative,
+            Answer::Declined => &self.decline,
+        }
+    }
+}
+
+/// Whether a message's calendar document is offered the three buttons.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnswerButtons {
+    /// Nothing asks for an answer: no calendar document, a cancellation,
+    /// somebody's answer to your meeting, or a calendar file. What the
+    /// document is has been said already, so nothing more is.
+    NotAsked,
+    /// The three buttons.
+    Offered(TheButtons),
+    /// An invitation that asks for an answer and cannot be given one here,
+    /// and why. No buttons at all rather than greyed ones: Tab passes a
+    /// greyed button by, and its reason with it.
+    CannotBeAnswered(CannotAnswer),
+}
+
+/// The buttons a message carrying `document` is offered, or why it is offered
+/// none.
+///
+/// `said_before` is the answer this account last gave the meeting here, so
+/// each button can say it replaces or repeats it. `dates` words the meeting's
+/// time, because how a date is said depends on settings this layer cannot see.
+pub fn the_answer_buttons(
+    document: &str,
+    answering_as: &str,
+    allowed: Allowed,
+    message_row_id: i64,
+    said_before: Option<Answer>,
+    dates: crate::presentation::date_display::DateSettings,
+) -> AnswerButtons {
+    let ready = match whether_it_can_be_answered(document, answering_as, allowed) {
+        Ok(ready) => ready,
+        // What these are has been said by the sentence about the document,
+        // and none of them asks anybody for an answer.
+        Err(
+            CannotAnswer::ItIsACancellation
+            | CannotAnswer::ItIsSomebodyElsesAnswer
+            | CannotAnswer::ItIsNotAnInvitationAtAll,
+        ) => return AnswerButtons::NotAsked,
+        Err(why) => return AnswerButtons::CannotBeAnswered(why),
+    };
+    let when = crate::application::invitations::when_the_invitation_is(ready.invitation(), dates);
+    let pressing = |answer| ready.what_pressing_it_will_do(answer, &when, said_before);
+    AnswerButtons::Offered(TheButtons {
+        message_row_id,
+        accept: pressing(Answer::Accepted),
+        tentative: pressing(Answer::Tentative),
+        decline: pressing(Answer::Declined),
+    })
 }
 
 /// How the sending went, so the sentence afterwards can say what really
@@ -464,6 +551,10 @@ pub struct TheAnswerToSend {
     pub body: String,
     /// The reply as a calendar document, which is what their client reads.
     pub calendar_document: String,
+    /// The `In-Reply-To` and `References` that put the answer under the
+    /// invitation. Nothing only for an invitation whose message carried no
+    /// `Message-ID` to answer.
+    pub threading: Option<crate::application::threading::Continuing>,
 }
 
 /// The subject an answer goes out under.
@@ -708,8 +799,24 @@ fn the_guest_answering<'a>(
         })
 }
 
-/// The media type a meeting invitation arrives as.
-const AN_INVITATION_ARRIVES_AS: &str = "text/calendar";
+/// The media types a meeting invitation arrives as.
+///
+/// `text/calendar` is the standard's. `application/ics` is what some senders
+/// write, naming the file's kind rather than the document's, and the part is
+/// still the meeting (#50 point 5).
+const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "application/ics"];
+
+/// Whether a part's media type is one a calendar document arrives as.
+///
+/// Parameters and case aside, which senders write every way there is. The one
+/// answer the finder below and the attachment row both ask, so a part the row
+/// calls a meeting is one the finder finds.
+pub fn is_a_calendar_part(kind: &str) -> bool {
+    let named = kind.split(';').next().unwrap_or_default().trim();
+    AN_INVITATION_ARRIVES_AS
+        .iter()
+        .any(|calendar| named.eq_ignore_ascii_case(calendar))
+}
 
 /// The invitation a message carries, when it carries one.
 ///
@@ -729,13 +836,7 @@ const AN_INVITATION_ARRIVES_AS: &str = "text/calendar";
 pub fn the_invitation_a_message_carries(parts: &[(String, Vec<u8>)]) -> Option<String> {
     parts
         .iter()
-        .find(|(kind, _)| {
-            kind.split(';')
-                .next()
-                .unwrap_or_default()
-                .trim()
-                .eq_ignore_ascii_case(AN_INVITATION_ARRIVES_AS)
-        })
+        .find(|(kind, _)| is_a_calendar_part(kind))
         .and_then(|(_, bytes)| String::from_utf8(bytes.clone()).ok())
 }
 
@@ -768,6 +869,23 @@ mod finding_the_invitation {
         )]);
 
         assert!(found.is_some(), "the type was read as a whole line");
+    }
+
+    #[test]
+    fn test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar() {
+        // Some senders label the calendar part by its file's kind rather than
+        // as text, and the part is still the meeting. Finding only
+        // `text/calendar` left those invitations unsaid and unanswerable
+        // (#50 point 5).
+        let found = the_invitation_a_message_carries(&[
+            ("text/plain".to_string(), b"Are you free?".to_vec()),
+            (
+                "Application/ICS; name=invite.ics".to_string(),
+                an_invitation(),
+            ),
+        ]);
+
+        assert!(found.is_some_and(|document| document.contains("METHOD:REQUEST")));
     }
 
     #[test]
@@ -1201,6 +1319,35 @@ mod tests {
         .expect("an invitation that can be answered")
     }
 
+    /// The `Message-ID` of the message the ordinary invitation came in, bare,
+    /// as the store keeps it.
+    pub(super) const THE_INVITATION_ID: &str = "invite-7@example.com";
+
+    #[test]
+    fn test_the_answer_goes_out_threaded_under_the_invitation() {
+        // Without these two headers the organiser's mailbox files the answer
+        // as a conversation of its own, beside the invitation rather than
+        // under it (#50 point 8). The same two a reply to any other message
+        // carries, built by the same rule.
+        let sending = ready_to_answer()
+            .the_answer_to_send(
+                Answer::Accepted,
+                answered_at(),
+                THE_INVITATION_ID,
+                Some("root-1@example.com"),
+            )
+            .expect("an answer to send");
+
+        assert_eq!(
+            sending.threading,
+            Some(crate::application::threading::Continuing {
+                in_reply_to: "<invite-7@example.com>".to_string(),
+                references: "<root-1@example.com> <invite-7@example.com>".to_string(),
+            }),
+            "the answer goes out as a conversation of its own"
+        );
+    }
+
     #[test]
     fn test_the_subject_puts_the_answer_in_front_of_the_meetings_own_name() {
         // The convention every other mail program writes and reads. Without
@@ -1213,7 +1360,7 @@ mod tests {
             (Answer::Declined, "Declined: Quarterly review"),
         ] {
             let sending = ready_to_answer()
-                .the_answer_to_send(answer, answered_at())
+                .the_answer_to_send(answer, answered_at(), THE_INVITATION_ID, None)
                 .expect("an answer to send");
 
             assert_eq!(sending.subject, expected);
@@ -1227,7 +1374,7 @@ mod tests {
         // without the document the organiser's client has nothing to file it
         // against and no answer to record.
         let sending = ready_to_answer()
-            .the_answer_to_send(Answer::Accepted, answered_at())
+            .the_answer_to_send(Answer::Accepted, answered_at(), THE_INVITATION_ID, None)
             .expect("an answer to send");
 
         assert_eq!(sending.to.address, "ada@example.com");
@@ -1253,7 +1400,7 @@ mod tests {
             (Answer::Declined, "Sam has declined Quarterly review."),
         ] {
             let sending = ready_to_answer()
-                .the_answer_to_send(answer, answered_at())
+                .the_answer_to_send(answer, answered_at(), THE_INVITATION_ID, None)
                 .expect("an answer to send");
 
             assert_eq!(sending.body, expected);
@@ -1270,7 +1417,7 @@ mod tests {
 
         let sending = whether_it_can_be_answered(&untitled, "sam@example.com", Allowed::EVERYTHING)
             .expect("an invitation that can be answered")
-            .the_answer_to_send(Answer::Declined, answered_at())
+            .the_answer_to_send(Answer::Declined, answered_at(), THE_INVITATION_ID, None)
             .expect("an answer to send");
 
         assert_eq!(sending.subject, "Declined: (no title)");
@@ -1456,10 +1603,15 @@ mod tests {
         // answered; two answers stamped alike, or the second stamped earlier,
         // means an old "no" can win over a later "yes" and nobody is told.
         let first = ready_to_answer()
-            .the_answer_to_send(Answer::Accepted, answered_at())
+            .the_answer_to_send(Answer::Accepted, answered_at(), THE_INVITATION_ID, None)
             .expect("a first answer to send");
         let second = ready_to_answer()
-            .the_answer_to_send(Answer::Declined, answered_at() + chrono::Duration::hours(1))
+            .the_answer_to_send(
+                Answer::Declined,
+                answered_at() + chrono::Duration::hours(1),
+                THE_INVITATION_ID,
+                None,
+            )
             .expect("a second answer to send");
 
         assert!(
@@ -1633,7 +1785,7 @@ mod tests {
             (Answer::Declined, "Declined:", "has declined", "DECLINED"),
         ] {
             let sending = ready_to_answer()
-                .the_answer_to_send(answer, answered_at())
+                .the_answer_to_send(answer, answered_at(), THE_INVITATION_ID, None)
                 .expect("an answer to send");
 
             assert!(sending.subject.starts_with(in_the_subject), "{sending:?}");
@@ -1661,7 +1813,9 @@ mod tests {
 /// live in two files that ask the same questions separately.
 #[cfg(test)]
 mod invitations_from_strangers {
-    use super::tests::{a_hostile_invitation, a_moment, answered_at, held_for_ten_seconds};
+    use super::tests::{
+        THE_INVITATION_ID, a_hostile_invitation, a_moment, answered_at, held_for_ten_seconds,
+    };
     use super::*;
 
     /// Everybody worth trying to answer as: two real guests, a stranger, a
@@ -1689,7 +1843,7 @@ mod invitations_from_strangers {
                 answered += 1;
                 for answer in [Answer::Accepted, Answer::Tentative, Answer::Declined] {
                     let sending = answering
-                        .the_answer_to_send(answer, answered_at())
+                        .the_answer_to_send(answer, answered_at(), THE_INVITATION_ID, None)
                         .unwrap_or_else(|refused| {
                             panic!(
                                 "seed {seed} said {who} could answer and then refused to \
@@ -1734,8 +1888,12 @@ mod invitations_from_strangers {
                 else {
                     continue;
                 };
-                let Ok(sending) = answering.the_answer_to_send(Answer::Declined, answered_at())
-                else {
+                let Ok(sending) = answering.the_answer_to_send(
+                    Answer::Declined,
+                    answered_at(),
+                    THE_INVITATION_ID,
+                    None,
+                ) else {
                     continue;
                 };
                 built += 1;

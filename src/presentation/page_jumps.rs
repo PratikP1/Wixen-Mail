@@ -27,6 +27,12 @@ pub enum Jump {
     Attachments,
     /// F7: the security warning above the message, when there is one.
     Warning,
+    /// Ctrl+P: print what the window shows, through Windows' print dialog.
+    /// Not a move of focus, and still a key the page hands to its window.
+    Print,
+    /// Alt+C, Alt+T or Alt+D: answer the meeting invitation the window's one
+    /// message carries, the letters its three buttons carry (13-11).
+    Answer(crate::application::invitations::Answer),
 }
 
 /// The listener a page runs to post the jumps, injected after the way out.
@@ -49,6 +55,22 @@ pub const SCRIPT: &str = r#"document.addEventListener('keydown', function(e) {
         e.stopPropagation();
         window.contextMenu.postMessage(JSON.stringify({ kind: 'attachments' }));
     }
+    // Print, the reader window's key for the same command (#45). Taken from
+    // the browser, whose own Ctrl+P would print the page as it draws it.
+    if (e.ctrlKey && !e.altKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'print' }));
+    }
+    // Accept, Tentative and Decline on a meeting invitation, the letters its
+    // three buttons carry (13-11). The window answers only when its one
+    // message can be answered, and says so when it cannot.
+    var answer = { c: 'accept', t: 'tentative', d: 'decline' }[String(e.key).toLowerCase()];
+    if (e.altKey && !e.ctrlKey && answer) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'answer', answer: answer }));
+    }
 }, true);"#;
 
 /// The jump a page asked for, read from the message it posted.
@@ -60,6 +82,22 @@ pub fn the_jump_the_page_asked_for(json: &str) -> Option<Jump> {
     match posted.get("kind").and_then(serde_json::Value::as_str)? {
         "attachments" => Some(Jump::Attachments),
         "warning" => Some(Jump::Warning),
+        "print" => Some(Jump::Print),
+        "answer" => the_answer_posted(&posted).map(Jump::Answer),
+        _ => None,
+    }
+}
+
+/// Which answer an answer key posted, or nothing for one the window cannot
+/// name: a guess at which answer was meant would send it to the organiser.
+fn the_answer_posted(
+    posted: &serde_json::Value,
+) -> Option<crate::application::invitations::Answer> {
+    use crate::application::invitations::Answer;
+    match posted.get("answer").and_then(serde_json::Value::as_str)? {
+        "accept" => Some(Answer::Accepted),
+        "tentative" => Some(Answer::Tentative),
+        "decline" => Some(Answer::Declined),
         _ => None,
     }
 }
@@ -108,6 +146,25 @@ mod tests {
     }
 
     #[test]
+    fn test_ctrl_p_in_the_page_posts_print_and_the_window_reads_it_back() {
+        // Control without Alt, so AltGr on a layout where Control+Alt+P types
+        // a letter is left alone, as Alt+A leaves Control alone.
+        assert!(SCRIPT.contains("e.ctrlKey && !e.altKey"), "{SCRIPT}");
+        assert!(
+            SCRIPT.contains("e.key === 'p' || e.key === 'P'"),
+            "{SCRIPT}"
+        );
+        assert!(SCRIPT.contains("kind: 'print'"), "{SCRIPT}");
+
+        // Named rather than only something, now the jump exists to name: the
+        // red half could ask only whether the window read the kind at all.
+        assert_eq!(
+            the_jump_the_page_asked_for(r#"{"kind":"print"}"#),
+            Some(Jump::Print)
+        );
+    }
+
+    #[test]
     fn test_the_script_takes_the_key_from_the_browser_before_posting_it() {
         // Without this the browser still acts on the key after the window
         // has: F7 is caret browsing in Edge, and Alt+A would reach whatever
@@ -122,11 +179,62 @@ mod tests {
     }
 
     #[test]
+    fn test_alt_c_t_and_d_in_the_page_post_the_answers_and_the_window_reads_them_back() {
+        // The letters the formatted window's buttons carry, A&ccept,
+        // &Tentative and &Decline, because a key a sighted reader reads on a
+        // button is the key the page has to listen for: the browser keeps
+        // every key once it has focus, so a button's own letter never fires
+        // from the page (#84). With Alt and without Control, as Alt+A is, so
+        // AltGr is left alone.
+        assert!(SCRIPT.contains("kind: 'answer'"), "{SCRIPT}");
+        for (letter, word) in [("c", "accept"), ("t", "tentative"), ("d", "decline")] {
+            assert!(
+                SCRIPT.contains(&format!("{letter}: '{word}'")),
+                "the page does not post {word} for Alt+{letter}: {SCRIPT}"
+            );
+        }
+        assert!(
+            SCRIPT.contains("if (e.altKey && !e.ctrlKey && answer)"),
+            "{SCRIPT}"
+        );
+
+        use crate::application::invitations::Answer;
+        for (word, answer) in [
+            ("accept", Answer::Accepted),
+            ("tentative", Answer::Tentative),
+            ("decline", Answer::Declined),
+        ] {
+            assert_eq!(
+                the_jump_the_page_asked_for(&format!(r#"{{"kind":"answer","answer":"{word}"}}"#)),
+                Some(Jump::Answer(answer)),
+                "{word}"
+            );
+        }
+        // An answer the window cannot name is no jump at all, rather than a
+        // guess at which meeting answer was meant.
+        for not_an_answer in [
+            r#"{"kind":"answer"}"#,
+            r#"{"kind":"answer","answer":"maybe"}"#,
+        ] {
+            assert_eq!(
+                the_jump_the_page_asked_for(not_an_answer),
+                None,
+                "{not_an_answer}"
+            );
+        }
+    }
+
+    #[test]
     fn test_every_kind_the_script_posts_is_one_the_window_reads() {
         let kinds = every_kind_the_script_posts();
-        assert_eq!(kinds.len(), 2, "{kinds:?}");
+        assert_eq!(kinds.len(), 4, "{kinds:?}");
         for kind in kinds {
-            let posted = format!(r#"{{"kind":"{kind}"}}"#);
+            // An answer names which, and the one that names none is refused
+            // above; this walk is about the kinds.
+            let posted = match kind.as_str() {
+                "answer" => r#"{"kind":"answer","answer":"accept"}"#.to_string(),
+                _ => format!(r#"{{"kind":"{kind}"}}"#),
+            };
             assert!(
                 the_jump_the_page_asked_for(&posted).is_some(),
                 "the script posts {kind:?} and the window reads it as nothing"

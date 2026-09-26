@@ -236,6 +236,13 @@ pub enum Action {
     /// only delete on this list that cannot reach any mail. The question goes
     /// and the messages it listed stay where they really live.
     DeleteSavedSearch,
+    /// Accept the meeting invitation the message carries: the Action menu's
+    /// Answer Invitation, Accept, by the same command (13-11).
+    AcceptInvitation,
+    /// Say you might attend it.
+    TentativeInvitation,
+    /// Decline it.
+    DeclineInvitation,
 }
 
 /// One line on a context menu.
@@ -305,6 +312,74 @@ pub fn entries_for_messages(any_unread: bool) -> &'static [Entry] {
         MESSAGES_WITH_THE_ONE_UNDER_THE_CURSOR_READ
     }
 }
+
+/// What to offer on a message carrying a calendar document: the same list as
+/// [`entries_for_messages`], then the three answers to a meeting invitation.
+///
+/// Offered on the kind of part, without reading it, because reading every
+/// message's calendar document to raise a menu is work the menu key should
+/// not wait on; pressing one on a cancellation says why it cannot be answered.
+pub fn entries_for_a_message_carrying_an_invitation(any_unread: bool) -> &'static [Entry] {
+    if any_unread {
+        MESSAGES_CARRYING_AN_INVITATION
+    } else {
+        MESSAGES_CARRYING_AN_INVITATION_THE_ONE_UNDER_THE_CURSOR_READ
+    }
+}
+
+/// The message list's menu on a message carrying an invitation, unread: the
+/// list below, then the three answers, which the test over the message menu
+/// holds to being exactly that.
+static MESSAGES_CARRYING_AN_INVITATION: &[Entry] = &[
+    entry("&Reply", Action::Reply),
+    entry("Reply &all", Action::ReplyAll),
+    entry("&Forward", Action::Forward),
+    entry(
+        crate::application::marking_read::what_the_command_says(true).context,
+        Action::MarkRead,
+    ),
+    entry("&Star or unstar", Action::ToggleStar),
+    entry("&Delete", Action::DeleteMessage),
+    entry("Delete &permanently", Action::DeleteMessageOutright),
+    entry("Mo&ve to folder", Action::MoveToFolder),
+    entry("Cop&y to folder", Action::CopyToFolder),
+    entry("Copy to a &task", Action::CopyToTask),
+    entry("Copy to the &calendar", Action::CopyToEvent),
+    entry("Copy to a &note", Action::CopyToNote),
+    // The Action menu's Answer Invitation, on the letters this menu had
+    // free: I, E and L. J stays free for Report as Junk.
+    entry("Accept &invitation", Action::AcceptInvitation),
+    entry(
+        "T&entatively accept invitation",
+        Action::TentativeInvitation,
+    ),
+    entry("Dec&line invitation", Action::DeclineInvitation),
+];
+
+/// The same when the message under the cursor is read.
+static MESSAGES_CARRYING_AN_INVITATION_THE_ONE_UNDER_THE_CURSOR_READ: &[Entry] = &[
+    entry("&Reply", Action::Reply),
+    entry("Reply &all", Action::ReplyAll),
+    entry("&Forward", Action::Forward),
+    entry(
+        crate::application::marking_read::what_the_command_says(false).context,
+        Action::MarkRead,
+    ),
+    entry("&Star or unstar", Action::ToggleStar),
+    entry("&Delete", Action::DeleteMessage),
+    entry("Delete &permanently", Action::DeleteMessageOutright),
+    entry("Mo&ve to folder", Action::MoveToFolder),
+    entry("Cop&y to folder", Action::CopyToFolder),
+    entry("Copy to a &task", Action::CopyToTask),
+    entry("Copy to the &calendar", Action::CopyToEvent),
+    entry("Copy to a &note", Action::CopyToNote),
+    entry("Accept &invitation", Action::AcceptInvitation),
+    entry(
+        "T&entatively accept invitation",
+        Action::TentativeInvitation,
+    ),
+    entry("Dec&line invitation", Action::DeclineInvitation),
+];
 
 /// The message list's menu when the message under the cursor is unread, and
 /// the form [`entries_for`] answers for the focus.
@@ -563,7 +638,52 @@ mod tests {
             "Messages, the one under the cursor read".to_string(),
             entries_for_messages(false),
         ));
+        for any_unread in [true, false] {
+            menus.push((
+                format!("Messages carrying an invitation, any unread {any_unread}"),
+                entries_for_a_message_carrying_an_invitation(any_unread),
+            ));
+        }
         menus
+    }
+
+    #[test]
+    fn test_a_message_carrying_an_invitation_is_offered_the_three_answers() {
+        // The Action menu's Answer Invitation, one press away from the
+        // message list, on the three letters the message menu had free (I, E
+        // and L; J stays free for Report as Junk). Offered after everything
+        // else, in the order the buttons are, and on no other message.
+        let answers = [
+            ("Accept &invitation", Action::AcceptInvitation),
+            (
+                "T&entatively accept invitation",
+                Action::TentativeInvitation,
+            ),
+            ("Dec&line invitation", Action::DeclineInvitation),
+        ];
+        for any_unread in [true, false] {
+            let offered: Vec<(&str, Action)> =
+                entries_for_a_message_carrying_an_invitation(any_unread)
+                    .iter()
+                    .map(|e| (e.label, e.action))
+                    .collect();
+            let without: Vec<(&str, Action)> = entries_for_messages(any_unread)
+                .iter()
+                .map(|e| (e.label, e.action))
+                .collect();
+
+            assert_eq!(
+                offered,
+                [without.as_slice(), answers.as_slice()].concat(),
+                "any_unread {any_unread}"
+            );
+            assert!(
+                without
+                    .iter()
+                    .all(|(_, action)| !answers.iter().any(|(_, answer)| answer == action)),
+                "a message carrying no invitation is offered an answer: {without:?}"
+            );
+        }
     }
 
     #[test]

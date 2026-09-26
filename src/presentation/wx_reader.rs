@@ -17,10 +17,16 @@
 //! that shape for the same reasons, and there was no sense in learning them
 //! twice.
 
+use crate::application::answering::TheButtons;
+use crate::application::invitations::Answer;
+use crate::application::printing::{Kind, Paper};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
-use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
+use crate::presentation::printing;
 use crate::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use crate::presentation::theme;
 use std::cell::{Cell, RefCell};
@@ -35,6 +41,7 @@ const ID_READER_FIND: Id = ID_HIGHEST + 903;
 const ID_SAVE_ATTACHMENT: Id = ID_HIGHEST + 904;
 const ID_GO_ATTACHMENTS: Id = ID_HIGHEST + 905;
 const ID_READ_ATTACHMENT: Id = ID_HIGHEST + 906;
+const ID_READER_PRINT: Id = ID_HIGHEST + 907;
 
 /// What the window does when somebody asks to save an attachment.
 ///
@@ -48,6 +55,33 @@ type SaveHandler = Box<dyn Fn(&ReaderAttachment)>;
 /// Set by the application for the same reason as the save handler: reading one
 /// means fetching the message again first.
 type ReadHandler = Box<dyn Fn(&ReaderAttachment)>;
+
+/// What the window does when somebody presses Accept, Tentative or Decline.
+///
+/// Set by the application for the reason the save handler is: answering sends
+/// mail from an account and files the meeting, and neither belongs to a window
+/// whose job is to show text. Handed the row of the message the tab shows, so
+/// the answer goes to that meeting and not to whatever the list has selected.
+type AnswerHandler = Box<dyn Fn(i64, Answer)>;
+
+/// The three answer buttons: the answer, the label with its letter, the name.
+///
+/// Accept takes C, not A: Alt+A is the attachments in both message windows.
+/// Tentative and Decline take their first letters, which nothing else in the
+/// reader's tab or on its menu bar (File, Go) answers.
+pub const THE_ANSWER_BUTTONS: [(Answer, &str, &str); 3] = [
+    (Answer::Accepted, "A&ccept", "Accept"),
+    (Answer::Tentative, "&Tentative", "Tentative"),
+    (Answer::Declined, "&Decline", "Decline"),
+];
+
+/// What one tab prints, composed when Print is pressed.
+///
+/// Composed then rather than when the tab opens, so a message is fetched and
+/// composed for paper only when somebody prints it. The main window composes
+/// it, because paper wants the dates in full and the window knows how to ask
+/// for that; a tab opened with nothing composed for it prints what it shows.
+pub type PaperFor = Rc<dyn Fn() -> Paper>;
 
 /// A reader window, kept alive for as long as it is open.
 /// Where closing a reading window goes back to, if anywhere.
@@ -63,6 +97,8 @@ pub struct ReaderWindow {
     notebook: Notebook,
     /// One entry per tab, in tab order.
     documents: Rc<RefCell<Vec<ReaderDocument>>>,
+    /// What each tab prints, in tab order beside `documents`.
+    papers: Rc<RefCell<Vec<PaperFor>>>,
     /// Which tab is showing. Tracked here because the notebook reports its
     /// selection on the page-changed event and not on demand.
     current: Rc<std::cell::Cell<usize>>,
@@ -71,6 +107,7 @@ pub struct ReaderWindow {
     attachment_lists: Rc<RefCell<Vec<Option<ListBox>>>>,
     save_attachment: Rc<RefCell<Option<SaveHandler>>>,
     read_attachment: Rc<RefCell<Option<ReadHandler>>>,
+    answer: Rc<RefCell<Option<AnswerHandler>>>,
     /// What to do when this window is closed, if anything.
     ///
     /// Set when the reader was opened from somewhere a person should come back
@@ -122,6 +159,9 @@ pub struct ReaderTabHandles {
     pub attachments: Option<ListBox>,
     /// `None` for every tab but a picture that was decoded.
     pub picture: Option<StaticBitmap>,
+    /// Accept, Tentative and Decline, in that order, for a message whose
+    /// invitation can be answered; empty for every other tab.
+    pub answer_buttons: Vec<Button>,
 }
 
 /// Hand one attachment to whatever the application said to do with it.
@@ -288,13 +328,20 @@ impl ReaderWindow {
         let file = Menu::builder()
             .append_item(
                 ID_READ_ATTACHMENT,
-                "&Read Attachment	Ctrl+O",
+                "&Read Attachment\tCtrl+O",
                 "Read the chosen attachment in a tab of its own",
             )
             .append_item(
                 ID_SAVE_ATTACHMENT,
                 "&Save Attachment...\tCtrl+S",
                 "Save the chosen attachment to a file",
+            )
+            .append_separator()
+            // The main window's key and letter for the same command (#45).
+            .append_item(
+                ID_READER_PRINT,
+                "&Print...\tCtrl+P",
+                "Print the message or attachment in this tab, with its header lines",
             )
             .append_separator()
             .append_item(ID_CLOSE_TAB, "&Close Tab\tCtrl+W", "Close this message")
@@ -357,10 +404,12 @@ impl ReaderWindow {
             frame,
             notebook,
             documents: Rc::new(RefCell::new(Vec::new())),
+            papers: Rc::new(RefCell::new(Vec::new())),
             current,
             attachment_lists: Rc::new(RefCell::new(Vec::new())),
             save_attachment: Rc::new(RefCell::new(None)),
             read_attachment: Rc::new(RefCell::new(None)),
+            answer: Rc::new(RefCell::new(None)),
             closed,
             go_back,
             a11y: a11y.clone(),
@@ -416,13 +465,42 @@ impl ReaderWindow {
         *self.read_attachment.borrow_mut() = Some(Box::new(handler));
     }
 
-    /// Add a document as a new tab and show the window.
+    /// Say what to do when somebody presses one of a meeting invitation's
+    /// three buttons: answer the message on that row, that way.
+    pub fn on_answer(&self, handler: impl Fn(i64, Answer) + 'static) {
+        *self.answer.borrow_mut() = Some(Box::new(handler));
+    }
+
+    /// Do the answer the application set up, for a window that is not this
+    /// one: the formatted window has the same three buttons and keys, and one
+    /// handler means the two cannot come to answer differently.
+    pub fn answer_now(&self, message_row_id: i64, answer: Answer) {
+        if let Some(handler) = self.answer.borrow().as_ref() {
+            handler(message_row_id, answer);
+        }
+    }
+
+    /// Add a document as a new tab and show the window. Print in the tab
+    /// prints what it shows, which is right for an attachment read here.
     ///
     /// Returns handles to the tab's own widgets. Production code has no use
     /// for them, since the window keeps its own records of what it built;
     /// they exist so a test can reach a live control and read back what it
     /// was painted.
     pub fn open(&self, document: ReaderDocument) -> ReaderTabHandles {
+        let as_shown = Paper {
+            printable: crate::application::printing::from_document(&document),
+            kind: Kind::Attachment,
+        };
+        self.open_with_paper(document, Rc::new(move || as_shown.clone()))
+    }
+
+    /// Add a document as a new tab, with what Print in that tab prints.
+    ///
+    /// A message or a conversation opened from the main window is shown with
+    /// the dates the person chose for the screen, "2 days ago" among them, and
+    /// printed with every date in full, so the window hands both.
+    pub fn open_with_paper(&self, document: ReaderDocument, paper: PaperFor) -> ReaderTabHandles {
         let panel = Panel::builder(&self.notebook).build();
         if let Some(palette) = self.palette.get() {
             theme::paint(&panel, palette.main_surface());
@@ -459,6 +537,18 @@ impl ReaderWindow {
             }
             bar
         });
+
+        // After the bar and before the message, so an invitation's answer is
+        // met on the way in (#50 point 7), and only when it can be given: an
+        // invitation that cannot be answered has no buttons at all and its
+        // reason in the bar, because Tab passes a greyed button by and its
+        // reason with it.
+        let answer_buttons = document
+            .answering
+            .as_ref()
+            .map_or_else(Vec::new, |offered| {
+                self.the_answer_buttons(&panel, &sizer, offered)
+            });
 
         // Rich2 because the plain multiline control on Windows has a text
         // length limit that a long conversation reaches, and because it is the
@@ -554,6 +644,7 @@ impl ReaderWindow {
         let label = tab_label(&document.title);
         self.notebook.add_page(&panel, &label, true, None);
         self.documents.borrow_mut().push(document.clone());
+        self.papers.borrow_mut().push(paper);
         self.attachment_lists.borrow_mut().push(attachments);
 
         let index = self.documents.borrow().len().saturating_sub(1);
@@ -615,7 +706,69 @@ impl ReaderWindow {
             warning,
             picture,
             attachments,
+            answer_buttons,
         }
+    }
+
+    /// Accept, Tentative and Decline in a row on `panel`, each named for its
+    /// answer and described by what pressing it will do, each pressing the
+    /// answer handler with the row of the message the tab shows.
+    ///
+    /// No key is bound for them. The panel hands its key messages to the
+    /// dialog manager, which finds Alt with a button's letter among the
+    /// panel's children wherever the keyboard is, so the labels' own letters
+    /// press them from the message's text too; a binding as well would press
+    /// twice.
+    fn the_answer_buttons(
+        &self,
+        panel: &Panel,
+        sizer: &BoxSizer,
+        offered: &TheButtons,
+    ) -> Vec<Button> {
+        let handler = self.answer.clone();
+        Self::answer_buttons_on(
+            panel,
+            sizer,
+            offered,
+            Rc::new(move |message_row_id, answer| {
+                if let Some(answer_it) = handler.borrow().as_ref() {
+                    answer_it(message_row_id, answer);
+                }
+            }),
+        )
+    }
+
+    /// The three buttons in a row on `parent`, added to `sizer`, each
+    /// pressing `press` with the row the buttons answer and its answer.
+    ///
+    /// One builder for both message windows, the reader's tab and the
+    /// formatted window, so the two cannot come to name, describe or letter
+    /// them differently.
+    pub fn answer_buttons_on(
+        parent: &dyn WxWidget,
+        sizer: &BoxSizer,
+        offered: &TheButtons,
+        press: Rc<dyn Fn(i64, Answer)>,
+    ) -> Vec<Button> {
+        let row = BoxSizer::builder(Orientation::Horizontal).build();
+        let built = THE_ANSWER_BUTTONS
+            .iter()
+            .map(|&(answer, label, name)| {
+                let button = Button::builder(parent).with_label(label).build();
+                // Not painted: a button keeps the colours Windows gives it, as
+                // every other button in this program does.
+                set_accessible_name_and_description(&button, name, offered.what_pressing(answer));
+                button.on_click({
+                    let press = press.clone();
+                    let message_row_id = offered.message_row_id;
+                    move |_| press(message_row_id, answer)
+                });
+                row.add(&button, 0, SizerFlag::All, 4);
+                button
+            })
+            .collect();
+        sizer.add_sizer(&row, 0, SizerFlag::All, 0);
+        built
     }
 
     /// Enter on an attachment row reads it, and Alt+A goes back to the message.
@@ -789,6 +942,7 @@ impl ReaderWindow {
         let frame = self.frame;
         let notebook = self.notebook;
         let documents = self.documents.clone();
+        let papers = self.papers.clone();
         let current = self.current.clone();
         let a11y = self.a11y.clone();
         let lists = self.attachment_lists.clone();
@@ -799,6 +953,17 @@ impl ReaderWindow {
             let id = event.get_id();
             if id == ID_CANCEL {
                 frame.show(false);
+                return;
+            }
+            if id == ID_READER_PRINT {
+                // Cloned out before the dialog opens, so no borrow is held
+                // across a modal loop that could close a tab under it.
+                let paper = papers.borrow().get(current.get()).cloned();
+                let Some(paper) = paper else {
+                    return;
+                };
+                let said = printing::print_through_the_dialog(&frame, &paper());
+                printing::say_what_came_of_it(&a11y, said);
                 return;
             }
             if id == ID_SAVE_ATTACHMENT || id == ID_READ_ATTACHMENT {
@@ -851,6 +1016,11 @@ impl ReaderWindow {
                 if page < open.len() {
                     open.remove(page);
                 }
+                let mut open_papers = papers.borrow_mut();
+                if page < open_papers.len() {
+                    open_papers.remove(page);
+                }
+                drop(open_papers);
                 let mut open_lists = lists.borrow_mut();
                 if page < open_lists.len() {
                     open_lists.remove(page);
@@ -941,6 +1111,7 @@ mod tests {
             mime_type: "application/pdf".to_string(),
             size: 1024,
             description: crate::service::mime::WhatTheSenderSaid::Nothing,
+            kind_the_message_gave: None,
         }
     }
 

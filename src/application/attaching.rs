@@ -742,6 +742,8 @@ mod tests {
             "2026-03-04T08:15:00Z"
                 .parse()
                 .expect("a moment written the way this test wrote it"),
+            "invite-7@example.com",
+            None,
         )
         .expect("an answer to send")
         .calendar_document

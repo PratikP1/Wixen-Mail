@@ -17,7 +17,9 @@
 use super::html_renderer::HtmlRenderer;
 use super::read_aloud::Reading;
 use super::ui_types::MessageItem;
+use crate::application::answering::is_a_calendar_part;
 use crate::application::checking_signatures::SignatureCheck;
+use crate::application::invitations::WhatTheInvitationSays;
 use crate::common::types::MessageBody;
 use crate::service::mime::WhatTheSenderSaid;
 use crate::service::signed_mail::{Finding, SignatureOutcome, SignatureReport};
@@ -77,6 +79,13 @@ pub struct ReaderDocument {
     /// that the cue means nothing, and then it means nothing on the message
     /// where it mattered.
     pub looks_unsafe: bool,
+    /// The three answer buttons, for one message whose invitation can be
+    /// answered here.
+    ///
+    /// `None` for everything else, and then the window builds no buttons at
+    /// all rather than greyed ones: an invitation that cannot be answered has
+    /// its reason in the bar instead (#50 point 7).
+    pub answering: Option<crate::application::answering::TheButtons>,
 }
 
 /// A decoded picture, ready for a window to draw.
@@ -327,6 +336,9 @@ pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -
         // verdict and what the message says about its own form, ever sets this.
         picture: None,
         looks_unsafe: warning_for(message.safety, &message.safety_reasons).is_some(),
+        // Offered by `with_answer_buttons` when what is said about the
+        // message is folded in, never by the composition of its text.
+        answering: None,
         attachments: attachments_of(message),
     }
     // Before a caller folds in a signature verdict, and that ordering is
@@ -417,8 +429,32 @@ fn attachments_of(message: &MessageItem) -> Vec<ReaderAttachment> {
             mime_type: item.mime_type.clone(),
             size: item.size,
             description: item.description.clone(),
+            kind_the_message_gave: None,
         })
         .collect()
+}
+
+/// Name each calendar part from what the message's calendar document asks.
+///
+/// Through the one question the finder asks, so a part the row calls a meeting
+/// is the part the meeting was read from.
+fn named_from(says: &WhatTheInvitationSays, attachments: &mut [ReaderAttachment]) {
+    for attachment in attachments
+        .iter_mut()
+        .filter(|attachment| is_a_calendar_part(&attachment.mime_type))
+    {
+        attachment.kind_the_message_gave = Some(says.what_its_part_is());
+    }
+}
+
+/// One message's attachments, its calendar part named from its own answer.
+///
+/// Per message, because a conversation holds a decision per message and one
+/// list covers all of them.
+fn attachments_of_part(part: &ConversationPart) -> Vec<ReaderAttachment> {
+    let mut attachments = attachments_of(&part.message);
+    named_from(&part.said.invitation, &mut attachments);
+    attachments
 }
 
 /// The warning shown above a message, when it has earned one.
@@ -679,10 +715,7 @@ pub fn said_before_the_message(bar: &str) -> &str {
 /// and this surface has to as well, or reading formatted quietly costs somebody
 /// their attachments.
 pub fn attachments_in(parts: &[ConversationPart]) -> Vec<ReaderAttachment> {
-    parts
-        .iter()
-        .flat_map(|part| attachments_of(&part.message))
-        .collect()
+    parts.iter().flat_map(attachments_of_part).collect()
 }
 
 /// Compose a conversation as HTML, so its messages are real headings.
@@ -817,6 +850,7 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
         // A document read out of a file, which nothing has judged.
         picture: None,
         looks_unsafe: false,
+        answering: None,
         landmarks,
         // A PDF gets no warning bar of its own. The bar says what the mail
         // provider's filter made of the message, and that verdict belongs to
@@ -863,6 +897,7 @@ pub fn text_document(
         // open behind this one.
         picture: None,
         looks_unsafe: false,
+        answering: None,
         warning: None,
         // Nothing hangs off a text file, so no list and nothing extra to tab
         // past.
@@ -964,6 +999,7 @@ pub fn image_document(attachment: &ReaderAttachment, bytes: &[u8]) -> ReaderDocu
         // cue means nothing, and then it means nothing on the message where it
         // mattered.
         looks_unsafe: false,
+        answering: None,
         warning: None,
         picture,
         attachments: Vec::new(),
@@ -1242,19 +1278,17 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         // `with_encryption`, never set this.
         picture: None,
         looks_unsafe: warning.is_some(),
+        answering: None,
         landmarks,
         warning,
         // Every message's attachments, in the order the messages are read, so
         // one list covers the whole conversation. Each row remembers which
         // message it came from, which is what makes that possible.
-        attachments: parts
-            .iter()
-            .flat_map(|part| attachments_of(&part.message))
-            .collect(),
+        attachments: attachments_in(parts),
     }
     .with_encryption(form);
 
-    // The three findings, for one message only and in the order that keeps
+    // The four findings, for one message only and in the order that keeps
     // each spoken. The window used to fold the signature in itself, and only
     // the signature, which is how the default reader came to say nothing about
     // a PGP message or an envelope (#51). A thread carries its findings per
@@ -1294,6 +1328,14 @@ pub struct ReaderAttachment {
     /// attachment that a person wrote, and for a picture it is the only thing
     /// that can say what is in it.
     pub description: WhatTheSenderSaid,
+    /// What the message's own decision calls this part, where its type
+    /// cannot say.
+    ///
+    /// A calendar part has one type whether it invites somebody to a meeting,
+    /// calls one off, answers one or publishes a calendar, and the row should
+    /// say which. `None` for every other attachment, whose kind is read from
+    /// its type.
+    pub kind_the_message_gave: Option<&'static str>,
 }
 
 impl ReaderAttachment {
@@ -1319,10 +1361,22 @@ impl ReaderAttachment {
         format!(
             "{}, {}, {}, {}",
             name,
-            describe_kind(&self.mime_type, &self.name),
+            self.kind_in_words(),
             human_size(self.size),
             self.what_the_sender_said()
         )
+    }
+
+    /// The second clause of [`Self::label`].
+    ///
+    /// What the message decided, where it decided something, and never over a
+    /// file Windows would run: "program" is the one kind that changes what
+    /// somebody should do, and a sender can name a calendar part anything.
+    fn kind_in_words(&self) -> String {
+        match self.kind_the_message_gave {
+            Some(kind) if !self.is_runnable() => kind.to_string(),
+            _ => describe_kind(&self.mime_type, &self.name),
+        }
     }
 
     /// The last clause of [`Self::label`].
@@ -1457,7 +1511,10 @@ fn describe_kind(mime_type: &str, name: &str) -> String {
         "text/plain" => Some(GENERIC_TEXT_FILE),
         "text/html" => Some("web page"),
         "text/csv" => Some("CSV spreadsheet"),
-        "text/calendar" => Some("calendar invitation"),
+        // A calendar file, and no more than that: the type is the same for an
+        // invitation, a cancellation, an answer and a published calendar. The
+        // message's own decision names which, through `kind_the_message_gave`.
+        "text/calendar" | "application/ics" => Some("calendar file"),
         "message/rfc822" => Some("email message"),
         "image/jpeg" => Some("JPEG image"),
         "image/png" => Some("PNG image"),
@@ -1762,11 +1819,104 @@ impl ReaderDocument {
         self
     }
 
-    /// Fold in the three things said about a message, in the one order that
-    /// keeps each of them spoken.
+    /// Say what the meeting a message carries is, before a word of it.
+    ///
+    /// [`WhatTheInvitationSays::Nothing`] for nearly all mail, and then nothing
+    /// changes, which is [`with_encryption`](Self::with_encryption)'s reasoning
+    /// unchanged.
+    ///
+    /// # One sentence, in two places
+    ///
+    /// The bar's and the body's, for the reason
+    /// [`with_smime_envelope`](Self::with_smime_envelope) gives: the bar is
+    /// spoken as the message opens, and the body is where somebody reading
+    /// from the top meets the meeting before the covering note. In the body it
+    /// goes between the header lines and the first word, and every landmark
+    /// below it moves down by what went in, so a heading still lands on its
+    /// words.
+    ///
+    /// The calendar part's row is named from the same answer, so the row and
+    /// the sentence cannot disagree about what the part is.
+    ///
+    /// # Why this must be folded in before a signature verdict
+    ///
+    /// [`with_encryption`](Self::with_encryption)'s reason exactly, and
+    /// `looks_unsafe` is left alone: a meeting is not a warning.
+    pub fn with_invitation(mut self, says: &WhatTheInvitationSays) -> Self {
+        named_from(says, &mut self.attachments);
+        let Some(sentence) = says.said() else {
+            return self;
+        };
+        self = self.said_above_the_body(&sentence);
+        self.warning = Some(match self.warning.take() {
+            // Under what is already there, the way the envelope goes: a bar
+            // that reshuffles itself by how bad the news is has to be read
+            // from the top every time to find out what is in it.
+            Some(already) => format!("{already}\n{sentence}"),
+            None => sentence,
+        });
+        self
+    }
+
+    /// Whether this message's invitation is answered here: the three buttons
+    /// when it can be, and the reason in the bar when it cannot.
+    ///
+    /// # Why this must be folded in before a signature verdict
+    ///
+    /// [`with_encryption`](Self::with_encryption)'s reason exactly: a reason
+    /// folded in below "More about this signature:" is on screen and never
+    /// spoken.
+    pub fn with_answer_buttons(
+        mut self,
+        answering: &crate::application::answering::AnswerButtons,
+    ) -> Self {
+        use crate::application::answering::AnswerButtons;
+        match answering {
+            AnswerButtons::NotAsked => {}
+            AnswerButtons::Offered(buttons) => self.answering = Some(buttons.clone()),
+            // Under the meeting's own sentence, which is what it is about.
+            AnswerButtons::CannotBeAnswered(why) => {
+                let why = why.why();
+                self.warning = Some(match self.warning.take() {
+                    Some(already) => format!("{already}\n{why}"),
+                    None => why,
+                });
+            }
+        }
+        self
+    }
+
+    /// A paragraph put between the header lines and the body, with every
+    /// landmark after it moved down by what went in.
+    ///
+    /// The header block ends at the first blank line of the text, which is
+    /// where every composer here puts one. A text with none has the paragraph
+    /// at its end rather than over anything.
+    fn said_above_the_body(mut self, sentence: &str) -> Self {
+        let paragraph = format!("{sentence}\n\n");
+        let Some(blank) = self.text.find("\n\n") else {
+            self.text = format!("{}\n\n{sentence}\n", self.text.trim_end());
+            return self;
+        };
+        let at = blank + 2;
+        let from = self.text[..at].chars().count();
+        let by = paragraph.chars().count();
+        self.text.insert_str(at, &paragraph);
+        for landmark in &mut self.landmarks {
+            if landmark.offset >= from {
+                landmark.offset += by;
+            }
+        }
+        self
+    }
+
+    /// Fold in the things said about a message, in the one order that keeps
+    /// each of them spoken.
     ///
     /// [`with_pgp`](Self::with_pgp), then
     /// [`with_smime_envelope`](Self::with_smime_envelope), then
+    /// [`with_invitation`](Self::with_invitation), then
+    /// [`with_answer_buttons`](Self::with_answer_buttons), then
     /// [`with_signature`](Self::with_signature). The order is the load-bearing
     /// part and it is written here once: a signature verdict puts
     /// `HOW_IT_WAS_CHECKED` into the bar and [`said_before_the_message`] cuts
@@ -1774,13 +1924,17 @@ impl ReaderDocument {
     /// Two surfaces got that order right by each carrying the comment; four
     /// never folded anything at all (#51). A surface asks
     /// [`crate::application::reading_a_message`] and hands the answer here,
-    /// and cannot get the order wrong.
+    /// and cannot get the order wrong. The meeting follows the envelope, so a
+    /// fact about how the message arrived is heard first, and why the meeting
+    /// cannot be answered follows the meeting.
     pub fn with_what_is_said(
         self,
         said: &crate::application::reading_a_message::WhatIsSaidAboutIt,
     ) -> Self {
         self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
     }
 }
@@ -1812,9 +1966,10 @@ fn the_reason_it_did_not_open(
 /// over a thread of five is heard as covering all five, which is the reason
 /// [`ReaderDocument::with_signature`] stays off a thread. So what is known
 /// about one message is said at that message, under its own heading and before
-/// a word of its body: why a PGP message did not open, and what its S/MIME
-/// envelope says. The envelope sentence takes the place of the body where the
-/// body would otherwise say there is no text, as
+/// a word of its body: why a PGP message did not open, what its S/MIME
+/// envelope says, and what the meeting it carries is. The envelope sentence
+/// takes the place of the body where the body would otherwise say there is no
+/// text, as
 /// [`ReaderDocument::with_smime_envelope`] does for one message and for the
 /// same reason: that sentence is false about an enveloped message. Where there
 /// is a body anyway, a shape nothing here has met, the sentence goes before it
@@ -1830,7 +1985,13 @@ fn one_of_several(part: &ConversationPart) -> (Option<String>, MessageBody) {
         }
         other => (other, part.body.clone()),
     };
-    let said: Vec<&str> = reason.into_iter().chain(envelope).collect();
+    // The meeting after the envelope, the order the bar folds them in.
+    let invitation = part.said.invitation.said();
+    let said: Vec<&str> = reason
+        .into_iter()
+        .chain(envelope)
+        .chain(invitation.as_deref())
+        .collect();
     ((!said.is_empty()).then(|| said.join("\n")), body)
 }
 
@@ -1872,6 +2033,7 @@ mod tests {
             mime_type: mime_type.to_string(),
             size,
             description: WhatTheSenderSaid::Nothing,
+            kind_the_message_gave: None,
         }
     }
 
@@ -1997,7 +2159,12 @@ mod tests {
             ("text/plain", "a.txt", "text file"),
             ("application/zip", "a.zip", "zip archive"),
             ("message/rfc822", "a.eml", "email message"),
-            ("text/calendar", "a.ics", "calendar invitation"),
+            // Not an invitation: the type is the same for a cancellation and
+            // a published feed, so the type alone says only that it is a
+            // calendar file. What the message decided it asks
+            // is said instead where there is a decision.
+            ("text/calendar", "a.ics", "calendar file"),
+            ("application/ics", "a.ics", "calendar file"),
             // Unknown, but the top level still says something useful.
             ("image/x-something-new", "a.bin", "image"),
             ("audio/x-something-new", "a.bin", "audio"),
@@ -3141,6 +3308,7 @@ mod warning_tests {
             attachments: Vec::new(),
             picture: None,
             looks_unsafe: false,
+            answering: None,
         }
     }
 
@@ -4309,6 +4477,7 @@ mod picture_preview_tests {
             mime_type: kind.to_string(),
             size: 240 * 1024,
             description: said,
+            kind_the_message_gave: None,
         }
     }
 
@@ -4500,6 +4669,7 @@ mod picture_shown_tests {
             mime_type: kind.to_string(),
             size: 4096,
             description: said,
+            kind_the_message_gave: None,
         }
     }
 
@@ -4640,5 +4810,316 @@ mod picture_shown_tests {
             .expect("the sentence saying the picture is shown");
         let kind = document.text.find("PNG image").expect("the kind");
         assert!(said < kind, "{}", document.text);
+    }
+}
+
+/// What a message carrying a meeting says before its body, and what its
+/// calendar part's row says.
+#[cfg(test)]
+mod invitation_tests {
+    use super::tests::{aloud, message};
+    use super::*;
+    use crate::application::invitations::{Standing, WhatTheInvitationSays};
+    use crate::application::reading_a_message::WhatIsSaidAboutIt;
+    use crate::presentation::ui_types::AttachmentItem;
+
+    const THE_SENTENCE: &str = "Meeting invitation: Quarterly review, 05/03/2026 at 09:00 to \
+         10:00, in Room 4, from Ada Lovelace, and it is new to your calendar.";
+
+    fn a_meeting() -> WhatTheInvitationSays {
+        WhatTheInvitationSays::Invitation {
+            summary: "Quarterly review".to_string(),
+            when: "05/03/2026 at 09:00 to 10:00".to_string(),
+            place: Some("Room 4".to_string()),
+            organiser: Some("Ada Lovelace".to_string()),
+            standing: Standing::New,
+        }
+    }
+
+    fn called_off() -> WhatTheInvitationSays {
+        WhatTheInvitationSays::Cancellation {
+            summary: "Quarterly review".to_string(),
+            on_the_calendar: true,
+        }
+    }
+
+    fn saying(invitation: WhatTheInvitationSays) -> WhatIsSaidAboutIt {
+        WhatIsSaidAboutIt {
+            invitation,
+            ..WhatIsSaidAboutIt::nothing()
+        }
+    }
+
+    /// The message with a calendar part among its attachments.
+    fn carrying(named: &str, kind: &str) -> MessageItem {
+        MessageItem {
+            has_attachments: true,
+            attachments: vec![AttachmentItem {
+                filename: named.to_string(),
+                mime_type: kind.to_string(),
+                size: 512,
+                description: WhatTheSenderSaid::Nothing,
+            }],
+            ..message()
+        }
+    }
+
+    fn the_top_of(document: &ReaderDocument) -> &str {
+        said_before_the_message(document.warning.as_deref().expect("a bar"))
+    }
+
+    #[test]
+    fn test_an_invitation_is_said_at_the_top_of_the_bar_and_of_the_body() {
+        // The bar is spoken as the message opens; the body is where somebody
+        // reading from the top meets it. Headings in the body still land on
+        // their own words after the sentence goes in above them.
+        let body = MessageBody::Html("<h2>Agenda</h2><p>Figures first.</p>".to_string());
+
+        let document =
+            single_message(&message(), &body, aloud()).with_what_is_said(&saying(a_meeting()));
+
+        assert_eq!(the_top_of(&document), THE_SENTENCE);
+        let said_at = document
+            .text
+            .find(THE_SENTENCE)
+            .expect("the sentence in the body");
+        let agenda_at = document.text.find("Agenda").expect("the body");
+        assert!(
+            document.text.starts_with("Subject:") && said_at < agenda_at,
+            "{}",
+            document.text
+        );
+        let agenda = document
+            .landmarks
+            .iter()
+            .find(|landmark| landmark.label == "Agenda")
+            .expect("the heading is still a landmark");
+        let characters: Vec<char> = document.text.chars().collect();
+        assert_eq!(
+            characters[agenda.offset..agenda.offset + "Agenda".len()]
+                .iter()
+                .collect::<String>(),
+            "Agenda",
+            "the heading's landmark was left where the sentence pushed it from"
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature() {
+        let said = WhatIsSaidAboutIt {
+            signature: SignatureCheck::NotKept,
+            ..saying(a_meeting())
+        };
+
+        let document = single_message(
+            &message(),
+            &MessageBody::Plain("Hello".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(&said);
+
+        assert!(
+            document
+                .warning
+                .as_deref()
+                .is_some_and(|bar| bar.contains(HOW_IT_WAS_CHECKED)),
+            "the fixture did not produce the boundary this is about"
+        );
+        assert!(
+            the_top_of(&document).contains("Meeting invitation: Quarterly review"),
+            "{:?}",
+            document.warning
+        );
+    }
+
+    #[test]
+    fn test_a_cancellations_calendar_part_is_called_a_meeting_cancellation() {
+        let document = single_message(
+            &carrying("invite.ics", "text/calendar"),
+            &MessageBody::Plain("It is off.".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(&saying(called_off()));
+
+        assert_eq!(
+            document.attachments[0].label(),
+            "invite.ics, meeting cancellation, 512 bytes, no description"
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_part_named_like_a_program_is_still_called_a_program() {
+        // The kind the message gave never outranks the one warning that changes
+        // what somebody should do with a file.
+        let document = single_message(
+            &carrying("invite.exe", "text/calendar"),
+            &MessageBody::Plain("Open this.".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(&saying(a_meeting()));
+
+        assert_eq!(
+            document.attachments[0].label(),
+            "invite.exe, program, 512 bytes, no description"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_meeting_gains_no_bar_and_no_line() {
+        // Nearly every message. A bar or a line on every one of them is a bar
+        // people learn to talk past.
+        let body = MessageBody::Plain("One o'clock?".to_string());
+        let alone = single_message(&message(), &body, aloud());
+
+        let folded = alone
+            .clone()
+            .with_what_is_said(&saying(WhatTheInvitationSays::Nothing));
+
+        assert_eq!(folded, alone);
+    }
+
+    #[test]
+    fn test_one_message_of_several_says_its_meeting_under_its_own_heading() {
+        // A bar over a thread is heard as covering all of it, so the meeting
+        // is said where its message begins, and that message's calendar part
+        // is named from its own decision.
+        let first = ConversationPart {
+            message: message(),
+            body: MessageBody::Plain("Shall we meet?".to_string()),
+            said: WhatIsSaidAboutIt::nothing(),
+            depth: 0,
+        };
+        let second = ConversationPart {
+            message: carrying("invite.ics", "text/calendar"),
+            body: MessageBody::Plain("Here is the invitation.".to_string()),
+            said: saying(a_meeting()),
+            depth: 1,
+        };
+        let parts = [first, second];
+
+        let document = conversation("Quarterly report", &parts);
+
+        let heading_at = document.text.find("2. Reply").expect("the second heading");
+        let said_at = document.text.find(THE_SENTENCE).expect("the sentence");
+        let body_at = document
+            .text
+            .find("Here is the invitation.")
+            .expect("the body");
+        assert!(
+            heading_at < said_at && said_at < body_at,
+            "{}",
+            document.text
+        );
+        assert_eq!(document.warning, None);
+        assert!(
+            attachments_in(&parts)[0]
+                .label()
+                .contains(", meeting invitation,"),
+            "{}",
+            attachments_in(&parts)[0].label()
+        );
+    }
+}
+
+#[cfg(test)]
+mod answer_button_tests {
+    use super::tests::{aloud, message};
+    use super::*;
+    use crate::application::answering::{AnswerButtons, CannotAnswer, TheButtons};
+    use crate::application::invitations::{Standing, WhatTheInvitationSays};
+    use crate::application::reading_a_message::WhatIsSaidAboutIt;
+
+    fn a_meeting() -> WhatTheInvitationSays {
+        WhatTheInvitationSays::Invitation {
+            summary: "Quarterly review".to_string(),
+            when: "05/03/2026 at 09:00 to 10:00".to_string(),
+            place: None,
+            organiser: Some("Ada Lovelace".to_string()),
+            standing: Standing::New,
+        }
+    }
+
+    fn the_buttons() -> TheButtons {
+        TheButtons {
+            message_row_id: 42,
+            accept: "Accept Quarterly review.".to_string(),
+            tentative: "Say you might come to Quarterly review.".to_string(),
+            decline: "Decline Quarterly review.".to_string(),
+        }
+    }
+
+    fn saying(answering: AnswerButtons) -> WhatIsSaidAboutIt {
+        WhatIsSaidAboutIt {
+            invitation: a_meeting(),
+            answering,
+            ..WhatIsSaidAboutIt::nothing()
+        }
+    }
+
+    fn one_message(said: &WhatIsSaidAboutIt) -> ReaderDocument {
+        single_message(
+            &message(),
+            &MessageBody::Plain("Are you free?".to_string()),
+            aloud(),
+        )
+        .with_what_is_said(said)
+    }
+
+    #[test]
+    fn test_an_answerable_invitation_carries_its_buttons_into_the_document() {
+        // The window builds the three buttons from the document, so the
+        // document is what has to carry them, and the row they answer.
+        let document = one_message(&saying(AnswerButtons::Offered(the_buttons())));
+
+        assert_eq!(document.answering, Some(the_buttons()));
+    }
+
+    #[test]
+    fn test_why_an_invitation_cannot_be_answered_is_said_above_the_signature() {
+        // No buttons, and the reason in the bar where it is spoken: on a
+        // signed message that is above "More about this signature:", or it is
+        // on screen and never heard (#50 point 7).
+        let said = WhatIsSaidAboutIt {
+            signature: crate::application::checking_signatures::SignatureCheck::NotKept,
+            ..saying(AnswerButtons::CannotBeAnswered(
+                CannotAnswer::SendingIsSwitchedOff,
+            ))
+        };
+
+        let document = one_message(&said);
+
+        assert_eq!(document.answering, None);
+        let spoken = said_before_the_message(document.warning.as_deref().expect("a bar"));
+        assert!(
+            spoken.contains(&CannotAnswer::SendingIsSwitchedOff.why()),
+            "{spoken}"
+        );
+    }
+
+    #[test]
+    fn test_nothing_asked_adds_nothing_to_the_bar_or_the_buttons() {
+        // A cancellation, an answer to your meeting, a calendar file: what it
+        // is has been said, and nothing more is.
+        let document = one_message(&saying(AnswerButtons::NotAsked));
+        let with_the_buttons = one_message(&saying(AnswerButtons::Offered(the_buttons())));
+
+        assert_eq!(document.answering, None);
+        assert_eq!(document.warning, with_the_buttons.warning);
+    }
+
+    #[test]
+    fn test_a_conversation_of_several_messages_offers_no_buttons() {
+        // One set of buttons over a thread of two is heard as answering both;
+        // each message's sentence still says what it is.
+        let part = |depth| ConversationPart {
+            message: message(),
+            body: MessageBody::Plain("Are you free?".to_string()),
+            said: saying(AnswerButtons::Offered(the_buttons())),
+            depth,
+        };
+
+        let document = conversation("Quarterly review", &[part(0), part(1)]);
+
+        assert_eq!(document.answering, None);
     }
 }

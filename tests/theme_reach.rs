@@ -923,6 +923,7 @@ fn document_that_exercises_every_optional_widget() -> ReaderDocument {
             described: "A test picture".to_string(),
         }),
         looks_unsafe: true,
+        answering: None,
         attachments: vec![ReaderAttachment {
             message_row_id: 1,
             uid: 1,
@@ -931,6 +932,7 @@ fn document_that_exercises_every_optional_widget() -> ReaderDocument {
             mime_type: "application/pdf".to_string(),
             size: 1024,
             description: wixen_mail::service::mime::WhatTheSenderSaid::Nothing,
+            kind_the_message_gave: None,
         }],
     }
 }
