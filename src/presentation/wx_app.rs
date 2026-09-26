@@ -1906,6 +1906,21 @@ impl WxMailApp {
                     answer_the_invitation(app, &message_cache, Some(message_row), answer);
                 }
             });
+            // Remove from Calendar, in both message windows alike: the meeting
+            // the organiser's cancellation named, marked called off (13-13).
+            reader.on_remove({
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let message_cache = message_cache.clone();
+                move |event_id| {
+                    take_the_called_off_meeting_off_the_calendar(
+                        &ui_tx,
+                        &runtime,
+                        &message_cache,
+                        event_id,
+                    );
+                }
+            });
 
             // Space cycles short then full on the item under the cursor;
             // Shift+Space goes straight to full. One cycle shared across the
@@ -14356,6 +14371,11 @@ fn open_single_message(
 
     lock_state(state).reading_began = Some((message.message_id, std::time::Instant::now()));
 
+    // Asked before either document is built, so a move is already on the
+    // calendar when the meeting is said. Here and not in the preview, which
+    // opens a message as the cursor passes over it (13-13).
+    let change = what_opening_it_changes_on_the_calendar(cache, message);
+
     // Formatted unless somebody said otherwise. A message opened as plain text
     // has had its headings, links and tables taken out of it, and the person
     // most affected by that is the one who cannot see the layout those things
@@ -14392,7 +14412,10 @@ fn open_single_message(
             &[reader_text::ConversationPart {
                 message,
                 body: shown.body,
-                said: shown.said,
+                said: crate::application::reading_a_message::WhatIsSaidAboutIt {
+                    change,
+                    ..shown.said
+                },
                 depth: 0,
             }],
             closed,
@@ -14400,7 +14423,27 @@ fn open_single_message(
         return;
     }
     reader.on_closed(closed);
-    open_in_the_text_reader(reader, cache, message, out);
+    open_in_the_text_reader(reader, cache, message, out, change);
+}
+
+/// What opening a message in a reader window changes on the calendar, with a
+/// move already saved: the one seam between the two reader windows and
+/// [`crate::application::reading_a_message::what_opening_it_in_a_reader_changed`].
+///
+/// Asked by `open_single_message` and by nothing else. The preview is left
+/// out on purpose, and `tests/a_meeting_change_reaches_the_calendar.rs` reads
+/// that it stays out.
+fn what_opening_it_changes_on_the_calendar(
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+) -> crate::application::meeting_changes::MeetingChange {
+    crate::application::reading_a_message::what_opening_it_in_a_reader_changed(
+        cache.as_deref(),
+        message.message_id,
+        &message.from,
+        date_settings_from_stored_config,
+        |account| crate::application::reading_a_message::AnsweringAs::on(cache.as_deref(), account),
+    )
 }
 
 /// Open one message in the text control, whatever the setting says.
@@ -14411,23 +14454,27 @@ fn open_in_the_text_reader(
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
     out: read_aloud::Reading,
+    change: crate::application::meeting_changes::MeetingChange,
 ) {
     use crate::application::printing::{self, Kind, Paper};
     // Composed when Print is pressed, from the same function, with every
-    // date in full.
+    // date in full, saying what opening the message changed as the tab does.
     let paper = {
         let cache = cache.clone();
         let message = message.clone();
+        let change = change.clone();
         Rc::new(move || Paper {
             printable: printing::from_document(&a_message_as_the_reader_shows_it(
                 &cache,
                 &message,
                 printing::on_paper(out),
+                &change,
             )),
             kind: Kind::Message,
         })
     };
-    reader.open_with_paper(a_message_as_the_reader_shows_it(cache, message, out), paper);
+    let shown = a_message_as_the_reader_shows_it(cache, message, out, &change);
+    reader.open_with_paper(shown, paper);
 }
 
 /// One message composed the way the text reader shows it: its header lines,
@@ -14436,11 +14483,14 @@ fn open_in_the_text_reader(
 /// The reader and File, Print both go through here, so a page cannot come to
 /// show a different message from the reader. Paper asks with
 /// [`crate::application::printing::on_paper`], which writes every date in
-/// full.
+/// full. `change` is what opening the message in the reader changed on the
+/// calendar, which the reader asked first; File, Print on the list opens
+/// nothing and hands nothing.
 fn a_message_as_the_reader_shows_it(
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
     out: read_aloud::Reading,
+    change: &crate::application::meeting_changes::MeetingChange,
 ) -> reader_text::ReaderDocument {
     let stored = cache
         .as_ref()
@@ -14451,7 +14501,12 @@ fn a_message_as_the_reader_shows_it(
     // reader and paper are the places that need them.
     let mut message = message.clone();
     message.attachments = attachments_of(cache, message.message_id);
-    reader_text::single_message(&message, &shown.body, out).with_what_is_said(&shown.said)
+    reader_text::single_message(&message, &shown.body, out).with_what_is_said(
+        &crate::application::reading_a_message::WhatIsSaidAboutIt {
+            change: change.clone(),
+            ..shown.said
+        },
+    )
 }
 
 /// File, Print: the message under the cursor in the list, on paper, through
@@ -14515,6 +14570,7 @@ fn print_the_message_under_the_cursor(
         cache,
         &message,
         printing::on_paper(reading_from_settings()),
+        &crate::application::meeting_changes::MeetingChange::Nothing,
     ));
     say(print_through_the_dialog(
         frame,
@@ -15311,6 +15367,52 @@ fn answer_the_invitation(
     } = &went
     {
         flush_outbox(app);
+    }
+}
+
+/// Remove from Calendar: the meeting its organiser called off, marked
+/// cancelled and free on the calendar and waiting to be sent like any change
+/// made here (13-13, #50 point 2).
+///
+/// Marked, never deleted: a deletion here is carried to the provider on the
+/// next push, and nothing but a message said the meeting was off. The button
+/// was offered only because the organiser the calendar recorded sent the
+/// cancellation; the account's Allow Changes answer is asked again here, since
+/// it may have changed while the window was open. Every outcome is said once,
+/// through the status line, which speaks what it shows.
+fn take_the_called_off_meeting_off_the_calendar(
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    cache: &Option<Arc<MessageCache>>,
+    event_id: &str,
+) {
+    let refused = |why: &str| send_refusal(ui_tx, runtime, why);
+    let Some(cache) = cache.as_ref() else {
+        refused("There is no calendar on this computer to change.");
+        return;
+    };
+    let meeting = cache.get_event_by_id(event_id).unwrap_or_else(|e| {
+        tracing::warn!("Could not read the meeting Remove from Calendar was pressed for: {e}");
+        None
+    });
+    let Some(meeting) = meeting else {
+        refused("That meeting is no longer on your calendar.");
+        return;
+    };
+    if !crate::application::allowed::allowed_for(&meeting.account_id).personal_information {
+        refused(
+            "Your calendar was not changed, because changes to calendars are switched off \
+             for this account in Allow Changes.",
+        );
+        return;
+    }
+    match cache.mark_the_meeting_called_off(event_id) {
+        Ok(true) => send_status(ui_tx, runtime, "Removed from your calendar."),
+        Ok(false) => refused("That meeting is no longer on your calendar."),
+        Err(e) => {
+            tracing::warn!("Could not mark a meeting called off: {e}");
+            refused("Your calendar could not be changed, so the meeting is still on it.");
+        }
     }
 }
 
@@ -25371,6 +25473,22 @@ pub fn show_conversation_as_page(
             }),
         );
     }
+    // Remove from Calendar, for a window showing one message whose organiser
+    // called off a meeting on the calendar, where the answers go and for the
+    // same reasons; its letter is heard from the page, in the arm below. The
+    // reader's handler, so both windows remove the same way (13-13).
+    let removal = above.removal.clone();
+    if let Some(event_id) = &removal {
+        wx_reader::ReaderWindow::remove_button_on(
+            &frame,
+            &sizer,
+            event_id,
+            Rc::new({
+                let reader = reader.clone();
+                move |event_id| reader.remove_now(event_id)
+            }),
+        );
+    }
 
     // Anything hanging off these messages, in a list of its own. Without it,
     // reading formatted would quietly cost somebody their attachments: the page
@@ -25494,6 +25612,7 @@ pub fn show_conversation_as_page(
         let host = host.clone();
         let reader = reader.clone();
         let answering = answering.clone();
+        let removal = removal.clone();
         move |event: WebViewEventData| {
             use crate::presentation::accessibility::announcements::Priority;
             let Some(json) = event.get_string() else {
@@ -25557,7 +25676,17 @@ pub fn show_conversation_as_page(
                             .announce("There is no invitation here to answer.", Priority::Normal);
                     }
                 }
-                Some(page_jumps::Jump::Remove) => {}
+                // What the button does, with the window's own meeting; with
+                // nothing to remove, said rather than left silent.
+                Some(page_jumps::Jump::Remove) => match &removal {
+                    Some(event_id) => reader.remove_now(event_id),
+                    None => {
+                        let _ = a11y.announce(
+                            "There is no cancelled meeting here to remove.",
+                            Priority::Normal,
+                        );
+                    }
+                },
                 None => {
                     if crate::presentation::panes::leaving_which_way(&json).is_some() {
                         // Closing is what going back means here. The close

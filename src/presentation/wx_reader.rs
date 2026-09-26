@@ -613,6 +613,21 @@ impl ReaderWindow {
             .map_or_else(Vec::new, |offered| {
                 self.the_answer_buttons(&panel, &sizer, offered)
             });
+        // Remove from Calendar goes where the answers go, for the same reason,
+        // and only for a meeting its organiser called off (13-13).
+        let remove_button = document.removal.as_deref().map(|event_id| {
+            let handler = self.remove.clone();
+            Self::remove_button_on(
+                &panel,
+                &sizer,
+                event_id,
+                Rc::new(move |event_id| {
+                    if let Some(remove_it) = handler.borrow().as_ref() {
+                        remove_it(event_id);
+                    }
+                }),
+            )
+        });
 
         // Rich2 because the plain multiline control on Windows has a text
         // length limit that a long conversation reaches, and because it is the
@@ -771,7 +786,7 @@ impl ReaderWindow {
             picture,
             attachments,
             answer_buttons,
-            remove_button: None,
+            remove_button,
         }
     }
 

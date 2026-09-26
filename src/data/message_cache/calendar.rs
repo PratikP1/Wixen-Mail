@@ -701,8 +701,21 @@ impl MessageCache {
     /// provider's calendar on nobody's word but the message's. Answers whether
     /// there was a meeting under `event_id` to mark.
     pub fn mark_the_meeting_called_off(&self, event_id: &str) -> Result<bool> {
-        let _ = event_id;
-        Ok(false)
+        let marked = self
+            .conn
+            .execute(
+                "UPDATE calendar_events
+                 SET status = 'cancelled', show_as = 'free', pending = 1, updated_at = ?2
+                 WHERE id = ?1",
+                params![event_id, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to mark a meeting called off on the calendar: {}",
+                    e
+                ))
+            })?;
+        Ok(marked > 0)
     }
 
     /// Delete an event somebody deleted here, and note that the provider still

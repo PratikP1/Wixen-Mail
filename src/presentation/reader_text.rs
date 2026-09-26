@@ -1959,10 +1959,17 @@ impl ReaderDocument {
     /// spoken, and "Moved on your calendar" is the one sentence here that says
     /// something was done.
     pub fn with_meeting_change(
-        self,
+        mut self,
         change: &crate::application::meeting_changes::MeetingChange,
     ) -> Self {
-        let _ = change;
+        if let Some(sentence) = change.said() {
+            // Under the meeting's own sentence, which is what it is about.
+            self.warning = Some(match self.warning.take() {
+                Some(already) => format!("{already}\n{sentence}"),
+                None => sentence,
+            });
+        }
+        self.removal = change.offered_removal().map(str::to_string);
         self
     }
 }

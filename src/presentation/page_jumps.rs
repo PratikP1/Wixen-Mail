@@ -74,6 +74,14 @@ pub const SCRIPT: &str = r#"document.addEventListener('keydown', function(e) {
         e.stopPropagation();
         window.contextMenu.postMessage(JSON.stringify({ kind: 'answer', answer: answer }));
     }
+    // Remove from Calendar on a meeting its organiser called off, the letter
+    // the button carries (13-13). The window removes only when its one
+    // message offers it, and says so when it does not.
+    if (e.altKey && !e.ctrlKey && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'remove' }));
+    }
 }, true);"#;
 
 /// The jump a page asked for, read from the message it posted.
@@ -87,6 +95,7 @@ pub fn the_jump_the_page_asked_for(json: &str) -> Option<Jump> {
         "warning" => Some(Jump::Warning),
         "print" => Some(Jump::Print),
         "answer" => the_answer_posted(&posted).map(Jump::Answer),
+        "remove" => Some(Jump::Remove),
         _ => None,
     }
 }
