@@ -15231,7 +15231,12 @@ fn answer_the_invitation(
         }
     };
 
-    let to_send = match ready.the_answer_to_send(answer, chrono::Utc::now()) {
+    let to_send = match ready.the_answer_to_send(
+        answer,
+        chrono::Utc::now(),
+        &message.header_message_id,
+        message.refs_header.as_deref(),
+    ) {
         Ok(to_send) => to_send,
         Err(why) => {
             told(

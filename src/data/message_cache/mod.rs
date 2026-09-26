@@ -20,7 +20,7 @@ mod messages;
 pub mod moves_in_flight;
 pub mod moves_waiting;
 pub use address_books::AddressBookContainer;
-pub use calendar::DeletedCalendarEvent;
+pub use calendar::{AnsweredHere, DeletedCalendarEvent};
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};

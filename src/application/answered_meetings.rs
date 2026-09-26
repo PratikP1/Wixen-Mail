@@ -176,12 +176,12 @@ pub fn file_the_answer(
     // nothing.
     let already = cache.get_event_by_provider_id(account_id, &invitation.uid)?;
     let answered_before = match &already {
-        Some(row) => cache.the_version_answered_here(&row.id)?,
+        Some(row) => cache.the_answer_given_here(&row.id)?,
         None => None,
     };
-    let already_here = answered_before.map(|version| AlreadyOnTheCalendar {
+    let already_here = answered_before.map(|here| AlreadyOnTheCalendar {
         uid: invitation.uid.clone(),
-        version,
+        version: here.version,
     });
 
     let holding = answering.what_the_calendar_should_hold(answer, already_here.as_ref());
@@ -220,8 +220,36 @@ pub fn file_the_answer(
     cache.save_calendar_event(&the_row)?;
     // After the save, because a version written against a row that is not there
     // records an answer to a meeting nobody can see.
-    cache.remember_the_version_answered(&the_row.id, holding.version)?;
+    cache.remember_the_answer(&the_row.id, holding.version, answer)?;
     Ok(())
+}
+
+/// The message an invitation is answered from, as the answer needs it.
+///
+/// Read from the message's own row rather than from whatever the message list
+/// has selected, so a reader window whose message is not the selected row
+/// answers the meeting it shows (#50 point 8's sibling).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TheInvitationMessage {
+    /// The account the message is in, which is the one that answers.
+    pub account: String,
+    /// The calendar document the message carries.
+    pub document: String,
+    /// The message's own `Message-ID`, which the answer names as the one it
+    /// replies to.
+    pub message_id: String,
+    /// The `References` the message carried, which the answer carries on.
+    pub references: Option<String>,
+}
+
+/// The invitation a stored message carries, with its account and the headers a
+/// reply to it threads by. Nothing for a message carrying no calendar document
+/// this computer holds.
+pub fn the_invitation_on(
+    _cache: &MessageCache,
+    _message_row_id: i64,
+) -> Result<Option<TheInvitationMessage>> {
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -746,11 +774,119 @@ mod tests {
         assert_eq!(kept.summary, "A meeting stored before this");
         assert_eq!(
             cache
-                .the_version_answered_here("evt-1")
+                .the_answer_given_here("evt-1")
                 .expect("the new column to be readable"),
             None,
             "a meeting stored before answers were remembered has to read as \
              one nobody answered here"
+        );
+    }
+
+    #[test]
+    fn test_filing_an_answer_remembers_which_answer_was_given() {
+        // The reader says "you said you might attend this version" from what
+        // was filed, so filing keeps the answer beside the version, and a
+        // second answer replaces the first rather than keeping the older word.
+        let cache = a_calendar_on_this_computer("which_answer_was_given");
+
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        answer_it(
+            &cache,
+            &the_same_meeting_moved(3, "20260305T140000Z"),
+            Answer::Tentative,
+        );
+
+        let row = the_meeting_on_the_calendar(&cache).expect("the meeting to be filed");
+        assert_eq!(
+            cache
+                .the_answer_given_here(&row.id)
+                .expect("the answer to be readable"),
+            Some(crate::data::message_cache::AnsweredHere {
+                version: 3,
+                answer: Some(Answer::Tentative),
+            }),
+            "filing kept the version and not the answer somebody gave"
+        );
+    }
+
+    /// A folder on "acct" holding one invitation, its parts stored the way
+    /// opening a message stores them, and its place in a conversation.
+    fn an_invitation_in_the_inbox(cache: &MessageCache) -> i64 {
+        use crate::data::message_cache::attachment_content::AttachmentWithContent;
+        use crate::data::message_cache::{CachedAttachment, CachedFolder, CachedMessage};
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let row = cache
+            .save_message(&CachedMessage {
+                id: 0,
+                uid: 7,
+                folder_id: 1,
+                message_id: "invite-7@example.com".to_string(),
+                subject: "Invitation: Quarterly review".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "sam@example.com".to_string(),
+                cc: None,
+                date: "2026-03-01".to_string(),
+                body_plain: Some("Are you free?".to_string()),
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
+            })
+            .expect("a message");
+        cache
+            .set_message_references(row, &["root-1@example.com".to_string()])
+            .expect("its place in a conversation");
+        let document = an_invitation_that_arrived();
+        cache
+            .replace_attachments_with_content(
+                row,
+                &[AttachmentWithContent {
+                    described: CachedAttachment {
+                        id: 0,
+                        message_id: row,
+                        filename: "invite.ics".to_string(),
+                        mime_type: "text/calendar".to_string(),
+                        size: document.len() as i64,
+                        content_id: None,
+                        description: crate::service::mime::WhatTheSenderSaid::Nothing,
+                    },
+                    content: Some(document.into_bytes()),
+                }],
+            )
+            .expect("the parts stored");
+        row
+    }
+
+    #[test]
+    fn test_the_invitation_on_a_message_row_carries_its_account_and_what_a_reply_threads_by() {
+        // Answering takes the message it was pressed on, so everything the
+        // answer needs is read from that row: the account it is in, the
+        // document, and the two headers that put the reply under it (#50
+        // point 8). Nothing here reads the message list's selection.
+        let cache = a_calendar_on_this_computer("the_invitation_on_a_row");
+        let row = an_invitation_in_the_inbox(&cache);
+
+        assert_eq!(
+            the_invitation_on(&cache, row).expect("the message to be readable"),
+            Some(TheInvitationMessage {
+                account: "acct".to_string(),
+                document: an_invitation_that_arrived(),
+                message_id: "invite-7@example.com".to_string(),
+                // As the store keeps them, bare: the brackets are the reply
+                // builder's to add, as `threading::continuing` says.
+                references: Some("root-1@example.com".to_string()),
+            })
         );
     }
 

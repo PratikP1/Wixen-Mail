@@ -235,12 +235,10 @@ pub fn invitation_check_for(
                 })
         });
     let answered_here = on_the_calendar.as_ref().and_then(|copy| {
-        cache
-            .the_version_answered_here(&copy.id)
-            .unwrap_or_else(|e| {
-                tracing::warn!("Could not read which version of a meeting was answered: {e}");
-                None
-            })
+        cache.the_answer_given_here(&copy.id).unwrap_or_else(|e| {
+            tracing::warn!("Could not read which version of a meeting was answered: {e}");
+            None
+        })
     });
     invitations::what_the_invitation_says(
         &document,
@@ -640,7 +638,11 @@ mod tests {
         };
         cache.save_calendar_event(&held).expect("the meeting filed");
         cache
-            .remember_the_version_answered("evt-1", 1)
+            .remember_the_answer(
+                "evt-1",
+                1,
+                crate::application::invitations::Answer::Accepted,
+            )
             .expect("the answer remembered");
     }
 

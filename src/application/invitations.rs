@@ -41,6 +41,7 @@
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
+use crate::data::message_cache::AnsweredHere;
 use crate::presentation::date_display::DateSettings;
 // Reading a line, and writing one back out, are the calendar service's own
 // answers. They were written a second time here while this module was being
@@ -199,6 +200,27 @@ impl Answer {
             Answer::Tentative => "TENTATIVE",
             Answer::Declined => "DECLINED",
         }
+    }
+
+    /// The word the calendar keeps this answer as, beside the version answered.
+    ///
+    /// Its own spelling rather than the `PARTSTAT` one, because the column is
+    /// this program's record of what somebody pressed and not a copy of a
+    /// calendar document.
+    pub const fn as_stored(self) -> &'static str {
+        match self {
+            Answer::Accepted => "accepted",
+            Answer::Tentative => "tentative",
+            Answer::Declined => "declined",
+        }
+    }
+
+    /// The answer a stored word names, or nothing for a word this program never
+    /// wrote, which is read as no answer kept rather than guessed at.
+    pub fn from_stored(stored: &str) -> Option<Answer> {
+        [Answer::Accepted, Answer::Tentative, Answer::Declined]
+            .into_iter()
+            .find(|answer| answer.as_stored() == stored)
     }
 
     /// What answering this way does, as a sentence begins it.
@@ -560,7 +582,11 @@ pub enum Standing {
         from: String,
     },
     /// The version already answered here, or an older one.
-    AlreadyAnswered,
+    AlreadyAnswered {
+        /// What was answered, or nothing for an answer filed before the
+        /// answer itself was kept beside the version.
+        answer: Option<Answer>,
+    },
     /// The calendar holds the meeting at this time and nobody answered it
     /// here, which is how a calendar server that files invitations itself
     /// leaves one.
@@ -635,7 +661,7 @@ impl Standing {
             Standing::Changed { from } => {
                 format!(", a change to the meeting on your calendar, which was {from}")
             }
-            Standing::AlreadyAnswered => ", and you have answered this version".to_string(),
+            Standing::AlreadyAnswered { .. } => ", and you have answered this version".to_string(),
             Standing::AlreadyOnTheCalendar => ", and it is already on your calendar".to_string(),
         }
     }
@@ -718,8 +744,8 @@ fn plainly(written: &str) -> String {
 /// What a message's calendar document says, against what the calendar holds.
 ///
 /// `on_the_calendar` is the calendar's copy of the meeting the document names,
-/// and `answered_here` the version an answer given here last filed, both
-/// looked up by the caller. `dates` words the times, because how a date is
+/// and `answered_here` the version an answer given here last filed and what it
+/// was, both looked up by the caller. `dates` words the times, because how a date is
 /// said depends on settings this layer cannot see.
 ///
 /// A document that does not read is a calendar file, never an error a caller
@@ -728,7 +754,7 @@ fn plainly(written: &str) -> String {
 pub fn what_the_invitation_says(
     document: &str,
     on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
-    answered_here: Option<u32>,
+    answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> WhatTheInvitationSays {
     match what_it_asks(document) {
@@ -749,7 +775,7 @@ pub fn what_the_invitation_says(
 fn an_invitation_said(
     invitation: &Invitation,
     on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
-    answered_here: Option<u32>,
+    answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> WhatTheInvitationSays {
     let when = when_the_meeting_is(
@@ -788,7 +814,7 @@ fn the_standing_against(
     invitation: &Invitation,
     when: &str,
     copy: &crate::data::message_cache::CalendarEventEntry,
-    answered_here: Option<u32>,
+    answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> Standing {
     let was = when_the_meeting_is(
@@ -797,13 +823,18 @@ fn the_standing_against(
         copy.is_all_day,
         dates,
     );
-    let answered = answered_here.map(|version| AlreadyOnTheCalendar {
-        uid: invitation.uid.clone(),
-        version,
+    let answered = answered_here.map(|here| {
+        (
+            AlreadyOnTheCalendar {
+                uid: invitation.uid.clone(),
+                version: here.version,
+            },
+            here.answer,
+        )
     });
     match answered {
-        Some(held) => match what_changed(invitation, Some(&held)) {
-            WhatChanged::NothingNew => Standing::AlreadyAnswered,
+        Some((held, answer)) => match what_changed(invitation, Some(&held)) {
+            WhatChanged::NothingNew => Standing::AlreadyAnswered { answer },
             WhatChanged::AChange | WhatChanged::ANewMeeting => Standing::Changed { from: was },
         },
         None if was == when => Standing::AlreadyOnTheCalendar,
@@ -1956,6 +1987,9 @@ mod tests {
         }
     }
 
+    /// Said against the calendar, with an answer filed here at `answered_here`
+    /// the way one filed before the answer itself was kept reads: the version
+    /// and nothing about what was said.
     fn said_about(
         document: &str,
         on_the_calendar: Option<&crate::data::message_cache::CalendarEventEntry>,
@@ -1964,9 +1998,45 @@ mod tests {
         what_the_invitation_says(
             document,
             on_the_calendar,
-            answered_here,
+            answered_here.map(|version| AnsweredHere {
+                version,
+                answer: None,
+            }),
             written_out_in_full(),
         )
+    }
+
+    #[test]
+    fn test_an_invitation_answered_here_says_which_answer_was_given() {
+        // "You have answered this version" leaves somebody who cannot see the
+        // calendar asking which way. The answer is kept beside the version
+        // now, so it is said (#50 point 4).
+        let copy = the_calendar_holding("2026-03-05T09:00:00", "2026-03-05T10:00:00");
+
+        for (answer, ending) in [
+            (Answer::Accepted, ", and you accepted this version."),
+            (
+                Answer::Tentative,
+                ", and you said you might attend this version.",
+            ),
+            (Answer::Declined, ", and you declined this version."),
+        ] {
+            let says = what_the_invitation_says(
+                &an_invitation_at_nine(),
+                Some(&copy),
+                Some(AnsweredHere {
+                    version: 2,
+                    answer: Some(answer),
+                }),
+                written_out_in_full(),
+            );
+
+            assert!(
+                says.said().is_some_and(|said| said.ends_with(ending)),
+                "{answer:?}: {:?}",
+                says.said()
+            );
+        }
     }
 
     #[test]
