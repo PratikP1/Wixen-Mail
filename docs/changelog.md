@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A message carrying a meeting says what the meeting is before its body.** The audit of
+  2026-09-15 (#50) found that a message carrying an invitation opened as its covering note,
+  with the meeting one attachment row further down, called "calendar invitation" whatever it
+  asked. Now the reader window, the formatted window and the preview say it at the top of the
+  bar, so it is spoken as the message opens, and again at the top of the message: "Meeting
+  invitation: Quarterly review, 05/03/2026 at 09:00 to 10:00, in Room 4, from Ada Lovelace,
+  and it is new to your calendar." The date is written in full, the way the Reading tab says.
+  The sentence ends by saying whether the meeting is new to your calendar, a change to the one
+  there and when that was, a version you have already answered, or one already on your
+  calendar. A cancellation says so and whether the meeting is on your calendar; somebody's
+  answer to a meeting you called says who and what they answered; a calendar document that
+  asks nothing says "This message carries a calendar file." The attachment row says the same:
+  meeting invitation, meeting cancellation, reply to your meeting or calendar file, and a file
+  Windows would run is still called a program whatever it claims. On a signed message the
+  meeting is said before the account of the signature. An invitation sent as
+  `application/ics` is found now as well as one sent as `text/calendar`, here and by Answer
+  Invitation (#50 points 1 and 5). A message whose text the download of everything brings now
+  keeps its attachments' names and the calendar document, so the reader lists its attachments
+  and says its meeting; before, such a message showed no list of its attachments at all,
+  because the reader fetches nothing for a message whose text is here. The other files stay on
+  the server until you open one, as they did. The version does not move for this: no build has
+  been cut since 1.0.0-alpha.1. Known limitations: no invitation from a real Outlook, Google or
+  calendar server organiser has been read here, and nobody has heard the sentence with a
+  screen reader. Nothing on the calendar changes yet when a message is opened. A time an
+  invitation names in the sender's own time zone is read as that time on your clock, as the
+  calendar already reads one, so a meeting from somebody in another zone is said at the hour
+  they wrote. A message whose text the download brought before this version still has no
+  record of its attachments, and opening it does not make one, so it lists none and its
+  meeting is not said.
 - **File, Print prints what you are on, everywhere a message or an item is shown.** The tester
   on 2026-09-15 (#45): "Add print functionality." Press `Ctrl+P`, or choose Print on the File
   menu (letter P), and Windows' own print dialog opens, where you choose the printer, the

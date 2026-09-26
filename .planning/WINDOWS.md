@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 561
+open_count: 573
 waived_count: 0
 fixed_count: 60
-total_count: 621
-last_updated: 2026-09-25T19:00:00.000Z
+total_count: 633
+last_updated: 2026-09-26T03:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -644,6 +644,10 @@ last_updated: 2026-09-25T19:00:00.000Z
 | 627 | 13 | unrun-verify | src/presentation/managers.rs |  | 13-09: #47's undo in Contacts, Calendar, Reminders, Tasks and Notes, under NVDA and Narrator. What only a person settles, in each of the five lists: the Edit menu's Undo heard naming the action and the item, "Undo Delete: Dentist", "Undo Mark as Done: Dentist" or "Undo Move to Work: Quarterly plan"; Ctrl+Z heard saying one sentence, "Undid Delete on Dentist.", and the cursor heard landing on the item that came back; a deleted item made again heard as "Dentist had already been deleted at its account, so it comes back here as a new task and is sent there as one."; the question before a copy is taken away heard in full; "The last thing you did was in Tasks. Switch to Tasks to undo it." heard in another list; and a delete's question heard ending "Undo brings it back until your next action." application::undoing and data::message_cache::taking_back hold the decisions, the words and the store, and tests/undoing_a_mark_names_the_message.rs reads the wiring; none of them listens | open |  | 2026-09-25T20:00:00.000Z |  |
 | 628 | 13 | unrun-verify | src/data/message_cache/taking_back.rs |  | 13-09: an undone action on a contact, an event, a task or a note has never reached Google, Microsoft or a calendar server. A deletion still owed is taken back with its row in one transaction and nothing is sent; one the account has taken comes back as a new item that the next sync creates there; a toggle, a move and a copy go through the cache calls and file_under the action used, and each goes out through the sync's own push, whose client asks allowed_for(account).personal_information before it may change anything (TasksClient::for_account in tasks_api.rs, the same shape in the other clients). What a real account does with each, the owed case and the taken case both, is phase 14's: REAL-01's lines for Gmail's calendars, contacts and tasks, and no REAL line yet for Microsoft's or a calendar server's, which phase 14's planner decides. Known and left: nothing in the store says a sync is running, so the refusal rests on ASyncUnderWay, counted by the window's four syncs; a sync started any other way would not be counted. The Edit menu's help says undoing at the account is experimental (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-25T20:00:00.000Z |  |
 | 629 | 13 | todo | src/presentation/managers.rs |  | 13-09: two things an item's undo does not bring back. A deleted task's subtasks are taken out from under it by the delete (drop_synced_task sets their parent to nothing) and stay that way after Undo, because the record is the task's own row. And a day taken off a repeating event is a save rather than a delete, so it clears the undo step instead of being undone; undoing it would mean putting the series' exception dates back and taking back the day's change at the provider. Recommendation: build both beside an undo of an item's edit, if Pratik wants edits undoable; open until he asks | open |  | 2026-09-25T20:00:00.000Z |  |
+| 630 | 13 | unrun-verify | src/presentation/reader_text.rs |  | 13-10: the meeting sentence under NVDA and Narrator, in the text reader, the formatted window and the preview. What only a person settles: that the sentence is heard as the message opens and once more at the top of the message without that reading as too much; that the whole date reads well in the tester's date settings; that the calendar part's row is heard as meeting invitation, meeting cancellation, reply to your meeting or calendar file; and, on a signed invitation, that the meeting comes before the signature's verdict. Shift+Space reads the sentence twice, from the bar and from the body, as it already reads an S/MIME envelope's sentence twice | open |  | 2026-09-26T03:00:00.000Z |  |
+| 631 | 13 | unrun-verify | src/application/invitations.rs |  | 13-10: no invitation from a real organiser has been read here. The two raw messages in tests/an_invitation_is_said_before_the_body.rs are shaped from the standards and the audit of 2026-09-15, not taken from Outlook, Google Calendar or a CalDAV server. What a real account settles, for phase 14: whether each sender's invitation, cancellation and answer is found (text/calendar or application/ics, an alternative or an attachment), whether the title, place, organiser and hours read right, and whether "already on your calendar" is said for an invitation Google filed itself. Phase 14's planner decides the REAL line; none names invitations yet | open |  | 2026-09-26T03:00:00.000Z |  |
+| 632 | 13 | todo | src/application/invitations.rs |  | 13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as "Pacific Standard Time", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule | open |  | 2026-09-26T03:00:00.000Z |  |
+| 633 | 13 | todo | src/presentation/wx_app.rs |  | 13-10: a message whose text the download of everything brought before this build has no parts recorded, and nothing records them later: the text pass skips a message whose text is here, and the reader fetches nothing for one (the selection handler sends the cached body and spawns no fetch). Such a message shows no list of its attachments and its meeting is not said. From this build the text pass keeps every part's name and the calendar document (reading_a_message::keep_what_a_download_carried). Recommendation: the reader fetches the whole message once when a row says it has attachments and none are recorded, the way it fetches a body it does not hold, with care that the second MessageBodyLoaded does not announce the message twice. Whether the text pass should keep every file rather than names and calendar documents is a question of disk, the attachment store's 512 MB budget; recommendation no | open |  | 2026-09-26T03:00:00.000Z |  |
 
 ````json
 [
@@ -8193,6 +8197,54 @@ last_updated: 2026-09-25T19:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 630,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "13-10: the meeting sentence under NVDA and Narrator, in the text reader, the formatted window and the preview. What only a person settles: that the sentence is heard as the message opens and once more at the top of the message without that reading as too much; that the whole date reads well in the tester's date settings; that the calendar part's row is heard as meeting invitation, meeting cancellation, reply to your meeting or calendar file; and, on a signed invitation, that the meeting comes before the signature's verdict. Shift+Space reads the sentence twice, from the bar and from the body, as it already reads an S/MIME envelope's sentence twice",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 631,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/invitations.rs",
+    "line": null,
+    "description": "13-10: no invitation from a real organiser has been read here. The two raw messages in tests/an_invitation_is_said_before_the_body.rs are shaped from the standards and the audit of 2026-09-15, not taken from Outlook, Google Calendar or a CalDAV server. What a real account settles, for phase 14: whether each sender's invitation, cancellation and answer is found (text/calendar or application/ics, an alternative or an attachment), whether the title, place, organiser and hours read right, and whether \"already on your calendar\" is said for an invitation Google filed itself. Phase 14's planner decides the REAL line; none names invitations yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 632,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/invitations.rs",
+    "line": null,
+    "description": "13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as \"Pacific Standard Time\", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 633,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-10: a message whose text the download of everything brought before this build has no parts recorded, and nothing records them later: the text pass skips a message whose text is here, and the reader fetches nothing for one (the selection handler sends the cached body and spawns no fetch). Such a message shows no list of its attachments and its meeting is not said. From this build the text pass keeps every part's name and the calendar document (reading_a_message::keep_what_a_download_carried). Recommendation: the reader fetches the whole message once when a row says it has attachments and none are recorded, the way it fetches a body it does not hold, with care that the second MessageBodyLoaded does not announce the message twice. Whether the text pass should keep every file rather than names and calendar documents is a question of disk, the attachment store's 512 MB budget; recommendation no",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
     "resolved_at": null
   }
 ]
