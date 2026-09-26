@@ -5916,8 +5916,9 @@ stays at 122.
     keys a decision of their own, listed for Pratik.
   - [S] A real key from a real correspondent is his.
 
-- [ ] **GAP-04**: The reader shows and announces a meeting invitation with its answers, and a
+- [x] **GAP-04**: The reader shows and announces a meeting invitation with its answers, and a
   cancellation or an update reaches the calendar.
+  Ticked 2026-09-26 by 13-13.
   - Evidence: `gh issue view 50 --json state` on 2026-09-20: open.
   - Plans, 2026-09-24: 13-10 (the invitation said before the body), 13-11 (the answer
     buttons in both reader windows), 13-12 (synced events carry their UID), 13-13 (updates
@@ -5961,10 +5962,34 @@ stays at 122.
     A repeating meeting on a Microsoft account is not found, and no provider's UID has been
     compared with a real invitation (ledger 635). The box waits for 13-13, which moves and
     cancels a meeting only for the organiser this plan records.
+  - 13-13 on 2026-09-26: `application::meeting_changes::what_opening_it_changes` decides, as
+    one pure value, whether opening an update or a cancellation moves the meeting, offers
+    Remove from Calendar or only says why not; only the organiser the calendar's copy records
+    can change it, and a repeating meeting, a copy recording nobody and an account with
+    calendar changes off are said. The two reader windows ask it on opening, the preview never
+    does, and Remove from Calendar marks the meeting cancelled and free on `Alt+R` in both.
+    `cargo test --lib application::meeting_changes::`, 18 tests; `cargo test --test
+    a_meeting_change_reaches_the_calendar`, 19 tests. No real organiser's update or
+    cancellation has been through it (ledger 637) and nobody has heard it (ledger 636).
   - [S] #50, from the Outlook gap audit of 2026-09-15, in the tester's list.
-  - [D] The invitation's part shown and said before the body with Accept, Tentative and
+  - [x] [D] The invitation's part shown and said before the body with Accept, Tentative and
     Decline; a cancellation removing and an update moving the event; the answer sent through
-    the outbox and the gate.
+    the outbox and the gate. Met 2026-09-26 by 13-10 to 13-13. "Shown and said before the
+    body": `test_a_raw_invitation_is_said_at_the_top_of_the_bar_and_the_body` and
+    `test_the_formatted_window_and_the_preview_say_the_invitation_before_the_message` (13-10).
+    "With Accept, Tentative and Decline": `test_an_answerable_invitation_has_three_named_described_buttons`
+    and `test_the_formatted_window_has_the_three_buttons_after_the_page` (13-11). "A
+    cancellation removing and an update moving the event": the UID and organiser every sync
+    keeps, `application::calendar::tests::test_a_google_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser`
+    (13-12); `test_an_update_from_the_organiser_opened_in_a_reader_moves_the_meeting_and_says_so`,
+    `test_a_cancellation_in_the_text_reader_has_one_named_described_button_and_no_answers`,
+    `test_removing_leaves_the_meeting_cancelled_free_present_and_waiting_to_be_sent` and
+    `application::meeting_changes::tests::test_a_cancellation_from_somebody_other_than_the_organiser_changes_nothing`
+    (13-13); a cancellation is marked cancelled and free rather than deleted, so "removing"
+    takes it off the calendar's time and keeps the row. "The answer sent through the outbox
+    and the gate": `application::answering::tests::test_the_answer_goes_out_threaded_under_the_invitation`
+    and `application::answering::invitations_from_strangers::test_nothing_is_ever_answerable_with_sending_switched_off`
+    (13-11).
   - [S] An invitation from a real organiser and its answer arriving are his account's.
 
 - [ ] **GAP-05**: S/MIME-encrypted and PGP/MIME mail is read, a PGP signature is verified and
@@ -6259,7 +6284,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-01 | Phase 13 | Done 2026-09-25, 13-04: File, Print on every surface that shows a message or an item, the reader window, a conversation's row, the formatted message window and the five other modules, through one path to Windows' print dialog, held by `tests/print_is_on_the_file_menu.rs`, `application::printing`'s and `presentation::page_jumps`'s cases; the ear and the paper are ledger 613 and 617. Until then "13-03 built 2026-09-25, File, Print on the message list through Windows' print dialog; 13-04 to come, which ticks it". Before that "13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it". Before that "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-02 | Phase 13 | Done 2026-09-25, 13-08 and 13-09: Edit, Undo and Redo on every box that takes typing, several steps each, in the message list on the last mark, star, label, move, delete or copy, and in the other five modules on the last Mark Done, Pin, move, copy or delete, with the item named in all six, held by `tests/undo_reaches_the_text.rs`, `tests/every_text_box_keeps_a_history.rs`, `tests/undoing_a_mark_names_the_message.rs`, `application::undoing`'s and `data::message_cache::taking_back`'s cases; the ear and the real account are ledger 622 to 625, 627 and 628; #47 closed by 13-09. Until 13-09 "Done 2026-09-25, 13-08: Edit, Undo and Redo on every box that takes typing, several steps each, and in the message list on the last mark, star, label, move, delete or copy with the item named, held by `tests/undo_reaches_the_text.rs`, `tests/every_text_box_keeps_a_history.rs`, `tests/undoing_a_mark_names_the_message.rs` and `application::undoing`'s cases; the ear and the real server are ledger 622 to 625; 13-09 brings the other five modules and closes #47". Until then "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 built 2026-09-25, undo of the last mark, star or label in the message list; 13-08 and 13-09 to come, 13-08 ticks it". Until 13-07 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 to 13-09 to come, 13-08 ticks it". Until 13-06 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 to 13-09 to come, 13-08 ticks it", and until 13-05 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it", and until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-03 | Phase 13 | Planned 2026-09-24: 13-16, 13-17, 13-17.1, which ticks it; not built. Until then "Not planned, 2026-09-20" |
-| GAP-04 | Phase 13 | In progress 2026-09-26: the first `[D]` clause's "invitation's part shown and said before the body" built by 13-10, held by `tests/an_invitation_is_said_before_the_body.rs` and `application::invitations`'s cases; "with Accept, Tentative and Decline" and "the answer sent through the outbox and the gate" built by 13-11, held by `tests/the_invitation_is_answered_from_the_reader.rs` and `application::answering`'s cases; the UID and organiser every sync keeps, the prerequisite of the calendar changes, built by 13-12, held by `application::answered_meetings`'s and `application::calendar`'s cases; the calendar changes wait for 13-13, which ticks it. Until 13-12 "the UID and the calendar changes wait for 13-12 and 13-13, and 13-13 ticks it". Until 13-11 "the answer buttons, the UID and the calendar changes wait for 13-11 to 13-13, and 13-13 ticks it". Until 13-10 "Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built", and before that "Not planned, 2026-09-20" |
+| GAP-04 | Phase 13 | Done 2026-09-26, 13-10 to 13-13: the invitation said before the body, answered from buttons in both reader windows through the outbox and the gate, and an organiser's update moving the meeting and cancellation removing it on opening in a reader window, held by `tests/an_invitation_is_said_before_the_body.rs`, `tests/the_invitation_is_answered_from_the_reader.rs`, `tests/a_meeting_change_reaches_the_calendar.rs` and `application::meeting_changes`'s cases; untried against a real organiser (ledgers 631, 635 and 637). Until 13-13 "In progress 2026-09-26: the first `[D]` clause's "invitation's part shown and said before the body" built by 13-10, held by `tests/an_invitation_is_said_before_the_body.rs` and `application::invitations`'s cases; "with Accept, Tentative and Decline" and "the answer sent through the outbox and the gate" built by 13-11, held by `tests/the_invitation_is_answered_from_the_reader.rs` and `application::answering`'s cases; the UID and organiser every sync keeps, the prerequisite of the calendar changes, built by 13-12, held by `application::answered_meetings`'s and `application::calendar`'s cases; the calendar changes wait for 13-13, which ticks it". Until 13-12 "the UID and the calendar changes wait for 13-12 and 13-13, and 13-13 ticks it". Until 13-11 "the answer buttons, the UID and the calendar changes wait for 13-11 to 13-13, and 13-13 ticks it". Until 13-10 "Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-05 | Phase 13 | Planned 2026-09-24: 13-14, 13-15, 13-18 to 13-21 (13-20 waits on answer (b)), 13-21 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-06 | Phase 13 | Planned 2026-09-24: 13-22, 13-24, 13-24.1, 13-25, which ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-07 | Phase 13 | Planned 2026-09-24: 13-26, 13-27, 13-28 (waits on answer (c)), which ticks it; not built. Until then "Not planned, 2026-09-20" |

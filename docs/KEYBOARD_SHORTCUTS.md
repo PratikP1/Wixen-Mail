@@ -260,6 +260,7 @@ where the caret is.
 | Accept a meeting invitation | `Alt+C` | Presses the Accept button of a message whose invitation can be answered. Works in the formatted view as well, from the message |
 | Say you might attend | `Alt+T` | Presses the Tentative button, the same way |
 | Decline a meeting invitation | `Alt+D` | Presses the Decline button, the same way |
+| Remove a cancelled meeting from your calendar | `Alt+R` | Presses Remove from Calendar on a message whose organiser called the meeting off. Works in the formatted view as well, from the message |
 
 #### Answering a meeting invitation
 
@@ -284,6 +285,20 @@ leaving what you were reading. In the formatted view, pressing one of them
 where there is nothing to answer says "There is no invitation here to
 answer." The Action menu's Answer Invitation and the message list's context
 menu answer the same way.
+
+#### Removing a cancelled meeting
+
+A message in which the organiser calls off a meeting on your calendar has one
+button, Remove from Calendar, where the answer buttons would be. It marks the
+meeting cancelled on your calendar, so the time is free again, and sends
+nothing to the organiser. `Alt+R` presses it from inside the message, in both
+views, and the status line says "Removed from your calendar." once. In the
+formatted view, `Alt+R` where there is nothing to remove says "There is no
+cancelled meeting here to remove."
+
+The button is there only when the cancellation comes from the organiser your
+calendar records for that meeting. From anybody else, the bar says who it came
+from and that your calendar was not changed.
 
 #### Attachments
 
