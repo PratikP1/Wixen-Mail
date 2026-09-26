@@ -6,6 +6,132 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ## [Unreleased]
 
+### Added
+
+- **A message carrying a meeting says what the meeting is before its body.** The audit of
+  2026-09-15 (#50) found that a message carrying an invitation opened as its covering note,
+  with the meeting one attachment row further down, called "calendar invitation" whatever it
+  asked. Now the reader window, the formatted window and the preview say it at the top of the
+  bar, so it is spoken as the message opens, and again at the top of the message: "Meeting
+  invitation: Quarterly review, 05/03/2026 at 09:00 to 10:00, in Room 4, from Ada Lovelace,
+  and it is new to your calendar." The date is written in full, the way the Reading tab says.
+  The sentence ends by saying whether the meeting is new to your calendar, a change to the one
+  there and when that was, a version you have already answered, or one already on your
+  calendar. A cancellation says so and whether the meeting is on your calendar; somebody's
+  answer to a meeting you called says who and what they answered; a calendar document that
+  asks nothing says "This message carries a calendar file." The attachment row says the same:
+  meeting invitation, meeting cancellation, reply to your meeting or calendar file, and a file
+  Windows would run is still called a program whatever it claims. On a signed message the
+  meeting is said before the account of the signature. An invitation sent as
+  `application/ics` is found now as well as one sent as `text/calendar`, here and by Answer
+  Invitation (#50 points 1 and 5). A message whose text the download of everything brings now
+  keeps its attachments' names and the calendar document, so the reader lists its attachments
+  and says its meeting; before, such a message showed no list of its attachments at all,
+  because the reader fetches nothing for a message whose text is here. The other files stay on
+  the server until you open one, as they did. The version does not move for this: no build has
+  been cut since 1.0.0-alpha.1. Known limitations: no invitation from a real Outlook, Google or
+  calendar server organiser has been read here, and nobody has heard the sentence with a
+  screen reader. Nothing on the calendar changes yet when a message is opened. A time an
+  invitation names in the sender's own time zone is read as that time on your clock, as the
+  calendar already reads one, so a meeting from somebody in another zone is said at the hour
+  they wrote. A message whose text the download brought before this version still has no
+  record of its attachments, and opening it does not make one, so it lists none and its
+  meeting is not said.
+- **File, Print prints what you are on, everywhere a message or an item is shown.** The tester
+  on 2026-09-15 (#45): "Add print functionality." Press `Ctrl+P`, or choose Print on the File
+  menu (letter P), and Windows' own print dialog opens, where you choose the printer, the
+  copies and the pages. In the message list it prints the message you are on, and on a
+  conversation's row the whole conversation, every message in order. The reader window has
+  Print on its own File menu with the same key and letter, and prints the message,
+  conversation or attachment in the tab you are on; the formatted message window prints what
+  it shows on `Ctrl+P`. In Contacts, Calendar, Tasks, Notes and Reminders it prints the item
+  you are on, with the details `Shift+Space` reads, one to a line, and with nothing chosen it
+  says so in that module's words. A message's page carries the header lines the reader window
+  shows, then its words; a conversation heads each message with who sent it and when; every
+  date is written in full, even where the screen says how long ago. Each page is 11 point
+  black on white, with "Wixen Mail", the subject or name, and the page number at the top.
+  Afterwards one sentence says what was sent, to which printer and how many pages; closing the
+  dialog says nothing was printed. The job is named by its kind in Windows' print queue, such
+  as "Wixen Mail message" or "Wixen Mail contact", never by its subject or a name, and the
+  privacy page says where the text goes. The version does not move for this: no build has been
+  cut since 1.0.0-alpha.1. Known limitations: the page is plain text, with no pictures or
+  formatting, and there is no print preview. A web page opened from a link in a message is not
+  printed. Nobody has worked the print dialog with a screen reader or looked at a printed page
+  from this build yet.
+- **Undo and Redo on the Edit menu.** The tester on 2026-09-15 (#47): "There are no general
+  undo/redo commands that provide corresponding functionality." The Edit menu now opens with
+  Undo (`Ctrl+Z`, letter U) and Redo (`Ctrl+Y`, letter R). They act on the box you are typing
+  in, such as a note's title or body or the contacts search, with "a multi-step history where
+  the native control gives one step", as the tester asked. Each of those boxes remembers up to
+  100 steps, and Undo takes them back one at a time: a word you typed with the space after it,
+  a paste, a cut, or a run of deleting. The cursor goes back to where each step began, and words
+  a step removed come back selected. Redo puts the steps back in turn until you type something
+  new. In the contacts search, each Undo runs the search again on the words it brings back.
+  Choosing a note in the list starts its title and body afresh, so Undo never reaches into the
+  note you had open before. With nothing to undo or redo, the menu shows them greyed and the
+  keys say so in a sentence, spoken
+  and on the status bar; in the sidebar or a message you are reading, they say they
+  work in a box you can type in. Cut now takes words out in a way the box can undo; before
+  this, Undo after Cut put nothing back. **Undo Send moved to third on the Edit menu and its
+  letter moved from U to N**, because U is Undo's; its key is still `Ctrl+Shift+Z`. The version
+  does not move for this: no build has been cut since 1.0.0-alpha.1.
+  **Every dialog's boxes keep the same several steps**, as the tester asked for "every dialog
+  with a text field": the composer's To, Cc, Bcc and Subject lines, the account settings, Add
+  Address Book and Add Calendar, the contact editor with its Prefix and Suffix boxes, the event
+  and task forms with the event's Category, the rules, labels and signatures, Send Feedback,
+  Settings' download folder, Check Spelling, and the boxes that ask for a search or a name.
+  A dialog has no Edit menu, so `Ctrl+Z` and `Ctrl+Y` go straight to the box. What a dialog
+  opens holding, such as an account's server or a contact's nickname, is where Undo stops, so
+  it never empties a box of it. A check over the source now names any box built without the
+  history, so a new dialog cannot quietly go back to one step.
+  **In the message list, Undo takes back the last mark, star or label**, the tester's "undo
+  for actions on items ... mark as read or unread, star ... with the item named": Mark as Read
+  or Unread, Star or Unstar, a label put on or taken off, and Remove every label. With the list
+  focused, the Edit menu names what Undo will take back, "Undo Mark as Read: Quarterly report",
+  or the count for a set, "Undo Star: 4 messages". Each message goes back to the way it was
+  before, so undoing Mark as Read over a mix of read and unread messages unreads only the ones
+  that were unread, and one sentence is said for the lot. The change goes to the mail server
+  the way the action did, and a server that refuses puts it back and says why. Redo does the
+  action again. Only the last action is kept, until your next action on messages replaces it,
+  with no time limit; a message marked read by the reading wait never replaces it. In a
+  dialog, `Ctrl+Z` and `Ctrl+Y` with nothing left to undo or redo now say so in the same
+  sentence the main window's Edit menu says, where before they did nothing and said nothing.
+  **Undo takes back a move, a delete or a copy of messages too**, the rest of the tester's
+  "the last delete, move, copy": the menu names it, "Undo Move to Archive: Invoice" or "Undo
+  Delete: 3 messages", and the messages go back to the folder they came from, with the cursor
+  on the first of them when that folder is on screen. A change the mail server has not heard
+  of yet is taken back on this computer and nothing is sent. One the server has carried out is
+  moved back the way a move goes, here first and then at the server, and an undone copy goes
+  to the Trash, never deleted outright. Undo refuses, in a sentence naming the message and
+  saying what to do, a Delete Permanently the server already has, a move or copy to another
+  account, a message the server moved that this computer has not read back yet, and one whose
+  change is reaching the server at that moment. Redo does the move, delete or copy again.
+  **Undo works in Contacts, Calendar, Reminders, Tasks and Notes too**, the tester's "and the
+  same in the other modules": `Ctrl+Z` in the list takes back the last Mark Done or Not Done,
+  Pin or Unpin, Delete, Move to or Copy to, and the menu names it, "Undo Delete: Dentist". A
+  deleted item comes back with everything it had while its account has not been told, and the
+  delete is then never sent; once the account has deleted it, it comes back as a new item and
+  Undo says so. Undoing a copy takes away the copy, after asking, and never the item copied.
+  It is one step for the whole window: the last thing you did anywhere is what Undo takes
+  back, and Undo in another module's list says where that was. Undo refuses, and says why,
+  while the item's account is being synced. **A delete's question no longer says "This cannot
+  be undone"**, since it now can: it says "Undo brings it back until your next action."
+  Known limitations: the number
+  fields, such as the minutes between checks for mail and an event's hour and minute, and the
+  composer's Describe the picture and Insert Link boxes, keep Windows' own single step, where
+  pressing Undo twice puts the change back. A password box keeps no steps at all, so a
+  password is never held in memory as steps. A move to another account cannot be undone, by
+  decision: undoing it would be a second crossing between two servers. An undone mark, star,
+  label, move, delete or copy has not been sent to a real mail server yet, and no undo in the
+  other modules has reached Google, Microsoft or a calendar server, so it is as experimental
+  as every other change this program sends, and the Undo item's help says so. A deleted item
+  its account had already deleted comes back as a new item there, not as the one it was. A
+  deleted task's subtasks stay where the delete left them, no longer under it, and a day taken
+  off a repeating event cannot be undone, so it leaves nothing for Undo to take back. Nobody
+  has heard the greyed items, the sentences, Undo Send's new letter, a step undone, a mark
+  undone, a move undone or an item's undo with a screen reader yet, in the main window or in
+  a dialog.
+
 ### Changed
 
 - **Labels can be made, renamed and put in order, and the Label menu shows yours.** The

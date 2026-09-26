@@ -2727,6 +2727,9 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> AdvancedTabControls 
     let dl_field = TextCtrl::builder(panel).build();
     set_accessible_name(&dl_field, "Download folder");
     dl_field.set_value(&config.download_folder.to_string_lossy());
+    // After the stored folder is filled in, which is where the history starts;
+    // a folder chosen with Browse is a step Undo takes back.
+    crate::presentation::text_history_keys::keep_a_history(&dl_field);
     let dl_browse = Button::builder(panel).with_label("&Browse...").build();
 
     dl_browse.on_click({

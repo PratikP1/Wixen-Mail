@@ -403,6 +403,21 @@ pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experime
      Mail holds one key at a time, and it has to be exported without a \
      passphrase, because nothing here asks you for one.";
 
+/// What Undo and Redo say, as their help on the Edit menu, while they name a
+/// mark, a star or a label on messages (13-07), a move, a delete or a copy
+/// (13-08), or an action on a contact, an event, a task, a note or a reminder
+/// (13-09).
+///
+/// An undo is a second change at somebody's account, sent the way the action
+/// was, and the action itself has never met a real account, so the undo is no
+/// less experimental than what it takes back. Said where the person choosing
+/// it reads, not in a changelog. The account rather than the mail server,
+/// since a calendar, an address book, a task list and a notes service are
+/// where the other five modules' changes go.
+pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your account the way the action was, \
+     and like every change Wixen Mail sends it is experimental, because none of it has been \
+     run against a real account yet.";
+
 /// Everything that has an opinion about what may be changed.
 ///
 /// Kept as one value so the answer is worked out in one place and every
@@ -682,9 +697,25 @@ mod tests {
     fn test_anything_that_writes_says_it_is_experimental() {
         // The warning has to reach the person using it, not sit in a note.
         // None of these paths has run against a real account, and this is the
-        // sentence beside the two boxes that turn them on.
-        assert!(EXPERIMENTAL_WARNING.contains("experimental"));
-        assert!(EXPERIMENTAL_WARNING.contains("real account"));
+        // sentence beside the two boxes that turn them on. An undo of a mark
+        // is one more of them, said where Undo is chosen.
+        for said in [EXPERIMENTAL_WARNING, UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL] {
+            assert!(said.contains("experimental"), "{said:?}");
+            assert!(said.contains("real account"), "{said:?}");
+            assert!(!said.contains("  "), "{said:?}");
+        }
+        assert!(
+            UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("the way the action was"),
+            "it does not say the undo is sent like the action: \
+             {UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
+        );
+        // Since 13-09 it is Undo's help in the other five modules too, where a
+        // change goes to a calendar, an address book, a task list or a notes
+        // service, so it names the account rather than the mail server.
+        assert!(
+            !UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("mail server"),
+            "{UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
+        );
     }
 
     #[test]

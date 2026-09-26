@@ -30,6 +30,7 @@
 
 use crate::application::calendar_source::{NOT_TRIED_FOR_REAL, Source};
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
 use wxdragon::prelude::*;
 
@@ -218,6 +219,9 @@ pub fn build_add_calendar_dialog(
 ///
 /// The visible label is a control of its own and wxWidgets never joins the two,
 /// so without the name the box announces as "edit" and nothing else.
+///
+/// The box keeps a history of several steps, unless it is a password box: a
+/// password is never held in memory as steps.
 fn labelled_field(
     dialog: &Dialog,
     sizer: &FlexGridSizer,
@@ -226,6 +230,9 @@ fn labelled_field(
 ) -> TextCtrl {
     let text = StaticText::builder(dialog).with_label(label).build();
     let field = TextCtrl::builder(dialog).with_style(style).build();
+    if !style.contains(TextCtrlStyle::Password) {
+        keep_a_history(&field);
+    }
     set_accessible_name(&field, &name_from_label(label));
     sizer.add(&text, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);

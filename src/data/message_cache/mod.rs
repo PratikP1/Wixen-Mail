@@ -40,6 +40,7 @@ pub mod shared_folders;
 mod signatures;
 pub mod signed_original;
 mod tags;
+pub mod taking_back;
 pub mod tasks;
 pub mod waiting_flag_changes;
 
@@ -1006,7 +1007,7 @@ pub struct CalendarContainer {
 }
 
 /// Calendar event entry for local cache
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CalendarEventEntry {
     pub id: String,
     pub account_id: String,
@@ -1097,7 +1098,7 @@ pub struct CalendarEventEntry {
 }
 
 /// Reminder entry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReminderEntry {
     pub id: String,
     pub account_id: String,
@@ -1124,7 +1125,7 @@ pub struct TaskListEntry {
 }
 
 /// Task entry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TaskEntry {
     pub id: String,
     pub account_id: String,
@@ -1239,7 +1240,7 @@ pub struct NoteFolderEntry {
 }
 
 /// Note entry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NoteEntry {
     pub id: String,
     pub account_id: String,

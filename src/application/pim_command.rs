@@ -216,8 +216,10 @@ pub struct PimAction {
 /// pressed Delete finds out from the question, and only if the question says
 /// which row.
 ///
-/// One sentence. A confirmation is read in full before its buttons are reached,
-/// and a long one teaches people to answer before it has finished.
+/// Short. A confirmation is read in full before its buttons are reached, and a
+/// long one teaches people to answer before it has finished. The question and
+/// the way back, since Edit, Undo brings a deleted item back (13-09); until
+/// then it said the delete could not be undone, which stopped being true.
 pub fn confirm_delete(kind: ItemKind, name: &str) -> String {
     let named = match name.trim() {
         // Both are possible: an untitled note, or a row whose title never
@@ -225,7 +227,7 @@ pub fn confirm_delete(kind: ItemKind, name: &str) -> String {
         "" => format!("this {}", thing(kind)),
         title => format!("\"{title}\""),
     };
-    format!("Delete {named}? This cannot be undone.")
+    format!("Delete {named}? Undo brings it back until your next action.")
 }
 
 /// What one of these is called in a sentence.
@@ -598,7 +600,14 @@ mod tests {
         let asked = confirm_delete(ItemKind::Task, "File the tax return");
 
         assert!(asked.contains("File the tax return"), "{asked}");
-        assert!(asked.contains("cannot be undone"), "{asked}");
+        // Edit, Undo brings a deleted item back since 13-09, so the question
+        // says so rather than claiming it cannot be undone, which would send
+        // somebody who deleted the wrong row off to type it again.
+        assert!(!asked.contains("cannot be undone"), "{asked}");
+        assert_eq!(
+            asked,
+            "Delete \"File the tax return\"? Undo brings it back until your next action."
+        );
     }
 
     #[test]

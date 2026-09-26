@@ -702,6 +702,22 @@ Wixen Mail could never look at.
 Today that check refuses everything, because nothing this project publishes is signed yet.
 Until it is, an update will download, be refused, and point you at the releases page.
 
+## Printing
+
+When you print a message or a conversation, its header lines and its words go to the printer
+you choose in Windows' print dialog, through Windows' print spooler. A contact, event, task,
+note or reminder sends its details the same way. The spooler keeps the job on your computer
+until the printer has taken it, and a network printer or a print server keeps it for as long
+as its own settings say. Nothing is sent anywhere else.
+
+The job is named by what it is, such as "Wixen Mail message" or "Wixen Mail contact", and not
+by its subject or a name, because the queue of a shared printer can be read by whoever else
+uses it. The log keeps the printer's name and how many pages went, and never the subject, a
+name or the words.
+
+If you print to a file printer such as Microsoft Print to PDF, the file it writes holds the
+text and is not encrypted, like the saved copy of a message.
+
 ## Logging
 
 `logs\wixen-mail.log` records what the application did. It never contains a password, a

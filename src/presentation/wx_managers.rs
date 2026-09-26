@@ -26,6 +26,7 @@ use crate::presentation::accessibility::names::{
 };
 use crate::presentation::manager_words;
 use crate::presentation::status_line::said_and_shown;
+use crate::presentation::text_history_keys::{keep_a_history, set_anew};
 use crate::presentation::theme;
 use crate::presentation::wx_item_form::{BirthdayFields, build_birthday_fields};
 use std::cell::RefCell;
@@ -55,10 +56,12 @@ pub(crate) fn get_selected(list: &ListCtrl) -> Option<usize> {
     if sel >= 0 { Some(sel as usize) } else { None }
 }
 
-/// Add a label + TextCtrl row to a FlexGridSizer. Returns the TextCtrl.
+/// Add a label + TextCtrl row to a FlexGridSizer. Returns the TextCtrl, which
+/// keeps a history of several steps.
 fn add_field(parent: &Dialog, sizer: &FlexGridSizer, label: &str) -> TextCtrl {
     let lbl = StaticText::builder(parent).with_label(label).build();
     let field = TextCtrl::builder(parent).build();
+    keep_a_history(&field);
     // The visible label is a separate control, which wxWidgets never associates
     // with the field, so without this the field announces as just "edit".
     set_accessible_name(&field, &name_from_label(label));
@@ -943,6 +946,7 @@ pub fn build_contact_manager_dialog(
     let search_row = BoxSizer::builder(Orientation::Horizontal).build();
     let search_lbl = StaticText::builder(&dialog).with_label("&Search:").build();
     let search_f = TextCtrl::builder(&dialog).build();
+    keep_a_history(&search_f);
     set_accessible_name(&search_f, "Search");
     search_row.add(
         &search_lbl,
@@ -1320,17 +1324,20 @@ const ID_DEL_ADDR: Id = ID_HIGHEST + 405;
 const ID_ADD_CUSTOM: Id = ID_HIGHEST + 406;
 const ID_DEL_CUSTOM: Id = ID_HIGHEST + 407;
 
-/// Add a label + TextCtrl row to a FlexGridSizer, parent is a Panel.
+/// Add a label + TextCtrl row to a FlexGridSizer, parent is a Panel. The box
+/// keeps a history of several steps.
 fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCtrl {
     let lbl = StaticText::builder(parent).with_label(label).build();
     let field = TextCtrl::builder(parent).build();
+    keep_a_history(&field);
     set_accessible_name(&field, &name_from_label(label));
     sizer.add(&lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);
     field
 }
 
-/// Add a label and a box that offers `choices` and takes anything typed.
+/// Add a label and a box that offers `choices` and takes anything typed, with
+/// a history of several steps for what is typed.
 ///
 /// Named by the label built just before it, which Windows reads on both
 /// channels, and not with `set_accessible_name`. An accessible object of
@@ -1349,6 +1356,7 @@ fn add_panel_combo(
     let field = ComboBox::builder(parent)
         .with_string_choices(choices)
         .build();
+    keep_a_history(&field);
     sizer.add(&lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);
     field
@@ -1775,6 +1783,7 @@ pub fn build_contact_edit_dialog(
     let notes_f = TextCtrl::builder(&notes_panel)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
+    keep_a_history(&notes_f);
     set_accessible_name_and_description(
         &notes_f,
         "Notes",
@@ -1844,21 +1853,23 @@ pub fn build_contact_edit_dialog(
     let addrs_data = Rc::new(RefCell::new(Vec::<AddressItem>::new()));
     let custom_data = Rc::new(RefCell::new(Vec::<CustomFieldItem>::new()));
 
+    // The contact's own values are where each box's history starts, so Undo
+    // never empties a box the editor opened holding them.
     if let Some(c) = existing {
-        name_f.set_value(&c.name);
-        prefix_f.set_value(&c.name_prefix);
-        given_f.set_value(&c.given_name);
-        middle_f.set_value(&c.middle_name);
-        family_f.set_value(&c.family_name);
-        suffix_f.set_value(&c.name_suffix);
-        nick_f.set_value(&c.nickname);
-        company_f.set_value(&c.company);
-        dept_f.set_value(&c.department);
-        title_f.set_value(&c.job_title);
-        web_f.set_value(&c.website);
-        rel_f.set_value(&c.relationship);
-        avatar_f.set_value(&c.avatar_url);
-        notes_f.set_value(&c.notes);
+        set_anew(&name_f, &c.name);
+        set_anew(&prefix_f, &c.name_prefix);
+        set_anew(&given_f, &c.given_name);
+        set_anew(&middle_f, &c.middle_name);
+        set_anew(&family_f, &c.family_name);
+        set_anew(&suffix_f, &c.name_suffix);
+        set_anew(&nick_f, &c.nickname);
+        set_anew(&company_f, &c.company);
+        set_anew(&dept_f, &c.department);
+        set_anew(&title_f, &c.job_title);
+        set_anew(&web_f, &c.website);
+        set_anew(&rel_f, &c.relationship);
+        set_anew(&avatar_f, &c.avatar_url);
+        set_anew(&notes_f, &c.notes);
         fav_check.set_value(c.favorite);
 
         *emails_data.borrow_mut() = c.emails.clone();
@@ -2764,6 +2775,7 @@ pub fn build_address_sub_dialog(
         .with_label(initial_region_label)
         .build();
     let region_f = TextCtrl::builder(&dlg).build();
+    keep_a_history(&region_f);
     set_accessible_name(&region_f, "State or region");
     fields.add(
         &region_lbl,
@@ -2777,6 +2789,7 @@ pub fn build_address_sub_dialog(
         .with_label(initial_code_label)
         .build();
     let code_f = TextCtrl::builder(&dlg).build();
+    keep_a_history(&code_f);
     set_accessible_name(&code_f, "Postal code");
     fields.add(
         &code_lbl,
@@ -3471,7 +3484,7 @@ pub fn build_rule_edit_dialog(
             if let Some(said) = the_words_for_a_way_of_matching(&question.match_type) {
                 select_choice_by_string(&match_choice, said);
             }
-            pattern_f.set_value(&question.pattern);
+            set_anew(&pattern_f, &question.pattern);
             cs_check.set_value(question.case_sensitive);
         }
         None => {
@@ -3922,6 +3935,7 @@ pub fn build_filter_edit_dialog(
         .with_label(the_value_label_for(""))
         .build();
     let action_value_f = TextCtrl::builder(&dlg).build();
+    keep_a_history(&action_value_f);
     set_accessible_name(&action_value_f, &name_from_label(the_value_label_for("")));
     fields.add(
         &value_label,
@@ -3954,7 +3968,7 @@ pub fn build_filter_edit_dialog(
     dlg.set_sizer(sizer, true);
 
     if let Some(r) = existing {
-        name_f.set_value(&r.name);
+        set_anew(&name_f, &r.name);
         // The words, because the words are what the list holds now. Selecting
         // by the stored name silently selected nothing for five of the eleven
         // fields, and pressing OK on a rule that opened that way rewrote its
@@ -3965,10 +3979,10 @@ pub fn build_filter_edit_dialog(
         if let Some(said) = the_words_for_a_way_of_matching(&r.match_type) {
             select_choice_by_string(&match_choice, said);
         }
-        pattern_f.set_value(&r.pattern);
+        set_anew(&pattern_f, &r.pattern);
         cs_check.set_value(r.case_sensitive);
         select_choice_by_string(&action_choice, shown_action(&r.action_type));
-        action_value_f.set_value(&r.action_value);
+        set_anew(&action_value_f, &r.action_value);
         en_check.set_value(r.enabled);
         sound_check.set_value(r.plays_a_sound);
     }
@@ -4380,7 +4394,7 @@ pub fn build_tag_edit_dialog(
     dlg.set_sizer(sizer, true);
 
     if let Some(t) = existing {
-        name_f.set_value(&t.name);
+        set_anew(&name_f, &t.name);
         if let Some(pos) = TAG_COLORS.iter().position(|(_, hex)| *hex == t.color) {
             color_choice.set_selection(pos as u32);
         }
@@ -4778,6 +4792,7 @@ pub fn build_sig_edit_dialog(
     let content_f = TextCtrl::builder(&dlg)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
+    keep_a_history(&content_f);
     set_accessible_name_and_description(
         &content_f,
         "Signature",
@@ -4811,8 +4826,8 @@ pub fn build_sig_edit_dialog(
     dlg.set_sizer(sizer, true);
 
     if let Some(s) = existing {
-        name_f.set_value(&s.name);
-        content_f.set_value(&s.content_plain);
+        set_anew(&name_f, &s.name);
+        set_anew(&content_f, &s.content_plain);
         def_check.set_value(s.is_default);
     }
 

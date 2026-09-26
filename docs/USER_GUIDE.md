@@ -563,6 +563,58 @@ conversation, once each.
 Nobody has heard a phrase at the start of a row or the sound after a check
 yet; the tester's copy is the first that will.
 
+### Meeting invitations
+
+When a message carries a meeting, Wixen Mail says what the meeting is before a
+word of the message. The sentence is at the top of the bar above the message,
+so it is spoken as the message opens, and it is repeated at the top of the
+message itself, under the header lines. The reader window, the formatted
+window and the preview pane all say it. On a message that is also signed, it
+comes before the account of the signature, so it is still spoken.
+
+For an invitation, the sentence names the meeting, when and where it is, and
+who sent it, then says what it means for your calendar:
+
+> Meeting invitation: Quarterly review, 05/03/2026 at 09:00 to 10:00, in Room
+> 4, from Ada Lovelace, and it is new to your calendar.
+
+The date is written in full, the way you chose on the Reading tab of Settings,
+even where a list would say how long ago. The end of the sentence is one of
+four:
+
+| The sentence ends | What it means |
+|---|---|
+| and it is new to your calendar | Nothing on your calendar goes by this meeting's name. |
+| a change to the meeting on your calendar, which was ... | Your calendar holds the meeting at another time, or you answered an earlier version of it, and the sentence says when it was. |
+| and you have answered this version | You answered this version here already, or a later one. |
+| and it is already on your calendar | Your calendar holds the meeting at this time and nobody answered it here. Google puts an invitation on your calendar when it arrives, which is how this happens. |
+
+Other messages about meetings say:
+
+- A cancellation: "Meeting cancelled: Quarterly review. It is on your
+  calendar." or "It is not on your calendar."
+- Somebody's answer to a meeting you called: "Grace Hopper accepted your
+  meeting: Quarterly review." The answer is accepted, declined, or "said they
+  might come to".
+- A calendar file that asks nothing, such as a published calendar: "This
+  message carries a calendar file."
+
+The attachment row for the calendar part says the same thing in a word or
+two: meeting invitation, meeting cancellation, reply to your meeting, or
+calendar file. A file that Windows would run is still called a program,
+whatever it claims to be.
+
+To answer an invitation, choose Answer Invitation on the Action menu.
+
+What this does not do yet: opening a message leaves your calendar as it was,
+and no invitation from a real Outlook, Google or calendar server
+organiser has been read here. A time an invitation names in the sender's own
+time zone is read as that time on your clock, as the calendar reads one, so a
+meeting from somebody in another zone is said at the hour they wrote. A
+message whose text was downloaded in the background before this version has no
+record of its attachments, and opening it does not make one, so it lists none
+and its meeting is not said.
+
 ### Message Actions
 
 **Using Context Menu (Right-Click):**
@@ -673,6 +725,40 @@ In the Move to window, `Enter` on a folder is the move; on a folder that
 holds other folders it still moves there rather than opening it, and on an
 account row it does nothing.
 
+**Undo takes a move, a delete or a copy back.** Since 2026-09-25, `Ctrl+Z`
+in the message list, or Edit, Undo, puts the messages of your last move or
+delete back in the folder they came from, and the cursor lands on the first
+of them when that folder is on screen. The menu names what it will take
+back, "Undo Move to Archive: Invoice" or "Undo Delete: 3 messages", and one
+sentence says what happened: "Undid Move to Archive on Invoice." How it does
+that depends on how far the change got:
+
+- **The server has not been told yet**, because there was no network or the
+  change is still on its way. Undo takes the change back on this computer and
+  sends nothing, so the server never hears of either.
+- **The server has done it.** Undo moves the message back from where the
+  server now holds it, the same way a move goes: here at once, then the
+  server.
+- **A copy.** Undo sends the copy to the Trash, here and at the server. It is
+  never deleted outright, so a copy that turned out to be the wrong message
+  can still be found.
+
+Some things cannot come back, and Undo says so in a sentence naming the
+message:
+
+- A message deleted with Delete Permanently, once the server has it. Before
+  that, Undo brings it back.
+- A message moved or copied to another account. Move it from that account
+  instead.
+- A message the server moved but whose new place this computer has not read
+  yet. Refresh the folder it went to, and move it back from there.
+- A message whose change is reaching the server at that moment. Try again
+  shortly.
+
+Redo (`Ctrl+Y`) does the move, delete or copy again. Undoing a change at the
+server is experimental, and the Undo item's help on the Edit menu says so:
+nobody has undone a move against a real mail server yet.
+
 A move or a copy to a folder on another account completes here at once too,
 and the servers follow: the row leaves, the status bar shows "Moved to
 Work in Home: Invoice", and the message appears in that folder of the other
@@ -700,6 +786,70 @@ against a real mail server after a restart, nor moved a message to another
 account this way; the loopback servers the tests use answer the four ways a
 server can, at each of the two servers, and a real account settles the
 rest.
+
+### Printing
+
+Press `Ctrl+P`, or choose File, Print, to print what you are on. Windows' own
+print dialog opens, the same one other programs use, and you choose the
+printer, the number of copies and which pages there. The dialog belongs to
+the window you printed from, so closing it takes you back to that window.
+
+What each place prints:
+
+| Where you are | What `Ctrl+P` prints |
+|---------------|----------------------|
+| A message in the message list | That message |
+| A conversation's row in the message list | The whole conversation, every message in order |
+| The reader window | What the tab you are on holds: a message, a conversation, or an attachment you opened there |
+| The formatted message window | The message or the conversation it shows |
+| Contacts, Calendar, Tasks, Notes or Reminders | The contact, event, task, note or reminder you are on |
+
+In the reader window, Print is on its own File menu too, with the letter `P`.
+
+What is printed for a message:
+
+- The header lines, as the reader window shows them: Subject, From, To, Cc
+  when there is one, the date written in full, and the names of any
+  attachments.
+- The words of the message, as the reader window shows them.
+
+A conversation prints each message under a heading that says its place in
+the conversation, who sent it and when, with the date written in full, even
+where the screen shows how long ago it was. An attachment prints as its tab
+shows it.
+
+A contact, event, task, note or reminder prints the same details `Shift+Space`
+reads aloud, one to a line, with its name or title first and every date
+written in full. A note's text prints as you wrote it. If nothing is chosen
+in the list, Print says so, for example "Choose an event first.", and
+nothing is printed.
+
+At the top of every page is a line saying "Wixen Mail", the subject or the
+name, and the page number out of how many, such as "page 2 of 3". The page is
+11 point Segoe UI, black on white, whatever theme or reading size you use on
+the screen. There is no setting for it.
+
+What is not printed:
+
+- Pictures and formatting. The page carries the words only, as plain text.
+- A web page opened from a link in a message. That page opens in a window of
+  its own, and `Ctrl+P` does not print it.
+
+There is no print preview, because Windows' print dialog does not have one.
+
+After the job is sent, Wixen Mail says one sentence naming what was printed,
+the printer and how many pages went, for example "Sent Quarterly report to HP
+LaserJet 1022, 2 pages." If you close the dialog without printing, it says
+nothing was printed. If something goes wrong, it says what, and that nothing
+was printed.
+
+In Windows' print queue the job is named by what it is, such as "Wixen Mail
+message", "Wixen Mail conversation" or "Wixen Mail contact", and never by its
+subject or a name, because other people can see the queue of a shared
+printer.
+
+Nobody has yet worked the print dialog with a screen reader from any of these
+places, or looked at a page on paper from this build.
 
 ## Composing Email
 
@@ -1025,6 +1175,39 @@ is for; `Delete` removes the one you are on, asking first and naming what it
 will delete. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) has every key for
 every module in full.
 
+### Undo in the other modules
+
+`Ctrl+Z` in a module's list takes back the last thing you did to an item
+there, and `Ctrl+Y` does it again. With the list focused, the Edit menu names
+it, such as "Undo Delete: Dentist".
+
+| What you did | What Undo does |
+| --- | --- |
+| Mark Done or Not Done | Puts the task or reminder back the way it was |
+| Pin or Unpin | Puts the note back the way it was |
+| Move to | Moves it back to the calendar, list, folder, group or account it came from |
+| Copy to | Takes away the copy, after asking, and leaves the one you copied |
+| Delete | Brings the item back |
+
+A deleted item comes back in one of two ways, and Undo says which:
+
+- **As it was.** Your account has not been told about the delete yet, so the
+  item comes back with everything it had and the delete is never sent. This
+  is the usual case when you undo straight away, or when the network is off.
+- **As a new item.** Your account has already deleted it, so there is nothing
+  there to put back. The item is made again here from what it held, and your
+  account receives it as a new one on the next sync, with a new identity
+  there.
+
+While that account is syncing, Undo changes nothing: it says the item is being
+synced and asks you to try again shortly, rather than racing the sync.
+
+Undo lasts until your next action, on anything, with no time limit. There is
+one step for the whole window, so undoing in Tasks after marking a message
+read says the last thing you did was in Mail. Undoing at your account is
+experimental: nothing in these modules has been tried against a real account
+yet.
+
 ### The contact editor
 
 The Basic Info tab asks for a name in this order: Name, Prefix, Given name,
@@ -1107,6 +1290,31 @@ A task has a due date and no time, so none of this changes the task window.
 - `F1` - Help documentation
 - `Esc` - Close dialogs
 
+### Editing
+- `Ctrl+Z` - Undo a step in the box you are typing in, such as a note or the
+  contacts search. Each box remembers up to 100 steps, and a step is a word
+  you typed with the space after it, a paste, a cut, or a run of deleting.
+  Choosing another note starts its boxes afresh. With nothing to undo it
+  says so. Boxes in dialogs keep the same steps: the composer's address and
+  subject lines, the account settings, the contact editor and every other
+  box you type in. What a dialog opens holding is where Undo stops, and in a
+  dialog, with nothing left to undo, the key says so in the same words as the
+  main window
+- `Ctrl+Y` - Redo, putting back the steps Undo took, one at a time. Once you
+  type something new, there is nothing to redo, and it says so
+
+A few boxes keep Windows' own single step, where a second Undo puts the
+change back: number fields such as the minutes between checks for mail, and
+the Describe the picture and Insert Link boxes in the composer. A password box
+keeps no steps at all, so your password is never held in memory as a list of
+the ways you typed it.
+- `Ctrl+Shift+Z` - Undo Send, while a message you just sent is still being
+  held. It is third on the Edit menu, after Undo and Redo, and its letter is
+  N. Some programs use `Ctrl+Shift+Z` for Redo; here Redo is `Ctrl+Y`
+
+The Edit menu greys Undo and Redo when there is nothing for them to do, and
+a screen reader says they are unavailable.
+
 ### Window Navigation
 - `F6` - Cycle through panes (folders → messages → preview)
 - `Tab` - Navigate within pane
@@ -1122,6 +1330,13 @@ A task has a due date and no time, so none of this changes the task window.
 - `Ctrl+Shift+S` - Star or unstar the selected messages. Until 2026-09-20 this
   line said `S`, which has never been bound
 - `M` - Mark as read or as unread, and hear which
+- `Ctrl+Z` in the message list - Undo the last mark as read or unread, star,
+  label, delete, move or copy, each message back the way it was. The Edit
+  menu names it, such as "Undo Mark as Read: Quarterly report" or "Undo Move
+  to Archive: Invoice", and `Ctrl+Y` does it again. It lasts until your next
+  action on messages, with no time limit, and the change goes to the mail
+  server the way the action did. What a move, a delete or a copy can and
+  cannot take back is under "Moving, deleting and copying happen here first"
 - `Space` - Read the message aloud
 
 ### Navigation

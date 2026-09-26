@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 550
+open_count: 573
 waived_count: 0
-fixed_count: 59
-total_count: 609
-last_updated: 2026-09-24T23:30:00.000Z
+fixed_count: 60
+total_count: 633
+last_updated: 2026-09-26T03:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -624,6 +624,30 @@ last_updated: 2026-09-24T23:30:00.000Z
 | 607 | 12 | unrun-verify | src/presentation/wx_app.rs |  | 12-10: #48 under NVDA. What only the tester's ear settles: the Label submenu's items heard with their keys after the labels load and after a rename and a move, Edit Labels at its end, the Label Manager's Key column read row by row, a move said as Later, 2 of 5. after Alt+Shift+Up or Down, the cursor staying on the moved row, and Ctrl+6 with five labels saying there is no label 6 from the message list. tests/the_label_menu_says_the_labels_an_account_has.rs reads the real menu bar and the live manager and cannot hear any of it | open |  | 2026-09-24T21:00:00.000Z |  |
 | 608 | 12 | todo | docs/plans/20260924-pro-licence.md |  | 12-11: the pro licence (#65, ALPHA-03) is a design and nothing in the program is gated. The ten rows of its section 9, Decisions for Pratik, are his: the free and pro line, whether several accounts are gated, the merchant, online revocation, how long a perpetual licence carries updates, a trial with no card, whether the supporter tier delivers a real licence, how priority support is carried, when gating starts and the grace period after a lapse. The answer column is empty. Closed when a phase is planned from his answers | open |  | 2026-09-24T22:00:00.000Z |  |
 | 609 | 12 | unrun-verify | .github/workflows/ci.yml |  | 12-12: main has not been pushed since 6cb8f17c on 2026-09-23, and phase 12 closes 112 commits ahead of origin/main by git rev-list origin/main..HEAD --count at 3791bc9d on 2026-09-24. CI, Accessibility and NVDA have run on main at none of the merges from 12-03.1 to 12-11: nine of those plans ran them on their own pull requests, #94 to #102 (12-03.1, 12-04, 12-05, 12-06, 12-06.1, 12-07, 12-08, 12-09 and 12-10, pushed under Pratik's standing OK), 12-03.2 and 12-11 did not, and no run has read the tree the phase's merges made together. The nine pull requests still read open on GitHub by gh pr list on 2026-09-24, because their merges are local. 12-12's full gate is the local whole suite, release build and audit; it runs no NVDA case and no accessibility scan. The push of main is Pratik's. Closed when the three workflows have run on a push of main holding 12-12's merge and their verdicts are read | open |  | 2026-09-24T23:00:00.000Z |  |
+| 610 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-01: #47 under NVDA. What only the tester's ear settles: Undo and Redo heard first on the Edit menu with Ctrl+Z, Ctrl+Y and the letters U and R; Undo Send found third on the letter N; Undo and Redo read as unavailable while greyed with nothing to do; "Undone", "Redone" and the two nothing-to-do sentences heard after Ctrl+Z and Ctrl+Y in a note and the contacts search; and the read-only and list sentences in the preview and a list. tests/undo_reaches_the_text.rs reads a real box and the real menu bar and cannot hear any of it | open |  | 2026-09-25T02:00:00.000Z |  |
+| 611 | 13 | todo | src/presentation/wx_app.rs |  | 13-01: a greyed menu item's key does nothing and says nothing, because wxWidgets returns early for it (framecmn.cpp:364, if (!item->IsEnabled()) return true;). Mark Done or Not Done (Ctrl+Shift+K) and Pin or Unpin (Ctrl+Shift+P) are greyed by module at wx_app.rs:2131-2140, so either key pressed in a module its command does not apply to, such as Ctrl+Shift+K in Contacts, is silent, against application::editing's rule that a key never does nothing quietly. The fix is the one 13-01 used for Undo and Redo: grey on menu open, offer again on close, and let the handler say why | open |  | 2026-09-25T02:00:00.000Z |  |
+| 612 | 13 | stub | src/application/printing.rs |  | 13-02: application::printing has no caller outside its tests until 13-03 wires File, Print; 13-03 closes this. The layout, the stamp, the job's name and the three sentences are pure and tested, and the five items' fields are reached today only through read_full, so nothing prints and nothing claims to | fixed |  | 2026-09-25T06:00:00.000Z | 2026-09-25T12:00:00.000Z |
+| 613 | 13 | unrun-verify | src/presentation/printing.rs |  | 13-03: #45 under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the letter P and Ctrl+P; Windows' print dialog worked by keyboard, with the printer list, Preferences, the page range and the copies heard; focus back on the message list when it closes; the one sentence heard after a job, a cancel and a failure; and a printed page looked at by a sighted reader. tests/printing_draws_what_the_layout_says.rs reads every drawn line back from a metafile and tests/printing_spools_a_document.rs spools a three-page job to Microsoft Print to PDF, here and on CI's runner; neither opens the dialog or makes paper | open |  | 2026-09-25T12:00:00.000Z |  |
+| 614 | 13 | todo | src/presentation/printing.rs |  | 13-03: wxdragon 0.9.17's printing never starts a print job on Windows. Its C++ shim's OnBeginDocument and OnEndDocument overrides call the Rust callback and return true without calling wxPrintout's own, which is where StartDoc and EndDoc are called (wxdragon-sys-0.9.17/cpp/src/print.cpp:47-58, wxWidgets prntbase.cpp:597-605), and the Rust proxy always passes both callbacks (wxdragon-0.9.17/src/printing.rs:45-58); upstream main carries the same override (phase 13 research 1.2). Filing it upstream is a public post and Pratik's: on 2026-09-24 he asked for details first and is running a test program that prints through wxDragon to confirm it. The draft is in 13-03-SUMMARY.md and nothing has been posted. Closed when he has filed it or decided not to | open |  | 2026-09-25T12:00:00.000Z |  |
+| 615 | 13 | todo | src/service/pdf.rs |  | 13-03, from phase 13 research 1.3: pdfpurr 0.4.0 does not apply the ToUnicode map a Microsoft Print to PDF file carries, so the text of such a file comes back as glyph numbers and a PDF attachment made that way reads as nonsense in the reader. Probed 2026-09-24: the file's own CMap maps 0029 to 0046, F, and pdfpurr returned the glyph code. The fix belongs in PDFPurr on Pratik's schedule (phase 13 decision 12); tests/printing_spools_a_document.rs counts pages with pdfpurr and reads no text for this reason. Closed when a pdfpurr release applies the map and the reader reads such a file | open |  | 2026-09-25T12:00:00.000Z |  |
+| 616 | 13 | todo | .github/workflows/release.yml |  | 13-03: release.yml's quality gate runs cargo test on windows-latest without WIXEN_NO_AUDIO, which ci.yml, guards.yml, mutants.yml and other-platforms.yml all set because GitHub's Windows runners have no audio driver and rodio 0.22.2 faults on the first write there (ci.yml's comment). It was missing before 13-03, and 13-03 leaves release.yml as main holds it: a WIXEN_NO_PDF_PRINTER line it added there was taken off again when the runner turned out to have the PDF printer. No test 13-03 adds needs WIXEN_NO_AUDIO, so whether the release gate gains it is Pratik's (guardrail 7). Closed when he decides | open |  | 2026-09-25T12:00:00.000Z |  |
+| 617 | 13 | unrun-verify | src/presentation/wx_reader.rs |  | 13-04: #45's other surfaces under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the reader window's letter P and Ctrl+P, and Ctrl+P in the formatted message window; Windows' print dialog worked by keyboard from each, with focus back on the tab's text or on the page when it closes; the one sentence heard after a job, a cancel and a failure in each; Print in Contacts, Calendar, Tasks, Notes and Reminders heard, with the refusal when nothing is chosen; and a conversation's pages and an item's page looked at by a sighted reader. tests/print_is_on_the_file_menu.rs holds every surface's route to the one path and presentation::page_jumps holds the page's key; neither opens the dialog or makes paper | open |  | 2026-09-25T18:00:00.000Z |  |
+| 618 | 13 | todo | src/presentation/reader_text.rs |  | 13-04: the reader window's conversation tab and the formatted conversation page head each message with its date as the list stores it, such as 2026-01-01T00:00:00+00:00, because reader_text::conversation (reader_text.rs:1169) and thread_parts (:729) take no reading. Premise 3 of 13-04 read where it comes from: conversation_nodes copies MessageItem.date into ThreadNode.date, and conversation_parts copies it back. Paper writes each heading's date in full since 13-04 (application::printing::conversation_on_paper); changing what the screen shows was not 13-04's. The fix is a reading handed to both compositions, as single_message already takes one | open |  | 2026-09-25T18:00:00.000Z |  |
+| 619 | 13 | unrun-verify | src/presentation/text_history_keys.rs |  | 13-05: several steps of undo in the main window's three boxes, under NVDA and Narrator. What only a person settles: each Ctrl+Z in the note title, the note body and the contacts search heard as the words of one step coming back, with the caret where that step began and a removed word heard as selected; Redo heard putting each step back; the contacts list heard changing as the search runs again on restored words; and choosing another note leaving nothing to undo. tests/several_steps_come_back.rs holds the steps, the caret, the restore raising the change and Ctrl+Z taken in the box on a real control; application::text_history holds the grouping; neither listens | open |  | 2026-09-25T20:00:00.000Z |  |
+| 620 | 13 | unrun-verify | src/presentation/wx_compose.rs |  | 13-06: several steps of undo in every dialog's boxes, under NVDA and Narrator. What only a person settles: in the composer's To, Cc, Bcc and Subject lines and in the account editor's boxes, each Ctrl+Z heard as the words of one step coming back and each Ctrl+Y putting one back; a box a dialog opened holding, such as a reply's Subject or an account's server, stopping at what it opened with; the contact editor's Prefix and Suffix combo boxes doing the same; and Ctrl+Z and Ctrl+Y with nothing left to do in a dialog heard saying so in the Edit menu's words, which 13-07 added where this line said they said nothing. tests/several_steps_come_back.rs holds a box in a dialog, a combo box pressed at its edit, the Check Spelling box, the stored contact's boxes and the sentence a dialog's empty key says on real controls; tests/every_text_box_keeps_a_history.rs holds every box to the history; neither listens | open |  | 2026-09-25T22:00:00.000Z |  |
+| 621 | 13 | todo | src/presentation/wx_compose.rs |  | 13-06: what keeps Windows' single step, named rather than hidden. The composer's Describe the picture and Insert Link boxes are wxWidgets' own text-entry dialog (wx_compose.rs, TextEntryDialog::builder), whose box wxdragon 0.9.17 does not hand back, so keep_a_history cannot reach it; a dialog of this program's own for each would give them the history. The thirteen number fields (SpinCtrl::builder in wx_account_manager.rs, wx_compose.rs, wx_item_form.rs and wx_settings.rs) keep Windows' step too, which is short for a typed number; undo there only if Pratik wants it. Both are left as they are. tests/every_text_box_keeps_a_history.rs names the dialogs and the number fields in KEEPS_WINDOWS_ONE_STEP, and an entry naming a file that no longer builds one is refused. Narrowed 2026-09-25 by 13-07: this entry also asked whether a dialog's Ctrl+Z with nothing left to undo should speak, and it does now, taken as the recommendation that day: Ctrl+Z and Ctrl+Y with nothing to do in a dialog say the sentences the main window's Edit menu says (text_history_keys::say_nothing_left_through, read in tests/several_steps_come_back.rs) | open |  | 2026-09-25T22:00:00.000Z |  |
+| 622 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-07: #47's undo of a mark, a star or a label, under NVDA and Narrator. What only a person settles: with the message list focused, the Edit menu's Undo heard naming the action and the message, "Undo Mark as Read: Quarterly report", or the count, and greyed as unavailable when nothing is kept; the help heard saying it is experimental; Ctrl+Z heard saying one sentence, "Undid Mark as Read on Quarterly report.", and the rows heard read or unread, starred or labelled again after it; Ctrl+Y heard doing it again; and "There is nothing to undo in this list yet." heard with nothing kept. tests/undoing_a_mark_names_the_message.rs reads the window's wiring and application::undoing holds the decisions and the words; neither listens | open |  | 2026-09-26T00:00:00.000Z |  |
+| 623 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-07: an undone mark, star or label has never reached a real mail server. The undo goes through spawn_server_change, the path the action takes, and the session it opens asks allowed_for(account).mail before any change (mail_controller.rs, connect), so it is gated like the action; what a real IMAP or Gmail server does with a flag or keyword put back right after it was set, and whether a refusal puts the row back as the action's does, is phase 14's, with REAL-01's lines for marks as the place it belongs. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-26T00:00:00.000Z |  |
+| 624 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-08: #47's undo of a move, a delete or a copy, under NVDA and Narrator. What only a person settles: with the message list focused after a move, the Edit menu's Undo heard as "Undo Move to Archive: Invoice", or "Undo Delete: 3 messages" for a set; Ctrl+Z heard saying one sentence, "Undid Move to Archive on Invoice.", and the cursor heard landing on the message back when its folder is on screen; a refusal heard naming the message and what to do, such as "Invoice went to another account, so it cannot be taken back from here. Move it from that account instead."; Ctrl+Y heard doing the move again. application::undoing holds the decisions and the words and tests/undoing_a_mark_names_the_message.rs reads the window's wiring; neither listens | open |  | 2026-09-25T17:00:00.000Z |  |
+| 625 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-08: an undone move, delete or copy has never reached a real mail server. A change the server had not heard of is ended here and nothing is sent; one the server carried out is a new move back, or a copy sent to the trash, made through complete_here_then_tell_the_server, the path the action took, after allowed_for(account).mail is met in move_back_or_again or in where_a_delete_goes_here. What a real IMAP or Gmail server does with a message moved back from where it put it a moment before, whether the number the store recorded after the first move is the one the server still holds, and whether a copy's trash reaches the right message, is phase 14's, with REAL-02's lines for move, copy and delete as the place it belongs. Known and left: a replay that begins between the undo's read of the store and its end of the waiting row can still send the move once more; the window is the few statements of undo_here on the interface thread. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-25T17:00:00.000Z |  |
+| 626 | 13 | todo | src/application/undoing.rs |  | 13-08: undoing a move or a copy to another account is refused in a sentence, by phase 13's decision 11, because the undo would be a second crossing between two servers with the same three steps and held bytes. what_undo_does_to answers every crossing with went_to_another_account, held by test_a_crossing_is_refused_with_a_sentence and the record "an undo refuses a move to another account in words". Building it means a crossing back through mail_across_accounts, remembered with the other account's folder and number; open until Pratik asks for it | open |  | 2026-09-25T17:00:00.000Z |  |
+| 627 | 13 | unrun-verify | src/presentation/managers.rs |  | 13-09: #47's undo in Contacts, Calendar, Reminders, Tasks and Notes, under NVDA and Narrator. What only a person settles, in each of the five lists: the Edit menu's Undo heard naming the action and the item, "Undo Delete: Dentist", "Undo Mark as Done: Dentist" or "Undo Move to Work: Quarterly plan"; Ctrl+Z heard saying one sentence, "Undid Delete on Dentist.", and the cursor heard landing on the item that came back; a deleted item made again heard as "Dentist had already been deleted at its account, so it comes back here as a new task and is sent there as one."; the question before a copy is taken away heard in full; "The last thing you did was in Tasks. Switch to Tasks to undo it." heard in another list; and a delete's question heard ending "Undo brings it back until your next action." application::undoing and data::message_cache::taking_back hold the decisions, the words and the store, and tests/undoing_a_mark_names_the_message.rs reads the wiring; none of them listens | open |  | 2026-09-25T20:00:00.000Z |  |
+| 628 | 13 | unrun-verify | src/data/message_cache/taking_back.rs |  | 13-09: an undone action on a contact, an event, a task or a note has never reached Google, Microsoft or a calendar server. A deletion still owed is taken back with its row in one transaction and nothing is sent; one the account has taken comes back as a new item that the next sync creates there; a toggle, a move and a copy go through the cache calls and file_under the action used, and each goes out through the sync's own push, whose client asks allowed_for(account).personal_information before it may change anything (TasksClient::for_account in tasks_api.rs, the same shape in the other clients). What a real account does with each, the owed case and the taken case both, is phase 14's: REAL-01's lines for Gmail's calendars, contacts and tasks, and no REAL line yet for Microsoft's or a calendar server's, which phase 14's planner decides. Known and left: nothing in the store says a sync is running, so the refusal rests on ASyncUnderWay, counted by the window's four syncs; a sync started any other way would not be counted. The Edit menu's help says undoing at the account is experimental (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL) | open |  | 2026-09-25T20:00:00.000Z |  |
+| 629 | 13 | todo | src/presentation/managers.rs |  | 13-09: two things an item's undo does not bring back. A deleted task's subtasks are taken out from under it by the delete (drop_synced_task sets their parent to nothing) and stay that way after Undo, because the record is the task's own row. And a day taken off a repeating event is a save rather than a delete, so it clears the undo step instead of being undone; undoing it would mean putting the series' exception dates back and taking back the day's change at the provider. Recommendation: build both beside an undo of an item's edit, if Pratik wants edits undoable; open until he asks | open |  | 2026-09-25T20:00:00.000Z |  |
+| 630 | 13 | unrun-verify | src/presentation/reader_text.rs |  | 13-10: the meeting sentence under NVDA and Narrator, in the text reader, the formatted window and the preview. What only a person settles: that the sentence is heard as the message opens and once more at the top of the message without that reading as too much; that the whole date reads well in the tester's date settings; that the calendar part's row is heard as meeting invitation, meeting cancellation, reply to your meeting or calendar file; and, on a signed invitation, that the meeting comes before the signature's verdict. Shift+Space reads the sentence twice, from the bar and from the body, as it already reads an S/MIME envelope's sentence twice | open |  | 2026-09-26T03:00:00.000Z |  |
+| 631 | 13 | unrun-verify | src/application/invitations.rs |  | 13-10: no invitation from a real organiser has been read here. The two raw messages in tests/an_invitation_is_said_before_the_body.rs are shaped from the standards and the audit of 2026-09-15, not taken from Outlook, Google Calendar or a CalDAV server. What a real account settles, for phase 14: whether each sender's invitation, cancellation and answer is found (text/calendar or application/ics, an alternative or an attachment), whether the title, place, organiser and hours read right, and whether "already on your calendar" is said for an invitation Google filed itself. Phase 14's planner decides the REAL line; none names invitations yet | open |  | 2026-09-26T03:00:00.000Z |  |
+| 632 | 13 | todo | src/application/invitations.rs |  | 13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as "Pacific Standard Time", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule | open |  | 2026-09-26T03:00:00.000Z |  |
+| 633 | 13 | todo | src/presentation/wx_app.rs |  | 13-10: a message whose text the download of everything brought before this build has no parts recorded, and nothing records them later: the text pass skips a message whose text is here, and the reader fetches nothing for one (the selection handler sends the cached body and spawns no fetch). Such a message shows no list of its attachments and its meeting is not said. From this build the text pass keeps every part's name and the calendar document (reading_a_message::keep_what_a_download_carried). Recommendation: the reader fetches the whole message once when a row says it has attachments and none are recorded, the way it fetches a body it does not hold, with care that the second MessageBodyLoaded does not announce the message twice. Whether the text pass should keep every file rather than names and calendar documents is a question of disk, the attachment store's 512 MB budget; recommendation no | open |  | 2026-09-26T03:00:00.000Z |  |
 
 ````json
 [
@@ -7933,6 +7957,294 @@ last_updated: 2026-09-24T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 610,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-01: #47 under NVDA. What only the tester's ear settles: Undo and Redo heard first on the Edit menu with Ctrl+Z, Ctrl+Y and the letters U and R; Undo Send found third on the letter N; Undo and Redo read as unavailable while greyed with nothing to do; \"Undone\", \"Redone\" and the two nothing-to-do sentences heard after Ctrl+Z and Ctrl+Y in a note and the contacts search; and the read-only and list sentences in the preview and a list. tests/undo_reaches_the_text.rs reads a real box and the real menu bar and cannot hear any of it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T02:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 611,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-01: a greyed menu item's key does nothing and says nothing, because wxWidgets returns early for it (framecmn.cpp:364, if (!item->IsEnabled()) return true;). Mark Done or Not Done (Ctrl+Shift+K) and Pin or Unpin (Ctrl+Shift+P) are greyed by module at wx_app.rs:2131-2140, so either key pressed in a module its command does not apply to, such as Ctrl+Shift+K in Contacts, is silent, against application::editing's rule that a key never does nothing quietly. The fix is the one 13-01 used for Undo and Redo: grey on menu open, offer again on close, and let the handler say why",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T02:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 612,
+    "kind": "stub",
+    "phase": "13",
+    "file": "src/application/printing.rs",
+    "line": null,
+    "description": "13-02: application::printing has no caller outside its tests until 13-03 wires File, Print; 13-03 closes this. The layout, the stamp, the job's name and the three sentences are pure and tested, and the five items' fields are reached today only through read_full, so nothing prints and nothing claims to",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-25T06:00:00.000Z",
+    "resolved_at": "2026-09-25T12:00:00.000Z"
+  },
+  {
+    "id": 613,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/printing.rs",
+    "line": null,
+    "description": "13-03: #45 under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the letter P and Ctrl+P; Windows' print dialog worked by keyboard, with the printer list, Preferences, the page range and the copies heard; focus back on the message list when it closes; the one sentence heard after a job, a cancel and a failure; and a printed page looked at by a sighted reader. tests/printing_draws_what_the_layout_says.rs reads every drawn line back from a metafile and tests/printing_spools_a_document.rs spools a three-page job to Microsoft Print to PDF, here and on CI's runner; neither opens the dialog or makes paper",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 614,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/printing.rs",
+    "line": null,
+    "description": "13-03: wxdragon 0.9.17's printing never starts a print job on Windows. Its C++ shim's OnBeginDocument and OnEndDocument overrides call the Rust callback and return true without calling wxPrintout's own, which is where StartDoc and EndDoc are called (wxdragon-sys-0.9.17/cpp/src/print.cpp:47-58, wxWidgets prntbase.cpp:597-605), and the Rust proxy always passes both callbacks (wxdragon-0.9.17/src/printing.rs:45-58); upstream main carries the same override (phase 13 research 1.2). Filing it upstream is a public post and Pratik's: on 2026-09-24 he asked for details first and is running a test program that prints through wxDragon to confirm it. The draft is in 13-03-SUMMARY.md and nothing has been posted. Closed when he has filed it or decided not to",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 615,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/pdf.rs",
+    "line": null,
+    "description": "13-03, from phase 13 research 1.3: pdfpurr 0.4.0 does not apply the ToUnicode map a Microsoft Print to PDF file carries, so the text of such a file comes back as glyph numbers and a PDF attachment made that way reads as nonsense in the reader. Probed 2026-09-24: the file's own CMap maps 0029 to 0046, F, and pdfpurr returned the glyph code. The fix belongs in PDFPurr on Pratik's schedule (phase 13 decision 12); tests/printing_spools_a_document.rs counts pages with pdfpurr and reads no text for this reason. Closed when a pdfpurr release applies the map and the reader reads such a file",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 616,
+    "kind": "todo",
+    "phase": "13",
+    "file": ".github/workflows/release.yml",
+    "line": null,
+    "description": "13-03: release.yml's quality gate runs cargo test on windows-latest without WIXEN_NO_AUDIO, which ci.yml, guards.yml, mutants.yml and other-platforms.yml all set because GitHub's Windows runners have no audio driver and rodio 0.22.2 faults on the first write there (ci.yml's comment). It was missing before 13-03, and 13-03 leaves release.yml as main holds it: a WIXEN_NO_PDF_PRINTER line it added there was taken off again when the runner turned out to have the PDF printer. No test 13-03 adds needs WIXEN_NO_AUDIO, so whether the release gate gains it is Pratik's (guardrail 7). Closed when he decides",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 617,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_reader.rs",
+    "line": null,
+    "description": "13-04: #45's other surfaces under NVDA and Narrator, and on paper. What only a person settles: File, Print heard on the reader window's letter P and Ctrl+P, and Ctrl+P in the formatted message window; Windows' print dialog worked by keyboard from each, with focus back on the tab's text or on the page when it closes; the one sentence heard after a job, a cancel and a failure in each; Print in Contacts, Calendar, Tasks, Notes and Reminders heard, with the refusal when nothing is chosen; and a conversation's pages and an item's page looked at by a sighted reader. tests/print_is_on_the_file_menu.rs holds every surface's route to the one path and presentation::page_jumps holds the page's key; neither opens the dialog or makes paper",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 618,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "13-04: the reader window's conversation tab and the formatted conversation page head each message with its date as the list stores it, such as 2026-01-01T00:00:00+00:00, because reader_text::conversation (reader_text.rs:1169) and thread_parts (:729) take no reading. Premise 3 of 13-04 read where it comes from: conversation_nodes copies MessageItem.date into ThreadNode.date, and conversation_parts copies it back. Paper writes each heading's date in full since 13-04 (application::printing::conversation_on_paper); changing what the screen shows was not 13-04's. The fix is a reading handed to both compositions, as single_message already takes one",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 619,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/text_history_keys.rs",
+    "line": null,
+    "description": "13-05: several steps of undo in the main window's three boxes, under NVDA and Narrator. What only a person settles: each Ctrl+Z in the note title, the note body and the contacts search heard as the words of one step coming back, with the caret where that step began and a removed word heard as selected; Redo heard putting each step back; the contacts list heard changing as the search runs again on restored words; and choosing another note leaving nothing to undo. tests/several_steps_come_back.rs holds the steps, the caret, the restore raising the change and Ctrl+Z taken in the box on a real control; application::text_history holds the grouping; neither listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 620,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13-06: several steps of undo in every dialog's boxes, under NVDA and Narrator. What only a person settles: in the composer's To, Cc, Bcc and Subject lines and in the account editor's boxes, each Ctrl+Z heard as the words of one step coming back and each Ctrl+Y putting one back; a box a dialog opened holding, such as a reply's Subject or an account's server, stopping at what it opened with; the contact editor's Prefix and Suffix combo boxes doing the same; and Ctrl+Z and Ctrl+Y with nothing left to do in a dialog heard saying so in the Edit menu's words, which 13-07 added where this line said they said nothing. tests/several_steps_come_back.rs holds a box in a dialog, a combo box pressed at its edit, the Check Spelling box, the stored contact's boxes and the sentence a dialog's empty key says on real controls; tests/every_text_box_keeps_a_history.rs holds every box to the history; neither listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 621,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13-06: what keeps Windows' single step, named rather than hidden. The composer's Describe the picture and Insert Link boxes are wxWidgets' own text-entry dialog (wx_compose.rs, TextEntryDialog::builder), whose box wxdragon 0.9.17 does not hand back, so keep_a_history cannot reach it; a dialog of this program's own for each would give them the history. The thirteen number fields (SpinCtrl::builder in wx_account_manager.rs, wx_compose.rs, wx_item_form.rs and wx_settings.rs) keep Windows' step too, which is short for a typed number; undo there only if Pratik wants it. Both are left as they are. tests/every_text_box_keeps_a_history.rs names the dialogs and the number fields in KEEPS_WINDOWS_ONE_STEP, and an entry naming a file that no longer builds one is refused. Narrowed 2026-09-25 by 13-07: this entry also asked whether a dialog's Ctrl+Z with nothing left to undo should speak, and it does now, taken as the recommendation that day: Ctrl+Z and Ctrl+Y with nothing to do in a dialog say the sentences the main window's Edit menu says (text_history_keys::say_nothing_left_through, read in tests/several_steps_come_back.rs)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 622,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-07: #47's undo of a mark, a star or a label, under NVDA and Narrator. What only a person settles: with the message list focused, the Edit menu's Undo heard naming the action and the message, \"Undo Mark as Read: Quarterly report\", or the count, and greyed as unavailable when nothing is kept; the help heard saying it is experimental; Ctrl+Z heard saying one sentence, \"Undid Mark as Read on Quarterly report.\", and the rows heard read or unread, starred or labelled again after it; Ctrl+Y heard doing it again; and \"There is nothing to undo in this list yet.\" heard with nothing kept. tests/undoing_a_mark_names_the_message.rs reads the window's wiring and application::undoing holds the decisions and the words; neither listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T00:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 623,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-07: an undone mark, star or label has never reached a real mail server. The undo goes through spawn_server_change, the path the action takes, and the session it opens asks allowed_for(account).mail before any change (mail_controller.rs, connect), so it is gated like the action; what a real IMAP or Gmail server does with a flag or keyword put back right after it was set, and whether a refusal puts the row back as the action's does, is phase 14's, with REAL-01's lines for marks as the place it belongs. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T00:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 624,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-08: #47's undo of a move, a delete or a copy, under NVDA and Narrator. What only a person settles: with the message list focused after a move, the Edit menu's Undo heard as \"Undo Move to Archive: Invoice\", or \"Undo Delete: 3 messages\" for a set; Ctrl+Z heard saying one sentence, \"Undid Move to Archive on Invoice.\", and the cursor heard landing on the message back when its folder is on screen; a refusal heard naming the message and what to do, such as \"Invoice went to another account, so it cannot be taken back from here. Move it from that account instead.\"; Ctrl+Y heard doing the move again. application::undoing holds the decisions and the words and tests/undoing_a_mark_names_the_message.rs reads the window's wiring; neither listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T17:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 625,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-08: an undone move, delete or copy has never reached a real mail server. A change the server had not heard of is ended here and nothing is sent; one the server carried out is a new move back, or a copy sent to the trash, made through complete_here_then_tell_the_server, the path the action took, after allowed_for(account).mail is met in move_back_or_again or in where_a_delete_goes_here. What a real IMAP or Gmail server does with a message moved back from where it put it a moment before, whether the number the store recorded after the first move is the one the server still holds, and whether a copy's trash reaches the right message, is phase 14's, with REAL-02's lines for move, copy and delete as the place it belongs. Known and left: a replay that begins between the undo's read of the store and its end of the waiting row can still send the move once more; the window is the few statements of undo_here on the interface thread. The Edit menu's help says it is experimental meanwhile (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T17:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 626,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/undoing.rs",
+    "line": null,
+    "description": "13-08: undoing a move or a copy to another account is refused in a sentence, by phase 13's decision 11, because the undo would be a second crossing between two servers with the same three steps and held bytes. what_undo_does_to answers every crossing with went_to_another_account, held by test_a_crossing_is_refused_with_a_sentence and the record \"an undo refuses a move to another account in words\". Building it means a crossing back through mail_across_accounts, remembered with the other account's folder and number; open until Pratik asks for it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T17:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 627,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "13-09: #47's undo in Contacts, Calendar, Reminders, Tasks and Notes, under NVDA and Narrator. What only a person settles, in each of the five lists: the Edit menu's Undo heard naming the action and the item, \"Undo Delete: Dentist\", \"Undo Mark as Done: Dentist\" or \"Undo Move to Work: Quarterly plan\"; Ctrl+Z heard saying one sentence, \"Undid Delete on Dentist.\", and the cursor heard landing on the item that came back; a deleted item made again heard as \"Dentist had already been deleted at its account, so it comes back here as a new task and is sent there as one.\"; the question before a copy is taken away heard in full; \"The last thing you did was in Tasks. Switch to Tasks to undo it.\" heard in another list; and a delete's question heard ending \"Undo brings it back until your next action.\" application::undoing and data::message_cache::taking_back hold the decisions, the words and the store, and tests/undoing_a_mark_names_the_message.rs reads the wiring; none of them listens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 628,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/data/message_cache/taking_back.rs",
+    "line": null,
+    "description": "13-09: an undone action on a contact, an event, a task or a note has never reached Google, Microsoft or a calendar server. A deletion still owed is taken back with its row in one transaction and nothing is sent; one the account has taken comes back as a new item that the next sync creates there; a toggle, a move and a copy go through the cache calls and file_under the action used, and each goes out through the sync's own push, whose client asks allowed_for(account).personal_information before it may change anything (TasksClient::for_account in tasks_api.rs, the same shape in the other clients). What a real account does with each, the owed case and the taken case both, is phase 14's: REAL-01's lines for Gmail's calendars, contacts and tasks, and no REAL line yet for Microsoft's or a calendar server's, which phase 14's planner decides. Known and left: nothing in the store says a sync is running, so the refusal rests on ASyncUnderWay, counted by the window's four syncs; a sync started any other way would not be counted. The Edit menu's help says undoing at the account is experimental (allowed::UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 629,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "13-09: two things an item's undo does not bring back. A deleted task's subtasks are taken out from under it by the delete (drop_synced_task sets their parent to nothing) and stay that way after Undo, because the record is the task's own row. And a day taken off a repeating event is a save rather than a delete, so it clears the undo step instead of being undone; undoing it would mean putting the series' exception dates back and taking back the day's change at the provider. Recommendation: build both beside an undo of an item's edit, if Pratik wants edits undoable; open until he asks",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 630,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "13-10: the meeting sentence under NVDA and Narrator, in the text reader, the formatted window and the preview. What only a person settles: that the sentence is heard as the message opens and once more at the top of the message without that reading as too much; that the whole date reads well in the tester's date settings; that the calendar part's row is heard as meeting invitation, meeting cancellation, reply to your meeting or calendar file; and, on a signed invitation, that the meeting comes before the signature's verdict. Shift+Space reads the sentence twice, from the bar and from the body, as it already reads an S/MIME envelope's sentence twice",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 631,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/invitations.rs",
+    "line": null,
+    "description": "13-10: no invitation from a real organiser has been read here. The two raw messages in tests/an_invitation_is_said_before_the_body.rs are shaped from the standards and the audit of 2026-09-15, not taken from Outlook, Google Calendar or a CalDAV server. What a real account settles, for phase 14: whether each sender's invitation, cancellation and answer is found (text/calendar or application/ics, an alternative or an attachment), whether the title, place, organiser and hours read right, and whether \"already on your calendar\" is said for an invitation Google filed itself. Phase 14's planner decides the REAL line; none names invitations yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 632,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/invitations.rs",
+    "line": null,
+    "description": "13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as \"Pacific Standard Time\", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 633,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-10: a message whose text the download of everything brought before this build has no parts recorded, and nothing records them later: the text pass skips a message whose text is here, and the reader fetches nothing for one (the selection handler sends the cached body and spawns no fetch). Such a message shows no list of its attachments and its meeting is not said. From this build the text pass keeps every part's name and the calendar document (reading_a_message::keep_what_a_download_carried). Recommendation: the reader fetches the whole message once when a row says it has attachments and none are recorded, the way it fetches a body it does not hold, with care that the second MessageBodyLoaded does not announce the message twice. Whether the text pass should keep every file rather than names and calendar documents is a question of disk, the attachment store's 512 MB budget; recommendation no",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T03:00:00.000Z",
     "resolved_at": null
   }
 ]
