@@ -3086,6 +3086,14 @@ pub mod windows_store {
             data: *mut c_void,
             size: *mut u32,
         ) -> i32;
+        fn CryptDecryptMessage(
+            parameters: *const DecryptMessageParameters,
+            encrypted: *const u8,
+            encrypted_length: u32,
+            decrypted: *mut u8,
+            decrypted_length: *mut u32,
+            exchange_certificate: *mut *const CertContext,
+        ) -> i32;
         #[cfg(test)]
         fn PFXImportCertStore(
             pfx: *const DataBlob,
@@ -3249,14 +3257,155 @@ pub mod windows_store {
             Ok(None)
         }
 
-        fn open_the_envelope(&self, _envelope_der: &[u8]) -> WhatTheEnvelopeHeld {
-            what_a_refusal_means(0)
+        /// Opened by Windows, with the key where it lives.
+        ///
+        /// Tested with a key imported into this process only, which is how
+        /// every test of the private key here works: the envelopes OpenSSL made
+        /// for the keyholder certificate open, and nothing is written to the
+        /// person's store. What no test here can reach is a key that asks for
+        /// something before it is used, a protected key or a card, where
+        /// Windows shows its own prompt; that waits for a real certificate.
+        fn open_the_envelope(&self, envelope_der: &[u8]) -> WhatTheEnvelopeHeld {
+            match &self.looking_in {
+                Wherever::ThePersonsOwnStore => {
+                    let wide: Vec<u16> = "MY".encode_utf16().chain([0]).collect();
+                    // SAFETY: the store is opened here, used once and closed
+                    // on the one path out, and the name outlives the call.
+                    unsafe {
+                        let store = CertOpenSystemStoreW(0, wide.as_ptr());
+                        if store.is_null() {
+                            return what_a_refusal_means(last_error());
+                        }
+                        let held = open_with_the_keys_in(store, envelope_der);
+                        CertCloseStore(store, 0);
+                        held
+                    }
+                }
+                // SAFETY: the handle is owned by this value and open for as
+                // long as the borrow lasts.
+                #[cfg(test)]
+                Wherever::OnlyInMemory(store) => unsafe {
+                    open_with_the_keys_in(store.0, envelope_der)
+                },
+            }
         }
     }
 
+    /// Windows' parameters for opening an envelope: the encodings, and the
+    /// stores to look for a key in.
+    #[repr(C)]
+    struct DecryptMessageParameters {
+        size: u32,
+        encoding: u32,
+        store_count: u32,
+        stores: *mut *mut c_void,
+    }
+
+    /// Open an envelope with a key one open store holds.
+    ///
+    /// Asked twice, the way Windows sizes an answer: once for how many bytes
+    /// are inside, and once to write them. The first call does not decrypt,
+    /// so an envelope to nobody here passes it and is refused by the second.
+    ///
+    /// # Safety
+    ///
+    /// `store` has to be an open certificate store handle.
+    unsafe fn open_with_the_keys_in(
+        store: *mut c_void,
+        envelope_der: &[u8],
+    ) -> WhatTheEnvelopeHeld {
+        // Nothing to hand over, and a length Windows cannot be told, are both
+        // an envelope that will not open, and neither is worth a call.
+        let Ok(length) = u32::try_from(envelope_der.len()) else {
+            return WhatTheEnvelopeHeld::Damaged;
+        };
+        if length == 0 {
+            return WhatTheEnvelopeHeld::Damaged;
+        }
+        let mut stores = [store];
+        let parameters = DecryptMessageParameters {
+            size: std::mem::size_of::<DecryptMessageParameters>() as u32,
+            encoding: X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+            store_count: 1,
+            stores: stores.as_mut_ptr(),
+        };
+        let mut size: u32 = 0;
+        // SAFETY: the envelope, the parameters and the store array outlive
+        // both calls, the first writes only the size, and the second writes at
+        // most `size` bytes into a buffer of exactly that many.
+        unsafe {
+            let sized = CryptDecryptMessage(
+                &parameters,
+                envelope_der.as_ptr(),
+                length,
+                std::ptr::null_mut(),
+                &mut size,
+                std::ptr::null_mut(),
+            );
+            if sized == 0 {
+                return what_a_refusal_means(last_error());
+            }
+            let mut inside = vec![0u8; size as usize];
+            let opened = CryptDecryptMessage(
+                &parameters,
+                envelope_der.as_ptr(),
+                length,
+                inside.as_mut_ptr(),
+                &mut size,
+                std::ptr::null_mut(),
+            );
+            if opened == 0 {
+                return what_a_refusal_means(last_error());
+            }
+            inside.truncate(size as usize);
+            WhatTheEnvelopeHeld::Opened(inside)
+        }
+    }
+
+    /// Windows' answer for an envelope addressed to no certificate whose key
+    /// the store holds.
+    const CRYPT_E_NO_DECRYPT_CERT: u32 = 0x8009_200C;
+
+    /// Windows' answers for a key that is here and would not be used.
+    ///
+    /// Permission refused, a key that needs a prompt where none may be shown,
+    /// a prompt cancelled, a card missing, taken out, or locked by a wrong PIN,
+    /// and a certificate that says nothing of where its key is. The last two
+    /// numbers are the same cancellation, once as Windows' plain code and once
+    /// as the form most of its calls hand back.
+    const THE_KEY_WOULD_NOT_BE_USED: [u32; 14] = [
+        0x8009_0010, // NTE_PERM
+        0x8009_0016, // NTE_BAD_KEYSET
+        0x8009_000D, // NTE_NO_KEY
+        0x8009_0019, // NTE_KEYSET_NOT_DEF
+        0x8009_0022, // NTE_SILENT_CONTEXT
+        0x8009_0036, // NTE_USER_CANCELLED
+        0x8010_006E, // SCARD_W_CANCELLED_BY_USER
+        0x8010_000C, // SCARD_E_NO_SMARTCARD
+        0x8010_0069, // SCARD_W_REMOVED_CARD
+        0x8010_006B, // SCARD_W_WRONG_CHV
+        0x8010_006C, // SCARD_W_CHV_BLOCKED
+        0x8009_200B, // CRYPT_E_NO_KEY_PROPERTY
+        0x8007_04C7, // ERROR_CANCELLED, as Windows' calls hand it back
+        1223,        // ERROR_CANCELLED
+    ];
+
     /// What Windows refusing to open an envelope means, read from its code.
-    fn what_a_refusal_means(_code: u32) -> WhatTheEnvelopeHeld {
-        WhatTheEnvelopeHeld::TheKeyHereRefused
+    ///
+    /// A code and never Windows' own words, which are in the language Windows
+    /// is set to and say things like "bad data" that tell nobody what to do.
+    /// Everything that is neither of the two named answers is the envelope:
+    /// measured on 2026-09-26, a changed byte, a cut, words that are not an
+    /// envelope and a signed document offered as one each gave a code of their
+    /// own and none of them was about the key.
+    fn what_a_refusal_means(code: u32) -> WhatTheEnvelopeHeld {
+        match code {
+            CRYPT_E_NO_DECRYPT_CERT => WhatTheEnvelopeHeld::NotAddressedToACertificateHere,
+            code if THE_KEY_WOULD_NOT_BE_USED.contains(&code) => {
+                WhatTheEnvelopeHeld::TheKeyHereRefused
+            }
+            _ => WhatTheEnvelopeHeld::Damaged,
+        }
     }
 
     /// Whether a chain may be asked about withdrawal, and how far that may go.

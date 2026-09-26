@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 356 records have arrived since and have not been through it.
+# 358 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3686,7 +3686,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # ── A runner cannot judge this record, and that is written here rather than
@@ -3717,7 +3717,7 @@ red = [
     "service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # ── The compiler named in two places ────────────────────────────────────────
@@ -12570,7 +12570,7 @@ red = [
     "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 [[guard]]
@@ -17651,7 +17651,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 15 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # ── The sentence reached the bar and the body still said "no text" ──────────
@@ -21982,7 +21982,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # Counting the week from Sunday, which is how a calendar on the wall is
@@ -31933,4 +31933,48 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/page_jumps.rs", tests = 8 },
+]
+
+# An envelope to nobody here read as a key that refused, so a message meant for
+# somebody else tells its reader their own key would not open it, and sends
+# them looking for a key problem they do not have. Written 2026-09-26 by 13-14,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an envelope to nobody here is said to be addressed to nobody here"
+file = "src/service/signed_mail.rs"
+before = """            CRYPT_E_NO_DECRYPT_CERT => WhatTheEnvelopeHeld::NotAddressedToACertificateHere,"""
+after = """            CRYPT_E_NO_DECRYPT_CERT => WhatTheEnvelopeHeld::TheKeyHereRefused,"""
+red = [
+    "service::signed_mail::tests::test_an_envelope_offered_to_a_store_holding_no_key_for_it_is_not_addressed_here",
+    "service::signed_mail::tests::test_an_envelope_to_somebody_else_is_not_addressed_here_though_a_key_is_held",
+    "service::signed_mail::windows_store::tests::test_what_a_refusal_means_is_read_from_the_code_windows_gave",
+]
+tests_last_seen = [
+    { file = "src/service/signed_mail.rs", tests = 118 },
+]
+
+# The envelope's bytes handed back from the call that only sizes them, so every
+# envelope Windows can size "opens" to zeros: the keyholder's words, a message
+# to somebody else and a damaged one alike. Written 2026-09-26 by 13-14,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an opened envelope hands back what windows wrote, not the buffer it sized"
+file = "src/service/signed_mail.rs"
+before = """            let mut inside = vec![0u8; size as usize];
+            let opened = CryptDecryptMessage("""
+after = """            let inside = vec![0u8; size as usize];
+            if size > 0 {
+                return WhatTheEnvelopeHeld::Opened(inside);
+            }
+            let mut inside = inside;
+            let opened = CryptDecryptMessage("""
+red = [
+    "service::signed_mail::tests::test_an_envelope_made_for_the_keyholder_opens_with_the_key_held_in_memory",
+    "service::signed_mail::tests::test_an_envelope_wrapping_a_signature_opens_to_a_message_the_checker_reads_as_signed",
+    "service::signed_mail::tests::test_an_envelope_offered_to_a_store_holding_no_key_for_it_is_not_addressed_here",
+    "service::signed_mail::tests::test_an_envelope_to_somebody_else_is_not_addressed_here_though_a_key_is_held",
+    "service::signed_mail::tests::test_a_damaged_envelope_is_said_to_be_damaged_and_never_opens",
+]
+tests_last_seen = [
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
