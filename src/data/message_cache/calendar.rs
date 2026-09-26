@@ -1,8 +1,20 @@
 //! Calendar event and sync state persistence operations
 
 use super::{CalendarEventEntry, MessageCache, SyncState, TheDeletionSoFar};
+use crate::application::invitations::Answer;
 use crate::common::{Error, Result};
 use rusqlite::params;
+
+/// What an answer given on this computer last filed against one meeting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnsweredHere {
+    /// The version of the meeting that was answered.
+    pub version: u32,
+    /// What was answered. Nothing for an answer filed before the answer
+    /// itself was kept beside the version, and for a stored word this program
+    /// never wrote.
+    pub answer: Option<Answer>,
+}
 
 /// An event somebody deleted here that the provider has not been told about.
 ///
@@ -414,7 +426,7 @@ impl MessageCache {
     }
 
     /// Which version of the meeting an answer given on this computer last wrote
-    /// into this row, if anybody ever answered it here.
+    /// into this row, and what it was, if anybody ever answered it here.
     ///
     /// Nothing for every event a calendar server sent and every event made in
     /// this program, which is the whole calendar apart from the meetings
@@ -425,12 +437,14 @@ impl MessageCache {
     /// Kept off [`CalendarEventEntry`] on purpose. One subsystem asks this
     /// question and the struct is built at a hundred places, so a field would
     /// be a hundred edits to carry one fact none of them has an opinion about.
-    /// `save_calendar_event` names its columns, so a save leaves this one where
-    /// it was rather than clearing it.
-    pub fn the_version_answered_here(&self, event_id: &str) -> Result<Option<u32>> {
+    /// `save_calendar_event` names its columns, so a save leaves these two
+    /// where they were rather than clearing them.
+    pub fn the_answer_given_here(&self, event_id: &str) -> Result<Option<AnsweredHere>> {
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT answered_version FROM calendar_events WHERE id = ?1")
+            .prepare_cached(
+                "SELECT answered_version, answered_with FROM calendar_events WHERE id = ?1",
+            )
             .map_err(|e| {
                 Error::Other(format!(
                     "Failed to prepare the answered version lookup: {}",
@@ -439,11 +453,21 @@ impl MessageCache {
             })?;
 
         let mut rows = stmt
-            .query_map(params![event_id], |row| row.get::<_, Option<u32>>(0))
+            .query_map(params![event_id], |row| {
+                Ok((
+                    row.get::<_, Option<u32>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            })
             .map_err(|e| Error::Other(format!("Failed to query the answered version: {}", e)))?;
 
         match rows.next() {
-            Some(Ok(version)) => Ok(version),
+            // The word is turned into the answer here and nowhere else, and a
+            // word this program never wrote is no answer rather than a guess.
+            Some(Ok((version, answered_with))) => Ok(version.map(|version| AnsweredHere {
+                version,
+                answer: answered_with.as_deref().and_then(Answer::from_stored),
+            })),
             Some(Err(e)) => Err(Error::Other(format!(
                 "Failed to read the answered version: {}",
                 e
@@ -452,16 +476,17 @@ impl MessageCache {
         }
     }
 
-    /// Write down which version of the meeting an answer just filed here.
+    /// Write down which version of the meeting an answer just filed here, and
+    /// which answer it was.
     ///
     /// Its own statement rather than a column on the save, because the save is
     /// how a calendar server's copy is written too and a server's copy says
     /// nothing about what anybody on this computer answered.
-    pub fn remember_the_version_answered(&self, event_id: &str, version: u32) -> Result<()> {
+    pub fn remember_the_answer(&self, event_id: &str, version: u32, answer: Answer) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE calendar_events SET answered_version = ?2 WHERE id = ?1",
-                params![event_id, version],
+                "UPDATE calendar_events SET answered_version = ?2, answered_with = ?3 WHERE id = ?1",
+                params![event_id, version, answer.as_stored()],
             )
             .map_err(|e| {
                 Error::Other(format!(
@@ -1676,6 +1701,116 @@ mod tests {
                 .expect("what is waiting")
                 .is_empty(),
             "opening an older database queued its whole calendar to be sent"
+        );
+    }
+
+    #[test]
+    fn test_the_answer_given_is_remembered_beside_the_version() {
+        // "You answered this version" says nothing about which way, and the
+        // reader is asked to say "you declined this version" (#50 point 4).
+        // So the answer is kept beside the version, and read back as the
+        // answer rather than as a word.
+        let cache = temp_cache("the_answer_beside_the_version");
+        cache
+            .save_calendar_event(&make_event("evt-1", "acct", "m-1@example.com", "Review"))
+            .expect("the meeting filed");
+
+        cache
+            .remember_the_answer("evt-1", 3, Answer::Declined)
+            .expect("the answer remembered");
+
+        assert_eq!(
+            cache
+                .the_answer_given_here("evt-1")
+                .expect("the answer read"),
+            Some(AnsweredHere {
+                version: 3,
+                answer: Some(Answer::Declined),
+            }),
+            "the version was kept and the answer given was not"
+        );
+    }
+
+    #[test]
+    fn test_a_stored_answer_this_program_never_wrote_reads_as_no_answer() {
+        // The column is a word, and a word nothing here wrote is not guessed
+        // at: read as no answer kept, so the reader says "you have answered
+        // this version" rather than a way somebody never answered.
+        let cache = temp_cache("a_word_nothing_wrote");
+        cache
+            .save_calendar_event(&make_event("evt-1", "acct", "m-1@example.com", "Review"))
+            .expect("the meeting filed");
+        cache
+            .remember_the_answer("evt-1", 1, Answer::Accepted)
+            .expect("the answer remembered");
+        cache
+            .conn
+            .execute(
+                "UPDATE calendar_events SET answered_with = 'maybe' WHERE id = 'evt-1'",
+                [],
+            )
+            .expect("a word this program never writes");
+
+        assert_eq!(
+            cache.the_answer_given_here("evt-1").expect("the row read"),
+            Some(AnsweredHere {
+                version: 1,
+                answer: None,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_database_that_kept_only_the_version_reads_as_no_answer_and_learns_one() {
+        // Every database answered in before this shipped holds a version and no
+        // answer. It has to open, read that row as a version with nothing said
+        // about which way, never as an error, and keep the next answer given.
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
+        conn.execute(THE_EVENTS_TABLE_AS_THE_LAST_RELEASE_WROTE_IT, [])
+            .expect("the events table as it was");
+        conn.execute(
+            "ALTER TABLE calendar_events ADD COLUMN answered_version INTEGER",
+            [],
+        )
+        .expect("the version column the answer path added first");
+        conn.execute(
+            "INSERT INTO calendar_events
+             (id, account_id, provider_event_id, summary, start_datetime, end_datetime,
+              created_at, updated_at, categories, answered_version)
+             VALUES ('evt-1', 'acct', 'm-1@example.com', 'Review',
+                     '2026-03-05T09:00:00Z', '2026-03-05T10:00:00Z',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '', 2)",
+            params![],
+        )
+        .expect("a meeting answered before the answer was kept");
+        drop(conn);
+
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
+
+        assert_eq!(
+            cache
+                .the_answer_given_here("evt-1")
+                .expect("the old row read"),
+            Some(AnsweredHere {
+                version: 2,
+                answer: None,
+            })
+        );
+        cache
+            .remember_the_answer("evt-1", 3, Answer::Accepted)
+            .expect("the next answer remembered");
+        assert_eq!(
+            cache
+                .the_answer_given_here("evt-1")
+                .expect("the new answer read"),
+            Some(AnsweredHere {
+                version: 3,
+                answer: Some(Answer::Accepted),
+            }),
+            "an older database never learned to keep the answer"
         );
     }
 

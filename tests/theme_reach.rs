@@ -923,6 +923,7 @@ fn document_that_exercises_every_optional_widget() -> ReaderDocument {
             described: "A test picture".to_string(),
         }),
         looks_unsafe: true,
+        answering: None,
         attachments: vec![ReaderAttachment {
             message_row_id: 1,
             uid: 1,

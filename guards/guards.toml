@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 337 records have arrived since and have not been through it.
+# 346 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -1532,7 +1532,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/data/message_cache/calendar.rs", tests = 39 },
+    { file = "src/data/message_cache/calendar.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -1550,7 +1550,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/data/message_cache/calendar.rs", tests = 39 },
+    { file = "src/data/message_cache/calendar.rs", tests = 42 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -12581,7 +12581,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -16482,7 +16482,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_cancellations_calendar_part_is_called_a_meeting_cancellation",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -16731,8 +16731,8 @@ red = [
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
     { file = "src/application/opening_pgp.rs", tests = 5 },
-    { file = "src/application/reading_a_message.rs", tests = 9 },
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -16760,7 +16760,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16786,7 +16786,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16817,7 +16817,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "src/presentation/wx_reader.rs", tests = 14 },
 ]
 
@@ -16851,7 +16851,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -16913,7 +16913,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -17624,7 +17624,7 @@ red = [
     "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
@@ -17665,7 +17665,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── A PGP key nobody could import, so no message ever opened ────────────────
@@ -17781,7 +17781,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── Undo Send: the hold reaching the row, and the clock letting it go ────────
@@ -17963,9 +17963,10 @@ red = [
     "application::answered_meetings::tests::test_a_meeting_of_whole_days_keeps_its_dates_rather_than_gaining_a_clock_reading",
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
     "application::answered_meetings::tests::test_a_held_answer_is_filed_on_the_calendar_while_it_waits_to_go",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 17 },
+    { file = "src/application/answered_meetings.rs", tests = 19 },
 ]
 
 # ── The version answered is written against the row that is really here ─────
@@ -18000,9 +18001,10 @@ before = """    let id = match already.as_ref() {
 after = """    let id = uuid::Uuid::new_v4().to_string();"""
 red = [
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 17 },
+    { file = "src/application/answered_meetings.rs", tests = 19 },
 ]
 
 # ── The count of held-back pictures, kept and said ──────────────────────────
@@ -19300,7 +19302,7 @@ red = [
     "application::context_menu::tests::test_a_copy_sits_beside_the_move_it_is_the_twin_of",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]
 
 # ── A contact left in a group it was only passing through ───────────────────
@@ -19845,7 +19847,7 @@ red = [
     "application::context_menu::tests::test_the_note_folder_menu_offers_a_sync_exactly_where_the_seam_says_one_exists",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]
 
 # ── Two places deciding where one account's notes go ────────────────────────
@@ -19891,7 +19893,7 @@ red = [
     "application::notes_backend::tests::test_an_account_with_no_provider_at_all_keeps_its_notes_here",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
     { file = "src/application/new_item.rs", tests = 42 },
     { file = "src/application/notes_backend.rs", tests = 25 },
 ]
@@ -21731,7 +21733,7 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
@@ -24403,7 +24405,7 @@ red = [
     "application::answering::tests::test_an_answer_queued_while_offline_says_it_waits_for_a_network",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 38 },
+    { file = "src/application/answering.rs", tests = 39 },
 ]
 
 # A queued meeting answer left off the calendar, which is what the filing
@@ -24437,9 +24439,10 @@ red = [
     "application::answered_meetings::tests::test_the_meeting_is_filed_under_a_calendar_made_for_an_account_that_has_none",
     "application::answered_meetings::tests::test_the_meetings_own_status_is_not_the_guests_answer",
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 17 },
+    { file = "src/application/answered_meetings.rs", tests = 19 },
 ]
 
 # Answering a meeting with the hold off told "Sending to ..." and handed to
@@ -24731,7 +24734,7 @@ red = [
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
 ]
 
 # The order of the fold: a signature verdict puts "More about this signature:"
@@ -24746,15 +24749,20 @@ tests_last_seen = [
 # 13-10, when the meeting a message carries joined the chain between the
 # envelope and the signature: the break still moves the envelope below the
 # signature and leaves the meeting where it is, and was measured again.
+# Rewritten again 2026-09-26 by 13-11, when why a meeting cannot be answered
+# joined the chain after the meeting and before the signature, and measured
+# again.
 [[guard]]
 name = "the envelope is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
 before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
             .with_smime_envelope(&said.envelope)"""
 red = [
@@ -24765,8 +24773,8 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The preview pane's bar. The reader window and the conversation window put
@@ -24790,7 +24798,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # A finding about one message of several, said where that message begins.
@@ -24813,7 +24821,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_a_page_of_several_messages_says_where_one_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The guard that names every surface. It named two of six until 2026-09-16,
@@ -26335,7 +26343,7 @@ red = [
     "test_the_reading_complains_when_the_script_or_the_wiring_loses_a_jump",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 6 },
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
 ]
 
@@ -26358,7 +26366,7 @@ red = [
     "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 6 },
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
 ]
 
 # ── Alt+A in the page window moves focus to the attachments list ────────────
@@ -26564,7 +26572,7 @@ red = [
     "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
     { file = "src/application/marking_read.rs", tests = 5 },
 ]
 
@@ -26588,9 +26596,13 @@ after = """    } else {
     }"""
 red = [
     "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+    # 13-11's case holds the invitation's menus to being the message menus
+    # followed by the three answers, so the read form answering the unread
+    # one breaks it as well.
+    "application::context_menu::tests::test_a_message_carrying_an_invitation_is_offered_the_three_answers",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]
 
 # ── A letter bound on a list is consumed, so the search never gets it ───────
@@ -30763,7 +30775,7 @@ red = [
     "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/page_jumps.rs", tests = 6 },
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
 ]
 
 # A space joining the run of typing it ends, so a whole sentence typed is one
@@ -31356,7 +31368,7 @@ red = [
     "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 48 },
+    { file = "src/application/invitations.rs", tests = 49 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31372,30 +31384,34 @@ red = [
     "application::answering::finding_the_invitation::test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 38 },
+    { file = "src/application/answering.rs", tests = 39 },
 ]
 
 # The meeting folded in after the signature: it is in the bar, below "More
 # about this signature:", and nothing speaks it (reader_text.rs's rule on
 # `with_encryption`). Two records for one break, because the library's case
 # and the raw message's case each go red and a record reads one suite. Written
-# 2026-09-25 by 13-10, measured through `scripts/guards.sh --remeasure`.
+# 2026-09-25 by 13-10, measured through `scripts/guards.sh --remeasure`. Both
+# rewritten 2026-09-26 by 13-11 for the answer buttons' place in the chain,
+# after the meeting and before the signature, and measured again.
 [[guard]]
 name = "the meeting is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
 before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
             .with_invitation(&said.invitation)"""
 red = [
     "presentation::reader_text::invitation_tests::test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 [[guard]]
@@ -31405,16 +31421,18 @@ suite = "an_invitation_is_said_before_the_body"
 before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
             .with_invitation(&said.invitation)"""
 red = [
     "test_a_signed_invitation_says_the_meeting_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]
 
@@ -31432,7 +31450,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_one_message_of_several_says_its_meeting_under_its_own_heading",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The kind the message gave put over the one warning that changes what
@@ -31448,7 +31466,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_calendar_part_named_like_a_program_is_still_called_a_program",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The download of everything writing a message's parts over the ones the
@@ -31469,6 +31487,200 @@ red = [
     "test_a_download_leaves_the_files_the_reader_kept_where_they_are",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
+]
+
+# The version written and the answer dropped, which is the calendar as it was
+# before 13-11: the reader could say a version was answered and never which
+# way (#50 point 4). Written 2026-09-26 by 13-11, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the answer given is remembered beside the version"
+file = "src/data/message_cache/calendar.rs"
+before = """                params![event_id, version, answer.as_stored()],"""
+after = """                params![event_id, version, None::<&str>],"""
+red = [
+    "data::message_cache::calendar::tests::test_the_answer_given_is_remembered_beside_the_version",
+    "data::message_cache::calendar::tests::test_a_database_that_kept_only_the_version_reads_as_no_answer_and_learns_one",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 19 },
+    { file = "src/data/message_cache/calendar.rs", tests = 42 },
+]
+
+# The answer to a meeting sent with no In-Reply-To and no References, which is
+# #50 point 8: the organiser's mailbox files it as a conversation of its own
+# beside the invitation. Written 2026-09-26 by 13-11, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the answer to a meeting goes out threaded under the invitation"
+file = "src/application/answering.rs"
+before = """            threading: crate::application::threading::continuing(invitation_id, its_references),"""
+after = """            threading: None,"""
+red = [
+    "application::answering::tests::test_the_answer_goes_out_threaded_under_the_invitation",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 39 },
+]
+
+# Why a meeting cannot be answered folded in after the signature: in the bar,
+# below "More about this signature:", and nothing speaks it (#50 point 7).
+# Written 2026-09-26 by 13-11, measured through `scripts/guards.sh
+# --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "why a meeting cannot be answered is folded in before the signature, so it is spoken"
+file = "src/presentation/reader_text.rs"
+before = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
+            .with_signature(&said.signature)"""
+after = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
+            .with_signature(&said.signature)
+            .with_answer_buttons(&said.answering)"""
+red = [
+    "presentation::reader_text::answer_button_tests::test_why_an_invitation_cannot_be_answered_is_said_above_the_signature",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 135 },
+]
+
+# The reader building the three buttons for every tab, answerable or not, which
+# is the greyed-or-pointless row #50 point 7 asks never to see: a cancellation
+# offered buttons that answer nothing. Written 2026-09-26 by 13-11, measured
+# through `scripts/guards.sh --remeasure` against the new target.
+[[guard]]
+name = "a message that cannot be answered is offered no buttons"
+file = "src/presentation/wx_reader.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """        let answer_buttons = document
+            .answering
+            .as_ref()
+            .map_or_else(Vec::new, |offered| {
+                self.the_answer_buttons(&panel, &sizer, offered)
+            });"""
+after = """        let answer_buttons = self.the_answer_buttons(
+            &panel,
+            &sizer,
+            &document.answering.clone().unwrap_or(TheButtons {
+                message_row_id: 0,
+                accept: String::new(),
+                tentative: String::new(),
+                decline: String::new(),
+            }),
+        );"""
+red = [
+    "test_a_cancellation_has_no_buttons_and_its_bar_says_why",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
+]
+
+# The buttons named and not described, which is #50 point 4 again: nothing
+# says what pressing one will do or who will be told before it is pressed.
+# Written 2026-09-26 by 13-11, measured through `scripts/guards.sh
+# --remeasure` against the new target, which reads MSAA at each button.
+[[guard]]
+name = "each answer button is described by what pressing it will do"
+file = "src/presentation/wx_reader.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """                set_accessible_name_and_description(&button, name, offered.what_pressing(answer));"""
+after = """                set_accessible_name(&button, name);"""
+red = [
+    "test_an_answerable_invitation_has_three_named_described_buttons",
+    # The formatted window's buttons are built by the same function since
+    # 13-11's third task, so they lose their descriptions with the reader's.
+    "test_the_formatted_window_has_the_three_buttons_after_the_page",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
+]
+
+# The page's listener posting nothing for Alt+C, Alt+T and Alt+D, which leaves
+# the formatted window, the default way a message opens, with buttons whose
+# letters never fire from the page (#84's shape). Written 2026-09-26 by 13-11,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the page's script posts the answer for alt+c, alt+t and alt+d, not nothing"
+file = "src/presentation/page_jumps.rs"
+before = """        window.contextMenu.postMessage(JSON.stringify({ kind: 'answer', answer: answer }));"""
+after = """        // posts nothing"""
+red = [
+    "presentation::page_jumps::tests::test_alt_c_t_and_d_in_the_page_post_the_answers_and_the_window_reads_them_back",
+    "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_jumps.rs", tests = 7 },
+]
+
+# The formatted window's answer arm reaching nothing: the page posts the key
+# and the window drops it. Written 2026-09-26 by 13-11, measured through
+# `scripts/guards.sh --remeasure` against the new target, whose reading of the
+# arm is the one that goes red.
+[[guard]]
+name = "the formatted window's answer keys press the buttons' handler with its own message"
+file = "src/presentation/wx_app.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """                        reader.answer_now(offered.message_row_id, answer);"""
+after = """                        let _ = (offered, answer);"""
+red = [
+    "test_the_pages_answer_keys_press_the_buttons_handler_with_the_windows_message",
+    # The companion plants the same fault in the arm, and with the arm
+    # already broken it finds nothing to plant.
+    "test_the_reading_complains_when_the_answer_keys_reach_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
+]
+
+# The formatted window building no buttons for a message that can be answered,
+# which leaves its keys the only way and nothing to Tab to. Written 2026-09-26
+# by 13-11, measured through `scripts/guards.sh --remeasure` against the new
+# target.
+[[guard]]
+name = "the formatted window offers the three buttons for a message that can be answered"
+file = "src/presentation/wx_app.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """    if let Some(offered) = &answering {
+        wx_reader::ReaderWindow::answer_buttons_on("""
+after = """    if let Some(offered) = answering.as_ref().filter(|_| false) {
+        wx_reader::ReaderWindow::answer_buttons_on("""
+red = [
+    "test_the_formatted_window_has_the_three_buttons_after_the_page",
+    "test_a_press_in_the_formatted_window_answers_the_message_it_shows",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
+]
+
+# The three answers offered on every message, which is a menu entry that
+# answers nothing on ordinary mail and three letters taken from it. Written
+# 2026-09-26 by 13-11, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "the three answers are offered only on a message carrying an invitation"
+file = "src/application/context_menu.rs"
+before = """    if any_unread {
+        MESSAGES
+    } else {"""
+after = """    if any_unread {
+        MESSAGES_CARRYING_AN_INVITATION
+    } else {"""
+red = [
+    "application::context_menu::tests::test_a_message_carrying_an_invitation_is_offered_the_three_answers",
+    # The focus form is the unread form by pointer, and the break hands the
+    # message menu's focus a different list.
+    "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 19 },
 ]

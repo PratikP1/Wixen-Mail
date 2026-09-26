@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Accept, Tentative and Decline where an invitation is said.** The audit of 2026-09-15
+  (#50 points 4, 7 and 8) found that a meeting could be answered only from Action, Answer
+  Invitation, that the sentence saying what an answer would do before it went was written and
+  never shown, and that the answer went out with no `In-Reply-To`, so the organiser's mailbox
+  could not file it under the invitation. A message whose invitation can be answered now has
+  three buttons, Accept, Tentative and Decline: in the plain-text reader after the bar and
+  before the message, in the formatted window after the message and before its attachments.
+  Each says after its name what pressing it will do and who will be told, and whether it
+  repeats or replaces an answer you gave here before. `Alt+C`, `Alt+T` and `Alt+D` press them
+  in both windows from inside the message; Accept is on C because `Alt+A` is the attachments.
+  An invitation that cannot be answered has no buttons at all rather than greyed ones, and the
+  bar says why, for example that sending mail is switched off. The message list's context menu
+  on a message with a calendar file offers Accept invitation, Tentatively accept invitation
+  and Decline invitation (letters I, E and L). Answering takes the message it was pressed on,
+  so a reader window whose message is not the one selected in the list answers the meeting it
+  shows. The answer is sent as a reply to the invitation. Which answer you gave is kept beside
+  the version answered, so the sentence says "and you accepted this version", "and you said
+  you might attend this version" or "and you declined this version". What answering did is
+  said once, where it was said twice. The version does not move for this: no build has been
+  cut since 1.0.0-alpha.1. Known limitations: no answer has reached a real organiser, and
+  nobody has heard the buttons or their descriptions with a screen reader.
 - **A message carrying a meeting says what the meeting is before its body.** The audit of
   2026-09-15 (#50) found that a message carrying an invitation opened as its covering note,
   with the meeting one attachment row further down, called "calendar invitation" whatever it

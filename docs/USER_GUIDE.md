@@ -586,7 +586,8 @@ four:
 |---|---|
 | and it is new to your calendar | Nothing on your calendar goes by this meeting's name. |
 | a change to the meeting on your calendar, which was ... | Your calendar holds the meeting at another time, or you answered an earlier version of it, and the sentence says when it was. |
-| and you have answered this version | You answered this version here already, or a later one. |
+| and you accepted this version, and you said you might attend this version, or and you declined this version | You answered this version here already, or a later one, and that was your answer. |
+| and you have answered this version | The same, for an answer given before Wixen Mail kept which answer it was. |
 | and it is already on your calendar | Your calendar holds the meeting at this time and nobody answered it here. Google puts an invitation on your calendar when it arrives, which is how this happens. |
 
 Other messages about meetings say:
@@ -604,11 +605,54 @@ two: meeting invitation, meeting cancellation, reply to your meeting, or
 calendar file. A file that Windows would run is still called a program,
 whatever it claims to be.
 
-To answer an invitation, choose Answer Invitation on the Action menu.
+#### Answering an invitation
+
+A message whose invitation you can answer has three buttons: Accept,
+Tentative and Decline. In the plain-text reader they come after the bar and
+before the message; in the formatted window, which is how a message opens
+unless you chose plain text, they come after the message and before its
+attachments. Each button's name is its answer, and your screen reader reads
+after the name what pressing it will do and who will be told:
+
+> Accept Quarterly review, 05/03/2026 at 09:00 to 10:00. Ada Lovelace will be
+> told.
+
+If you answered this meeting here before, the same sentence says so and
+whether pressing the button says the same again or replaces that answer.
+
+You do not have to reach the buttons. From anywhere in the message:
+
+| Key | Answer |
+|---|---|
+| `Alt+C` | Accept. It is C rather than A because `Alt+A` is the attachments. |
+| `Alt+T` | Tentative, that you might attend. |
+| `Alt+D` | Decline. |
+
+The same three are at the end of the message list's context menu
+(`Shift+F10` or the `Menu` key) on a message with a calendar file attached,
+as Accept invitation, Tentatively accept invitation and Decline invitation,
+and on the Action menu as Answer Invitation.
+
+When an invitation cannot be answered there are no buttons at all, rather
+than greyed ones you would pass without hearing why, and the bar says why.
+In a new installation that is usually "Sending mail is switched off, so no
+answer can reach the organiser", with the setting to change; it can also be
+that the invitation was not addressed to you, or that it is one day of a
+repeating meeting, which Wixen Mail does not answer yet. A conversation of
+several messages shows no buttons; open the message on its own to answer it.
+
+After you answer, the status line says what happened, once. The answer goes
+into the outbox under the same hold as any message, so Undo Send takes it
+back for the first seconds. It is sent as a reply to the invitation, with the
+headers a mail program uses to file a reply under the message it answers. The
+meeting is put
+on your calendar, and your answer is kept beside it, so the next time the
+invitation is opened the sentence says which way you answered.
 
 What this does not do yet: opening a message leaves your calendar as it was,
 and no invitation from a real Outlook, Google or calendar server
-organiser has been read here. A time an invitation names in the sender's own
+organiser has been read here, nor has any answer reached one. Nobody has
+listened to the buttons with a screen reader yet. A time an invitation names in the sender's own
 time zone is read as that time on your clock, as the calendar reads one, so a
 meeting from somebody in another zone is said at the hour they wrote. A
 message whose text was downloaded in the background before this version has no

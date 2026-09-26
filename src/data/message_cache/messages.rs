@@ -2805,6 +2805,25 @@ impl MessageCache {
         Ok(Some(message))
     }
 
+    /// The `References` a message carried, as the store keeps them: bare and
+    /// space separated. Nothing for a message that named none, and for a row
+    /// that is not here.
+    ///
+    /// Its own read rather than a field on [`CachedMessage`], which is built at
+    /// every place a message is saved and has no use for it; answering a
+    /// meeting is the one path that threads a reply from a row id alone.
+    pub fn the_references_of(&self, message_id: i64) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT refs_header FROM messages WHERE id = ?1",
+                params![message_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map(Option::flatten)
+            .map_err(|e| Error::Other(format!("Failed to read a message's references: {}", e)))
+    }
+
     /// Update message flags
     pub fn update_message_flags(&self, message_id: i64, read: bool, starred: bool) -> Result<()> {
         self.conn

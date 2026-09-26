@@ -1889,6 +1889,23 @@ impl WxMailApp {
                     read_attachment(app, &a11y, attachment);
                 }
             });
+            // An invitation's three buttons, in the text reader and in the
+            // formatted window alike: the answer for the message the window
+            // shows, whatever the list has selected (13-11).
+            reader.on_answer({
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let message_cache = message_cache.clone();
+                move |message_row, answer| {
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
+                    answer_the_invitation(app, &message_cache, Some(message_row), answer);
+                }
+            });
 
             // Space cycles short then full on the item under the cursor;
             // Shift+Space goes straight to full. One cycle shared across the
@@ -3635,12 +3652,30 @@ impl WxMailApp {
                 // range grows and as M toggles.
                 wire_context_menu(&msg_list, {
                     let state = state.clone();
+                    let message_cache = message_cache.clone();
                     let list = msg_list;
                     move || {
+                        use crate::application::context_menu::entries_for_a_message_carrying_an_invitation;
+                        use crate::application::reading_a_message::carries_a_calendar_part;
                         let rows = chosen_rows(&list);
-                        let any_unread =
-                            the_chosen_rows_have_unread(&lock_state(&state), &rows).unwrap_or(true);
-                        Some(entries_for_messages(any_unread))
+                        let (any_unread, under_the_cursor) = {
+                            let held = lock_state(&state);
+                            (
+                                the_chosen_rows_have_unread(&held, &rows).unwrap_or(true),
+                                held.what_the_cursor_stands_for().map(|row| row.id),
+                            )
+                        };
+                        // The three answers on a message with a calendar part
+                        // recorded, read by its kind and not parsed: pressing
+                        // one on a cancellation says why it cannot be answered.
+                        let carries_an_invitation = under_the_cursor
+                            .zip(message_cache.as_deref())
+                            .is_some_and(|(row, cache)| carries_a_calendar_part(cache, row));
+                        Some(if carries_an_invitation {
+                            entries_for_a_message_carrying_an_invitation(any_unread)
+                        } else {
+                            entries_for_messages(any_unread)
+                        })
                     }
                 });
                 // The one control here holding twelve kinds of row. Which menu
@@ -4637,7 +4672,12 @@ impl WxMailApp {
                             } else {
                                 Answer::Declined
                             };
-                            answer_the_invitation(app, &message_cache, &a11y, answer);
+                            // The row under the cursor, which the menu and
+                            // the list's context menu both act on.
+                            let under_the_cursor = lock_state(&state)
+                                .what_the_cursor_stands_for()
+                                .map(|row| row.id);
+                            answer_the_invitation(app, &message_cache, under_the_cursor, answer);
                         }
                         _ if id == ID_SEND_RECEIPT => {
                             send_receipt_for_the_open_message(app);
@@ -14577,6 +14617,9 @@ fn what_a_message_shows_and_says(
         // Read only for a message carrying a meeting, whose time is said the
         // way this reader words a date.
         date_settings_from_stored_config,
+        // Read only for a message carrying an invitation, which is offered
+        // its buttons or told why not.
+        |account| crate::application::reading_a_message::AnsweringAs::on(cache.as_deref(), account),
     )
 }
 
@@ -15155,14 +15198,24 @@ fn fill_folders_from(
 /// a new installation, deliberately, so for most people pressing Accept will
 /// explain that rather than send anything. A button that quietly did nothing
 /// would be worse than no button at all.
+///
+/// `message_row` is the message the answer was pressed on: a reader window's
+/// buttons and keys pass the message the window shows, and the Action menu
+/// and the list's context menu pass the row under the cursor. Nothing here
+/// reads the list's selection, so a reader window whose message is not the
+/// selected row answers the meeting it shows.
+///
+/// Every outcome is said once, through the status line, which speaks what it
+/// shows. Until 13-11 each was also announced beside it, so accepting was
+/// heard twice (ledger 155).
 fn answer_the_invitation(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
-    a11y: &Arc<Accessibility>,
+    message_row: Option<i64>,
     answer: crate::application::invitations::Answer,
 ) {
+    use crate::application::answered_meetings::TheInvitationMessage;
     use crate::application::answering;
-    use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles {
         state,
@@ -15170,74 +15223,62 @@ fn answer_the_invitation(
         rt: runtime,
     } = app;
 
-    let told = |said: &str, how: Priority| {
-        send_status(ui_tx, runtime, said);
-        let _ = a11y.announce(said, how);
-    };
+    let refused = |why: &str| send_refusal(ui_tx, runtime, why);
     let Some(cache) = cache.as_ref() else {
-        told(
-            "There is no mail on this computer to answer.",
-            Priority::High,
-        );
+        refused("There is no mail on this computer to answer.");
         return;
     };
-    let (message, account) = {
-        let held = lock_state(state);
-        (
-            held.selected_message_index
-                .and_then(|at| held.the_loaded_message_the_row_stands_for(at).cloned()),
-            held.active_account_id.clone(),
-        )
-    };
-    let (Some(message), Some(account)) = (message, account) else {
-        told(
-            "Select the message holding the invitation first.",
-            Priority::High,
-        );
+    let Some(message_row) = message_row else {
+        refused("Select the message holding the invitation first.");
         return;
     };
-
-    // The invitation travels as a part of the message, so it is read back out
-    // of what was stored when the message was opened rather than fetched
-    // again.
-    let parts: Vec<(String, Vec<u8>)> = cache
-        .attachments_with_content(message.message_id)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|file| Some((file.described.mime_type, file.content?)))
-        .collect();
-    let Some(document) = answering::the_invitation_a_message_carries(&parts) else {
-        told(
+    let found = crate::application::answered_meetings::the_invitation_on(cache, message_row)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read the message an answer was pressed on: {e}");
+            None
+        });
+    let Some(TheInvitationMessage {
+        account,
+        document,
+        message_id,
+        references,
+    }) = found
+    else {
+        refused(
             "This message does not carry a meeting invitation. Open it once if \
              you have not, so its parts are on this computer.",
-            Priority::High,
         );
         return;
     };
 
-    let answering_as = the_address_this_account_answers_as(state, &account);
+    // The same reading the buttons were offered from, so a button offered is
+    // a button that can be pressed.
+    let answering_as =
+        crate::application::reading_a_message::AnsweringAs::on(Some(cache), &account);
     let ready = match answering::whether_it_can_be_answered(
         &document,
-        &answering_as,
-        crate::application::allowed::allowed_for(&account),
+        &answering_as.address,
+        answering_as.allowed,
     ) {
         Ok(ready) => ready,
         // Each refusal has its own sentence, and this is the whole point of
         // them: "sending is switched off" and "you were not invited" are
         // different things to be told and lead somewhere different.
         Err(why) => {
-            told(&why.why(), Priority::High);
+            refused(&why.why());
             return;
         }
     };
 
-    let to_send = match ready.the_answer_to_send(answer, chrono::Utc::now()) {
+    let to_send = match ready.the_answer_to_send(
+        answer,
+        chrono::Utc::now(),
+        &message_id,
+        references.as_deref(),
+    ) {
         Ok(to_send) => to_send,
         Err(why) => {
-            told(
-                &format!("The answer could not be written. {why}"),
-                Priority::High,
-            );
+            refused(&format!("The answer could not be written. {why}"));
             return;
         }
     };
@@ -15254,9 +15295,10 @@ fn answer_the_invitation(
     ) {
         tracing::warn!("The answer was queued and could not be put on the calendar: {why}");
     }
-    told(
+    send_status(
+        ui_tx,
+        runtime,
         &ready.what_answering_did(answer, &went, chrono::Local::now()),
-        Priority::Normal,
     );
     // What the composer's Send does for a message with the hold off, and this
     // did not: the send loop runs on a clock only for rows carrying a moment,
@@ -15270,19 +15312,6 @@ fn answer_the_invitation(
     {
         flush_outbox(app);
     }
-}
-
-/// The address this account answers an invitation as.
-///
-/// The account's own, because an invitation names the guest by address and the
-/// answer has to come from the one that was invited.
-fn the_address_this_account_answers_as(state: &Arc<StdMutex<WxUIState>>, account: &str) -> String {
-    lock_state(state)
-        .accounts
-        .iter()
-        .find(|held| held.id == account)
-        .map(|held| held.email.clone())
-        .unwrap_or_default()
 }
 
 /// Put the answer in the queue that sends mail, and say how that went.
@@ -15321,7 +15350,9 @@ fn send_the_answer(
         html_mode: false,
         account_index: None,
         attachments: vec![written],
-        answering: None,
+        // Under the invitation in the organiser's mailbox, rather than a
+        // conversation of its own (#50 point 8).
+        answering: to_send.threading.clone(),
         // An answer to a meeting invitation goes as soon as the hold lets it.
         // Nothing offers to delay one and nothing should: the person who sent
         // the invitation is waiting on the answer.
@@ -17974,52 +18005,57 @@ fn open_for_scanning(
             // content.
             let reader = Rc::new(wx_reader::ReaderWindow::new(frame, a11y));
             reader.wire_menu();
-            reader.open(reader_text::single_message(
-                &MessageItem {
-                    uid: 1,
-                    message_id: 1,
-                    subject: "Scan target".to_string(),
-                    from: "Somebody <somebody@example.com>".to_string(),
-                    date: "2026-01-01T00:00:00+00:00".to_string(),
-                    read: true,
-                    starred: false,
-                    answered: false,
-                    draft: false,
-                    has_attachments: true,
-                    attachments: vec![AttachmentItem {
-                        filename: "report.pdf".to_string(),
-                        mime_type: "application/pdf".to_string(),
-                        size: 1024,
-                        description: crate::service::mime::WhatTheSenderSaid::Nothing,
-                    }],
-                    thread_depth: 0,
-                    is_thread_parent: true,
-                    thread_id: None,
-                    snippet: None,
-                    size_bytes: Some(1024),
-                    to: "me@example.com".to_string(),
-                    cc: String::new(),
-                    reply_to: String::new(),
-                    header_message_id: String::new(),
-                    refs_header: None,
-                    // Deliberately not Ordinary, so the warning bar exists and
-                    // gets scanned. It only appears when there is something to
-                    // say, so an ordinary message would leave it out.
-                    safety: crate::service::safety::Safety::Suspicious,
-                    safety_reasons: vec!["This message is a scan fixture".to_string()],
-                    receipt_to: None,
-                    list_unsubscribe: None,
-                    account_id: String::new(),
-                    labels: Vec::new(),
-                    says_first: None,
-                },
-                &MessageBody::Html(
-                    "<h1>A heading</h1><p>Some text, and \
+            reader.open(
+                reader_text::single_message(
+                    &MessageItem {
+                        uid: 1,
+                        message_id: 1,
+                        subject: "Scan target".to_string(),
+                        from: "Somebody <somebody@example.com>".to_string(),
+                        date: "2026-01-01T00:00:00+00:00".to_string(),
+                        read: true,
+                        starred: false,
+                        answered: false,
+                        draft: false,
+                        has_attachments: true,
+                        attachments: vec![AttachmentItem {
+                            filename: "report.pdf".to_string(),
+                            mime_type: "application/pdf".to_string(),
+                            size: 1024,
+                            description: crate::service::mime::WhatTheSenderSaid::Nothing,
+                        }],
+                        thread_depth: 0,
+                        is_thread_parent: true,
+                        thread_id: None,
+                        snippet: None,
+                        size_bytes: Some(1024),
+                        to: "me@example.com".to_string(),
+                        cc: String::new(),
+                        reply_to: String::new(),
+                        header_message_id: String::new(),
+                        refs_header: None,
+                        // Deliberately not Ordinary, so the warning bar exists and
+                        // gets scanned. It only appears when there is something to
+                        // say, so an ordinary message would leave it out.
+                        safety: crate::service::safety::Safety::Suspicious,
+                        safety_reasons: vec!["This message is a scan fixture".to_string()],
+                        receipt_to: None,
+                        list_unsubscribe: None,
+                        account_id: String::new(),
+                        labels: Vec::new(),
+                        says_first: None,
+                    },
+                    &MessageBody::Html(
+                        "<h1>A heading</h1><p>Some text, and \
                      <a href=\"https://example.com/\">a link</a>.</p>"
-                        .to_string(),
-                ),
-                reading_from_settings(),
-            ));
+                            .to_string(),
+                    ),
+                    reading_from_settings(),
+                )
+                // An invitation the scan's guest can answer, so the scan reaches
+                // Accept, Tentative and Decline at their own handles (13-11).
+                .with_what_is_said(&scan_fixtures::an_answerable_invitation(1)),
+            );
             // Leaked on purpose: the window has to outlive this function or it
             // closes before the scan reaches it, and the process is about to be
             // killed anyway.
@@ -25317,6 +25353,25 @@ pub fn show_conversation_as_page(
     // and the host's second line, wired below once the host exists, are how
     // (#80). A veto stood here until 2026-09-20 and never fired.
 
+    // An invitation's three buttons, for a window showing one message whose
+    // invitation can be answered, built after the page so the browser stays
+    // the first control that takes the keyboard, and before the list. The
+    // browser keeps every key once it has focus, so their letters are heard
+    // from the page through its listener, in the arm below (#84). One
+    // handler behind both windows, the reader's, set once by the main window.
+    let answering = above.answering.clone();
+    if let Some(offered) = &answering {
+        wx_reader::ReaderWindow::answer_buttons_on(
+            &frame,
+            &sizer,
+            offered,
+            Rc::new({
+                let reader = reader.clone();
+                move |message_row_id, answer| reader.answer_now(message_row_id, answer)
+            }),
+        );
+    }
+
     // Anything hanging off these messages, in a list of its own. Without it,
     // reading formatted would quietly cost somebody their attachments: the page
     // renders bodies and nothing else, so the only sign there had been a file
@@ -25437,6 +25492,8 @@ pub fn show_conversation_as_page(
     page.on_script_message_received({
         let a11y = a11y.clone();
         let host = host.clone();
+        let reader = reader.clone();
+        let answering = answering.clone();
         move |event: WebViewEventData| {
             use crate::presentation::accessibility::announcements::Priority;
             let Some(json) = event.get_string() else {
@@ -25489,6 +25546,16 @@ pub fn show_conversation_as_page(
                         &a11y,
                         printing::print_through_the_dialog(&frame, &paper),
                     );
+                }
+                // What the buttons do, with the window's own message; with
+                // nothing to answer, said rather than left silent.
+                Some(page_jumps::Jump::Answer(answer)) => {
+                    if let Some(offered) = &answering {
+                        reader.answer_now(offered.message_row_id, answer);
+                    } else {
+                        let _ = a11y
+                            .announce("There is no invitation here to answer.", Priority::Normal);
+                    }
                 }
                 None => {
                     if crate::presentation::panes::leaving_which_way(&json).is_some() {

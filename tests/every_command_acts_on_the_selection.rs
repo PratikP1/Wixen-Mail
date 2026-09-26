@@ -121,13 +121,16 @@ const THE_CURSOR_HANDLER: (&str, &str) =
 const THE_OLD_HANDLER: &str = "msg_list.on_item_selected({";
 /// The commands that act on the row the cursor is on, by the function or
 /// the arm that reads it.
-const THE_CURSOR_COMMANDS: [&str; 6] = [
+///
+/// Answering an invitation is not among them since 13-11: it takes the message
+/// it was pressed on, because a reader window's buttons answer the message the
+/// window shows, and the Action menu's arm passes the row under the cursor.
+const THE_CURSOR_COMMANDS: [&str; 5] = [
     "fn start_reply(",
     "fn msg_info(",
     "fn save_the_message_as(",
     "fn receipt_for_the_open_message(",
     "fn send_receipt_for_the_open_message(",
-    "fn answer_the_invitation(",
 ];
 const THE_COPY_TO_ARM: &str = "_ if id == ID_CONTEXT_COPY_TO_TASK";
 /// What a command over the set reads and says.
