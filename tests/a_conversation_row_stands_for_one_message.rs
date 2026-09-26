@@ -743,12 +743,15 @@ const THE_ROOT_SELECTED: &str = "select_item(&root)";
 /// which message the row stands for, so under conversation view it acts on
 /// the message the row previews and never on the flat row at the same
 /// index.
-const THE_CURSOR_COMMANDS: [&str; 8] = [
+///
+/// Answering an invitation left the list in 13-11: it takes the message it was
+/// pressed on, and the Action menu's arm asks `what_the_cursor_stands_for()`,
+/// which is the conversation-aware reading, for the row it passes.
+const THE_CURSOR_COMMANDS: [&str; 7] = [
     "fn start_reply(",
     "fn msg_info(",
     "fn receipt_for_the_open_message(",
     "fn send_receipt_for_the_open_message(",
-    "fn answer_the_invitation(",
     "fn save_the_message_as(",
     "fn mark_what_was_read(",
     "fn block_the_sender(",

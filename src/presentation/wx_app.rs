@@ -4637,7 +4637,12 @@ impl WxMailApp {
                             } else {
                                 Answer::Declined
                             };
-                            answer_the_invitation(app, &message_cache, &a11y, answer);
+                            // The row under the cursor, which the menu and
+                            // the list's context menu both act on.
+                            let under_the_cursor = lock_state(&state)
+                                .what_the_cursor_stands_for()
+                                .map(|row| row.id);
+                            answer_the_invitation(app, &message_cache, under_the_cursor, answer);
                         }
                         _ if id == ID_SEND_RECEIPT => {
                             send_receipt_for_the_open_message(app);
@@ -15155,14 +15160,24 @@ fn fill_folders_from(
 /// a new installation, deliberately, so for most people pressing Accept will
 /// explain that rather than send anything. A button that quietly did nothing
 /// would be worse than no button at all.
+///
+/// `message_row` is the message the answer was pressed on: a reader window's
+/// buttons and keys pass the message the window shows, and the Action menu
+/// and the list's context menu pass the row under the cursor. Nothing here
+/// reads the list's selection, so a reader window whose message is not the
+/// selected row answers the meeting it shows.
+///
+/// Every outcome is said once, through the status line, which speaks what it
+/// shows. Until 13-11 each was also announced beside it, so accepting was
+/// heard twice (ledger 155).
 fn answer_the_invitation(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
-    a11y: &Arc<Accessibility>,
+    message_row: Option<i64>,
     answer: crate::application::invitations::Answer,
 ) {
+    use crate::application::answered_meetings::TheInvitationMessage;
     use crate::application::answering;
-    use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles {
         state,
@@ -15170,47 +15185,30 @@ fn answer_the_invitation(
         rt: runtime,
     } = app;
 
-    let told = |said: &str, how: Priority| {
-        send_status(ui_tx, runtime, said);
-        let _ = a11y.announce(said, how);
-    };
+    let refused = |why: &str| send_refusal(ui_tx, runtime, why);
     let Some(cache) = cache.as_ref() else {
-        told(
-            "There is no mail on this computer to answer.",
-            Priority::High,
-        );
+        refused("There is no mail on this computer to answer.");
         return;
     };
-    let (message, account) = {
-        let held = lock_state(state);
-        (
-            held.selected_message_index
-                .and_then(|at| held.the_loaded_message_the_row_stands_for(at).cloned()),
-            held.active_account_id.clone(),
-        )
-    };
-    let (Some(message), Some(account)) = (message, account) else {
-        told(
-            "Select the message holding the invitation first.",
-            Priority::High,
-        );
+    let Some(message_row) = message_row else {
+        refused("Select the message holding the invitation first.");
         return;
     };
-
-    // The invitation travels as a part of the message, so it is read back out
-    // of what was stored when the message was opened rather than fetched
-    // again.
-    let parts: Vec<(String, Vec<u8>)> = cache
-        .attachments_with_content(message.message_id)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|file| Some((file.described.mime_type, file.content?)))
-        .collect();
-    let Some(document) = answering::the_invitation_a_message_carries(&parts) else {
-        told(
+    let found = crate::application::answered_meetings::the_invitation_on(cache, message_row)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read the message an answer was pressed on: {e}");
+            None
+        });
+    let Some(TheInvitationMessage {
+        account,
+        document,
+        message_id,
+        references,
+    }) = found
+    else {
+        refused(
             "This message does not carry a meeting invitation. Open it once if \
              you have not, so its parts are on this computer.",
-            Priority::High,
         );
         return;
     };
@@ -15226,7 +15224,7 @@ fn answer_the_invitation(
         // them: "sending is switched off" and "you were not invited" are
         // different things to be told and lead somewhere different.
         Err(why) => {
-            told(&why.why(), Priority::High);
+            refused(&why.why());
             return;
         }
     };
@@ -15234,15 +15232,12 @@ fn answer_the_invitation(
     let to_send = match ready.the_answer_to_send(
         answer,
         chrono::Utc::now(),
-        &message.header_message_id,
-        message.refs_header.as_deref(),
+        &message_id,
+        references.as_deref(),
     ) {
         Ok(to_send) => to_send,
         Err(why) => {
-            told(
-                &format!("The answer could not be written. {why}"),
-                Priority::High,
-            );
+            refused(&format!("The answer could not be written. {why}"));
             return;
         }
     };
@@ -15259,9 +15254,10 @@ fn answer_the_invitation(
     ) {
         tracing::warn!("The answer was queued and could not be put on the calendar: {why}");
     }
-    told(
+    send_status(
+        ui_tx,
+        runtime,
         &ready.what_answering_did(answer, &went, chrono::Local::now()),
-        Priority::Normal,
     );
     // What the composer's Send does for a message with the hold off, and this
     // did not: the send loop runs on a clock only for rows carrying a moment,
@@ -15326,7 +15322,9 @@ fn send_the_answer(
         html_mode: false,
         account_index: None,
         attachments: vec![written],
-        answering: None,
+        // Under the invitation in the organiser's mailbox, rather than a
+        // conversation of its own (#50 point 8).
+        answering: to_send.threading.clone(),
         // An answer to a meeting invitation goes as soon as the hold lets it.
         // Nothing offers to delay one and nothing should: the person who sent
         // the invitation is waiting on the answer.

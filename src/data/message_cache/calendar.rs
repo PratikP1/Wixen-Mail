@@ -442,7 +442,9 @@ impl MessageCache {
     pub fn the_answer_given_here(&self, event_id: &str) -> Result<Option<AnsweredHere>> {
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT answered_version FROM calendar_events WHERE id = ?1")
+            .prepare_cached(
+                "SELECT answered_version, answered_with FROM calendar_events WHERE id = ?1",
+            )
             .map_err(|e| {
                 Error::Other(format!(
                     "Failed to prepare the answered version lookup: {}",
@@ -451,13 +453,20 @@ impl MessageCache {
             })?;
 
         let mut rows = stmt
-            .query_map(params![event_id], |row| row.get::<_, Option<u32>>(0))
+            .query_map(params![event_id], |row| {
+                Ok((
+                    row.get::<_, Option<u32>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            })
             .map_err(|e| Error::Other(format!("Failed to query the answered version: {}", e)))?;
 
         match rows.next() {
-            Some(Ok(version)) => Ok(version.map(|version| AnsweredHere {
+            // The word is turned into the answer here and nowhere else, and a
+            // word this program never wrote is no answer rather than a guess.
+            Some(Ok((version, answered_with))) => Ok(version.map(|version| AnsweredHere {
                 version,
-                answer: None,
+                answer: answered_with.as_deref().and_then(Answer::from_stored),
             })),
             Some(Err(e)) => Err(Error::Other(format!(
                 "Failed to read the answered version: {}",
@@ -473,11 +482,11 @@ impl MessageCache {
     /// Its own statement rather than a column on the save, because the save is
     /// how a calendar server's copy is written too and a server's copy says
     /// nothing about what anybody on this computer answered.
-    pub fn remember_the_answer(&self, event_id: &str, version: u32, _answer: Answer) -> Result<()> {
+    pub fn remember_the_answer(&self, event_id: &str, version: u32, answer: Answer) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE calendar_events SET answered_version = ?2 WHERE id = ?1",
-                params![event_id, version],
+                "UPDATE calendar_events SET answered_version = ?2, answered_with = ?3 WHERE id = ?1",
+                params![event_id, version, answer.as_stored()],
             )
             .map_err(|e| {
                 Error::Other(format!(

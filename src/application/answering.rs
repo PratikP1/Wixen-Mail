@@ -251,8 +251,8 @@ impl Answering {
         &self,
         answer: Answer,
         answered_at: chrono::DateTime<chrono::Utc>,
-        _invitation_id: &str,
-        _its_references: Option<&str>,
+        invitation_id: &str,
+        its_references: Option<&str>,
     ) -> crate::common::Result<TheAnswerToSend> {
         // Built first, because it is the only step here that can refuse, and
         // every reason it has to refuse was asked already by
@@ -269,7 +269,9 @@ impl Answering {
             subject: the_subject_line(&self.invitation, answer),
             body: the_body(&self.invitation, &self.answering, answer),
             calendar_document,
-            threading: None,
+            // The rule every reply here is threaded by, so an answer and a
+            // reply to the same invitation sit in the same place.
+            threading: crate::application::threading::continuing(invitation_id, its_references),
         })
     }
 

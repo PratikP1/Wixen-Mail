@@ -661,7 +661,10 @@ impl Standing {
             Standing::Changed { from } => {
                 format!(", a change to the meeting on your calendar, which was {from}")
             }
-            Standing::AlreadyAnswered { .. } => ", and you have answered this version".to_string(),
+            Standing::AlreadyAnswered { answer } => format!(
+                ", and you {} this version",
+                answer.map_or("have answered", Answer::what_you_did)
+            ),
             Standing::AlreadyOnTheCalendar => ", and it is already on your calendar".to_string(),
         }
     }
@@ -674,6 +677,15 @@ impl Answer {
         [Answer::Accepted, Answer::Tentative, Answer::Declined]
             .into_iter()
             .find(|answer| written.trim().eq_ignore_ascii_case(answer.as_partstat()))
+    }
+
+    /// What you did, said to you about a version you answered.
+    const fn what_you_did(self) -> &'static str {
+        match self {
+            Answer::Accepted => "accepted",
+            Answer::Tentative => "said you might attend",
+            Answer::Declined => "declined",
+        }
     }
 
     /// What somebody else did, said about them.

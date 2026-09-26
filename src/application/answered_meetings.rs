@@ -246,10 +246,33 @@ pub struct TheInvitationMessage {
 /// reply to it threads by. Nothing for a message carrying no calendar document
 /// this computer holds.
 pub fn the_invitation_on(
-    _cache: &MessageCache,
-    _message_row_id: i64,
+    cache: &MessageCache,
+    message_row_id: i64,
 ) -> Result<Option<TheInvitationMessage>> {
-    Ok(None)
+    let Some(message) = cache.get_message(message_row_id)? else {
+        return Ok(None);
+    };
+    let Some(account) = cache.account_of_folder(message.folder_id)? else {
+        return Ok(None);
+    };
+    // The invitation travels as a part of the message, so it is read back out
+    // of what was stored when the message was opened rather than fetched
+    // again, the same reading the reader's sentence takes.
+    let parts: Vec<(String, Vec<u8>)> = cache
+        .attachments_with_content(message_row_id)?
+        .into_iter()
+        .filter_map(|file| Some((file.described.mime_type, file.content?)))
+        .collect();
+    let Some(document) = crate::application::answering::the_invitation_a_message_carries(&parts)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(TheInvitationMessage {
+        account,
+        document,
+        message_id: message.message_id,
+        references: cache.the_references_of(message_row_id)?,
+    }))
 }
 
 #[cfg(test)]

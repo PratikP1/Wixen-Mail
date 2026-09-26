@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 337 records have arrived since and have not been through it.
+# 339 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -1532,7 +1532,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/data/message_cache/calendar.rs", tests = 39 },
+    { file = "src/data/message_cache/calendar.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -1550,7 +1550,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/data/message_cache/calendar.rs", tests = 39 },
+    { file = "src/data/message_cache/calendar.rs", tests = 42 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -17963,9 +17963,10 @@ red = [
     "application::answered_meetings::tests::test_a_meeting_of_whole_days_keeps_its_dates_rather_than_gaining_a_clock_reading",
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
     "application::answered_meetings::tests::test_a_held_answer_is_filed_on_the_calendar_while_it_waits_to_go",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 17 },
+    { file = "src/application/answered_meetings.rs", tests = 19 },
 ]
 
 # ── The version answered is written against the row that is really here ─────
@@ -18000,9 +18001,10 @@ before = """    let id = match already.as_ref() {
 after = """    let id = uuid::Uuid::new_v4().to_string();"""
 red = [
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 17 },
+    { file = "src/application/answered_meetings.rs", tests = 19 },
 ]
 
 # ── The count of held-back pictures, kept and said ──────────────────────────
@@ -24403,7 +24405,7 @@ red = [
     "application::answering::tests::test_an_answer_queued_while_offline_says_it_waits_for_a_network",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 38 },
+    { file = "src/application/answering.rs", tests = 39 },
 ]
 
 # A queued meeting answer left off the calendar, which is what the filing
@@ -24437,9 +24439,10 @@ red = [
     "application::answered_meetings::tests::test_the_meeting_is_filed_under_a_calendar_made_for_an_account_that_has_none",
     "application::answered_meetings::tests::test_the_meetings_own_status_is_not_the_guests_answer",
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 17 },
+    { file = "src/application/answered_meetings.rs", tests = 19 },
 ]
 
 # Answering a meeting with the hold off told "Sending to ..." and handed to
@@ -31356,7 +31359,7 @@ red = [
     "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 48 },
+    { file = "src/application/invitations.rs", tests = 49 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31372,7 +31375,7 @@ red = [
     "application::answering::finding_the_invitation::test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 38 },
+    { file = "src/application/answering.rs", tests = 39 },
 ]
 
 # The meeting folded in after the signature: it is in the bar, below "More
@@ -31471,4 +31474,39 @@ red = [
 tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 9 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
+]
+
+# The version written and the answer dropped, which is the calendar as it was
+# before 13-11: the reader could say a version was answered and never which
+# way (#50 point 4). Written 2026-09-26 by 13-11, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the answer given is remembered beside the version"
+file = "src/data/message_cache/calendar.rs"
+before = """                params![event_id, version, answer.as_stored()],"""
+after = """                params![event_id, version, None::<&str>],"""
+red = [
+    "data::message_cache::calendar::tests::test_the_answer_given_is_remembered_beside_the_version",
+    "data::message_cache::calendar::tests::test_a_database_that_kept_only_the_version_reads_as_no_answer_and_learns_one",
+    "application::answered_meetings::tests::test_filing_an_answer_remembers_which_answer_was_given",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 19 },
+    { file = "src/data/message_cache/calendar.rs", tests = 42 },
+]
+
+# The answer to a meeting sent with no In-Reply-To and no References, which is
+# #50 point 8: the organiser's mailbox files it as a conversation of its own
+# beside the invitation. Written 2026-09-26 by 13-11, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the answer to a meeting goes out threaded under the invitation"
+file = "src/application/answering.rs"
+before = """            threading: crate::application::threading::continuing(invitation_id, its_references),"""
+after = """            threading: None,"""
+red = [
+    "application::answering::tests::test_the_answer_goes_out_threaded_under_the_invitation",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 39 },
 ]
