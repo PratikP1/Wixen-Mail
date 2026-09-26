@@ -411,14 +411,32 @@ pub enum AnswerButtons {
 /// each button can say it replaces or repeats it. `dates` words the meeting's
 /// time, because how a date is said depends on settings this layer cannot see.
 pub fn the_answer_buttons(
-    _document: &str,
-    _answering_as: &str,
-    _allowed: Allowed,
-    _message_row_id: i64,
-    _said_before: Option<Answer>,
-    _dates: crate::presentation::date_display::DateSettings,
+    document: &str,
+    answering_as: &str,
+    allowed: Allowed,
+    message_row_id: i64,
+    said_before: Option<Answer>,
+    dates: crate::presentation::date_display::DateSettings,
 ) -> AnswerButtons {
-    AnswerButtons::NotAsked
+    let ready = match whether_it_can_be_answered(document, answering_as, allowed) {
+        Ok(ready) => ready,
+        // What these are has been said by the sentence about the document,
+        // and none of them asks anybody for an answer.
+        Err(
+            CannotAnswer::ItIsACancellation
+            | CannotAnswer::ItIsSomebodyElsesAnswer
+            | CannotAnswer::ItIsNotAnInvitationAtAll,
+        ) => return AnswerButtons::NotAsked,
+        Err(why) => return AnswerButtons::CannotBeAnswered(why),
+    };
+    let when = crate::application::invitations::when_the_invitation_is(ready.invitation(), dates);
+    let pressing = |answer| ready.what_pressing_it_will_do(answer, &when, said_before);
+    AnswerButtons::Offered(TheButtons {
+        message_row_id,
+        accept: pressing(Answer::Accepted),
+        tentative: pressing(Answer::Tentative),
+        decline: pressing(Answer::Declined),
+    })
 }
 
 /// How the sending went, so the sentence afterwards can say what really

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 339 records have arrived since and have not been through it.
+# 342 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12581,7 +12581,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -16482,7 +16482,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_cancellations_calendar_part_is_called_a_meeting_cancellation",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -16731,8 +16731,8 @@ red = [
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
     { file = "src/application/opening_pgp.rs", tests = 5 },
-    { file = "src/application/reading_a_message.rs", tests = 9 },
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -16760,7 +16760,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16786,7 +16786,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16817,7 +16817,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "src/presentation/wx_reader.rs", tests = 14 },
 ]
 
@@ -16851,7 +16851,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -16913,7 +16913,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -17624,7 +17624,7 @@ red = [
     "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
@@ -17665,7 +17665,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── A PGP key nobody could import, so no message ever opened ────────────────
@@ -17781,7 +17781,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # ── Undo Send: the hold reaching the row, and the clock letting it go ────────
@@ -21733,7 +21733,7 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
@@ -24734,7 +24734,7 @@ red = [
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
 ]
 
 # The order of the fold: a signature verdict puts "More about this signature:"
@@ -24749,15 +24749,20 @@ tests_last_seen = [
 # 13-10, when the meeting a message carries joined the chain between the
 # envelope and the signature: the break still moves the envelope below the
 # signature and leaves the meeting where it is, and was measured again.
+# Rewritten again 2026-09-26 by 13-11, when why a meeting cannot be answered
+# joined the chain after the meeting and before the signature, and measured
+# again.
 [[guard]]
 name = "the envelope is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
 before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
             .with_smime_envelope(&said.envelope)"""
 red = [
@@ -24768,8 +24773,8 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The preview pane's bar. The reader window and the conversation window put
@@ -24793,7 +24798,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # A finding about one message of several, said where that message begins.
@@ -24816,7 +24821,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_a_page_of_several_messages_says_where_one_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The guard that names every surface. It named two of six until 2026-09-16,
@@ -31382,23 +31387,27 @@ tests_last_seen = [
 # about this signature:", and nothing speaks it (reader_text.rs's rule on
 # `with_encryption`). Two records for one break, because the library's case
 # and the raw message's case each go red and a record reads one suite. Written
-# 2026-09-25 by 13-10, measured through `scripts/guards.sh --remeasure`.
+# 2026-09-25 by 13-10, measured through `scripts/guards.sh --remeasure`. Both
+# rewritten 2026-09-26 by 13-11 for the answer buttons' place in the chain,
+# after the meeting and before the signature, and measured again.
 [[guard]]
 name = "the meeting is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
 before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
             .with_invitation(&said.invitation)"""
 red = [
     "presentation::reader_text::invitation_tests::test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 [[guard]]
@@ -31408,16 +31417,18 @@ suite = "an_invitation_is_said_before_the_body"
 before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
             .with_invitation(&said.invitation)"""
 red = [
     "test_a_signed_invitation_says_the_meeting_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]
 
@@ -31435,7 +31446,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_one_message_of_several_says_its_meeting_under_its_own_heading",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The kind the message gave put over the one warning that changes what
@@ -31451,7 +31462,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_calendar_part_named_like_a_program_is_still_called_a_program",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "src/presentation/reader_text.rs", tests = 135 },
 ]
 
 # The download of everything writing a message's parts over the ones the
@@ -31472,7 +31483,7 @@ red = [
     "test_a_download_leaves_the_files_the_reader_kept_where_they_are",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/application/reading_a_message.rs", tests = 13 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]
 
@@ -31509,4 +31520,78 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answering.rs", tests = 39 },
+]
+
+# Why a meeting cannot be answered folded in after the signature: in the bar,
+# below "More about this signature:", and nothing speaks it (#50 point 7).
+# Written 2026-09-26 by 13-11, measured through `scripts/guards.sh
+# --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "why a meeting cannot be answered is folded in before the signature, so it is spoken"
+file = "src/presentation/reader_text.rs"
+before = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
+            .with_signature(&said.signature)"""
+after = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
+            .with_signature(&said.signature)
+            .with_answer_buttons(&said.answering)"""
+red = [
+    "presentation::reader_text::answer_button_tests::test_why_an_invitation_cannot_be_answered_is_said_above_the_signature",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 135 },
+]
+
+# The reader building the three buttons for every tab, answerable or not, which
+# is the greyed-or-pointless row #50 point 7 asks never to see: a cancellation
+# offered buttons that answer nothing. Written 2026-09-26 by 13-11, measured
+# through `scripts/guards.sh --remeasure` against the new target.
+[[guard]]
+name = "a message that cannot be answered is offered no buttons"
+file = "src/presentation/wx_reader.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """        let answer_buttons = document
+            .answering
+            .as_ref()
+            .map_or_else(Vec::new, |offered| {
+                self.the_answer_buttons(&panel, &sizer, offered)
+            });"""
+after = """        let answer_buttons = self.the_answer_buttons(
+            &panel,
+            &sizer,
+            &document.answering.clone().unwrap_or(TheButtons {
+                message_row_id: 0,
+                accept: String::new(),
+                tentative: String::new(),
+                decline: String::new(),
+            }),
+        );"""
+red = [
+    "test_a_cancellation_has_no_buttons_and_its_bar_says_why",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 5 },
+]
+
+# The buttons named and not described, which is #50 point 4 again: nothing
+# says what pressing one will do or who will be told before it is pressed.
+# Written 2026-09-26 by 13-11, measured through `scripts/guards.sh
+# --remeasure` against the new target, which reads MSAA at each button.
+[[guard]]
+name = "each answer button is described by what pressing it will do"
+file = "src/presentation/wx_reader.rs"
+suite = "the_invitation_is_answered_from_the_reader"
+before = """                set_accessible_name_and_description(&button, name, offered.what_pressing(answer));"""
+after = """                set_accessible_name(&button, name);"""
+red = [
+    "test_an_answerable_invitation_has_three_named_described_buttons",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 5 },
 ]

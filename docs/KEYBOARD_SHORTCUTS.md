@@ -257,6 +257,29 @@ where the caret is.
 | Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
 | Print this tab | `Ctrl+P` | Prints the message, the conversation or the attachment in this tab through Windows' own print dialog, with every date written in full. The letter is `P` on the reader's File menu. Works in the formatted view as well, where it prints the message or the conversation the window shows |
+| Accept a meeting invitation | `Alt+C` | Presses the Accept button of a message whose invitation can be answered |
+| Say you might attend | `Alt+T` | Presses the Tentative button, the same way |
+| Decline a meeting invitation | `Alt+D` | Presses the Decline button, the same way |
+
+#### Answering a meeting invitation
+
+A message whose invitation you can answer has three buttons, Accept, Tentative
+and Decline. In the plain-text reader they come after the security warning and
+before the message. Each button says what pressing it will do, and who will be
+told, after its name. Accept is on `Alt+C` rather than `Alt+A`, because
+`Alt+A` is the attachments.
+
+The buttons are there only when the invitation can be answered. When it
+cannot, there are no buttons at all rather than greyed ones, and the bar above
+the message says why: a cancellation says the meeting is called off, and an
+invitation says, for example, that sending mail is switched off or that it was
+not addressed to you. In a conversation of several messages there are no
+buttons; open the message on its own to answer it.
+
+After you press one, the status line says what happened, once. `Alt+C`,
+`Alt+T` and `Alt+D` work from the message itself, so you can answer without
+leaving what you were reading. The Action menu's Answer Invitation answers the
+same way.
 
 #### Attachments
 

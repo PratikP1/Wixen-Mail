@@ -35,6 +35,39 @@ pub const THE_SENDERS_LINK: &str = "https://example.com/where-it-went";
 /// the renderer makes a link (#89) and the same case presses Enter on.
 pub const THE_ADDRESS_WRITTEN_OUT: &str = "https://example.org/written-out";
 
+/// A meeting invitation Somebody sends the scan's reader target, with the
+/// guest it names able to answer, so the scan reaches the three buttons at
+/// their own handles (13-11).
+pub fn an_answerable_invitation(
+    message_row_id: i64,
+) -> crate::application::reading_a_message::WhatIsSaidAboutIt {
+    use crate::application::reading_a_message::WhatIsSaidAboutIt;
+    const THE_INVITATION: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\n\
+        BEGIN:VEVENT\r\nUID:scan-target@example.com\r\nSEQUENCE:0\r\n\
+        SUMMARY:Scan target meeting\r\nDTSTART:20260105T090000\r\nDTEND:20260105T100000\r\n\
+        ORGANIZER;CN=Somebody:mailto:somebody@example.com\r\n\
+        ATTENDEE;CN=Me;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:me@example.com\r\n\
+        END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let dates = crate::presentation::date_display::DateSettings::default();
+    WhatIsSaidAboutIt {
+        invitation: crate::application::invitations::what_the_invitation_says(
+            THE_INVITATION,
+            None,
+            None,
+            dates,
+        ),
+        answering: crate::application::answering::the_answer_buttons(
+            THE_INVITATION,
+            "me@example.com",
+            crate::application::allowed::Allowed::EVERYTHING,
+            message_row_id,
+            None,
+            dates,
+        ),
+        ..WhatIsSaidAboutIt::nothing()
+    }
+}
+
 /// The conversation the formatted page window opens on for the scan: a
 /// message written as a page holding one paragraph and one link, and a reply
 /// written as text holding an address on a line of its own.
@@ -328,6 +361,20 @@ mod tests {
     use super::*;
     use crate::presentation::manager_words;
     use crate::presentation::wx_managers::what_stops_this_being_shown;
+
+    #[test]
+    fn test_the_invitation_is_offered_its_three_buttons() {
+        // A fixture that asked for no answer, or could not be answered, would
+        // scan a reader tab with no buttons in it and report them named.
+        assert!(
+            matches!(
+                an_answerable_invitation(1).answering,
+                crate::application::answering::AnswerButtons::Offered(_)
+            ),
+            "{:?}",
+            an_answerable_invitation(1).answering
+        );
+    }
 
     #[test]
     fn test_the_contact_has_a_row_on_every_list() {

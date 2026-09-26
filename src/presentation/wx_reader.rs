@@ -17,12 +17,15 @@
 //! that shape for the same reasons, and there was no sense in learning them
 //! twice.
 
+use crate::application::answering::TheButtons;
 use crate::application::invitations::Answer;
 use crate::application::printing::{Kind, Paper};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
-use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
 use crate::presentation::printing;
 use crate::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use crate::presentation::theme;
@@ -60,6 +63,17 @@ type ReadHandler = Box<dyn Fn(&ReaderAttachment)>;
 /// whose job is to show text. Handed the row of the message the tab shows, so
 /// the answer goes to that meeting and not to whatever the list has selected.
 type AnswerHandler = Box<dyn Fn(i64, Answer)>;
+
+/// The three answer buttons: the answer, the label with its letter, the name.
+///
+/// Accept takes C, not A: Alt+A is the attachments in both message windows.
+/// Tentative and Decline take their first letters, which nothing else in the
+/// reader's tab or on its menu bar (File, Go) answers.
+pub const THE_ANSWER_BUTTONS: [(Answer, &str, &str); 3] = [
+    (Answer::Accepted, "A&ccept", "Accept"),
+    (Answer::Tentative, "&Tentative", "Tentative"),
+    (Answer::Declined, "&Decline", "Decline"),
+];
 
 /// What one tab prints, composed when Print is pressed.
 ///
@@ -524,6 +538,18 @@ impl ReaderWindow {
             bar
         });
 
+        // After the bar and before the message, so an invitation's answer is
+        // met on the way in (#50 point 7), and only when it can be given: an
+        // invitation that cannot be answered has no buttons at all and its
+        // reason in the bar, because Tab passes a greyed button by and its
+        // reason with it.
+        let answer_buttons = document
+            .answering
+            .as_ref()
+            .map_or_else(Vec::new, |offered| {
+                self.the_answer_buttons(&panel, &sizer, offered)
+            });
+
         // Rich2 because the plain multiline control on Windows has a text
         // length limit that a long conversation reaches, and because it is the
         // control a screen reader reports a caret position for.
@@ -680,8 +706,48 @@ impl ReaderWindow {
             warning,
             picture,
             attachments,
-            answer_buttons: Vec::new(),
+            answer_buttons,
         }
+    }
+
+    /// Accept, Tentative and Decline in a row on `panel`, each named for its
+    /// answer and described by what pressing it will do, each pressing the
+    /// answer handler with the row of the message the tab shows.
+    ///
+    /// No key is bound for them. The panel hands its key messages to the
+    /// dialog manager, which finds Alt with a button's letter among the
+    /// panel's children wherever the keyboard is, so the labels' own letters
+    /// press them from the message's text too; a binding as well would press
+    /// twice.
+    fn the_answer_buttons(
+        &self,
+        panel: &Panel,
+        sizer: &BoxSizer,
+        offered: &TheButtons,
+    ) -> Vec<Button> {
+        let row = BoxSizer::builder(Orientation::Horizontal).build();
+        let built = THE_ANSWER_BUTTONS
+            .iter()
+            .map(|&(answer, label, name)| {
+                let button = Button::builder(panel).with_label(label).build();
+                // Not painted: a button keeps the colours Windows gives it, as
+                // every other button in this program does.
+                set_accessible_name_and_description(&button, name, offered.what_pressing(answer));
+                button.on_click({
+                    let handler = self.answer.clone();
+                    let message_row_id = offered.message_row_id;
+                    move |_| {
+                        if let Some(answer_it) = handler.borrow().as_ref() {
+                            answer_it(message_row_id, answer);
+                        }
+                    }
+                });
+                row.add(&button, 0, SizerFlag::All, 4);
+                button
+            })
+            .collect();
+        sizer.add_sizer(&row, 0, SizerFlag::All, 0);
+        built
     }
 
     /// Enter on an attachment row reads it, and Alt+A goes back to the message.

@@ -1867,9 +1867,22 @@ impl ReaderDocument {
     /// folded in below "More about this signature:" is on screen and never
     /// spoken.
     pub fn with_answer_buttons(
-        self,
-        _answering: &crate::application::answering::AnswerButtons,
+        mut self,
+        answering: &crate::application::answering::AnswerButtons,
     ) -> Self {
+        use crate::application::answering::AnswerButtons;
+        match answering {
+            AnswerButtons::NotAsked => {}
+            AnswerButtons::Offered(buttons) => self.answering = Some(buttons.clone()),
+            // Under the meeting's own sentence, which is what it is about.
+            AnswerButtons::CannotBeAnswered(why) => {
+                let why = why.why();
+                self.warning = Some(match self.warning.take() {
+                    Some(already) => format!("{already}\n{why}"),
+                    None => why,
+                });
+            }
+        }
         self
     }
 
@@ -1897,12 +1910,13 @@ impl ReaderDocument {
         self
     }
 
-    /// Fold in the four things said about a message, in the one order that
-    /// keeps each of them spoken.
+    /// Fold in the things said about a message, in the one order that keeps
+    /// each of them spoken.
     ///
     /// [`with_pgp`](Self::with_pgp), then
     /// [`with_smime_envelope`](Self::with_smime_envelope), then
     /// [`with_invitation`](Self::with_invitation), then
+    /// [`with_answer_buttons`](Self::with_answer_buttons), then
     /// [`with_signature`](Self::with_signature). The order is the load-bearing
     /// part and it is written here once: a signature verdict puts
     /// `HOW_IT_WAS_CHECKED` into the bar and [`said_before_the_message`] cuts
@@ -1911,7 +1925,8 @@ impl ReaderDocument {
     /// never folded anything at all (#51). A surface asks
     /// [`crate::application::reading_a_message`] and hands the answer here,
     /// and cannot get the order wrong. The meeting follows the envelope, so a
-    /// fact about how the message arrived is heard first.
+    /// fact about how the message arrived is heard first, and why the meeting
+    /// cannot be answered follows the meeting.
     pub fn with_what_is_said(
         self,
         said: &crate::application::reading_a_message::WhatIsSaidAboutIt,
@@ -1919,6 +1934,7 @@ impl ReaderDocument {
         self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_answer_buttons(&said.answering)
             .with_signature(&said.signature)
     }
 }

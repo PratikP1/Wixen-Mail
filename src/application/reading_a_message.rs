@@ -309,12 +309,71 @@ pub fn invitation_check_for(
 /// `NotAsked` with no cache, and for every message whose calendar document
 /// asks nobody anything, which is all mail but invitations.
 pub fn answer_buttons_for(
-    _cache: Option<&MessageCache>,
-    _message_row_id: i64,
-    _dates: impl FnOnce() -> DateSettings,
-    _answering_as: impl FnOnce(&str) -> AnsweringAs,
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
 ) -> answering::AnswerButtons {
-    answering::AnswerButtons::NotAsked
+    let not_asked = answering::AnswerButtons::NotAsked;
+    let Some(cache) = cache else {
+        return not_asked;
+    };
+    // The names first, as the sentence's check reads them, because nearly no
+    // message carries a calendar part and the rest of this reads the row.
+    let carries_a_calendar_part =
+        cache
+            .get_attachments_for_message(message_row_id)
+            .is_ok_and(|parts| {
+                parts
+                    .iter()
+                    .any(|part| answering::is_a_calendar_part(&part.mime_type))
+            });
+    if !carries_a_calendar_part {
+        return not_asked;
+    }
+    // The same reading pressing a button takes, so the buttons offered are
+    // the ones that can be pressed.
+    let found = crate::application::answered_meetings::the_invitation_on(cache, message_row_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read a message's invitation to offer its buttons: {e}");
+            None
+        });
+    let Some(found) = found else {
+        return not_asked;
+    };
+    let said_before = invitations::the_meeting_named_in(&found.document)
+        .and_then(|uid| the_answer_given_to(cache, &found.account, &uid));
+    let who = answering_as(&found.account);
+    answering::the_answer_buttons(
+        &found.document,
+        &who.address,
+        who.allowed,
+        message_row_id,
+        said_before,
+        dates(),
+    )
+}
+
+/// What this account last answered the meeting named `uid`, here, if it did
+/// and the answer was kept.
+fn the_answer_given_to(
+    cache: &MessageCache,
+    account: &str,
+    uid: &str,
+) -> Option<invitations::Answer> {
+    let copy = cache
+        .get_event_by_provider_id(account, uid)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not look a meeting up on the calendar: {e}");
+            None
+        })?;
+    cache
+        .the_answer_given_here(&copy.id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read which answer a meeting was given: {e}");
+            None
+        })?
+        .answer
 }
 
 /// Keep what a message downloaded for its text carried, so what is said about

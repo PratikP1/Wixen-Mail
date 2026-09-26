@@ -790,12 +790,7 @@ fn an_invitation_said(
     answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> WhatTheInvitationSays {
-    let when = when_the_meeting_is(
-        &invitation.starts,
-        invitation.ends.as_deref(),
-        invitation.is_all_day,
-        dates,
-    );
+    let when = when_the_invitation_is(invitation, dates);
     let standing = match on_the_calendar {
         None => Standing::New,
         Some(copy) => the_standing_against(invitation, &when, copy, answered_here, dates),
@@ -916,6 +911,17 @@ fn when_the_meeting_is(
         Some((_, end)) => format!("{begins} to {}", date_display::absolute(end, dates)),
         None => begins,
     }
+}
+
+/// When an invitation's meeting is, worded the way this reader words a date:
+/// the same words the sentence before the message says.
+pub fn when_the_invitation_is(invitation: &Invitation, dates: DateSettings) -> String {
+    when_the_meeting_is(
+        &invitation.starts,
+        invitation.ends.as_deref(),
+        invitation.is_all_day,
+        dates,
+    )
 }
 
 /// Where a stored moment falls on this computer's clock.
