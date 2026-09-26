@@ -198,8 +198,11 @@ mod tests {
             }
         }
 
-        fn unwrap_content_key(&self, _recipient: &Recipient) -> Result<Vec<u8>> {
-            Err(Error::Security("not asked here".to_string()))
+        fn open_the_envelope(
+            &self,
+            _envelope_der: &[u8],
+        ) -> crate::service::signed_mail::WhatTheEnvelopeHeld {
+            crate::service::signed_mail::WhatTheEnvelopeHeld::TheKeyHereRefused
         }
     }
 
