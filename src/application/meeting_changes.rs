@@ -30,7 +30,8 @@
 //! it would move or call off every day of the series.
 
 use crate::application::allowed::Allowed;
-use crate::application::invitations::{Invitation, WhatItAsks};
+use crate::application::invitations::{self, Invitation, WhatItAsks};
+use crate::application::receipts::address_of;
 use crate::data::message_cache::CalendarEventEntry;
 use crate::presentation::date_display::DateSettings;
 
@@ -98,15 +99,65 @@ pub struct TheCalendarsCopy<'a> {
 impl MeetingChange {
     /// The sentence said about the change, or nothing when there is none.
     pub fn said(&self) -> Option<String> {
-        None
+        match self {
+            MeetingChange::Nothing => None,
+            MeetingChange::Move { from, to, .. } => {
+                Some(format!("Moved on your calendar from {from} to {to}."))
+            }
+            MeetingChange::OfferRemoval { .. } => Some(
+                "The organiser has called this meeting off. Remove from Calendar takes it off \
+                 yours."
+                    .to_string(),
+            ),
+            MeetingChange::SaidNotApplied(why) => Some(why.said()),
+        }
     }
 
     /// The calendar row Remove from Calendar marks, for a change that offers
     /// it.
     pub fn offered_removal(&self) -> Option<&str> {
-        None
+        match self {
+            MeetingChange::OfferRemoval { event_id } => Some(event_id),
+            _ => None,
+        }
     }
 }
+
+impl Why {
+    /// Why the calendar was not changed, in a sentence.
+    fn said(&self) -> String {
+        const NOT_CHANGED: &str = "Your calendar was not changed, because";
+        match self {
+            Why::NotTheOrganiser { sender, organiser } => format!(
+                "This says the meeting changed, and it comes from {sender} rather than the \
+                 organiser, {organiser}, so your calendar was not changed."
+            ),
+            Why::NoOrganiserRecorded => {
+                format!("{NOT_CHANGED} the meeting on it does not say who organised it.")
+            }
+            Why::ARepeatingMeeting => format!(
+                "{NOT_CHANGED} this meeting repeats, and changing one day of a repeating \
+                 meeting is not done here yet."
+            ),
+            Why::ChangesAreOff => format!(
+                "{NOT_CHANGED} changes to calendars are switched off for this account in Allow \
+                 Changes."
+            ),
+            Why::CouldNotBeSaved => format!("{NOT_CHANGED} it could not be written to."),
+        }
+    }
+}
+
+/// What a message would change, before anybody's right to change it is asked.
+enum Wanted {
+    /// A move, worded from and to.
+    Move { from: String, to: String },
+    /// The meeting taken off the calendar.
+    Removal,
+}
+
+/// The word a called-off meeting's status holds.
+const CALLED_OFF: &str = "cancelled";
 
 /// What opening this message changes on the calendar.
 ///
@@ -115,6 +166,12 @@ impl MeetingChange {
 /// is one, `sender` the message's From as its header carried it, `allowed`
 /// what the account it arrived on may change, and `dates` how this reader
 /// words a date.
+///
+/// What the message would change is asked first, so a message that would
+/// change nothing says nothing: a reason not to apply a change nobody asked
+/// for is a sentence to listen past on every message. Then who sent it, before
+/// whether changes are allowed, because a stranger's message is the reason
+/// that matters and switching changes on would not make it apply.
 pub fn what_opening_it_changes(
     asked: WhatItAsks,
     invitation: &Invitation,
@@ -123,21 +180,143 @@ pub fn what_opening_it_changes(
     allowed: Allowed,
     dates: DateSettings,
 ) -> MeetingChange {
-    let _ = (asked, invitation, held, sender, allowed, dates);
-    MeetingChange::Nothing
+    let Some(held) = held else {
+        return MeetingChange::Nothing;
+    };
+    let Some(wanted) = what_it_would_change(asked, invitation, &held, dates) else {
+        return MeetingChange::Nothing;
+    };
+    if let Some(why) = why_it_is_not_applied(&held, sender, allowed) {
+        return MeetingChange::SaidNotApplied(why);
+    }
+    let event_id = held.copy.id.clone();
+    match wanted {
+        Wanted::Move { from, to } => MeetingChange::Move { event_id, from, to },
+        Wanted::Removal => MeetingChange::OfferRemoval { event_id },
+    }
+}
+
+/// What the message would change on the copy, whoever sent it.
+fn what_it_would_change(
+    asked: WhatItAsks,
+    invitation: &Invitation,
+    held: &TheCalendarsCopy<'_>,
+    dates: DateSettings,
+) -> Option<Wanted> {
+    match asked {
+        WhatItAsks::Invitation => the_move(invitation, held, dates),
+        WhatItAsks::Cancellation => {
+            (!held.copy.status.eq_ignore_ascii_case(CALLED_OFF)).then_some(Wanted::Removal)
+        }
+        WhatItAsks::SomebodysAnswer | WhatItAsks::SomethingElse => None,
+    }
+}
+
+/// The move an update asks for, when it is newer than the copy and at another
+/// time.
+///
+/// Newer by the version answered here, where one was; a copy answered nowhere
+/// here records no version, and only its time can say. The start alone is said
+/// when it moved, and the whole of both times when only the end did, so the
+/// sentence never says "from nine to nine".
+fn the_move(
+    invitation: &Invitation,
+    held: &TheCalendarsCopy<'_>,
+    dates: DateSettings,
+) -> Option<Wanted> {
+    let newer = held
+        .answered_version
+        .is_none_or(|answered| invitation.version > answered);
+    let was = invitations::when_the_copy_is(held.copy, dates);
+    let now = invitations::when_the_invitation_is(invitation, dates);
+    if !newer || was == now {
+        return None;
+    }
+    let copy = held.copy;
+    let started = invitations::when_it_starts(
+        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
+        copy.is_all_day,
+        dates,
+    );
+    let starts = invitations::when_it_starts(&invitation.starts, invitation.is_all_day, dates);
+    Some(if started == starts {
+        Wanted::Move { from: was, to: now }
+    } else {
+        Wanted::Move {
+            from: started,
+            to: starts,
+        }
+    })
+}
+
+/// Why a change the message asks for is not applied, or nothing when it is.
+fn why_it_is_not_applied(
+    held: &TheCalendarsCopy<'_>,
+    sender: &str,
+    allowed: Allowed,
+) -> Option<Why> {
+    let Some(organiser) = held.organiser else {
+        return Some(Why::NoOrganiserRecorded);
+    };
+    if !the_organiser_sent_it(sender, organiser) {
+        return Some(Why::NotTheOrganiser {
+            sender: invitations::plainly(&address_of(sender)),
+            organiser: invitations::plainly(&address_of(organiser)),
+        });
+    }
+    if held
+        .copy
+        .recurrence_rule
+        .as_deref()
+        .is_some_and(|rule| !rule.trim().is_empty())
+    {
+        return Some(Why::ARepeatingMeeting);
+    }
+    if !allowed.personal_information {
+        return Some(Why::ChangesAreOff);
+    }
+    None
+}
+
+/// Whether the address a message came from is the organiser's, read the way
+/// the rest of this program reads a sender: the address in angle brackets, in
+/// small letters.
+fn the_organiser_sent_it(sender: &str, organiser: &str) -> bool {
+    address_of(sender) == address_of(organiser)
 }
 
 /// The calendar's copy moved to the time the organiser's update gives it,
 /// waiting to be sent like any change made here.
+///
+/// Everything else on the row is the copy's: its identity here and at the
+/// provider, its status and whether it takes up time, which are the meeting's
+/// and the person's, not the update's.
 pub fn the_copy_moved(copy: &CalendarEventEntry, invitation: &Invitation) -> CalendarEventEntry {
-    let _ = invitation;
-    copy.clone()
+    let ends = crate::application::caldav_sync::the_end_a_calendar_did_not_give(
+        &invitation.starts,
+        invitation.ends.as_deref(),
+        invitation.is_all_day,
+    );
+    CalendarEventEntry {
+        start_datetime: invitation.starts.clone(),
+        end_datetime: ends.clone(),
+        // A meeting of whole days keeps its dates and gains no clock reading,
+        // as an answered one does.
+        start_date: invitation.is_all_day.then(|| invitation.starts.clone()),
+        end_date: invitation.is_all_day.then_some(ends),
+        is_all_day: invitation.is_all_day,
+        time_zone: invitation.time_zone.clone(),
+        // A change this computer made, which is what puts it in front of the
+        // push.
+        pending: true,
+        ..copy.clone()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::invitations::{self, read_the_invitation};
+    use crate::application::invitations::read_the_invitation;
 
     /// Version 3 of the meeting, moved from Thursday at nine to Friday at two,
     /// from Ada, who called it.

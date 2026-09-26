@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 350 records have arrived since and have not been through it.
+# 352 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2429,12 +2429,17 @@ red = [
     "application::invitations::tests::test_an_invitation_the_calendar_has_never_held_is_said_with_its_time_place_and_organiser",
     "application::reading_a_message::tests::test_an_answerable_invitation_is_offered_three_buttons_for_its_own_row",
     "application::reading_a_message::tests::test_an_invitation_for_a_meeting_answered_at_an_earlier_version_is_a_change",
+    # Added 2026-09-26 by 13-13, found by --remeasure: a move is said from
+    # when to when, worded from stored moments with a T.
+    "application::meeting_changes::tests::test_a_meeting_that_only_grows_longer_says_both_whole_times",
+    "application::meeting_changes::tests::test_an_update_from_the_organiser_moves_the_meeting_and_says_from_what_to_what",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
-    { file = "src/application/invitations.rs", tests = 49 },
+    { file = "src/application/invitations.rs", tests = 50 },
+    { file = "src/application/meeting_changes.rs", tests = 18 },
     { file = "src/application/reading_a_message.rs", tests = 15 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
@@ -31397,7 +31402,7 @@ red = [
     "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 49 },
+    { file = "src/application/invitations.rs", tests = 50 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31791,4 +31796,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
+]
+
+# The organiser comparison asked of the organiser against itself, so it always
+# holds: a stranger's cancellation carrying a real meeting's UID is offered
+# Remove from Calendar and a stranger's update moves the meeting (pitfall 4,
+# T-13-13-01). Written 2026-09-26 by 13-13, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a meeting change from anybody but the organiser recorded is said and not applied"
+file = "src/application/meeting_changes.rs"
+before = """    if !the_organiser_sent_it(sender, organiser) {"""
+after = """    if !the_organiser_sent_it(organiser, organiser) {"""
+red = [
+    "application::meeting_changes::tests::test_a_cancellation_from_somebody_other_than_the_organiser_changes_nothing",
+    "application::meeting_changes::tests::test_an_update_from_somebody_other_than_the_organiser_moves_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 18 },
+]
+
+# The Allow Changes question left out, so an account whose calendar changes
+# are switched off still has its meetings moved on opening and offered for
+# removal. Written 2026-09-26 by 13-13, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a meeting change while calendar changes are switched off is said and not applied"
+file = "src/application/meeting_changes.rs"
+before = """    if !allowed.personal_information {
+        return Some(Why::ChangesAreOff);
+    }
+"""
+after = """"""
+red = [
+    "application::meeting_changes::tests::test_nothing_changes_while_calendar_changes_are_switched_off",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 18 },
 ]

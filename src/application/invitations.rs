@@ -814,9 +814,12 @@ fn an_invitation_said(
 /// What an invitation is to a meeting the calendar already holds.
 ///
 /// An answer given here settles it by version, through [`what_changed`], so the
-/// rule that an older invitation moves nothing is written once. With no answer
-/// given here, the copy is a calendar server's, which files invitations as they
-/// arrive, and only a different time makes it a change.
+/// rule that an older invitation moves nothing is written once. Past that, only
+/// a different time makes it a change. With no answer given here, the copy is a
+/// calendar server's, which files invitations as they arrive. With one, a later
+/// version at the time the calendar already holds is a move already made, by
+/// the provider or by opening the organiser's update here (13-13), and "which
+/// was" that same time would describe it as one still to come.
 fn the_standing_against(
     invitation: &Invitation,
     when: &str,
@@ -824,12 +827,7 @@ fn the_standing_against(
     answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> Standing {
-    let was = when_the_meeting_is(
-        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
-        Some(&copy.end_datetime),
-        copy.is_all_day,
-        dates,
-    );
+    let was = when_the_copy_is(copy, dates);
     let answered = answered_here.map(|here| {
         (
             AlreadyOnTheCalendar {
@@ -840,12 +838,13 @@ fn the_standing_against(
         )
     });
     match answered {
-        Some((held, answer)) => match what_changed(invitation, Some(&held)) {
-            WhatChanged::NothingNew => Standing::AlreadyAnswered { answer },
-            WhatChanged::AChange | WhatChanged::ANewMeeting => Standing::Changed { from: was },
-        },
-        None if was == when => Standing::AlreadyOnTheCalendar,
-        None => Standing::Changed { from: was },
+        Some((held, answer))
+            if what_changed(invitation, Some(&held)) == WhatChanged::NothingNew =>
+        {
+            Standing::AlreadyAnswered { answer }
+        }
+        _ if was == when => Standing::AlreadyOnTheCalendar,
+        _ => Standing::Changed { from: was },
     }
 }
 
