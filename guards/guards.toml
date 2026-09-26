@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 330 records have arrived since and have not been through it.
+# 337 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12581,7 +12581,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -16477,9 +16477,12 @@ after = """            WhatTheSenderSaid::Nothing => String::new(),"""
 red = [
     "presentation::reader_text::tests::test_an_attachment_reads_as_a_name_a_kind_a_size_and_what_the_sender_said",
     "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
+    # Two since 13-10, whose calendar rows are asserted whole.
+    "presentation::reader_text::invitation_tests::test_a_calendar_part_named_like_a_program_is_still_called_a_program",
+    "presentation::reader_text::invitation_tests::test_a_cancellations_calendar_part_is_called_a_meeting_cancellation",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -16728,8 +16731,8 @@ red = [
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
     { file = "src/application/opening_pgp.rs", tests = 5 },
-    { file = "src/application/reading_a_message.rs", tests = 7 },
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -16757,7 +16760,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16783,7 +16786,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16814,7 +16817,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
     { file = "src/presentation/wx_reader.rs", tests = 14 },
 ]
 
@@ -16848,7 +16851,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -16910,7 +16913,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -17621,7 +17624,7 @@ red = [
     "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
@@ -17662,7 +17665,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # ── A PGP key nobody could import, so no message ever opened ────────────────
@@ -17778,7 +17781,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # ── Undo Send: the hold reaching the row, and the clock letting it go ────────
@@ -21704,16 +21707,31 @@ red = [
     "presentation::ui_types::tests::test_a_contact_detail_reads_a_birthday_with_no_year_as_words",
     "presentation::ui_types::tests::test_contact_detail_text_includes_every_populated_field",
     "presentation::ui_types::tests::test_the_heading_for_a_week_names_the_week_even_when_nothing_is_in_it",
+    # Nine since 13-02 and 13-04, found short by 13-10's re-measure on
+    # 2026-09-25: every date on paper is written in full through this
+    # picture, and `application::printing` is a file this record did not
+    # name, so its new tests flagged nothing. The case CLAUDE.md names first
+    # among the three the count check cannot see.
+    "application::printing::tests::test_a_contact_prints_every_field_its_reading_names",
+    "application::printing::tests::test_a_conversation_on_paper_heads_each_message_with_its_date_in_full",
+    "application::printing::tests::test_a_message_prints_its_header_lines_before_its_text",
+    "application::printing::tests::test_a_note_prints_its_body_as_written_not_as_spoken",
+    "application::printing::tests::test_a_reminder_prints_whether_it_is_done",
+    "application::printing::tests::test_a_task_prints_its_due_date_in_full",
+    "application::printing::tests::test_an_event_prints_its_start_end_place_and_description_one_to_a_line",
+    "application::printing::tests::test_one_message_shown_as_a_conversation_prints_as_that_message",
+    "application::printing::tests::test_the_date_on_paper_is_the_full_date_and_time",
 ]
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 46 },
+    { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
@@ -24385,7 +24403,7 @@ red = [
     "application::answering::tests::test_an_answer_queued_while_offline_says_it_waits_for_a_network",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 37 },
+    { file = "src/application/answering.rs", tests = 38 },
 ]
 
 # A queued meeting answer left off the calendar, which is what the filing
@@ -24713,7 +24731,7 @@ red = [
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
 ]
 
 # The order of the fold: a signature verdict puts "More about this signature:"
@@ -24724,14 +24742,19 @@ tests_last_seen = [
 # inside the spoken cut.
 #
 # Measured 2026-09-16 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+# `scripts/guards.sh --remeasure`, `cargo test --lib`. Rewritten 2026-09-25 by
+# 13-10, when the meeting a message carries joined the chain between the
+# envelope and the signature: the break still moves the envelope below the
+# signature and leaves the meeting where it is, and was measured again.
 [[guard]]
 name = "the envelope is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
 before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
+            .with_invitation(&said.invitation)
             .with_signature(&said.signature)
             .with_smime_envelope(&said.envelope)"""
 red = [
@@ -24742,8 +24765,8 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 7 },
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # The preview pane's bar. The reader window and the conversation window put
@@ -24767,7 +24790,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # A finding about one message of several, said where that message begins.
@@ -24790,7 +24813,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_a_page_of_several_messages_says_where_one_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 125 },
+    { file = "src/presentation/reader_text.rs", tests = 131 },
 ]
 
 # The guard that names every surface. It named two of six until 2026-09-16,
@@ -31311,4 +31334,141 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
+]
+
+# A cancellation read as an invitation: the message says "Meeting
+# invitation" about a meeting that has been called off, with the time it no
+# longer has, and the row calls the part an invitation. Written 2026-09-25 by
+# 13-10, measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a cancellation is said as one and never as an invitation"
+file = "src/application/invitations.rs"
+before = '''        WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
+            summary: the_title_of(document),
+            on_the_calendar: on_the_calendar.is_some(),
+        },'''
+after = '''        WhatItAsks::Cancellation => read_the_invitation(document)
+            .map_or(WhatTheInvitationSays::CalendarFile, |invitation| {
+                an_invitation_said(&invitation, on_the_calendar, answered_here, dates)
+            }),'''
+red = [
+    "application::invitations::tests::test_a_cancellation_says_it_is_one_and_whether_the_meeting_is_on_the_calendar",
+    "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
+]
+tests_last_seen = [
+    { file = "src/application/invitations.rs", tests = 48 },
+]
+
+# The finder back to `text/calendar` alone, which is #50 point 5: an
+# invitation sent as `application/ics` is found by nothing, so it is neither
+# said nor answerable. Written 2026-09-25 by 13-10, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an invitation sent as application/ics is found"
+file = "src/application/answering.rs"
+before = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "application/ics"];'''
+after = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "text/calendar"];'''
+red = [
+    "application::answering::finding_the_invitation::test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 38 },
+]
+
+# The meeting folded in after the signature: it is in the bar, below "More
+# about this signature:", and nothing speaks it (reader_text.rs's rule on
+# `with_encryption`). Two records for one break, because the library's case
+# and the raw message's case each go red and a record reads one suite. Written
+# 2026-09-25 by 13-10, measured through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the meeting is folded in before the signature, so it is spoken"
+file = "src/presentation/reader_text.rs"
+before = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
+            .with_signature(&said.signature)"""
+after = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_signature(&said.signature)
+            .with_invitation(&said.invitation)"""
+red = [
+    "presentation::reader_text::invitation_tests::test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 131 },
+]
+
+[[guard]]
+name = "a raw signed invitation says the meeting above the signature's account"
+file = "src/presentation/reader_text.rs"
+suite = "an_invitation_is_said_before_the_body"
+before = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_invitation(&said.invitation)
+            .with_signature(&said.signature)"""
+after = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_signature(&said.signature)
+            .with_invitation(&said.invitation)"""
+red = [
+    "test_a_signed_invitation_says_the_meeting_above_the_account_of_the_signature",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 131 },
+    { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
+]
+
+# The calendar part's row back to one word for every calendar part, which is
+# what `describe_kind`'s "calendar invitation" was: a cancellation's row said
+# invitation. Written 2026-09-25 by 13-10, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a calendar part's row says what the message decided it asks"
+file = "src/presentation/reader_text.rs"
+before = """            Some(kind) if !self.is_runnable() => kind.to_string(),"""
+after = """            Some(_) if !self.is_runnable() => "calendar invitation".to_string(),"""
+red = [
+    "presentation::reader_text::invitation_tests::test_a_cancellations_calendar_part_is_called_a_meeting_cancellation",
+    "presentation::reader_text::invitation_tests::test_one_message_of_several_says_its_meeting_under_its_own_heading",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 131 },
+]
+
+# The kind the message gave put over the one warning that changes what
+# somebody should do: a calendar part a sender named `invite.exe` read as a
+# meeting invitation rather than a program. Written 2026-09-25 by 13-10,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a calendar part named like a program is still called a program"
+file = "src/presentation/reader_text.rs"
+before = """            Some(kind) if !self.is_runnable() => kind.to_string(),"""
+after = """            Some(kind) => kind.to_string(),"""
+red = [
+    "presentation::reader_text::invitation_tests::test_a_calendar_part_named_like_a_program_is_still_called_a_program",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 131 },
+]
+
+# The download of everything writing a message's parts over the ones the
+# reader kept, which drops every file somebody opened the message to get.
+# Written 2026-09-25 by 13-10, measured through `scripts/guards.sh
+# --remeasure` against the raw-message target.
+[[guard]]
+name = "a download leaves the files the reader kept where they are"
+file = "src/application/reading_a_message.rs"
+suite = "an_invitation_is_said_before_the_body"
+before = """    if parts.is_empty()
+        || !cache
+            .get_attachments_for_message(message_row_id)?
+            .is_empty()
+    {"""
+after = """    if parts.is_empty() {"""
+red = [
+    "test_a_download_leaves_the_files_the_reader_kept_where_they_are",
+]
+tests_last_seen = [
+    { file = "src/application/reading_a_message.rs", tests = 9 },
+    { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]

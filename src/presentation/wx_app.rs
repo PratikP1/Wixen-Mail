@@ -14574,6 +14574,9 @@ fn what_a_message_shows_and_says(
         message.message_id,
         &message.from,
         body,
+        // Read only for a message carrying a meeting, whose time is said the
+        // way this reader words a date.
+        date_settings_from_stored_config,
     )
 }
 
@@ -33969,6 +33972,7 @@ mod opening_an_attachment_a_second_time {
             mime_type: "application/pdf".to_string(),
             size: 0,
             description: crate::service::mime::WhatTheSenderSaid::Nothing,
+            kind_the_message_gave: None,
         }
     }
 

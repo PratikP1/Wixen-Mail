@@ -563,6 +563,58 @@ conversation, once each.
 Nobody has heard a phrase at the start of a row or the sound after a check
 yet; the tester's copy is the first that will.
 
+### Meeting invitations
+
+When a message carries a meeting, Wixen Mail says what the meeting is before a
+word of the message. The sentence is at the top of the bar above the message,
+so it is spoken as the message opens, and it is repeated at the top of the
+message itself, under the header lines. The reader window, the formatted
+window and the preview pane all say it. On a message that is also signed, it
+comes before the account of the signature, so it is still spoken.
+
+For an invitation, the sentence names the meeting, when and where it is, and
+who sent it, then says what it means for your calendar:
+
+> Meeting invitation: Quarterly review, 05/03/2026 at 09:00 to 10:00, in Room
+> 4, from Ada Lovelace, and it is new to your calendar.
+
+The date is written in full, the way you chose on the Reading tab of Settings,
+even where a list would say how long ago. The end of the sentence is one of
+four:
+
+| The sentence ends | What it means |
+|---|---|
+| and it is new to your calendar | Nothing on your calendar goes by this meeting's name. |
+| a change to the meeting on your calendar, which was ... | Your calendar holds the meeting at another time, or you answered an earlier version of it, and the sentence says when it was. |
+| and you have answered this version | You answered this version here already, or a later one. |
+| and it is already on your calendar | Your calendar holds the meeting at this time and nobody answered it here. Google puts an invitation on your calendar when it arrives, which is how this happens. |
+
+Other messages about meetings say:
+
+- A cancellation: "Meeting cancelled: Quarterly review. It is on your
+  calendar." or "It is not on your calendar."
+- Somebody's answer to a meeting you called: "Grace Hopper accepted your
+  meeting: Quarterly review." The answer is accepted, declined, or "said they
+  might come to".
+- A calendar file that asks nothing, such as a published calendar: "This
+  message carries a calendar file."
+
+The attachment row for the calendar part says the same thing in a word or
+two: meeting invitation, meeting cancellation, reply to your meeting, or
+calendar file. A file that Windows would run is still called a program,
+whatever it claims to be.
+
+To answer an invitation, choose Answer Invitation on the Action menu.
+
+What this does not do yet: opening a message leaves your calendar as it was,
+and no invitation from a real Outlook, Google or calendar server
+organiser has been read here. A time an invitation names in the sender's own
+time zone is read as that time on your clock, as the calendar reads one, so a
+meeting from somebody in another zone is said at the hour they wrote. A
+message whose text was downloaded in the background before this version has no
+record of its attachments, and opening it does not make one, so it lists none
+and its meeting is not said.
+
 ### Message Actions
 
 **Using Context Menu (Right-Click):**
