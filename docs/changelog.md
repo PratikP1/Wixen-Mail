@@ -561,6 +561,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **An invitation finds the meeting Google, Outlook or a calendar server already put on your
+  calendar.** Google and Outlook file an invitation on your calendar themselves, under a name
+  of their own, while the invitation names the meeting by the name every calendar shares. So
+  the sentence at the top of such a message said the meeting was new to your calendar while it
+  was there, and answering it put a second copy of the meeting beside the first. Each
+  calendar check now keeps the shared name and who called the meeting, so the
+  message says the meeting is already on your calendar, and answering it changes that meeting
+  rather than adding another; the change then waits to go to the provider like any change you
+  make here. A meeting already on your calendar learns its name on the next calendar check.
+  The name and who called the meeting are never sent to Google, Outlook or the calendar
+  server. The version does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: a meeting that repeats is not found on an Outlook account, because
+  Microsoft gives each day of a series a name of its own. Nothing here has met a real
+  provider's copy of a meeting, so whether each provider's name is the one its own
+  invitations carry is untried.
+
 - **`Ctrl+2` applies the label the Label menu says it does.** Until this build the Label
   submenu listed the five labels an account starts with, in Thunderbird's order, whatever your
   labels were, while `Ctrl` and a number applied your labels in alphabetical order. So the
