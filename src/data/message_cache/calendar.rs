@@ -497,6 +497,84 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Write down the meeting's iCalendar UID and who called it, as whoever
+    /// filed the row said.
+    ///
+    /// Kept off [`CalendarEventEntry`] for the reason [`Self::the_answer_given_here`]
+    /// gives, and written by its own statement after the save, so a save never
+    /// clears them. Written whole: the provider's copy is the authority on both.
+    pub fn remember_where_it_came_from(
+        &self,
+        event_id: &str,
+        ical_uid: Option<&str>,
+        organiser: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendar_events SET ical_uid = ?2, organiser = ?3 WHERE id = ?1",
+                params![event_id, ical_uid, organiser],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to record where a meeting came from: {}", e))
+            })?;
+        Ok(())
+    }
+
+    /// The meeting an invitation names, by the UID every calendar shares.
+    ///
+    /// A row that knows its UID is found by it. A row that does not is found
+    /// by its provider identifier, which is the UID for every calendar
+    /// server's row, every meeting an answer filed here, and every row stored
+    /// before the UID was kept. A row that knows its UID is preferred, and is
+    /// never found by an identifier that only happens to match its provider's.
+    pub fn get_event_by_ical_uid(
+        &self,
+        account_id: &str,
+        ical_uid: &str,
+    ) -> Result<Option<CalendarEventEntry>> {
+        let sql = format!(
+            "SELECT {} FROM calendar_events
+             WHERE account_id = ?1
+               AND (ical_uid = ?2 OR (ical_uid IS NULL AND provider_event_id = ?2))
+             ORDER BY ical_uid IS NULL
+             LIMIT 1",
+            EVENT_COLS
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare the meeting lookup: {}", e)))?;
+
+        let mut rows = stmt
+            .query_map(params![account_id, ical_uid], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to look the meeting up: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read the meeting: {}", e))),
+            None => Ok(None),
+        }
+    }
+
+    /// Who called the meeting, as whoever filed it said; nothing when nobody
+    /// said, which is every row stored before this was kept.
+    pub fn the_organiser_on_the_calendar(&self, event_id: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT organiser FROM calendar_events WHERE id = ?1")
+            .map_err(|e| Error::Other(format!("Failed to prepare the organiser lookup: {}", e)))?;
+
+        let mut rows = stmt
+            .query_map(params![event_id], |row| row.get::<_, Option<String>>(0))
+            .map_err(|e| Error::Other(format!("Failed to query the organiser: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(organiser)) => Ok(organiser),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read the organiser: {}", e))),
+            None => Ok(None),
+        }
+    }
+
     /// Get a single event by the identity it carries on this computer.
     pub fn get_event_by_id(&self, event_id: &str) -> Result<Option<CalendarEventEntry>> {
         let sql = format!("SELECT {} FROM calendar_events WHERE id = ?1", EVENT_COLS);
@@ -1811,6 +1889,135 @@ mod tests {
                 answer: Some(Answer::Accepted),
             }),
             "an older database never learned to keep the answer"
+        );
+    }
+
+    /// A meeting as a Google sync files it: under Google's own identifier,
+    /// told afterwards the UID the meeting carries everywhere and who called it.
+    fn a_meeting_google_filed(cache: &MessageCache) {
+        cache
+            .save_calendar_event(&make_event("evt-g", "acct", "google-123", "Review"))
+            .expect("the meeting filed");
+        cache
+            .remember_where_it_came_from("evt-g", Some("m-1@example.com"), Some("ada@example.com"))
+            .expect("where it came from remembered");
+    }
+
+    #[test]
+    fn test_a_meeting_a_provider_filed_is_found_by_its_uid_and_not_by_its_provider_id() {
+        // Google files a meeting under an identifier of its own, and the
+        // invitation names the meeting by the UID every calendar shares. Found
+        // by the UID, the answer lands on Google's row; the provider's own
+        // identifier is not a UID and finds nothing.
+        let cache = temp_cache("found_by_its_uid");
+        a_meeting_google_filed(&cache);
+
+        let found = cache
+            .get_event_by_ical_uid("acct", "m-1@example.com")
+            .expect("the calendar to be readable");
+        assert_eq!(found.map(|row| row.id).as_deref(), Some("evt-g"));
+        assert_eq!(
+            cache
+                .get_event_by_ical_uid("acct", "google-123")
+                .expect("the calendar to be readable")
+                .map(|row| row.id),
+            None,
+            "a row that knows its UID was found by an identifier that is not one"
+        );
+        assert_eq!(
+            cache
+                .get_event_by_ical_uid("another-account", "m-1@example.com")
+                .expect("the calendar to be readable")
+                .map(|row| row.id),
+            None,
+            "a UID found a meeting on another account's calendar"
+        );
+    }
+
+    #[test]
+    fn test_a_row_that_never_learned_its_uid_is_found_by_its_provider_id() {
+        // Every row filed before the column existed, every row an answer filed
+        // here, and every calendar server's row keep the UID as the provider's
+        // identifier, so a row with no UID of its own is found that way.
+        let cache = temp_cache("found_by_its_provider_id");
+        cache
+            .save_calendar_event(&make_event("evt-1", "acct", "m-1@example.com", "Review"))
+            .expect("the meeting filed");
+
+        assert_eq!(
+            cache
+                .get_event_by_ical_uid("acct", "m-1@example.com")
+                .expect("the calendar to be readable")
+                .map(|row| row.id)
+                .as_deref(),
+            Some("evt-1")
+        );
+    }
+
+    #[test]
+    fn test_the_organiser_on_the_calendar_is_read_back_as_it_was_written() {
+        // The rule that only the organiser may move or cancel a meeting reads
+        // this, so it has to come back as written, and a row nobody told reads
+        // as nobody rather than as an error.
+        let cache = temp_cache("the_organiser_round_trips");
+        a_meeting_google_filed(&cache);
+        cache
+            .save_calendar_event(&make_event("evt-2", "acct", "uid-2", "Lunch"))
+            .expect("a meeting nobody said who called");
+
+        assert_eq!(
+            cache
+                .the_organiser_on_the_calendar("evt-g")
+                .expect("the organiser read")
+                .as_deref(),
+            Some("ada@example.com")
+        );
+        assert_eq!(
+            cache
+                .the_organiser_on_the_calendar("evt-2")
+                .expect("the organiser read"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_database_with_neither_column_opens_and_finds_its_meetings_by_provider_id() {
+        // Every database in use has neither the UID nor the organiser. It has
+        // to open, keep every event, find each one by the identifier it was
+        // filed under, and say nobody is known to have called it.
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
+        conn.execute(THE_EVENTS_TABLE_AS_THE_LAST_RELEASE_WROTE_IT, [])
+            .expect("the events table as it was");
+        conn.execute(
+            "INSERT INTO calendar_events
+             (id, account_id, provider_event_id, summary, start_datetime, end_datetime,
+              created_at, updated_at, categories)
+             VALUES ('evt-1', 'acct', 'm-1@example.com', 'Review',
+                     '2026-03-05T09:00:00Z', '2026-03-05T10:00:00Z',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')",
+            params![],
+        )
+        .expect("a meeting filed before either column");
+        drop(conn);
+
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
+
+        assert_eq!(
+            cache
+                .get_event_by_ical_uid("acct", "m-1@example.com")
+                .expect("the calendar to be readable")
+                .map(|row| row.summary)
+                .as_deref(),
+            Some("Review")
+        );
+        assert_eq!(
+            cache
+                .the_organiser_on_the_calendar("evt-1")
+                .expect("the new column to be readable"),
+            None
         );
     }
 

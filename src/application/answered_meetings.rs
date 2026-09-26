@@ -173,8 +173,9 @@ pub fn file_the_answer(
 
     // Scoped to this account, so an invitation naming itself after a meeting on
     // somebody else's calendar in this program finds nothing and replaces
-    // nothing.
-    let already = cache.get_event_by_provider_id(account_id, &invitation.uid)?;
+    // nothing. By the meeting's UID, so a meeting a provider filed under an
+    // identifier of its own is found rather than filed a second time.
+    let already = cache.get_event_by_ical_uid(account_id, &invitation.uid)?;
     let answered_before = match &already {
         Some(row) => cache.the_answer_given_here(&row.id)?,
         None => None,
@@ -207,21 +208,55 @@ pub fn file_the_answer(
         None => "confirmed".to_string(),
     };
 
-    let the_row = the_row_an_answer_leaves(
-        &holding,
-        invitation,
-        WhereItGoes {
-            account_id,
-            calendar_id: &calendar_id,
-            id: &id,
-            status: &status,
-        },
+    let the_row = still_where_it_came_from(
+        the_row_an_answer_leaves(
+            &holding,
+            invitation,
+            WhereItGoes {
+                account_id,
+                calendar_id: &calendar_id,
+                id: &id,
+                status: &status,
+            },
+        ),
+        already.as_ref(),
     );
     cache.save_calendar_event(&the_row)?;
     // After the save, because a version written against a row that is not there
     // records an answer to a meeting nobody can see.
     cache.remember_the_answer(&the_row.id, holding.version, answer)?;
+    // The organiser already on the calendar's copy wins over the invitation's.
+    // A stranger can send an invitation carrying a real meeting's UID, and the
+    // rule that only the organiser may move or cancel a meeting trusts this.
+    let organiser = match already.as_ref() {
+        Some(row) => cache.the_organiser_on_the_calendar(&row.id)?,
+        None => None,
+    }
+    .or_else(|| invitation.organiser.as_ref().map(|who| who.address.clone()));
+    cache.remember_where_it_came_from(&the_row.id, Some(&invitation.uid), organiser.as_deref())?;
     Ok(())
+}
+
+/// The answer's row, still filed where the calendar's copy came from.
+///
+/// A provider's row keeps the provider's identifier and its version marker,
+/// or the next sync finds nothing under that identifier and files the meeting
+/// again beside the answer. A row an answer filed carries nothing of the kind,
+/// and a meeting the calendar has never held has no row to keep them from.
+fn still_where_it_came_from(
+    answered: CalendarEventEntry,
+    already: Option<&CalendarEventEntry>,
+) -> CalendarEventEntry {
+    match already {
+        Some(held) => CalendarEventEntry {
+            provider_event_id: held.provider_event_id.clone(),
+            source_provider: held.source_provider.clone(),
+            etag: held.etag.clone(),
+            web_link: held.web_link.clone(),
+            ..answered
+        },
+        None => answered,
+    }
 }
 
 /// The message an invitation is answered from, as the answer needs it.
@@ -829,6 +864,130 @@ mod tests {
                 answer: Some(Answer::Tentative),
             }),
             "filing kept the version and not the answer somebody gave"
+        );
+    }
+
+    /// The meeting as a Google sync leaves it: filed under Google's own
+    /// identifier in a calendar of its own, and told the UID the invitation
+    /// names and who called it.
+    fn the_meeting_google_put_on_the_calendar(cache: &MessageCache) -> CalendarEventEntry {
+        let from_google =
+            CalendarEventEntry {
+                provider_event_id: Some("google-123".to_string()),
+                source_provider: Some("google".to_string()),
+                etag: Some("\"3\"".to_string()),
+                pending: false,
+                ..the_row_an_answer_leaves(
+                    &ready_to_answer(&an_invitation_that_arrived())
+                        .what_the_calendar_should_hold(Answer::Accepted, None),
+                    &crate::application::invitations::read_the_invitation(
+                        &an_invitation_that_arrived(),
+                    )
+                    .expect("the invitation to read"),
+                    WhereItGoes {
+                        account_id: "acct",
+                        calendar_id: "primary-at-google",
+                        id: "evt-g",
+                        status: "confirmed",
+                    },
+                )
+            };
+        cache
+            .save_calendar_event(&from_google)
+            .expect("Google's copy filed");
+        cache
+            .remember_where_it_came_from("evt-g", Some("m-1@example.com"), Some("ada@example.com"))
+            .expect("where it came from remembered");
+        from_google
+    }
+
+    #[test]
+    fn test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none() {
+        // Research finding 2 and ledger 154. The invitation names the meeting
+        // by its UID and Google filed it under an identifier of its own, so
+        // looked up by the identifier the answer found nothing and filed the
+        // meeting a second time beside Google's. The answer lands on Google's
+        // row now, and the row keeps Google's identifier, or the next sync
+        // would find nothing under it and file the meeting a third time.
+        let cache = a_calendar_on_this_computer("a_meeting_google_holds");
+        the_meeting_google_put_on_the_calendar(&cache);
+
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Tentative);
+
+        let held = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            held.len(),
+            1,
+            "answering filed the meeting beside Google's copy: {held:?}"
+        );
+        assert_eq!(held[0].id, "evt-g");
+        assert_eq!(held[0].provider_event_id.as_deref(), Some("google-123"));
+        assert_eq!(held[0].source_provider.as_deref(), Some("google"));
+        assert_eq!(held[0].calendar_id.as_deref(), Some("primary-at-google"));
+        assert_eq!(held[0].show_as, "tentative");
+        assert_eq!(
+            cache
+                .the_answer_given_here("evt-g")
+                .expect("the answer to be readable"),
+            Some(crate::data::message_cache::AnsweredHere {
+                version: 2,
+                answer: Some(Answer::Tentative),
+            })
+        );
+    }
+
+    #[test]
+    fn test_an_answer_filed_as_a_new_row_records_who_called_the_meeting() {
+        // The rule that only the organiser may move or cancel a meeting reads
+        // the organiser off the calendar's copy, so a meeting first filed by
+        // an answer carries the one its invitation named.
+        let cache = a_calendar_on_this_computer("a_new_row_knows_its_organiser");
+
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+
+        let row = the_meeting_on_the_calendar(&cache).expect("the meeting to be filed");
+        assert_eq!(
+            cache
+                .the_organiser_on_the_calendar(&row.id)
+                .expect("the organiser to be readable")
+                .as_deref(),
+            Some("ada@example.com")
+        );
+        assert_eq!(
+            cache
+                .get_event_by_ical_uid("acct", "m-1@example.com")
+                .expect("the calendar to be readable")
+                .map(|found| found.id),
+            Some(row.id),
+            "the row an answer filed is not found by the meeting's UID"
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_naming_another_organiser_does_not_replace_the_one_on_the_calendar() {
+        // A stranger can send an invitation carrying a real meeting's UID. The
+        // organiser a provider recorded is the one the rule about moving and
+        // cancelling trusts, so answering the stranger's copy leaves it alone.
+        let cache = a_calendar_on_this_computer("a_strangers_organiser");
+        the_meeting_google_put_on_the_calendar(&cache);
+        let from_a_stranger = an_invitation_that_arrived()
+            .replace("SEQUENCE:2", "SEQUENCE:3")
+            .replace(
+                "ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com",
+                "ORGANIZER;CN=Mallory:mailto:mallory@example.net",
+            );
+
+        answer_it(&cache, &from_a_stranger, Answer::Accepted);
+
+        assert_eq!(
+            cache
+                .the_organiser_on_the_calendar("evt-g")
+                .expect("the organiser to be readable")
+                .as_deref(),
+            Some("ada@example.com"),
+            "an invitation's organiser replaced the one the provider recorded"
         );
     }
 

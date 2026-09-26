@@ -942,6 +942,16 @@ pub fn the_meeting_named_in(document: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The address of whoever called the first meeting in a calendar document,
+/// read off its ORGANIZER line the way an invitation's is, or nothing when it
+/// names nobody.
+pub fn the_organiser_named_in(document: &str) -> Option<String> {
+    the_meetings_own_lines(document)
+        .iter()
+        .find_map(|line| a_person_named_on(line, "ORGANIZER"))
+        .map(|organiser| organiser.address)
+}
+
 /// The first meeting's own property lines, put back together and with any
 /// block nested inside it left out.
 ///

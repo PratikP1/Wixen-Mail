@@ -268,7 +268,7 @@ pub fn invitation_check_for(
         .zip(invitations::the_meeting_named_in(&document))
         .and_then(|(account, uid)| {
             cache
-                .get_event_by_provider_id(&account, &uid)
+                .get_event_by_ical_uid(&account, &uid)
                 .unwrap_or_else(|e| {
                     tracing::warn!("Could not look a meeting up on the calendar: {e}");
                     None
@@ -359,7 +359,7 @@ fn the_answer_given_to(
     uid: &str,
 ) -> Option<invitations::Answer> {
     let copy = cache
-        .get_event_by_provider_id(account, uid)
+        .get_event_by_ical_uid(account, uid)
         .unwrap_or_else(|e| {
             tracing::warn!("Could not look a meeting up on the calendar: {e}");
             None
@@ -865,6 +865,105 @@ mod tests {
                 } if from == "05/03/2026 at 08:00 to 09:00"
             ),
             "{said:?}"
+        );
+    }
+
+    /// The meeting on "acc-1"'s calendar as a Google sync files it, at the
+    /// hour the invitation names: under Google's own identifier, told the UID
+    /// the invitation carries.
+    fn put_on_the_calendar_by_google(cache: &MessageCache) {
+        let held = crate::data::message_cache::CalendarEventEntry {
+            id: "evt-g".to_string(),
+            account_id: "acc-1".to_string(),
+            provider_event_id: Some("google-123".to_string()),
+            calendar_id: None,
+            summary: "Quarterly review".to_string(),
+            description: None,
+            location: Some("Room 4".to_string()),
+            start_datetime: "2026-03-05T09:00:00".to_string(),
+            end_datetime: "2026-03-05T10:00:00".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: Some("google".to_string()),
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-03-01T00:00:00Z".to_string(),
+            updated_at: "2026-03-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        };
+        cache
+            .save_calendar_event(&held)
+            .expect("Google's copy filed");
+        cache
+            .remember_where_it_came_from("evt-g", Some("m-1@example.com"), Some("ada@example.com"))
+            .expect("where it came from remembered");
+    }
+
+    #[test]
+    fn test_an_invitation_for_a_meeting_google_already_filed_is_said_to_be_on_the_calendar() {
+        // Google files an invitation on the calendar itself, under an
+        // identifier of its own. Looked up by that identifier, the meeting
+        // was said to be new while it sat on the calendar at the same hour.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+        put_on_the_calendar_by_google(&cache);
+
+        let said = invitation_check_for(Some(&cache), row, written_out_in_full);
+
+        assert!(
+            matches!(
+                &said,
+                WhatTheInvitationSays::Invitation {
+                    standing: crate::application::invitations::Standing::AlreadyOnTheCalendar,
+                    ..
+                }
+            ),
+            "{said:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_buttons_say_the_answer_given_to_a_meeting_google_filed() {
+        // The same lookup behind the buttons: an answer written on Google's
+        // row is the answer already given, and Decline says it replaces it.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+        put_on_the_calendar_by_google(&cache);
+        cache
+            .remember_the_answer(
+                "evt-g",
+                2,
+                crate::application::invitations::Answer::Accepted,
+            )
+            .expect("the answer remembered");
+
+        let answering::AnswerButtons::Offered(buttons) =
+            answer_buttons_for(Some(&cache), row, written_out_in_full, answering_as_me)
+        else {
+            panic!("an invitation answered before is still offered the buttons");
+        };
+
+        assert!(
+            buttons
+                .decline
+                .ends_with("You have already accepted this, and this replaces that answer."),
+            "{}",
+            buttons.decline
         );
     }
 
