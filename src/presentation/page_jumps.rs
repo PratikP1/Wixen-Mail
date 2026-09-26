@@ -30,6 +30,9 @@ pub enum Jump {
     /// Ctrl+P: print what the window shows, through Windows' print dialog.
     /// Not a move of focus, and still a key the page hands to its window.
     Print,
+    /// Alt+C, Alt+T or Alt+D: answer the meeting invitation the window's one
+    /// message carries, the letters its three buttons carry (13-11).
+    Answer(crate::application::invitations::Answer),
 }
 
 /// The listener a page runs to post the jumps, injected after the way out.
@@ -152,11 +155,62 @@ mod tests {
     }
 
     #[test]
+    fn test_alt_c_t_and_d_in_the_page_post_the_answers_and_the_window_reads_them_back() {
+        // The letters the formatted window's buttons carry, A&ccept,
+        // &Tentative and &Decline, because a key a sighted reader reads on a
+        // button is the key the page has to listen for: the browser keeps
+        // every key once it has focus, so a button's own letter never fires
+        // from the page (#84). With Alt and without Control, as Alt+A is, so
+        // AltGr is left alone.
+        assert!(SCRIPT.contains("kind: 'answer'"), "{SCRIPT}");
+        for (letter, word) in [("c", "accept"), ("t", "tentative"), ("d", "decline")] {
+            assert!(
+                SCRIPT.contains(&format!("{letter}: '{word}'")),
+                "the page does not post {word} for Alt+{letter}: {SCRIPT}"
+            );
+        }
+        assert!(
+            SCRIPT.contains("if (e.altKey && !e.ctrlKey && answer)"),
+            "{SCRIPT}"
+        );
+
+        use crate::application::invitations::Answer;
+        for (word, answer) in [
+            ("accept", Answer::Accepted),
+            ("tentative", Answer::Tentative),
+            ("decline", Answer::Declined),
+        ] {
+            assert_eq!(
+                the_jump_the_page_asked_for(&format!(r#"{{"kind":"answer","answer":"{word}"}}"#)),
+                Some(Jump::Answer(answer)),
+                "{word}"
+            );
+        }
+        // An answer the window cannot name is no jump at all, rather than a
+        // guess at which meeting answer was meant.
+        for not_an_answer in [
+            r#"{"kind":"answer"}"#,
+            r#"{"kind":"answer","answer":"maybe"}"#,
+        ] {
+            assert_eq!(
+                the_jump_the_page_asked_for(not_an_answer),
+                None,
+                "{not_an_answer}"
+            );
+        }
+    }
+
+    #[test]
     fn test_every_kind_the_script_posts_is_one_the_window_reads() {
         let kinds = every_kind_the_script_posts();
-        assert_eq!(kinds.len(), 3, "{kinds:?}");
+        assert_eq!(kinds.len(), 4, "{kinds:?}");
         for kind in kinds {
-            let posted = format!(r#"{{"kind":"{kind}"}}"#);
+            // An answer names which, and the one that names none is refused
+            // above; this walk is about the kinds.
+            let posted = match kind.as_str() {
+                "answer" => r#"{"kind":"answer","answer":"accept"}"#.to_string(),
+                _ => format!(r#"{{"kind":"{kind}"}}"#),
+            };
             assert!(
                 the_jump_the_page_asked_for(&posted).is_some(),
                 "the script posts {kind:?} and the window reads it as nothing"

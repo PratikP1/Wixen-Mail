@@ -43,8 +43,9 @@ use wixen_mail::presentation::date_display::{
     Clock, DateOrder, DateSettings, DateStyle, DateWording,
 };
 use wixen_mail::presentation::read_aloud::Reading;
-use wixen_mail::presentation::reader_text::{self, ReaderDocument};
+use wixen_mail::presentation::reader_text::{self, ConversationPart, ReaderDocument};
 use wixen_mail::presentation::ui_types::MessageItem;
+use wixen_mail::presentation::wx_app;
 use wixen_mail::presentation::wx_reader::ReaderWindow;
 use wxdragon::prelude::*;
 
@@ -150,9 +151,27 @@ unsafe extern "system" {
     fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn PostMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> i32;
+    fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn SetFocus(hwnd: isize) -> isize;
     fn GetFocus() -> isize;
+    fn GetDlgCtrlID(hwnd: isize) -> i32;
+    fn EnumThreadWindows(
+        thread: u32,
+        callback: extern "system" fn(isize, isize) -> i32,
+        lparam: isize,
+    ) -> i32;
 }
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetCurrentThreadId() -> u32;
+}
+
+/// What a button sends its parent when it is clicked, sent to the parent
+/// directly: `BM_CLICK` is refused by a window that is not in front, and a
+/// window a test builds is not.
+const WM_COMMAND: u32 = 0x0111;
+const BN_CLICKED: usize = 0;
 
 #[link(name = "oleacc")]
 unsafe extern "system" {
@@ -184,6 +203,24 @@ fn descendants_of(parent: isize) -> Vec<isize> {
     // SAFETY: the callback only pushes to this thread's local.
     unsafe { EnumChildWindows(parent, collect, 0) };
     FOUND.with(|found| found.borrow().clone())
+}
+
+/// Every top-level window the calling thread owns.
+fn this_threads_windows() -> Vec<isize> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumThreadWindows(GetCurrentThreadId(), collect, 0) };
+    FOUND.with(|found| found.borrow().clone())
+}
+
+/// Press a button the way a click does: its command, sent to its parent.
+fn press(parent: isize, button: isize) {
+    // SAFETY: two live windows of this thread; the command is what the
+    // button sends on a click, so the handler that runs is the click's.
+    unsafe {
+        let id = GetDlgCtrlID(button) as u16 as usize;
+        SendMessageW(parent, WM_COMMAND, id | (BN_CLICKED << 16), button);
+    }
 }
 
 fn class_name(hwnd: isize) -> String {
@@ -329,7 +366,21 @@ fn a_message_carrying(document: &str, row: i64) -> ReaderDocument {
         from: "Ada Lovelace <ada@example.com>".to_string(),
         ..Default::default()
     };
-    let said = WhatIsSaidAboutIt {
+    reader_text::single_message(
+        &message,
+        &MessageBody::Plain("Are you free?".to_string()),
+        Reading {
+            dates: written_out_in_full(),
+            now: chrono::Local::now(),
+        },
+    )
+    .with_what_is_said(&said_about(document, row))
+}
+
+/// What is said about a message carrying `document`, asked the way every
+/// surface asks it, with Sam answering and sending switched on.
+fn said_about(document: &str, row: i64) -> WhatIsSaidAboutIt {
+    WhatIsSaidAboutIt {
         invitation: what_the_invitation_says(document, None, None, written_out_in_full()),
         answering: the_answer_buttons(
             document,
@@ -340,16 +391,44 @@ fn a_message_carrying(document: &str, row: i64) -> ReaderDocument {
             written_out_in_full(),
         ),
         ..WhatIsSaidAboutIt::nothing()
-    };
-    reader_text::single_message(
-        &message,
-        &MessageBody::Plain("Are you free?".to_string()),
-        Reading {
-            dates: written_out_in_full(),
-            now: chrono::Local::now(),
+    }
+}
+
+/// One message of a conversation the formatted window opens on.
+fn a_part_carrying(document: &str, row: i64, depth: usize) -> ConversationPart {
+    ConversationPart {
+        message: MessageItem {
+            message_id: row,
+            subject: "Invitation: Quarterly review".to_string(),
+            from: "Ada Lovelace <ada@example.com>".to_string(),
+            ..Default::default()
         },
-    )
-    .with_what_is_said(&said)
+        body: MessageBody::Plain("Are you free?".to_string()),
+        said: said_about(document, row),
+        depth,
+    }
+}
+
+/// The row the formatted window's one message is, which a press has to carry.
+const THE_FORMATTED_ROW: i64 = 44;
+
+/// The formatted window `show_conversation_as_page` builds for `parts`, found
+/// by the title it gives itself, and its controls in the order Windows holds
+/// them.
+fn the_formatted_window(
+    parent: &Frame,
+    reader: &Rc<ReaderWindow>,
+    a11y: &Arc<Accessibility>,
+    subject: &str,
+    parts: &[ConversationPart],
+) -> Result<(isize, Vec<Control>), String> {
+    wx_app::show_conversation_as_page(parent, reader, a11y, subject, parts, None);
+    let title = format!("{subject} - headings - Wixen Mail");
+    let window = this_threads_windows()
+        .into_iter()
+        .find(|hwnd| window_text(*hwnd) == title)
+        .ok_or(format!("no window titled {title:?} was opened"))?;
+    Ok((window, read_the_controls(window)?))
 }
 
 // ── The harvest ───────────────────────────────────────────────────────────
@@ -368,7 +447,36 @@ struct Harvest {
     the_message_text: isize,
     /// The cancellation's tab.
     cancellation_tab: Vec<Control>,
+    /// The formatted window opened on the invitation alone.
+    formatted_window: Vec<Control>,
+    /// What the answer handler was handed when its Decline was pressed.
+    pressed_in_the_formatted_window: Vec<(i64, Answer)>,
+    /// The formatted window opened on a conversation of two messages that
+    /// each carry the invitation.
+    two_messages: Vec<Control>,
 }
+
+/// What the session read, held while it waits for the formatted windows'
+/// browsers to exist.
+struct Gathered {
+    harvest: Result<Harvest, String>,
+    page_windows: Vec<isize>,
+}
+
+/// The classes WebView2 gives the windows it puts under a host control.
+const CHROMIUMS_CLASSES: [&str; 2] = ["Chrome_WidgetWin_1", "Chrome_RenderWidgetHostHWND"];
+
+/// Whether the browser under a formatted window's host control exists yet.
+fn the_browser_is_there(page_window: isize) -> bool {
+    descendants_of(page_window)
+        .into_iter()
+        .any(|hwnd| CHROMIUMS_CLASSES.contains(&class_name(hwnd).as_str()))
+}
+
+/// Ticks before the session stops waiting for a browser: half a minute,
+/// which is generous. GitHub's runners have taken over three seconds to make
+/// one.
+const GIVE_UP_AFTER_TICKS: u32 = 1000;
 
 fn take_the_harvest() -> Result<Harvest, String> {
     if std::mem::size_of::<Variant>() != 24 {
@@ -418,7 +526,13 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 PostMessageW(text, WM_SYSKEYUP, VK_C, ALT_RELEASED);
             }
 
+            // The key's time to arrive, then everything is read, then the
+            // session waits for each formatted window's browser to exist
+            // before it ends: a browser still being made when the loop stops
+            // takes the process down with it, which the hook's run met here as
+            // 0xc000041d (tests/closing_a_window_before_its_browser_exists.rs).
             let ticks = Rc::new(std::cell::Cell::new(0u32));
+            let gathered: Rc<RefCell<Option<Gathered>>> = Rc::default();
             let ticker = Rc::new(Timer::new(&parent));
             ticker.on_tick({
                 let ticker = ticker.clone();
@@ -428,7 +542,23 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     if ticks.get() < TICKS_FOR_THE_KEY {
                         return;
                     }
-                    ticker.stop();
+                    let waiting = match gathered.borrow().as_ref() {
+                        Some(already) => already
+                            .page_windows
+                            .iter()
+                            .any(|window| !the_browser_is_there(*window)),
+                        None => false,
+                    };
+                    if gathered.borrow().is_some() {
+                        if waiting && ticks.get() < GIVE_UP_AFTER_TICKS {
+                            return;
+                        }
+                        ticker.stop();
+                        if let Some(done) = gathered.borrow_mut().take() {
+                            settle(done.harvest);
+                        }
+                        return;
+                    }
                     // SAFETY: asks this thread's own queue.
                     let focus_after_alt_c = unsafe { GetFocus() };
                     let pressed_by_alt_c = pressed.borrow().clone();
@@ -445,18 +575,55 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     let cancelled = reader.open(a_message_carrying(&a_cancellation(), 43));
                     let cancellation_tab = read_the_controls(cancelled.panel.get_handle() as isize);
 
-                    settle(
-                        with_a_greyed_button
-                            .and_then(|greyed| Ok((greyed, cancellation_tab?)))
-                            .map(|(with_a_greyed_button, cancellation_tab)| Harvest {
-                                invitation_tab: invitation_tab.clone(),
-                                with_a_greyed_button,
-                                pressed_by_alt_c,
-                                focus_after_alt_c,
-                                the_message_text: text,
-                                cancellation_tab,
-                            }),
+                    // The formatted window, which is how a message opens by
+                    // default: the invitation alone, its Decline pressed the
+                    // way a click presses it, and a conversation of two.
+                    let formatted = the_formatted_window(
+                        &parent,
+                        &reader,
+                        &a11y,
+                        "Invitation to answer",
+                        &[a_part_carrying(AN_INVITATION, THE_FORMATTED_ROW, 0)],
                     );
+                    let before = pressed.borrow().len();
+                    if let Ok((window, controls)) = &formatted
+                        && let Some(decline) = the_buttons(controls).get(2)
+                    {
+                        press(*window, decline.hwnd);
+                    }
+                    let pressed_in_the_formatted_window = pressed.borrow()[before..].to_vec();
+                    let two = the_formatted_window(
+                        &parent,
+                        &reader,
+                        &a11y,
+                        "Two messages about a meeting",
+                        &[
+                            a_part_carrying(AN_INVITATION, 46, 0),
+                            a_part_carrying(AN_INVITATION, 47, 1),
+                        ],
+                    );
+
+                    let page_windows: Vec<isize> = [&formatted, &two]
+                        .into_iter()
+                        .filter_map(|opened| opened.as_ref().ok().map(|(window, _)| *window))
+                        .collect();
+                    let harvest = (|| {
+                        Ok(Harvest {
+                            invitation_tab: invitation_tab.clone(),
+                            with_a_greyed_button: with_a_greyed_button?,
+                            pressed_by_alt_c,
+                            focus_after_alt_c,
+                            the_message_text: text,
+                            cancellation_tab: cancellation_tab?,
+                            formatted_window: formatted?.1,
+                            pressed_in_the_formatted_window,
+                            two_messages: two?.1,
+                        })
+                    })();
+                    *gathered.borrow_mut() = Some(Gathered {
+                        harvest,
+                        page_windows,
+                    });
                 }
             });
             ticker.start(TICK_MS, false);
@@ -641,4 +808,140 @@ fn test_the_reading_refuses_a_greyed_button() {
         wrong.iter().any(|why| why.contains("is greyed")),
         "a greyed button was passed over: {wrong:?}"
     );
+}
+
+// ── The formatted window ──────────────────────────────────────────────────
+
+/// Where the buttons are in the formatted window: after the browser, which
+/// has to stay the first control that takes the keyboard, so the buttons are
+/// reached by Tab after the message and by their keys from inside it.
+fn what_is_wrong_with_the_formatted_order(controls: &[Control]) -> Vec<String> {
+    let the_browser = controls
+        .iter()
+        .position(|control| !["Edit", "Button", "ListBox"].contains(&control.class.as_str()));
+    let first_button = controls
+        .iter()
+        .position(|control| control.class == "Button");
+    match (the_browser, first_button) {
+        (Some(browser), Some(button)) if browser < button => Vec::new(),
+        found => vec![format!(
+            "the browser and the first button are at {found:?} among {:?}",
+            controls
+                .iter()
+                .map(|control| (&control.class, &control.msaa.name))
+                .collect::<Vec<_>>()
+        )],
+    }
+}
+
+#[test]
+fn test_the_formatted_window_has_the_three_buttons_after_the_page() {
+    let harvest = the_harvest();
+    complain(
+        "on the formatted window's buttons",
+        &what_is_wrong_with_the_buttons(&harvest.formatted_window),
+    );
+    complain(
+        "on where the formatted window's buttons are",
+        &what_is_wrong_with_the_formatted_order(&harvest.formatted_window),
+    );
+}
+
+#[test]
+fn test_a_press_in_the_formatted_window_answers_the_message_it_shows() {
+    assert_eq!(
+        the_harvest().pressed_in_the_formatted_window,
+        vec![(THE_FORMATTED_ROW, Answer::Declined)],
+        "Decline in the formatted window did not answer its own message once"
+    );
+}
+
+#[test]
+fn test_a_conversation_of_two_messages_has_no_buttons() {
+    // One row of buttons over two messages would be heard as answering both.
+    let harvest = the_harvest();
+    assert!(
+        the_buttons(&harvest.two_messages).is_empty(),
+        "a conversation of two was offered buttons: {:?}",
+        harvest.two_messages
+    );
+}
+
+// ── The page's keys, read from the source ─────────────────────────────────
+//
+// The route is a script injected into a browser control, and a key typed into
+// the browser comes from another process, so what a reading can hold is the
+// shape: the page's jump for an answer reaches the same handler the buttons
+// do, with the window's own message, and says so when there is none.
+
+const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
+
+fn shipped(path: &str) -> String {
+    wixen_mail::common::what_ships::what_ships(
+        &std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("{path}: {e}"))
+            .replace("\r\n", "\n"),
+    )
+}
+
+/// One function's text, from its signature to the closing brace at column
+/// nought, or a complaint when the signature is gone.
+fn body_of(source: &str, signature: &str) -> Result<String, String> {
+    let at = source.find(signature).ok_or(format!(
+        "{signature} is no longer in this file, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let ends = rest.find("\n}\n").map_or(rest.len(), |end| end + 2);
+    Ok(rest[..ends].to_string())
+}
+
+fn the_page_answers_through_the_buttons_handler(app: &str) -> Result<(), String> {
+    let body = body_of(app, "pub fn show_conversation_as_page(")?;
+    const THE_ARM: &str = "Some(page_jumps::Jump::Answer(answer)) =>";
+    let at = body
+        .find(THE_ARM)
+        .ok_or("the page window has no arm for the page's answer keys")?;
+    let arm = &body[at..];
+    let arm = &arm[..arm.find("\n                None =>").unwrap_or(arm.len())];
+    if !arm.contains("reader.answer_now(") {
+        return Err(
+            "the page's answer keys do not reach the handler the buttons press, so Alt+C in \
+             the message answers nothing"
+                .to_string(),
+        );
+    }
+    if !arm.contains("\"There is no invitation here to answer.\"") {
+        return Err(
+            "the page's answer keys say nothing on a message with no invitation to answer"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_pages_answer_keys_press_the_buttons_handler_with_the_windows_message() {
+    the_page_answers_through_the_buttons_handler(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_reading_complains_when_the_answer_keys_reach_nothing() {
+    // Planted inside the arm itself, since the window's buttons reach the
+    // same handler and a plant there would leave the arm as it was.
+    let app = shipped(THE_MAIN_WINDOW);
+    let body = body_of(&app, "pub fn show_conversation_as_page(").expect("the page window");
+    let at = body
+        .find("Some(page_jumps::Jump::Answer(answer)) =>")
+        .expect("the companion's anchor, the page's answer arm, is not in the page window");
+    let (before, the_arm_onwards) = body.split_at(at);
+    let planted_body = format!(
+        "{before}{}",
+        the_arm_onwards.replacen("reader.answer_now(", "drop((", 1)
+    );
+    assert_ne!(planted_body, body, "the companion planted nothing");
+    let planted = app.replacen(&body, &planted_body, 1);
+    let why = the_page_answers_through_the_buttons_handler(&planted)
+        .expect_err("answer keys reaching nothing were passed over");
+    assert!(why.contains("answers nothing"), "{why}");
 }

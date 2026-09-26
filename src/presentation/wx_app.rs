@@ -25508,6 +25508,7 @@ pub fn show_conversation_as_page(
                         printing::print_through_the_dialog(&frame, &paper),
                     );
                 }
+                Some(page_jumps::Jump::Answer(_)) => {}
                 None => {
                     if crate::presentation::panes::leaving_which_way(&json).is_some() {
                         // Closing is what going back means here. The close

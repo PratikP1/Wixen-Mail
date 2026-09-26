@@ -31,15 +31,16 @@ use wxdragon::prelude::*;
 /// keep working.
 pub const fn command_for(action: Action) -> Id {
     use crate::presentation::wx_app::{
-        ID_CHECK_MAIL, ID_CHOOSE_FOLDERS, ID_CONTEXT_COPY_ITEM, ID_CONTEXT_COPY_TO_EVENT,
-        ID_CONTEXT_COPY_TO_NOTE, ID_CONTEXT_COPY_TO_TASK, ID_CONTEXT_DELETE_CONTAINER,
-        ID_CONTEXT_DELETE_ITEM, ID_CONTEXT_MOVE_ITEM, ID_CONTEXT_NEW_CONTAINER,
-        ID_CONTEXT_NEW_ITEM, ID_CONTEXT_REMOVE_FROM_GROUP, ID_CONTEXT_RENAME_CONTAINER,
-        ID_CONTEXT_SYNC_NOW, ID_CONTEXT_TOGGLE_COMPLETE, ID_CONTEXT_TOGGLE_PIN,
-        ID_CONTEXT_WRITE_TO_GROUP, ID_COPY_TO_FOLDER, ID_DELETE, ID_DELETE_OUTRIGHT,
-        ID_DELETE_SEARCH, ID_EDIT_SEARCH_CONDITIONS, ID_FORWARD, ID_GET_OLDER, ID_MARK_READ,
-        ID_MOVE_DOWN, ID_MOVE_TO_FOLDER, ID_MOVE_UP, ID_NEW_FOLDER, ID_REFRESH_FOLDER,
-        ID_RENAME_SEARCH, ID_REPLY, ID_REPLY_ALL, ID_TAG_MGR, ID_TOGGLE_STAR,
+        ID_ANSWER_ACCEPT, ID_ANSWER_DECLINE, ID_ANSWER_TENTATIVE, ID_CHECK_MAIL, ID_CHOOSE_FOLDERS,
+        ID_CONTEXT_COPY_ITEM, ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE,
+        ID_CONTEXT_COPY_TO_TASK, ID_CONTEXT_DELETE_CONTAINER, ID_CONTEXT_DELETE_ITEM,
+        ID_CONTEXT_MOVE_ITEM, ID_CONTEXT_NEW_CONTAINER, ID_CONTEXT_NEW_ITEM,
+        ID_CONTEXT_REMOVE_FROM_GROUP, ID_CONTEXT_RENAME_CONTAINER, ID_CONTEXT_SYNC_NOW,
+        ID_CONTEXT_TOGGLE_COMPLETE, ID_CONTEXT_TOGGLE_PIN, ID_CONTEXT_WRITE_TO_GROUP,
+        ID_COPY_TO_FOLDER, ID_DELETE, ID_DELETE_OUTRIGHT, ID_DELETE_SEARCH,
+        ID_EDIT_SEARCH_CONDITIONS, ID_FORWARD, ID_GET_OLDER, ID_MARK_READ, ID_MOVE_DOWN,
+        ID_MOVE_TO_FOLDER, ID_MOVE_UP, ID_NEW_FOLDER, ID_REFRESH_FOLDER, ID_RENAME_SEARCH,
+        ID_REPLY, ID_REPLY_ALL, ID_TAG_MGR, ID_TOGGLE_STAR,
     };
     match action {
         // These are the menu bar's own ids, so the same thing done two ways
@@ -70,6 +71,11 @@ pub const fn command_for(action: Action) -> Id {
         Action::EditSearchConditions => ID_EDIT_SEARCH_CONDITIONS,
         Action::RenameSavedSearch => ID_RENAME_SEARCH,
         Action::DeleteSavedSearch => ID_DELETE_SEARCH,
+        // The Action menu's Answer Invitation items, so answering from the
+        // message list's menu and from the menu bar run one piece of code.
+        Action::AcceptInvitation => ID_ANSWER_ACCEPT,
+        Action::TentativeInvitation => ID_ANSWER_TENTATIVE,
+        Action::DeclineInvitation => ID_ANSWER_DECLINE,
         // These have no menu bar entry, because what they act on is whatever
         // panel is open. Each handler reads the open module and acts on that.
         Action::NewItem => ID_CONTEXT_NEW_ITEM,
