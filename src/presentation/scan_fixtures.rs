@@ -377,6 +377,19 @@ mod tests {
     }
 
     #[test]
+    fn test_the_invitation_is_offered_remove_from_calendar_as_well() {
+        // No real message is both an invitation and a cancellation. The scan
+        // opens one reader tab, and this is how it reaches Remove from Calendar
+        // at its own handle beside the three answers (13-13).
+        assert_eq!(
+            an_answerable_invitation(1).change.offered_removal(),
+            Some("scan-target"),
+            "{:?}",
+            an_answerable_invitation(1).change
+        );
+    }
+
+    #[test]
     fn test_the_contact_has_a_row_on_every_list() {
         // The editor's three other tabs are four lists with Add and Remove
         // beside each. A contact with nothing on them is scanned as four empty

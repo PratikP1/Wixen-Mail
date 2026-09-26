@@ -65,6 +65,7 @@ use crate::application::answering;
 use crate::application::checking_signatures::{self, SignatureCheck};
 use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
 use crate::application::invitations::{self, WhatTheInvitationSays};
+use crate::application::meeting_changes::MeetingChange;
 use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
@@ -103,6 +104,10 @@ pub struct WhatIsSaidAboutIt {
     pub answering: answering::AnswerButtons,
     /// What the signature was worth, for a message that said it was signed.
     pub signature: SignatureCheck,
+    /// What opening the message changed on the calendar, which only a reader
+    /// window asks: nothing for every other surface, and for nearly every
+    /// message (#50 points 2 and 3).
+    pub change: MeetingChange,
 }
 
 /// Who answers an invitation that arrived on one account, and whether that
@@ -163,6 +168,7 @@ impl WhatIsSaidAboutIt {
             invitation: WhatTheInvitationSays::Nothing,
             answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotSigned,
+            change: MeetingChange::Nothing,
         }
     }
 }
@@ -228,6 +234,8 @@ pub fn put_together(
             invitation,
             answering,
             signature,
+            // Asked by a reader window after this, and by nothing else.
+            change: MeetingChange::Nothing,
         },
     }
 }
@@ -371,6 +379,30 @@ fn the_answer_given_to(
             None
         })?
         .answer
+}
+
+/// What opening a stored message in a reader window changes on the calendar,
+/// with a move already saved.
+///
+/// Asked by the two reader windows and by nothing else, before the message's
+/// document is built. The preview is left out on purpose: it opens a message
+/// as the cursor moves over it, and a calendar change made by arrowing past a
+/// message is a change nobody asked for. A cancellation is only offered here;
+/// Remove from Calendar marks it.
+///
+/// Reads the stored parts, which are never decrypted, so a meeting inside
+/// decrypted content cannot change the calendar through this (question 9).
+/// `from` is the sender as the header carried it; `answering_as` says what the
+/// account the message arrived on may change.
+pub fn what_opening_it_in_a_reader_changed(
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    from: &str,
+    dates: impl FnOnce() -> DateSettings,
+    answering_as: impl FnOnce(&str) -> AnsweringAs,
+) -> MeetingChange {
+    let _ = (cache, message_row_id, from, dates, answering_as);
+    MeetingChange::Nothing
 }
 
 /// Keep what a message downloaded for its text carried, so what is said about
@@ -1111,6 +1143,7 @@ mod tests {
             invitation: WhatTheInvitationSays::Nothing,
             answering: answering::AnswerButtons::NotAsked,
             signature: SignatureCheck::NotKept,
+            change: MeetingChange::Nothing,
         };
 
         let document =

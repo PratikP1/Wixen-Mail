@@ -24785,7 +24785,8 @@ tests_last_seen = [
 # signature and leaves the meeting where it is, and was measured again.
 # Rewritten again 2026-09-26 by 13-11, when why a meeting cannot be answered
 # joined the chain after the meeting and before the signature, and measured
-# again.
+# again. And by 13-13 the same day, when what opening a message changed on the
+# calendar joined it after the answer buttons, and measured again.
 [[guard]]
 name = "the envelope is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
@@ -24793,10 +24794,12 @@ before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_invitation(&said.invitation)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)
             .with_smime_envelope(&said.envelope)"""
 red = [
@@ -31427,7 +31430,8 @@ tests_last_seen = [
 # and the raw message's case each go red and a record reads one suite. Written
 # 2026-09-25 by 13-10, measured through `scripts/guards.sh --remeasure`. Both
 # rewritten 2026-09-26 by 13-11 for the answer buttons' place in the chain,
-# after the meeting and before the signature, and measured again.
+# after the meeting and before the signature, and measured again; and by 13-13
+# the same day for the meeting change's place, after the answer buttons.
 [[guard]]
 name = "the meeting is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
@@ -31435,10 +31439,12 @@ before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)
             .with_invitation(&said.invitation)"""
 red = [
@@ -31456,10 +31462,12 @@ before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)
             .with_invitation(&said.invitation)"""
 red = [
@@ -31569,7 +31577,8 @@ tests_last_seen = [
 # Why a meeting cannot be answered folded in after the signature: in the bar,
 # below "More about this signature:", and nothing speaks it (#50 point 7).
 # Written 2026-09-26 by 13-11, measured through `scripts/guards.sh
-# --remeasure`, `cargo test --lib`.
+# --remeasure`, `cargo test --lib`. Rewritten by 13-13 the same day for the
+# meeting change's place in the chain, after the answer buttons.
 [[guard]]
 name = "why a meeting cannot be answered is folded in before the signature, so it is spoken"
 file = "src/presentation/reader_text.rs"
@@ -31577,10 +31586,12 @@ before = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
             .with_answer_buttons(&said.answering)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)"""
 after = """        self.with_pgp(said.opened.as_ref())
             .with_smime_envelope(&said.envelope)
             .with_invitation(&said.invitation)
+            .with_meeting_change(&said.change)
             .with_signature(&said.signature)
             .with_answer_buttons(&said.answering)"""
 red = [

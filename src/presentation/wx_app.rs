@@ -25557,6 +25557,7 @@ pub fn show_conversation_as_page(
                             .announce("There is no invitation here to answer.", Priority::Normal);
                     }
                 }
+                Some(page_jumps::Jump::Remove) => {}
                 None => {
                     if crate::presentation::panes::leaving_which_way(&json).is_some() {
                         // Closing is what going back means here. The close

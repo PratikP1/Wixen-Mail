@@ -33,6 +33,9 @@ pub enum Jump {
     /// Alt+C, Alt+T or Alt+D: answer the meeting invitation the window's one
     /// message carries, the letters its three buttons carry (13-11).
     Answer(crate::application::invitations::Answer),
+    /// Alt+R: take the meeting the window's one message calls off off the
+    /// calendar, the letter Remove from Calendar carries (13-13).
+    Remove,
 }
 
 /// The listener a page runs to post the jumps, injected after the way out.
@@ -225,9 +228,26 @@ mod tests {
     }
 
     #[test]
+    fn test_alt_r_in_the_page_posts_remove_and_the_window_reads_it_back() {
+        // The letter Remove from Calendar carries, heard from the page because
+        // the browser keeps every key once it has focus (#84). With Alt and
+        // without Control, as Alt+A is, so AltGr is left alone.
+        assert!(
+            SCRIPT.contains("e.altKey && !e.ctrlKey && (e.key === 'r' || e.key === 'R')"),
+            "{SCRIPT}"
+        );
+        assert!(SCRIPT.contains("kind: 'remove'"), "{SCRIPT}");
+
+        assert_eq!(
+            the_jump_the_page_asked_for(r#"{"kind":"remove"}"#),
+            Some(Jump::Remove)
+        );
+    }
+
+    #[test]
     fn test_every_kind_the_script_posts_is_one_the_window_reads() {
         let kinds = every_kind_the_script_posts();
-        assert_eq!(kinds.len(), 4, "{kinds:?}");
+        assert_eq!(kinds.len(), 5, "{kinds:?}");
         for kind in kinds {
             // An answer names which, and the one that names none is refused
             // above; this walk is about the kinds.
