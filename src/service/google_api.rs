@@ -317,15 +317,21 @@ pub struct GoogleEvent {
     /// and Google refuses a change that names it.
     #[serde(default, skip_serializing)]
     pub original_start_time: Option<GoogleEventDateTime>,
-    /// Stub for the red commit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The meeting's iCalendar UID, the name an invitation calls it by.
+    ///
+    /// Google files a meeting under an identifier of its own, so this is how
+    /// an invitation finds the meeting Google already put on the calendar.
+    /// Spelled `iCalUID` on Google's reference page, read on 2026-09-24, and
+    /// not writable there, so never sent back.
+    #[serde(default, rename = "iCalUID", skip_serializing)]
     pub ical_uid: Option<String>,
-    /// Stub for the red commit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Who called the meeting. The server's to set, and never sent back:
+    /// nothing edited here is about who called a meeting.
+    #[serde(default, skip_serializing)]
     pub organizer: Option<GoogleOrganizer>,
 }
 
-/// Stub for the red commit.
+/// Who called a meeting, as Google names them.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GoogleOrganizer {
     #[serde(default)]
@@ -347,9 +353,14 @@ impl GoogleEvent {
             .filter(|named| !named.is_empty())
     }
 
-    /// Stub for the red commit.
+    /// The address of whoever called the meeting, or nothing when Google named
+    /// nobody. An empty address is no address.
     pub fn the_organisers_address(&self) -> Option<&str> {
-        None
+        self.organizer
+            .as_ref()
+            .and_then(|who| who.email.as_deref())
+            .map(str::trim)
+            .filter(|address| !address.is_empty())
     }
 }
 

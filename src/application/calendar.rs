@@ -834,11 +834,11 @@ pub async fn sync_google_calendar(
                     TheStatus::AlsoAtTheProvider,
                 );
                 let merged = everything_both_copies_call_off(merged, &ex);
-                cache.save_calendar_event(&merged)?;
+                save_what_google_sent(cache, &merged, event)?;
                 result.updated += 1;
             }
             None => {
-                cache.save_calendar_event(&local_event)?;
+                save_what_google_sent(cache, &local_event, event)?;
                 result.created += 1;
             }
         }
@@ -874,6 +874,41 @@ pub async fn sync_google_calendar(
     )?;
 
     Ok(result)
+}
+
+/// Save a meeting as Google sent it, with the UID an invitation names it by
+/// and who called it.
+///
+/// Google files a meeting under an identifier of its own, so without the UID
+/// an invitation for the meeting finds nothing and an answer files it a second
+/// time. Written after the save, created or updated alike, because the save
+/// names its columns and leaves these two where they were.
+fn save_what_google_sent(
+    cache: &MessageCache,
+    row: &CalendarEventEntry,
+    sent: &GoogleEvent,
+) -> Result<()> {
+    cache.save_calendar_event(row)?;
+    cache.remember_where_it_came_from(
+        &row.id,
+        sent.ical_uid.as_deref(),
+        sent.the_organisers_address(),
+    )
+}
+
+/// The same for Outlook, whose UID differs for each day of a series, so only
+/// a meeting that happens once is found by its invitation.
+fn save_what_outlook_sent(
+    cache: &MessageCache,
+    row: &CalendarEventEntry,
+    sent: &MsGraphEvent,
+) -> Result<()> {
+    cache.save_calendar_event(row)?;
+    cache.remember_where_it_came_from(
+        &row.id,
+        sent.ical_uid.as_deref(),
+        sent.the_organisers_address(),
+    )
 }
 
 /// Every day either copy of a series calls off, on the copy just read.
@@ -1188,11 +1223,11 @@ pub async fn sync_microsoft_calendar(
                     TheStatus::OnlyHere,
                 );
                 let merged = everything_both_copies_call_off(merged, &ex);
-                cache.save_calendar_event(&merged)?;
+                save_what_outlook_sent(cache, &merged, event)?;
                 result.updated += 1;
             }
             None => {
-                cache.save_calendar_event(&local_event)?;
+                save_what_outlook_sent(cache, &local_event, event)?;
                 result.created += 1;
             }
         }

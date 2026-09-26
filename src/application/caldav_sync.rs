@@ -922,6 +922,15 @@ pub async fn sync_caldav_calendar(
                 result.created += 1;
             }
         }
+        // The document's UID is already the row's provider identifier, and is
+        // kept in the UID column too so every source answers the same lookup.
+        // Who called the meeting is read off the document's ORGANIZER line,
+        // the way an invitation's is.
+        cache.remember_where_it_came_from(
+            &local_entry.id,
+            Some(&remote.uid),
+            crate::application::invitations::the_organiser_named_in(&remote.ical_data).as_deref(),
+        )?;
     }
 
     // The days changed out of a series, after every whole event this sync

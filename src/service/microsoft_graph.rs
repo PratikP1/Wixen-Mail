@@ -235,15 +235,22 @@ pub struct MsGraphEvent {
     pub is_reminder_on: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reminder_minutes_before_start: Option<i32>,
-    /// Stub for the red commit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The meeting's iCalendar UID, the name an invitation calls it by.
+    ///
+    /// Spelled `iCalUId`, with a lower-case d, on Graph's reference page, read
+    /// on 2026-09-24, which says it is read-only, so never sent back. The same
+    /// page says each day of a repeating series has its own, and a calendar
+    /// view answers with days, so a series invitation finds nothing here.
+    #[serde(default, rename = "iCalUId", skip_serializing)]
     pub ical_uid: Option<String>,
-    /// Stub for the red commit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Who called the meeting. The server's to set, and never sent back:
+    /// nothing edited here is about who called a meeting.
+    #[serde(default, skip_serializing)]
     pub organizer: Option<MsOrganizer>,
 }
 
-/// Stub for the red commit.
+/// Who called a meeting, as Graph names them: a recipient, whose address is
+/// inside `emailAddress`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MsOrganizer {
@@ -252,9 +259,14 @@ pub struct MsOrganizer {
 }
 
 impl MsGraphEvent {
-    /// Stub for the red commit.
+    /// The address of whoever called the meeting, or nothing when Graph named
+    /// nobody. An empty address is no address.
     pub fn the_organisers_address(&self) -> Option<&str> {
-        None
+        self.organizer
+            .as_ref()
+            .and_then(|who| who.email_address.as_ref())
+            .map(|named| named.address.trim())
+            .filter(|address| !address.is_empty())
     }
 
     /// The series this item is one day of, or nothing when it is a meeting in
