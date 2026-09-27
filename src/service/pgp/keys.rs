@@ -455,6 +455,34 @@ mod tests {
     }
 
     #[test]
+    fn test_an_ordinary_rsa_key_is_stored_and_opens_mail() {
+        // Alice's key is RSA-2048 with no subkey, 1,836 characters armoured,
+        // and Windows keeps 1,280 in one credential. Stored in one entry it
+        // imported cleanly under test and failed on every real Windows
+        // machine, so every entry written is held to what Windows keeps.
+        with_no_key();
+        let key = armour(ALICE_PRIVATE);
+        assert!(
+            key.encode_utf16().count() > 1_280,
+            "the fixture no longer shows the case: it fits in one entry"
+        );
+
+        assert_eq!(import(&key), WhatImportingAKeyFound::Imported);
+
+        for (user, secret) in secret_store::entries_under(KEYRING_SERVICE) {
+            assert!(
+                secret.encode_utf16().count() <= 1_280,
+                "{user} holds {} UTF-16 units, more than Windows keeps in one entry",
+                secret.encode_utf16().count()
+            );
+        }
+        assert_eq!(
+            open(&armour(TO_ALICE)),
+            WhatOpeningItFound::Opened("The meeting moved to Thursday at ten.\n".to_string())
+        );
+    }
+
+    #[test]
     fn test_with_no_key_at_all_it_says_so_rather_than_failing() {
         // Every fresh installation. "There is no key here" is a different
         // thing to be told from "your key does not open this", and the
