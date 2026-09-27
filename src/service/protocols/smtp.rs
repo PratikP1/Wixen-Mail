@@ -4,6 +4,7 @@
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
+use crate::service::pgp::{self, Recipient, Sending};
 use crate::service::protocols::MailAuth;
 use crate::service::signed_mail::sending::{OwnCertificate, encrypt_to, sign_detached};
 use lettre::{
@@ -106,8 +107,8 @@ pub struct Email {
 
 /// How a message is protected on its way out.
 ///
-/// S/MIME only, until OpenPGP's half arrives (13-20). The composer does not
-/// offer any of these yet (13-21), so every message sent today is `Plain`.
+/// S/MIME since 13-19 and OpenPGP since 13-20. The composer does not offer any
+/// of these yet (13-21), so every message sent today is `Plain`.
 #[derive(Debug, Clone, Default)]
 pub enum Protection {
     /// As it always went, with nothing added.
@@ -126,6 +127,21 @@ pub enum Protection {
     SmimeSignedAndEncrypted {
         own: OwnCertificate,
         recipients: Vec<Vec<u8>>,
+    },
+    /// Signed with the private key here with the fingerprint `sender`:
+    /// RFC 3156's `multipart/signed`.
+    PgpSigned { sender: String },
+    /// Encrypted to each recipient's key and to the sender's own: RFC 3156's
+    /// `multipart/encrypted`.
+    PgpEncrypted {
+        recipients: Vec<Recipient>,
+        sender: String,
+    },
+    /// Signed, then the signed message encrypted, RFC 3156 section 6.1, the
+    /// same order as S/MIME's.
+    PgpSignedAndEncrypted {
+        recipients: Vec<Recipient>,
+        sender: String,
     },
 }
 
@@ -213,6 +229,14 @@ fn build_message(email: &Email) -> Result<Message> {
         Protection::SmimeSignedAndEncrypted { own, recipients } => {
             let signed = signed(body, own)?;
             builder.singlepart(sealed(&signed.formatted(), own, recipients)?)
+        }
+        Protection::PgpSigned { sender } => builder.multipart(pgp_signed(body, sender)?),
+        Protection::PgpEncrypted { recipients, sender } => {
+            builder.multipart(pgp_encrypted(&body.formatted(), recipients, sender)?)
+        }
+        Protection::PgpSignedAndEncrypted { recipients, sender } => {
+            let signed = pgp_signed(body, sender)?;
+            builder.multipart(pgp_encrypted(&signed.formatted(), recipients, sender)?)
         }
     };
     built.map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))
@@ -381,6 +405,96 @@ fn everyone_it_is_sealed_for(own: &OwnCertificate, recipients: &[Vec<u8>]) -> Ve
         everyone.push(own.der.clone());
     }
     everyone
+}
+
+/// What a detached OpenPGP signature is labelled, as `multipart/signed`'s
+/// protocol and as the signature part's own type (RFC 3156, section 5).
+const PGP_SIGNATURE: &str = "application/pgp-signature";
+
+/// What `multipart/encrypted`'s protocol names for OpenPGP, and the type of
+/// the control part that says which version of it follows (RFC 3156,
+/// section 4).
+const PGP_ENCRYPTED: &str = "application/pgp-encrypted";
+
+/// The body signed with the sender's OpenPGP key, as `multipart/signed`.
+///
+/// Over the same bytes [`signed`] covers, for the same reason: the body as it
+/// sits between the boundaries, CRLF endings and all, less the CRLF that RFC
+/// 2046 gives to the boundary after it. `micalg` names SHA-256, the hash the
+/// signature is made with.
+fn pgp_signed(body: Body, sender: &str) -> Result<MultiPart> {
+    let formatted = body.formatted();
+    let between_the_boundaries = formatted.strip_suffix(b"\r\n").unwrap_or(&formatted);
+    let signature = built(pgp::sign_detached(between_the_boundaries, sender))?;
+    Ok(body
+        .first_in(MultiPart::signed(
+            PGP_SIGNATURE.to_string(),
+            "pgp-sha256".to_string(),
+        ))
+        .singlepart(
+            SinglePart::builder()
+                .header(content_type(&format!(
+                    "{PGP_SIGNATURE}; name=\"signature.asc\""
+                ))?)
+                .header(ContentDisposition::attachment("signature.asc"))
+                .body(signature),
+        ))
+}
+
+/// An entity encrypted to the recipients and to the sender, as
+/// `multipart/encrypted`: the control part saying `Version: 1`, then the
+/// armour, laid out the way Thunderbird lays one out.
+fn pgp_encrypted(entity: &[u8], recipients: &[Recipient], sender: &str) -> Result<MultiPart> {
+    let armour = built(pgp::encrypt_for(entity, recipients, sender))?;
+    Ok(MultiPart::encrypted(PGP_ENCRYPTED.to_string())
+        .singlepart(
+            SinglePart::builder()
+                .header(content_type(PGP_ENCRYPTED)?)
+                .body("Version: 1\r\n".to_string()),
+        )
+        .singlepart(
+            SinglePart::builder()
+                .header(content_type(
+                    "application/octet-stream; name=\"encrypted.asc\"",
+                )?)
+                .header(ContentDisposition::inline_with_name("encrypted.asc"))
+                .body(armour),
+        ))
+}
+
+/// The armour an OpenPGP step built, or why there is none, in words.
+///
+/// An error rather than a message sent some other way: a message asked to go
+/// signed or encrypted that cannot be goes nowhere, so nothing leaves
+/// unprotected because a key was missing or locked.
+fn built(sending: Sending) -> Result<String> {
+    let why = match sending {
+        Sending::Built(armour) => return Ok(armour),
+        Sending::NoPrivateKey => {
+            "There is no PGP private key here for the address this message is from".to_string()
+        }
+        Sending::TheKeyCouldNotBeRead => {
+            "Your PGP private key could not be read back from the credential store".to_string()
+        }
+        Sending::TheKeyIsLocked(key) => format!(
+            "The PGP key for {} is locked, and its passphrase has not been typed since Wixen \
+             Mail started",
+            key.whose
+        ),
+        Sending::YourKeyCannotSign => "Your PGP key is not one that signs".to_string(),
+        Sending::YourKeyCannotBeEncryptedTo => {
+            "Mail cannot be encrypted to your own PGP key, so the copy in Sent could never be \
+             opened"
+                .to_string()
+        }
+        Sending::ARecipientHasNoKey { address } => {
+            format!("There is no PGP key for {address} that mail can be encrypted to")
+        }
+        Sending::CouldNotBeBuilt => "The PGP message could not be built".to_string(),
+    };
+    Err(Error::Protocol(format!(
+        "{why}, so the message was not sent."
+    )))
 }
 
 /// A content type this module writes, read into the form the mail library
@@ -1129,6 +1243,155 @@ mod tests {
                     "{name} changed when the message was protected"
                 );
             }
+        }
+    }
+
+    /// The OpenPGP cases, with the keys held in this test's own credential
+    /// store, so nothing reaches the store of whoever runs them.
+    mod pgp_protected {
+        use super::*;
+        use crate::application::encrypted_mail::WhatTheEnvelopeSays;
+        use crate::service::pgp::for_tests::{
+            CAROLS_FINGERPRINT, alices_public_key, carols_private_key, carols_public_key,
+        };
+        use crate::service::pgp::{
+            PgpVerdict, WhatImportingAKeyFound, import_a_private_key, verify_detached,
+        };
+        use crate::service::signed_mail::{
+            claims_pgp_encryption, claims_pgp_signature, is_a_pgp_mime_part, take_apart_pgp_signed,
+        };
+
+        /// Carol writing to Alice, protected the way asked, with Carol's
+        /// private key the one held here.
+        fn carol_to_alice(protection: Protection) -> Email {
+            crate::service::secret_store::allow();
+            assert_eq!(
+                import_a_private_key(&carols_private_key()),
+                WhatImportingAKeyFound::Imported
+            );
+            Email {
+                from: "carol@example.com".to_string(),
+                to: vec![EmailAddress::new("alice@example.com".to_string(), None)],
+                message_id: "<carol-to-alice@example.com>".to_string(),
+                protection,
+                ..plain_note()
+            }
+        }
+
+        fn alice() -> Recipient {
+            Recipient {
+                address: "alice@example.com".to_string(),
+                public_key: alices_public_key(),
+            }
+        }
+
+        fn formatted(email: &Email) -> Vec<u8> {
+            build_message(email).expect("a message").formatted()
+        }
+
+        /// A signed message's own signature, checked the way the reader checks
+        /// a PGP/MIME signature that arrives.
+        fn verdict_on(signed: &[u8]) -> Option<PgpVerdict> {
+            take_apart_pgp_signed(signed).map(|parts| {
+                verify_detached(
+                    &parts.content,
+                    &parts.signature_armour,
+                    &[carols_public_key()],
+                )
+            })
+        }
+
+        /// The armour an encrypted message carries, found the way the arrival
+        /// path finds it, and opened the way the reader opens it.
+        fn opened(sent: &[u8]) -> WhatTheEnvelopeSays {
+            let armour = crate::service::mime::attachments_with_bytes(sent)
+                .ok()
+                .into_iter()
+                .flatten()
+                .find(|file| {
+                    is_a_pgp_mime_part(
+                        file.described.filename.as_deref().unwrap_or_default(),
+                        &file.described.mime_type,
+                    )
+                })
+                .map(|file| String::from_utf8_lossy(&file.bytes).into_owned());
+            crate::application::opening_pgp::from_the_part(armour.as_deref())
+        }
+
+        #[test]
+        fn test_a_pgp_signed_message_holds_for_the_check_the_reader_makes() {
+            let sent = formatted(&carol_to_alice(Protection::PgpSigned {
+                sender: CAROLS_FINGERPRINT.to_string(),
+            }));
+
+            assert!(claims_pgp_signature(&sent), "not marked as PGP/MIME signed");
+            assert!(
+                String::from_utf8_lossy(&sent).contains("micalg=\"pgp-sha256\""),
+                "the hash the signature was made with is not named"
+            );
+            assert!(matches!(verdict_on(&sent), Some(PgpVerdict::Holds { .. })));
+        }
+
+        #[test]
+        fn test_a_pgp_encrypted_message_is_marked_as_one_and_opens_to_its_words() {
+            let sent = formatted(&carol_to_alice(Protection::PgpEncrypted {
+                recipients: vec![alice()],
+                sender: CAROLS_FINGERPRINT.to_string(),
+            }));
+            let text = String::from_utf8_lossy(&sent).into_owned();
+
+            assert!(
+                claims_pgp_encryption(&sent),
+                "not marked as PGP/MIME encrypted"
+            );
+            assert!(text.contains("Version: 1"), "no control part");
+            assert!(
+                !text.contains("See attached."),
+                "the words went out in the clear"
+            );
+            // Carol's own key opens it, which is what makes the copy in Sent
+            // readable by the person who sent it.
+            let WhatTheEnvelopeSays::OpenedWithPgp { body, .. } = opened(&sent) else {
+                panic!("the sender's key did not open it");
+            };
+            assert_eq!(body.as_plain().trim_end(), "See attached.");
+        }
+
+        #[test]
+        fn test_a_pgp_signed_and_encrypted_message_opens_to_a_signed_one_that_holds() {
+            let sent = formatted(&carol_to_alice(Protection::PgpSignedAndEncrypted {
+                recipients: vec![alice()],
+                sender: CAROLS_FINGERPRINT.to_string(),
+            }));
+
+            let WhatTheEnvelopeSays::OpenedWithPgp { inside, .. } = opened(&sent) else {
+                panic!("the sender's key did not open it");
+            };
+            assert!(claims_pgp_signature(&inside), "what opened is not signed");
+            assert!(matches!(
+                verdict_on(&inside),
+                Some(PgpVerdict::Holds { .. })
+            ));
+        }
+
+        #[test]
+        fn test_a_recipient_with_no_pgp_key_stops_the_message_and_is_named() {
+            // Nothing goes out unprotected because one key was missing: the
+            // build stops, and the sentence says whose key it was.
+            let grace = Recipient {
+                address: "grace@example.com".to_string(),
+                public_key: String::new(),
+            };
+            let email = carol_to_alice(Protection::PgpEncrypted {
+                recipients: vec![alice(), grace],
+                sender: CAROLS_FINGERPRINT.to_string(),
+            });
+
+            let refused = build_message(&email).expect_err("a message went out");
+            assert!(
+                refused.to_string().contains("grace@example.com"),
+                "{refused}"
+            );
         }
     }
 

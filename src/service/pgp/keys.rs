@@ -7,8 +7,9 @@
 //! nobody makes in a hurry.
 //!
 //! So the crate's own types stop here. What crosses out of this file is
-//! [`WhatOpeningItFound`], [`WhatImportingAKeyFound`], [`WhatBecameOfAKey`]
-//! and [`KeyListing`], which are this project's words.
+//! [`WhatOpeningItFound`], [`WhatImportingAKeyFound`], [`WhatBecameOfAKey`],
+//! [`KeyListing`] and, for a signature on its way out, [`Sending`], which are
+//! this project's words.
 //!
 //! # Nothing here is logged
 //!
@@ -41,17 +42,20 @@
 //! out, nothing writes it anywhere and nothing logs it. It goes when the
 //! program closes, or when its key is removed.
 
+use super::sending::random_source;
 use super::{
-    KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, KeyListing, LockedKey, PARTS_PER_KEY,
+    KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, KeyListing, LockedKey, PARTS_PER_KEY, Sending,
     Unlocking, WhatBecameOfAKey, WhatImportingAKeyFound, WhatOpeningItFound, the_entry_for,
 };
 use crate::service::secret_store::{self, LONGEST_SECRET_ONE_ENTRY_HOLDS};
 use pgp::composed::{
-    ArmorOptions, Deserializable, Esk, Message, PublicOrSecret, SignedPublicKey, SignedSecretKey,
+    ArmorOptions, Deserializable, DetachedSignature, Esk, Message, PublicOrSecret,
+    SignedKeyDetails, SignedPublicKey, SignedSecretKey,
 };
+use pgp::crypto::hash::HashAlgorithm;
 use pgp::errors::Error as OpenPgpError;
-use pgp::packet::{KeyFlags, Signature, UserId};
-use pgp::types::{KeyDetails, Password, SignedUser};
+use pgp::packet::{KeyFlags, SecretKey, SecretSubkey, Signature, UserId};
+use pgp::types::{KeyDetails, Password, SignedUser, SigningKey};
 use std::collections::HashMap;
 use std::io::Read;
 
@@ -194,10 +198,7 @@ fn armoured_blocks(text: &str) -> Vec<&str> {
 pub(super) fn listing_of(key: &SignedPublicKey, private: bool) -> KeyListing {
     let mut users: Vec<&SignedUser> = key.details.users.iter().collect();
     users.sort_by_key(|user| !user.is_primary());
-    let primary_self_signature = users
-        .first()
-        .and_then(|user| user.signatures.first())
-        .or(key.details.direct_signatures.first());
+    let primary_self_signature = the_primary_self_signature(&key.details);
     let subkey_bindings = key
         .public_subkeys
         .iter()
@@ -226,6 +227,18 @@ pub(super) fn listing_of(key: &SignedPublicKey, private: bool) -> KeyListing {
             .any(|flags| flags.encrypt_comms() || flags.encrypt_storage()),
         can_sign: flags.iter().any(KeyFlags::sign),
     }
+}
+
+/// The signature a key makes over its own primary user id, or over itself
+/// where it names nobody: where its owner said what the primary key may do.
+pub(super) fn the_primary_self_signature(details: &SignedKeyDetails) -> Option<&Signature> {
+    details
+        .users
+        .iter()
+        .find(|user| user.is_primary())
+        .or(details.users.first())
+        .and_then(|user| user.signatures.first())
+        .or(details.direct_signatures.first())
 }
 
 /// A private key in this program's words, saying whether it is locked.
@@ -373,7 +386,7 @@ fn forget_the_slot(slot: usize) {
 }
 
 /// Every private key's armour in the credential store, in slot order.
-fn keys_here() -> crate::common::Result<Vec<String>> {
+pub(super) fn keys_here() -> crate::common::Result<Vec<String>> {
     move_the_old_entry_into_a_slot();
     let mut keys = Vec::new();
     for slot in 1..=KEY_SLOTS {
@@ -583,7 +596,7 @@ fn the_locked_key(key: &SignedSecretKey) -> LockedKey {
 
 /// A key's fingerprint the way every listing writes it, in hexadecimal
 /// capitals.
-fn fingerprint_of(key: &SignedSecretKey) -> String {
+pub(super) fn fingerprint_of(key: &SignedSecretKey) -> String {
     format!("{:X}", key.fingerprint())
 }
 
@@ -625,6 +638,80 @@ fn it_opens_every_locked_part(key: &SignedSecretKey, passphrase: &Password) -> b
             .secret_subkeys
             .iter()
             .all(|subkey| opened(subkey.key.unlock(passphrase, |_, _| Ok(()))))
+}
+
+/// A detached signature over exactly `content` by the part of `key` that
+/// signs, armoured, SHA-256.
+///
+/// Here rather than beside the rest of sending because it is the one step
+/// that needs a typed passphrase, and a typed passphrase does not leave this
+/// file. A locked part with none held answers that it is locked, and nothing
+/// is tried: the next step is the person's.
+pub(super) fn detached_signature(key: &SignedSecretKey, content: &[u8]) -> Sending {
+    let Some(part) = the_part_that_signs(key) else {
+        return Sending::YourKeyCannotSign;
+    };
+    let nothing_to_type = Password::empty();
+    with_the_held_passphrases(|held| {
+        let passphrase = match (part.is_locked(), held.get(&fingerprint_of(key))) {
+            (false, _) => &nothing_to_type,
+            (true, Some(typed)) => typed,
+            (true, None) => return Sending::TheKeyIsLocked(the_locked_key(key)),
+        };
+        part.signature_over(content, passphrase)
+    })
+}
+
+/// The part of a private key that signs: the primary where its owner let it,
+/// a signing subkey otherwise.
+enum SigningPart<'k> {
+    Primary(&'k SecretKey),
+    Subkey(&'k SecretSubkey),
+}
+
+fn the_part_that_signs(key: &SignedSecretKey) -> Option<SigningPart<'_>> {
+    let signs = |signature: &Signature| signature.key_flags().sign();
+    if the_primary_self_signature(&key.details).is_some_and(signs) {
+        return Some(SigningPart::Primary(&key.primary_key));
+    }
+    key.secret_subkeys
+        .iter()
+        .find(|subkey| subkey.signatures.first().is_some_and(signs))
+        .map(|subkey| SigningPart::Subkey(&subkey.key))
+}
+
+impl SigningPart<'_> {
+    fn is_locked(&self) -> bool {
+        match self {
+            SigningPart::Primary(part) => part.secret_params().is_encrypted(),
+            SigningPart::Subkey(part) => part.secret_params().is_encrypted(),
+        }
+    }
+
+    /// The armoured signature, or the answer that the key would not sign.
+    /// Nothing the crate said about why crosses out.
+    fn signature_over(&self, content: &[u8], passphrase: &Password) -> Sending {
+        let signature = match self {
+            SigningPart::Primary(part) => signed_by(*part, passphrase, content),
+            SigningPart::Subkey(part) => signed_by(*part, passphrase, content),
+        };
+        signature.map_or(Sending::YourKeyCannotSign, Sending::Built)
+    }
+}
+
+fn signed_by(
+    part: &impl SigningKey,
+    passphrase: &Password,
+    content: &[u8],
+) -> pgp::errors::Result<String> {
+    DetachedSignature::sign_binary_data(
+        random_source(),
+        part,
+        passphrase,
+        HashAlgorithm::Sha256,
+        content,
+    )?
+    .to_armored_string(ArmorOptions::default())
 }
 
 /// The passphrases typed this session, by fingerprint, for `work` to read or

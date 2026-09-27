@@ -17,8 +17,10 @@
 //! passphrase held in memory for the session once somebody types it; four
 //! ways of failing and one of needing a passphrase, each said in its own
 //! words. And, since 13-18, a signature checked against the keys it is
-//! handed, inline or detached, answering one of four verdicts. Key servers,
-//! revocation, and anything outgoing are outside it.
+//! handed, inline or detached, answering one of four verdicts. Since 13-20,
+//! outgoing mail too: a detached signature by a key here, and a message
+//! encrypted to its recipients' keys and the sender's own, each answering one
+//! of [`Sending`]'s outcomes. Key servers and revocation are outside it.
 //!
 //! Inline PGP and PGP/MIME. An armoured block in the message's text is what
 //! `application::body_safety::what_the_form_says` finds and hands here. Since
@@ -58,6 +60,7 @@
 //! See [`WhatOpeningItFound`].
 
 mod keys;
+mod sending;
 mod signatures;
 
 /// The GnuPG-made key and message, for the tests of modules that open mail.
@@ -359,6 +362,66 @@ pub struct KeyInYourList {
     pub name: String,
     /// The whole fingerprint, in groups of four.
     pub fingerprint: String,
+}
+
+/// Somebody a message is encrypted to: their address, which is what a refusal
+/// names, and the public key kept for them, as armour.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recipient {
+    pub address: String,
+    pub public_key: String,
+}
+
+/// What came of signing or encrypting a message on its way out.
+///
+/// One answer that carries the armour and seven that say why there is none,
+/// each a different thing for the person to do. Nothing here carries text from
+/// the crate behind this module, for the reason [`WhatOpeningItFound`] gives,
+/// and a key's passphrase never appears in any of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sending {
+    /// Built: a detached signature or an encrypted message, armoured.
+    Built(String),
+    /// No private key here has the sender's fingerprint.
+    NoPrivateKey,
+    /// The credential store would not give the keys back, or a key in it no
+    /// longer reads as one and may be the sender's, so nothing was tried.
+    TheKeyCouldNotBeRead,
+    /// The sender's key is locked and its passphrase has not been typed since
+    /// Wixen Mail started. The next step is to ask for it, which only a window
+    /// does.
+    TheKeyIsLocked(LockedKey),
+    /// The sender's key is not one that signs: its flags give no part of it
+    /// that job.
+    YourKeyCannotSign,
+    /// Mail cannot be encrypted to the sender's own key, and a message not
+    /// encrypted to its sender is one the copy in Sent never opens for them.
+    YourKeyCannotBeEncryptedTo,
+    /// The key handed for this recipient is missing or cannot be encrypted
+    /// to, so nothing was built for anybody.
+    ARecipientHasNoKey { address: String },
+    /// Every key was usable and the crate still would not build the message.
+    /// No input this program makes is known to reach it.
+    CouldNotBeBuilt,
+}
+
+/// A detached signature over exactly these bytes by the private key here with
+/// the fingerprint `sender`, armoured, SHA-256.
+///
+/// Exactly: RFC 3156 signs a MIME part as it goes out, CRLF line endings and
+/// all, so whatever is handed here is what the signature covers.
+pub fn sign_detached(content: &[u8], sender: &str) -> Sending {
+    sending::sign_detached(content, sender)
+}
+
+/// These bytes encrypted to each recipient's key and to the sender's own,
+/// SEIPD version 1, armoured.
+///
+/// The sender always, so the copy filed in Sent opens for the person who sent
+/// it. Only the public half of the sender's key is used, so a locked key needs
+/// no passphrase here.
+pub fn encrypt_for(content: &[u8], recipients: &[Recipient], sender: &str) -> Sending {
+    sending::encrypt_for(content, recipients, sender)
 }
 
 /// Check a clearsigned text against these public keys.

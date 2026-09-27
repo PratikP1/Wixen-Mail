@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **OpenPGP signing and encrypting are built underneath, and not offered yet (#52 points 4
+  and 5).** Wixen Mail can now sign a message with a PGP private key of yours and encrypt one
+  to each recipient's public key and to your own, laid out the PGP/MIME way Thunderbird and
+  other mail programs read, so the copy in Sent is one you can open. Encrypting uses only the
+  public half of your key, so a key locked with a passphrase needs its passphrase only to
+  sign. A recipient with no key that mail can be encrypted to, or a key of yours that is
+  locked with nothing typed since Wixen Mail started, stops the message with a sentence
+  saying which, and nothing goes out unprotected. The version does not move for this: no
+  build has been cut since 1.0.0-alpha.1. Known limitations: signing and encrypting are not
+  offered anywhere yet, and nothing you do reaches them; the Sign and Encrypt boxes in the
+  message window arrive in a later change. A message is encrypted with the older of
+  OpenPGP's two forms of encrypted data, because every program a correspondent may be using
+  reads it; whether to offer the newer one waits until real recipients' programs have been
+  tried. Nothing signed or encrypted here has been opened by Thunderbird or Proton Mail.
+  GnuPG, a separate program, opened a message encrypted here and checked a signature made
+  here, once, and Wixen Mail's own reader checks both in its tests. A key that does not say
+  it signs, or that mail may be encrypted to it, is treated as one that cannot, even where
+  another program would try it anyway.
 - **A correspondent's S/MIME certificate is kept when their signature holds (#52 points 4
   and 5).** When a message signed with an S/MIME certificate arrives, its signature holds, and
   the certificate names the address the message came from, Wixen Mail keeps that certificate,
