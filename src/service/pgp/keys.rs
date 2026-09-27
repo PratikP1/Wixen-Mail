@@ -662,6 +662,24 @@ pub(super) fn detached_signature(key: &SignedSecretKey, content: &[u8]) -> Sendi
     })
 }
 
+/// The key with this fingerprint, when the part of it that signs is locked and
+/// no passphrase for it is held.
+///
+/// The same two questions [`detached_signature`] asks before it signs, asked
+/// without signing anything. A key that cannot be read, or cannot sign, waits
+/// on nothing here: signing answers those itself.
+pub(super) fn the_passphrase_signing_needs(fingerprint: &str) -> Option<LockedKey> {
+    let key = keys_here()
+        .ok()?
+        .iter()
+        .filter_map(|armour| SignedSecretKey::from_string(armour).ok())
+        .map(|(key, _)| key)
+        .find(|key| fingerprint_of(key).eq_ignore_ascii_case(fingerprint))?;
+    let locked = the_part_that_signs(&key)?.is_locked();
+    let typed = with_the_held_passphrases(|held| held.contains_key(&fingerprint_of(&key)));
+    (locked && !typed).then(|| the_locked_key(&key))
+}
+
 /// The part of a private key that signs: the primary where its owner let it,
 /// a signing subkey otherwise.
 enum SigningPart<'k> {

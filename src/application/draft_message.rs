@@ -204,6 +204,7 @@ mod tests {
             references: None,
             created_at: "2026-07-30T10:00:00+00:00".to_string(),
             updated_at: "2026-07-30T10:05:00+00:00".to_string(),
+            protection: Default::default(),
         }
     }
 
@@ -441,6 +442,7 @@ mod what_the_filed_copy_says_it_is {
             references: None,
             created_at: "2026-07-30T10:00:00+00:00".to_string(),
             updated_at: "2026-07-30T10:05:00+00:00".to_string(),
+            protection: Default::default(),
         }
     }
 

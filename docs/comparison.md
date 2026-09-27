@@ -43,7 +43,7 @@ implying they exist.
 |---|---|---|
 | Templates | Repetitive replies without retyping | Not yet |
 | Several identities per account | One mailbox, more than one address to send as | Not yet |
-| Signing or encrypting what you send | Thunderbird has OpenPGP built in | Not yet. Signed mail that arrives is read and checked, S/MIME-encrypted mail to a certificate on this computer is opened, experimentally, and a PGP message written inline opens with a key imported from the File menu; nothing goes out signed or encrypted |
+| Signing or encrypting what you send | Thunderbird has OpenPGP built in | Offered, and experimental. The composer has Sign and Encrypt boxes, and a message goes out with S/MIME or OpenPGP, whichever this computer holds keys for. No message sent this way has been opened by another mail program yet. Signed and encrypted mail that arrives is read and checked, also experimentally |
 | Vacation or automatic replies | Usually a server feature, and usually set from the client | Not yet |
 
 Two more are worth stating plainly because their absence is a decision rather
@@ -121,5 +121,6 @@ What is left, in the order somebody would miss it:
 
 1. **Templates.** Repetitive replies without retyping.
 2. **Several identities per account.** One mailbox, more than one address.
-3. **Signing and encrypting outgoing mail.** Reading it works; sending it
-   does not.
+3. **Signing and encrypting outgoing mail that other programs are known to
+   read.** Both are offered now, experimentally; what is missing is a
+   message from here opened by Outlook, Thunderbird or Apple Mail.

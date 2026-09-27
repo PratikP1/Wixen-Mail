@@ -331,6 +331,9 @@ pub struct CompositionData {
     /// Carried through the window so that a reply put aside and reopened still
     /// goes out inside its thread instead of starting a new one.
     pub answering: Option<crate::application::threading::Continuing>,
+    /// Whether it was to go signed, encrypted, both or neither, so the
+    /// composer reopens with its boxes as they were left.
+    pub protection: crate::application::protecting::Choice,
 }
 
 /// Why the open folder's conversations were read again.
@@ -545,6 +548,9 @@ pub enum UIUpdate {
     OutboxSendResult {
         queue_id: String,
         success: bool,
+        /// How a message that went was protected, "signed with S/MIME" and
+        /// the like, or nothing for a plain one.
+        how: Option<&'static str>,
         error: Option<String>,
     },
     /// The network went or came back, in the words somebody is given.

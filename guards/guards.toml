@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 392 records have arrived since and have not been through it.
+# 397 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17322,7 +17322,7 @@ red = [
     "presentation::editor_page_harness::tests::test_a_file_dropped_on_the_message_is_turned_away_when_the_page_runs",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 83 },
+    { file = "src/presentation/editor_document.rs", tests = 88 },
     { file = "src/presentation/editor_page_harness.rs", tests = 36 },
 ]
 
@@ -17392,7 +17392,7 @@ red = [
     "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 6 },
+    { file = "src/data/message_cache/drafts.rs", tests = 8 },
     { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
@@ -29293,7 +29293,7 @@ red = [
     "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 83 },
+    { file = "src/presentation/editor_document.rs", tests = 88 },
     { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 1 },
 ]
 
@@ -29320,7 +29320,7 @@ red = [
     "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 83 },
+    { file = "src/presentation/editor_document.rs", tests = 88 },
     { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 1 },
 ]
 
@@ -32485,7 +32485,7 @@ red = [
     "test_the_field_and_the_buttons_are_named_in_tab_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_passphrase.rs", tests = 1 },
+    { file = "src/presentation/wx_passphrase.rs", tests = 2 },
     { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 8 },
 ]
 
@@ -32726,4 +32726,100 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/protocols/smtp.rs", tests = 48 },
+]
+
+# A message asked to go encrypted sent plain when a recipient has nothing kept,
+# so the person who ticked Encrypt hears it went and it went readable. Written
+# 2026-09-27 by 13-21, measured with the whole library.
+[[guard]]
+name = "a message asked to go encrypted to somebody with no key is refused, not sent plain"
+file = "src/application/protecting.rs"
+before = """    Err(who_cannot_be_reached(&kept, yours))"""
+after = """    let _ = who_cannot_be_reached(&kept, yours);
+    Ok(Protection::Plain)"""
+red = [
+    "application::protecting::tests::test_the_refusal_names_the_first_recipient_with_nothing_kept",
+    "application::protecting::tests::test_with_only_a_key_held_a_recipient_with_only_a_certificate_is_named",
+    "application::protecting::tests::with_a_certificate::test_with_both_held_the_refusal_names_the_recipient_with_neither",
+    "application::protecting::tests::with_a_certificate::test_with_both_held_and_no_one_kind_reaching_everybody_one_of_each_is_named",
+    "application::protecting::tests::from_the_queue::test_a_row_whose_certificate_was_forgotten_after_queueing_is_refused_not_sent_plain",
+    "application::protecting::tests::test_at_send_a_recipient_with_nothing_kept_is_named_and_a_blind_copy_refused",
+]
+tests_last_seen = [
+    { file = "src/application/protecting.rs", tests = 32 },
+]
+
+# A draft saved without whether it is to go signed or encrypted, so one
+# reopened and sent goes out plain. Written 2026-09-27 by 13-21, measured with
+# the whole library.
+[[guard]]
+name = "a draft keeps whether it is to go signed or encrypted"
+file = "src/data/message_cache/drafts.rs"
+before = """                draft.protection.as_stored(),"""
+after = """                Choice::Plain.as_stored(),"""
+red = [
+    "data::message_cache::drafts::tests::test_a_draft_keeps_whether_it_is_to_go_signed_or_encrypted",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/drafts.rs", tests = 8 },
+]
+
+# A queued message whose key went after it was queued sent plain rather than
+# refused, so a message asked to go encrypted goes out readable on the next
+# pass of the send loop. Written 2026-09-27 by 13-21, measured with the whole
+# library.
+[[guard]]
+name = "a queued message whose key went is refused at sending, not sent plain"
+file = "src/application/mail_controller.rs"
+before = """        .map_err(|refused| Error::InPlainWords(refused.said()))?,"""
+after = """        .unwrap_or_default(),"""
+red = [
+    "application::protecting::tests::from_the_queue::test_a_row_whose_certificate_was_forgotten_after_queueing_is_refused_not_sent_plain",
+]
+tests_last_seen = [
+    { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/protecting.rs", tests = 32 },
+]
+
+# Encrypt dropped from the letters the composer's page watches for, so Alt+Y
+# inside the message does nothing and the box can only be reached by Tab.
+# Written 2026-09-27 by 13-21, measured against the target that presses it.
+[[guard]]
+name = "alt y inside the message reaches the encrypt box"
+file = "src/presentation/editor_document.rs"
+suite = "signing_and_encrypting_from_the_composer"
+before = """        Reached::Sign,
+        Reached::Encrypt,
+    ];"""
+after = """        Reached::Sign,
+        Reached::Sign,
+    ];"""
+red = [
+    "test_alt_y_inside_the_message_ticks_encrypt",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 88 },
+    { file = "tests/signing_and_encrypting_from_the_composer.rs", tests = 20 },
+]
+
+# Send let a message go that its Sign or Encrypt box could not be honoured
+# for, so a message asked to go encrypted is queued to go plain or to fail
+# later where nobody is looking. Written 2026-09-27 by 13-21, measured against
+# the target that asks.
+[[guard]]
+name = "send keeps a message it cannot protect in the composer"
+file = "src/presentation/wx_compose.rs"
+suite = "signing_and_encrypting_from_the_composer"
+before = """        say(&refused.said());
+        return false;"""
+after = """        say(&refused.said());
+        return true;"""
+red = [
+    "test_send_with_encrypt_ticked_and_nothing_kept_for_a_recipient_does_not_go_and_names_them",
+    "test_a_locked_key_whose_passphrase_is_not_given_does_not_go",
+    "test_a_key_still_locked_after_its_passphrase_is_not_asked_for_twice",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/signing_and_encrypting_from_the_composer.rs", tests = 20 },
 ]

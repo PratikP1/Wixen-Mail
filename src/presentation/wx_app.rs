@@ -15530,6 +15530,7 @@ fn send_the_answer(
         // Nothing offers to delay one and nothing should: the person who sent
         // the invitation is waiting on the answer.
         send_at: None,
+        protection: crate::application::protecting::Choice::Plain,
     };
     match queue_for_sending(state, &Some(cache.clone()), &data) {
         Ok((_, waiting_on)) => HowItWent::Queued {
@@ -17450,6 +17451,45 @@ fn the_signature_a_message_starts_with(
     })
 }
 
+/// What the composer asks at Send about its Sign and Encrypt boxes: whether
+/// the message can go as they ask, from what this computer holds for the
+/// address it goes from and for each recipient.
+///
+/// The address is the active account's, because that is the account the
+/// Outbox sends the message from. Nothing is read for a message with neither
+/// box ticked.
+fn the_protection_check(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+) -> wx_compose::ProtectionCheck {
+    use crate::application::protecting::{Choice, WhatIsHeld, addresses_in, at_send, what_is_held};
+    let state = state.clone();
+    let cache = cache.clone();
+    Box::new(move |data: &wx_compose::ComposeData| {
+        if data.protection == Choice::Plain {
+            return Ok(());
+        }
+        let from = {
+            let s = lock_state(&state);
+            s.active_account_id
+                .as_ref()
+                .and_then(|id| s.accounts.iter().find(|a| &a.id == id))
+                .map(|account| account.email.clone())
+                .unwrap_or_default()
+        };
+        let held = match cache.as_deref() {
+            Some(cache) => what_is_held(
+                cache,
+                &*crate::service::signed_mail::this_computers_certificates(),
+                &from,
+                &addresses_in(&[&data.to, &data.cc, &data.bcc]),
+            ),
+            None => WhatIsHeld::default(),
+        };
+        at_send(data.protection, &from, &data.to, &data.cc, &data.bcc, &held)
+    })
+}
+
 /// Open the compose dialog and handle the result.
 fn open_compose(
     app: AppHandles<'_>,
@@ -17571,6 +17611,7 @@ fn open_compose(
     // automatic draft save used to raise the spelling check mid-sentence. Held
     // across the call, so the answer comes back however the window ends.
     let _typing = one_question_at_a_time::while_somebody_types();
+    let checking_protection = the_protection_check(state, cache);
 
     match wx_compose::show_compose_dialog_full(
         frame,
@@ -17586,6 +17627,7 @@ fn open_compose(
             rt,
         )),
         saver,
+        checking_protection,
     ) {
         ComposeResult::Send(data) => {
             // Queue first, then ask whether it goes. Nothing used to reach the
@@ -17735,6 +17777,7 @@ fn save_as_draft(
         attachments: data.attachments.clone(),
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
+        protection: data.protection,
         created_at: chrono::Local::now().to_rfc3339(),
         updated_at: chrono::Local::now().to_rfc3339(),
     };
@@ -18025,6 +18068,9 @@ fn put_in_the_outbox(
         // the reply was started and carried through the window unchanged.
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
+        // Signed, encrypted, both or neither, as the boxes were at Send, so
+        // the send loop builds it that way however long it waits.
+        protection: data.protection,
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),
@@ -21300,11 +21346,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::OutboxSendResult {
             queue_id,
             success,
+            how,
             error,
         } => {
             if *success {
-                frame.set_status_text("The message was sent from the Outbox.", 0);
-                let _ = a11y.signal(FeedbackEvent::MessageSent, "from the outbox");
+                // How it was protected is said every time it was, so the
+                // family that signed or encrypted it is never a silent choice.
+                let went = sent_from_the_outbox(*how);
+                frame.set_status_text(&format!("The message was sent {went}."), 0);
+                let _ = a11y.signal(FeedbackEvent::MessageSent, &went);
             } else {
                 let err = error.as_deref().unwrap_or("Unknown error");
                 tracing::error!("Outbox {} failed: {}", queue_id, err);
@@ -22184,6 +22234,9 @@ fn a_message_taken_back(
         // it, so carrying one through would be a schedule somebody cannot
         // see and cannot cancel. Pressing Schedule again is one press.
         send_at: None,
+        // Taken back, it keeps its boxes: a message asked to go encrypted
+        // that came back plain would be sent in the clear the next time.
+        protection: message.protection,
     }
 }
 
@@ -22206,6 +22259,7 @@ fn the_draft_it_became(
         body: written.body.clone(),
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
+        protection: written.protection,
     }
 }
 
@@ -22239,6 +22293,35 @@ fn the_conversation_it_was_answering(
         }),
         _ => None,
     }
+}
+
+/// Where a message went from and, when it was protected, how: "from the
+/// Outbox, signed and encrypted with OpenPGP". Shown and said as one.
+fn sent_from_the_outbox(how: Option<&str>) -> String {
+    match how {
+        Some(how) => format!("from the Outbox, {how}"),
+        None => "from the Outbox".to_string(),
+    }
+}
+
+/// A request with what this computer holds gathered for it, when the message
+/// was asked to go signed or encrypted.
+///
+/// Gathered here, as the message goes, rather than when it was queued, so a
+/// key or certificate removed in between stops the send with a reason rather
+/// than a message going out some other way. A plain message reads no key
+/// store at all.
+fn protected_as_asked(mut request: SendEmailRequest, cache: &MessageCache) -> SendEmailRequest {
+    use crate::application::protecting::{Choice, what_is_held};
+    if request.protection != Choice::Plain {
+        request.held = what_is_held(
+            cache,
+            &*crate::service::signed_mail::this_computers_certificates(),
+            &request.from_address,
+            &request.every_recipient(),
+        );
+    }
+    request
 }
 
 fn flush_outbox(app: AppHandles<'_>) {
@@ -22383,7 +22466,7 @@ fn flush_outbox(app: AppHandles<'_>) {
             let outcome = match auth {
                 Ok(auth) => match SendEmailRequest::from_queued(msg, &account, auth) {
                     Some(request) => controller
-                        .send_email(&request)
+                        .send_email(&protected_as_asked(request, &cache))
                         .await
                         .map_err(|e| e.to_string()),
                     None => Err(
@@ -22394,7 +22477,8 @@ fn flush_outbox(app: AppHandles<'_>) {
             };
 
             match &outcome {
-                Ok(raw) => {
+                Ok(went) => {
+                    let raw = &went.bytes;
                     // The one failure in this routine that reaches somebody
                     // outside the program. The message has already gone to the
                     // server; a row left behind is found by the next flush and
@@ -22453,6 +22537,7 @@ fn flush_outbox(app: AppHandles<'_>) {
                 .send(UIUpdate::OutboxSendResult {
                     queue_id: msg.id.clone(),
                     success: outcome.is_ok(),
+                    how: outcome.as_ref().ok().and_then(|went| went.how),
                     error: outcome.err(),
                 })
                 .await;
@@ -28614,6 +28699,7 @@ fn send_the_report(
         attachments,
         answering: None,
         send_at: None,
+        protection: crate::application::protecting::Choice::Plain,
     };
     let (recipient, waiting_on) = put_in_the_outbox(cache, sender.account.id.clone(), &data)?;
     Ok((recipient, waiting_on, kept_in.display().to_string()))
@@ -33023,6 +33109,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         // The existing test-only cache builder, not a second one: it already
@@ -33133,6 +33220,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         let cache = super::tests::test_cache();
@@ -33239,6 +33327,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         let cache = super::tests::test_cache();
@@ -33338,6 +33427,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         let cache = super::tests::test_cache();

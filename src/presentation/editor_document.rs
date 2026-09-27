@@ -1232,11 +1232,13 @@ pub enum Reached {
     SaveDraft,
     Discard,
     Cancel,
+    Sign,
+    Encrypt,
 }
 
 impl Reached {
     /// Every one, in the order the page indexes them by.
-    pub const ALL: [Reached; 15] = [
+    pub const ALL: [Reached; 17] = [
         Reached::From,
         Reached::To,
         Reached::Cc,
@@ -1252,6 +1254,8 @@ impl Reached {
         Reached::SaveDraft,
         Reached::Discard,
         Reached::Cancel,
+        Reached::Sign,
+        Reached::Encrypt,
     ];
 
     /// The visible label, with the ampersand that marks the underlined letter.
@@ -1283,6 +1287,12 @@ impl Reached {
             Self::SaveDraft => "Save &Draft",
             Self::Discard => "D&iscard",
             Self::Cancel => "Cance&l",
+            // G and Y, the two letters of either word nothing else in the
+            // window answers to: S is Subject, I is Discard, N is Send, E is
+            // the People found list, C is Cc, R is Redo, P is Spelling and T
+            // is To.
+            Self::Sign => "Si&gn (experimental)",
+            Self::Encrypt => "Encr&ypt (experimental)",
         }
     }
 
@@ -1304,7 +1314,42 @@ impl Reached {
             Self::SaveDraft => 'd',
             Self::Discard => 'i',
             Self::Cancel => 'l',
+            Self::Sign => 'g',
+            Self::Encrypt => 'y',
         }
+    }
+
+    /// What is said when a check box among these is ticked or cleared from
+    /// inside the message, where the box itself does not have the keyboard
+    /// and so says nothing of its own. Nothing for the rest.
+    ///
+    /// The same shape the formatting switches use, "Bold on", so a person
+    /// hears one pattern for everything that turns on and off.
+    pub fn said_when_ticked(self, ticked: bool) -> Option<String> {
+        let name = match self {
+            Self::Sign => "Sign",
+            Self::Encrypt => "Encrypt",
+            _ => return None,
+        };
+        Some(format!("{name} {}", if ticked { "on" } else { "off" }))
+    }
+
+    /// The sentence a screen reader reads after the name, for the ones that
+    /// need more than their label.
+    pub fn description(self) -> Option<String> {
+        let what_it_does = match self {
+            Self::Sign => {
+                "Signs this message with your certificate or PGP key, so the people it goes to can check it was not changed on the way."
+            }
+            Self::Encrypt => {
+                "Encrypts this message so only the people it goes to, and you, can open it. Each of them needs a certificate or PGP key kept here."
+            }
+            _ => return None,
+        };
+        Some(format!(
+            "{what_it_does} {}",
+            crate::application::allowed::SIGNING_AND_ENCRYPTING_IS_EXPERIMENTAL
+        ))
     }
 }
 
@@ -2302,17 +2347,95 @@ mod tests {
         // is not a crash. It is worse than that: Alt+S lands on Subject or on
         // Spelling depending on where the last one left off, which is a key
         // that cannot be learned.
-        let mut seen = std::collections::HashMap::new();
-        for reached in Reached::ALL {
-            if let Some(other) = seen.insert(reached.letter(), reached) {
-                panic!(
-                    "Alt+{} is both {} and {}",
-                    reached.letter().to_ascii_uppercase(),
-                    other.label(),
-                    reached.label(),
-                );
-            }
+        let every_one: Vec<(char, &str)> = Reached::ALL
+            .iter()
+            .map(|reached| (reached.letter(), reached.label()))
+            .collect();
+        if let Some(clash) = two_on_one_letter(&every_one) {
+            panic!("{clash}");
         }
+    }
+
+    /// The first letter two of these answer to, said, or nothing.
+    fn two_on_one_letter(each: &[(char, &str)]) -> Option<String> {
+        let mut seen = std::collections::HashMap::new();
+        each.iter().find_map(|(letter, label)| {
+            seen.insert(*letter, *label).map(|other| {
+                format!(
+                    "Alt+{} is both {other} and {label}",
+                    letter.to_ascii_uppercase()
+                )
+            })
+        })
+    }
+
+    #[test]
+    fn test_companion_a_letter_planted_twice_is_refused() {
+        let planted = [('g', "Si&gn (experimental)"), ('n', "Se&nd"), ('g', "&Go")];
+        assert_eq!(
+            two_on_one_letter(&planted).as_deref(),
+            Some("Alt+G is both Si&gn (experimental) and &Go")
+        );
+    }
+
+    #[test]
+    fn test_sign_and_encrypt_answer_to_g_and_y_and_say_they_are_experimental() {
+        assert_eq!(Reached::Sign.label(), "Si&gn (experimental)");
+        assert_eq!(Reached::Sign.letter(), 'g');
+        assert_eq!(Reached::Encrypt.label(), "Encr&ypt (experimental)");
+        assert_eq!(Reached::Encrypt.letter(), 'y');
+    }
+
+    #[test]
+    fn test_the_page_watches_for_g_and_y_while_the_keyboard_is_in_the_message() {
+        let table = reach_key_table();
+        for reached in [Reached::Sign, Reached::Encrypt] {
+            let index = Reached::ALL.iter().position(|each| *each == reached);
+            let entry =
+                index.map(|index| format!("{{key:\"{}\",index:{index}}}", reached.letter()));
+            assert!(
+                entry
+                    .as_ref()
+                    .is_some_and(|entry| table.contains(entry.as_str())),
+                "{reached:?} is not in the page's key table: {table}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ticking_sign_or_encrypt_from_the_message_says_which_and_which_way() {
+        let said: Vec<Option<String>> = [Reached::Sign, Reached::Encrypt]
+            .into_iter()
+            .flat_map(|reached| {
+                [
+                    reached.said_when_ticked(true),
+                    reached.said_when_ticked(false),
+                ]
+            })
+            .collect();
+        assert_eq!(
+            said,
+            vec![
+                Some("Sign on".to_string()),
+                Some("Sign off".to_string()),
+                Some("Encrypt on".to_string()),
+                Some("Encrypt off".to_string()),
+            ]
+        );
+        assert_eq!(Reached::Send.said_when_ticked(true), None);
+    }
+
+    #[test]
+    fn test_sign_and_encrypt_say_what_they_do_and_that_it_is_experimental() {
+        for reached in [Reached::Sign, Reached::Encrypt] {
+            let described = reached.description().unwrap_or_default();
+            assert!(
+                described
+                    .contains(crate::application::allowed::SIGNING_AND_ENCRYPTING_IS_EXPERIMENTAL),
+                "{reached:?}: {described:?}"
+            );
+        }
+        assert_ne!(Reached::Sign.description(), Reached::Encrypt.description());
     }
 
     #[test]

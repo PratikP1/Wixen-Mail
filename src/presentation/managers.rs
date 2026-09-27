@@ -4190,6 +4190,8 @@ pub fn open_draft(
             }),
             (None, _) => None,
         },
+        // Reopened with its Sign and Encrypt boxes as they were left.
+        protection: draft.protection,
     })
 }
 

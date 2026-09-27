@@ -2,6 +2,7 @@
 //!
 //! Bridges the UI with IMAP/SMTP protocols and manages mail operations.
 
+use crate::application::protecting::{Choice, WhatIsHeld, what_protection_it_gets};
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
@@ -11,7 +12,7 @@ use crate::service::protocols::imap::{
     MailboxStatus, Moved,
 };
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
-use crate::service::protocols::smtp::{Email, Protection, SmtpClient, SmtpConfig};
+use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
@@ -28,7 +29,7 @@ use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 /// exactly what an outgoing header carries for any other sender. Empty
 /// entries are dropped: a trailing comma is a typing artefact, not a request
 /// to send to nobody.
-fn addresses(field: &str) -> Vec<EmailAddress> {
+pub(crate) fn addresses(field: &str) -> Vec<EmailAddress> {
     crate::application::reply::split_addresses(field)
         .iter()
         .map(|entry| recipient_address(entry))
@@ -134,6 +135,15 @@ pub struct SendEmailRequest {
     /// The whole conversation before this reply, ending with the message being
     /// answered.
     pub references: Option<String>,
+    /// Whether it goes signed, encrypted, both or neither, as it was queued.
+    pub protection: Choice,
+    /// What this computer holds for the sender and the recipients.
+    ///
+    /// Nothing until the send loop gathers it, just before the message goes,
+    /// so a key removed after the message was queued is noticed. A message
+    /// asked to be protected with nothing gathered is refused, never sent
+    /// plain.
+    pub held: WhatIsHeld,
 }
 
 impl SendEmailRequest {
@@ -180,8 +190,30 @@ impl SendEmailRequest {
             body_html: queued.body_html.clone(),
             in_reply_to: queued.in_reply_to.clone(),
             references: queued.references.clone(),
+            protection: queued.protection,
+            held: WhatIsHeld::default(),
         })
     }
+
+    /// Every address it goes to, To, Cc and Bcc, which is who the send loop
+    /// gathers keys for.
+    pub fn every_recipient(&self) -> Vec<String> {
+        self.to
+            .iter()
+            .chain(&self.cc)
+            .chain(&self.bcc)
+            .map(|recipient| recipient.address.clone())
+            .collect()
+    }
+}
+
+/// What went out: the bytes, which the Sent copy is made from, and how it was
+/// protected, for the sentence that says it went.
+#[derive(Debug)]
+pub struct WentOut {
+    pub bytes: Vec<u8>,
+    /// "signed with S/MIME" and the like, or nothing for a plain message.
+    pub how: Option<&'static str>,
 }
 
 /// The message a request becomes, before anything is connected to.
@@ -197,6 +229,9 @@ impl SendEmailRequest {
 /// no credentials, so it sits above the gate rather than beside it: the gate
 /// stays the first thing `send_email` does.
 pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
+    let address_of = |recipient: &EmailAddress| recipient.address.clone();
+    let seen: Vec<String> = req.to.iter().chain(&req.cc).map(address_of).collect();
+    let blind: Vec<String> = req.bcc.iter().map(address_of).collect();
     Ok(Email {
         // Built here, from the same field the From header is built from, so
         // the domain the identifier names and the domain the recipient reads
@@ -225,9 +260,19 @@ pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
         // stops the send and says which one, rather than sending a message
         // without the thing it was written about.
         attachments: crate::application::attaching::read_all(&req.attachments)?,
-        // Nothing yet asks for anything else: the composer's Sign and Encrypt
-        // boxes, and the request carrying them, arrive with 13-21.
-        protection: Protection::Plain,
+        // What the composer's Sign and Encrypt boxes asked for, decided again
+        // now from what is held, since a key can go between Send and the
+        // moment the message goes. A refusal stops the send and the row stays
+        // queued, saying why; nothing goes out plain in place of a message
+        // somebody asked to be private.
+        protection: what_protection_it_gets(
+            req.protection,
+            &req.from_address,
+            &seen,
+            &blind,
+            &req.held,
+        )
+        .map_err(|refused| Error::InPlainWords(refused.said()))?,
     })
 }
 
@@ -585,7 +630,7 @@ impl MailController {
     /// The bytes are the Sent copy. Whether they are filed, and where, is the
     /// caller's decision: it needs the account's folder list and whether the
     /// provider already saved one, and neither belongs to sending.
-    pub async fn send_email(&self, req: &SendEmailRequest) -> Result<Vec<u8>> {
+    pub async fn send_email(&self, req: &SendEmailRequest) -> Result<WentOut> {
         let config = SmtpConfig {
             server: req.server.clone(),
             port: req.port,
@@ -601,9 +646,11 @@ impl MailController {
             SmtpClient::new(config)?
         };
 
-        let sent = client.send_email(outgoing(req)?, &req.auth).await?;
+        let email = outgoing(req)?;
+        let how = crate::application::protecting::how_it_goes(&email.protection);
+        let bytes = client.send_email(email, &req.auth).await?;
         tracing::info!("Email sent successfully");
-        Ok(sent)
+        Ok(WentOut { bytes, how })
     }
 
     /// Flag or unflag a message.
@@ -1117,6 +1164,8 @@ mod tests {
             body_html: None,
             in_reply_to: None,
             references: None,
+            protection: Choice::Plain,
+            held: WhatIsHeld::default(),
         };
         let result = controller.send_email(&req).await;
         assert!(result.is_err()); // expected in tests due placeholder/non-routable SMTP server
@@ -2633,6 +2682,7 @@ mod send_request_tests {
             body: "Attached.".into(),
             in_reply_to: None,
             references: None,
+            protection: Default::default(),
             attempt_count: 0,
             last_error: None,
             created_at: "2026-07-26".into(),

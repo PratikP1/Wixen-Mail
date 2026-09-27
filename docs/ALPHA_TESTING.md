@@ -277,6 +277,17 @@ Written down so you do not spend time reporting things already on the list.
   somebody sends you PGP-signed mail, import their public key and tell us
   which of the five sentences you heard, and whether it matched what their
   own program says.
+- **Sending signed and encrypted mail is experimental, and nothing sent this
+  way has been read by another program.** The composer has two boxes beside
+  Send, Sign (experimental) on `Alt+G` and Encrypt (experimental) on `Alt+Y`.
+  A message goes with S/MIME when you have a certificate and every recipient
+  has one kept here, and with OpenPGP otherwise; when neither can do it, Send
+  says why and nothing is sent. Every message signed or encrypted here so far
+  was read back by Wixen Mail itself, by OpenSSL and by GnuPG, never by
+  Outlook, Thunderbird, Apple Mail or Proton Mail. If you use S/MIME or PGP,
+  send yourself or a friend a signed and an encrypted message and tell us what
+  the other program said about each, and whether the sentence at Send was
+  clear when a key was missing.
 - **The download of everything has never met a real provider.** Since the
   build of 2026-09-18, every check for mail ends by bringing down every
   message of every folder you keep up to date, five hundred headers at a time

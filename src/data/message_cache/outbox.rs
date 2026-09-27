@@ -1,6 +1,7 @@
 //! Offline outbox queue persistence operations
 
 use super::{MessageCache, QueuedOutboxMessage};
+use crate::application::protecting::Choice;
 use crate::application::sending_later::{GoAfter, Readiness, readiness};
 use crate::common::{Error, Result};
 use chrono::{DateTime, Local};
@@ -78,14 +79,14 @@ impl MessageCache {
     ) -> Result<()> {
         let (send_after, somebody_chose_it) = when.written_down();
         self.conn.execute(
-            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 &item.id, &item.account_id, &item.to_addr, &item.cc_addr, &item.bcc_addr,
                 &item.subject, &item.body, &item.body_html, &item.attachments,
                 &item.attempt_count, &item.last_error, &item.created_at,
                 &item.in_reply_to, &item.references, &send_after,
-                &somebody_chose_it,
+                &somebody_chose_it, item.protection.as_stored(),
             ],
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
@@ -163,7 +164,7 @@ impl MessageCache {
         account_id: &str,
     ) -> Result<Vec<(QueuedOutboxMessage, GoAfter)>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection
              FROM outbox_queue
              WHERE account_id = ?1
              ORDER BY created_at ASC"
@@ -186,6 +187,7 @@ impl MessageCache {
                     created_at: row.get(11)?,
                     in_reply_to: row.get(12)?,
                     references: row.get(13)?,
+                    protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
                 };
                 let when =
                     GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
@@ -436,6 +438,7 @@ mod tests {
                     body: "Body".to_string(),
                     in_reply_to: None,
                     references: None,
+                    protection: Choice::Plain,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),
@@ -485,6 +488,7 @@ mod tests {
             body: "Queued body".to_string(),
             in_reply_to: None,
             references: None,
+            protection: Choice::Plain,
             attempt_count: 0,
             last_error: None,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -528,12 +532,73 @@ mod tests {
             body: "Body".to_string(),
             in_reply_to: None,
             references: None,
+            protection: Choice::Plain,
             attempt_count: 0,
             last_error: None,
             created_at: created_at.to_string(),
             body_html: None,
             attachments: String::new(),
         }
+    }
+
+    #[test]
+    fn test_each_protection_a_message_is_queued_with_comes_back_with_it() {
+        // A message asked to go encrypted that came back from the queue as
+        // plain would go out in the clear on the next pass of the send loop.
+        let cache = a_cache("queued_protection");
+        let choices = [
+            Choice::Plain,
+            Choice::Signed,
+            Choice::Encrypted,
+            Choice::SignedAndEncrypted,
+        ];
+        for (index, choice) in choices.into_iter().enumerate() {
+            let at = format!("2026-09-27T09:00:0{index}Z");
+            cache
+                .queue_outbox_message_to_go(
+                    &QueuedOutboxMessage {
+                        protection: choice,
+                        ..queued(&format!("p-{index}"), "acc-1", "Protected", &at)
+                    },
+                    &GoAfter::AsSoonAsPossible,
+                )
+                .expect("a message to queue");
+        }
+
+        let back: Vec<Choice> = cache
+            .load_outbox_messages("acc-1")
+            .expect("the queue to load")
+            .iter()
+            .map(|message| message.protection)
+            .collect();
+        assert_eq!(back, choices);
+    }
+
+    #[test]
+    fn test_a_message_queued_before_there_was_a_protection_goes_plain() {
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let older =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            older
+                .queue_outbox_message_to_go(
+                    &queued("old-1", "acc-1", "Queued long ago", "2026-01-01T09:00:00Z"),
+                    &GoAfter::AsSoonAsPossible,
+                )
+                .expect("a message to queue");
+            older
+                .conn
+                .execute("ALTER TABLE outbox_queue DROP COLUMN protection", [])
+                .expect("the column to come off, making this an older database");
+        }
+
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
+        let loaded = reopened
+            .load_outbox_messages("acc-1")
+            .expect("the queue to load");
+        assert_eq!(loaded.len(), 1, "the queued message did not survive");
+        assert_eq!(loaded[0].protection, Choice::Plain);
     }
 
     #[test]
@@ -731,6 +796,7 @@ mod tests {
                     body: "Body".to_string(),
                     in_reply_to: None,
                     references: None,
+                    protection: Choice::Plain,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),
@@ -765,6 +831,7 @@ mod tests {
                     body: "Body".to_string(),
                     in_reply_to: Some("<c@x>".to_string()),
                     references: Some("<a@x> <b@x> <c@x>".to_string()),
+                    protection: Choice::Plain,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),

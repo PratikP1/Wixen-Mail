@@ -611,6 +611,7 @@ fn check_send_preview(
         attachments: Vec::new(),
         answering: None,
         send_at: None,
+        protection: Default::default(),
     };
     let widgets = wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));
     check(

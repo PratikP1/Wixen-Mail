@@ -407,6 +407,16 @@ pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experime
      for it the first time a reader window opens a message that needs it, \
      and the passphrase is remembered until Wixen Mail closes and never saved.";
 
+/// What the composer's Sign and Encrypt boxes say, as the end of their
+/// descriptions (13-21).
+///
+/// Said where the person ticking them reads, because the risk is one nobody
+/// can see from here: a message this program signed or encrypted has never
+/// been opened by another mail program, so a signature it says holds, or a
+/// message it says is encrypted to somebody, may be one that program refuses.
+pub const SIGNING_AND_ENCRYPTING_IS_EXPERIMENTAL: &str = "Experimental: no other mail program has \
+     checked a signature Wixen Mail made or opened a message it encrypted yet.";
+
 /// What Undo and Redo say, as their help on the Edit menu, while they name a
 /// mark, a star or a label on messages (13-07), a move, a delete or a copy
 /// (13-08), or an action on a contact, an event, a task, a note or a reminder

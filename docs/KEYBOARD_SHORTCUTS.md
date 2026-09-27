@@ -1235,6 +1235,8 @@ cell" while the caret is inside one.
 |--------|----------|
 | Send | `Alt+N` |
 | Schedule | `Alt+H` |
+| Sign (experimental), a check box | `Alt+G` |
+| Encrypt (experimental), a check box | `Alt+Y` |
 | Undo | `Alt+U` |
 | Redo | `Alt+R` |
 | Attach File | `Alt+A` |
@@ -1252,6 +1254,17 @@ cell" while the caret is inside one.
 | Save Draft | `Alt+D` |
 | Discard | `Alt+I` |
 | Cancel | `Alt+L` |
+
+**Signing and encrypting**
+
+`Alt+G` ticks or clears Sign and `Alt+Y` ticks or clears Encrypt, from
+anywhere in the window, the message included; from inside the message the
+new state is read out, "Sign on" or "Encrypt off". Neither box is ever greyed.
+When Send, `Ctrl+Enter` or `Alt+N` finds a box it cannot honour, because you
+have no certificate or PGP key for the address the message is from, a
+recipient has nothing kept here, or there is a Bcc on a message to be
+encrypted, it says why, the message stays in the window and nothing is sent.
+A PGP key locked with a passphrase asks for it at Send.
 
 **Finding somebody to write to**
 
