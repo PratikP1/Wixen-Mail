@@ -2190,6 +2190,114 @@ mod tests {
         );
     }
 
+    /// The invitation at nine, written in `zone` from nine to ten.
+    fn an_invitation_at_nine_in(zone: &str) -> String {
+        an_invitation_at_nine()
+            .replace(
+                "DTSTART:20260305T090000",
+                &format!("DTSTART;TZID={zone}:20260305T090000"),
+            )
+            .replace(
+                "DTEND:20260305T100000",
+                &format!("DTEND;TZID={zone}:20260305T100000"),
+            )
+    }
+
+    #[test]
+    fn test_an_invitation_from_another_zone_says_its_own_clock_once_in_the_sentence() {
+        // Nine in Tokyo is said at the hour that is here, and the covering
+        // note says nine: the clause says why, once, in the sentence and never
+        // in what the answer buttons say.
+        let document = an_invitation_at_nine_in("Asia/Tokyo");
+        let midnight_universal = chrono::DateTime::parse_from_rfc3339("2026-03-05T00:00:00Z")
+            .expect("an instant")
+            .with_timezone(&chrono::Local);
+        let here = worded_here("2026-03-05T00:00:00Z", "2026-03-05T01:00:00Z");
+        let tokyo_is_here =
+            chrono::Offset::fix(midnight_universal.offset()).local_minus_utc() == 9 * 60 * 60;
+        let the_day_there = if midnight_universal.date_naive().to_string() == "2026-03-05" {
+            ""
+        } else {
+            "05/03/2026 at "
+        };
+
+        let said = said_about(&document, None, None)
+            .said()
+            .expect("an invitation is said");
+
+        let expected = if tokyo_is_here {
+            format!("Meeting invitation: Quarterly review, {here}, in Room 3,")
+        } else {
+            format!(
+                "Meeting invitation: Quarterly review, {here}, which is {the_day_there}09:00 to \
+                 10:00 Tokyo time, in Room 3,"
+            )
+        };
+        assert!(said.starts_with(&expected), "{said}\nexpected {expected}");
+        let invitation = read_the_invitation(&document).expect("to read");
+        assert_eq!(
+            when_the_invitation_is(&invitation, written_out_in_full()),
+            here
+        );
+    }
+
+    /// The calendar's copy as Microsoft Graph stores one: a clock face in
+    /// universal time, with "UTC" beside it.
+    fn graphs_copy(starts: &str, ends: &str) -> crate::data::message_cache::CalendarEventEntry {
+        crate::data::message_cache::CalendarEventEntry {
+            time_zone: Some("UTC".to_string()),
+            ..the_calendar_holding(starts, ends)
+        }
+    }
+
+    #[test]
+    fn test_one_meeting_written_in_two_zones_is_already_on_the_calendar() {
+        // Graph stores the meeting at five in the afternoon in universal time
+        // and Outlook's invitation names nine in Los Angeles: one instant, so
+        // one meeting, whatever the two texts or the two sentences say.
+        let copy = graphs_copy("2026-03-05T17:00:00.0000000", "2026-03-05T18:00:00.0000000");
+
+        let says = said_about(
+            &an_invitation_at_nine_in("America/Los_Angeles"),
+            Some(&copy),
+            None,
+        );
+
+        assert!(
+            matches!(
+                &says,
+                WhatTheInvitationSays::Invitation {
+                    standing: Standing::AlreadyOnTheCalendar,
+                    ..
+                }
+            ),
+            "{says:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_an_hour_away_in_another_zone_is_a_change_said_without_its_zone() {
+        let copy = graphs_copy("2026-03-05T18:00:00.0000000", "2026-03-05T19:00:00.0000000");
+
+        let says = said_about(
+            &an_invitation_at_nine_in("America/Los_Angeles"),
+            Some(&copy),
+            None,
+        );
+
+        let WhatTheInvitationSays::Invitation {
+            standing: Standing::Changed { from },
+            ..
+        } = &says
+        else {
+            panic!("{says:?}");
+        };
+        assert_eq!(
+            from,
+            &worded_here("2026-03-05T18:00:00Z", "2026-03-05T19:00:00Z")
+        );
+    }
+
     #[test]
     fn test_an_invitation_moving_a_meeting_on_the_calendar_says_when_it_was() {
         // Version 2 of a meeting answered here at version 1, an hour later

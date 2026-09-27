@@ -701,6 +701,56 @@ mod tests {
         assert_eq!(opening(THE_UPDATE, ADA, &copy), MeetingChange::Nothing);
     }
 
+    /// The update written for `starts` to `ends` o'clock on Thursday in Los
+    /// Angeles, as Outlook names the zone for somebody there.
+    fn the_update_in_los_angeles(starts: &str, ends: &str) -> String {
+        THE_UPDATE
+            .replace(
+                "DTSTART:20260306T140000",
+                &format!("DTSTART;TZID=America/Los_Angeles:20260305T{starts}"),
+            )
+            .replace(
+                "DTEND:20260306T150000",
+                &format!("DTEND;TZID=America/Los_Angeles:20260305T{ends}"),
+            )
+    }
+
+    /// The copy as Microsoft Graph stores one, five to six in the afternoon
+    /// in universal time with "UTC" beside it: nine to ten in Los Angeles.
+    fn graphs_copy() -> CalendarEventEntry {
+        CalendarEventEntry {
+            start_datetime: "2026-03-05T17:00:00.0000000".to_string(),
+            end_datetime: "2026-03-05T18:00:00.0000000".to_string(),
+            time_zone: Some("UTC".to_string()),
+            ..the_copy()
+        }
+    }
+
+    #[test]
+    fn test_one_instant_written_in_two_zones_moves_nothing() {
+        // The texts differ and the instants do not: moving the meeting would
+        // be a move to where it already is, said as a change.
+        assert_eq!(
+            opening(
+                &the_update_in_los_angeles("090000", "100000"),
+                ADA,
+                &graphs_copy()
+            ),
+            MeetingChange::Nothing
+        );
+    }
+
+    #[test]
+    fn test_an_update_at_another_instant_moves_a_copy_kept_in_another_zone() {
+        let change = opening(
+            &the_update_in_los_angeles("100000", "110000"),
+            ADA,
+            &graphs_copy(),
+        );
+
+        assert!(matches!(change, MeetingChange::Move { .. }), "{change:?}");
+    }
+
     #[test]
     fn test_a_meeting_that_only_grows_longer_says_both_whole_times() {
         // The same start, so the start alone would say "from nine to nine".

@@ -407,6 +407,36 @@ fn spoken_opening(raw: &str) -> String {
     spoken_as_it_opens(&in_the_text_reader(&item, &asked(&cache, &item, body)))
 }
 
+/// The clause the sentence carries for a meeting at nine to ten in Tokyo, said
+/// as `zone_said`: nothing on a computer whose clock is Tokyo's that morning,
+/// and Tokyo's clock otherwise, with Tokyo's day when it is not the day here.
+fn the_clause_for_tokyo(zone_said: &str) -> Option<String> {
+    use chrono::Offset;
+
+    let midnight_universal = chrono::DateTime::parse_from_rfc3339("2026-03-05T00:00:00Z")
+        .expect("an instant")
+        .with_timezone(&chrono::Local);
+    if midnight_universal.offset().fix().local_minus_utc() == 9 * 60 * 60 {
+        return None;
+    }
+    let the_day_there = if midnight_universal.date_naive().to_string() == "2026-03-05" {
+        ""
+    } else {
+        "05/03/2026 at "
+    };
+    Some(format!(
+        ", which is {the_day_there}09:00 to 10:00 {zone_said}, in Room 4,"
+    ))
+}
+
+/// Whether the sentence carries the clause exactly when it should.
+fn says_the_other_clock_when_it_differs(said: &str, zone_said: &str) {
+    match the_clause_for_tokyo(zone_said) {
+        Some(clause) => assert!(said.contains(&clause), "no {clause:?} in {said}"),
+        None => assert!(!said.contains(", which is "), "{said}"),
+    }
+}
+
 #[test]
 fn test_an_invitation_written_in_another_zone_is_said_at_this_computers_hour() {
     let said = spoken_opening(&an_invitation_written_in("Asia/Tokyo"));
@@ -415,6 +445,7 @@ fn test_an_invitation_written_in_another_zone_is_said_at_this_computers_hour() {
         said.starts_with(&begins_at_the_hour_that_is_here()),
         "the meeting is said at the hour Tokyo wrote, not the hour here: {said}"
     );
+    says_the_other_clock_when_it_differs(&said, "Tokyo time");
 }
 
 #[cfg(target_os = "windows")]
@@ -428,6 +459,7 @@ fn test_an_invitation_naming_its_zone_as_windows_does_is_said_at_this_computers_
         said.starts_with(&begins_at_the_hour_that_is_here()),
         "the meeting is said at the hour Tokyo wrote, not the hour here: {said}"
     );
+    says_the_other_clock_when_it_differs(&said, "Tokyo Standard Time");
 }
 
 // ── A message whose text the download of everything brought ──────────────
