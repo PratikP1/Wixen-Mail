@@ -26,7 +26,7 @@ carry:
 
 - The waves collided across ranges: 13-35 and 13-37 both sat at wave 37,
   13-36 and 13-38 at 38, and 13-37 sat below its own dependency. Every plan
-  from 13-37 on moved two waves later, so the waves run 1 to 53 with no
+  from 13-37 on moved two waves later, so the waves run 1 to 56 with no
   two plans on one.
 - The 13-24 split had not reached the plans that call the runner. 13-40,
   13-42, 13-43 and 13-44 now depend on 13-24.1, load its summary, and say
@@ -122,39 +122,42 @@ ledger entry a plan carries for one of the four answers.
 | 13-19 | 20 | S/MIME signing and encrypting, the service half | GAP-05 | no | nothing |
 | 13-20 | 21 | OpenPGP signing and encrypting, the service half; the false `cms` comment in `Cargo.toml` corrected | GAP-05 | no | (b) checkpoint |
 | 13-21 | 22 | Sign and Encrypt in the composer; GAP-05 ticked, #52 commented on | GAP-05 | yes | nothing |
-| 13-22 | 23 | Report as Junk on Action (J, Ctrl+Shift+J), told to the provider where it listens and said where it does not | GAP-06 | yes | nothing |
-| 13-23 | 24 | A rule that adds a label puts that label on | GAP-11, GAP-12 | yes | nothing |
-| 13-24 | 25 | The five set actions split into quiet do-halves, nothing heard meant to change | GAP-11, GAP-12, GAP-06 | yes, paths move | nothing |
-| 13-24.1 | 26 | One runner for several actions over a set, answering a `WhatWasDone`; a flag change carrying the folder it was asked in | GAP-11, GAP-12, GAP-06 | yes, paths move | nothing |
-| 13-25 | 27 | A block moves the sender's mail already here after one question with the count; Block on Ctrl+Shift+B; GAP-06 ticked | GAP-06 | yes | nothing |
-| 13-26 | 28 | The directory sign-in in the credential store, never sent in clear, and the `ldap3` panic fix | GAP-07 | yes | nothing |
-| 13-27 | 29 | The directory sign-in window from the Account Manager | GAP-07 | yes | nothing |
-| 13-28 | 30 | Microsoft's people search in People found, asked with a token of its own; GAP-07 ticked | GAP-07 | yes | (c) checkpoint |
-| 13-29 | 31 | Google as a free/busy source | GAP-08 | yes | nothing |
-| 13-30 | 32 | Free/busy asks every source an account has and merges the answers per person | GAP-08 | yes | nothing |
-| 13-31 | 33 | A guest's own zone from Microsoft's answer, each time on at most three clocks; GAP-08 ticked | GAP-08 | yes | nothing |
-| 13-32 | 34 | Edit Event scrolls, every field reachable at 768 pixels and at 200% (a conditional plan, in) | GAP-08 | yes | nothing |
-| 13-33 | 35 | Other addresses to send from, stored and managed from the Account Manager | GAP-10 | yes | nothing |
-| 13-34 | 36 | The outbox and drafts keep the address a message was written from | GAP-10 | no | nothing |
-| 13-35 | 37 | Compose's From list offers the other addresses and sends from the one chosen | GAP-10 | yes | nothing |
-| 13-36 | 38 | A reply goes out from the address it was sent to; GAP-10 ticked, #59 left open for shared mailboxes | GAP-10 | yes | nothing |
-| 13-37 | 39 | Saved searches keep an order somebody chooses, moved with the tree's gesture | GAP-09 | yes | nothing |
-| 13-38 | 40 | Alt+4 to Alt+9 for the first six saved searches, and the Saved Searches menu | GAP-09 | yes | nothing |
-| 13-39 | 41 | A saved search made from nothing, every or any changeable afterwards; GAP-09 ticked, #58 closed | GAP-09 | yes | nothing |
-| 13-40 | 42 | Quick Steps as data | GAP-11 | no | nothing |
-| 13-41 | 43 | The Quick Step Manager under Action, Quick Steps | GAP-11 | yes | nothing |
-| 13-42 | 44 | Quick Steps on the menu with Ctrl+Shift+7 to Ctrl+Shift+9, run over the selection through the runner; GAP-11 ticked, #60 closed | GAP-11 | yes | nothing |
-| 13-43 | 45 | What a rule would change in a folder, counted and worded before anything runs | GAP-12 | no | nothing |
-| 13-44 | 46 | Run a rule over a folder from This Folder and the Filter Manager; GAP-12 ticked, #61 closed | GAP-12 | yes | nothing |
-| 13-45 | 47 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
-| 13-46 | 48 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
-| 13-47 | 49 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
-| 13-48 | 50 | `.msg` through both import commands | GAP-13 | yes | nothing |
-| 13-49 | 51 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
-| 13-50 | 52 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
-| 13-51 | 53 | The pages, the listening lines, the closing read of GAP-01 to GAP-13, and `scripts/check.sh all` once by hand before its merge | all thirteen | yes | reports where (a) to (d) stand |
+| 13-21.1 | 23 | A time read in the zone it was written in, Windows names through ICU in `common::zones`; the invitation said at this computer's hour, the other zone's clock once; ledger 632 | GAP-04 | yes | nothing |
+| 13-21.2 | 24 | The calendar's list, readings, page, Calendar window, alerts and editor on this computer's clock; Outlook's UTC times at their real hour; ledger 632 closed | GAP-04 | yes | nothing |
+| 13-21.3 | 25 | A message the download brought before 13-10 fetched once for its parts when it is selected, through its own account, and its meeting said with no second announcement; ledger 633 | GAP-04 | yes | nothing |
+| 13-22 | 26 | Report as Junk on Action (J, Ctrl+Shift+J), told to the provider where it listens and said where it does not | GAP-06 | yes | nothing |
+| 13-23 | 27 | A rule that adds a label puts that label on | GAP-11, GAP-12 | yes | nothing |
+| 13-24 | 28 | The five set actions split into quiet do-halves, nothing heard meant to change | GAP-11, GAP-12, GAP-06 | yes, paths move | nothing |
+| 13-24.1 | 29 | One runner for several actions over a set, answering a `WhatWasDone`; a flag change carrying the folder it was asked in | GAP-11, GAP-12, GAP-06 | yes, paths move | nothing |
+| 13-25 | 30 | A block moves the sender's mail already here after one question with the count; Block on Ctrl+Shift+B; GAP-06 ticked | GAP-06 | yes | nothing |
+| 13-26 | 31 | The directory sign-in in the credential store, never sent in clear, and the `ldap3` panic fix | GAP-07 | yes | nothing |
+| 13-27 | 32 | The directory sign-in window from the Account Manager | GAP-07 | yes | nothing |
+| 13-28 | 33 | Microsoft's people search in People found, asked with a token of its own; GAP-07 ticked | GAP-07 | yes | (c) checkpoint |
+| 13-29 | 34 | Google as a free/busy source | GAP-08 | yes | nothing |
+| 13-30 | 35 | Free/busy asks every source an account has and merges the answers per person | GAP-08 | yes | nothing |
+| 13-31 | 36 | A guest's own zone from Microsoft's answer, each time on at most three clocks; GAP-08 ticked | GAP-08 | yes | nothing |
+| 13-32 | 37 | Edit Event scrolls, every field reachable at 768 pixels and at 200% (a conditional plan, in) | GAP-08 | yes | nothing |
+| 13-33 | 38 | Other addresses to send from, stored and managed from the Account Manager | GAP-10 | yes | nothing |
+| 13-34 | 39 | The outbox and drafts keep the address a message was written from | GAP-10 | no | nothing |
+| 13-35 | 40 | Compose's From list offers the other addresses and sends from the one chosen | GAP-10 | yes | nothing |
+| 13-36 | 41 | A reply goes out from the address it was sent to; GAP-10 ticked, #59 left open for shared mailboxes | GAP-10 | yes | nothing |
+| 13-37 | 42 | Saved searches keep an order somebody chooses, moved with the tree's gesture | GAP-09 | yes | nothing |
+| 13-38 | 43 | Alt+4 to Alt+9 for the first six saved searches, and the Saved Searches menu | GAP-09 | yes | nothing |
+| 13-39 | 44 | A saved search made from nothing, every or any changeable afterwards; GAP-09 ticked, #58 closed | GAP-09 | yes | nothing |
+| 13-40 | 45 | Quick Steps as data | GAP-11 | no | nothing |
+| 13-41 | 46 | The Quick Step Manager under Action, Quick Steps | GAP-11 | yes | nothing |
+| 13-42 | 47 | Quick Steps on the menu with Ctrl+Shift+7 to Ctrl+Shift+9, run over the selection through the runner; GAP-11 ticked, #60 closed | GAP-11 | yes | nothing |
+| 13-43 | 48 | What a rule would change in a folder, counted and worded before anything runs | GAP-12 | no | nothing |
+| 13-44 | 49 | Run a rule over a folder from This Folder and the Filter Manager; GAP-12 ticked, #61 closed | GAP-12 | yes | nothing |
+| 13-45 | 50 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
+| 13-46 | 51 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
+| 13-47 | 52 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
+| 13-48 | 53 | `.msg` through both import commands | GAP-13 | yes | nothing |
+| 13-49 | 54 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
+| 13-50 | 55 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
+| 13-51 | 56 | The pages, the listening lines, the closing read of GAP-01 to GAP-13, and `scripts/check.sh all` once by hand before its merge | all thirteen | yes | reports where (a) to (d) stand |
 
-Forty-four plans push and nine do not (13-02, 13-12, 13-16, 13-19, 13-20,
+Forty-seven plans push and nine do not (13-02, 13-12, 13-16, 13-19, 13-20,
 13-34, 13-40, 13-43, 13-47). Four carry a checkpoint (13-03, 13-20, 13-28,
 13-47, each `autonomous: false`), and each stops only when its executor's
 brief does not carry Pratik's answer.
@@ -162,7 +165,9 @@ brief does not carry Pratik's answer.
 **Requirement coverage.** GAP-01 by 13-02 to 13-04 (ticked by 13-04);
 GAP-02 by 13-01 and 13-05 to 13-09 (the box ticked by 13-08, #47 closed by
 13-09); GAP-03 by 13-16, 13-17 and 13-17.1 (ticked by 13-17.1); GAP-04 by
-13-10 to 13-13 (ticked by 13-13); GAP-05 by 13-14, 13-15 and 13-18 to 13-21
+13-10 to 13-13 (ticked by 13-13), 13-21.1 and 13-21.2 for times written in
+another zone (ledger 632), and 13-21.3 for mail brought before 13-10
+(ledger 633); GAP-05 by 13-14, 13-15 and 13-18 to 13-21
 (ticked by 13-21); GAP-06 by 13-22, 13-24, 13-24.1 and 13-25 (ticked by
 13-25); GAP-07 by 13-26 to 13-28 (ticked by 13-28); GAP-08 by 13-29 to 13-32
 (ticked by 13-31, 13-32 after it); GAP-09 by 13-37 to 13-39 (ticked by
@@ -189,7 +194,7 @@ lists on 2026-09-24. A wave is a set of plans sharing no file, and with the
 files the project writes by rule added to every list (`CLAUDE.md`, "Add the
 files this project writes by rule to every plan's `files_modified`") no two
 plans are disjoint. So the phase is a chain: each plan depends on the one
-before it, and the waves run 1 to 53 in plan order.
+before it, and the waves run 1 to 56 in plan order.
 
 - **Keyboard basics first** (13-01 to 13-09). Undo and Print are small,
   touch every surface, and every later plan that adds a text box or a
@@ -401,6 +406,52 @@ wxDragon, give me more details."
     filed, and is running a test program that prints through wxDragon to
     confirm the defect first. Nothing is posted. 13-03's summary holds the
     details and a draft, and ledger 614 carries it.
+
+**Pratik's answer of 2026-09-26**, to 13-10's two findings (ledger 632 and
+633). His words: "yes. Create/modify/add to plans to resolve the
+identified issues."
+
+56. Ledger 632: a stored time is read in the zone stored beside it, where it
+    is read and not where it arrives, because three writers send the stored
+    clock face and zone back to the provider and a series repeats on its
+    clock face; no column is added and no stored row changes (13-21.1,
+    13-21.2).
+57. Windows zone names, which Outlook writes, are read through Windows' own
+    ICU in `common::zones`, and 13-31 builds on it rather than on a module
+    of its own; 139 of the 141 names this machine knows map, and the two
+    that do not are retired zones (13-21.1; 13-31 amended).
+58. Taken from the research, for him to overrule: every time is said on
+    this computer's clock, as Google shows invitees; the zone a meeting was
+    written in is said once, in the invitation's sentence, an event's full
+    reading and its printed page, only when its clock differs and it names
+    a place; never in rows, button descriptions or alerts (13-21.1,
+    13-21.2).
+59. A zone this computer cannot place keeps the hour as written and the
+    sentence says so (13-21.1).
+60. The planner's: two plans, one sitting each; the event editor converts
+    at the dialog's two edges; the Day and Week views' day windows and a
+    Google series' offset across a change of the clocks are ledgered, not
+    fixed (13-21.2).
+61. Found and ledgered for him, not fixed: an Outlook invitation answered on
+    a Google or calendar-server account keeps a Windows zone name that
+    Google's reference does not accept and the calendar-server writer
+    refuses; and the guide's "Windows 10 or later" while the program already
+    needs version 1709 (13-21.1).
+62. Ledger 633: the reader fetches the whole message once when the row
+    says it has attachments and none are stored, stores what it learns,
+    and the message is not announced twice; the download of everything
+    does not keep every file, because of the 512 MB budget (13-21.3).
+63. The planner's, for him to overrule: both fetches on selection go
+    through the account the message is filed under, which also fixes a
+    body fetched under All Inboxes from the account last opened; a
+    message whose own parse finds no attachment has its row corrected so
+    it is fetched once; the preview loads again only when a meeting was
+    kept and the page differs, and nothing is said (13-21.3).
+64. Open for him: an invitation sent only as part of the message's text,
+    as Outlook sends one, is stored with no attachment bit by the header
+    sync, so the accepted rule does not reach it when it arrived before
+    13-10. Reaching it means fetching every earlier download once when
+    selected. 13-21.3 leaves it, ledgers it, and recommends leaving it.
 
 ## Four things that wait on Pratik
 

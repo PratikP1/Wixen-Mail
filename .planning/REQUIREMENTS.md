@@ -5972,6 +5972,12 @@ stays at 122.
   - Plans, 2026-09-24: 13-10 (the invitation said before the body), 13-11 (the answer
     buttons in both reader windows), 13-12 (synced events carry their UID), 13-13 (updates
     and cancellations reach the calendar), which ticks this line and comments on #50.
+  - Plans written 2026-09-26 on Pratik's answer to 13-10's findings, and added 2026-09-27:
+    13-21.1 (a time read in the zone it was written in, and the invitation said at this
+    computer's hour) and 13-21.2 (the calendar shown, read aloud, printed, alerted and edited
+    at this computer's hour), ledger 632; 13-21.3 (ledger 633), a message the download
+    brought before 13-10 fetched once for its parts when it is selected, so it lists its
+    attachments and says its meeting. None adds a `[D]` clause.
   - 13-10 on 2026-09-26: a message carrying an invitation, a cancellation or an answer says
     so at the top of the bar and of the message in the text reader, the formatted window and
     the preview, before the signature's account, and its calendar part's row says the same;
