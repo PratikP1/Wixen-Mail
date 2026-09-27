@@ -774,6 +774,18 @@ mod tests {
             "it does not say where keys are managed and the limit somebody meets \
              first: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
         );
+        // Since 13-17.1 a locked key is kept and its passphrase asked for, so
+        // the sentence says what happens to what is typed rather than that
+        // such a key is refused.
+        assert!(
+            !READING_PGP_MAIL_IS_EXPERIMENTAL.contains("cannot be imported yet"),
+            "it still says a locked key is refused: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            READING_PGP_MAIL_IS_EXPERIMENTAL
+                .contains("remembered until Wixen Mail closes and never saved"),
+            "it does not say where a typed passphrase goes: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
+        );
         assert!(
             !READING_PGP_MAIL_IS_EXPERIMENTAL.contains("  "),
             "a wrapped literal lost its continuations, so this is read aloud \

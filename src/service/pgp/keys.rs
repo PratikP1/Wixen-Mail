@@ -806,6 +806,19 @@ pub(crate) mod for_tests {
         super::tests::armour(super::tests::DAVE_LOCKED)
     }
 
+    /// The passphrase on Dave's key.
+    pub(crate) const DAVES_PASSPHRASE: &str = "correct horse";
+
+    /// A message encrypted to Dave by GnuPG.
+    pub(crate) fn a_message_to_dave() -> String {
+        super::tests::armour(super::tests::TO_DAVE)
+    }
+
+    /// The words inside it, exactly as opening it hands them back.
+    pub(crate) fn what_daves_message_says() -> &'static str {
+        "Dave, the passphrase opened it.\n"
+    }
+
     /// Dave's fingerprint, as `gpg --list-keys --with-colons` gave it.
     pub(crate) const DAVES_FINGERPRINT: &str = "BC398E0D54261CA0642E99AD469C95C000B5CB12";
 

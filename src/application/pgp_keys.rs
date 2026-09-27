@@ -11,8 +11,24 @@
 
 use crate::common::Result;
 use crate::common::how_the_machine_writes_dates::{self as the_machine, WhichLocale};
+use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
+
+/// Unlocking a key: what a reader window calls with the passphrase somebody
+/// typed, and what it answers.
+pub use crate::service::pgp::{LockedKey, Unlocking, unlock};
+
+/// The locked key a message needs before it can open, or `None` when it needs
+/// none: nearly every message, and every message whose key is open already.
+/// Not written yet.
+pub fn the_locked_key_it_needs(
+    _cache: Option<&MessageCache>,
+    _message_row_id: i64,
+    _body: &MessageBody,
+) -> Option<LockedKey> {
+    None
+}
 
 /// What keys can and cannot do in this build, said first in the key manager
 /// where a person reads it (#49).
@@ -405,9 +421,9 @@ mod tests {
     use crate::common::temp_home::TempHome;
     use crate::service::pgp::describe;
     use crate::service::pgp::for_tests::{
-        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, DAVES_FINGERPRINT, a_message_to_alice,
-        alices_private_key, alices_public_key, carols_public_key, daves_locked_key,
-        what_alices_message_says,
+        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, DAVES_FINGERPRINT, DAVES_PASSPHRASE,
+        a_message_to_alice, a_message_to_dave, alices_private_key, alices_public_key,
+        carols_public_key, daves_locked_key, what_alices_message_says, what_daves_message_says,
     };
     use crate::service::secret_store;
 
@@ -830,6 +846,80 @@ mod tests {
             "This attachment holds 2 keys: a private key naming Ada Lovelace \
              <ada@example.com>, key id 9C0D 1E2F 3A4B 5C6D, and a public key naming Grace \
              Hopper <grace@example.com>, key id 0B1C 2D3E 4F5A 6B7C. Import these keys?"
+        );
+    }
+
+    #[test]
+    fn test_a_locked_keys_row_says_it_is_locked() {
+        let locked = KeyListing {
+            locked: true,
+            ..adas_private_key()
+        };
+
+        assert_eq!(
+            what_a_row_says(&locked, IN_ENGLISH).kind,
+            "Private key, locked with a passphrase"
+        );
+        assert_eq!(
+            what_a_row_says(&adas_private_key(), IN_ENGLISH).kind,
+            "Private key"
+        );
+    }
+
+    /// What the reader's composition makes of a body, with nothing else about
+    /// the message to say.
+    fn shown(
+        body: &MessageBody,
+    ) -> crate::application::reading_a_message::WhatAMessageShowsAndSays {
+        crate::application::reading_a_message::put_together(
+            body.clone(),
+            crate::application::encrypted_mail::WhatTheEnvelopeSays::NotEncrypted,
+            crate::application::invitations::WhatTheInvitationSays::Nothing,
+            crate::application::answering::AnswerButtons::NotAsked,
+            crate::application::checking_signatures::SignatureCheck::NotSigned,
+        )
+    }
+
+    #[test]
+    fn test_a_message_to_a_locked_key_opens_once_its_passphrase_is_typed() {
+        // The reader window's open path, through the calls it makes: the
+        // composition says the key is locked, the window asks which key the
+        // message needs, unlocks it with what was typed, and composes again.
+        let cache = a_cache("pgp-locked-open");
+        import(&cache, &daves_locked_key());
+        let arrived = MessageBody::Plain(a_message_to_dave());
+        let dave = LockedKey {
+            whose: "Dave Example <dave@example.com>".to_string(),
+            fingerprint: DAVES_FINGERPRINT.to_string(),
+        };
+
+        assert_eq!(
+            shown(&arrived).said.opened,
+            Some(pgp::WhatOpeningItFound::TheKeyIsLocked(dave.clone()))
+        );
+        assert_eq!(shown(&arrived).body, arrived, "the armour was not kept");
+        assert_eq!(
+            the_locked_key_it_needs(Some(&cache), 0, &arrived),
+            Some(dave.clone())
+        );
+
+        assert_eq!(
+            unlock(&dave.fingerprint, DAVES_PASSPHRASE),
+            Unlocking::Unlocked
+        );
+
+        assert_eq!(
+            shown(&arrived).body,
+            MessageBody::Plain(what_daves_message_says().to_string())
+        );
+        assert_eq!(the_locked_key_it_needs(Some(&cache), 0, &arrived), None);
+        assert_eq!(
+            the_locked_key_it_needs(
+                Some(&cache),
+                0,
+                &MessageBody::Plain("One o'clock?".to_string())
+            ),
+            None
         );
     }
 

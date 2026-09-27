@@ -4083,14 +4083,32 @@ mod encryption_tests {
 
         let damaged = armoured_bar(WhatOpeningItFound::Damaged);
         assert!(damaged.contains("is damaged"), "{damaged}");
+
+        // The fifth, since 13-17.1: the key is here and locked, and the next
+        // step is to type its passphrase where the reader asks for it.
+        let locked = armoured_bar(adas_key_is_locked());
+        assert!(
+            locked.contains(
+                "This message is encrypted to your key for Ada Lovelace <ada@example.com>, \
+                 which is locked with a passphrase. Open the message in the reader to type it."
+            ),
+            "{locked}"
+        );
+    }
+
+    fn adas_key_is_locked() -> crate::service::pgp::WhatOpeningItFound {
+        crate::service::pgp::WhatOpeningItFound::TheKeyIsLocked(crate::service::pgp::LockedKey {
+            whose: "Ada Lovelace <ada@example.com>".to_string(),
+            fingerprint: "1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B".to_string(),
+        })
     }
 
     #[test]
     fn test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence() {
         // They will be written on different days and the way they collide is
-        // that somebody reuses a helper. Six comparisons and then four more
+        // that somebody reuses a helper. Ten comparisons and then five more
         // against the S/MIME sentence, which is about a message that cannot be
-        // opened at all rather than about a key.
+        // opened at all rather than about a key. Five reasons since 13-17.1.
         use crate::service::pgp::WhatOpeningItFound;
 
         let said: Vec<String> = [
@@ -4098,6 +4116,7 @@ mod encryption_tests {
             WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
             WhatOpeningItFound::TheKeyHereCouldNotBeRead,
             WhatOpeningItFound::Damaged,
+            adas_key_is_locked(),
         ]
         .into_iter()
         .map(armoured_bar)

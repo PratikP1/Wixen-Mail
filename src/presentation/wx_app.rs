@@ -18277,6 +18277,16 @@ fn open_for_scanning(
             manage_pgp_keys(cache, frame, tx, rt, a11y);
             OnReturn::WindowClosed
         }
+        ScanTarget::UnlockAPgpKey => {
+            // The way a reader window asks, for a made-up key, since a fresh
+            // profile holds none. Asked the first time, with no reason line.
+            let _ = crate::presentation::wx_passphrase::ask(
+                frame,
+                "Ada Lovelace <ada@example.com>",
+                None,
+            );
+            OnReturn::WindowClosed
+        }
         ScanTarget::Columns => {
             let inbox = ColumnLayout::defaults_for(message_columns::FolderKind::Inbox);
             let _ = wx_columns::show_column_dialog(frame, &inbox, a11y);
