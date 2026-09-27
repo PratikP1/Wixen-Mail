@@ -14,9 +14,12 @@
 //! clock agrees with this one's at that moment. A zone nothing here can place
 //! is said to be one, because the hour beside it was kept as it was written.
 
-use chrono::TimeZone;
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeZone};
+use chrono_tz::Tz;
 
-use crate::presentation::date_display::DateSettings;
+use crate::common::moment::{self, Moment};
+use crate::common::zones;
+use crate::presentation::date_display::{self, DateSettings};
 
 /// The clause saying the meeting's own clock, or nothing when it would say
 /// nothing this computer's clock has not.
@@ -42,8 +45,65 @@ fn seen_from<Here: TimeZone>(
     here: &Here,
     dates: DateSettings,
 ) -> Option<String> {
-    let _ = (starts, ends, zone, here, dates);
-    None
+    let named = moment::the_zone_named(zone)?;
+    let Some(its_zone) = zones::the_zone_called(named) else {
+        // The hour was kept as it was written, so say that it was, rather
+        // than let it pass as this computer's.
+        return is_a_clock_face(starts)
+            .then(|| format!("as written in {named}, a time zone this computer cannot place"));
+    };
+    if !zones::names_a_place(its_zone) {
+        return None;
+    }
+    let start = an_instant(starts, zone)?;
+    let there = start.with_timezone(&its_zone);
+    let seen_here = start.with_timezone(here);
+    if there.offset().fix() == seen_here.offset().fix() {
+        return None;
+    }
+    let begins = if there.date_naive() == seen_here.date_naive() {
+        date_display::the_clock_of(there.naive_local(), dates)
+    } else {
+        date_display::a_clock_face(there.naive_local(), dates)
+    };
+    let ending = ends
+        .and_then(|ends| an_instant(ends, zone))
+        .map(|end| {
+            until(
+                there.naive_local(),
+                end.with_timezone(&its_zone).naive_local(),
+                dates,
+            )
+        })
+        .unwrap_or_default();
+    Some(format!(
+        "which is {begins}{ending} {}",
+        the_zone_said(named)
+    ))
+}
+
+/// " to 10:00", or with the whole date again when the meeting ends on another
+/// day on its own clock.
+fn until(start: NaiveDateTime, end: NaiveDateTime, dates: DateSettings) -> String {
+    if end.date() == start.date() {
+        format!(" to {}", date_display::the_clock_of(end, dates))
+    } else {
+        format!(" to {}", date_display::a_clock_face(end, dates))
+    }
+}
+
+/// Whether a stored time is an hour on a clock, which a zone beside it would
+/// have placed.
+fn is_a_clock_face(stored: &str) -> bool {
+    matches!(moment::read(stored), Some(Moment::ClockFace(_)))
+}
+
+/// The instant a stored time names in the zone beside it, when it names one.
+fn an_instant(stored: &str, zone: Option<&str>) -> Option<DateTime<FixedOffset>> {
+    match moment::read_in(stored, zone)? {
+        Moment::Fixed(at) => Some(at),
+        Moment::ClockFace(_) | Moment::WholeDay(_) => None,
+    }
 }
 
 /// A stored zone's name as it is said: a Windows name as Windows writes it,
@@ -52,7 +112,13 @@ fn seen_from<Here: TimeZone>(
 ///
 /// The one place a stored zone name becomes words.
 pub fn the_zone_said(name: &str) -> String {
-    name.to_string()
+    let name = name.trim();
+    let the_databases = name.starts_with('/') || name.parse::<Tz>().is_ok();
+    if !the_databases {
+        return name.to_string();
+    }
+    let place = name.rsplit('/').next().unwrap_or(name).replace('_', " ");
+    format!("{place} time")
 }
 
 #[cfg(test)]

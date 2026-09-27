@@ -255,30 +255,28 @@ fn the_move(
     let newer = held
         .answered_version
         .is_none_or(|answered| invitation.version > answered);
-    let was = invitations::when_the_copy_is(held.copy, dates);
-    let now = invitations::when_the_invitation_is(invitation, dates);
-    if !newer || was == now {
+    let copy = held.copy;
+    if !newer || invitations::at_the_copys_time(invitation, copy) {
         return None;
     }
-    let copy = held.copy;
-    let started = invitations::when_it_starts(
-        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
-        copy.is_all_day,
-        copy.time_zone.as_deref(),
-        dates,
-    );
-    let starts = invitations::when_it_starts(
-        &invitation.starts,
-        invitation.is_all_day,
-        invitation.time_zone.as_deref(),
-        dates,
-    );
-    Some(if started == starts {
-        Wanted::Move { from: was, to: now }
+    let copy_starts = copy.start_date.as_deref().unwrap_or(&copy.start_datetime);
+    let (the_copys_zone, its_zone) = (copy.time_zone.as_deref(), invitation.time_zone.as_deref());
+    let only_the_end_moved = copy.is_all_day == invitation.is_all_day
+        && invitations::the_same_instant(copy_starts, the_copys_zone, &invitation.starts, its_zone);
+    Some(if only_the_end_moved {
+        Wanted::Move {
+            from: invitations::when_the_copy_is(copy, dates),
+            to: invitations::when_the_invitation_is(invitation, dates),
+        }
     } else {
         Wanted::Move {
-            from: started,
-            to: starts,
+            from: invitations::when_it_starts(copy_starts, copy.is_all_day, the_copys_zone, dates),
+            to: invitations::when_it_starts(
+                &invitation.starts,
+                invitation.is_all_day,
+                its_zone,
+                dates,
+            ),
         }
     })
 }

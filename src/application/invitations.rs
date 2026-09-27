@@ -790,14 +790,13 @@ fn an_invitation_said(
     answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> WhatTheInvitationSays {
-    let when = when_the_invitation_is(invitation, dates);
     let standing = match on_the_calendar {
         None => Standing::New,
-        Some(copy) => the_standing_against(invitation, &when, copy, answered_here, dates),
+        Some(copy) => the_standing_against(invitation, copy, answered_here, dates),
     };
     WhatTheInvitationSays::Invitation {
         summary: plainly(&invitation.summary),
-        when,
+        when: when_the_invitation_is_said(invitation, dates),
         place: invitation
             .location
             .as_deref()
@@ -820,14 +819,16 @@ fn an_invitation_said(
 /// version at the time the calendar already holds is a move already made, by
 /// the provider or by opening the organiser's update here (13-13), and "which
 /// was" that same time would describe it as one still to come.
+///
+/// "The time the calendar holds" is asked of instants, each read in its own
+/// zone: a Graph copy stored in universal time and an Outlook invitation
+/// written in Pacific time for the same moment are the same meeting.
 fn the_standing_against(
     invitation: &Invitation,
-    when: &str,
     copy: &crate::data::message_cache::CalendarEventEntry,
     answered_here: Option<AnsweredHere>,
     dates: DateSettings,
 ) -> Standing {
-    let was = when_the_copy_is(copy, dates);
     let answered = answered_here.map(|here| {
         (
             AlreadyOnTheCalendar {
@@ -843,8 +844,59 @@ fn the_standing_against(
         {
             Standing::AlreadyAnswered { answer }
         }
-        _ if was == when => Standing::AlreadyOnTheCalendar,
-        _ => Standing::Changed { from: was },
+        _ if at_the_copys_time(invitation, copy) => Standing::AlreadyOnTheCalendar,
+        _ => Standing::Changed {
+            from: when_the_copy_is(copy, dates),
+        },
+    }
+}
+
+/// Whether an invitation's meeting is at the time the calendar's copy holds.
+///
+/// The same start and end instants, each read in the zone stored or named
+/// beside it, or the same first day for a meeting of whole days. Never the
+/// worded sentences or the stored text: one instant written in two zones is
+/// two texts and one meeting. An invitation naming no end ends when the
+/// calendar would take it to, which is the rule filing it uses.
+pub fn at_the_copys_time(
+    invitation: &Invitation,
+    copy: &crate::data::message_cache::CalendarEventEntry,
+) -> bool {
+    let copy_starts = copy.start_date.as_deref().unwrap_or(&copy.start_datetime);
+    if invitation.is_all_day || copy.is_all_day {
+        let the_day = |stored: &str| crate::common::moment::read(stored).map(|at| at.the_day());
+        return invitation.is_all_day == copy.is_all_day
+            && the_day(&invitation.starts) == the_day(copy_starts);
+    }
+    let invitation_ends = crate::application::caldav_sync::the_end_a_calendar_did_not_give(
+        &invitation.starts,
+        invitation.ends.as_deref(),
+        false,
+    );
+    let (its_zone, the_copys_zone) = (invitation.time_zone.as_deref(), copy.time_zone.as_deref());
+    the_same_instant(&invitation.starts, its_zone, copy_starts, the_copys_zone)
+        && the_same_instant(
+            &invitation_ends,
+            its_zone,
+            &copy.end_datetime,
+            the_copys_zone,
+        )
+}
+
+/// Whether two stored times, each read in its own zone, are one instant.
+///
+/// A time that does not read is compared as it was written, which is all
+/// that can be said of it.
+pub fn the_same_instant(
+    one: &str,
+    its_zone: Option<&str>,
+    other: &str,
+    others: Option<&str>,
+) -> bool {
+    let at = |stored: &str, zone| crate::common::moment::read_in(stored, zone)?.on_this_computer();
+    match (at(one, its_zone), at(other, others)) {
+        (Some(one), Some(other)) => one == other,
+        _ => one.trim() == other.trim(),
     }
 }
 
@@ -919,8 +971,28 @@ fn when_the_meeting_is(
     }
 }
 
-/// When an invitation's meeting is, worded the way this reader words a date:
-/// the same words the sentence before the message says.
+/// When an invitation's meeting is, as the sentence before the message says
+/// it: this computer's hour, then once, when the meeting was written on a clock
+/// that differs, that clock. The answer buttons say [`when_the_invitation_is`]
+/// without it, so the other clock is heard once per message.
+///
+/// The zone's name came from a stranger's document, so the clause is put on
+/// one line like every other word of theirs.
+fn when_the_invitation_is_said(invitation: &Invitation, dates: DateSettings) -> String {
+    let here = when_the_invitation_is(invitation, dates);
+    match crate::presentation::time_elsewhere::where_it_was_set(
+        &invitation.starts,
+        invitation.ends.as_deref(),
+        invitation.time_zone.as_deref(),
+        dates,
+    ) {
+        Some(elsewhere) => format!("{here}, {}", plainly(&elsewhere)),
+        None => here,
+    }
+}
+
+/// When an invitation's meeting is, worded the way this reader words a date,
+/// on this computer's clock alone.
 pub fn when_the_invitation_is(invitation: &Invitation, dates: DateSettings) -> String {
     when_the_meeting_is(
         &invitation.starts,
@@ -2277,7 +2349,15 @@ mod tests {
 
     #[test]
     fn test_a_copy_an_hour_away_in_another_zone_is_a_change_said_without_its_zone() {
-        let copy = graphs_copy("2026-03-05T18:00:00.0000000", "2026-03-05T19:00:00.0000000");
+        // Kept in Tokyo, three to four the next morning there, which is six
+        // to seven in the evening in universal time: an hour after the
+        // invitation's nine in Los Angeles. Tokyo rather than universal time,
+        // so a copy read without its zone is at another hour on every
+        // computer this runs on, and a guard's break is red on all of them.
+        let copy = crate::data::message_cache::CalendarEventEntry {
+            time_zone: Some("Asia/Tokyo".to_string()),
+            ..the_calendar_holding("2026-03-06T03:00:00", "2026-03-06T04:00:00")
+        };
 
         let says = said_about(
             &an_invitation_at_nine_in("America/Los_Angeles"),

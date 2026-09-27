@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 402 records have arrived since and have not been through it.
+# 405 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2443,13 +2443,22 @@ red = [
     "common::moment::tests::test_a_placed_clock_face_is_written_as_an_instant_that_reads_back_the_same",
     "common::moment::tests::test_the_hour_a_zone_goes_through_twice_is_the_earlier_one",
     "common::moment::tests::test_the_hour_a_zone_skips_is_the_first_that_happens_after_it",
+    # And the other clock said once, and one meeting written in two zones.
+    "application::invitations::tests::test_a_copy_an_hour_away_in_another_zone_is_a_change_said_without_its_zone",
+    "application::invitations::tests::test_an_invitation_from_another_zone_says_its_own_clock_once_in_the_sentence",
+    "application::invitations::tests::test_one_meeting_written_in_two_zones_is_already_on_the_calendar",
+    "application::meeting_changes::tests::test_one_instant_written_in_two_zones_moves_nothing",
+    "presentation::time_elsewhere::tests::test_a_meeting_on_another_day_there_names_that_day",
+    "presentation::time_elsewhere::tests::test_a_meeting_set_on_another_clock_says_that_clock_once",
+    "presentation::time_elsewhere::tests::test_a_zone_nothing_here_can_place_is_said_to_be_one",
+    "presentation::time_elsewhere::tests::test_a_zone_windows_names_is_said_by_its_windows_name",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
-    { file = "src/application/invitations.rs", tests = 51 },
-    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "src/application/invitations.rs", tests = 54 },
+    { file = "src/application/meeting_changes.rs", tests = 21 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
@@ -2458,6 +2467,7 @@ tests_last_seen = [
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
+    { file = "src/presentation/time_elsewhere.rs", tests = 9 },
     { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
     { file = "src/service/caldav.rs", tests = 170 },
     { file = "src/service/tasks_api.rs", tests = 62 },
@@ -31472,7 +31482,7 @@ red = [
     "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 51 },
+    { file = "src/application/invitations.rs", tests = 54 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31897,7 +31907,7 @@ red = [
     "application::meeting_changes::tests::test_an_update_from_somebody_other_than_the_organiser_moves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "src/application/meeting_changes.rs", tests = 21 },
 ]
 
 # The Allow Changes question left out, so an account whose calendar changes
@@ -31916,7 +31926,7 @@ red = [
     "application::meeting_changes::tests::test_nothing_changes_while_calendar_changes_are_switched_off",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "src/application/meeting_changes.rs", tests = 21 },
 ]
 
 # Remove from Calendar deleting the meeting instead of marking it, so a
@@ -32123,7 +32133,7 @@ red = [
     "application::reading_a_message::tests::test_a_change_inside_an_opened_envelope_is_said_and_the_calendar_is_left_as_it_was",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "src/application/meeting_changes.rs", tests = 21 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
 ]
 
@@ -32849,10 +32859,12 @@ red = [
     "common::moment::tests::test_a_clock_face_beside_a_windows_zone_name_is_placed_by_windows",
     "common::zones::tests::test_a_windows_name_is_the_zone_windows_says_it_means",
     "common::zones::tests::test_a_windows_name_with_space_round_it_is_asked_without_the_space",
+    "presentation::time_elsewhere::tests::test_a_zone_windows_names_is_said_by_its_windows_name",
 ]
 tests_last_seen = [
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/common/zones.rs", tests = 11 },
+    { file = "src/presentation/time_elsewhere.rs", tests = 9 },
 ]
 
 # A clock face read without the zone stored beside it, which is how every
@@ -32867,17 +32879,26 @@ after = """        .and_then(|its_zone| placed_in(clock, &its_zone));
     let _ = placed;
     Some(moment)"""
 red = [
+    "application::invitations::tests::test_a_copy_an_hour_away_in_another_zone_is_a_change_said_without_its_zone",
+    "application::invitations::tests::test_an_invitation_from_another_zone_says_its_own_clock_once_in_the_sentence",
     "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
+    "application::invitations::tests::test_one_meeting_written_in_two_zones_is_already_on_the_calendar",
+    "application::meeting_changes::tests::test_one_instant_written_in_two_zones_moves_nothing",
     "common::moment::tests::test_a_clock_face_beside_a_windows_zone_name_is_placed_by_windows",
     "common::moment::tests::test_a_clock_face_beside_a_zone_is_the_instant_that_zone_puts_it_at",
     "common::moment::tests::test_a_clock_face_graph_wrote_beside_utc_is_that_instant",
     "common::moment::tests::test_a_placed_clock_face_is_written_as_an_instant_that_reads_back_the_same",
     "common::moment::tests::test_the_hour_a_zone_goes_through_twice_is_the_earlier_one",
     "common::moment::tests::test_the_hour_a_zone_skips_is_the_first_that_happens_after_it",
+    "presentation::time_elsewhere::tests::test_a_meeting_on_another_day_there_names_that_day",
+    "presentation::time_elsewhere::tests::test_a_meeting_set_on_another_clock_says_that_clock_once",
+    "presentation::time_elsewhere::tests::test_a_zone_windows_names_is_said_by_its_windows_name",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 51 },
+    { file = "src/application/invitations.rs", tests = 54 },
+    { file = "src/application/meeting_changes.rs", tests = 21 },
     { file = "src/common/moment.rs", tests = 20 },
+    { file = "src/presentation/time_elsewhere.rs", tests = 9 },
 ]
 
 # The same break seen from the raw message: an invitation from Tokyo parsed,
@@ -32912,10 +32933,12 @@ before = """fn on_this_computer(stored: &str, zone: Option<&str>) -> Option<chro
 after = """fn on_this_computer(stored: &str, _zone: Option<&str>) -> Option<chrono::DateTime<chrono::Local>> {
     crate::common::moment::read(stored)?.on_this_computer()"""
 red = [
+    "application::invitations::tests::test_a_copy_an_hour_away_in_another_zone_is_a_change_said_without_its_zone",
+    "application::invitations::tests::test_an_invitation_from_another_zone_says_its_own_clock_once_in_the_sentence",
     "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 51 },
+    { file = "src/application/invitations.rs", tests = 54 },
 ]
 
 # An organiser's move saved with the copy's zone beside the update's clock
@@ -32934,6 +32957,60 @@ red = [
     "test_a_move_keeps_the_zone_the_update_was_written_in",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "src/application/meeting_changes.rs", tests = 21 },
     { file = "tests/a_meeting_change_reaches_the_calendar.rs", tests = 20 },
+]
+
+# A zone that is only a way of writing universal time let through as a place,
+# so every Outlook event Graph delivered in UTC would carry a clause saying
+# its own clock in "UTC time". Written 2026-09-27 by 13-21.1, measured
+# against the library.
+[[guard]]
+name = "universal time is no place to say a clock for"
+file = "src/presentation/time_elsewhere.rs"
+before = """    if !zones::names_a_place(its_zone) {"""
+after = """    if false && !zones::names_a_place(its_zone) {"""
+red = [
+    "presentation::time_elsewhere::tests::test_a_time_written_in_universal_time_says_nothing_more",
+]
+tests_last_seen = [
+    { file = "src/presentation/time_elsewhere.rs", tests = 9 },
+]
+
+# "Already on your calendar" decided by the worded sentences again: once the
+# sentence carries the other clock, an invitation written in Los Angeles never
+# words the same as the Graph copy of the same meeting, and a meeting already
+# there is said to be a change. Written 2026-09-27 by 13-21.1, measured
+# against the library.
+[[guard]]
+name = "already on the calendar is decided by instants, not by the words"
+file = "src/application/invitations.rs"
+before = """        _ if at_the_copys_time(invitation, copy) => Standing::AlreadyOnTheCalendar,"""
+after = """        _ if when_the_copy_is(copy, dates) == when_the_invitation_is_said(invitation, dates) => {
+            Standing::AlreadyOnTheCalendar
+        }"""
+red = [
+    "application::invitations::tests::test_one_meeting_written_in_two_zones_is_already_on_the_calendar",
+]
+tests_last_seen = [
+    { file = "src/application/invitations.rs", tests = 54 },
+]
+
+# An organiser's update compared with the calendar's copy by the stored text:
+# the Graph copy in universal time and the update written in Los Angeles for
+# the same moment differ as text, so the meeting is "moved" to where it is.
+# Written 2026-09-27 by 13-21.1, measured against the library.
+[[guard]]
+name = "an update moves a meeting only when the instants differ"
+file = "src/application/meeting_changes.rs"
+before = """    if !newer || invitations::at_the_copys_time(invitation, copy) {"""
+after = """    if !newer
+        || (invitation.starts == copy.start_datetime
+            && invitation.ends.as_deref() == Some(copy.end_datetime.as_str()))
+    {"""
+red = [
+    "application::meeting_changes::tests::test_one_instant_written_in_two_zones_moves_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 21 },
 ]
