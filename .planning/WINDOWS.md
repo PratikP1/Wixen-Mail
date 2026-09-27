@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 595
+open_count: 601
 waived_count: 0
 fixed_count: 66
-total_count: 661
-last_updated: 2026-09-27T23:30:00.000Z
+total_count: 667
+last_updated: 2026-09-27T23:32:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -646,7 +646,7 @@ last_updated: 2026-09-27T23:30:00.000Z
 | 629 | 13 | todo | src/presentation/managers.rs |  | 13-09: two things an item's undo does not bring back. A deleted task's subtasks are taken out from under it by the delete (drop_synced_task sets their parent to nothing) and stay that way after Undo, because the record is the task's own row. And a day taken off a repeating event is a save rather than a delete, so it clears the undo step instead of being undone; undoing it would mean putting the series' exception dates back and taking back the day's change at the provider. Recommendation: build both beside an undo of an item's edit, if Pratik wants edits undoable; open until he asks | open |  | 2026-09-25T20:00:00.000Z |  |
 | 630 | 13 | unrun-verify | src/presentation/reader_text.rs |  | 13-10: the meeting sentence under NVDA and Narrator, in the text reader, the formatted window and the preview. What only a person settles: that the sentence is heard as the message opens and once more at the top of the message without that reading as too much; that the whole date reads well in the tester's date settings; that the calendar part's row is heard as meeting invitation, meeting cancellation, reply to your meeting or calendar file; and, on a signed invitation, that the meeting comes before the signature's verdict. Shift+Space reads the sentence twice, from the bar and from the body, as it already reads an S/MIME envelope's sentence twice | open |  | 2026-09-26T03:00:00.000Z |  |
 | 631 | 13 | unrun-verify | src/application/invitations.rs |  | 13-10: no invitation from a real organiser has been read here. The two raw messages in tests/an_invitation_is_said_before_the_body.rs are shaped from the standards and the audit of 2026-09-15, not taken from Outlook, Google Calendar or a CalDAV server. What a real account settles, for phase 14: whether each sender's invitation, cancellation and answer is found (text/calendar or application/ics, an alternative or an attachment), whether the title, place, organiser and hours read right, and whether "already on your calendar" is said for an invitation Google filed itself. Phase 14's planner decides the REAL line; none names invitations yet | open |  | 2026-09-26T03:00:00.000Z |  |
-| 632 | 13 | todo | src/application/invitations.rs |  | 13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as "Pacific Standard Time", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule | open |  | 2026-09-26T03:00:00.000Z |  |
+| 632 | 13 | todo | src/application/invitations.rs |  | 13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as "Pacific Standard Time", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule. 13-21.1 on 2026-09-27, the invitation half: common::moment::read_in reads a stored clock face in the zone stored beside it, common::zones places a zone database name, a calendar server's path or a Windows name through Windows' ICU, and the invitation's sentence and answer buttons say this computer's hour, the sentence adding the other clock once; the standing and an organiser's move compare instants. The calendar half, its list, readings, printed page, alerts and editor, is 13-21.2's, which closes this | open |  | 2026-09-26T03:00:00.000Z |  |
 | 633 | 13 | todo | src/presentation/wx_app.rs |  | 13-10: a message whose text the download of everything brought before this build has no parts recorded, and nothing records them later: the text pass skips a message whose text is here, and the reader fetches nothing for one (the selection handler sends the cached body and spawns no fetch). Such a message shows no list of its attachments and its meeting is not said. From this build the text pass keeps every part's name and the calendar document (reading_a_message::keep_what_a_download_carried). Recommendation: the reader fetches the whole message once when a row says it has attachments and none are recorded, the way it fetches a body it does not hold, with care that the second MessageBodyLoaded does not announce the message twice. Whether the text pass should keep every file rather than names and calendar documents is a question of disk, the attachment store's 512 MB budget; recommendation no | open |  | 2026-09-26T03:00:00.000Z |  |
 | 634 | 13 | unrun-verify | src/presentation/wx_reader.rs |  | 13-11: the answer buttons have not been heard. Under NVDA and Narrator, in the text reader and the formatted window: each button's name and its description, what pressing it will do and who will be told, read after the name; Alt+C, Alt+T and Alt+D pressing them from inside the message in both windows; the reason in the bar heard for an invitation that cannot be answered; the three answers on the message list's context menu on I, E and L; and the one sentence after answering. Where the keyboard lands after Alt+C in the text reader is also the ear's: the plan said the button pressed, and a window the target builds, which is not in front, kept it in the message. Recommendation: keep it in the message, where somebody was reading; the question is Pratik's if the ear disagrees | open |  | 2026-09-26T16:00:00.000Z |  |
 | 635 | 13 | unrun-verify | src/application/calendar.rs |  | 13-12: whether Google's iCalUID and Microsoft Graph's iCalUId equal the UID in the invitation each provider's own servers mail out, and whether organizer.email and organizer.emailAddress.address name the organiser the invitation names, is read from each provider's reference page and has never met a real account; phase 14's. Graph gives each day of a repeating series its own iCalUId and this program reads Graph through a calendar view, which answers with days, so an invitation to a repeating meeting finds nothing on a Microsoft account and is said to be new (decision 17, said in the changelog); the fix, if wanted, reads the series master, a request this program does not make today. Not written either: the days of a Google series stored as rows of their own, which keep no UID so a series invitation finds the series, and subscribed feeds, whose rows are found by their provider identifier, which is already the UID | open |  | 2026-09-26T20:00:00.000Z |  |
@@ -676,6 +676,12 @@ last_updated: 2026-09-27T23:30:00.000Z
 | 659 | 13 | todo | src/application/protecting.rs |  | 13-21, a question for Pratik: encrypting a message that has a Bcc is refused at Send, because S/MIME and OpenPGP both write every recipient's key on the envelope where anybody who received the message can read it, so a blind copy would not stay blind. The other shapes: encrypt to the Bcc recipients too and say their keys show, or send each Bcc recipient an encrypted copy of their own. Recommendation: keep the refusal until phase 14 has tried a real correspondent, then offer the separate copies, the only shape that keeps a blind copy blind. The guide and the changelog say the refusal meanwhile | open |  | 2026-09-27T23:30:00.000Z |  |
 | 660 | 13 | todo | src/presentation/wx_app.rs |  | 13-21: the composer's From list chooses nothing the Outbox reads. ComposeData.account_index is read by nothing in wx_app.rs, queue_for_sending puts the row under the active account, and the send loop sends from that account's address. So the Sign and Encrypt check at Send reads what is held for the active account's address, the one the message really goes from, and the changelog says so. 13-34, which puts the From on the queued row, is where the check at Send and the gathering in the send loop have to read the row's address instead; its plan names this entry | open |  | 2026-09-27T23:30:00.000Z |  |
 | 661 | 13 | deviation | src/presentation/wx_compose.rs |  | 13-21: a red commit's stub put two visible check boxes after Cancel in the composer's button row, and three window targets that build the composer, a_marker_counts_at_the_start_of_any_line, a_signature_follows_the_from_account and signing_and_encrypting_from_the_composer, ended with exit 0xc000041d after a wxStaticCast assert from wx/object.h, every time under scripts/check.sh (three runs, two of them the hook) and never by hand, alone, after the gate's lib runs, after clippy with every feature, or as the gate's whole list of 134 targets. Hidden, or where the green puts them in the toolbar after Schedule, all three pass under the gate. Not diagnosed; it has the look of ledger 466's WebView2 completion reaching a control it no longer fits. Whoever next adds a control to the composer's button row should expect it | open |  | 2026-09-27T23:30:00.000Z |  |
+| 662 | 13 | unrun-verify | src/presentation/time_elsewhere.rs |  | 13-21.1: nobody has heard an invitation from another time zone said at this computer's hour, the clause that says the other clock once ("which is 05/03/2026 at 09:00 to 10:00 Tokyo Standard Time"), or the sentence for a zone this computer cannot place ("as written in Customized Time Zone, a time zone this computer cannot place"); the tester's ear | open |  | 2026-09-27T23:32:00.000Z |  |
+| 663 | 13 | unrun-verify | src/common/zones.rs |  | 13-21.1, for phase 14: no invitation from a real organiser in another time zone has been read here, neither Outlook's, whose TZID is a Windows name placed through Windows' ICU, nor Google's, whose TZID is a zone database name; both said at the right hour is untried against a real account | open |  | 2026-09-27T23:32:00.000Z |  |
+| 664 | 13 | todo | src/service/caldav.rs | 1013 | 13-21.1: a DTEND naming a different zone from its DTSTART is read in DTSTART's zone, because the calendar row holds one zone and the reader keeps DTSTART's TZID only; a meeting that starts in one zone and ends in another (a flight, say) is said with the wrong end. Recommendation: read DTEND's own TZID and store the end as an instant when it differs | open |  | 2026-09-27T23:32:00.000Z |  |
+| 665 | 13 | todo | src/common/zones.rs |  | 13-21.1: a zone defined only by the VTIMEZONE block in its own document (a name neither the zone database nor Windows knows, such as Outlook's "Customized Time Zone") cannot be placed, so its hour is kept as written and said to be unplaced; reading that block's STANDARD and DAYLIGHT rules would place it | open |  | 2026-09-27T23:32:00.000Z |  |
+| 666 | 13 | todo | src/application/answered_meetings.rs | 112 | 13-21.1: an Outlook invitation answered on a Google or calendar-server account keeps its Windows zone name (answered_meetings.rs:112) and is pushed; Google's reference asks for a zone database name for start.timeZone, and the calendar-server writer refuses a Windows name by name, so the answer's event may not reach either. Recommendation: the writers ask common::zones for the zone database name before sending | open |  | 2026-09-27T23:32:00.000Z |  |
+| 667 | 13 | todo | docs/USER_GUIDE.md | 23 | 13-21.1: the guide says Windows 10 or later, while the program imports UiaRaiseNotificationEvent statically, which Windows added in version 1709, so a Windows 10 older than 1709 cannot start it. Recommendation: say version 1709 or later, or check for it in the installer | open |  | 2026-09-27T23:32:00.000Z |  |
 
 ````json
 [
@@ -8257,7 +8263,7 @@ last_updated: 2026-09-27T23:30:00.000Z
     "phase": "13",
     "file": "src/application/invitations.rs",
     "line": null,
-    "description": "13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as \"Pacific Standard Time\", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule",
+    "description": "13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as \"Pacific Standard Time\", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule. 13-21.1 on 2026-09-27, the invitation half: common::moment::read_in reads a stored clock face in the zone stored beside it, common::zones places a zone database name, a calendar server's path or a Windows name through Windows' ICU, and the invitation's sentence and answer buttons say this computer's hour, the sentence adding the other clock once; the standing and an organiser's move compare instants. The calendar half, its list, readings, printed page, alerts and editor, is 13-21.2's, which closes this",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-26T03:00:00.000Z",
@@ -8609,6 +8615,78 @@ last_updated: 2026-09-27T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 662,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/time_elsewhere.rs",
+    "line": null,
+    "description": "13-21.1: nobody has heard an invitation from another time zone said at this computer's hour, the clause that says the other clock once (\"which is 05/03/2026 at 09:00 to 10:00 Tokyo Standard Time\"), or the sentence for a zone this computer cannot place (\"as written in Customized Time Zone, a time zone this computer cannot place\"); the tester's ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 663,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/common/zones.rs",
+    "line": null,
+    "description": "13-21.1, for phase 14: no invitation from a real organiser in another time zone has been read here, neither Outlook's, whose TZID is a Windows name placed through Windows' ICU, nor Google's, whose TZID is a zone database name; both said at the right hour is untried against a real account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 664,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/caldav.rs",
+    "line": 1013,
+    "description": "13-21.1: a DTEND naming a different zone from its DTSTART is read in DTSTART's zone, because the calendar row holds one zone and the reader keeps DTSTART's TZID only; a meeting that starts in one zone and ends in another (a flight, say) is said with the wrong end. Recommendation: read DTEND's own TZID and store the end as an instant when it differs",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 665,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/common/zones.rs",
+    "line": null,
+    "description": "13-21.1: a zone defined only by the VTIMEZONE block in its own document (a name neither the zone database nor Windows knows, such as Outlook's \"Customized Time Zone\") cannot be placed, so its hour is kept as written and said to be unplaced; reading that block's STANDARD and DAYLIGHT rules would place it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 666,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/answered_meetings.rs",
+    "line": 112,
+    "description": "13-21.1: an Outlook invitation answered on a Google or calendar-server account keeps its Windows zone name (answered_meetings.rs:112) and is pushed; Google's reference asks for a zone database name for start.timeZone, and the calendar-server writer refuses a Windows name by name, so the answer's event may not reach either. Recommendation: the writers ask common::zones for the zone database name before sending",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 667,
+    "kind": "todo",
+    "phase": "13",
+    "file": "docs/USER_GUIDE.md",
+    "line": 23,
+    "description": "13-21.1: the guide says Windows 10 or later, while the program imports UiaRaiseNotificationEvent statically, which Windows added in version 1709, so a Windows 10 older than 1709 cannot start it. Recommendation: say version 1709 or later, or check for it in the installer",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:32:00.000Z",
     "resolved_at": null
   }
 ]
