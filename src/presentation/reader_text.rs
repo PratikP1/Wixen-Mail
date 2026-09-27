@@ -1774,6 +1774,9 @@ impl ReaderDocument {
             // unsafe-message cue on one would teach somebody that the cue means
             // nothing.
             SignatureCheck::NotKept => Some(nothing_kept_to_check_bar(self.warning.as_deref())),
+            SignatureCheck::Pgp(_) | SignatureCheck::StoredBeforeSignaturesWereKept => {
+                return self;
+            }
         };
         self
     }
@@ -3885,6 +3888,175 @@ mod signature_tests {
             assert!(bar.contains(limit), "the bar left out {limit:?}\n{bar}");
         }
     }
+
+    // ── PGP signatures ───────────────────────────────────────────────────
+
+    use crate::service::pgp::{KeyInYourList, PgpVerdict};
+
+    fn ada() -> KeyInYourList {
+        KeyInYourList {
+            name: "Ada Lovelace <ada@example.com>".to_string(),
+            fingerprint: "1A2B 3C4D 5E6F 7A8B 9C0D 1E2F 3A4B 5C6D 7E8F 9A0B".to_string(),
+        }
+    }
+
+    /// The four PGP verdicts and the message stored before signatures were
+    /// kept, as the reader is handed them.
+    pub(super) fn every_pgp_signature_check() -> Vec<SignatureCheck> {
+        vec![
+            SignatureCheck::Pgp(PgpVerdict::Holds { whose: ada() }),
+            SignatureCheck::Pgp(PgpVerdict::NoKeyToCheckIt {
+                key_id: "1A2B 3C4D 5E6F 7A8B".to_string(),
+            }),
+            SignatureCheck::Pgp(PgpVerdict::DoesNotHold { whose: ada() }),
+            SignatureCheck::Pgp(PgpVerdict::Damaged),
+            SignatureCheck::StoredBeforeSignaturesWereKept,
+        ]
+    }
+
+    /// What the reader says as the message opens, with this folded in.
+    pub(super) fn said_first(check: &SignatureCheck) -> String {
+        let bar = a_message(Safety::Ordinary)
+            .with_signature(check)
+            .warning
+            .expect("a signed message says something");
+        said_before_the_message(&bar).to_string()
+    }
+
+    #[test]
+    fn test_a_pgp_signature_that_holds_says_the_key_made_it_and_not_who_holds_it() {
+        // The sentence a forger would most like misheard. It names the key the
+        // way the key manager's row names it, says what holding means, and in
+        // the same breath what it does not.
+        assert_eq!(
+            said_first(&SignatureCheck::Pgp(PgpVerdict::Holds { whose: ada() })),
+            "This message's PGP signature holds: it was made by the key in your list for Ada \
+             Lovelace <ada@example.com>, fingerprint 1A2B 3C4D 5E6F 7A8B 9C0D 1E2F 3A4B 5C6D \
+             7E8F 9A0B. That says the key made it; it does not say who holds the key."
+        );
+    }
+
+    #[test]
+    fn test_a_pgp_signature_nobody_here_could_check_names_the_key_it_would_need() {
+        assert_eq!(
+            said_first(&SignatureCheck::Pgp(PgpVerdict::NoKeyToCheckIt {
+                key_id: "1A2B 3C4D 5E6F 7A8B".to_string()
+            })),
+            "This message carries a PGP signature by key 1A2B 3C4D 5E6F 7A8B, which is not in \
+             your list, so it could not be checked."
+        );
+    }
+
+    #[test]
+    fn test_a_pgp_signature_that_does_not_hold_says_what_that_means() {
+        assert_eq!(
+            said_first(&SignatureCheck::Pgp(PgpVerdict::DoesNotHold {
+                whose: ada()
+            })),
+            "This message's PGP signature does not hold against the key in your list for Ada \
+             Lovelace <ada@example.com>. It was changed after it was signed, or the signature \
+             is not that key's."
+        );
+    }
+
+    #[test]
+    fn test_a_damaged_pgp_signature_says_it_could_not_be_checked() {
+        assert_eq!(
+            said_first(&SignatureCheck::Pgp(PgpVerdict::Damaged)),
+            "This message's PGP signature is damaged, so it could not be checked."
+        );
+    }
+
+    #[test]
+    fn test_a_message_stored_before_signatures_were_kept_says_so_and_not_that_it_failed() {
+        // #52 point 6. Signed, with the bytes gone before anybody kept them:
+        // not unsigned, and not a signature that failed.
+        let said = said_first(&SignatureCheck::StoredBeforeSignaturesWereKept);
+
+        assert!(
+            said.starts_with(
+                "This message is signed, and it was stored before Wixen Mail kept the form \
+                 signed mail arrives in, so the signature cannot be checked."
+            ),
+            "{said}"
+        );
+        assert!(
+            said.contains("not the same as a signature that does not match"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn test_the_pgp_signature_sentences_are_five_different_sentences() {
+        // Five different things to do next: nothing, import the sender's key,
+        // distrust the words, ask for them again, or fetch nothing because
+        // nothing can be fetched. Two alike would hide one of them.
+        let said: Vec<String> = every_pgp_signature_check().iter().map(said_first).collect();
+
+        for (which, one) in said.iter().enumerate() {
+            assert!(!one.is_empty(), "verdict {which} says nothing");
+            for other in &said[which + 1..] {
+                assert_ne!(one, other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_every_pgp_verdict_is_said_above_the_line_the_reader_stops_at() {
+        // The reader speaks what is above "More about this signature:", so a
+        // verdict below it is on screen and never heard. The account of the
+        // check is under the line, the way S/MIME's is.
+        for check in every_pgp_signature_check() {
+            let bar = a_message(Safety::Ordinary)
+                .with_signature(&check)
+                .warning
+                .expect("a signed message says something");
+            let verdict_at = bar.find(&said_first(&check)).expect("the verdict");
+            let line_at = bar
+                .find(HOW_IT_WAS_CHECKED)
+                .unwrap_or_else(|| panic!("no account of the check: {bar}"));
+            assert!(verdict_at < line_at, "{bar}");
+            assert!(bar.contains(WHAT_A_SIGNATURE_IS_WORTH), "{bar}");
+        }
+    }
+
+    #[test]
+    fn test_each_message_of_a_conversation_says_its_own_pgp_verdict() {
+        // Ledger 497. One bar over a thread would be heard as covering every
+        // message, so a PGP verdict is said where its message begins, and
+        // nothing about it heads the thread.
+        let signed = crate::application::reading_a_message::WhatIsSaidAboutIt {
+            signature: SignatureCheck::Pgp(PgpVerdict::DoesNotHold { whose: ada() }),
+            ..crate::application::reading_a_message::WhatIsSaidAboutIt::nothing()
+        };
+        let part = |said, depth| ConversationPart {
+            message: super::tests::message(),
+            body: MessageBody::Plain("The numbers are attached.".into()),
+            said,
+            depth,
+        };
+        let document = conversation(
+            "The figures",
+            &[
+                part(signed, 0),
+                part(
+                    crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+                    1,
+                ),
+            ],
+        );
+
+        assert_eq!(document.warning, None, "one verdict heads the whole thread");
+        let spoken = read_whole(&document);
+        let first = spoken.find("1. Message from").expect("the first heading");
+        let verdict = spoken
+            .find("PGP signature does not hold")
+            .unwrap_or_else(|| panic!("the verdict is never said in the thread: {spoken}"));
+        let second = spoken
+            .find("2. Reply, level 2 from")
+            .expect("the second heading");
+        assert!(first < verdict && verdict < second, "{spoken}");
+    }
 }
 
 #[cfg(test)]
@@ -4198,7 +4370,9 @@ mod encryption_tests {
         let smime = smime.said().expect("a sentence");
 
         assert_ne!(smime, ENCRYPTED_AND_NOT_OPENED_HERE);
-        assert_ne!(smime, SIGNED_AND_NOT_CHECKED_HERE);
+        for check in super::signature_tests::every_pgp_signature_check() {
+            assert_ne!(smime, super::signature_tests::said_first(&check));
+        }
         assert_ne!(
             smime,
             crate::application::encrypted_mail::ENCRYPTED_AND_THE_DETAILS_COULD_NOT_BE_READ
@@ -4206,38 +4380,35 @@ mod encryption_tests {
     }
 
     #[test]
-    fn test_a_signed_message_says_so_without_saying_the_signature_was_checked() {
-        // Telling somebody a message is signed changes what they trust, so the
-        // sentence carries what was not done in the same breath as what was
-        // found. "Could not check" must never read as "fine".
-        let bar = opened(Safety::Ordinary, &a_clearsigned_message())
+    fn test_a_clearsigned_message_is_said_through_its_verdict_and_not_its_form() {
+        // Until 13-18 the form alone put "which Wixen Mail cannot check" into
+        // the bar. A PGP signature is checked now, so the form says nothing of
+        // its own and the verdict the composition found is what is said: two
+        // sentences about one signature would be heard as two findings.
+        let as_it_came = opened(Safety::Ordinary, &a_clearsigned_message());
+        assert_eq!(as_it_came.warning, None);
+
+        let bar = as_it_came
+            .with_signature(&SignatureCheck::Pgp(
+                crate::service::pgp::PgpVerdict::Damaged,
+            ))
             .warning
             .expect("a signed message has something to say");
 
-        assert!(bar.contains("carries a PGP signature"), "got {bar}");
-        assert!(bar.contains("cannot check"), "got {bar}");
-        assert!(
-            bar.contains("nothing here says whether it is genuine"),
-            "got {bar}"
-        );
+        assert!(bar.contains("PGP signature is damaged"), "got {bar}");
     }
 
     #[test]
-    fn test_the_signed_sentence_makes_no_claim_a_check_would_have_to_earn() {
-        // Written against the wording rather than against a composed bar,
-        // because the risk is that somebody tightening the sentence later
-        // reaches for a shorter one that reads as a verdict.
-        for claim in [
-            "verified",
-            "was made by",
-            "has not been changed",
-            "is valid",
-            "trusted",
-        ] {
-            assert!(
-                !SIGNED_AND_NOT_CHECKED_HERE.contains(claim),
-                "the signed sentence claims {claim}: {SIGNED_AND_NOT_CHECKED_HERE}"
-            );
+    fn test_no_pgp_signature_sentence_makes_a_claim_a_check_did_not_earn() {
+        // Written against the wording, because the risk is somebody
+        // tightening a sentence later into one that reads as a verdict on the
+        // sender. A signature that holds says a key made it; "genuine",
+        // "verified" and "trusted" say more than that about a person.
+        for check in super::signature_tests::every_pgp_signature_check() {
+            let said = super::signature_tests::said_first(&check).to_lowercase();
+            for claim in ["genuine", "verified", "is valid", "trusted"] {
+                assert!(!said.contains(claim), "{said} claims {claim}");
+            }
         }
     }
 
@@ -4537,11 +4708,19 @@ mod encryption_tests {
     }
 
     #[test]
-    fn test_both_sentences_read_as_sentences_rather_than_a_wrapped_literal() {
+    fn test_the_encryption_and_signature_sentences_read_as_sentences_not_a_wrapped_literal() {
         // A wrapped literal that loses its continuations keeps every space of
         // the indenting, and these are read aloud. Runs of stray spaces are
         // silences in the middle of a sentence.
-        for sentence in [ENCRYPTED_AND_NOT_OPENED_HERE, SIGNED_AND_NOT_CHECKED_HERE] {
+        let signatures = super::signature_tests::every_pgp_signature_check()
+            .iter()
+            .map(super::signature_tests::said_first)
+            .collect::<Vec<String>>();
+        for sentence in signatures
+            .iter()
+            .map(String::as_str)
+            .chain([ENCRYPTED_AND_NOT_OPENED_HERE])
+        {
             assert!(!sentence.contains("  "), "{sentence}");
         }
     }

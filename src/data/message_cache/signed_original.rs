@@ -84,8 +84,11 @@ pub enum SignedOriginal {
     /// start being checked once they are fetched again.
     NotSigned,
     /// The bytes as they arrived, which is the only thing a signature can be
-    /// checked against.
+    /// checked against: an S/MIME signed message.
     Kept(Vec<u8>),
+    /// The same, for a PGP/MIME signed message, which is checked against the
+    /// PGP keys here rather than against a certificate.
+    KeptPgpMime(Vec<u8>),
     /// It says it is signed and the bytes were not kept here, so there is
     /// nothing to check it against. Not a failed check.
     NotKept,
@@ -367,6 +370,7 @@ mod tests {
     use super::*;
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
+    use crate::service::pgp::for_tests::a_pgp_mime_message_signed_by_carol;
     use crate::service::signed_mail::for_tests::signed_beside;
 
     fn signed_cache() -> TempHome<MessageCache> {
@@ -427,6 +431,66 @@ mod tests {
         assert_eq!(
             cache.signed_original(row).expect("read"),
             SignedOriginal::Kept(raw)
+        );
+    }
+
+    #[test]
+    fn test_the_form_a_pgp_mime_signed_message_arrived_in_comes_back_as_pgp_mime() {
+        // Kept beside S/MIME's, and read back as what it is: a PGP signature
+        // handed to the certificate checker says it carries no signature that
+        // checker can read, about a message that does carry one.
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+        let raw = a_pgp_mime_message_signed_by_carol();
+
+        cache.keep_signed_original(row, &raw).expect("kept");
+
+        assert_eq!(
+            cache.signed_original(row).expect("read"),
+            SignedOriginal::KeptPgpMime(raw)
+        );
+    }
+
+    #[test]
+    fn test_a_row_kept_before_the_kind_was_written_reads_as_smime() {
+        // Every row a build before 13-18 kept is S/MIME, because nothing else
+        // was kept. A row written without the kind has none, and that has to
+        // read as it did.
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+        let raw = signed_beside();
+        cache
+            .conn
+            .execute(
+                "INSERT INTO signed_original (message_id, original, bytes, last_read_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![row, raw, raw.len() as i64, now()],
+            )
+            .expect("a row the way an older build wrote one");
+
+        assert_eq!(
+            cache.signed_original(row).expect("read"),
+            SignedOriginal::Kept(raw)
+        );
+    }
+
+    #[test]
+    fn test_a_pgp_mime_signed_message_too_large_to_keep_still_says_it_was_signed() {
+        // The same ceiling as S/MIME's, and the same rule over it: the bytes
+        // go, the claim stays.
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+        let mut raw = a_pgp_mime_message_signed_by_carol();
+        raw.extend(std::iter::repeat_n(
+            b'x',
+            LARGEST_SIGNED_MESSAGE_KEPT_BYTES as usize,
+        ));
+
+        cache.keep_signed_original(row, &raw).expect("asked");
+
+        assert_eq!(
+            cache.signed_original(row).expect("read"),
+            SignedOriginal::NotKept
         );
     }
 

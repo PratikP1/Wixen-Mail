@@ -827,6 +827,71 @@ pub(crate) mod for_tests {
 
     /// Carol's fingerprint, as `gpg --list-keys --with-colons` gave it.
     pub(crate) const CAROLS_FINGERPRINT: &str = "8DE4DEEC367D086637934A1C52B5C043A2C64173";
+
+    /// Carol's private key, which signs: the one fixture key GnuPG will sign
+    /// with.
+    pub(crate) fn carols_private_key() -> String {
+        super::tests::armour(super::tests::CAROL_PRIVATE)
+    }
+
+    /// Carol's clearsigned text, as `gpg --clearsign` wrote it; the commands
+    /// are beside the fixture in `signatures.rs`.
+    pub(crate) fn a_clearsigned_message_by_carol() -> String {
+        use super::super::signatures::tests::{CAROL_CLEARSIGNED, armour};
+        armour(CAROL_CLEARSIGNED)
+    }
+
+    /// The words she signed, as a reader shows them.
+    pub(crate) fn what_carol_signed() -> &'static str {
+        super::super::signatures::tests::WHAT_CAROL_SIGNED
+    }
+
+    /// A whole PGP/MIME signed message by Carol, as it arrives.
+    ///
+    /// The signed part and the signature are GnuPG's, byte for byte; the
+    /// envelope around them is written here the way Thunderbird writes one,
+    /// every line ending CRLF, the `Content-Type` folded onto a second line
+    /// as mail programs fold it. What the signature covers is only the part,
+    /// so the envelope is the one thing here a test may write for itself.
+    pub(crate) fn a_pgp_mime_message_signed_by_carol() -> Vec<u8> {
+        use super::super::signatures::tests::{
+            CAROLS_DETACHED_SIGNATURE, CAROLS_SIGNED_PART, armour,
+        };
+        let signature = armour(CAROLS_DETACHED_SIGNATURE).replace('\n', "\r\n");
+        format!(
+            "From: Carol Example <carol@example.com>\r\n\
+             To: me@example.com\r\n\
+             Subject: The figures\r\n\
+             MIME-Version: 1.0\r\n\
+             Content-Type: multipart/signed; micalg=pgp-sha512;\r\n \
+             protocol=\"application/pgp-signature\"; boundary=\"signed-13-18\"\r\n\
+             \r\n\
+             This is an OpenPGP/MIME signed message (RFC 4880 and 3156)\r\n\
+             --signed-13-18\r\n\
+             {part}\r\n\
+             --signed-13-18\r\n\
+             Content-Type: application/pgp-signature; name=\"signature.asc\"\r\n\
+             Content-Description: OpenPGP digital signature\r\n\
+             Content-Disposition: attachment; filename=\"signature.asc\"\r\n\
+             \r\n\
+             {signature}\r\n\
+             --signed-13-18--\r\n",
+            part = armour(CAROLS_SIGNED_PART),
+        )
+        .into_bytes()
+    }
+
+    /// Her detached signature over that part, as armour.
+    pub(crate) fn carols_detached_signature() -> String {
+        use super::super::signatures::tests::{CAROLS_DETACHED_SIGNATURE, armour};
+        armour(CAROLS_DETACHED_SIGNATURE)
+    }
+
+    /// The part inside it that Carol's signature covers, byte for byte.
+    pub(crate) fn what_carols_signature_covers() -> Vec<u8> {
+        use super::super::signatures::tests::{CAROLS_SIGNED_PART, armour};
+        armour(CAROLS_SIGNED_PART).into_bytes()
+    }
 }
 
 #[cfg(test)]
@@ -981,7 +1046,7 @@ mod tests {
     /// GNUPGHOME=/c/g16 gpg --batch --pinentry-mode loopback --passphrase '' \
     ///     --armor --export-secret-keys carol@example.com
     /// ```
-    const CAROL_PRIVATE: &str = "
+    pub(super) const CAROL_PRIVATE: &str = "
         LS0tLS1CRUdJTiBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0tLQoKbEZnRWFyaVk1QllKS3dZ
         QkJBSGFSdzhCQVFkQStUc0c5RTZidWxlVmZrR1NmRDQ2R3U3WHRRbmEwN2R4SUZZTgpaSm9E
         Y1lJQUFQNHlZWFpvcnBsT3puVG9zMTdHa29FSm02RGlOMDY2YncyVTdYZUdBOU4xbUJGYXRD

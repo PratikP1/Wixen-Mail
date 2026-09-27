@@ -275,7 +275,7 @@ pub fn added_to_the_archive(
             &rebuilt,
             message_files::WhatToWrite::ExactlyAsItArrived(raw),
         ),
-        SignedOriginal::NotSigned | SignedOriginal::NotKept => {
+        SignedOriginal::KeptPgpMime(_) | SignedOriginal::NotSigned | SignedOriginal::NotKept => {
             message_files::written_into_an_archive(
                 archive,
                 &rebuilt,
@@ -318,7 +318,7 @@ pub fn one_message_written_out(
         // Not through `ending_where_a_line_ends`: that is what a trip through
         // an archive changes, and a message written out on its own keeps its
         // body exactly as it was stored.
-        SignedOriginal::NotSigned | SignedOriginal::NotKept => {
+        SignedOriginal::KeptPgpMime(_) | SignedOriginal::NotSigned | SignedOriginal::NotKept => {
             message_files::written_as_one_message(
                 &rebuilt_from_what_is_stored(stored, text),
                 &what_can_be_written_of(files).to_write,
@@ -1716,6 +1716,23 @@ mod tests {
             Some(&some_text()),
             &[],
             &SignedOriginal::Kept(arrived.clone()),
+        )
+        .expect("a signed message is written");
+
+        assert_eq!(written, arrived);
+    }
+
+    #[test]
+    fn test_a_pgp_mime_signed_message_saved_as_a_file_is_written_exactly_as_it_arrived() {
+        // The same statement about bytes, made with a PGP key rather than a
+        // certificate. Kept since 13-18, and worth nothing rebuilt.
+        let arrived = crate::service::pgp::for_tests::a_pgp_mime_message_signed_by_carol();
+
+        let written = one_message_written_out(
+            &a_stored_message(),
+            Some(&some_text()),
+            &[],
+            &SignedOriginal::KeptPgpMime(arrived.clone()),
         )
         .expect("a signed message is written");
 

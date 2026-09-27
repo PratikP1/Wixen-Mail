@@ -683,3 +683,174 @@ fn test_a_file_inside_an_opened_envelope_is_taken_from_the_envelope() {
         );
     }
 }
+
+// ── A PGP/MIME signed message, checked against a key kept here ───────────────
+
+/// Carol's public key, the part her signature covers and the signature, as
+/// GnuPG 2.4.9 made them. The commands are beside the same fixtures in
+/// `src/service/pgp/signatures.rs`, which an integration target cannot reach.
+const CAROL_PUBLIC: &str = "
+    LS0tLS1CRUdJTiBQR1AgUFVCTElDIEtFWSBCTE9DSy0tLS0tCgptRE1FYXJpWTVCWUpLd1lC
+    QkFIYVJ3OEJBUWRBK1RzRzlFNmJ1bGVWZmtHU2ZENDZHdTdYdFFuYTA3ZHhJRllOClpKb0Rj
+    WUswSVVOaGNtOXNJRVY0WVcxd2JHVWdQR05oY205c1FHVjRZVzF3YkdVdVkyOXRQb2lRQkJN
+    V0NnQTQKRmlFRWplVGU3RFo5Q0dZM2swb2NVclhBUTZMR1FYTUZBbXE0bU9RQ0d3TUZDd2tJ
+    QndJR0ZRb0pDQXNDQkJZQwpBd0VDSGdFQ0Y0QUFDZ2tRVXJYQVE2TEdRWFBLaUFFQXRMSkNY
+    czVIYldLN2c2czhnMVdJQzNKbytBRi9mdFdoCmdxOUE1a1JVdkxNQS8yc0VzYlhVTEI3NFdz
+    clBvekZJcVNQYTVOT01EL1ZPSitwVnBCSFdON3dKdURnRWFyaVkKNVJJS0t3WUJCQUdYVlFF
+    RkFRRUhRRWR3dUtjRFBBQW5OZ3ZGY2xYYTRtNCtZdzZEMDF1UGxyaTdjbEgzUUFJMwpBd0VJ
+    QjRoNEJCZ1dDZ0FnRmlFRWplVGU3RFo5Q0dZM2swb2NVclhBUTZMR1FYTUZBbXE0bU9VQ0d3
+    d0FDZ2tRClVyWEFRNkxHUVhNK0JRRUF3bzF6S3QrR2FIVkF6NDNydXYvNENWTXMwY0lVYmQ0
+    eVIxTkN4aG8rbDdzQkFLRnYKci95WUJZRkNMcUdUT3VBOTJHSGZzNzFtZ0N4YkpXTmdoTzhS
+    WFBFRwo9WmtSUwotLS0tLUVORCBQR1AgUFVCTElDIEtFWSBCTE9DSy0tLS0tCg==";
+
+const CAROLS_SIGNED_PART: &str = "
+    Q29udGVudC1UeXBlOiB0ZXh0L3BsYWluOyBjaGFyc2V0PXVzLWFzY2lpDQpDb250ZW50LVRy
+    YW5zZmVyLUVuY29kaW5nOiA3Yml0DQoNClRoZSBmaWd1cmVzIGFyZSBmaW5hbC4gQ2Fyb2wN
+    Cg==";
+
+const CAROLS_DETACHED_SIGNATURE: &str = "
+    LS0tLS1CRUdJTiBQR1AgU0lHTkFUVVJFLS0tLS0KCmlJZ0VBQllLQURBV0lRU041TjdzTm4w
+    SVpqZVRTaHhTdGNCRG9zWkJjd1VDYXJqK054SWNZMkZ5YjJ4QVpYaGgKYlhCc1pTNWpiMjBB
+    Q2drUVVyWEFRNkxHUVhQaExBRUFtN0dEMEJNdG94cmNGdHlGeDVXVllFcXVKQU5qZGREWApF
+    Q3BrZWdBZkF1MEEvMVhBNjRMWmpySFJvZUhTbVRYTE50WFQxTkw0RHo1NjlGTVYrQUZ1YUVV
+    QQo9RGdYRwotLS0tLUVORCBQR1AgU0lHTkFUVVJFLS0tLS0K";
+
+fn decoded(encoded: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let packed: String = encoded.split_whitespace().collect();
+    String::from_utf8(STANDARD.decode(packed).expect("a fixture that decodes"))
+        .expect("armour is text")
+}
+
+/// Carol's signed part and signature in the envelope a mail program sends
+/// them in, every line ending CRLF.
+fn a_pgp_mime_message_signed_by_carol() -> Vec<u8> {
+    format!(
+        "From: Carol Example <carol@example.com>\r\n\
+         To: me@example.com\r\n\
+         Subject: The figures\r\n\
+         MIME-Version: 1.0\r\n\
+         Content-Type: multipart/signed; micalg=pgp-sha512;\r\n \
+         protocol=\"application/pgp-signature\"; boundary=\"signed-13-18\"\r\n\
+         \r\n\
+         --signed-13-18\r\n\
+         {part}\r\n\
+         --signed-13-18\r\n\
+         Content-Type: application/pgp-signature; name=\"signature.asc\"\r\n\
+         \r\n\
+         {signature}\r\n\
+         --signed-13-18--\r\n",
+        part = decoded(CAROLS_SIGNED_PART),
+        signature = decoded(CAROLS_DETACHED_SIGNATURE).replace('\n', "\r\n"),
+    )
+    .into_bytes()
+}
+
+#[test]
+fn test_a_pgp_mime_signed_message_that_arrived_here_says_its_verdict_before_the_message() {
+    // The arrival keeps the bytes, the check reads them back out of the
+    // database and against the public key kept there, and the reader says the
+    // verdict above the line it stops speaking at. The keys are read from the
+    // database here rather than through the key manager, which also reads the
+    // credential store: an integration target has no test store in front of
+    // it, and that would read the real one of whoever runs the tests.
+    use wixen_mail::application::answering::AnswerButtons;
+    use wixen_mail::application::checking_signatures;
+    use wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays;
+    use wixen_mail::application::invitations::WhatTheInvitationSays;
+    use wixen_mail::application::reading_a_message;
+    use wixen_mail::common::types::MessageBody;
+    use wixen_mail::data::message_cache::{CachedFolder, CachedMessage, MessageCache};
+    use wixen_mail::presentation::read_aloud::Reading;
+    use wixen_mail::presentation::reader_text;
+    use wixen_mail::presentation::ui_types::MessageItem;
+
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    cache
+        .save_folder(&CachedFolder {
+            id: 0,
+            account_id: "acc-1".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .expect("a folder");
+    let row = cache
+        .save_message(&CachedMessage {
+            id: 0,
+            uid: 1,
+            folder_id: 1,
+            message_id: "<1@example.com>".to_string(),
+            subject: "The figures".to_string(),
+            from_addr: "carol@example.com".to_string(),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            date: "2026-09-27".to_string(),
+            body_plain: Some("The figures are final. Carol".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
+            safety: wixen_mail::service::safety::Safety::Ordinary,
+        })
+        .expect("a message");
+    cache
+        .note_the_form_it_arrived_in(row, &a_pgp_mime_message_signed_by_carol())
+        .expect("arrived");
+    cache
+        .keep_public_key(
+            "8DE4DEEC367D086637934A1C52B5C043A2C64173",
+            &decoded(CAROL_PUBLIC),
+        )
+        .expect("Carol's key kept");
+
+    let check = checking_signatures::from_what_was_kept(
+        cache.signed_original(row).expect("what was kept"),
+        "carol@example.com",
+        wixen_mail::service::signed_mail::this_computers_certificates().as_ref(),
+        chrono::Utc::now(),
+        || {
+            cache
+                .public_keys()
+                .expect("the kept keys")
+                .into_iter()
+                .map(|kept| kept.armour)
+                .collect()
+        },
+    );
+    let shown = reading_a_message::put_together(
+        MessageBody::Plain("The figures are final. Carol".to_string()),
+        WhatTheEnvelopeSays::NotEncrypted,
+        WhatTheInvitationSays::Nothing,
+        AnswerButtons::NotAsked,
+        check,
+    );
+    let document = reader_text::single_message(
+        &MessageItem {
+            subject: "The figures".to_string(),
+            from: "Carol Example <carol@example.com>".to_string(),
+            ..Default::default()
+        },
+        &shown.body,
+        Reading {
+            dates: Default::default(),
+            now: chrono::Local::now(),
+        },
+    )
+    .with_what_is_said(&shown.said);
+
+    let bar = document
+        .warning
+        .as_deref()
+        .expect("a signed message says so");
+    assert!(
+        reader_text::said_before_the_message(bar).contains(
+            "This message's PGP signature holds: it was made by the key in your list for Carol \
+             Example <carol@example.com>"
+        ),
+        "{bar}"
+    );
+}

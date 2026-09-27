@@ -369,6 +369,9 @@ pub fn signature_for(
         &crate::application::receipts::address_of(from),
         crate::service::signed_mail::this_computers_certificates().as_ref(),
         chrono::Utc::now(),
+        // An S/MIME signature sealed inside an S/MIME envelope: no PGP key
+        // has anything to say about it.
+        Vec::new,
     )
 }
 
