@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 582
+open_count: 583
 waived_count: 0
-fixed_count: 61
-total_count: 643
-last_updated: 2026-09-27T03:36:08.000Z
+fixed_count: 62
+total_count: 645
+last_updated: 2026-09-27T05:28:15.000Z
 ---
 
 # Broken Windows Ledger
@@ -158,7 +158,7 @@ last_updated: 2026-09-27T03:36:08.000Z
 | 141 | 04 | unrun-verify | src/service/signed_mail.rs |  | EncryptedMessage::read has never met a real envelope from a real sender. Its fixture is real OpenSSL output, which is more than hand-built DER and is not mail: nobody has put an enveloped message from Outlook or Thunderbird through it. If one does not parse, the reader says the message is encrypted and its details could not be read, which is a wrong message rather than an absent one, and that is worse than the blank body it replaces. The refusal path is what bounds it and it is tested against every seventh-byte prefix of the fixture. 13-14 on 2026-09-26: envelopes OpenSSL sealed for the keyholder certificate, one around a note, one around a signed message and one around an invitation, now open through CryptDecryptMessage with the key held in memory; an envelope from Outlook or Thunderbird has still been neither read nor opened, and RSA-OAEP and authEnvelopedData have opened only in the research's probe. | open |  | 2026-09-06T17:25:10.804Z |  |
 | 142 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Nobody has heard an encrypted message open. Three things only a screen reader run settles: whether the sentence in the body is reached before somebody concludes the message is broken, whether hearing the same sentence in the bar as the message opens and again in the body is heard as thoroughness or as repetition, and whether the count in it addressed to 1 certificate is understood at all by somebody who has never been told what a certificate is. 13-14 on 2026-09-26: the four sentences that replace it on Windows, the opened one above the words with experimental in it and the three refusals, have not been heard either. | open |  | 2026-09-06T17:25:20.115Z |  |
 | 143 | 04 | unrun-verify | src/service/signed_mail.rs |  | Whether this computer holds a certificate an encrypted message was addressed to has never been asked of a real Windows certificate store holding a real S/MIME certificate. which_recipient_is_us is exercised against a store held in memory, so the three answers are tested and the Windows path that produces them is not. A store that answered wrongly rather than failing would tell somebody a private message was not meant for them. 13-14 on 2026-09-26: opening is now asked of the same store, the in-memory key opens the keyholder's envelopes, and the person's own MY store is asked in a test only for an envelope it holds no key for; a real certificate in the person's store opening a real message is still unmet. | open |  | 2026-09-06T17:25:20.633Z |  |
-| 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. | open |  | 2026-09-06T19:22:31.977Z |  |
+| 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. 13-16 (2026-09-27): keys are now split across credential entries Windows will keep and up to eight are held, tested with GnuPG-made RSA-2048 and Ed25519 keys and a passphrase-locked one; still no real key from a correspondent, and no key has been imported on a real machine against the real credential store | open |  | 2026-09-06T19:22:31.977Z |  |
 | 145 | 04 | stub | src/application/opening_pgp.rs |  | PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog. | fixed | 13-15: a multipart/encrypted message whose protocol is application/pgp-encrypted is marked at arrival in arrived_pgp_encrypted, and opening it offers the encrypted part to the key and takes what opens apart in memory under 13-14's rules. Closed by data::message_cache::how_it_arrived::tests::test_a_pgp_mime_message_is_marked_on_arrival and application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key, against a message GnuPG 2.4.9 made; a real correspondent's message is ledger 641 | 2026-09-06T19:22:32.467Z | 2026-09-27T03:36:08.000Z |
 | 146 | 04 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. | open |  | 2026-09-06T19:22:32.974Z |  |
 | 147 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the hold announced. Pressing Send now says "Sending in 10 seconds. Undo Send takes it back." and whether that sentence finishes in time for somebody to hear it, decide and press Ctrl+Shift+Z inside ten seconds is the whole argument in Hold::DEFAULT's doc and no test can measure it. Plan 04.2-04's checkpoint, item 4, asks this question in the flow it matters most in. | open |  | 2026-09-06T23:11:30.841Z |  |
@@ -658,6 +658,8 @@ last_updated: 2026-09-27T03:36:08.000Z
 | 641 | 14 | unrun-verify | src/application/opening_pgp.rs |  | 13-15: no PGP/MIME message from a real correspondent's program has been opened here. The one tested was made by GnuPG 2.4.9 for a test key and wrapped in multipart/encrypted by hand, the way Thunderbird lays one out; Thunderbird, Proton Mail and any other program may name or type the encrypted part differently, protect the headers inside, or send an inner entity this reads wrongly. Needs a real key and a message from each of those programs | open |  | 2026-09-27T03:36:08.000Z |  |
 | 642 | 13 | todo | src/service/pgp/keys.rs |  | 13-15: what the key opens is handed back as text read lossily as UTF-8, which was right for inline PGP's words and is not for a PGP/MIME message, whose inside is a whole MIME entity that can carry words in another character set or a file as raw bytes; either comes out with replacement marks in it. Recommendation: hand the opened bytes to the application layer and let the MIME parser read each part's own charset, the next time a plan touches service::pgp | open |  | 2026-09-27T03:36:08.000Z |  |
 | 643 | 13 | todo | src/presentation/reader_text.rs |  | 13-15: a PGP/MIME message that opens to files and no words shows "This message has no text, or it has not been downloaded yet.", which is half false, because an opened PGP message says nothing above its words the way inline PGP says nothing. 13-14 fixed the same case for S/MIME by putting its opened sentence there. Recommendation: say "This message was encrypted with PGP and was opened here. It holds files and no words." in that place and only there, which needs Pratik's word on the sentence | open |  | 2026-09-27T03:36:08.000Z |  |
+| 644 | 13 | deviation | src/service/secret_store.rs |  | 13-16: the credential store under test took a secret of any length while Windows keeps 1,280 characters, 2,560 bytes of UTF-16, in one credential, so an ordinary RSA private key (1,836 characters for the test key, 6,618 for an RSA-4096 key with a subkey) imported in every test and could not be stored on any real Windows machine. Found by 13-16's research and fixed in 13-16: the test store refuses what Windows refuses, and a key is split across key-N-part-M entries under wixen-mail-pgp. Shown by service::secret_store::tests::test_a_secret_windows_would_refuse_is_refused_here_too and service::pgp::keys::tests::test_an_ordinary_rsa_key_is_stored_and_opens_mail, red at 92784f28 and 658d420d | fixed |  | 2026-09-27T05:28:15.000Z | 2026-09-27T05:28:15.000Z |
+| 645 | 13 | todo | src/service/oauth.rs |  | 13-16: the same 1,280-character limit applies to service::oauth, which writes a sign-in's token JSON through secret_store::write (oauth.rs:910 on 2026-09-27). A Microsoft access token is commonly over 1,280 characters (13-16 research assumption A2, not measured), so an Outlook sign-in may fail to save on Windows. No OAuth test went red under 13-16's honest test store, because the tests store short tokens: the whole library ran 8,111 passed and 13 failed, every failure a PGP case. 13-28, which asks Microsoft for a token of its own, is the place to measure a real token's length and, if it is over, split it the way 13-16 splits a PGP key | open |  | 2026-09-27T05:28:15.000Z |  |
 
 ````json
 [
@@ -2383,7 +2385,7 @@ last_updated: 2026-09-27T03:36:08.000Z
     "phase": "04",
     "file": "src/service/pgp/keys.rs",
     "line": null,
-    "description": "No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens.",
+    "description": "No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. 13-16 (2026-09-27): keys are now split across credential entries Windows will keep and up to eight are held, tested with GnuPG-made RSA-2048 and Ed25519 keys and a passphrase-locked one; still no real key from a correspondent, and no key has been imported on a real machine against the real credential store",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T19:22:31.977Z",
@@ -8375,6 +8377,30 @@ last_updated: 2026-09-27T03:36:08.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T03:36:08.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 644,
+    "kind": "deviation",
+    "phase": "13",
+    "file": "src/service/secret_store.rs",
+    "line": null,
+    "description": "13-16: the credential store under test took a secret of any length while Windows keeps 1,280 characters, 2,560 bytes of UTF-16, in one credential, so an ordinary RSA private key (1,836 characters for the test key, 6,618 for an RSA-4096 key with a subkey) imported in every test and could not be stored on any real Windows machine. Found by 13-16's research and fixed in 13-16: the test store refuses what Windows refuses, and a key is split across key-N-part-M entries under wixen-mail-pgp. Shown by service::secret_store::tests::test_a_secret_windows_would_refuse_is_refused_here_too and service::pgp::keys::tests::test_an_ordinary_rsa_key_is_stored_and_opens_mail, red at 92784f28 and 658d420d",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-27T05:28:15.000Z",
+    "resolved_at": "2026-09-27T05:28:15.000Z"
+  },
+  {
+    "id": 645,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "13-16: the same 1,280-character limit applies to service::oauth, which writes a sign-in's token JSON through secret_store::write (oauth.rs:910 on 2026-09-27). A Microsoft access token is commonly over 1,280 characters (13-16 research assumption A2, not measured), so an Outlook sign-in may fail to save on Windows. No OAuth test went red under 13-16's honest test store, because the tests store short tokens: the whole library ran 8,111 passed and 13 failed, every failure a PGP case. 13-28, which asks Microsoft for a token of its own, is the place to measure a real token's length and, if it is over, split it the way 13-16 splits a PGP key",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T05:28:15.000Z",
     "resolved_at": null
   }
 ]

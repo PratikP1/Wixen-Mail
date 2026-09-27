@@ -53,6 +53,16 @@ one.
 Your passwords and sign-in tokens are not in that folder. They are in the Windows credential
 store, protected per user by Windows itself.
 
+The PGP private keys you import are in the Windows credential store too, under the name
+`wixen-mail-pgp`. One entry there holds at most 1,280 characters and an ordinary key is
+longer, so each key is split across several entries named `key-1-part-1`, `key-1-part-2` and
+so on: up to eight keys, each in up to eight parts. Uninstalling erases every one of those
+names, whether anything was ever written there or not, and the single `private-key` entry an
+older version kept a key in. Other people's public keys are different. They are not secret,
+because they are made to be handed out, so they are kept in the mail database in the `cache`
+folder, beside your mail and, like it, not encrypted. Read from `src/service/pgp/mod.rs` and
+`src/data/message_cache/pgp_keys.rs`.
+
 **The downloaded mail is not encrypted.** Windows stops other people who use the computer from
 reading the folder, but anything running as you can read it, and so can anyone who takes the
 drive out unless the disk itself is encrypted. Turn on BitLocker if that matters to you. This
@@ -765,7 +775,8 @@ excerpt before you send it. A copy of each report you send, and its excerpt, is 
 ## Uninstalling
 
 Uninstalling removes everything Wixen Mail stored: the program, your accounts, your settings,
-the downloaded mail, and your saved passwords and sign-in tokens. It writes a note in your
+the downloaded mail, your saved passwords and sign-in tokens, and every part of every PGP
+private key you imported. It writes a note in your
 temporary folder
 every time, `wixen-mail-uninstall.log`, saying what went and naming anything it could not
 remove, so a leftover is something you are told about rather than something you find. Two

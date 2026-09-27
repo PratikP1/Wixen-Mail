@@ -197,6 +197,15 @@ distributed.
 `wixen-mail-pgp`, with the account name `private-key`. It is defined once in
 `src/service/pgp/mod.rs` as `KEYRING_SERVICE` and `KEYRING_PRIVATE_KEY`.
 
+**Since 13-16, on 2026-09-27, nothing is written under `private-key`.** Windows
+keeps 1,280 characters in one credential entry and an ordinary RSA key is
+longer, so a key is split across the account names `key-{slot}-part-{part}`
+under the same service, `KEY_SLOTS` keys of `PARTS_PER_KEY` parts each, and an
+entry an older build left under `private-key` is moved into a slot the first
+time keys are asked for. `keyring_entries` names the old entry and every part
+of every slot without reading anything, and each new name is permanent the same
+way.
+
 **The name is permanent from the commit that wrote it.** Changing it orphans a
 private key on every machine that has one: the code that erases secrets names
 its entries by this string, so a renamed service leaves the old entry behind,

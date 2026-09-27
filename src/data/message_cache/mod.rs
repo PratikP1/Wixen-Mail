@@ -30,6 +30,7 @@ pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub use tasks::MovedWhatTheProviderHolds;
 pub mod notes;
 mod outbox;
+pub mod pgp_keys;
 pub mod reminders;
 pub mod saved_searches;
 #[cfg(test)]
@@ -2722,6 +2723,21 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create favourites table: {}", e)))?;
+
+        // Other people's OpenPGP public keys, by fingerprint. Not secret, so
+        // here in the mail database rather than in the credential store with
+        // this program's own private keys; `pgp_keys.rs` says why and what
+        // reads them.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS pgp_public_keys (
+                fingerprint TEXT PRIMARY KEY,
+                armour TEXT NOT NULL,
+                added_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create the public keys table: {}", e)))?;
 
         // Message text is packed before it is stored, and these hold the
         // packed form. The two TEXT columns above stay, because a column that

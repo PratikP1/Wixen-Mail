@@ -15,6 +15,19 @@
 
 use crate::common::Result;
 
+/// The longest secret one entry holds on Windows, in UTF-16 units.
+///
+/// `keyring` 4.1.5 hands a secret to `windows-native-keyring-store` 1.1.0,
+/// whose `validate_password` (`src/utils.rs:79-94`) encodes it as UTF-16 and
+/// refuses it when the bytes are more than `CRED_MAX_CREDENTIAL_BLOB_SIZE`,
+/// which `windows-sys` sets to 2,560 (`Security/Credentials/mod.rs:378`). Read
+/// in the vendored sources on 2026-09-27. For the plain text every secret here
+/// is, one unit is one character, so 1,280 characters.
+///
+/// The store under test refuses past it the way Windows does, so a value too
+/// long for one entry is red here rather than only on somebody's machine.
+pub const LONGEST_SECRET_ONE_ENTRY_HOLDS: usize = 1_280;
+
 /// Whether the first credential entry of this process has been opened, which
 /// is what sets the platform's store up.
 #[cfg(not(test))]
@@ -134,6 +147,19 @@ mod backing {
         if let Some(refused) = refusal(Refusing::Everything) {
             return Err(refused);
         }
+        // What Windows says, worded the way it reaches a caller through the
+        // real backing: `keyring-core` 1.0.0's `Error::TooLong` reads "Value of
+        // '{name}' is longer than the platform limit of {len} chars"
+        // (`src/error.rs:91-94`), named "password encoded as UTF-16" with 2560
+        // by `windows-native-keyring-store`, behind the real backing's "Could
+        // not save it: ".
+        if secret.encode_utf16().count() > super::LONGEST_SECRET_ONE_ENTRY_HOLDS {
+            return Err(Error::Security(
+                "Could not save it: Value of 'password encoded as UTF-16' is longer than \
+                 the platform limit of 2560 chars"
+                    .to_string(),
+            ));
+        }
         ENTRIES.with(|entries| {
             entries
                 .borrow_mut()
@@ -165,6 +191,24 @@ mod backing {
         });
         Ok(())
     }
+
+    /// Every entry this thread's store holds under `service`, sorted by name.
+    ///
+    /// For a test that has to see everything that was written rather than ask
+    /// for one name it already knows, which is the only way to catch a write
+    /// under a name nothing else reads.
+    pub fn entries_under(service: &str) -> Vec<(String, String)> {
+        let mut held: Vec<(String, String)> = ENTRIES.with(|entries| {
+            entries
+                .borrow()
+                .iter()
+                .filter(|((kept_under, _), _)| kept_under == service)
+                .map(|((_, user), secret)| (user.clone(), secret.clone()))
+                .collect()
+        });
+        held.sort();
+        held
+    }
 }
 
 /// Keep `secret` under `service` and `user`, replacing whatever was there.
@@ -191,7 +235,7 @@ pub fn remove(service: &str, user: &str) -> Result<()> {
 }
 
 #[cfg(test)]
-pub use backing::{allow, refuse, refuse_removals};
+pub use backing::{allow, entries_under, refuse, refuse_removals};
 
 #[cfg(test)]
 mod tests {
@@ -235,6 +279,40 @@ mod tests {
             "a refused write reported success, which is the whole defect this seam exists to catch"
         );
         allow();
+    }
+
+    #[test]
+    fn test_a_secret_windows_would_refuse_is_refused_here_too() {
+        // Windows keeps at most 2,560 bytes in one credential, and `keyring`
+        // counts them as UTF-16, so 1,280 characters of plain text is the most
+        // one entry holds. A store under test that took anything let an
+        // ordinary RSA private key, 1,836 characters armoured, import cleanly
+        // here and fail on every real Windows machine.
+        write("svc", "fits", &"k".repeat(1_280)).expect("1,280 characters fit in one entry");
+
+        let refused = write("svc", "too-long", &"k".repeat(1_281));
+
+        match refused {
+            Err(problem) => assert!(
+                problem
+                    .to_string()
+                    .contains("longer than the platform limit of 2560 chars"),
+                "refused for some other reason: {problem}"
+            ),
+            Ok(()) => panic!("1,281 characters were kept, and Windows would refuse them"),
+        }
+        assert_eq!(
+            read("svc", "too-long").unwrap(),
+            None,
+            "the refused secret was kept"
+        );
+
+        // Counted as UTF-16 rather than as characters: a key outside the basic
+        // plane is two units, so 641 of them are 1,282 and too long.
+        assert!(
+            write("svc", "wide", &"\u{1F511}".repeat(641)).is_err(),
+            "the length was counted in characters rather than in UTF-16 units"
+        );
     }
 
     #[test]
