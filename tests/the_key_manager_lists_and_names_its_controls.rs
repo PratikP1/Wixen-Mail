@@ -51,6 +51,7 @@ const CHILDID_SELF: i64 = 0;
 const ROLE_SYSTEM_PUSHBUTTON: i64 = 0x2b;
 const ROLE_SYSTEM_TEXT: i64 = 0x2a;
 const ROLE_SYSTEM_LIST: i64 = 0x21;
+const ROLE_SYSTEM_LISTITEM: i64 = 0x22;
 /// The resize grip a resizable dialog carries in its corner, which no key
 /// reaches.
 const ROLE_SYSTEM_GRIP: i64 = 0x4;
@@ -232,21 +233,28 @@ fn msaa_of(hwnd: isize) -> Result<Msaa, String> {
                 false => String::new(),
             }
         };
-        let name = name_of(CHILDID_SELF);
-        let mut role = Variant::empty();
-        let hr_role = get_role(object, Variant::child(CHILDID_SELF), &mut role);
-        let role = match hr_role >= 0 && role.vt == VT_I4 {
-            true => role.val & 0xFFFF_FFFF,
-            false => -1,
+        let role_of = |child: i64| {
+            let mut role = Variant::empty();
+            match get_role(object, Variant::child(child), &mut role) >= 0 && role.vt == VT_I4 {
+                true => role.val & 0xFFFF_FFFF,
+                false => -1,
+            }
         };
-        // A list's rows are its simple children, numbered from one. Only a
-        // list is asked, since every other control's children are its own
-        // parts rather than anything a person reads.
+        let name = name_of(CHILDID_SELF);
+        let role = role_of(CHILDID_SELF);
+        // A list's rows are its children with the list item role, numbered
+        // from one. The count also holds the header, a window of its own
+        // with no name, which is why the role is asked. Only a list is asked,
+        // since every other control's children are its own parts rather than
+        // anything a person reads.
         let mut children = Vec::new();
         if role == ROLE_SYSTEM_LIST {
             let mut count = 0i32;
             if get_count(object, &mut count) >= 0 {
-                children = (1..=i64::from(count)).map(name_of).collect();
+                children = (1..=i64::from(count))
+                    .filter(|child| role_of(*child) == ROLE_SYSTEM_LISTITEM)
+                    .map(name_of)
+                    .collect();
             }
         }
         let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));

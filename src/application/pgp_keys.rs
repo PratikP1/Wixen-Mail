@@ -10,6 +10,7 @@
 //! be, and nothing in this program checks that.
 
 use crate::common::Result;
+use crate::common::how_the_machine_writes_dates::{self as the_machine, WhichLocale};
 use crate::data::message_cache::MessageCache;
 use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
 
@@ -21,18 +22,78 @@ use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
 /// pins each clause to the code that makes it true: a locked key refused by
 /// [`import`], a private key opening mail sent to it, no reader of the public
 /// keys outside this module, and a removal that leaves nothing behind.
-pub const WHAT_KEYS_CAN_DO_HERE: &str = "";
+pub const WHAT_KEYS_CAN_DO_HERE: &str = "A private key here opens PGP messages sent to it. \
+     A key locked with a passphrase cannot be imported yet. Public keys are kept here, and \
+     nothing uses them yet. Private keys are kept in the Windows credential store and public \
+     keys in Wixen Mail's own data, and removing a key here removes it from this computer.";
 
 /// The question asked before a key is removed, naming the key and what stops
 /// working without it.
+///
+/// The whole fingerprint, because two keys can carry the same name and this
+/// is the last moment to tell which one is going. Asked with No as the
+/// answer Enter gives.
 pub fn removal_question(listing: &KeyListing) -> String {
-    let _ = listing;
-    String::new()
+    let what_stops = if listing.private {
+        "Messages encrypted to it will no longer open here, and it cannot be brought back \
+         unless you import it again."
+    } else {
+        "It will no longer be kept here."
+    };
+    format!(
+        "Remove the {} for {}, {}? {what_stops}",
+        kind_of(listing),
+        whose(listing),
+        in_groups_of_four(&listing.fingerprint)
+    )
+}
+
+/// "private key" or "public key".
+fn kind_of(listing: &KeyListing) -> &'static str {
+    if listing.private {
+        "private key"
+    } else {
+        "public key"
+    }
+}
+
+/// Hexadecimal digits in groups of four, the way a fingerprint is read to
+/// somebody to check it, and the way a screen reader says it as groups
+/// rather than as one forty-digit word.
+fn in_groups_of_four(digits: &str) -> String {
+    digits
+        .chars()
+        .collect::<Vec<char>>()
+        .chunks(4)
+        .map(|group| group.iter().collect::<String>())
+        .collect::<Vec<String>>()
+        .join(" ")
+}
+
+/// A date the way a person says one, in this computer's month names.
+fn in_words(when: &chrono::DateTime<chrono::Utc>, which: WhichLocale<'_>) -> String {
+    use chrono::Datelike;
+    the_machine::a_date(
+        which,
+        the_machine::Shape::DayMonthYear(when.year()),
+        when.month(),
+        when.day(),
+    )
+}
+
+/// What a key can do, in the words of the list's last column.
+fn what_it_can_do(listing: &KeyListing) -> &'static str {
+    match (listing.can_encrypt, listing.can_sign) {
+        (true, true) => "Encrypt and sign",
+        (true, false) => "Encrypt only",
+        (false, true) => "Sign only",
+        (false, false) => "Neither encrypt nor sign",
+    }
 }
 
 /// One key as a row of the key manager's list: the person first, the
 /// fingerprint after, so a row is heard as whose key it is before it is heard
-/// as sixty hexadecimal digits.
+/// as forty hexadecimal digits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyRow {
     /// The first name and address the key carries.
@@ -51,18 +112,52 @@ pub struct KeyRow {
     pub can: String,
 }
 
-/// What a row of the key manager says about one key.
-pub fn what_a_row_says(listing: &KeyListing) -> KeyRow {
-    let _ = listing;
+/// What a row of the key manager says about one key, its dates in the month
+/// names of `which`: [`WhichLocale::ThisComputer`] in the window.
+pub fn what_a_row_says(listing: &KeyListing, which: WhichLocale<'_>) -> KeyRow {
+    let mut kind = kind_of(listing).to_string();
+    kind[..1].make_ascii_uppercase();
     KeyRow {
-        name: String::new(),
-        kind: String::new(),
-        key_id: String::new(),
-        fingerprint: String::new(),
-        created: String::new(),
-        expires: String::new(),
-        can: String::new(),
+        name: listing
+            .user_ids
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "No name or address".to_string()),
+        kind,
+        key_id: in_groups_of_four(&listing.key_id),
+        fingerprint: in_groups_of_four(&listing.fingerprint),
+        created: in_words(&listing.created, which),
+        expires: listing
+            .expires
+            .as_ref()
+            .map_or_else(|| "Never".to_string(), |when| in_words(when, which)),
+        can: what_it_can_do(listing).to_string(),
     }
+}
+
+/// What the key manager says when a removal is answered No.
+pub const NOTHING_WAS_REMOVED: &str = "Nothing was removed.";
+
+/// What the key manager says once a removal has been asked for and answered.
+pub fn what_removing_did(listing: &KeyListing, removed: &Result<bool>) -> String {
+    let key = format!("{} for {}", kind_of(listing), whose(listing));
+    match removed {
+        Ok(true) => format!("The {key} was removed."),
+        Ok(false) => format!("The {key} was no longer here, so nothing was removed."),
+        Err(problem) => format!("The {key} could not be removed: {problem}. It is still here."),
+    }
+}
+
+/// What the key manager says when a key's public half is on the clipboard.
+///
+/// "Public" whatever the key is, because that is the only half that leaves.
+pub fn on_the_clipboard(listing: &KeyListing) -> String {
+    format!("The public key for {} is on the clipboard.", whose(listing))
+}
+
+/// What the key manager says when a key's public half has been written out.
+pub fn saved_to(listing: &KeyListing, path: &str) -> String {
+    format!("The public key for {} was saved to {path}.", whose(listing))
 }
 
 /// What importing did with one key, and the sentence that says so.
@@ -192,7 +287,7 @@ fn whose(listing: &KeyListing) -> String {
         .user_ids
         .first()
         .cloned()
-        .unwrap_or_else(|| format!("key {}", listing.key_id))
+        .unwrap_or_else(|| format!("key {}", in_groups_of_four(&listing.key_id)))
 }
 
 /// Remove the key with this fingerprint, private or public.
@@ -490,6 +585,9 @@ mod tests {
 
     // ── The question before a removal, and a row of the list ───────────────
 
+    /// The month names a row is read in here, the same on every machine.
+    const IN_ENGLISH: WhichLocale<'static> = WhichLocale::NamedInATest("en-GB");
+
     fn adas_private_key() -> KeyListing {
         KeyListing {
             user_ids: vec![
@@ -549,7 +647,7 @@ mod tests {
     #[test]
     fn test_a_row_says_whose_key_it_is_before_its_numbers() {
         assert_eq!(
-            what_a_row_says(&adas_private_key()),
+            what_a_row_says(&adas_private_key(), IN_ENGLISH),
             KeyRow {
                 name: "Ada Lovelace <ada@example.com>".to_string(),
                 kind: "Private key".to_string(),
@@ -561,7 +659,7 @@ mod tests {
             }
         );
         assert_eq!(
-            what_a_row_says(&graces_public_key()),
+            what_a_row_says(&graces_public_key(), IN_ENGLISH),
             KeyRow {
                 name: "Grace Hopper <grace@example.com>".to_string(),
                 kind: "Public key".to_string(),
@@ -583,7 +681,7 @@ mod tests {
             ..adas_private_key()
         };
 
-        let row = what_a_row_says(&nameless);
+        let row = what_a_row_says(&nameless, IN_ENGLISH);
 
         assert_eq!(row.name, "No name or address");
         assert_eq!(row.can, "Sign only");
