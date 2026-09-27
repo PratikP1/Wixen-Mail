@@ -207,6 +207,17 @@ pub(crate) mod for_tests {
     pub(crate) fn a_pgp_mime_message_to_alice() -> Vec<u8> {
         super::tests::armour(super::tests::PGP_MIME_TO_ALICE).into_bytes()
     }
+
+    /// The words of its plain half.
+    pub(crate) fn what_the_pgp_mime_message_says() -> &'static str {
+        "The figures are in the minutes. See you Thursday."
+    }
+
+    /// Bob's private key, which is a real key and not the one Alice's messages
+    /// were encrypted to.
+    pub(crate) fn bobs_private_key() -> String {
+        super::tests::armour(super::tests::BOB_PRIVATE)
+    }
 }
 
 #[cfg(test)]
@@ -272,7 +283,7 @@ mod tests {
 
     /// Bob's private key. A real key, and not the one the message below was
     /// encrypted to.
-    const BOB_PRIVATE: &str = "
+    pub(super) const BOB_PRIVATE: &str = "
         LS0tLS1CRUdJTiBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0tLQoKbFFPWUJHcWRrWFFCQ0FE
         UTFZcmdQYmF2MWxyenkvaEhBb3FiS2Y3YmdFMDZ3c0tXcm1aWlZoTnB3K0N4d3FlZgpwZ204
         RWNuWXNuQkJESkpVY01IVjRVS0R4MkFZdVFwemN0OG5Zd0xGMzh1WWtJc20xT1YwTTVGN2VM

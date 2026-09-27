@@ -45,6 +45,7 @@
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::service::mime::{self, AttachmentWithBytes};
+use crate::service::pgp::WhatOpeningItFound;
 use crate::service::signed_mail::{
     CertificateStore, EncryptedMessage, WhatTheEnvelopeHeld, claims_a_signature,
     this_computers_certificates,
@@ -80,6 +81,24 @@ pub enum WhatTheEnvelopeSays {
         /// Everything inside, as Windows handed it back, for the signature a
         /// message sealed after it was signed carries.
         inside: Vec<u8>,
+    },
+    /// A PGP/MIME message that opened with the PGP key this computer holds,
+    /// and what was inside it, taken apart in memory and never stored.
+    OpenedWithPgp {
+        /// The words, in place of the empty body the message arrived with.
+        body: MessageBody,
+        /// The files inside, a meeting's among them.
+        parts: Vec<AttachmentWithBytes>,
+        /// Everything inside, as the key handed it back.
+        inside: Vec<u8>,
+    },
+    /// A PGP/MIME message that did not open: its armour, to be shown the way
+    /// inline PGP's is, and what the key found.
+    PgpNotOpened {
+        /// The armour the message carried in its encrypted part.
+        armour: MessageBody,
+        /// Why it did not open, in the words inline PGP already has.
+        found: WhatOpeningItFound,
     },
     /// No certificate this computer holds a key for is one it was encrypted to.
     NotAddressedHere,
@@ -135,6 +154,7 @@ impl WhatTheEnvelopeSays {
                 Some(ENCRYPTED_AND_THE_DETAILS_COULD_NOT_BE_READ)
             }
             Self::Opened { .. } => Some(OPENED_HERE),
+            Self::OpenedWithPgp { .. } | Self::PgpNotOpened { .. } => None,
             Self::NotAddressedHere => Some(NOT_ADDRESSED_HERE),
             Self::TheKeyRefused => Some(THE_KEY_HERE_REFUSED),
             Self::Damaged => Some(DAMAGED_ON_ARRIVAL),
@@ -168,6 +188,11 @@ impl WhatTheEnvelopeSays {
             Self::Opened { inside, .. } if claims_a_signature(inside) => Some(inside),
             _ => None,
         }
+    }
+
+    /// What the PGP key found, for a PGP/MIME message that did not open.
+    pub fn what_the_pgp_key_found(&self) -> Option<&WhatOpeningItFound> {
+        None
     }
 }
 

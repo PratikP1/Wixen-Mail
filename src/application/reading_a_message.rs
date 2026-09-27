@@ -818,6 +818,61 @@ mod tests {
         assert_eq!(shown.said, WhatIsSaidAboutIt::nothing());
     }
 
+    // ── PGP/MIME ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_a_pgp_mime_message_that_opened_is_shown_as_its_words_with_nothing_said() {
+        // In place of the empty body it arrived with, and with no sentence,
+        // the way inline PGP that opened says none: its words are the news.
+        with_no_key();
+        let words = MessageBody::Multipart {
+            plain: "The figures are in the minutes.".to_string(),
+            html: "<p>The figures are in the minutes.</p>".to_string(),
+        };
+
+        let shown = put_together(
+            MessageBody::Plain(String::new()),
+            WhatTheEnvelopeSays::OpenedWithPgp {
+                body: words.clone(),
+                parts: Vec::new(),
+                inside: Vec::new(),
+            },
+            WhatTheInvitationSays::Nothing,
+            answering::AnswerButtons::NotAsked,
+            SignatureCheck::NotSigned,
+        );
+
+        assert_eq!(shown.body, words);
+        assert_eq!(shown.said.opened, None);
+    }
+
+    #[test]
+    fn test_a_pgp_mime_message_that_did_not_open_shows_its_armour_and_the_reason_its_key_gave() {
+        // Shown the way inline PGP that did not open is: the armour, and the
+        // reason, which the reader words with the sentences inline PGP has.
+        // The reason is the one found when the part was offered, not asked
+        // again: with no key here, asking again would say there is none.
+        with_no_key();
+        let armour = MessageBody::Plain(a_message_to_alice());
+
+        let shown = put_together(
+            MessageBody::Plain(String::new()),
+            WhatTheEnvelopeSays::PgpNotOpened {
+                armour: armour.clone(),
+                found: WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
+            },
+            WhatTheInvitationSays::Nothing,
+            answering::AnswerButtons::NotAsked,
+            SignatureCheck::NotSigned,
+        );
+
+        assert_eq!(shown.body, armour);
+        assert_eq!(
+            shown.said.opened,
+            Some(WhatOpeningItFound::TheKeyHereDoesNotOpenIt)
+        );
+    }
+
     // ── The two answers asked of the cache ────────────────────────────────
 
     fn a_cache() -> TempHome<MessageCache> {
