@@ -76,20 +76,21 @@ pub(crate) use keys::for_tests;
 /// `wixen-mail-caldav-{id}`.
 pub const KEYRING_SERVICE: &str = "wixen-mail-pgp";
 
-/// Account name under [`KEYRING_SERVICE`] holding the private key.
+/// Account name under [`KEYRING_SERVICE`] that held the one private key a
+/// build before 13-16 kept.
 ///
-/// One key, because reading a message somebody holds the key for is one key's
-/// worth of work and several keys is a feature with a chooser in it. The entry
-/// name is fixed rather than derived from a fingerprint so that a machine with
-/// a key on it has exactly one entry, and the uninstaller can name it without
-/// reading anything first.
+/// Nothing is written under it any more. Windows keeps 1,280 characters in one
+/// entry and an ordinary RSA key is longer, so keys are now split across
+/// [`the_entry_for`] each slot's parts, and an entry found here is moved into
+/// a slot the first time keys are asked for. It stays on [`keyring_entries`]
+/// for ever, because a machine that never ran a later build still has it.
 ///
-/// When several keys do arrive, they become several user names under this same
-/// service, and [`keyring_entries`] is what grows. Nothing outside this module
-/// changes, which is why the answer lives here rather than being written out by
-/// hand in the uninstaller. `oauth::entries_for_account` is the precedent and
-/// its own comment records what happened when two lists of entries were kept
-/// apart: a removed account left its refresh token on the machine.
+/// Several keys arrived the way this comment used to say they would: as
+/// several user names under this same service, with [`keyring_entries`] the
+/// thing that grew and nothing outside this module changing.
+/// `oauth::entries_for_account` is the precedent and its own comment records
+/// what happened when two lists of entries were kept apart: a removed account
+/// left its refresh token on the machine.
 pub const KEYRING_PRIVATE_KEY: &str = "private-key";
 
 /// How many private keys this computer can hold.
@@ -140,9 +141,25 @@ pub const PARTS_PER_KEY: usize = 8;
 ///
 /// An entry that was never written is listed too. Deleting one that is not
 /// there costs nothing, and the alternative is deciding from a stored flag
-/// whether a key exists, which is how secrets get left behind.
+/// whether a key exists, which is how secrets get left behind. So this is
+/// the old single entry and every part of every slot, built from
+/// [`KEY_SLOTS`] and [`PARTS_PER_KEY`] and reading nothing.
 pub fn keyring_entries() -> Vec<(String, String)> {
-    vec![(KEYRING_SERVICE.to_string(), KEYRING_PRIVATE_KEY.to_string())]
+    let every_part = (1..=KEY_SLOTS)
+        .flat_map(|slot| (1..=PARTS_PER_KEY).map(move |part| the_entry_for(slot, part)));
+    std::iter::once(KEYRING_PRIVATE_KEY.to_string())
+        .chain(every_part)
+        .map(|user| (KEYRING_SERVICE.to_string(), user))
+        .collect()
+}
+
+/// The account name under [`KEYRING_SERVICE`] holding one part of the key in
+/// one slot, both counted from one: `key-1-part-1` is the first.
+///
+/// **Permanent from the commit that writes it**, for [`KEYRING_SERVICE`]'s
+/// reason.
+fn the_entry_for(slot: usize, part: usize) -> String {
+    format!("key-{slot}-part-{part}")
 }
 
 /// What happened when a PGP message was opened.
@@ -264,13 +281,26 @@ mod tests {
         // rather than a rename a refactor performs.
         assert_eq!(KEYRING_SERVICE, "wixen-mail-pgp");
         assert_eq!(KEYRING_PRIVATE_KEY, "private-key");
+        // The same for how many places a key can occupy, in the direction
+        // that matters: fewer would leave a part nothing names.
+        assert_eq!((KEY_SLOTS, PARTS_PER_KEY), (8, 8));
+        assert_eq!(the_entry_for(3, 2), "key-3-part-2");
     }
 
     #[test]
     fn test_the_entries_uninstalling_erases_name_the_private_key() {
+        // The name one key lived under before keys were split, first, and
+        // then every part of every slot, the last part of the last slot too.
+        let entries = keyring_entries();
+
         assert_eq!(
-            keyring_entries(),
-            vec![("wixen-mail-pgp".to_string(), "private-key".to_string())]
+            entries.first(),
+            Some(&("wixen-mail-pgp".to_string(), "private-key".to_string()))
+        );
+        assert_eq!(entries.len(), 1 + 8 * 8);
+        assert_eq!(
+            entries.last(),
+            Some(&("wixen-mail-pgp".to_string(), "key-8-part-8".to_string()))
         );
     }
 

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 367 records have arrived since and have not been through it.
+# 370 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12805,7 +12805,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/credentials.rs", tests = 10 },
-    { file = "src/service/secret_store.rs", tests = 6 },
+    { file = "src/service/secret_store.rs", tests = 7 },
 ]
 
 [[guard]]
@@ -17590,11 +17590,12 @@ before = """    for (service, user) in pgp::keyring_entries() {
 after = """"""
 red = [
     "application::forget::tests::test_every_owner_of_credential_entries_is_named_where_uninstalling_reads",
+    "application::forget::tests::test_every_part_of_every_slot_a_private_key_can_occupy_is_one_uninstalling_erases",
     "application::forget::tests::test_the_master_key_is_always_forgotten",
     "application::forget::tests::test_the_private_key_entry_is_one_uninstalling_erases",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 24 },
+    { file = "src/application/forget.rs", tests = 25 },
 ]
 
 # ── An encrypted message opened as a blank message with nothing said ────────
@@ -29673,7 +29674,7 @@ red = [
     "test_threads_reaching_the_credential_store_at_once_all_find_it_ready",
 ]
 tests_last_seen = [
-    { file = "src/service/secret_store.rs", tests = 6 },
+    { file = "src/service/secret_store.rs", tests = 7 },
     { file = "tests/the_credential_store_is_ready_for_every_thread.rs", tests = 1 },
 ]
 
@@ -32221,4 +32222,75 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
+]
+
+# The credential store under test taking a secret of any length again, so a
+# value Windows refuses, over 2,560 bytes of UTF-16, is kept here and fails
+# only on a real machine. That is how an ordinary RSA private key imported
+# cleanly in every test and could not be stored anywhere it mattered. The RSA
+# case stays green under it: it asks the size of every entry itself. Written
+# 2026-09-27 by 13-16, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "the store under test refuses a secret windows would refuse"
+file = "src/service/secret_store.rs"
+before = """        if secret.encode_utf16().count() > super::LONGEST_SECRET_ONE_ENTRY_HOLDS {"""
+after = """        if secret.encode_utf16().count() > super::LONGEST_SECRET_ONE_ENTRY_HOLDS * 1_000 {"""
+red = [
+    "service::secret_store::tests::test_a_secret_windows_would_refuse_is_refused_here_too",
+]
+tests_last_seen = [
+    { file = "src/service/secret_store.rs", tests = 7 },
+]
+
+# A private key kept whole in one credential entry again, as it was before
+# 13-16, so an RSA key of 1,836 characters is refused by Windows' 1,280 and
+# every message to it says the key could not be read. Written 2026-09-27 by
+# 13-16, measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a private key is kept in parts windows will keep"
+file = "src/service/pgp/keys.rs"
+before = """        if units + character.len_utf16() > LONGEST_SECRET_ONE_ENTRY_HOLDS {"""
+after = """        if units + character.len_utf16() > usize::MAX / 2 {"""
+red = [
+    "application::opening_pgp::tests::pgp_mime::test_a_file_inside_a_pgp_mime_message_is_taken_from_it_when_saved",
+    "application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_offered_to_bobs_key_says_the_key_here_does_not_open_it",
+    "application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key",
+    "application::opening_pgp::tests::pgp_mime::test_opening_a_pgp_mime_message_writes_nothing_to_the_cache",
+    "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
+    "presentation::reader_text::encryption_tests::test_a_page_holding_a_pgp_mime_message_that_opened_fetches_no_picture",
+    "presentation::reader_text::encryption_tests::test_the_files_inside_a_pgp_mime_message_that_opened_are_the_files_listed",
+    "service::pgp::keys::tests::test_a_key_longer_than_its_parts_hold_is_refused_and_nothing_is_written",
+    "service::pgp::keys::tests::test_a_key_that_does_not_open_it_is_not_reported_as_no_key",
+    "service::pgp::keys::tests::test_a_message_encrypted_to_the_imported_key_opens_and_reads",
+    "service::pgp::keys::tests::test_a_message_whose_middle_was_corrupted_does_not_come_back_as_text",
+    "service::pgp::keys::tests::test_an_ordinary_rsa_key_is_stored_and_opens_mail",
+    "service::pgp::keys::tests::test_damaged_armour_says_it_is_damaged_and_does_not_panic",
+    "service::pgp::keys::tests::test_every_entry_a_key_is_stored_under_is_one_uninstalling_erases",
+]
+tests_last_seen = [
+    { file = "src/application/opening_pgp.rs", tests = 12 },
+    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/service/pgp/keys.rs", tests = 18 },
+]
+
+# The last part of every slot left off the list uninstalling erases, so a key
+# long enough to reach it leaves that part of itself in the credential store
+# after the program is gone, and nothing reads it or can. Written 2026-09-27
+# by 13-16, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "uninstalling names the last part of every slot a private key can occupy"
+file = "src/service/pgp/mod.rs"
+before = """        .flat_map(|slot| (1..=PARTS_PER_KEY).map(move |part| the_entry_for(slot, part)));"""
+after = """        .flat_map(|slot| (1..PARTS_PER_KEY).map(move |part| the_entry_for(slot, part)));"""
+red = [
+    "application::forget::tests::test_every_part_of_every_slot_a_private_key_can_occupy_is_one_uninstalling_erases",
+    "application::forget::tests::test_the_master_key_is_always_forgotten",
+    "service::pgp::tests::test_the_entries_uninstalling_erases_name_the_private_key",
+]
+tests_last_seen = [
+    { file = "src/application/forget.rs", tests = 25 },
+    { file = "src/service/pgp/mod.rs", tests = 6 },
 ]

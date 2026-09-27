@@ -33,8 +33,11 @@
 //! worse than no key: every message would report the wrong reason for ever
 //! after.
 
-use super::{KEYRING_PRIVATE_KEY, KEYRING_SERVICE, WhatImportingAKeyFound, WhatOpeningItFound};
-use crate::service::secret_store;
+use super::{
+    KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, PARTS_PER_KEY, WhatImportingAKeyFound,
+    WhatOpeningItFound, the_entry_for,
+};
+use crate::service::secret_store::{self, LONGEST_SECRET_ONE_ENTRY_HOLDS};
 use pgp::composed::{Deserializable, Message, SignedPublicKey, SignedSecretKey};
 use pgp::errors::Error as OpenPgpError;
 use pgp::types::Password;
@@ -103,26 +106,158 @@ impl NotKept {
     /// Why, in words that finish "Your key could not be saved: ...".
     fn reason(&self) -> String {
         match self {
+            NotKept::TooLarge => format!(
+                "it is longer than the {} characters Wixen Mail can keep for one key",
+                with_commas(PARTS_PER_KEY * LONGEST_SECRET_ONE_ENTRY_HOLDS)
+            ),
+            NotKept::NoRoomLeft => {
+                format!("Wixen Mail keeps {KEY_SLOTS} private keys and already holds {KEY_SLOTS}")
+            }
             NotKept::Refused(reason) => reason.clone(),
-            _ => String::new(),
         }
     }
 }
 
-/// Put a private key's armour in the credential store.
-fn keep(armoured: &str) -> Result<(), NotKept> {
-    // The green replaces this body; the two variants are named so the red
-    // builds under `-D warnings` with nothing constructing them yet.
-    let _ = (NotKept::TooLarge, NotKept::NoRoomLeft);
-    secret_store::write(KEYRING_SERVICE, KEYRING_PRIVATE_KEY, armoured)
-        .map_err(|problem| NotKept::Refused(problem.to_string()))
+/// A count with a thousands separator, so "10,240" is heard as one number.
+fn with_commas(count: usize) -> String {
+    let digits = count.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (from_the_end, digit) in digits.chars().rev().enumerate() {
+        if from_the_end > 0 && from_the_end % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    grouped.chars().rev().collect()
 }
 
-/// Every private key's armour in the credential store.
+/// Put a private key's armour in the credential store, in the first free slot.
+///
+/// Split into parts Windows will keep, because one entry holds 1,280
+/// characters and an ordinary RSA key is longer. Byte for byte: the parts
+/// joined in order are the armour that arrived.
+fn keep(armoured: &str) -> Result<(), NotKept> {
+    move_the_old_entry_into_a_slot();
+    keep_in_a_free_slot(armoured)
+}
+
+fn keep_in_a_free_slot(armoured: &str) -> Result<(), NotKept> {
+    let parts = in_parts(armoured);
+    if parts.len() > PARTS_PER_KEY {
+        return Err(NotKept::TooLarge);
+    }
+    let slot = first_free_slot()?.ok_or(NotKept::NoRoomLeft)?;
+    // Parts past this key's last first, so a removal the store refuses leaves
+    // nothing half written, and a slot left with a longer key's tail never
+    // reads back with that tail joined to this key.
+    for stale in parts.len() + 1..=PARTS_PER_KEY {
+        secret_store::remove(KEYRING_SERVICE, &the_entry_for(slot, stale)).map_err(refused)?;
+    }
+    for (index, part) in parts.iter().enumerate() {
+        if let Err(problem) =
+            secret_store::write(KEYRING_SERVICE, &the_entry_for(slot, index + 1), part)
+        {
+            forget_the_slot(slot);
+            return Err(refused(problem));
+        }
+    }
+    Ok(())
+}
+
+fn refused(problem: crate::common::Error) -> NotKept {
+    NotKept::Refused(problem.to_string())
+}
+
+/// `text` in pieces of at most one entry's worth of UTF-16, cut only between
+/// characters. Never empty: an empty text is one empty part.
+fn in_parts(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let (mut start, mut units) = (0, 0);
+    for (at, character) in text.char_indices() {
+        if units + character.len_utf16() > LONGEST_SECRET_ONE_ENTRY_HOLDS {
+            parts.push(&text[start..at]);
+            (start, units) = (at, 0);
+        }
+        units += character.len_utf16();
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+/// The first slot whose first part is not there.
+fn first_free_slot() -> Result<Option<usize>, NotKept> {
+    for slot in 1..=KEY_SLOTS {
+        if secret_store::read(KEYRING_SERVICE, &the_entry_for(slot, 1))
+            .map_err(refused)?
+            .is_none()
+        {
+            return Ok(Some(slot));
+        }
+    }
+    Ok(None)
+}
+
+/// Remove every part of a slot, as far as the store allows.
+///
+/// The first part first, because a slot whose first part is gone reads as free,
+/// and a later write there clears whatever parts the store refused to let go.
+fn forget_the_slot(slot: usize) {
+    for part in 1..=PARTS_PER_KEY {
+        if let Err(problem) = secret_store::remove(KEYRING_SERVICE, &the_entry_for(slot, part)) {
+            tracing::warn!("A part of a private key could not be removed: {problem}");
+        }
+    }
+}
+
+/// Every private key's armour in the credential store, in slot order.
 fn keys_here() -> crate::common::Result<Vec<String>> {
-    Ok(secret_store::read(KEYRING_SERVICE, KEYRING_PRIVATE_KEY)?
-        .into_iter()
-        .collect())
+    move_the_old_entry_into_a_slot();
+    let mut keys = Vec::new();
+    for slot in 1..=KEY_SLOTS {
+        if let Some(key) = the_key_in(slot)? {
+            keys.push(key);
+        }
+    }
+    Ok(keys)
+}
+
+/// A slot's parts joined in order, up to the first that is not there.
+fn the_key_in(slot: usize) -> crate::common::Result<Option<String>> {
+    let mut joined: Option<String> = None;
+    for part in 1..=PARTS_PER_KEY {
+        let Some(piece) = secret_store::read(KEYRING_SERVICE, &the_entry_for(slot, part))? else {
+            break;
+        };
+        joined.get_or_insert_with(String::new).push_str(&piece);
+    }
+    Ok(joined)
+}
+
+/// Move the one entry a build before 13-16 kept a key under into a slot.
+///
+/// On Windows that entry can only hold a key of 1,280 characters or fewer, so
+/// it fits in one part. It is removed only once the slot holds it, and the
+/// uninstaller names `private-key` for ever, so a move that fails leaves a key
+/// that is still erased when the program goes.
+fn move_the_old_entry_into_a_slot() {
+    let old = match secret_store::read(KEYRING_SERVICE, KEYRING_PRIVATE_KEY) {
+        Ok(Some(old)) => old,
+        Ok(None) => return,
+        Err(problem) => {
+            tracing::warn!(
+                "The credential store would not say whether an older key is here: {problem}"
+            );
+            return;
+        }
+    };
+    let moved = keep_in_a_free_slot(&old)
+        .and_then(|()| secret_store::remove(KEYRING_SERVICE, KEYRING_PRIVATE_KEY).map_err(refused));
+    if let Err(not_kept) = moved {
+        tracing::warn!(
+            "The private key an older build kept could not be moved: {}",
+            not_kept.reason()
+        );
+    }
 }
 
 /// Whether any part of a key that could decrypt is locked with a passphrase.
