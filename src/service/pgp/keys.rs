@@ -77,15 +77,52 @@ pub(super) fn import(armoured: &str) -> WhatImportingAKeyFound {
     // anything that rewrites a cryptographic document, even to tidy it, is a
     // second chance to change what it says, and the thing coming back out has
     // to be the thing that went in.
-    match secret_store::write(KEYRING_SERVICE, KEYRING_PRIVATE_KEY, armoured) {
+    match keep(armoured) {
         Ok(()) => WhatImportingAKeyFound::Imported,
         // The store's reason, which is about the store. Nothing from the file
         // travels in it; `secret_store` already holds itself to reasons and
         // never values.
-        Err(problem) => WhatImportingAKeyFound::CouldNotBeStored {
-            reason: problem.to_string(),
+        Err(not_kept) => WhatImportingAKeyFound::CouldNotBeStored {
+            reason: not_kept.reason(),
         },
     }
+}
+
+/// Why a key was not kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NotKept {
+    /// Longer than the parts one key may use hold.
+    TooLarge,
+    /// Every slot already holds a key.
+    NoRoomLeft,
+    /// The credential store said no, and this is its reason.
+    Refused(String),
+}
+
+impl NotKept {
+    /// Why, in words that finish "Your key could not be saved: ...".
+    fn reason(&self) -> String {
+        match self {
+            NotKept::Refused(reason) => reason.clone(),
+            _ => String::new(),
+        }
+    }
+}
+
+/// Put a private key's armour in the credential store.
+fn keep(armoured: &str) -> Result<(), NotKept> {
+    // The green replaces this body; the two variants are named so the red
+    // builds under `-D warnings` with nothing constructing them yet.
+    let _ = (NotKept::TooLarge, NotKept::NoRoomLeft);
+    secret_store::write(KEYRING_SERVICE, KEYRING_PRIVATE_KEY, armoured)
+        .map_err(|problem| NotKept::Refused(problem.to_string()))
+}
+
+/// Every private key's armour in the credential store.
+fn keys_here() -> crate::common::Result<Vec<String>> {
+    Ok(secret_store::read(KEYRING_SERVICE, KEYRING_PRIVATE_KEY)?
+        .into_iter()
+        .collect())
 }
 
 /// Whether any part of a key that could decrypt is locked with a passphrase.
@@ -104,7 +141,7 @@ fn a_passphrase_is_holding_it_shut(key: &SignedSecretKey) -> bool {
 
 /// Open an armoured message with the private key this computer holds.
 pub(super) fn open(armour: &str) -> WhatOpeningItFound {
-    let stored = match secret_store::read(KEYRING_SERVICE, KEYRING_PRIVATE_KEY) {
+    let stored = match keys_here().map(|keys| keys.into_iter().next()) {
         Ok(None) => return WhatOpeningItFound::NoKeyHere,
         Ok(Some(stored)) => stored,
         // The reason and never the entry. A locked-down credential store is
@@ -171,10 +208,7 @@ fn open_with(armour: &str, key: &SignedSecretKey) -> WhatOpeningItFound {
 /// [`super::keyring_entries`] gives: deciding from a flag whether a secret
 /// exists is how secrets get left behind.
 pub(super) fn a_key_is_here() -> bool {
-    secret_store::read(KEYRING_SERVICE, KEYRING_PRIVATE_KEY)
-        .ok()
-        .flatten()
-        .is_some()
+    keys_here().is_ok_and(|keys| !keys.is_empty())
 }
 
 /// A key and a message for the tests of other modules.
@@ -357,6 +391,47 @@ mod tests {
         bXM5OHU5NmxQVGg5ZVBIcVZwZnd0M3NaMEd6eE5KNi9ScG1XQ2FhbUtmcVZ3dVlZM0lCCmZT
         a3NzSUFINVpKd3hqTGxDWWRmemIzd081bXJkbGxnMW5pKzE4dkJ3NFQ3ZVE9PQo9OFNXaAot
         LS0tLUVORCBQR1AgTUVTU0FHRS0tLS0tCg==";
+
+    /// Carol's private key: Ed25519 with a Curve25519 encryption subkey, no
+    /// expiry, no passphrase, 744 characters armoured, so it fits in one
+    /// credential entry where Alice's and Bob's do not. Made by GnuPG 2.4.9 on
+    /// 2026-09-27 in a short home directory:
+    ///
+    /// ```text
+    /// GNUPGHOME=/c/g16 gpg --batch --pinentry-mode loopback --passphrase '' \
+    ///     --quick-generate-key 'Carol Example <carol@example.com>' ed25519 sign,cert never
+    /// GNUPGHOME=/c/g16 gpg --batch --pinentry-mode loopback --passphrase '' \
+    ///     --quick-add-key 8DE4DEEC367D086637934A1C52B5C043A2C64173 cv25519 encr never
+    /// GNUPGHOME=/c/g16 gpg --batch --pinentry-mode loopback --passphrase '' \
+    ///     --armor --export-secret-keys carol@example.com
+    /// ```
+    const CAROL_PRIVATE: &str = "
+        LS0tLS1CRUdJTiBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0tLQoKbEZnRWFyaVk1QllKS3dZ
+        QkJBSGFSdzhCQVFkQStUc0c5RTZidWxlVmZrR1NmRDQ2R3U3WHRRbmEwN2R4SUZZTgpaSm9E
+        Y1lJQUFQNHlZWFpvcnBsT3puVG9zMTdHa29FSm02RGlOMDY2YncyVTdYZUdBOU4xbUJGYXRD
+        RkRZWEp2CmJDQkZlR0Z0Y0d4bElEeGpZWEp2YkVCbGVHRnRjR3hsTG1OdmJUNklrQVFURmdv
+        QU9CWWhCSTNrM3V3MmZRaG0KTjVOS0hGSzF3RU9peGtGekJRSnF1SmprQWhzREJRc0pDQWND
+        QmhVS0NRZ0xBZ1FXQWdNQkFoNEJBaGVBQUFvSgpFRksxd0VPaXhrRnp5b2dCQUxTeVFsN09S
+        MjFpdTRPclBJTlZpQXR5YVBnQmYzN1ZvWUt2UU9aRVZMeXpBUDlyCkJMRzExQ3dlK0ZyS3o2
+        TXhTS2tqMnVUVGpBLzFUaWZxVmFRUjFqZThDWnhkQkdxNG1PVVNDaXNHQVFRQmwxVUIKQlFF
+        QkIwQkhjTGluQXp3QUp6WUx4WEpWMnVKdVBtTU9nOU5iajVhNHUzSlI5MEFDTndNQkNBY0FB
+        UDljalE3dQpwRkY3ci8xbVNrNlZNbW5FbW5xR09TcnlDS0ltUk4wMGZoZ0EwQTlzaUhnRUdC
+        WUtBQ0FXSVFTTjVON3NObjBJClpqZVRTaHhTdGNCRG9zWkJjd1VDYXJpWTVRSWJEQUFLQ1JC
+        U3RjQkRvc1pCY3o0RkFRRENqWE1xMzRab2RVRFAKamV1Ni8vZ0pVeXpSd2hSdDNqSkhVMExH
+        R2o2WHV3RUFvVyt2L0pnRmdVSXVvWk02NEQzWVlkK3p2V2FBTEZzbApZMkNFN3hGYzhRWT0K
+        PUJ4eGUKLS0tLS1FTkQgUEdQIFBSSVZBVEUgS0VZIEJMT0NLLS0tLS0K";
+
+    /// "Carol, the key fits in one entry.", encrypted to Carol by GnuPG with
+    /// `gpg --batch --armor --trust-model always --encrypt -r carol@example.com`,
+    /// and checked to open under `gpg --decrypt` before it was written down.
+    const TO_CAROL: &str = "
+        LS0tLS1CRUdJTiBQR1AgTUVTU0FHRS0tLS0tCgpoRjREUUVOWDZPRTRVZUFTQVFkQTJxcjhj
+        ZzZ4NVpyWmtCTmQxVklDaHZxK0IzUG56RDB5bU5kRTNnT2xKbG93Ckh2TDhTQi92KzVKWThI
+        R3QrY29XSXcyek9FRTNlTTJtLzFWaC9mdks4TVNlWVc2Q1JUR0UzZm04b1lMOXJ1aTQKMG1R
+        QnhJKzM2TEZRLzltZ2lNWlYzeWhzdFRrc1ZFWG9ibVZuRGJVUi9vRTlSRXorTVFGVmRRL1dP
+        eVdvOXBmbQplamRxOThhZ3NuSHN4WHhqVnlPYjNuWWhkaGxVTWkzclZ3MDBkbVRzZjhmbmpV
+        K1g3cUgwck5aMlhyWkFFbUh0CkJBL1FFYjNVCj1mOGlBCi0tLS0tRU5EIFBHUCBNRVNTQUdF
+        LS0tLS0K";
 
     /// A whole PGP/MIME message to Alice, RFC 3156's `multipart/encrypted`,
     /// with every line ending in a carriage return and a line feed, as mail
@@ -600,10 +675,10 @@ mod tests {
     }
 
     #[test]
-    fn test_the_key_is_stored_under_the_one_name_uninstalling_erases() {
-        // The name is permanent and the uninstaller names it. A key filed
-        // anywhere else is a key left on the machine after the program is
-        // gone.
+    fn test_every_entry_a_key_is_stored_under_is_one_uninstalling_erases() {
+        // The names are permanent and the uninstaller names them without
+        // reading anything. A part filed anywhere else is a piece of a
+        // private key left on the machine after the program is gone.
         with_no_key();
 
         assert_eq!(
@@ -611,11 +686,121 @@ mod tests {
             WhatImportingAKeyFound::Imported
         );
 
-        assert_eq!(
-            secret_store::read(KEYRING_SERVICE, KEYRING_PRIVATE_KEY).expect("the store"),
-            Some(armour(ALICE_PRIVATE))
-        );
+        let written = secret_store::entries_under(KEYRING_SERVICE);
+        assert!(!written.is_empty(), "nothing was written");
+        let erased = super::super::keyring_entries();
+        for (user, _) in &written {
+            assert!(
+                erased.contains(&(KEYRING_SERVICE.to_string(), user.clone())),
+                "{user} was written and uninstalling does not name it"
+            );
+        }
         assert!(a_key_is_here());
+    }
+
+    #[test]
+    fn test_a_key_an_older_build_kept_under_one_name_moves_into_parts_and_still_opens() {
+        // Before keys were split, one key lived under `private-key`. On a
+        // Windows machine only a key of 1,280 characters or fewer could have
+        // been kept there, which is an elliptic-curve key like Carol's. It
+        // has to go on opening mail, and it has to end up where the rest of
+        // this module looks, with the old entry gone.
+        with_no_key();
+        let carol = armour(CAROL_PRIVATE);
+        secret_store::write(KEYRING_SERVICE, KEYRING_PRIVATE_KEY, &carol)
+            .expect("an older build's entry");
+
+        assert_eq!(
+            open(&armour(TO_CAROL)),
+            WhatOpeningItFound::Opened("Carol, the key fits in one entry.\n".to_string())
+        );
+        assert_eq!(
+            secret_store::entries_under(KEYRING_SERVICE),
+            vec![("key-1-part-1".to_string(), carol)],
+            "the older entry was not moved into the first slot"
+        );
+    }
+
+    #[test]
+    fn test_a_key_longer_than_its_parts_hold_is_refused_and_nothing_is_written() {
+        // Cut to fit, a key would be stored as whole and never open anything,
+        // and every message afterwards would report the wrong reason.
+        with_no_key();
+        let most = super::super::PARTS_PER_KEY * 1_280;
+
+        assert_eq!(keep(&"k".repeat(most + 1)), Err(NotKept::TooLarge));
+        assert_eq!(secret_store::entries_under(KEYRING_SERVICE), vec![]);
+
+        assert_eq!(keep(&"k".repeat(most)), Ok(()), "the longest a key may be");
+        assert_eq!(keys_here().expect("the store"), vec!["k".repeat(most)]);
+    }
+
+    #[test]
+    fn test_a_part_left_over_past_a_keys_last_is_removed_when_its_slot_is_used() {
+        // A removal the store stopped partway leaves parts behind a slot that
+        // reads as free. A shorter key written there would read back with the
+        // old key's tail joined to it.
+        with_no_key();
+        for part in ["key-1-part-2", "key-1-part-3"] {
+            secret_store::write(KEYRING_SERVICE, part, "left over").expect("a stale part");
+        }
+
+        assert_eq!(keep("fresh"), Ok(()));
+
+        assert_eq!(
+            secret_store::entries_under(KEYRING_SERVICE),
+            vec![("key-1-part-1".to_string(), "fresh".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_a_second_key_goes_to_the_next_free_slot_and_leaves_the_first_alone() {
+        with_no_key();
+
+        assert_eq!(keep("first"), Ok(()));
+        assert_eq!(keep("second"), Ok(()));
+
+        assert_eq!(
+            secret_store::entries_under(KEYRING_SERVICE),
+            vec![
+                ("key-1-part-1".to_string(), "first".to_string()),
+                ("key-2-part-1".to_string(), "second".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_with_every_slot_taken_another_key_is_refused_and_nothing_is_written() {
+        with_no_key();
+        for which in 1..=super::super::KEY_SLOTS {
+            assert_eq!(keep(&format!("key {which}")), Ok(()), "slot {which}");
+        }
+
+        assert_eq!(keep("one more"), Err(NotKept::NoRoomLeft));
+        assert_eq!(
+            secret_store::entries_under(KEYRING_SERVICE).len(),
+            super::super::KEY_SLOTS
+        );
+    }
+
+    #[test]
+    fn test_a_key_refused_for_its_length_or_for_room_says_which_in_words() {
+        // These finish "Your key could not be saved: ..." on the File menu,
+        // so each has to say what was wrong and nothing about the key.
+        assert!(
+            NotKept::TooLarge.reason().contains("10,240 characters"),
+            "{}",
+            NotKept::TooLarge.reason()
+        );
+        assert!(
+            NotKept::NoRoomLeft.reason().contains("8 private keys"),
+            "{}",
+            NotKept::NoRoomLeft.reason()
+        );
+        assert_eq!(
+            NotKept::Refused("the store is locked".to_string()).reason(),
+            "the store is locked"
+        );
     }
 
     #[test]

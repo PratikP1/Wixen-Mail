@@ -15,6 +15,19 @@
 
 use crate::common::Result;
 
+/// The longest secret one entry holds on Windows, in UTF-16 units.
+///
+/// `keyring` 4.1.5 hands a secret to `windows-native-keyring-store` 1.1.0,
+/// whose `validate_password` (`src/utils.rs:79-94`) encodes it as UTF-16 and
+/// refuses it when the bytes are more than `CRED_MAX_CREDENTIAL_BLOB_SIZE`,
+/// which `windows-sys` sets to 2,560 (`Security/Credentials/mod.rs:378`). Read
+/// in the vendored sources on 2026-09-27. For the plain text every secret here
+/// is, one unit is one character, so 1,280 characters.
+///
+/// The store under test refuses past it the way Windows does, so a value too
+/// long for one entry is red here rather than only on somebody's machine.
+pub const LONGEST_SECRET_ONE_ENTRY_HOLDS: usize = 1_280;
+
 /// Whether the first credential entry of this process has been opened, which
 /// is what sets the platform's store up.
 #[cfg(not(test))]
@@ -133,6 +146,19 @@ mod backing {
     pub fn write(service: &str, user: &str, secret: &str) -> Result<()> {
         if let Some(refused) = refusal(Refusing::Everything) {
             return Err(refused);
+        }
+        // What Windows says, worded the way it reaches a caller through the
+        // real backing: `keyring-core` 1.0.0's `Error::TooLong` reads "Value of
+        // '{name}' is longer than the platform limit of {len} chars"
+        // (`src/error.rs:91-94`), named "password encoded as UTF-16" with 2560
+        // by `windows-native-keyring-store`, behind the real backing's "Could
+        // not save it: ".
+        if secret.encode_utf16().count() > super::LONGEST_SECRET_ONE_ENTRY_HOLDS {
+            return Err(Error::Security(
+                "Could not save it: Value of 'password encoded as UTF-16' is longer than \
+                 the platform limit of 2560 chars"
+                    .to_string(),
+            ));
         }
         ENTRIES.with(|entries| {
             entries

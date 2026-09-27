@@ -404,9 +404,17 @@ mod tests {
         // arrive in silence, which is the failure `CLAUDE.md` records a census
         // causing elsewhere: with a spare above the floor, the guard stops
         // being load-bearing.
+        //
+        // Since 13-16 a private key is split across fixed entries, every
+        // slot's every part named whether or not anything was written there,
+        // so the machine's own entries are the master key, the name one key
+        // lived under before, and those.
         let entries = entries_for(&[], &[], &[]);
 
-        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries.len(),
+            2 + crate::service::pgp::KEY_SLOTS * crate::service::pgp::PARTS_PER_KEY
+        );
         assert_eq!(entries[0].service, "wixen-mail");
         assert_eq!(entries[0].user, "master-key");
         assert_eq!(entries[1].service, "wixen-mail-pgp");
@@ -705,6 +713,29 @@ mod tests {
             "uninstalling does not name the OpenPGP private key, so a key \
              imported on this machine outlives the program that stored it"
         );
+    }
+
+    #[test]
+    fn test_every_part_of_every_slot_a_private_key_can_occupy_is_one_uninstalling_erases() {
+        // A key is split across `key-{slot}-part-{part}` because Windows keeps
+        // 1,280 characters in one entry. Uninstalling reads nothing before it
+        // deletes, so it has to name every place a part could be, the last
+        // part of the last slot included, or that part outlives the program.
+        use crate::service::pgp::{KEY_SLOTS, PARTS_PER_KEY};
+        let entries = entries_for(&[], &[], &[]);
+
+        for slot in 1..=KEY_SLOTS {
+            for part in 1..=PARTS_PER_KEY {
+                let name = format!("key-{slot}-part-{part}");
+                assert!(
+                    entries
+                        .iter()
+                        .any(|entry| entry.service == "wixen-mail-pgp" && entry.user == name),
+                    "uninstalling does not name {name}, so a part of a private key \
+                     kept there outlives the program that stored it"
+                );
+            }
+        }
     }
 
     /// Every module under `src/service/` that owns credential store entries.

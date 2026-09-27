@@ -92,6 +92,45 @@ pub const KEYRING_SERVICE: &str = "wixen-mail-pgp";
 /// apart: a removed account left its refresh token on the machine.
 pub const KEYRING_PRIVATE_KEY: &str = "private-key";
 
+/// How many private keys this computer can hold.
+///
+/// **Permanent in the direction of shrinking.** Every slot's every part is
+/// named by [`keyring_entries`] without reading anything, so the uninstaller
+/// erases what could have been written. Lowering this would leave a key in a
+/// slot nothing names any more; raising it is safe.
+///
+/// Eight, which is a guess at "more than anybody using a mail program for
+/// their own addresses holds" and not a measurement. Each slot costs
+/// [`PARTS_PER_KEY`] entries the uninstaller asks to delete, most of which
+/// were never written, and a delete of nothing costs nothing.
+pub const KEY_SLOTS: usize = 8;
+
+/// How many credential store entries one private key may be split across.
+///
+/// Windows keeps 1,280 characters in one entry
+/// ([`crate::service::secret_store::LONGEST_SECRET_ONE_ENTRY_HOLDS`]), and an
+/// ordinary key is longer. Measured on 2026-09-27 with GnuPG 2.4.9 in a short
+/// home directory, since `gpg-agent` refuses a long one:
+///
+/// ```text
+/// GNUPGHOME=/c/g16 gpg --batch --pinentry-mode loopback --passphrase '' \
+///     --quick-generate-key 'Rsa Big <big@example.com>' rsa4096 sign,cert never
+/// GNUPGHOME=/c/g16 gpg --batch --pinentry-mode loopback --passphrase '' \
+///     --quick-add-key <its fingerprint> rsa4096 encr never
+/// GNUPGHOME=/c/g16 gpg --batch --pinentry-mode loopback --passphrase '' \
+///     --armor --export-secret-keys big@example.com
+/// ```
+///
+/// An RSA-4096 key with an RSA-4096 encryption subkey is 6,618 characters
+/// armoured, 105 lines, so six parts, or 6,723 characters and still six with a
+/// carriage return on every line. The same commands with `ed25519` and
+/// `cv25519` give 736 characters, one part. Eight parts, 10,240 characters,
+/// leaves about half as much again over the larger for more user ids and
+/// signatures. A key past that is refused with a sentence and never cut.
+///
+/// Permanent in the direction of shrinking, for [`KEY_SLOTS`]'s reason.
+pub const PARTS_PER_KEY: usize = 8;
+
 /// Every credential store entry that could hold OpenPGP key material.
 ///
 /// Answered here rather than listed in the uninstaller, for the reason
