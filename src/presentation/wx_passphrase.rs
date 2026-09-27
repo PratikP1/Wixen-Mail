@@ -48,16 +48,20 @@ pub const THAT_DID_NOT_OPEN_IT: &str = "That passphrase did not open the key. Tr
 /// and never anything a message says, so a stranger's mail cannot word a
 /// prompt for a secret.
 pub fn what_it_asks(whose: &str) -> String {
+    asking_for(whose, "open")
+}
+
+fn asking_for(whose: &str, what_it_does: &str) -> String {
     format!(
-        "The key for {whose} is locked with a passphrase. Type it to open this message. It is \
-         remembered until Wixen Mail closes and never saved."
+        "The key for {whose} is locked with a passphrase. Type it to {what_it_does} this \
+         message. It is remembered until Wixen Mail closes and never saved."
     )
 }
 
 /// What the dialog says when the composer asks at Send, for a key that is to
 /// sign the message rather than open one.
 pub fn what_signing_asks(whose: &str) -> String {
-    what_it_asks(whose)
+    asking_for(whose, "sign")
 }
 
 /// The dialog, built and not yet shown.
@@ -81,6 +85,11 @@ impl PassphraseDialog {
 /// `said` is the line said first when asking again, so it is heard before the
 /// sentence it qualifies rather than after it.
 pub fn build<W: WxWidget>(parent: &W, whose: &str, said: Option<&str>) -> PassphraseDialog {
+    build_asking(parent, &what_it_asks(whose), said)
+}
+
+/// The dialog asking what `asks` says, without showing it.
+fn build_asking<W: WxWidget>(parent: &W, asks: &str, said: Option<&str>) -> PassphraseDialog {
     let dialog = Dialog::builder(parent, TITLE)
         .with_style(DialogStyle::DefaultDialogStyle)
         .build();
@@ -93,9 +102,7 @@ pub fn build<W: WxWidget>(parent: &W, whose: &str, said: Option<&str>) -> Passph
         again.wrap(440);
         sizer.add(&again, 0, SizerFlag::All, 8);
     }
-    let asks = StaticText::builder(&dialog)
-        .with_label(&what_it_asks(whose))
-        .build();
+    let asks = StaticText::builder(&dialog).with_label(asks).build();
     asks.wrap(440);
     sizer.add(&asks, 0, SizerFlag::All, 8);
 
@@ -139,7 +146,16 @@ pub fn build<W: WxWidget>(parent: &W, whose: &str, said: Option<&str>) -> Passph
 /// Ask for the passphrase of the key for `whose`, saying `said` first when
 /// asking again. What was typed on OK, `None` on Cancel.
 pub fn ask<W: WxWidget>(parent: &W, whose: &str, said: Option<&str>) -> Option<String> {
-    let asking = build(parent, whose, said);
+    answered(build(parent, whose, said))
+}
+
+/// Ask for the passphrase of the key for `whose` before a message is signed
+/// with it, saying `said` first when asking again.
+pub fn ask_to_sign<W: WxWidget>(parent: &W, whose: &str, said: Option<&str>) -> Option<String> {
+    answered(build_asking(parent, &what_signing_asks(whose), said))
+}
+
+fn answered(asking: PassphraseDialog) -> Option<String> {
     asking.field.set_focus();
     let pressed = asking.dialog.show_modal();
     let answer = asking.answer(pressed);

@@ -4190,7 +4190,8 @@ pub fn open_draft(
             }),
             (None, _) => None,
         },
-        protection: crate::application::protecting::Choice::Plain,
+        // Reopened with its Sign and Encrypt boxes as they were left.
+        protection: draft.protection,
     })
 }
 

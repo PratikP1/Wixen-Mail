@@ -29,7 +29,7 @@ use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 /// exactly what an outgoing header carries for any other sender. Empty
 /// entries are dropped: a trailing comma is a typing artefact, not a request
 /// to send to nobody.
-fn addresses(field: &str) -> Vec<EmailAddress> {
+pub(crate) fn addresses(field: &str) -> Vec<EmailAddress> {
     crate::application::reply::split_addresses(field)
         .iter()
         .map(|entry| recipient_address(entry))
@@ -205,6 +205,15 @@ impl SendEmailRequest {
             .map(|recipient| recipient.address.clone())
             .collect()
     }
+}
+
+/// What went out: the bytes, which the Sent copy is made from, and how it was
+/// protected, for the sentence that says it went.
+#[derive(Debug)]
+pub struct WentOut {
+    pub bytes: Vec<u8>,
+    /// "signed with S/MIME" and the like, or nothing for a plain message.
+    pub how: Option<&'static str>,
 }
 
 /// The message a request becomes, before anything is connected to.
@@ -621,7 +630,7 @@ impl MailController {
     /// The bytes are the Sent copy. Whether they are filed, and where, is the
     /// caller's decision: it needs the account's folder list and whether the
     /// provider already saved one, and neither belongs to sending.
-    pub async fn send_email(&self, req: &SendEmailRequest) -> Result<Vec<u8>> {
+    pub async fn send_email(&self, req: &SendEmailRequest) -> Result<WentOut> {
         let config = SmtpConfig {
             server: req.server.clone(),
             port: req.port,
@@ -637,9 +646,11 @@ impl MailController {
             SmtpClient::new(config)?
         };
 
-        let sent = client.send_email(outgoing(req)?, &req.auth).await?;
+        let email = outgoing(req)?;
+        let how = crate::application::protecting::how_it_goes(&email.protection);
+        let bytes = client.send_email(email, &req.auth).await?;
         tracing::info!("Email sent successfully");
-        Ok(sent)
+        Ok(WentOut { bytes, how })
     }
 
     /// Flag or unflag a message.

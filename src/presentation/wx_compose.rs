@@ -823,6 +823,25 @@ pub fn build_compose_dialog(
         .build();
     set_accessible_name(&schedule_btn, "Schedule when this message goes, Alt+H");
     toolbar_sizer.add(&schedule_btn, 0, SizerFlag::All, 2);
+
+    // Beside Send and Schedule, because both change how the message goes. Made
+    // straight after Schedule, so Tab reaches them next. Never greyed, even
+    // when nothing here could sign or encrypt: a greyed box is skipped by Tab
+    // with its reason, so the reason is said at Send instead.
+    let sign_box = a_box_that_protects(&dialog, Reached::Sign);
+    let encrypt_box = a_box_that_protects(&dialog, Reached::Encrypt);
+    toolbar_sizer.add(
+        &sign_box,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        2,
+    );
+    toolbar_sizer.add(
+        &encrypt_box,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        2,
+    );
     toolbar_sizer.add_spacer(12);
 
     // Undo / Redo
@@ -1117,15 +1136,10 @@ pub fn build_compose_dialog(
         .with_id(ID_CANCEL)
         .build();
 
-    let sign_box = CheckBox::builder(&dialog).with_label("Sign").build();
-    let encrypt_box = CheckBox::builder(&dialog).with_label("Encrypt").build();
-
     button_sizer.add_spacer(0); // Push buttons right
     button_sizer.add(&draft_btn, 0, SizerFlag::All, 4);
     button_sizer.add(&discard_btn, 0, SizerFlag::All, 4);
     button_sizer.add(&cancel_btn, 0, SizerFlag::All, 4);
-    sign_box.hide();
-    encrypt_box.hide();
 
     main_sizer.add_sizer(&button_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
 
@@ -1188,11 +1202,46 @@ pub fn build_compose_dialog(
 /// not have the keyboard, and say which way it went. Anything else reached
 /// is not a box and is left alone.
 pub fn tick_from_the_page(
-    _reached: Reached,
-    _sign_box: &CheckBox,
-    _encrypt_box: &CheckBox,
-    _a11y: &crate::presentation::accessibility::Accessibility,
+    reached: Reached,
+    sign_box: &CheckBox,
+    encrypt_box: &CheckBox,
+    a11y: &crate::presentation::accessibility::Accessibility,
 ) {
+    let ticked = match reached {
+        Reached::Sign => sign_box,
+        Reached::Encrypt => encrypt_box,
+        _ => return,
+    };
+    let now_on = !ticked.get_value();
+    ticked.set_value(now_on);
+    if let Some(said) = reached.said_when_ticked(now_on) {
+        let _ = a11y.announce(
+            &said,
+            crate::presentation::accessibility::announcements::Priority::Normal,
+        );
+    }
+}
+
+/// One of the two boxes, labelled, named and described from what
+/// [`Reached`] says of it.
+fn a_box_that_protects(dialog: &Dialog, which: Reached) -> CheckBox {
+    let check = CheckBox::builder(dialog).with_label(which.label()).build();
+    set_accessible_name_and_description(
+        &check,
+        &name_from_label(which.label()),
+        &which.description().unwrap_or_default(),
+    );
+    check
+}
+
+/// The boxes set to a choice, as a draft reopens with them.
+fn show_the_choice(
+    sign_box: &CheckBox,
+    encrypt_box: &CheckBox,
+    choice: crate::application::protecting::Choice,
+) {
+    sign_box.set_value(choice.signs());
+    encrypt_box.set_value(choice.encrypts());
 }
 
 /// How the composer asks whether a message can go as its Sign and Encrypt
@@ -1207,12 +1256,56 @@ pub type ProtectionCheck =
 /// the message asked about again when it opens; any other answer is said
 /// through `say` and the message does not go.
 pub fn may_it_go(
-    _data: &ComposeData,
-    _check: &ProtectionCheck,
-    _ask: &mut dyn FnMut(&crate::application::pgp_keys::LockedKey) -> bool,
-    _say: &mut dyn FnMut(&str),
+    data: &ComposeData,
+    check: &ProtectionCheck,
+    ask: &mut dyn FnMut(&crate::application::pgp_keys::LockedKey) -> bool,
+    say: &mut dyn FnMut(&str),
 ) -> bool {
-    true
+    use crate::application::protecting::CannotProtect;
+    let mut asked: Vec<String> = Vec::new();
+    loop {
+        let refused = match check(data) {
+            Ok(()) => return true,
+            Err(refused) => refused,
+        };
+        // A key already asked about that is still locked is not asked about
+        // again, or a passphrase that opens a different key would be a
+        // dialog that never stops coming back.
+        if let CannotProtect::TheKeyIsLocked(key) = &refused
+            && !asked.contains(&key.fingerprint)
+        {
+            asked.push(key.fingerprint.clone());
+            if ask(key) {
+                continue;
+            }
+        }
+        say(&refused.said());
+        return false;
+    }
+}
+
+/// Ask for a locked key's passphrase until it opens the key or somebody
+/// cancels. Whether it opened.
+fn the_passphrase_was_typed(
+    dialog: &Dialog,
+    key: &crate::application::pgp_keys::LockedKey,
+) -> bool {
+    use crate::application::pgp_keys::{Unlocking, unlock};
+    let mut said = None;
+    while let Some(typed) =
+        crate::presentation::wx_passphrase::ask_to_sign(dialog, &key.whose, said)
+    {
+        match unlock(&key.fingerprint, &typed) {
+            Unlocking::Unlocked => return true,
+            Unlocking::WrongPassphrase => {
+                said = Some(crate::presentation::wx_passphrase::THAT_DID_NOT_OPEN_IT);
+            }
+            // The key went, or could not be read, while the dialog was up:
+            // nothing more to ask, and Send says what became of it.
+            Unlocking::NoSuchKey | Unlocking::TheKeyCouldNotBeRead => return false,
+        }
+    }
+    false
 }
 
 /// The compose dialog, with automatic draft saving.
@@ -1247,6 +1340,9 @@ pub fn show_compose_dialog_full(
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
     finding_people: Option<FindingPeople>,
     on_autosave: impl Fn(&ComposeData) + 'static,
+    // Whether the message can go as its Sign and Encrypt boxes ask, from what
+    // this computer holds, asked at Send before anything is queued.
+    checking_protection: ProtectionCheck,
 ) -> ComposeResult {
     let title = compose_title(&mode);
     let ComposeDialogWidgets {
@@ -1277,8 +1373,8 @@ pub fn show_compose_dialog_full(
         draft_btn,
         discard_btn,
         cancel_btn,
-        sign_box: _,
-        encrypt_box: _,
+        sign_box,
+        encrypt_box,
     } = build_compose_dialog(
         parent,
         title,
@@ -1418,6 +1514,9 @@ pub fn show_compose_dialog_full(
             // A draft was written here, so it is this editor's own markup
             // coming back. Escaping it would show somebody their tags.
             set_body(&MessageBody::Html(data.body.clone()));
+            // Reopened with its boxes as they were left: a draft sent without
+            // its Encrypt box is a private message sent in the clear.
+            show_the_choice(&sign_box, &encrypt_box, data.protection);
         }
     }
     follow_the_from_account(
@@ -1954,7 +2053,10 @@ pub fn show_compose_dialog_full(
                     .collect(),
                 answering: answering.clone(),
                 send_at: chosen_moment.borrow().clone(),
-                protection: crate::application::protecting::Choice::Plain,
+                protection: crate::application::protecting::Choice::from_boxes(
+                    sign_box.get_value(),
+                    encrypt_box.get_value(),
+                ),
             })
         }
     };
@@ -2518,7 +2620,9 @@ pub fn show_compose_dialog_full(
                         Reached::SaveDraft => dialog.end_modal(ID_SAVE_DRAFT),
                         Reached::Discard => dialog.end_modal(ID_DISCARD),
                         Reached::Cancel => dialog.end_modal(ID_CANCEL),
-                        Reached::Sign | Reached::Encrypt => {}
+                        Reached::Sign | Reached::Encrypt => {
+                            tick_from_the_page(reached, &sign_box, &encrypt_box, &a11y)
+                        }
                     }
                 }
                 // Tab, which outside a table used to do nothing at all, so the
@@ -2747,6 +2851,27 @@ pub fn show_compose_dialog_full(
                         crate::presentation::accessibility::announcements::Priority::High,
                     );
                     say_so(&dialog, "Not sent", why);
+                    continue;
+                }
+                // Signed or encrypted as the boxes ask, or not at all, decided
+                // before anything is queued. The reason is said and shown the
+                // way the refusal above is, and the window comes back with the
+                // message as it was. A locked key is asked for here, at Send,
+                // rather than the send failing later where nobody is looking.
+                let may_go = may_it_go(
+                    &data,
+                    &checking_protection,
+                    &mut |key| the_passphrase_was_typed(&dialog, key),
+                    &mut |said| {
+                        tracing::warn!("Not sent: it could not be protected as asked");
+                        let _ = a11y.announce(
+                            said,
+                            crate::presentation::accessibility::announcements::Priority::High,
+                        );
+                        say_so(&dialog, "Not sent", said);
+                    },
+                );
+                if !may_go {
                     continue;
                 }
                 // Before the preview rather than after it. Somebody who has

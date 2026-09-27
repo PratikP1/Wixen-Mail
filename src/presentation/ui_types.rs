@@ -548,6 +548,9 @@ pub enum UIUpdate {
     OutboxSendResult {
         queue_id: String,
         success: bool,
+        /// How a message that went was protected, "signed with S/MIME" and
+        /// the like, or nothing for a plain one.
+        how: Option<&'static str>,
         error: Option<String>,
     },
     /// The network went or came back, in the words somebody is given.

@@ -1238,7 +1238,7 @@ pub enum Reached {
 
 impl Reached {
     /// Every one, in the order the page indexes them by.
-    pub const ALL: [Reached; 15] = [
+    pub const ALL: [Reached; 17] = [
         Reached::From,
         Reached::To,
         Reached::Cc,
@@ -1254,6 +1254,8 @@ impl Reached {
         Reached::SaveDraft,
         Reached::Discard,
         Reached::Cancel,
+        Reached::Sign,
+        Reached::Encrypt,
     ];
 
     /// The visible label, with the ampersand that marks the underlined letter.
@@ -1285,7 +1287,12 @@ impl Reached {
             Self::SaveDraft => "Save &Draft",
             Self::Discard => "D&iscard",
             Self::Cancel => "Cance&l",
-            Self::Sign | Self::Encrypt => "",
+            // G and Y, the two letters of either word nothing else in the
+            // window answers to: S is Subject, I is Discard, N is Send, E is
+            // the People found list, C is Cc, R is Redo, P is Spelling and T
+            // is To.
+            Self::Sign => "Si&gn (experimental)",
+            Self::Encrypt => "Encr&ypt (experimental)",
         }
     }
 
@@ -1307,21 +1314,42 @@ impl Reached {
             Self::SaveDraft => 'd',
             Self::Discard => 'i',
             Self::Cancel => 'l',
-            Self::Sign | Self::Encrypt => ' ',
+            Self::Sign => 'g',
+            Self::Encrypt => 'y',
         }
     }
 
     /// What is said when a check box among these is ticked or cleared from
     /// inside the message, where the box itself does not have the keyboard
     /// and so says nothing of its own. Nothing for the rest.
-    pub fn said_when_ticked(self, _ticked: bool) -> Option<String> {
-        None
+    ///
+    /// The same shape the formatting switches use, "Bold on", so a person
+    /// hears one pattern for everything that turns on and off.
+    pub fn said_when_ticked(self, ticked: bool) -> Option<String> {
+        let name = match self {
+            Self::Sign => "Sign",
+            Self::Encrypt => "Encrypt",
+            _ => return None,
+        };
+        Some(format!("{name} {}", if ticked { "on" } else { "off" }))
     }
 
     /// The sentence a screen reader reads after the name, for the ones that
     /// need more than their label.
     pub fn description(self) -> Option<String> {
-        None
+        let what_it_does = match self {
+            Self::Sign => {
+                "Signs this message with your certificate or PGP key, so the people it goes to can check it was not changed on the way."
+            }
+            Self::Encrypt => {
+                "Encrypts this message so only the people it goes to, and you, can open it. Each of them needs a certificate or PGP key kept here."
+            }
+            _ => return None,
+        };
+        Some(format!(
+            "{what_it_does} {}",
+            crate::application::allowed::SIGNING_AND_ENCRYPTING_IS_EXPERIMENTAL
+        ))
     }
 }
 

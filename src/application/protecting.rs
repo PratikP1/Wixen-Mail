@@ -60,15 +60,22 @@ impl Choice {
     }
 
     /// The choice the composer's two boxes make.
-    pub const fn from_boxes(_sign: bool, _encrypt: bool) -> Self {
-        Choice::Plain
+    pub const fn from_boxes(sign: bool, encrypt: bool) -> Self {
+        match (sign, encrypt) {
+            (false, false) => Choice::Plain,
+            (true, false) => Choice::Signed,
+            (false, true) => Choice::Encrypted,
+            (true, true) => Choice::SignedAndEncrypted,
+        }
     }
 
-    const fn signs(self) -> bool {
+    /// Whether the Sign box is ticked for this choice.
+    pub const fn signs(self) -> bool {
         matches!(self, Choice::Signed | Choice::SignedAndEncrypted)
     }
 
-    const fn encrypts(self) -> bool {
+    /// Whether the Encrypt box is ticked for this choice.
+    pub const fn encrypts(self) -> bool {
         matches!(self, Choice::Encrypted | Choice::SignedAndEncrypted)
     }
 
@@ -392,19 +399,33 @@ fn who_cannot_be_reached(kept: &[KeptFor], yours: YoursAre) -> CannotProtect {
 /// What Send asks before anything is queued, so a message that cannot be
 /// protected is never put in the Outbox at all.
 pub fn at_send(
-    _choice: Choice,
-    _from: &str,
-    _to: &str,
-    _cc: &str,
-    _bcc: &str,
-    _held: &WhatIsHeld,
+    choice: Choice,
+    from: &str,
+    to: &str,
+    cc: &str,
+    bcc: &str,
+    held: &WhatIsHeld,
 ) -> Result<(), CannotProtect> {
-    Err(CannotProtect::ABlindCopyWouldShow)
+    what_protection_it_gets(
+        choice,
+        from,
+        &addresses_in(&[to, cc]),
+        &addresses_in(&[bcc]),
+        held,
+    )
+    .map(|_| ())
 }
 
 /// Every address in some recipient lines as typed, without the names.
-pub fn addresses_in(_lines: &[&str]) -> Vec<String> {
-    Vec::new()
+///
+/// Read the way the send loop reads them, so Send and the moment the message
+/// goes ask about the same people.
+pub fn addresses_in(lines: &[&str]) -> Vec<String> {
+    lines
+        .iter()
+        .flat_map(|line| crate::application::mail_controller::addresses(line))
+        .map(|recipient| recipient.address)
+        .collect()
 }
 
 /// How a message went, as the end of "Sent, ...": which of the two families
