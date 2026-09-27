@@ -173,13 +173,17 @@ jobs:
         # account editor on its first page, which 'account-editor' turns past
         # to reach the checkboxes. It is here for the signature choice, whose
         # name is read here in the running program.
+        #
+        # The pgp-keys target, added 2026-09-27 (#49, 13-17), is the PGP key
+        # manager on File. A fresh profile holds no key, so it is scanned with
+        # an empty list and focus on Import from File.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
           'which-days', 'send-later', 'add-address-book', 'about', 'feedback',
           'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
           'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
-          'account-details', 'phone-number', 'page', 'page-window'
+          'account-details', 'phone-number', 'page', 'page-window', 'pgp-keys'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

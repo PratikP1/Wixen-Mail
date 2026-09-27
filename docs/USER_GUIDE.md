@@ -719,7 +719,7 @@ A message that was signed and then encrypted has its signature checked once it
 opens, and the signature is said the way any signature is.
 
 PGP mail is the other kind, the kind Thunderbird and Proton Mail use. Import
-your private key with File, Import PGP Private Key, and a PGP message encrypted
+your private key in File, PGP Keys, and a PGP message encrypted
 to that key opens, whether its encrypted text sits in the body of the message
 or in a separate part, which is called PGP/MIME. Reading PGP mail is
 experimental, and the menu item says so. A PGP message that opens shows its
@@ -738,6 +738,50 @@ Thunderbird or Proton Mail has been read here either: the one tested was made
 with GnuPG. A picture sent inside an encrypted message is not shown yet, and it
 is counted among the pictures not shown. Sending signed or encrypted mail is
 not built.
+
+#### PGP keys
+
+File, PGP Keys opens the key manager, which lists every PGP key on this
+computer: your private keys first, then other people's public keys. Each row
+starts with the name and address the key carries, then says whether it is a
+private or a public key, its key id, its fingerprint, when it was made, when it
+expires, and whether it can encrypt, sign or both. The manager is experimental,
+and the menu says so.
+
+The box at the top of the window says what keys can and cannot do in this
+build:
+
+- A private key opens PGP messages sent to it.
+- A key locked with a passphrase cannot be imported yet. Export it from the
+  other program without a passphrase if you want to use it here.
+- Public keys are kept, and nothing uses them yet. Sending encrypted mail is
+  not built, so a public key here waits for that.
+- Removing a key here removes it from this computer.
+
+A key says whose it is, and nothing here checks that claim. Before you rely on
+somebody's public key, check its fingerprint with them another way, such as on
+the phone.
+
+The buttons:
+
+| Button | Letter | What it does |
+|---|---|---|
+| Import from File | `Alt+F` | Reads every key in a file you choose, private or public, and says what became of each |
+| Paste a Key | `Alt+P` | Opens a box to paste a key's text into, then imports it |
+| Export Public Key | `Alt+X` | Writes the chosen key's public half to a file you choose. The private half never leaves |
+| Copy Public Key | `Alt+C` | Puts the chosen key's public half on the clipboard, to paste into a message |
+| Remove | `Alt+R` | Asks first, naming the key and its fingerprint. For a private key it says that messages encrypted to it will stop opening. `Enter` answers No |
+| Close | `Alt+O` | Closes the manager. `Esc` does the same |
+
+Every answer is shown on the line above the buttons and said aloud. A button
+pressed with no key chosen says to choose one first.
+
+Somebody may send you their public key as an attachment, usually a `.asc` or
+`.key` file. Press `Enter` on it in the attachment list, in either reader
+window, and Wixen Mail says what kind of key it is, the name it gives and its
+key id, and asks whether to import it. `Enter` answers No, so nothing is
+imported by accident. A `.asc` file that holds no key, usually a signature, is
+read as text instead.
 
 ### Message Actions
 

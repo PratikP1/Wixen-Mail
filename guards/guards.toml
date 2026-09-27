@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 372 records have arrived since and have not been through it.
+# 375 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16828,14 +16828,18 @@ tests_last_seen = [
 # was red in that run as well and is not listed, because it was already red
 # before the break was applied: four records were carrying counts from before
 # this task added tests, and they were re-measured afterwards.
+#
+# Re-anchored 2026-09-27 by 13-17: a key is the fourth reading and its test
+# now comes last, so the break is anchored after it; re-measured through
+# `scripts/guards.sh --remeasure`.
 
 [[guard]]
 name = "the reading gate admits text and still refuses what it cannot read"
 file = "src/presentation/reader_text.rs"
-before = """            return Some(HowItReads::Picture);
+before = """            return Some(HowItReads::Key);
         }
         None"""
-after = """            return Some(HowItReads::Picture);
+after = """            return Some(HowItReads::Key);
         }
         Some(HowItReads::Text)"""
 red = [
@@ -16843,7 +16847,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 143 },
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]
 
 # ── A picture whose sender said nothing, and a preview that says nothing ────
@@ -17728,21 +17732,26 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-06 against a green tree, with
 # `cargo test --no-fail-fast --test wired`.
+#
+# Rewritten 2026-09-27 by 13-17: the way in is now the key manager, File, PGP
+# Keys, where File, Import PGP Private Key was and on its letter (Pratik,
+# 2026-09-24), so the anchor is the new item and the two tests are the
+# rewritten ones. Re-measured through `scripts/guards.sh --remeasure`.
 
 [[guard]]
 name = "a PGP private key somebody can import"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
 before = '''            .append_item(
-                ID_IMPORT_PGP_KEY,
-                "Import PGP Private &Key... (experimental)",
+                ID_PGP_KEYS,
+                "PGP &Keys... (experimental)",
                 crate::application::allowed::READING_PGP_MAIL_IS_EXPERIMENTAL,
             )'''
 after = ''''''
 red = [
     "test_every_handled_command_has_something_that_raises_it",
-    "test_importing_a_pgp_private_key_is_on_a_menu_and_reaches_the_importer",
-    "test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen",
+    "test_the_menu_says_the_pgp_key_manager_is_experimental_before_it_is_chosen",
+    "test_the_pgp_key_manager_is_on_the_file_menu_and_reaches_the_manager",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -26477,7 +26486,7 @@ red = [
     "test_the_reading_complains_when_the_readers_item_goes_back_to_f8",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
 ]
 
@@ -30754,7 +30763,7 @@ red = [
     "test_no_two_items_on_one_menu_claim_the_same_letter",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/wired.rs", tests = 77 },
 ]
 
@@ -30772,7 +30781,7 @@ red = [
     "test_no_two_menu_items_claim_the_same_shortcut",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/wired.rs", tests = 77 },
 ]
 
@@ -31652,7 +31661,7 @@ red = [
     "test_a_cancellation_has_no_buttons_and_its_bar_says_why",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
 ]
 
@@ -31673,7 +31682,7 @@ red = [
     "test_the_formatted_window_has_the_three_buttons_after_the_page",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
 ]
 
@@ -32261,10 +32270,14 @@ red = [
     "application::pgp_keys::tests::test_exporting_gives_the_public_half_as_armour",
     "application::pgp_keys::tests::test_importing_says_one_sentence_for_each_key",
     "application::pgp_keys::tests::test_removing_a_key_by_fingerprint_takes_it_off_the_list",
+    "application::pgp_keys::tests::test_the_limits_say_a_private_key_opens_mail_sent_to_it_and_one_does",
+    "application::pgp_keys::tests::test_the_limits_say_where_keys_are_kept_and_removing_one_leaves_nothing",
     "application::pgp_keys::tests::test_the_public_half_of_a_private_key_here_is_not_kept_again",
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
     "presentation::reader_text::encryption_tests::test_a_page_holding_a_pgp_mime_message_that_opened_fetches_no_picture",
     "presentation::reader_text::encryption_tests::test_the_files_inside_a_pgp_mime_message_that_opened_are_the_files_listed",
+    "presentation::wx_pgp_keys::tests::test_the_keys_underneath_are_the_ones_the_application_layer_keeps",
+    "presentation::wx_pgp_keys::tests::test_the_row_a_press_acts_on_is_the_one_chosen_and_nothing_is_not_a_row",
     "service::pgp::keys::tests::test_a_key_longer_than_its_parts_hold_is_refused_and_nothing_is_written",
     "service::pgp::keys::tests::test_a_key_that_does_not_open_it_is_not_reported_as_no_key",
     "service::pgp::keys::tests::test_a_message_encrypted_to_the_imported_key_opens_and_reads",
@@ -32279,9 +32292,10 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/application/pgp_keys.rs", tests = 7 },
+    { file = "src/application/pgp_keys.rs", tests = 19 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
     { file = "src/service/pgp/keys.rs", tests = 25 },
 ]
 
@@ -32335,7 +32349,64 @@ red = [
     "application::pgp_keys::tests::test_a_public_key_imported_twice_is_already_here_the_second_time",
     "application::pgp_keys::tests::test_every_key_here_lists_private_keys_first_then_public_ones",
     "application::pgp_keys::tests::test_removing_a_key_by_fingerprint_takes_it_off_the_list",
+    "presentation::wx_pgp_keys::tests::test_the_keys_underneath_are_the_ones_the_application_layer_keeps",
+    "presentation::wx_pgp_keys::tests::test_the_row_a_press_acts_on_is_the_one_chosen_and_nothing_is_not_a_row",
 ]
 tests_last_seen = [
-    { file = "src/application/pgp_keys.rs", tests = 7 },
+    { file = "src/application/pgp_keys.rs", tests = 19 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
+]
+
+# The key manager's Remove acting without asking, so a stray press takes a
+# private key off this computer with nothing said first and no way back but
+# importing it again (T-13-17-04). The question and its No are the only thing
+# between a press and the loss. Written 2026-09-27 by 13-17, measured by hand
+# with `cargo test --no-fail-fast --test the_key_manager_lists_and_names_its_controls`.
+[[guard]]
+name = "the key manager asks before it removes a key"
+file = "src/presentation/wx_pgp_keys.rs"
+suite = "the_key_manager_lists_and_names_its_controls"
+before = """        if !(self.desktop.ask)(&self.dialog, &pgp_keys::removal_question(&key)) {"""
+after = """        if false {"""
+red = [
+    "test_remove_answered_yes_takes_the_key_off_the_list_and_says_so",
+    "test_remove_asks_naming_the_key_and_no_keeps_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
+    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 12 },
+]
+
+# The key manager's first sentence saying a key locked with a passphrase can
+# be imported, which is false until 13-17.1: somebody reads it, imports their
+# usual export, and is refused. The case pins the clause to `import`'s refusal.
+# Written 2026-09-27 by 13-17, measured by hand with `cargo test --lib`.
+[[guard]]
+name = "the key manager says a locked key cannot be imported yet"
+file = "src/application/pgp_keys.rs"
+before = """     A key locked with a passphrase cannot be imported yet. Public keys"""
+after = """     A key locked with a passphrase can be imported now. Public keys"""
+red = [
+    "application::pgp_keys::tests::test_the_limits_say_a_locked_key_cannot_be_imported_and_none_is",
+]
+tests_last_seen = [
+    { file = "src/application/pgp_keys.rs", tests = 19 },
+]
+
+# A key sent as an attachment refused by the reader's gate again, so Enter on
+# it says Wixen Mail cannot read an ASC file and never asks whether to import
+# it, in both reader windows. The gate is `how_it_reads`, which the worker
+# asks too, so the break is there rather than in `wx_reader.rs`. Written
+# 2026-09-27 by 13-17, measured by hand with `cargo test --lib`.
+[[guard]]
+name = "a key sent as an attachment can be read in the reader"
+file = "src/presentation/reader_text.rs"
+before = """        if kind == "application/pgp-keys" || MAY_HOLD_A_KEY.contains(&extension.as_str()) {"""
+after = """        if false {"""
+red = [
+    "presentation::wx_reader::tests::test_a_pgp_key_can_be_read_here_whichever_way_it_says_so",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]

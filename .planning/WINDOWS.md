@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 583
+open_count: 586
 waived_count: 0
-fixed_count: 62
-total_count: 645
-last_updated: 2026-09-27T05:28:15.000Z
+fixed_count: 63
+total_count: 649
+last_updated: 2026-09-27T08:08:59.000Z
 ---
 
 # Broken Windows Ledger
@@ -160,7 +160,7 @@ last_updated: 2026-09-27T05:28:15.000Z
 | 143 | 04 | unrun-verify | src/service/signed_mail.rs |  | Whether this computer holds a certificate an encrypted message was addressed to has never been asked of a real Windows certificate store holding a real S/MIME certificate. which_recipient_is_us is exercised against a store held in memory, so the three answers are tested and the Windows path that produces them is not. A store that answered wrongly rather than failing would tell somebody a private message was not meant for them. 13-14 on 2026-09-26: opening is now asked of the same store, the in-memory key opens the keyholder's envelopes, and the person's own MY store is asked in a test only for an envelope it holds no key for; a real certificate in the person's store opening a real message is still unmet. | open |  | 2026-09-06T17:25:20.633Z |  |
 | 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. 13-16 (2026-09-27): keys are now split across credential entries Windows will keep and up to eight are held, tested with GnuPG-made RSA-2048 and Ed25519 keys and a passphrase-locked one; still no real key from a correspondent, and no key has been imported on a real machine against the real credential store | open |  | 2026-09-06T19:22:31.977Z |  |
 | 145 | 04 | stub | src/application/opening_pgp.rs |  | PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog. | fixed | 13-15: a multipart/encrypted message whose protocol is application/pgp-encrypted is marked at arrival in arrived_pgp_encrypted, and opening it offers the encrypted part to the key and takes what opens apart in memory under 13-14's rules. Closed by data::message_cache::how_it_arrived::tests::test_a_pgp_mime_message_is_marked_on_arrival and application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key, against a message GnuPG 2.4.9 made; a real correspondent's message is ledger 641 | 2026-09-06T19:22:32.467Z | 2026-09-27T03:36:08.000Z |
-| 146 | 04 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. | open |  | 2026-09-06T19:22:32.974Z |  |
+| 146 | 04 | unrun-verify | src/presentation/wx_pgp_keys.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. Updated 2026-09-27 by 13-17: the import is now the key manager's (File, PGP Keys, Import from File and Paste a Key), one sentence per key, said and shown on the manager's line, and a key sent as an attachment is imported after a question in the reader; none of it has been heard. | open |  | 2026-09-06T19:22:32.974Z |  |
 | 147 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the hold announced. Pressing Send now says "Sending in 10 seconds. Undo Send takes it back." and whether that sentence finishes in time for somebody to hear it, decide and press Ctrl+Shift+Z inside ten seconds is the whole argument in Hold::DEFAULT's doc and no test can measure it. Plan 04.2-04's checkpoint, item 4, asks this question in the flow it matters most in. | open |  | 2026-09-06T23:11:30.841Z |  |
 | 148 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | A message that leaves after a hold has never met a real server. Whether it arrives with the headers a recipient's client expects, and whether ten seconds feels long or short with a real mailbox syncing underneath, are both unsettled. | open |  | 2026-09-06T23:11:39.000Z |  |
 | 149 | 04.2 | unrun-verify | src/presentation/wx_send_later.rs |  | Nobody has heard the Schedule window. Whether a month choice, a day spinner, a year spinner, an hour spinner, a minute spinner and sometimes a morning-or-afternoon choice are heard as six separate named controls, each saying its own value as it changes, is the question wx_item_form.rs's module doc settled with a real screen reader session for that dialog and which has not been settled for this one. The control shape is the same and the names are set with set_accessible_name rather than set_name, so the expectation is that it carries over. That is an expectation, not a measurement. | open |  | 2026-09-06T23:59:00.000Z |  |
@@ -510,7 +510,7 @@ last_updated: 2026-09-27T05:28:15.000Z
 | 493 | 09 | deviation | scripts/uia-events.ps1 | 1 | 09-06: the plan prescribed a UI Automation event logger and read a capture of one event per key as meaning the second reading was NVDA's own; the managed UI Automation client did show exactly one ElementSelected per key and nothing else, and it is blind to what NVDA reads for a native SysTabControl32, which is MSAA and win events. The logger logs both channels, the win-event hook reading class, text and child id only and never an IAccessible (ledger 390). Two conditions of the capture: the session was locked (the focused element was the Lock Screen, pid 16028), so SendInput answered ERROR_ACCESS_DENIED and SendKeys threw, keys were posted as WM_KEYDOWN to the tab control's own window, and no window could take foreground focus, so the page-panel candidate is judged from the in-thread focus events (the row took focus at open, both captures) and wxWidgets' UpdateSelection giving the page focus only when the notebook has none, not from a foreground run; and NVDA was running and not stopped. The fix also takes the numpad's arrows, found because the test's first key lacked the extended bit and wxWidgets read VK_RIGHT as WXK_NUMPAD_RIGHT | open |  | 2026-09-16T22:44:35.134Z |  |
 | 494 | 09 | todo | nvda-tests/README.md | 60 | 09-06: the README's What is in here table lists two test files and the directory holds five (calendar-immediate-actions, filter-manager-delete and settings-tabs-read-once are not in it), and its prose says two tests where the workflow runs five. A table that is read as the inventory and is short by three is a check nobody reads; bring it to the directory, or have a reading hold it there | fixed | Fixed by 11-02 on 2026-09-18: the table lists all five files under tests/ with what each holds and whether it runs, the prose dates the two the package began with and counts the five, and the workflow section says four run and one is skipped. No reading holds the table to the directory; the count is a sentence dated 2026-09-18 | 2026-09-16T22:44:35.707Z | 2026-09-18T13:30:00.000Z |
 | 495 | 09 | unrun-verify | src/presentation/reader_text.rs |  | Whether the preview pane's bar and a conversation's per-message sentences read well by ear has been heard by nobody: preview_html renders the top of the bar as a region named Security warning above the message, and one_of_several says why a PGP message did not open under its own heading on the page and in the text reader. Both are held by tests against a key and a message GnuPG made and a signed message OpenSSL made; whether they sound right with NVDA, and whether a real correspondent's key opens anything, is FOUND-10's last [S] line, the tester's (09-07, #51). | open |  | 2026-09-17T01:01:46.443Z |  |
-| 496 | 09 | todo | src/presentation/wx_app.rs |  | import_a_pgp_private_key announces its outcome and puts nothing in the status bar; its comment said both until 2026-09-16 and was corrected to what the body does. A visible line to match the spoken one is owed, on import_a_mailbox's pattern, which sends the status and announces; it wants a red in tests/wired.rs and ui_tx and runtime passed to the function (09-07, #51 item 6). | open |  | 2026-09-17T01:02:01.809Z |  |
+| 496 | 09 | todo | src/presentation/wx_app.rs |  | import_a_pgp_private_key announces its outcome and puts nothing in the status bar; its comment said both until 2026-09-16 and was corrected to what the body does. A visible line to match the spoken one is owed, on import_a_mailbox's pattern, which sends the status and announces; it wants a red in tests/wired.rs and ui_tx and runtime passed to the function (09-07, #51 item 6). | fixed | 13-17: import_a_pgp_private_key is gone and the key manager holds import; every answer it gives goes through said_and_shown, onto its What happened line and said. Shown by test_an_import_is_said_and_the_list_is_read_again and test_the_line_every_answer_goes_to_is_named in tests/the_key_manager_lists_and_names_its_controls.rs, red at 60234f21 and green at e58e94d8; a key attachment's answer goes to the status bar through UIUpdate::StatusUpdated | 2026-09-17T01:02:01.809Z | 2026-09-27T08:08:59.000Z |
 | 497 | 09 | todo | src/presentation/reader_text.rs |  | A PGP signature inside a conversation of several messages is still not mentioned there: SIGNED_AND_NOT_CHECKED_HERE is folded by with_encryption for one message only, and one_of_several says the PGP opening reason and the S/MIME envelope but nothing about a clearsigned part. Opening the message on its own says it; the changelog's dated correction on the armour entry says so (09-07). | open |  | 2026-09-17T01:02:02.382Z |  |
 | 498 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-07-PLAN.md |  | 09-07 executed with four departures: the wired.rs guards were edited in task 1 rather than task 3 because body_of panics on the moved fn line and task 1 could not compile its verify otherwise; task 2's second guard record went on reader_text's behaviour (the reason dropped from one_of_several) rather than on a call-site bypass, and task 3's record covers the call site; three stray rustdoc blocks moved home rather than one, the folder loader's and the module loader's beside the mailbox import's; and a third changelog entry, the armour entry's thread limitation, was dated beside the two the plan named. The key import's status-bar sentence was corrected in the comment, not built, because the task's one red was spent (ledger todo beside this). | open |  | 2026-09-17T01:02:02.964Z |  |
 | 499 | 09 | unrun-verify | src/application/importing_an_outlook_data_file.rs |  | No real Outlook data file has been through the import: neither this program nor the outlook-pst crate can write one, so brought_in's walk over a real file's folders (opened, what_it_holds, each_item_in) is unrun, and what is tested is the filing of each of the five kinds handed in by one_folder_filed. The closing sentence says so to whoever runs it. FOUND-11's [S] line; the tester's, when he has a .pst to hand. | open |  | 2026-09-17T02:49:01.548Z |  |
@@ -660,6 +660,10 @@ last_updated: 2026-09-27T05:28:15.000Z
 | 643 | 13 | todo | src/presentation/reader_text.rs |  | 13-15: a PGP/MIME message that opens to files and no words shows "This message has no text, or it has not been downloaded yet.", which is half false, because an opened PGP message says nothing above its words the way inline PGP says nothing. 13-14 fixed the same case for S/MIME by putting its opened sentence there. Recommendation: say "This message was encrypted with PGP and was opened here. It holds files and no words." in that place and only there, which needs Pratik's word on the sentence | open |  | 2026-09-27T03:36:08.000Z |  |
 | 644 | 13 | deviation | src/service/secret_store.rs |  | 13-16: the credential store under test took a secret of any length while Windows keeps 1,280 characters, 2,560 bytes of UTF-16, in one credential, so an ordinary RSA private key (1,836 characters for the test key, 6,618 for an RSA-4096 key with a subkey) imported in every test and could not be stored on any real Windows machine. Found by 13-16's research and fixed in 13-16: the test store refuses what Windows refuses, and a key is split across key-N-part-M entries under wixen-mail-pgp. Shown by service::secret_store::tests::test_a_secret_windows_would_refuse_is_refused_here_too and service::pgp::keys::tests::test_an_ordinary_rsa_key_is_stored_and_opens_mail, red at 92784f28 and 658d420d | fixed |  | 2026-09-27T05:28:15.000Z | 2026-09-27T05:28:15.000Z |
 | 645 | 13 | todo | src/service/oauth.rs |  | 13-16: the same 1,280-character limit applies to service::oauth, which writes a sign-in's token JSON through secret_store::write (oauth.rs:910 on 2026-09-27). A Microsoft access token is commonly over 1,280 characters (13-16 research assumption A2, not measured), so an Outlook sign-in may fail to save on Windows. No OAuth test went red under 13-16's honest test store, because the tests store short tokens: the whole library ran 8,111 passed and 13 failed, every failure a PGP case. 13-28, which asks Microsoft for a token of its own, is the place to measure a real token's length and, if it is over, split it the way 13-16 splits a PGP key | open |  | 2026-09-27T05:28:15.000Z |  |
+| 646 | 13 | unrun-verify | src/presentation/wx_pgp_keys.rs |  | 13-17: nobody has heard the PGP key manager with a screen reader. Whether each row is read as the person first and the fingerprint after, whether the question before a removal is read in full with its fingerprint, and whether the eight letters land where the shortcuts page says. tests/the_key_manager_lists_and_names_its_controls.rs reads names, roles and rows over MSAA at each control's handle, which proves structure and not how it sounds | open |  | 2026-09-27T08:08:59.000Z |  |
+| 647 | 13 | todo | src/service/pgp/mod.rs |  | 13-17: service::pgp::import_a_private_key and WhatImportingAKeyFound are reached only by tests since the File menu's import was replaced by the key manager, which imports through import_keys. The tests in application::opening_pgp, application::reading_a_message and presentation::reader_text that put a key in place through it want moving to import_keys, and the old path deleting | open |  | 2026-09-27T08:08:59.000Z |  |
+| 648 | 13 | todo | src/presentation/wx_app.rs |  | 13-17: the question before a key attachment is imported is asked over the text reader when that is open and over the main window otherwise, so Enter on a key in the formatted message window asks over the main window and focus goes back there once it is answered, not to the formatted window. Read in the code, not tried. Carrying the asking window through UIUpdate::KeyAttachmentOffered would fix it | open |  | 2026-09-27T08:08:59.000Z |  |
+| 649 | 13 | todo | src/application/pgp_keys.rs |  | 13-17: the key manager writes Created and Expires day first in the computer's month names, through how_the_machine_writes_dates, and does not follow the date order and wording chosen for the message list. A question for Pratik whether the key list should follow that setting; recommended yes, in the presentation layer through date_display | open |  | 2026-09-27T08:08:59.000Z |  |
 
 ````json
 [
@@ -2407,9 +2411,9 @@ last_updated: 2026-09-27T05:28:15.000Z
     "id": 146,
     "kind": "unrun-verify",
     "phase": "04",
-    "file": "src/presentation/wx_app.rs",
+    "file": "src/presentation/wx_pgp_keys.rs",
     "line": null,
-    "description": "Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles.",
+    "description": "Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. Updated 2026-09-27 by 13-17: the import is now the key manager's (File, PGP Keys, Import from File and Paste a Key), one sentence per key, said and shown on the manager's line, and a key sent as an attachment is imported after a question in the reader; none of it has been heard.",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T19:22:32.974Z",
@@ -6610,10 +6614,10 @@ last_updated: 2026-09-27T05:28:15.000Z
     "file": "src/presentation/wx_app.rs",
     "line": null,
     "description": "import_a_pgp_private_key announces its outcome and puts nothing in the status bar; its comment said both until 2026-09-16 and was corrected to what the body does. A visible line to match the spoken one is owed, on import_a_mailbox's pattern, which sends the status and announces; it wants a red in tests/wired.rs and ui_tx and runtime passed to the function (09-07, #51 item 6).",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "13-17: import_a_pgp_private_key is gone and the key manager holds import; every answer it gives goes through said_and_shown, onto its What happened line and said. Shown by test_an_import_is_said_and_the_list_is_read_again and test_the_line_every_answer_goes_to_is_named in tests/the_key_manager_lists_and_names_its_controls.rs, red at 60234f21 and green at e58e94d8; a key attachment's answer goes to the status bar through UIUpdate::StatusUpdated",
     "recorded_at": "2026-09-17T01:02:01.809Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-27T08:08:59.000Z"
   },
   {
     "id": 497,
@@ -8401,6 +8405,54 @@ last_updated: 2026-09-27T05:28:15.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T05:28:15.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 646,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_pgp_keys.rs",
+    "line": null,
+    "description": "13-17: nobody has heard the PGP key manager with a screen reader. Whether each row is read as the person first and the fingerprint after, whether the question before a removal is read in full with its fingerprint, and whether the eight letters land where the shortcuts page says. tests/the_key_manager_lists_and_names_its_controls.rs reads names, roles and rows over MSAA at each control's handle, which proves structure and not how it sounds",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T08:08:59.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 647,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/pgp/mod.rs",
+    "line": null,
+    "description": "13-17: service::pgp::import_a_private_key and WhatImportingAKeyFound are reached only by tests since the File menu's import was replaced by the key manager, which imports through import_keys. The tests in application::opening_pgp, application::reading_a_message and presentation::reader_text that put a key in place through it want moving to import_keys, and the old path deleting",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T08:08:59.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 648,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-17: the question before a key attachment is imported is asked over the text reader when that is open and over the main window otherwise, so Enter on a key in the formatted message window asks over the main window and focus goes back there once it is answered, not to the formatted window. Read in the code, not tried. Carrying the asking window through UIUpdate::KeyAttachmentOffered would fix it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T08:08:59.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 649,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/pgp_keys.rs",
+    "line": null,
+    "description": "13-17: the key manager writes Created and Expires day first in the computer's month names, through how_the_machine_writes_dates, and does not follow the date order and wording chosen for the message list. A question for Pratik whether the key list should follow that setting; recommended yes, in the presentation layer through date_display",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T08:08:59.000Z",
     "resolved_at": null
   }
 ]

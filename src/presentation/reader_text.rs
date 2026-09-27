@@ -1148,6 +1148,9 @@ pub enum HowItReads {
     Text,
     /// A picture, described by [`image_document`].
     Picture,
+    /// A file that may hold PGP keys: Enter on it asks whether to import
+    /// them, and one that holds none is read as text (#49, 13-17).
+    Key,
 }
 
 /// File names read as pictures when the type does not say so.
@@ -1193,6 +1196,11 @@ const READS_AS_A_PICTURE: [(&str, &str); 5] = [
 /// read, and `text/calendar` already means something else here. These are the
 /// extensions whose whole content is the words in them.
 const READS_AS_TEXT: [&str; 6] = ["txt", "text", "log", "md", "markdown", "csv"];
+
+/// File names that may hold a PGP key when the type does not say so: what
+/// GnuPG and most mail programs name an exported key. Whether one does is
+/// decided by what it holds, since a `.asc` is as often a signature.
+const MAY_HOLD_A_KEY: [&str; 2] = ["asc", "key"];
 
 /// One message of a conversation, with the body already fetched and what is
 /// said about it already asked.
@@ -1474,6 +1482,9 @@ impl ReaderAttachment {
         }
         if the_kind_of_picture(&self.mime_type, &self.name).is_some() {
             return Some(HowItReads::Picture);
+        }
+        if kind == "application/pgp-keys" || MAY_HOLD_A_KEY.contains(&extension.as_str()) {
+            return Some(HowItReads::Key);
         }
         None
     }

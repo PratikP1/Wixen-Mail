@@ -63,6 +63,14 @@ because they are made to be handed out, so they are kept in the mail database in
 folder, beside your mail and, like it, not encrypted. Read from `src/service/pgp/mod.rs` and
 `src/data/message_cache/pgp_keys.rs`.
 
+File, PGP Keys lists both kinds and is where they are imported, exported and removed.
+Removing a private key there erases every part of it from the credential store, and removing a
+public key deletes its row from the mail database; nothing of a removed key is kept anywhere.
+Export and Copy Public Key hand over a key's public half only, never the private half. A key
+somebody sends you as an attachment is read only when you press `Enter` on it, and imported
+only if you answer Yes. Read from `src/application/pgp_keys.rs` and
+`src/presentation/wx_pgp_keys.rs`.
+
 **The downloaded mail is not encrypted.** Windows stops other people who use the computer from
 reading the folder, but anything running as you can read it, and so can anyone who takes the
 drive out unless the disk itself is encrypted. Turn on BitLocker if that matters to you. This

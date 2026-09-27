@@ -168,13 +168,13 @@ fn where_print_is(app: &str, transport: &str) -> Result<(), String> {
         ));
     }
     let at = |id: &str| file.find(&format!("{id},"));
-    match (at("ID_IMPORT_PGP_KEY"), at("ID_PRINT"), at("ID_QUIT")) {
+    match (at("ID_PGP_KEYS"), at("ID_PRINT"), at("ID_QUIT")) {
         (Some(key), Some(print), Some(quit)) if key < print && print < quit => {}
         _ => {
             return Err(
-                "Print is no longer between Import PGP Private Key and Quit on File, in \
-                 a group of its own"
-                    .to_string(),
+                "Print is no longer between PGP Keys and Quit on File, in a group of its \
+                 own"
+                .to_string(),
             );
         }
     }

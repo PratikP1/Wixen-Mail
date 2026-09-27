@@ -135,9 +135,9 @@ ignore = [
     # oracle about any key is one: a page holding decrypted content fetches no
     # picture whatever the setting says, a meeting found inside it changes
     # nothing on the calendar on its own, and the read receipt is still decided
-    # from the header alone. And PGP private key import is labelled experimental
-    # in the File menu, so very few machines hold a key for anything to be an
-    # oracle about.
+    # from the header alone. And the PGP key manager, File, PGP Keys, where keys
+    # are imported, is labelled experimental on the File menu, so very few
+    # machines hold a key for anything to be an oracle about.
     #
     # The one automatic outbound response this program has was checked rather
     # than assumed, because "this program sends nothing back" is exactly the kind

@@ -4158,44 +4158,64 @@ fn raise_what_is_due(frame: &Frame) {{
     );
 }
 
-/// The command that imports a PGP private key is on a menu and does something.
+/// The PGP key manager is on the File menu and opens.
 ///
 /// A key nobody can import is a decryption path nobody can reach, and every
 /// PGP message would go on saying there is no key here for ever. That is the
 /// exact shape guardrail 1 is about: written, tested, and reachable from
-/// nothing.
+/// nothing. Since 13-17 the way in is the key manager, File, PGP Keys, where
+/// File, Import PGP Private Key was (Pratik, 2026-09-24), and the import is
+/// one of the manager's buttons.
 ///
 /// Both halves, because the first without the second is this project's own
 /// recorded defect: a command on a menu, an arm that catches its id, and
-/// nothing behind it.
+/// nothing behind it. And the old item gone, because two doors to one thing
+/// is one more item to arrow past.
 ///
-/// What this cannot see: whether the import works. `service::pgp::keys`
-/// measures that against a key GnuPG made.
+/// What this cannot see: whether the manager works.
+/// `tests/the_key_manager_lists_and_names_its_controls.rs` reads the window.
 #[test]
-fn test_importing_a_pgp_private_key_is_on_a_menu_and_reaches_the_importer() {
+fn test_the_pgp_key_manager_is_on_the_file_menu_and_reaches_the_manager() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     let squashed = without_whitespace(&what_ships(&app));
 
     assert!(
-        squashed.contains("append_item(ID_IMPORT_PGP_KEY,"),
-        "importing a PGP private key is on no menu, so there is no way to reach the \
-         decryption path at all and every PGP message says there is no key here"
+        squashed.contains("append_item(ID_PGP_KEYS,"),
+        "the PGP key manager is on no menu, so there is no way to import a key and \
+         every PGP message says there is no key here"
+    );
+    assert!(
+        !squashed.contains("ID_IMPORT_PGP_KEY"),
+        "File, Import PGP Private Key is still here beside the manager that replaced it"
     );
 
     let at = squashed
-        .find("_ifid==ID_IMPORT_PGP_KEY=>")
-        .expect("a menu arm for importing a PGP key");
+        .find("_ifid==ID_PGP_KEYS=>")
+        .expect("a menu arm for the PGP key manager");
     // As far as the next arm, so a call sitting in the one below cannot answer
     // for this one.
     let arm = &squashed[at..];
     let ends = arm[1..].find("_ifid==").map_or(arm.len(), |next| next + 1);
     assert!(
-        arm[..ends].contains("import_a_pgp_private_key("),
-        "the menu item is caught by an arm that does not import anything"
+        arm[..ends].contains("manage_pgp_keys("),
+        "the menu item is caught by an arm that does not open the key manager"
+    );
+    // The opener's own body, from its signature to the brace rustfmt puts at
+    // the left margin, so a call elsewhere in the file cannot answer for it.
+    let shipped = what_ships(&app);
+    let opener = shipped
+        .find("fn manage_pgp_keys(")
+        .map(|at| &shipped[at..])
+        .map(|rest| &rest[..rest.find("\n}\n").unwrap_or(rest.len())])
+        .unwrap_or_default();
+    assert!(
+        opener.contains("wx_pgp_keys::show("),
+        "manage_pgp_keys does not open the key manager's window: {opener:?}"
     );
 }
 
-/// The menu says reading PGP mail is experimental before it is chosen.
+/// The menu says reading PGP mail is experimental before the manager is
+/// chosen.
 ///
 /// Nothing on this path has met a real correspondent's key or a real
 /// correspondent's message. Guardrail: anything that will produce bug reports
@@ -4206,13 +4226,13 @@ fn test_importing_a_pgp_private_key_is_on_a_menu_and_reaches_the_importer() {
 /// the help line is what Windows hands a screen reader as the item's
 /// description, and the label is read whatever anybody's settings say.
 #[test]
-fn test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen() {
+fn test_the_menu_says_the_pgp_key_manager_is_experimental_before_it_is_chosen() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     let squashed = without_whitespace(&what_ships(&app));
 
     let at = squashed
-        .find("append_item(ID_IMPORT_PGP_KEY,")
-        .expect("importing a PGP key on a menu");
+        .find("append_item(ID_PGP_KEYS,")
+        .expect("the PGP key manager on a menu");
     let item = &squashed[at..squashed.len().min(at + 400)];
     assert!(
         item.contains("(experimental)"),
@@ -4223,6 +4243,10 @@ fn test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen() {
         item.contains("READING_PGP_MAIL_IS_EXPERIMENTAL"),
         "the menu item's description does not carry the sentence saying what could go \
          wrong: {item}"
+    );
+    assert!(
+        item.contains("\"PGP&Keys...(experimental)\""),
+        "the item is not File, PGP Keys on K, where the import it replaced was: {item}"
     );
 }
 
