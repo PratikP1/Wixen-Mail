@@ -270,12 +270,14 @@ pub fn added_to_the_archive(
     let carried = what_can_be_written_of(files);
     let rebuilt = ending_where_a_line_ends(rebuilt_from_what_is_stored(stored, text));
     match arrived_as {
-        SignedOriginal::Kept(raw) => message_files::written_into_an_archive(
-            archive,
-            &rebuilt,
-            message_files::WhatToWrite::ExactlyAsItArrived(raw),
-        ),
-        SignedOriginal::KeptPgpMime(_) | SignedOriginal::NotSigned | SignedOriginal::NotKept => {
+        SignedOriginal::Kept(raw) | SignedOriginal::KeptPgpMime(raw) => {
+            message_files::written_into_an_archive(
+                archive,
+                &rebuilt,
+                message_files::WhatToWrite::ExactlyAsItArrived(raw),
+            )
+        }
+        SignedOriginal::NotSigned | SignedOriginal::NotKept => {
             message_files::written_into_an_archive(
                 archive,
                 &rebuilt,
@@ -289,7 +291,7 @@ pub fn added_to_the_archive(
             // left behind whatever the store has. Counting the store's answer
             // here would report files missing from a message that has all of
             // them.
-            SignedOriginal::Kept(_) => 0,
+            SignedOriginal::Kept(_) | SignedOriginal::KeptPgpMime(_) => 0,
             _ => carried.not_here,
         },
         signature_could_not_be_kept: matches!(arrived_as, SignedOriginal::NotKept),
@@ -314,11 +316,11 @@ pub fn one_message_written_out(
 ) -> Option<Vec<u8>> {
     let text = text.filter(|text| is_really_there(text))?;
     Some(match arrived_as {
-        SignedOriginal::Kept(raw) => raw.clone(),
+        SignedOriginal::Kept(raw) | SignedOriginal::KeptPgpMime(raw) => raw.clone(),
         // Not through `ending_where_a_line_ends`: that is what a trip through
         // an archive changes, and a message written out on its own keeps its
         // body exactly as it was stored.
-        SignedOriginal::KeptPgpMime(_) | SignedOriginal::NotSigned | SignedOriginal::NotKept => {
+        SignedOriginal::NotSigned | SignedOriginal::NotKept => {
             message_files::written_as_one_message(
                 &rebuilt_from_what_is_stored(stored, text),
                 &what_can_be_written_of(files).to_write,

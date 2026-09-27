@@ -382,6 +382,15 @@ pub fn verify_detached(
     signatures::verify_detached(content, signature_armour, public_keys)
 }
 
+/// The public half of every private key here, as armour, in slot order.
+///
+/// What a signature made with one of your own keys is checked against, since
+/// importing a public key whose private half is here keeps nothing. Never the
+/// private half: nothing outside this module is handed that.
+pub fn public_halves_of_the_keys_here() -> crate::common::Result<Vec<String>> {
+    keys::public_halves_of_the_keys_here()
+}
+
 /// Every key an armoured text holds, described.
 pub fn describe(armour: &str) -> Vec<KeyListing> {
     keys::describe(armour)

@@ -724,6 +724,15 @@ pub(super) fn public_half(armour: &str) -> Option<String> {
     public.to_armored_string(ArmorOptions::default()).ok()
 }
 
+/// The public half of every private key here, in slot order. A stored key
+/// that no longer reads as one gives nothing, as it does to the list.
+pub(super) fn public_halves_of_the_keys_here() -> crate::common::Result<Vec<String>> {
+    Ok(keys_here()?
+        .iter()
+        .filter_map(|armour| public_half(armour))
+        .collect())
+}
+
 /// The public half of the private key here with this fingerprint.
 pub(super) fn public_half_of_a_key_here(
     fingerprint: &str,

@@ -43,7 +43,7 @@
 
 use super::MessageCache;
 use crate::common::{Error, Result};
-use crate::service::signed_mail::claims_a_signature;
+use crate::service::signed_mail::{claims_a_signature, claims_pgp_signature};
 use rusqlite::OptionalExtension;
 
 /// The largest message whose arrived-in form is kept.
@@ -94,6 +94,49 @@ pub enum SignedOriginal {
     NotKept,
 }
 
+/// Which kind of signature a kept message carries, as the `kind` column holds
+/// it.
+///
+/// A column rather than a wider [`claims_a_signature`], whose own comment says
+/// why that question must stay S/MIME's: the wrapper is the same and only the
+/// protocol tells the two apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SignedKind {
+    Smime,
+    PgpMime,
+}
+
+impl SignedKind {
+    /// Which kind a message's own headers claim, if either.
+    fn claimed_by(raw: &[u8]) -> Option<Self> {
+        if claims_a_signature(raw) {
+            Some(Self::Smime)
+        } else if claims_pgp_signature(raw) {
+            Some(Self::PgpMime)
+        } else {
+            None
+        }
+    }
+
+    fn as_column(self) -> &'static str {
+        match self {
+            Self::Smime => "smime",
+            Self::PgpMime => "pgp-mime",
+        }
+    }
+
+    /// The column as read. NULL is a row a build before 13-18 kept, and those
+    /// were all S/MIME; a value nothing here writes reads the same way, since
+    /// S/MIME's checker says in its own words that it found no signature it
+    /// can read rather than inventing a verdict.
+    fn from_column(value: Option<&str>) -> Self {
+        match value {
+            Some("pgp-mime") => Self::PgpMime,
+            _ => Self::Smime,
+        }
+    }
+}
+
 /// Current time as an RFC 3339 string, which sorts correctly as text.
 fn now() -> String {
     chrono::Utc::now().to_rfc3339()
@@ -109,25 +152,27 @@ impl MessageCache {
     ///
     /// Ordinary mail costs one cheap header read and writes nothing.
     pub fn keep_signed_original(&self, message_id: i64, raw: &[u8]) -> Result<()> {
-        if !claims_a_signature(raw) {
+        let Some(kind) = SignedKind::claimed_by(raw) else {
             return Ok(());
-        }
+        };
         let kept = i64::try_from(raw.len())
             .is_ok_and(|size| size <= LARGEST_SIGNED_MESSAGE_KEPT_BYTES)
             .then_some(raw);
         self.conn
             .execute(
-                "INSERT INTO signed_original (message_id, original, bytes, last_read_at)
-                 VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO signed_original (message_id, original, bytes, last_read_at, kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(message_id) DO UPDATE SET
                      original = excluded.original,
                      bytes = excluded.bytes,
-                     last_read_at = excluded.last_read_at",
+                     last_read_at = excluded.last_read_at,
+                     kind = excluded.kind",
                 rusqlite::params![
                     message_id,
                     kept,
                     kept.map_or(0, |bytes| bytes.len() as i64),
                     now(),
+                    kind.as_column(),
                 ],
             )
             .map_err(|e| {
@@ -195,12 +240,12 @@ impl MessageCache {
     /// Reading counts as the message being worked with, so dropping the least
     /// recently read prefers something else.
     pub fn signed_original(&self, message_id: i64) -> Result<SignedOriginal> {
-        let found: Option<Option<Vec<u8>>> = self
+        let found: Option<(Option<Vec<u8>>, Option<String>)> = self
             .conn
             .query_row(
-                "SELECT original FROM signed_original WHERE message_id = ?1",
+                "SELECT original, kind FROM signed_original WHERE message_id = ?1",
                 rusqlite::params![message_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(|e| {
@@ -212,10 +257,13 @@ impl MessageCache {
 
         match found {
             None => Ok(SignedOriginal::NotSigned),
-            Some(None) => Ok(SignedOriginal::NotKept),
-            Some(Some(original)) => {
+            Some((None, _)) => Ok(SignedOriginal::NotKept),
+            Some((Some(original), kind)) => {
                 self.mark_signed_original_read(message_id)?;
-                Ok(SignedOriginal::Kept(original))
+                Ok(match SignedKind::from_column(kind.as_deref()) {
+                    SignedKind::Smime => SignedOriginal::Kept(original),
+                    SignedKind::PgpMime => SignedOriginal::KeptPgpMime(original),
+                })
             }
         }
     }

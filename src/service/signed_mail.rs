@@ -188,8 +188,22 @@ pub fn claims_pgp_encryption(raw: &[u8]) -> bool {
 /// reason [`layout_of`] says: the wrapper is the same and the protocol is what
 /// tells the two apart, and handing a PGP signature to a reader that only knows
 /// certificates reports it as a signature nobody could check.
-pub fn claims_pgp_signature(_raw: &[u8]) -> bool {
-    false
+pub fn claims_pgp_signature(raw: &[u8]) -> bool {
+    let (headers, _) = split_headers_from_body(raw);
+    header_value(headers, "content-type")
+        .is_some_and(|value| is_pgp_signed(&ContentType::read(&value)))
+}
+
+/// The media type of a PGP/MIME signature part, and the value a signed
+/// message's `protocol` parameter names (RFC 3156, section 5).
+const PGP_MIME_SIGNATURE: &str = "application/pgp-signature";
+
+/// Whether a `Content-Type` is a PGP/MIME signed message's.
+fn is_pgp_signed(header: &ContentType) -> bool {
+    header.media_type == "multipart/signed"
+        && header
+            .parameter("protocol")
+            .is_some_and(|protocol| protocol.trim().eq_ignore_ascii_case(PGP_MIME_SIGNATURE))
 }
 
 /// Whether one of a message's stored files is the encrypted part of a PGP/MIME
@@ -413,8 +427,40 @@ pub struct PgpSignedParts {
 
 /// The signed part and the signature out of a PGP/MIME signed message, or
 /// `None` when it is not one or either part is missing.
-pub fn take_apart_pgp_signed(_raw_message: &[u8]) -> Option<PgpSignedParts> {
-    None
+///
+/// Through the same private reading of the headers and the same split at the
+/// boundary S/MIME's detached signature is taken apart by, because the rule
+/// that decides whether a signature holds is the same for both: the line break
+/// before a delimiter belongs to the delimiter.
+pub fn take_apart_pgp_signed(raw_message: &[u8]) -> Option<PgpSignedParts> {
+    let (headers, body) = split_headers_from_body(raw_message);
+    let header = ContentType::read(&header_value(headers, "content-type")?);
+    if !is_pgp_signed(&header) {
+        return None;
+    }
+    let boundary = header.parameter("boundary")?;
+    let parts = parts_between(body, &boundary);
+    let (content, signature_part) = (parts.first()?, parts.get(1)?);
+    let (signature_headers, signature_body) = split_headers_from_body(signature_part);
+    Some(PgpSignedParts {
+        content: content.to_vec(),
+        signature_armour: armour_of(signature_headers, signature_body)?,
+    })
+}
+
+/// A signature part's armour, undone from base64 where a sender encoded it.
+///
+/// Not [`decode_body`], which reads no transfer encoding as base64 because
+/// that is what an S/MIME signature always is. An armoured PGP signature is
+/// text, and 7bit is what it nearly always travels as.
+fn armour_of(headers: &[u8], body: &[u8]) -> Option<String> {
+    let encoding = header_value(headers, "content-transfer-encoding").unwrap_or_default();
+    let bytes = if encoding.trim().eq_ignore_ascii_case("base64") {
+        decode_body(headers, body).ok()?
+    } else {
+        body.to_vec()
+    };
+    String::from_utf8(bytes).ok()
 }
 
 /// The raw bytes of each part of a multipart body, in order.

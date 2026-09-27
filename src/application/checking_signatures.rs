@@ -27,12 +27,14 @@
 //! contacting nobody and waiting for nothing. A message opens at the speed it
 //! always did and no authority learns that it was opened.
 
+use crate::application::body_safety::{WhatTheFormSays, what_the_form_says};
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::data::message_cache::signed_original::SignedOriginal;
-use crate::service::pgp::PgpVerdict;
+use crate::service::pgp::{self, PgpVerdict};
 use crate::service::signed_mail::{
-    CertificateStore, Reach, SignatureReport, examine_signed_message, this_computers_certificates,
+    CertificateStore, Reach, SignatureReport, examine_signed_message, take_apart_pgp_signed,
+    this_computers_certificates,
 };
 use chrono::{DateTime, Utc};
 
@@ -84,44 +86,116 @@ pub fn for_message(
             tracing::warn!("Could not read what was kept of a signed message: {problem}");
             SignedOriginal::NotSigned
         });
+    if matches!(kept, SignedOriginal::NotSigned) && carries_a_signature_part(cache, message_row_id)
+    {
+        return SignatureCheck::StoredBeforeSignaturesWereKept;
+    }
     from_what_was_kept(
         kept,
         sender,
         this_computers_certificates().as_ref(),
         now,
-        Vec::new,
+        || crate::application::pgp_keys::every_key_that_checks_signatures(Some(cache)),
     )
+}
+
+/// The media types a signature part is stored under: S/MIME's two spellings
+/// and PGP/MIME's.
+const SIGNATURE_PARTS: [&str; 3] = [
+    "application/pkcs7-signature",
+    "application/x-pkcs7-signature",
+    "application/pgp-signature",
+];
+
+/// Whether a message with nothing kept of its arrived-in form carries a
+/// signature part among its stored files, which is what a signed message
+/// stored before those forms were kept looks like (#52 point 6).
+///
+/// Its parts are stored, so the signature part is findable; its bytes are
+/// not, so the check cannot be built. A file list that cannot be read answers
+/// no, which is what the message said before this was asked.
+fn carries_a_signature_part(cache: &MessageCache, message_row_id: i64) -> bool {
+    cache
+        .get_attachments_for_message(message_row_id)
+        .unwrap_or_else(|problem| {
+            tracing::warn!("Could not read a message's files to look for a signature: {problem}");
+            Vec::new()
+        })
+        .iter()
+        .any(|file| {
+            SIGNATURE_PARTS
+                .iter()
+                .any(|kind| file.mime_type.trim().eq_ignore_ascii_case(kind))
+        })
 }
 
 /// The same, for a caller that has the bytes and a store already.
 ///
 /// Split out so the whole decision can be tested without a database and
-/// without the machine this happens to be running on.
+/// without the machine this happens to be running on. `pgp_keys` is asked
+/// only for a PGP/MIME message, since the private keys' public halves are a
+/// read of the credential store that S/MIME mail should not cost.
 pub fn from_what_was_kept(
     kept: SignedOriginal,
     sender: &str,
     store: &dyn CertificateStore,
     now: DateTime<Utc>,
-    _pgp_keys: impl FnOnce() -> Vec<String>,
+    pgp_keys: impl FnOnce() -> Vec<String>,
 ) -> SignatureCheck {
     let raw = match kept {
-        SignedOriginal::NotSigned | SignedOriginal::KeptPgpMime(_) => {
-            return SignatureCheck::NotSigned;
-        }
+        SignedOriginal::NotSigned => return SignatureCheck::NotSigned,
         SignedOriginal::NotKept => return SignatureCheck::NotKept,
+        SignedOriginal::KeptPgpMime(raw) => {
+            return SignatureCheck::Pgp(pgp_mime_verdict(&raw, &pgp_keys()));
+        }
         SignedOriginal::Kept(raw) => raw,
     };
     let report = examine_signed_message(&raw, sender, now);
     SignatureCheck::Checked(Box::new(asking_this_computer(report, store, now)))
 }
 
+/// A PGP/MIME message's signature, checked over the signed part's exact bytes.
+///
+/// A kept message that will not come apart into a signed part and a signature
+/// is damaged as far as anybody reading it can tell: it said it was signed,
+/// and nothing in it can be checked.
+fn pgp_mime_verdict(raw: &[u8], keys: &[String]) -> PgpVerdict {
+    match take_apart_pgp_signed(raw) {
+        Some(parts) => pgp::verify_detached(&parts.content, &parts.signature_armour, keys),
+        None => PgpVerdict::Damaged,
+    }
+}
+
 /// What can be said about the clearsigned block a body carries, and the body
 /// to show, or `None` for a body that carries none.
+///
+/// The plain half is the one checked, because that is where a clearsigned
+/// block is written; the markup half, where there is one, stays the sender's.
+/// The body shown is the signed words where the block is the whole of the
+/// plain half, and the body as it came otherwise: `service::pgp` says why.
+///
+/// `pgp_keys` is asked only once the body is found to carry a signature, so
+/// ordinary mail never reads the credential store.
 pub fn for_a_clearsigned_body(
-    _body: &MessageBody,
-    _pgp_keys: impl FnOnce() -> Vec<String>,
+    body: &MessageBody,
+    pgp_keys: impl FnOnce() -> Vec<String>,
 ) -> Option<(SignatureCheck, MessageBody)> {
-    None
+    let form = what_the_form_says(Some(body.as_plain()), body.as_html());
+    if form != WhatTheFormSays::SignedWithPgp {
+        return None;
+    }
+    let (verdict, words) = pgp::verify_cleartext(body.as_plain(), &pgp_keys());
+    let shown = match body {
+        MessageBody::Plain(_) => MessageBody::Plain(words),
+        MessageBody::Multipart { html, .. } => MessageBody::Multipart {
+            plain: words,
+            html: html.clone(),
+        },
+        // No plain half to hold a block: the markup is shown as it came, and
+        // the verdict says the signature could not be read.
+        MessageBody::Html(_) => body.clone(),
+    };
+    Some((SignatureCheck::Pgp(verdict), shown))
 }
 
 /// Fold in the two answers only this computer's own store can give.
