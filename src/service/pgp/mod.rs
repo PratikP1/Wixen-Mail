@@ -13,9 +13,10 @@
 //! **What is here is reading mail and keeping keys, not the whole of PGP.**
 //! Up to [`KEY_SLOTS`] private keys, kept in the credential store in parts;
 //! other people's public keys described and handed back for the mail database
-//! to keep; one message opened by whichever key it names; four ways of
-//! failing, each said in its own words. Key servers, revocation, and anything
-//! outgoing are outside it.
+//! to keep; one message opened by whichever key it names, a locked key's
+//! passphrase held in memory for the session once somebody types it; four
+//! ways of failing and one of needing a passphrase, each said in its own
+//! words. Key servers, revocation, and anything outgoing are outside it.
 //!
 //! Inline PGP and PGP/MIME. An armoured block in the message's text is what
 //! `application::body_safety::what_the_form_says` finds and hands here. Since
@@ -201,6 +202,38 @@ pub enum WhatOpeningItFound {
     /// The armour is not readable as an OpenPGP message: truncated, corrupted
     /// in transit, or never an OpenPGP message at all.
     Damaged,
+    /// The message was encrypted to a key here that a passphrase is holding
+    /// shut, and nobody has typed that passphrase since Wixen Mail started.
+    ///
+    /// Not a failure of the message or of the key: the next step is to ask
+    /// the person, which only a reader window does (13-17.1). Which key is the
+    /// key's own first name and address, read out of the credential store,
+    /// and never anything the message says.
+    TheKeyIsLocked(LockedKey),
+}
+
+/// A private key here that a passphrase is holding shut.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockedKey {
+    /// The first name and address the key carries, or its short identifier
+    /// where it carries none.
+    pub whose: String,
+    /// The whole fingerprint in hexadecimal capitals, which [`unlock`] takes.
+    pub fingerprint: String,
+}
+
+/// What came of a typed passphrase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unlocking {
+    /// It opens the key, and it is held until Wixen Mail closes.
+    Unlocked,
+    /// It does not open the key, and nothing was held.
+    WrongPassphrase,
+    /// No private key here has that fingerprint.
+    NoSuchKey,
+    /// The credential store would not give the key back, so nothing could be
+    /// tried.
+    TheKeyCouldNotBeRead,
 }
 
 /// What happened when a private key was imported.
@@ -219,18 +252,9 @@ pub enum WhatImportingAKeyFound {
     NotAPrivateKey,
     /// It is not an OpenPGP key at all.
     NotAKey,
-    /// It is a private key and a passphrase is holding it shut.
-    ///
-    /// Refused rather than stored, for the reason [`Self::NotAPrivateKey`]
-    /// gives: a key that can never open anything is worse than no key at all,
-    /// because every message afterwards reports the wrong reason. Nothing here
-    /// asks for a passphrase, so an export made with one cannot be used, and
-    /// saying so at import is the only moment somebody can act on it.
-    ///
-    /// **A fifth variant, added when the implementation was written.** The four
-    /// below were chosen before there was anything behind them and this case
-    /// was not among them, which is what writing the implementation found.
-    TheKeyIsLockedWithAPassphrase,
+    // A key locked with a passphrase was refused here until 13-17.1, as
+    // `TheKeyIsLockedWithAPassphrase`. It is kept locked now, and its
+    // passphrase asked for when a message needs it, so it reads as imported.
     /// It is a private key and the credential store would not take it.
     ///
     /// The only variant carrying words, and they are the store's reason rather
@@ -263,6 +287,9 @@ pub struct KeyListing {
     /// Whether this is a private key, which opens mail, rather than somebody's
     /// public key, which does not.
     pub private: bool,
+    /// Whether a passphrase is holding this private key shut. Always false
+    /// for a public key, which has nothing to lock.
+    pub locked: bool,
     /// Whether mail can be encrypted to it.
     pub can_encrypt: bool,
     /// Whether it can sign.
@@ -276,16 +303,14 @@ pub struct KeyListing {
 /// would hide which of them did not come in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WhatBecameOfAKey {
-    /// A private key, now in the credential store.
+    /// A private key, now in the credential store, locked or not, which its
+    /// listing says.
     Imported(KeyListing),
     /// A private key that was already here, so nothing changed.
     AlreadyHere(KeyListing),
     /// A public key. Not secret, so not this module's to keep: the caller
     /// keeps the armour where the rest of this program's data lives.
     PublicKeyToKeep { armour: String, listing: KeyListing },
-    /// A private key a passphrase is holding shut, refused for the reason
-    /// [`WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase`] gives.
-    LockedWithAPassphrase(KeyListing),
     /// A private key the credential store would not take, and why, in words
     /// about the store and never about the key.
     CouldNotBeStored { listing: KeyListing, reason: String },
@@ -338,6 +363,18 @@ pub fn public_half_of_a_key_here(fingerprint: &str) -> crate::common::Result<Opt
 /// tree to that.
 pub fn open_a_message(armour: &str) -> WhatOpeningItFound {
     keys::open(armour)
+}
+
+/// Try a typed passphrase on the private key here with this fingerprint, and
+/// hold it until Wixen Mail closes if it opens the key.
+///
+/// The typed text becomes the crate's own passphrase type at once, and that
+/// is what is held: in memory, in this module and nowhere else, overwritten
+/// when it is dropped. It is never written to the credential store, the
+/// database, a file or a log, and nothing outside this module can read it
+/// back.
+pub fn unlock(fingerprint: &str, typed: &str) -> Unlocking {
+    keys::unlock(fingerprint, typed)
 }
 
 /// Take an armoured private key file and put it in the credential store.
@@ -405,6 +442,10 @@ mod tests {
             WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
             WhatOpeningItFound::TheKeyHereCouldNotBeRead,
             WhatOpeningItFound::Damaged,
+            WhatOpeningItFound::TheKeyIsLocked(LockedKey {
+                whose: "Dave Example <dave@example.com>".to_string(),
+                fingerprint: "BC398E0D54261CA0642E99AD469C95C000B5CB12".to_string(),
+            }),
         ];
 
         for (which, one) in all.iter().enumerate() {
@@ -416,13 +457,12 @@ mod tests {
 
     #[test]
     fn test_a_refusal_to_import_carries_no_words_from_the_file() {
-        // Four of the five refusals carry nothing at all, so there is nowhere
-        // for key material to travel. The fifth carries the credential store's
+        // Two of the three refusals carry nothing at all, so there is nowhere
+        // for key material to travel. The third carries the credential store's
         // reason, which is about the store rather than about the file.
         let refusals = [
             WhatImportingAKeyFound::NotAPrivateKey,
             WhatImportingAKeyFound::NotAKey,
-            WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase,
         ];
 
         for refusal in refusals {

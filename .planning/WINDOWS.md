@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 586
+open_count: 588
 waived_count: 0
 fixed_count: 63
-total_count: 649
-last_updated: 2026-09-27T08:08:59.000Z
+total_count: 651
+last_updated: 2026-09-27T10:33:40.000Z
 ---
 
 # Broken Windows Ledger
@@ -158,7 +158,7 @@ last_updated: 2026-09-27T08:08:59.000Z
 | 141 | 04 | unrun-verify | src/service/signed_mail.rs |  | EncryptedMessage::read has never met a real envelope from a real sender. Its fixture is real OpenSSL output, which is more than hand-built DER and is not mail: nobody has put an enveloped message from Outlook or Thunderbird through it. If one does not parse, the reader says the message is encrypted and its details could not be read, which is a wrong message rather than an absent one, and that is worse than the blank body it replaces. The refusal path is what bounds it and it is tested against every seventh-byte prefix of the fixture. 13-14 on 2026-09-26: envelopes OpenSSL sealed for the keyholder certificate, one around a note, one around a signed message and one around an invitation, now open through CryptDecryptMessage with the key held in memory; an envelope from Outlook or Thunderbird has still been neither read nor opened, and RSA-OAEP and authEnvelopedData have opened only in the research's probe. | open |  | 2026-09-06T17:25:10.804Z |  |
 | 142 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Nobody has heard an encrypted message open. Three things only a screen reader run settles: whether the sentence in the body is reached before somebody concludes the message is broken, whether hearing the same sentence in the bar as the message opens and again in the body is heard as thoroughness or as repetition, and whether the count in it addressed to 1 certificate is understood at all by somebody who has never been told what a certificate is. 13-14 on 2026-09-26: the four sentences that replace it on Windows, the opened one above the words with experimental in it and the three refusals, have not been heard either. | open |  | 2026-09-06T17:25:20.115Z |  |
 | 143 | 04 | unrun-verify | src/service/signed_mail.rs |  | Whether this computer holds a certificate an encrypted message was addressed to has never been asked of a real Windows certificate store holding a real S/MIME certificate. which_recipient_is_us is exercised against a store held in memory, so the three answers are tested and the Windows path that produces them is not. A store that answered wrongly rather than failing would tell somebody a private message was not meant for them. 13-14 on 2026-09-26: opening is now asked of the same store, the in-memory key opens the keyholder's envelopes, and the person's own MY store is asked in a test only for an envelope it holds no key for; a real certificate in the person's store opening a real message is still unmet. | open |  | 2026-09-06T17:25:20.633Z |  |
-| 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. 13-16 (2026-09-27): keys are now split across credential entries Windows will keep and up to eight are held, tested with GnuPG-made RSA-2048 and Ed25519 keys and a passphrase-locked one; still no real key from a correspondent, and no key has been imported on a real machine against the real credential store | open |  | 2026-09-06T19:22:31.977Z |  |
+| 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. 13-16 (2026-09-27): keys are now split across credential entries Windows will keep and up to eight are held, tested with GnuPG-made RSA-2048 and Ed25519 keys and a passphrase-locked one; still no real key from a correspondent, and no key has been imported on a real machine against the real credential store. 13-17.1 (2026-09-27): a key locked with a passphrase is kept locked and opened with the passphrase typed for it, tested with Dave's key locked by GnuPG; still no real locked key, which is ledger 651 | open |  | 2026-09-06T19:22:31.977Z |  |
 | 145 | 04 | stub | src/application/opening_pgp.rs |  | PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog. | fixed | 13-15: a multipart/encrypted message whose protocol is application/pgp-encrypted is marked at arrival in arrived_pgp_encrypted, and opening it offers the encrypted part to the key and takes what opens apart in memory under 13-14's rules. Closed by data::message_cache::how_it_arrived::tests::test_a_pgp_mime_message_is_marked_on_arrival and application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key, against a message GnuPG 2.4.9 made; a real correspondent's message is ledger 641 | 2026-09-06T19:22:32.467Z | 2026-09-27T03:36:08.000Z |
 | 146 | 04 | unrun-verify | src/presentation/wx_pgp_keys.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. Updated 2026-09-27 by 13-17: the import is now the key manager's (File, PGP Keys, Import from File and Paste a Key), one sentence per key, said and shown on the manager's line, and a key sent as an attachment is imported after a question in the reader; none of it has been heard. | open |  | 2026-09-06T19:22:32.974Z |  |
 | 147 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the hold announced. Pressing Send now says "Sending in 10 seconds. Undo Send takes it back." and whether that sentence finishes in time for somebody to hear it, decide and press Ctrl+Shift+Z inside ten seconds is the whole argument in Hold::DEFAULT's doc and no test can measure it. Plan 04.2-04's checkpoint, item 4, asks this question in the flow it matters most in. | open |  | 2026-09-06T23:11:30.841Z |  |
@@ -664,6 +664,8 @@ last_updated: 2026-09-27T08:08:59.000Z
 | 647 | 13 | todo | src/service/pgp/mod.rs |  | 13-17: service::pgp::import_a_private_key and WhatImportingAKeyFound are reached only by tests since the File menu's import was replaced by the key manager, which imports through import_keys. The tests in application::opening_pgp, application::reading_a_message and presentation::reader_text that put a key in place through it want moving to import_keys, and the old path deleting | open |  | 2026-09-27T08:08:59.000Z |  |
 | 648 | 13 | todo | src/presentation/wx_app.rs |  | 13-17: the question before a key attachment is imported is asked over the text reader when that is open and over the main window otherwise, so Enter on a key in the formatted message window asks over the main window and focus goes back there once it is answered, not to the formatted window. Read in the code, not tried. Carrying the asking window through UIUpdate::KeyAttachmentOffered would fix it | open |  | 2026-09-27T08:08:59.000Z |  |
 | 649 | 13 | todo | src/application/pgp_keys.rs |  | 13-17: the key manager writes Created and Expires day first in the computer's month names, through how_the_machine_writes_dates, and does not follow the date order and wording chosen for the message list. A question for Pratik whether the key list should follow that setting; recommended yes, in the presentation layer through date_display | open |  | 2026-09-27T08:08:59.000Z |  |
+| 650 | 13 | unrun-verify | src/presentation/wx_passphrase.rs |  | 13-17.1: nobody has heard Unlock a PGP Key with a screen reader. Whether the sentence naming the key is read when the dialog opens, whether the reason line "That passphrase did not open the key. Try again." is heard first when it asks again, whether focus is heard landing in a field named Passphrase, and whether a real password manager's paste lands in it. tests/a_locked_key_asks_for_its_passphrase.rs reads the name at the field's handle over MSAA and proves a WM_PASTE on a clipboard of its own, which is structure and not how it sounds | open |  | 2026-09-27T10:33:40.000Z |  |
+| 651 | 14 | unrun-verify | src/service/pgp/keys.rs |  | 13-17.1, phase 14's: no real correspondent's key locked with a passphrase has been through this. Dave's key, locked by GnuPG 2.4.9 with the default protection, is the only one tried. What a real account settles: that a key exported by Thunderbird, Kleopatra or GnuPG with other protection settings is kept locked, that its passphrase opens it through every locked part, and that a message a real correspondent sent to it asks once and then opens | open |  | 2026-09-27T10:33:40.000Z |  |
 
 ````json
 [
@@ -2389,7 +2391,7 @@ last_updated: 2026-09-27T08:08:59.000Z
     "phase": "04",
     "file": "src/service/pgp/keys.rs",
     "line": null,
-    "description": "No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. 13-16 (2026-09-27): keys are now split across credential entries Windows will keep and up to eight are held, tested with GnuPG-made RSA-2048 and Ed25519 keys and a passphrase-locked one; still no real key from a correspondent, and no key has been imported on a real machine against the real credential store",
+    "description": "No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. 13-16 (2026-09-27): keys are now split across credential entries Windows will keep and up to eight are held, tested with GnuPG-made RSA-2048 and Ed25519 keys and a passphrase-locked one; still no real key from a correspondent, and no key has been imported on a real machine against the real credential store. 13-17.1 (2026-09-27): a key locked with a passphrase is kept locked and opened with the passphrase typed for it, tested with Dave's key locked by GnuPG; still no real locked key, which is ledger 651",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T19:22:31.977Z",
@@ -8453,6 +8455,30 @@ last_updated: 2026-09-27T08:08:59.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T08:08:59.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 650,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_passphrase.rs",
+    "line": null,
+    "description": "13-17.1: nobody has heard Unlock a PGP Key with a screen reader. Whether the sentence naming the key is read when the dialog opens, whether the reason line \"That passphrase did not open the key. Try again.\" is heard first when it asks again, whether focus is heard landing in a field named Passphrase, and whether a real password manager's paste lands in it. tests/a_locked_key_asks_for_its_passphrase.rs reads the name at the field's handle over MSAA and proves a WM_PASTE on a clipboard of its own, which is structure and not how it sounds",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T10:33:40.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 651,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/service/pgp/keys.rs",
+    "line": null,
+    "description": "13-17.1, phase 14's: no real correspondent's key locked with a passphrase has been through this. Dave's key, locked by GnuPG 2.4.9 with the default protection, is the only one tried. What a real account settles: that a key exported by Thunderbird, Kleopatra or GnuPG with other protection settings is kept locked, that its passphrase opens it through every locked part, and that a message a real correspondent sent to it asks once and then opens",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T10:33:40.000Z",
     "resolved_at": null
   }
 ]

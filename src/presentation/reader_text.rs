@@ -24,6 +24,7 @@ use crate::common::types::MessageBody;
 use crate::service::mime::WhatTheSenderSaid;
 use crate::service::signed_mail::{Finding, SignatureOutcome, SignatureReport};
 use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
+use std::borrow::Cow;
 
 /// A heading inside the composed text, for jump-to-next-heading.
 ///
@@ -583,6 +584,22 @@ const THE_PGP_KEY_HERE_COULD_NOT_BE_READ: &str = "This message is encrypted with
 const THE_PGP_MESSAGE_IS_DAMAGED: &str = "This message is encrypted with PGP and the encrypted part is damaged, so it \
      cannot be opened even with the right key. Ask whoever sent it to send it \
      again. What is shown below is the damaged form rather than the message.";
+
+/// What is said when the message was encrypted to a key here that a
+/// passphrase is holding shut, and nobody has typed it yet (13-17.1).
+///
+/// The fifth reason, and a different thing to do from all four: nothing is
+/// wrong, and the next step is to type the passphrase where a reader window
+/// asks for it. Said in the preview, which never asks, and in a reader window
+/// whose question was cancelled. Whose key it is comes from the key, never
+/// from the message.
+fn the_pgp_key_here_is_locked(whose: &str) -> String {
+    format!(
+        "This message is encrypted to your key for {whose}, which is locked with a \
+         passphrase. Open the message in the reader to type it. What is shown below is the \
+         encrypted form rather than the message."
+    )
+}
 
 /// What is said above a message carrying a signature nothing here has checked.
 ///
@@ -1902,7 +1919,7 @@ impl ReaderDocument {
             // caller asking about a message whose body carries no armour, and
             // nothing is invented: a sentence about a message nothing here has
             // looked at would be a claim on no evidence.
-            bar.replace(ENCRYPTED_AND_NOT_OPENED_HERE, sentence)
+            bar.replace(ENCRYPTED_AND_NOT_OPENED_HERE, &sentence)
         });
         self
     }
@@ -2057,20 +2074,24 @@ impl ReaderDocument {
 /// `None` where nothing offered the message to a key, because its body carries
 /// no armour, which is nearly every message; and `None` where it opened, because
 /// the document was built from the words rather than from the armour and there
-/// is nothing to say. Four sentences for the four ways it did not open, kept
-/// apart because they are four different things to do next.
+/// is nothing to say. Five sentences for the five ways it did not open, kept
+/// apart because they are five different things to do next.
 fn the_reason_it_did_not_open(
     found: Option<&crate::service::pgp::WhatOpeningItFound>,
-) -> Option<&'static str> {
+) -> Option<Cow<'static, str>> {
     use crate::service::pgp::WhatOpeningItFound;
 
-    match found? {
-        WhatOpeningItFound::Opened(_) => None,
-        WhatOpeningItFound::NoKeyHere => Some(NO_PGP_KEY_ON_THIS_COMPUTER),
-        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => Some(THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT),
-        WhatOpeningItFound::TheKeyHereCouldNotBeRead => Some(THE_PGP_KEY_HERE_COULD_NOT_BE_READ),
-        WhatOpeningItFound::Damaged => Some(THE_PGP_MESSAGE_IS_DAMAGED),
-    }
+    let reason = match found? {
+        WhatOpeningItFound::Opened(_) => return None,
+        WhatOpeningItFound::NoKeyHere => NO_PGP_KEY_ON_THIS_COMPUTER,
+        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT,
+        WhatOpeningItFound::TheKeyHereCouldNotBeRead => THE_PGP_KEY_HERE_COULD_NOT_BE_READ,
+        WhatOpeningItFound::Damaged => THE_PGP_MESSAGE_IS_DAMAGED,
+        WhatOpeningItFound::TheKeyIsLocked(key) => {
+            return Some(Cow::Owned(the_pgp_key_here_is_locked(&key.whose)));
+        }
+    };
+    Some(Cow::Borrowed(reason))
 }
 
 /// What one message of several says where it begins, and the body it shows.
@@ -2101,6 +2122,7 @@ fn one_of_several(part: &ConversationPart) -> (Option<String>, MessageBody) {
     // The meeting after the envelope, the order the bar folds them in.
     let invitation = part.said.invitation.said();
     let said: Vec<&str> = reason
+        .as_deref()
         .into_iter()
         .chain(envelope)
         .chain(invitation.as_deref())
@@ -4080,14 +4102,32 @@ mod encryption_tests {
 
         let damaged = armoured_bar(WhatOpeningItFound::Damaged);
         assert!(damaged.contains("is damaged"), "{damaged}");
+
+        // The fifth, since 13-17.1: the key is here and locked, and the next
+        // step is to type its passphrase where the reader asks for it.
+        let locked = armoured_bar(adas_key_is_locked());
+        assert!(
+            locked.contains(
+                "This message is encrypted to your key for Ada Lovelace <ada@example.com>, \
+                 which is locked with a passphrase. Open the message in the reader to type it."
+            ),
+            "{locked}"
+        );
+    }
+
+    fn adas_key_is_locked() -> crate::service::pgp::WhatOpeningItFound {
+        crate::service::pgp::WhatOpeningItFound::TheKeyIsLocked(crate::service::pgp::LockedKey {
+            whose: "Ada Lovelace <ada@example.com>".to_string(),
+            fingerprint: "1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B".to_string(),
+        })
     }
 
     #[test]
     fn test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence() {
         // They will be written on different days and the way they collide is
-        // that somebody reuses a helper. Six comparisons and then four more
+        // that somebody reuses a helper. Ten comparisons and then five more
         // against the S/MIME sentence, which is about a message that cannot be
-        // opened at all rather than about a key.
+        // opened at all rather than about a key. Five reasons since 13-17.1.
         use crate::service::pgp::WhatOpeningItFound;
 
         let said: Vec<String> = [
@@ -4095,6 +4135,7 @@ mod encryption_tests {
             WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
             WhatOpeningItFound::TheKeyHereCouldNotBeRead,
             WhatOpeningItFound::Damaged,
+            adas_key_is_locked(),
         ]
         .into_iter()
         .map(armoured_bar)

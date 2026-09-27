@@ -726,7 +726,8 @@ experimental, and the menu item says so. A PGP message that opens shows its
 words and its files with nothing said above them. One that does not open shows
 its encrypted text, and the bar says why: there is no private key on this
 computer, the key here is not the one it was encrypted to, the key could not be
-read back, or the encrypted part is damaged. Everything above about opening
+read back, the encrypted part is damaged, or the key is locked with a
+passphrase nobody has typed yet. Everything above about opening
 again each time, search, pictures and meetings holds for PGP mail too.
 
 What this does not do yet: no encrypted message from Outlook or Thunderbird,
@@ -752,11 +753,14 @@ The box at the top of the window says what keys can and cannot do in this
 build:
 
 - A private key opens PGP messages sent to it.
-- A key locked with a passphrase cannot be imported yet. Export it from the
-  other program without a passphrase if you want to use it here.
+- A key locked with a passphrase is kept locked. Its passphrase is asked for
+  when you open a message that needs it, and remembered until Wixen Mail
+  closes. It is never saved.
 - Public keys are kept, and nothing uses them yet. Sending encrypted mail is
   not built, so a public key here waits for that.
 - Removing a key here removes it from this computer.
+
+A locked key's row says "Private key, locked with a passphrase".
 
 A key says whose it is, and nothing here checks that claim. Before you rely on
 somebody's public key, check its fingerprint with them another way, such as on
@@ -782,6 +786,36 @@ window, and Wixen Mail says what kind of key it is, the name it gives and its
 key id, and asks whether to import it. `Enter` answers No, so nothing is
 imported by accident. A `.asc` file that holds no key, usually a signature, is
 read as text instead.
+
+#### A key locked with a passphrase
+
+Most keys exported from another program carry a passphrase, and Wixen Mail
+keeps such a key locked, as it came. Nothing asks for the passphrase until a
+message needs it:
+
+1. Open a message encrypted to that key in either reader window. A dialog,
+   Unlock a PGP Key, opens first. It says
+   whose key it is, taking the name from the key itself, never from the
+   message.
+2. Type the passphrase, or paste it from your password manager. Focus starts
+   in the field, and `Alt+P` returns to it.
+3. Press `Enter`. The message opens to its words.
+
+If the passphrase is wrong, the dialog opens again and says so first: "That
+passphrase did not open the key. Try again." Press `Esc` to stop asking. The
+message then shows its encrypted text, with a sentence saying the key is
+locked and that opening the message in the reader lets you type it.
+
+The preview pane never asks, because a dialog appearing while you arrow
+through your messages would be in the way. It says the same sentence instead.
+A conversation opened in the reader asks once for each locked key its
+messages need.
+
+Once typed, the passphrase opens every message to that key until you close
+Wixen Mail. It is held in memory only. It is never written to your disk, the
+mail database or the Windows credential store, and it is gone when Wixen Mail
+closes or when you remove the key. There is no command to forget it sooner:
+close Wixen Mail.
 
 ### Message Actions
 

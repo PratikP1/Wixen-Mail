@@ -1337,6 +1337,19 @@ can and cannot do in this build. Each letter is used once.
 | Remove | `Alt+R` | Remove the chosen key, after a question that names it. `Enter` answers No |
 | Close | `Alt+O` or `Esc` | Close PGP Keys |
 
+### Unlock a PGP Key Dialog Accelerators
+
+A reader window opens this when a message it is opening needs a key that is
+locked with a passphrase, the first time that key is needed since Wixen Mail
+started. The preview never opens it. Focus starts in the passphrase field,
+which takes a paste.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Passphrase | `Alt+P` | The field the passphrase is typed or pasted into |
+| OK | `Enter` | Try the passphrase. A wrong one asks again, saying so first |
+| Cancel | `Esc` | Show the message without opening it, saying the key is locked |
+
 ### Send Feedback Dialog Accelerators
 
 The window opens on What is this about. Tab moves through the questions, the

@@ -494,7 +494,14 @@ pub fn build<W: WxWidget>(
         .build();
     set_accessible_name(&list, &what_the_label_says(THE_LIST_LABEL));
     for (at, heading) in THE_COLUMNS.iter().enumerate() {
-        let width = if at == 0 { 240 } else { 110 };
+        // The name widest, then the kind, which says "Private key, locked
+        // with a passphrase" for a locked key and would be cut off at the
+        // width of the rest.
+        let width = match at {
+            0 => 240,
+            1 => 230,
+            _ => 110,
+        };
         list.insert_column(at as i64, heading, ListColumnFormat::Left, width);
     }
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);

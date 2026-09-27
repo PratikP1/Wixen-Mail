@@ -226,12 +226,17 @@ pub enum ScanTarget {
     /// of them destructive. A fresh profile holds no key, so the scan meets
     /// it empty, with focus on Import from File.
     PgpKeys,
+    /// The dialog a reader window opens when a message needs a key locked
+    /// with a passphrase (#49, 13-17.1). A fresh profile holds no key, so it
+    /// is opened for a made-up one: the field and its name are the same
+    /// whoever's key it asks about.
+    UnlockAPgpKey,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 41] = [
+    pub const ALL: [ScanTarget; 42] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -273,6 +278,7 @@ impl ScanTarget {
         ScanTarget::Page,
         ScanTarget::PageWindow,
         ScanTarget::PgpKeys,
+        ScanTarget::UnlockAPgpKey,
     ];
 
     /// The name used on the command line.
@@ -319,6 +325,7 @@ impl ScanTarget {
             Self::Page => "page",
             Self::PageWindow => "page-window",
             Self::PgpKeys => "pgp-keys",
+            Self::UnlockAPgpKey => "unlock-a-pgp-key",
         }
     }
 

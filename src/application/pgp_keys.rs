@@ -11,21 +11,54 @@
 
 use crate::common::Result;
 use crate::common::how_the_machine_writes_dates::{self as the_machine, WhichLocale};
+use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
+
+/// Unlocking a key: what a reader window calls with the passphrase somebody
+/// typed, and what it answers.
+pub use crate::service::pgp::{LockedKey, Unlocking, unlock};
+
+/// The locked key a message needs before it can open, or `None` when it needs
+/// none: nearly every message, and every message whose key is open already.
+///
+/// Asked by a reader window before it builds the message, so it can ask for
+/// the passphrase first. The same two questions the reader's composition asks
+/// ([`crate::application::reading_a_message::put_together`]): what a PGP/MIME
+/// part came to, and otherwise what the body's armour came to. Ordinary mail
+/// costs one read of a column and a look at the body's form, and never
+/// reaches the credential store.
+pub fn the_locked_key_it_needs(
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    body: &MessageBody,
+) -> Option<LockedKey> {
+    use crate::application::opening_pgp;
+    let found = cache
+        .and_then(|cache| opening_pgp::for_pgp_mime(cache, message_row_id))
+        .and_then(|envelope| envelope.what_the_pgp_key_found().cloned())
+        .or_else(|| opening_pgp::for_body(body));
+    match found? {
+        pgp::WhatOpeningItFound::TheKeyIsLocked(key) => Some(key),
+        _ => None,
+    }
+}
 
 /// What keys can and cannot do in this build, said first in the key manager
 /// where a person reads it (#49).
 ///
 /// **True for the build it ships in, clause by clause.** Every later plan that
 /// changes what a key can do here rewrites this, and a case in this module
-/// pins each clause to the code that makes it true: a locked key refused by
-/// [`import`], a private key opening mail sent to it, no reader of the public
-/// keys outside this module, and a removal that leaves nothing behind.
+/// pins each clause to the code that makes it true: a locked key kept locked
+/// by [`import`], a private key opening mail sent to it, no reader of the
+/// public keys outside this module, and a removal that leaves nothing behind.
+/// Until 13-17.1 the second clause said a locked key could not be imported.
 pub const WHAT_KEYS_CAN_DO_HERE: &str = "A private key here opens PGP messages sent to it. \
-     A key locked with a passphrase cannot be imported yet. Public keys are kept here, and \
-     nothing uses them yet. Private keys are kept in the Windows credential store and public \
-     keys in Wixen Mail's own data, and removing a key here removes it from this computer.";
+     A key locked with a passphrase is kept locked. Its passphrase is asked for when you open \
+     a message that needs it in a reader window, and remembered until Wixen Mail closes; it is \
+     never saved. Public keys are kept here, and nothing uses them yet. Private keys are kept \
+     in the Windows credential store and public keys in Wixen Mail's own data, and removing a \
+     key here removes it from this computer.";
 
 /// The question asked before a key is removed, naming the key and what stops
 /// working without it.
@@ -98,7 +131,8 @@ fn what_it_can_do(listing: &KeyListing) -> &'static str {
 pub struct KeyRow {
     /// The first name and address the key carries.
     pub name: String,
-    /// "Private key" or "Public key".
+    /// "Private key", "Private key, locked with a passphrase" or "Public
+    /// key".
     pub kind: String,
     /// The short identifier, in groups of four.
     pub key_id: String,
@@ -117,6 +151,9 @@ pub struct KeyRow {
 pub fn what_a_row_says(listing: &KeyListing, which: WhichLocale<'_>) -> KeyRow {
     let mut kind = kind_of(listing).to_string();
     kind[..1].make_ascii_uppercase();
+    if listing.locked {
+        kind.push_str(", locked with a passphrase");
+    }
     KeyRow {
         name: listing
             .user_ids
@@ -294,6 +331,14 @@ pub fn import(cache: &MessageCache, armoured: &str) -> Vec<Imported> {
 
 fn what_became_of(cache: &MessageCache, answer: WhatBecameOfAKey) -> Imported {
     let (listing, said) = match answer {
+        WhatBecameOfAKey::Imported(listing) if listing.locked => {
+            let said = format!(
+                "The private key for {} was imported. It is locked with a passphrase, which \
+                 Wixen Mail asks for the first time you open a message that needs it.",
+                whose(&listing)
+            );
+            (listing, said)
+        }
         WhatBecameOfAKey::Imported(listing) => {
             let said = format!(
                 "The private key for {} was imported. Messages encrypted to it will open \
@@ -305,14 +350,6 @@ fn what_became_of(cache: &MessageCache, answer: WhatBecameOfAKey) -> Imported {
         WhatBecameOfAKey::AlreadyHere(listing) => {
             let said = format!(
                 "The private key for {} is already here, so nothing changed.",
-                whose(&listing)
-            );
-            (listing, said)
-        }
-        WhatBecameOfAKey::LockedWithAPassphrase(listing) => {
-            let said = format!(
-                "The private key for {} has a passphrase on it. Wixen Mail cannot ask for \
-                 one yet, so it would never open anything and it was not stored.",
                 whose(&listing)
             );
             (listing, said)
@@ -402,8 +439,9 @@ mod tests {
     use crate::common::temp_home::TempHome;
     use crate::service::pgp::describe;
     use crate::service::pgp::for_tests::{
-        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, a_message_to_alice, alices_private_key,
-        alices_public_key, carols_public_key, daves_locked_key, what_alices_message_says,
+        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, DAVES_FINGERPRINT, DAVES_PASSPHRASE,
+        a_message_to_alice, a_message_to_dave, alices_private_key, alices_public_key,
+        carols_public_key, daves_locked_key, what_alices_message_says, what_daves_message_says,
     };
     use crate::service::secret_store;
 
@@ -560,23 +598,36 @@ mod tests {
     // half; a sentence that dropped the clause would fail the first.
 
     #[test]
-    fn test_the_limits_say_a_locked_key_cannot_be_imported_and_none_is() {
+    fn test_the_limits_say_a_locked_key_is_kept_locked_and_one_is() {
         assert!(
-            WHAT_KEYS_CAN_DO_HERE
-                .contains("A key locked with a passphrase cannot be imported yet."),
+            WHAT_KEYS_CAN_DO_HERE.contains(
+                "A key locked with a passphrase is kept locked. Its passphrase is asked for \
+                 when you open a message that needs it in a reader window, and remembered \
+                 until Wixen Mail closes; it is never saved."
+            ),
             "{WHAT_KEYS_CAN_DO_HERE:?}"
         );
         let cache = a_cache("pgp-limits-locked");
 
         let answers = import(&cache, &daves_locked_key());
 
-        assert_eq!(answers.len(), 1, "{answers:?}");
-        assert!(
-            answers[0].said.contains("passphrase"),
-            "{}",
-            answers[0].said
+        assert_eq!(
+            answers
+                .iter()
+                .map(|imported| imported.said.as_str())
+                .collect::<Vec<&str>>(),
+            vec![
+                "The private key for Dave Example <dave@example.com> was imported. It is \
+                 locked with a passphrase, which Wixen Mail asks for the first time you open \
+                 a message that needs it."
+            ]
         );
-        assert_eq!(fingerprints_and_halves(&cache), vec![]);
+        let listed: Vec<(String, bool, bool)> = every_key_here(&cache)
+            .expect("the keys to be read")
+            .into_iter()
+            .map(|key| (key.fingerprint, key.private, key.locked))
+            .collect();
+        assert_eq!(listed, vec![(DAVES_FINGERPRINT.to_string(), true, true)]);
     }
 
     #[test]
@@ -681,6 +732,7 @@ mod tests {
                 .to_utc(),
             expires: None,
             private: true,
+            locked: false,
             can_encrypt: true,
             can_sign: true,
         }
@@ -700,6 +752,7 @@ mod tests {
                     .to_utc(),
             ),
             private: false,
+            locked: false,
             can_encrypt: true,
             can_sign: false,
         }
@@ -811,6 +864,80 @@ mod tests {
             "This attachment holds 2 keys: a private key naming Ada Lovelace \
              <ada@example.com>, key id 9C0D 1E2F 3A4B 5C6D, and a public key naming Grace \
              Hopper <grace@example.com>, key id 0B1C 2D3E 4F5A 6B7C. Import these keys?"
+        );
+    }
+
+    #[test]
+    fn test_a_locked_keys_row_says_it_is_locked() {
+        let locked = KeyListing {
+            locked: true,
+            ..adas_private_key()
+        };
+
+        assert_eq!(
+            what_a_row_says(&locked, IN_ENGLISH).kind,
+            "Private key, locked with a passphrase"
+        );
+        assert_eq!(
+            what_a_row_says(&adas_private_key(), IN_ENGLISH).kind,
+            "Private key"
+        );
+    }
+
+    /// What the reader's composition makes of a body, with nothing else about
+    /// the message to say.
+    fn shown(
+        body: &MessageBody,
+    ) -> crate::application::reading_a_message::WhatAMessageShowsAndSays {
+        crate::application::reading_a_message::put_together(
+            body.clone(),
+            crate::application::encrypted_mail::WhatTheEnvelopeSays::NotEncrypted,
+            crate::application::invitations::WhatTheInvitationSays::Nothing,
+            crate::application::answering::AnswerButtons::NotAsked,
+            crate::application::checking_signatures::SignatureCheck::NotSigned,
+        )
+    }
+
+    #[test]
+    fn test_a_message_to_a_locked_key_opens_once_its_passphrase_is_typed() {
+        // The reader window's open path, through the calls it makes: the
+        // composition says the key is locked, the window asks which key the
+        // message needs, unlocks it with what was typed, and composes again.
+        let cache = a_cache("pgp-locked-open");
+        import(&cache, &daves_locked_key());
+        let arrived = MessageBody::Plain(a_message_to_dave());
+        let dave = LockedKey {
+            whose: "Dave Example <dave@example.com>".to_string(),
+            fingerprint: DAVES_FINGERPRINT.to_string(),
+        };
+
+        assert_eq!(
+            shown(&arrived).said.opened,
+            Some(pgp::WhatOpeningItFound::TheKeyIsLocked(dave.clone()))
+        );
+        assert_eq!(shown(&arrived).body, arrived, "the armour was not kept");
+        assert_eq!(
+            the_locked_key_it_needs(Some(&cache), 0, &arrived),
+            Some(dave.clone())
+        );
+
+        assert_eq!(
+            unlock(&dave.fingerprint, DAVES_PASSPHRASE),
+            Unlocking::Unlocked
+        );
+
+        assert_eq!(
+            shown(&arrived).body,
+            MessageBody::Plain(what_daves_message_says().to_string())
+        );
+        assert_eq!(the_locked_key_it_needs(Some(&cache), 0, &arrived), None);
+        assert_eq!(
+            the_locked_key_it_needs(
+                Some(&cache),
+                0,
+                &MessageBody::Plain("One o'clock?".to_string())
+            ),
+            None
         );
     }
 
