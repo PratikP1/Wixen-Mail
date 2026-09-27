@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **PGP/MIME mail opens, experimentally.** The audit of 2026-09-15 (#52 point 2) found that
+  only PGP mail with its encrypted text in the body of the message ever reached your key. A
+  PGP/MIME message, the kind Thunderbird sends, keeps its encrypted text in a separate part,
+  so it opened as a blank message and nothing said why. Now a message that arrives as
+  PGP/MIME is recognised from its headers and marked, and opening it offers the encrypted
+  part to the PGP key you imported. One that opens shows its words and lists the files inside
+  it, on every surface that shows a message. One that does not open shows its encrypted text
+  with the same four reasons PGP mail already had: no private key here, the key here is not
+  the one it was encrypted to, the key could not be read back, or the encrypted part is
+  damaged. What opened is never stored, so search does not look inside it; a page holding it
+  fetches no picture, whatever the Reading tab says; and a meeting inside one is said and can
+  be answered, and never changes your calendar when you open the message. The version does not
+  move for this: no build has been cut since 1.0.0-alpha.1. Known limitations: no PGP/MIME
+  message from Thunderbird or Proton Mail has been read, only one made with GnuPG for a test
+  key; a PGP/MIME message that opens to files and no words says it has no text, which is half
+  true; and words or a file inside a PGP/MIME message sent as raw bytes rather than in one of
+  the usual text-safe encodings may come out changed, a letter outside UTF-8 read as a
+  replacement mark, because what the key opens is read as UTF-8 text before it is taken
+  apart.
 - **S/MIME encrypted mail opens, experimentally.** The audit of 2026-09-15 (#52 point 1)
   found that an S/MIME message encrypted to you could only be said to be encrypted: the code
   that would open it refused, because it could not be tested without a real certificate. It

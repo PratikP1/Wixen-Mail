@@ -456,19 +456,22 @@ What it cannot protect against: nothing, since nothing goes without the setting 
 command; and one narrower thing worth writing down, because it was checked rather than
 assumed. A receipt is decided from the header alone, when the message is selected, and never
 from whether an encrypted message opened, so a sender who asks cannot learn from a receipt
-whether you could read what they sent. The same holds for pictures: a PGP message that opens
-is shown as its words, as text, so it points at no picture a browser could fetch, and an
-S/MIME message that opens is shown on a page that fetches no picture at all, whatever the
-Reading tab says. Read from `receipt_for_the_open_message` and
-`send_receipt_for_the_open_message` in `src/presentation/wx_app.rs`,
-`src/application/receipts.rs`, `the_body_to_show` in `src/application/opening_pgp.rs`, and
-`for_mail_opened_from_encryption` in `src/presentation/html_renderer.rs`; the reasoning about
-encrypted mail is written out in `.cargo/audit.toml` under the `rsa` advisory.
+whether you could read what they sent. The same holds for pictures: a PGP message whose
+armour sits in its text is shown as its words, as text, so it points at no picture a browser
+could fetch, and a PGP/MIME message or an S/MIME message that opens, either of which can be a
+formatted page, is shown on a page that fetches no picture at all, whatever the Reading tab
+says. Read from `receipt_for_the_open_message` and `send_receipt_for_the_open_message` in
+`src/presentation/wx_app.rs`, `src/application/receipts.rs`, `the_body_to_show` and
+`for_pgp_mime` in `src/application/opening_pgp.rs`, and `for_mail_opened_from_encryption` in
+`src/presentation/html_renderer.rs`; the reasoning about encrypted mail is written out in
+`.cargo/audit.toml` under the `rsa` advisory.
 
 **Encrypted mail.** Since 2026-09-26 an S/MIME message encrypted to a certificate whose key is
 in your Windows certificate store is opened by Windows, with the key where it lives; the key
-is never read out of the store. What was inside is opened again every time you read the
-message and is never stored: the mail kept on this computer holds the message still
+is never read out of the store. The same day a PGP/MIME message, the kind Thunderbird sends,
+began to open with the PGP key you imported, and everything below holds for it too. What was
+inside is opened again every time you read the message and is never stored: the mail kept on
+this computer holds the message still
 encrypted, which is one reason search does not look inside encrypted mail. A file inside one
 is opened again when you save or read it, and is written only where you save it. A page
 holding opened mail fetches no picture, and a meeting inside one is said and can be answered
@@ -476,7 +479,8 @@ but never moves or removes anything on your calendar when you open the message, 
 fetch or a change made on opening would tell the sender that it opened. What it cannot
 protect against: a message that says what it wants to say after it opened, in its words,
 and a file you save and open elsewhere. Read from `src/application/encrypted_mail.rs`,
-`src/service/signed_mail.rs` and `src/application/meeting_changes.rs`.
+`src/application/opening_pgp.rs`, `src/service/signed_mail.rs` and
+`src/application/meeting_changes.rs`.
 
 **Links.** An address in a message can carry who you are: a mailing's links often hold a
 token per recipient, so opening one tells the site which recipient opened it, and when.

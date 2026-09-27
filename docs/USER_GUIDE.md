@@ -718,13 +718,26 @@ you open it.
 A message that was signed and then encrypted has its signature checked once it
 opens, and the signature is said the way any signature is.
 
+PGP mail is the other kind, the kind Thunderbird and Proton Mail use. Import
+your private key with File, Import PGP Private Key, and a PGP message encrypted
+to that key opens, whether its encrypted text sits in the body of the message
+or in a separate part, which is called PGP/MIME. Reading PGP mail is
+experimental, and the menu item says so. A PGP message that opens shows its
+words and its files with nothing said above them. One that does not open shows
+its encrypted text, and the bar says why: there is no private key on this
+computer, the key here is not the one it was encrypted to, the key could not be
+read back, or the encrypted part is damaged. Everything above about opening
+again each time, search, pictures and meetings holds for PGP mail too.
+
 What this does not do yet: no encrypted message from Outlook or Thunderbird,
 and no certificate somebody really uses, has been opened here; the messages
 tested were made with OpenSSL for a key held only while the tests run. A key
 that asks for a PIN or a password, or that lives on a smart card, has not been
-tried, so what Windows shows then is not known. A picture sent inside an
-encrypted message is not shown yet, and it is counted among the pictures not
-shown. Sending signed or encrypted mail is not built.
+tried, so what Windows shows then is not known. No PGP/MIME message from
+Thunderbird or Proton Mail has been read here either: the one tested was made
+with GnuPG. A picture sent inside an encrypted message is not shown yet, and it
+is counted among the pictures not shown. Sending signed or encrypted mail is
+not built.
 
 ### Message Actions
 

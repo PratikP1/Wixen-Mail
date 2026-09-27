@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 580
+open_count: 582
 waived_count: 0
-fixed_count: 60
-total_count: 640
-last_updated: 2026-09-26T23:30:00.000Z
+fixed_count: 61
+total_count: 643
+last_updated: 2026-09-27T03:36:08.000Z
 ---
 
 # Broken Windows Ledger
@@ -159,7 +159,7 @@ last_updated: 2026-09-26T23:30:00.000Z
 | 142 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Nobody has heard an encrypted message open. Three things only a screen reader run settles: whether the sentence in the body is reached before somebody concludes the message is broken, whether hearing the same sentence in the bar as the message opens and again in the body is heard as thoroughness or as repetition, and whether the count in it addressed to 1 certificate is understood at all by somebody who has never been told what a certificate is. 13-14 on 2026-09-26: the four sentences that replace it on Windows, the opened one above the words with experimental in it and the three refusals, have not been heard either. | open |  | 2026-09-06T17:25:20.115Z |  |
 | 143 | 04 | unrun-verify | src/service/signed_mail.rs |  | Whether this computer holds a certificate an encrypted message was addressed to has never been asked of a real Windows certificate store holding a real S/MIME certificate. which_recipient_is_us is exercised against a store held in memory, so the three answers are tested and the Windows path that produces them is not. A store that answered wrongly rather than failing would tell somebody a private message was not meant for them. 13-14 on 2026-09-26: opening is now asked of the same store, the in-memory key opens the keyholder's envelopes, and the person's own MY store is asked in a test only for an envelope it holds no key for; a real certificate in the person's store opening a real message is still unmet. | open |  | 2026-09-06T17:25:20.633Z |  |
 | 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. | open |  | 2026-09-06T19:22:31.977Z |  |
-| 145 | 04 | stub | src/application/opening_pgp.rs |  | PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog. | open |  | 2026-09-06T19:22:32.467Z |  |
+| 145 | 04 | stub | src/application/opening_pgp.rs |  | PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog. | fixed | 13-15: a multipart/encrypted message whose protocol is application/pgp-encrypted is marked at arrival in arrived_pgp_encrypted, and opening it offers the encrypted part to the key and takes what opens apart in memory under 13-14's rules. Closed by data::message_cache::how_it_arrived::tests::test_a_pgp_mime_message_is_marked_on_arrival and application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key, against a message GnuPG 2.4.9 made; a real correspondent's message is ledger 641 | 2026-09-06T19:22:32.467Z | 2026-09-27T03:36:08.000Z |
 | 146 | 04 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. | open |  | 2026-09-06T19:22:32.974Z |  |
 | 147 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the hold announced. Pressing Send now says "Sending in 10 seconds. Undo Send takes it back." and whether that sentence finishes in time for somebody to hear it, decide and press Ctrl+Shift+Z inside ten seconds is the whole argument in Hold::DEFAULT's doc and no test can measure it. Plan 04.2-04's checkpoint, item 4, asks this question in the flow it matters most in. | open |  | 2026-09-06T23:11:30.841Z |  |
 | 148 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | A message that leaves after a hold has never met a real server. Whether it arrives with the headers a recipient's client expects, and whether ten seconds feels long or short with a real mailbox syncing underneath, are both unsettled. | open |  | 2026-09-06T23:11:39.000Z |  |
@@ -655,6 +655,9 @@ last_updated: 2026-09-26T23:30:00.000Z
 | 638 | 13 | todo | src/application/meeting_changes.rs |  | 13-13: an update or a cancellation for a repeating meeting is said and not applied ("changing one day of a repeating meeting is not done here yet"), because the message is usually about one day and the calendar's copy is the series. Recommendation: apply it to that one day as a day cut out of the series, once the invitation's RECURRENCE-ID is read, beside answering one day of a series, which is not done either; Pratik's to schedule | open |  | 2026-09-26T23:00:00.000Z |  |
 | 639 | 14 | unrun-verify | src/service/signed_mail.rs |  | 13-14: a key marked for strong protection, or held on a smart card, has never been offered an envelope. Windows shows its own prompt for such a key from whichever thread asks, and CryptDecryptMessage is asked on the thread that opens a message, again when the reader window asks what opening it changes, and on a worker when a file inside is saved or read; whether the prompt comes to the front, how many times one opening asks, and which code a cancelled prompt gives (the mapping treats NTE_USER_CANCELLED, ERROR_CANCELLED and the smart card codes as the key refusing, unmeasured) are unknown. Phase 14's, with a real certificate | open |  | 2026-09-26T23:30:00.000Z |  |
 | 640 | 13 | todo | src/application/encrypted_mail.rs |  | 13-14: a picture sent inside an encrypted message, a cid: part inside the envelope, is not shown. The pictures carried into a page come from the files the message kept, which hold only the envelope, so the cleaner drops the cid: address and the page counts the picture among those not fetched, under a sentence about fetching that is not quite its reason. Recommendation: carry pictures from the opened parts, in memory, the next time a plan touches the page's carrying; the fetching rule for encrypted mail stays as it is | open |  | 2026-09-26T23:30:00.000Z |  |
+| 641 | 14 | unrun-verify | src/application/opening_pgp.rs |  | 13-15: no PGP/MIME message from a real correspondent's program has been opened here. The one tested was made by GnuPG 2.4.9 for a test key and wrapped in multipart/encrypted by hand, the way Thunderbird lays one out; Thunderbird, Proton Mail and any other program may name or type the encrypted part differently, protect the headers inside, or send an inner entity this reads wrongly. Needs a real key and a message from each of those programs | open |  | 2026-09-27T03:36:08.000Z |  |
+| 642 | 13 | todo | src/service/pgp/keys.rs |  | 13-15: what the key opens is handed back as text read lossily as UTF-8, which was right for inline PGP's words and is not for a PGP/MIME message, whose inside is a whole MIME entity that can carry words in another character set or a file as raw bytes; either comes out with replacement marks in it. Recommendation: hand the opened bytes to the application layer and let the MIME parser read each part's own charset, the next time a plan touches service::pgp | open |  | 2026-09-27T03:36:08.000Z |  |
+| 643 | 13 | todo | src/presentation/reader_text.rs |  | 13-15: a PGP/MIME message that opens to files and no words shows "This message has no text, or it has not been downloaded yet.", which is half false, because an opened PGP message says nothing above its words the way inline PGP says nothing. 13-14 fixed the same case for S/MIME by putting its opened sentence there. Recommendation: say "This message was encrypted with PGP and was opened here. It holds files and no words." in that place and only there, which needs Pratik's word on the sentence | open |  | 2026-09-27T03:36:08.000Z |  |
 
 ````json
 [
@@ -2393,10 +2396,10 @@ last_updated: 2026-09-26T23:30:00.000Z
     "file": "src/application/opening_pgp.rs",
     "line": null,
     "description": "PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog.",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "13-15: a multipart/encrypted message whose protocol is application/pgp-encrypted is marked at arrival in arrived_pgp_encrypted, and opening it offers the encrypted part to the key and takes what opens apart in memory under 13-14's rules. Closed by data::message_cache::how_it_arrived::tests::test_a_pgp_mime_message_is_marked_on_arrival and application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key, against a message GnuPG 2.4.9 made; a real correspondent's message is ledger 641",
     "recorded_at": "2026-09-06T19:22:32.467Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-27T03:36:08.000Z"
   },
   {
     "id": 146,
@@ -8336,6 +8339,42 @@ last_updated: 2026-09-26T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-26T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 641,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/application/opening_pgp.rs",
+    "line": null,
+    "description": "13-15: no PGP/MIME message from a real correspondent's program has been opened here. The one tested was made by GnuPG 2.4.9 for a test key and wrapped in multipart/encrypted by hand, the way Thunderbird lays one out; Thunderbird, Proton Mail and any other program may name or type the encrypted part differently, protect the headers inside, or send an inner entity this reads wrongly. Needs a real key and a message from each of those programs",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T03:36:08.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 642,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/pgp/keys.rs",
+    "line": null,
+    "description": "13-15: what the key opens is handed back as text read lossily as UTF-8, which was right for inline PGP's words and is not for a PGP/MIME message, whose inside is a whole MIME entity that can carry words in another character set or a file as raw bytes; either comes out with replacement marks in it. Recommendation: hand the opened bytes to the application layer and let the MIME parser read each part's own charset, the next time a plan touches service::pgp",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T03:36:08.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 643,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "13-15: a PGP/MIME message that opens to files and no words shows \"This message has no text, or it has not been downloaded yet.\", which is half false, because an opened PGP message says nothing above its words the way inline PGP says nothing. 13-14 fixed the same case for S/MIME by putting its opened sentence there. Recommendation: say \"This message was encrypted with PGP and was opened here. It holds files and no words.\" in that place and only there, which needs Pratik's word on the sentence",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T03:36:08.000Z",
     "resolved_at": null
   }
 ]
