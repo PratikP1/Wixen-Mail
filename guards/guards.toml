@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 384 records have arrived since and have not been through it.
+# 385 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32590,4 +32590,21 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 151 },
+]
+
+# The signing time left out of a signature made here, so Windows writes no
+# signed attributes and the signature covers the words and nothing about
+# them. Written 2026-09-27 by 13-19, measured with the whole library by hand
+# and with `scripts/guards.sh`.
+[[guard]]
+name = "a signature made here carries signed attributes"
+file = "src/service/signed_mail.rs"
+before = """            authenticated_attribute_count: 1,"""
+after = """            authenticated_attribute_count: 0,"""
+red = [
+    "service::signed_mail::sending::tests::with_the_keyholders_key::test_a_signature_made_here_carries_signed_attributes",
+]
+tests_last_seen = [
+    { file = "src/service/signed_mail.rs", tests = 127 },
+    { file = "src/service/signed_mail/sending.rs", tests = 8 },
 ]

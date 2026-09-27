@@ -90,8 +90,15 @@ pub fn sign_detached(content: &[u8], signer: &OwnCertificate) -> Result<Vec<u8>>
 /// here adds one, so a message is never sealed for somebody it was not
 /// addressed to.
 pub fn encrypt_to(content: &[u8], recipients: &[Vec<u8>]) -> Result<Vec<u8>> {
-    let _ = recipients;
-    Ok(content.to_vec())
+    #[cfg(target_os = "windows")]
+    {
+        super::windows_store::seal_for(content, recipients)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (content, recipients);
+        Err(Error::Security(NOT_ON_THIS_SYSTEM.to_string()))
+    }
 }
 
 /// The sentence for a system this has no signing for yet.
@@ -102,8 +109,21 @@ const NOT_ON_THIS_SYSTEM: &str = "Wixen Mail cannot sign or seal mail on this op
 /// the years 1950 to 2049, GeneralizedTime for any other, as the whole DER
 /// element.
 pub(super) fn signing_time(moment: DateTime<Utc>) -> Vec<u8> {
-    let _ = moment.year();
-    Vec::new()
+    /// DER's tags for the two ways of writing a moment.
+    const UTC_TIME: u8 = 0x17;
+    const GENERALIZED_TIME: u8 = 0x18;
+    // The two differ only in how much of the year they write.
+    let after_the_year = moment.format("%m%d%H%M%SZ");
+    let year = moment.year();
+    let (tag, written) = if (1950..2050).contains(&year) {
+        (UTC_TIME, format!("{:02}{after_the_year}", year % 100))
+    } else {
+        (GENERALIZED_TIME, format!("{year:04}{after_the_year}"))
+    };
+    // Thirteen or fifteen characters, so the length always fits in one byte.
+    let mut element = vec![tag, written.len() as u8];
+    element.extend_from_slice(written.as_bytes());
+    element
 }
 
 #[cfg(test)]
@@ -284,8 +304,15 @@ mod tests {
                     .all(|recipient| recipient.key_wrapping_algorithm == oid::RSA_ENCRYPTION),
                 "{recipients:?}"
             );
-            assert_eq!(recipient_matching(&recipients, &keyholder), Some(0));
-            assert_eq!(recipient_matching(&recipients, &alice), Some(1));
+            // Each certificate names one recipient and not the same one. Not
+            // in the order they were handed over: the recipients are a DER
+            // set, and a set is written sorted by its members' bytes.
+            let keyholders = recipient_matching(&recipients, &keyholder);
+            let alices = recipient_matching(&recipients, &alice);
+            assert!(
+                keyholders.is_some() && alices.is_some() && keyholders != alices,
+                "the keyholder at {keyholders:?}, Alice at {alices:?}"
+            );
             assert_eq!(
                 read.map(|read| read.content_algorithm).ok().as_deref(),
                 Some(AES_256_CBC)
