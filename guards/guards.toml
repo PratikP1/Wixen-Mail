@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 391 records have arrived since and have not been through it.
+# 392 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3956,7 +3956,7 @@ red = [
     "service::protocols::smtp::against_a_server_that_answers::test_a_blind_copy_reaches_the_server_and_never_the_message",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/smtp.rs", tests = 44 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 # ── Which mailbox a change is applied to ────────────────────────────────────
@@ -5291,7 +5291,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/service/protocols/smtp.rs", tests = 44 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 # ── One queued message, one identifier, however many attempts ───────────────
@@ -12448,7 +12448,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pictures.rs", tests = 44 },
-    { file = "src/service/protocols/smtp.rs", tests = 44 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 [[guard]]
@@ -12464,7 +12464,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pictures.rs", tests = 44 },
-    { file = "src/service/protocols/smtp.rs", tests = 44 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 [[guard]]
@@ -32624,7 +32624,7 @@ red = [
     "service::protocols::smtp::tests::protected::test_a_signed_and_encrypted_message_opens_to_a_signed_one_that_holds",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/smtp.rs", tests = 44 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 # The sender left out of those an outgoing message is sealed for, so the copy
@@ -32641,7 +32641,7 @@ red = [
     "service::protocols::smtp::tests::protected::test_a_signed_and_encrypted_message_opens_to_a_signed_one_that_holds",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/smtp.rs", tests = 44 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 # A message asked to go encrypted sent with its body in the clear, the
@@ -32656,7 +32656,7 @@ red = [
     "service::protocols::smtp::tests::protected::test_an_encrypted_message_opens_with_the_senders_own_key_to_its_words",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/smtp.rs", tests = 44 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 # A certificate kept from a signature that does not hold, so a forged message
@@ -32710,4 +32710,20 @@ red = [
 tests_last_seen = [
     { file = "src/service/pgp/keys.rs", tests = 33 },
     { file = "src/service/pgp/sending.rs", tests = 14 },
+]
+
+# A message asked to go encrypted with OpenPGP sent with its body where the
+# armour should be when a key is missing, so the one message the person wanted
+# private is the one that goes out readable. Written 2026-09-27 by 13-20,
+# measured with the whole library by hand.
+[[guard]]
+name = "an openpgp message whose key is missing does not go out unwrapped"
+file = "src/service/protocols/smtp.rs"
+before = """    let armour = built(pgp::encrypt_for(entity, recipients, sender))?;"""
+after = """    let armour = built(pgp::encrypt_for(entity, recipients, sender)).unwrap_or_else(|_| String::from_utf8_lossy(entity).into_owned());"""
+red = [
+    "service::protocols::smtp::tests::pgp_protected::test_a_recipient_with_no_pgp_key_stops_the_message_and_is_named",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
