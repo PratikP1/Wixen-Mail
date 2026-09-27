@@ -16,7 +16,7 @@
 //! without an add-in (the phase's decision 23). The announcement after the
 //! send names the family, so the choice is never silent.
 
-use crate::service::pgp::LockedKey;
+use crate::service::pgp::{LockedKey, Recipient};
 use crate::service::protocols::smtp::Protection;
 use crate::service::signed_mail::sending::OwnCertificate;
 
@@ -34,14 +34,77 @@ pub enum Choice {
 impl Choice {
     /// The word written in the outbox row and the draft.
     pub const fn as_stored(self) -> &'static str {
-        "plain"
+        match self {
+            Choice::Plain => "plain",
+            Choice::Signed => "signed",
+            Choice::Encrypted => "encrypted",
+            Choice::SignedAndEncrypted => "signed and encrypted",
+        }
     }
 
     /// The choice a stored word names. Nothing written, or a word this build
     /// does not know, reads as plain: every row and draft from before the
     /// column existed was plain.
-    pub fn from_stored(_stored: Option<&str>) -> Self {
-        Choice::Plain
+    pub fn from_stored(stored: Option<&str>) -> Self {
+        [
+            Choice::Signed,
+            Choice::Encrypted,
+            Choice::SignedAndEncrypted,
+        ]
+        .into_iter()
+        .find(|choice| Some(choice.as_stored()) == stored)
+        .unwrap_or(Choice::Plain)
+    }
+
+    const fn signs(self) -> bool {
+        matches!(self, Choice::Signed | Choice::SignedAndEncrypted)
+    }
+
+    const fn encrypts(self) -> bool {
+        matches!(self, Choice::Encrypted | Choice::SignedAndEncrypted)
+    }
+
+    /// The choice as the end of "this message cannot be ...".
+    const fn as_said(self) -> &'static str {
+        match self {
+            Choice::Plain => "sent",
+            Choice::Signed => "signed",
+            Choice::Encrypted => "encrypted",
+            Choice::SignedAndEncrypted => "signed and encrypted",
+        }
+    }
+
+    /// What a key of the sender's own has to be able to do for this choice,
+    /// as the end of "a key that ...".
+    const fn what_a_key_must_do(self) -> &'static str {
+        match self {
+            Choice::Plain => "send mail",
+            Choice::Signed => "sign",
+            Choice::Encrypted => "have mail encrypted to it",
+            Choice::SignedAndEncrypted => "sign and have mail encrypted to it",
+        }
+    }
+}
+
+impl YourPgpKey {
+    /// Whether this key can do what the choice asks of the sender's key:
+    /// sign, and be encrypted to so the Sent copy opens.
+    fn can_do(&self, choice: Choice) -> bool {
+        (!choice.signs() || self.signs) && (!choice.encrypts() || self.can_be_encrypted_to)
+    }
+}
+
+impl WhatIsHeld {
+    /// What is kept for this address, which is nothing when it is not listed.
+    fn kept_for(&self, address: &str) -> KeptFor {
+        self.theirs
+            .iter()
+            .find(|kept| kept.address.eq_ignore_ascii_case(address))
+            .cloned()
+            .unwrap_or_else(|| KeptFor {
+                address: address.to_string(),
+                ..KeptFor::default()
+            })
     }
 }
 
@@ -114,24 +177,205 @@ pub enum CannotProtect {
     TheKeyIsLocked(LockedKey),
 }
 
+/// Where a PGP key is imported, named the way the menu reads.
+const WHERE_KEYS_ARE_IMPORTED: &str = "File, PGP Keys";
+
 impl CannotProtect {
-    /// The sentence said and shown, ending with what became of the message.
+    /// The sentence said and shown: what stopped it, what to do, and what
+    /// became of the message.
     pub fn said(&self) -> String {
-        String::new()
+        let why = match self {
+            CannotProtect::NoKeyOfYourOwn { from, choice } => format!(
+                "You have no certificate or PGP key for {from} that can {}, so this message \
+                 cannot be {}.",
+                choice.what_a_key_must_do(),
+                choice.as_said()
+            ),
+            CannotProtect::NoKeyFor {
+                address,
+                yours: YoursAre::Both,
+            } => format!(
+                "There is no certificate or PGP key here for {address}, so this message cannot \
+                 be encrypted to that address. A certificate is kept when {address} sends you \
+                 signed mail, and a PGP key can be imported with {WHERE_KEYS_ARE_IMPORTED}."
+            ),
+            CannotProtect::NoKeyFor {
+                address,
+                yours: YoursAre::Certificate,
+            } => format!(
+                "There is no certificate here for {address}, and you have no PGP key to use \
+                 instead, so this message cannot be encrypted to that address. A certificate is \
+                 kept when {address} sends you signed mail."
+            ),
+            CannotProtect::NoKeyFor {
+                address,
+                yours: YoursAre::PgpKey,
+            } => format!(
+                "There is no PGP key here for {address}, and you have no certificate to use \
+                 instead, so this message cannot be encrypted to that address. A PGP key can be \
+                 imported with {WHERE_KEYS_ARE_IMPORTED}."
+            ),
+            CannotProtect::NoOneKindReachesEveryone {
+                without_a_certificate,
+                without_a_key,
+            } => format!(
+                "No one kind of encryption reaches everybody this message is to: there is no \
+                 certificate here for {without_a_certificate}, and no PGP key here for \
+                 {without_a_key}. Send them separate messages, or import the missing key with \
+                 {WHERE_KEYS_ARE_IMPORTED}."
+            ),
+            CannotProtect::ABlindCopyWouldShow => "An encrypted message names everybody it is \
+                 encrypted to, so a blind copy would not stay blind. Move the Bcc addresses to Cc, \
+                 or send them a message of their own."
+                .to_string(),
+            CannotProtect::TheKeyIsLocked(key) => format!(
+                "The PGP key for {} is locked and its passphrase has not been typed, so this \
+                 message cannot be signed.",
+                key.whose
+            ),
+        };
+        format!("{why} Nothing was sent.")
     }
 }
 
 /// The protection a message gets, or why it cannot get it.
 ///
-/// `to` is every recipient who can be seen, To and Cc; `blind` is Bcc.
+/// `to` is every recipient who can be seen, To and Cc; `blind` is Bcc. S/MIME
+/// is tried first and OpenPGP second, for the reason the module gives. Never
+/// plain for anything but [`Choice::Plain`].
 pub fn what_protection_it_gets(
-    _choice: Choice,
-    _from: &str,
-    _to: &[String],
-    _blind: &[String],
-    _held: &WhatIsHeld,
+    choice: Choice,
+    from: &str,
+    to: &[String],
+    blind: &[String],
+    held: &WhatIsHeld,
 ) -> Result<Protection, CannotProtect> {
-    Ok(Protection::Plain)
+    if choice == Choice::Plain {
+        return Ok(Protection::Plain);
+    }
+    // Both families write every recipient's key on the envelope where anybody
+    // who received the message can read it.
+    if choice.encrypts() && !blind.is_empty() {
+        return Err(CannotProtect::ABlindCopyWouldShow);
+    }
+    let certificate = held.own_certificate.as_ref();
+    let key = held.own_key.as_ref().filter(|key| key.can_do(choice));
+    let yours = match (certificate, key) {
+        (Some(_), Some(_)) => YoursAre::Both,
+        (Some(_), None) => YoursAre::Certificate,
+        (None, Some(_)) => YoursAre::PgpKey,
+        (None, None) => {
+            return Err(CannotProtect::NoKeyOfYourOwn {
+                from: from.to_string(),
+                choice,
+            });
+        }
+    };
+    let kept: Vec<KeptFor> = everybody_else(from, to, blind)
+        .into_iter()
+        .map(|address| held.kept_for(address))
+        .collect();
+    let every_one_has = |has: fn(&KeptFor) -> bool| !choice.encrypts() || kept.iter().all(has);
+
+    if let Some(own) = certificate
+        && every_one_has(has_a_certificate)
+    {
+        return Ok(with_s_mime(choice, own, &kept));
+    }
+    if let Some(key) = key
+        && every_one_has(has_a_key)
+    {
+        if choice.signs()
+            && let Some(locked) = &key.waiting_for_its_passphrase
+        {
+            return Err(CannotProtect::TheKeyIsLocked(locked.clone()));
+        }
+        return Ok(with_openpgp(choice, key, &kept));
+    }
+    Err(who_cannot_be_reached(&kept, yours))
+}
+
+/// Every recipient but the sender, each once, in the order written.
+///
+/// Not the sender, because the sender is always one of those a message is
+/// encrypted to, from their own key or certificate.
+fn everybody_else<'a>(from: &str, to: &'a [String], blind: &'a [String]) -> Vec<&'a str> {
+    let mut everybody: Vec<&str> = Vec::new();
+    for address in to.iter().chain(blind).map(String::as_str) {
+        let seen = |other: &&str| other.eq_ignore_ascii_case(address);
+        if !address.eq_ignore_ascii_case(from) && !everybody.iter().any(seen) {
+            everybody.push(address);
+        }
+    }
+    everybody
+}
+
+fn has_a_certificate(kept: &KeptFor) -> bool {
+    !kept.certificates.is_empty()
+}
+
+fn has_a_key(kept: &KeptFor) -> bool {
+    !kept.public_keys.is_empty()
+}
+
+fn with_s_mime(choice: Choice, own: &OwnCertificate, kept: &[KeptFor]) -> Protection {
+    let own = own.clone();
+    let recipients: Vec<Vec<u8>> = kept
+        .iter()
+        .flat_map(|kept| kept.certificates.iter().cloned())
+        .collect();
+    match choice {
+        Choice::Plain => Protection::Plain,
+        Choice::Signed => Protection::SmimeSigned { own },
+        Choice::Encrypted => Protection::SmimeEncrypted { own, recipients },
+        Choice::SignedAndEncrypted => Protection::SmimeSignedAndEncrypted { own, recipients },
+    }
+}
+
+fn with_openpgp(choice: Choice, key: &YourPgpKey, kept: &[KeptFor]) -> Protection {
+    let sender = key.fingerprint.clone();
+    let recipients: Vec<Recipient> = kept
+        .iter()
+        .flat_map(|kept| {
+            kept.public_keys.iter().map(|armour| Recipient {
+                address: kept.address.clone(),
+                public_key: armour.clone(),
+            })
+        })
+        .collect();
+    match choice {
+        Choice::Plain => Protection::Plain,
+        Choice::Signed => Protection::PgpSigned { sender },
+        Choice::Encrypted => Protection::PgpEncrypted { recipients, sender },
+        Choice::SignedAndEncrypted => Protection::PgpSignedAndEncrypted { recipients, sender },
+    }
+}
+
+/// Who stopped a message being encrypted, when neither family reaches
+/// everybody: the first recipient with nothing of the kind the sender holds,
+/// or, when the sender holds both and each recipient has one, one of each.
+fn who_cannot_be_reached(kept: &[KeptFor], yours: YoursAre) -> CannotProtect {
+    let unreachable = |kept: &&KeptFor| match yours {
+        YoursAre::Certificate => !has_a_certificate(kept),
+        YoursAre::PgpKey => !has_a_key(kept),
+        YoursAre::Both => !has_a_certificate(kept) && !has_a_key(kept),
+    };
+    if let Some(kept) = kept.iter().find(unreachable) {
+        return CannotProtect::NoKeyFor {
+            address: kept.address.clone(),
+            yours,
+        };
+    }
+    let first_without = |has: fn(&KeptFor) -> bool| {
+        kept.iter()
+            .find(|kept| !has(kept))
+            .map(|kept| kept.address.clone())
+            .unwrap_or_default()
+    };
+    CannotProtect::NoOneKindReachesEveryone {
+        without_a_certificate: first_without(has_a_certificate),
+        without_a_key: first_without(has_a_key),
+    }
 }
 
 #[cfg(test)]

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 392 records have arrived since and have not been through it.
+# 394 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17392,7 +17392,7 @@ red = [
     "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 6 },
+    { file = "src/data/message_cache/drafts.rs", tests = 8 },
     { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
@@ -32726,4 +32726,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/protocols/smtp.rs", tests = 48 },
+]
+
+# A message asked to go encrypted sent plain when a recipient has nothing kept,
+# so the person who ticked Encrypt hears it went and it went readable. Written
+# 2026-09-27 by 13-21, measured with the whole library.
+[[guard]]
+name = "a message asked to go encrypted to somebody with no key is refused, not sent plain"
+file = "src/application/protecting.rs"
+before = """    Err(who_cannot_be_reached(&kept, yours))"""
+after = """    let _ = who_cannot_be_reached(&kept, yours);
+    Ok(Protection::Plain)"""
+red = [
+    "application::protecting::tests::test_the_refusal_names_the_first_recipient_with_nothing_kept",
+    "application::protecting::tests::test_with_only_a_key_held_a_recipient_with_only_a_certificate_is_named",
+    "application::protecting::tests::with_a_certificate::test_with_both_held_the_refusal_names_the_recipient_with_neither",
+    "application::protecting::tests::with_a_certificate::test_with_both_held_and_no_one_kind_reaching_everybody_one_of_each_is_named",
+]
+tests_last_seen = [
+    { file = "src/application/protecting.rs", tests = 20 },
+]
+
+# A draft saved without whether it is to go signed or encrypted, so one
+# reopened and sent goes out plain. Written 2026-09-27 by 13-21, measured with
+# the whole library.
+[[guard]]
+name = "a draft keeps whether it is to go signed or encrypted"
+file = "src/data/message_cache/drafts.rs"
+before = """                draft.protection.as_stored(),"""
+after = """                Choice::Plain.as_stored(),"""
+red = [
+    "data::message_cache::drafts::tests::test_a_draft_keeps_whether_it_is_to_go_signed_or_encrypted",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/drafts.rs", tests = 8 },
 ]

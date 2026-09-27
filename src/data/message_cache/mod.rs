@@ -3210,6 +3210,13 @@ impl MessageCache {
             "somebody_chose_it",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        // Whether a message goes signed, encrypted, both or neither, as the
+        // word `application::protecting::Choice` writes. On the queued row so a
+        // message scheduled or tried again goes out as it was asked to, and on
+        // the draft so one reopened keeps its Encrypt box. Nothing on every
+        // row and draft already here, which reads as plain: what each was.
+        self.ensure_column_exists("outbox_queue", "protection", "TEXT")?;
+        self.ensure_column_exists("drafts", "protection", "TEXT")?;
         // What kind of day an event is. Empty for every event stored before
         // there were categories, which is the right answer for all of them.
         self.ensure_column_exists("calendar_events", "categories", "TEXT NOT NULL DEFAULT ''")?;

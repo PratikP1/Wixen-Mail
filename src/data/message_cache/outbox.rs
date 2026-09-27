@@ -79,14 +79,14 @@ impl MessageCache {
     ) -> Result<()> {
         let (send_after, somebody_chose_it) = when.written_down();
         self.conn.execute(
-            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 &item.id, &item.account_id, &item.to_addr, &item.cc_addr, &item.bcc_addr,
                 &item.subject, &item.body, &item.body_html, &item.attachments,
                 &item.attempt_count, &item.last_error, &item.created_at,
                 &item.in_reply_to, &item.references, &send_after,
-                &somebody_chose_it,
+                &somebody_chose_it, item.protection.as_stored(),
             ],
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
@@ -164,7 +164,7 @@ impl MessageCache {
         account_id: &str,
     ) -> Result<Vec<(QueuedOutboxMessage, GoAfter)>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection
              FROM outbox_queue
              WHERE account_id = ?1
              ORDER BY created_at ASC"
@@ -187,7 +187,7 @@ impl MessageCache {
                     created_at: row.get(11)?,
                     in_reply_to: row.get(12)?,
                     references: row.get(13)?,
-                    protection: Choice::Plain,
+                    protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
                 };
                 let when =
                     GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);

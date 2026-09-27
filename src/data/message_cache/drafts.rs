@@ -11,9 +11,9 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
 
         self.conn.execute(
-            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments)
+            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments, protection)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9, ?10, ?11, ?12, ?13)",
+                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 draft.id,
                 draft.account_id,
@@ -28,6 +28,7 @@ impl MessageCache {
                 draft.references,
                 draft.body_html,
                 crate::application::attaching::joined(&draft.attachments),
+                draft.protection.as_stored(),
             ],
         ).map_err(|e| Error::Other(format!("Failed to save draft: {}", e)))?;
 
@@ -39,7 +40,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments, protection
              FROM drafts
              WHERE account_id = ?1
              ORDER BY updated_at DESC",
@@ -62,7 +63,7 @@ impl MessageCache {
                     references: row.get(10)?,
                     body_html: row.get(11)?,
                     attachments: crate::application::attaching::split(&row.get::<_, String>(12)?),
-                    protection: Choice::Plain,
+                    protection: Choice::from_stored(row.get::<_, Option<String>>(13)?.as_deref()),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
@@ -80,7 +81,7 @@ impl MessageCache {
         let result = self
             .conn
             .query_row(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments, protection
              FROM drafts
              WHERE id = ?1",
                 params![draft_id],
@@ -101,7 +102,9 @@ impl MessageCache {
                         attachments: crate::application::attaching::split(
                             &row.get::<_, String>(12)?,
                         ),
-                        protection: Choice::Plain,
+                        protection: Choice::from_stored(
+                            row.get::<_, Option<String>>(13)?.as_deref(),
+                        ),
                     })
                 },
             )
