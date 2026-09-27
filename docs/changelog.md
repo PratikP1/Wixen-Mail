@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Several PGP private keys, experimentally.** Wixen Mail held one PGP private key, and
+  importing another replaced it. It now keeps up to eight, and a message opens with whichever
+  of them it was encrypted to. File, Import PGP Private Key adds the key it is given, says the
+  sentences it said before, and treats a key already here as imported. Its sentence for a key
+  that could not be saved has two new reasons: the key is too long, or eight keys are already
+  here. Underneath, a
+  file holding several keys is read one key at a time: a private key goes to the Windows
+  credential store, one with a passphrase on it is refused on its own, and somebody else's
+  public key can be kept in the mail database, where it is not secret. Nothing you can reach
+  yet keeps a public key, lists your keys, removes one or exports one: that is the key
+  manager, which is not built yet. The version does not move for this: no build has been cut
+  since 1.0.0-alpha.1. Known limitations: no real key from a real correspondent has been
+  imported, only keys GnuPG made for tests; and the experimental note on the File menu still
+  says Wixen Mail holds one key at a time, until the key manager rewrites it.
 - **PGP/MIME mail opens, experimentally.** The audit of 2026-09-15 (#52 point 2) found that
   only PGP mail with its encrypted text in the body of the message ever reached your key. A
   PGP/MIME message, the kind Thunderbird sends, keeps its encrypted text in a separate part,
@@ -620,6 +634,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **An ordinary RSA PGP private key can be imported on Windows.** Windows keeps at most 1,280
+  characters in one entry of its credential store, and a PGP private key made with RSA is
+  longer: the test key here is 1,836 characters, and a usual key with an encryption subkey is
+  over 6,000. So importing one said "Your key could not be saved" on every real Windows
+  machine, and no test saw it, because the stand-in store the tests use took anything. The
+  stand-in now refuses what Windows refuses, and a key is split across as many as eight
+  entries under `wixen-mail-pgp`, each short enough to keep. A key longer than 10,240
+  characters is refused with a sentence saying so and is never cut. A key an older version
+  kept in its one entry is moved into the new entries the first time it is used, and
+  uninstalling erases every one of them. The version does not move for this: no build has
+  been cut since 1.0.0-alpha.1. Known limitations: this has been measured against the limit
+  written in the Windows credential library, not against a real key imported on a real
+  machine.
 - **An invitation finds the meeting Google, Outlook or a calendar server already put on your
   calendar.** Google and Outlook file an invitation on your calendar themselves, under a name
   of their own, while the invitation names the meeting by the name every calendar shares. So
