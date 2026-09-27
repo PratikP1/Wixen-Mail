@@ -190,15 +190,16 @@ const CALLED_OFF: &str = "cancelled";
 ///
 /// What the message would change is asked first, so a message that would
 /// change nothing says nothing: a reason not to apply a change nobody asked
-/// for is a sentence to listen past on every message. Then who sent it, before
-/// whether changes are allowed, because a stranger's message is the reason
-/// that matters and switching changes on would not make it apply.
+/// for is a sentence to listen past on every message. Then where it was found,
+/// because a change inside encrypted mail is never made on opening. Then who
+/// sent it, before whether changes are allowed, because a stranger's message is
+/// the reason that matters and switching changes on would not make it apply.
 pub fn what_opening_it_changes(
     asked: WhatItAsks,
     invitation: &Invitation,
     held: Option<TheCalendarsCopy<'_>>,
     sender: &str,
-    _found: WhereItWasFound,
+    found: WhereItWasFound,
     allowed: Allowed,
     dates: DateSettings,
 ) -> MeetingChange {
@@ -208,6 +209,11 @@ pub fn what_opening_it_changes(
     let Some(wanted) = what_it_would_change(asked, invitation, &held, dates) else {
         return MeetingChange::Nothing;
     };
+    // Before who sent it: a change found inside encrypted mail is not made
+    // whoever sent it, organiser or not, so no other reason is the one to say.
+    if found == WhereItWasFound::InsideEncryptedMail {
+        return MeetingChange::SaidNotApplied(Why::InsideEncryptedMail);
+    }
     if let Some(why) = why_it_is_not_applied(&held, sender, allowed) {
         return MeetingChange::SaidNotApplied(why);
     }

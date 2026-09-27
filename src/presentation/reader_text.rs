@@ -459,9 +459,39 @@ fn named_from(says: &WhatTheInvitationSays, attachments: &mut [ReaderAttachment]
 /// Per message, because a conversation holds a decision per message and one
 /// list covers all of them.
 fn attachments_of_part(part: &ConversationPart) -> Vec<ReaderAttachment> {
-    let mut attachments = attachments_of(&part.message);
+    let mut attachments = if part.said.envelope.is_opened() {
+        the_files_inside(part)
+    } else {
+        attachments_of(&part.message)
+    };
     named_from(&part.said.invitation, &mut attachments);
     attachments
+}
+
+/// The files inside an envelope that opened, listed in place of the envelope.
+///
+/// The envelope is the one file an encrypted message carries in the clear,
+/// and there is nothing in it anybody could open. Each file inside is found
+/// again by its place among the files inside, from the envelope opened again,
+/// because none of them is kept.
+fn the_files_inside(part: &ConversationPart) -> Vec<ReaderAttachment> {
+    part.said
+        .envelope
+        .parts_inside()
+        .iter()
+        .enumerate()
+        .map(|(index, file)| ReaderAttachment {
+            message_row_id: part.message.message_id,
+            uid: part.message.uid,
+            index,
+            name: file.described.display_name(),
+            mime_type: file.described.mime_type.clone(),
+            size: file.described.size,
+            description: file.described.description.clone(),
+            kind_the_message_gave: None,
+            inside_the_envelope: true,
+        })
+        .collect()
 }
 
 /// The warning shown above a message, when it has earned one.
@@ -747,12 +777,20 @@ pub fn conversation_html(subject: &str, parts: &[ConversationPart]) -> String {
     // same composition. Two of them would be two chances to disagree about
     // what level a reply is at, and the whole point of this surface is that
     // the levels are right.
-    HtmlRenderer::new().render_thread(subject, &thread_parts(parts))
+    the_renderer_for(parts, HtmlRenderer::new()).render_thread(subject, &thread_parts(parts))
 }
 
-/// The renderer a page of these messages is built with.
-pub fn the_renderer_for(_parts: &[ConversationPart], renderer: HtmlRenderer) -> HtmlRenderer {
-    renderer
+/// The renderer a page of these messages is built with: one that fetches no
+/// picture when any of them was opened from its encryption here.
+///
+/// The whole page and not only that message's part, because a page is one
+/// document and one fetch from it is enough to say it opened (T-13-14-01).
+fn the_renderer_for(parts: &[ConversationPart], renderer: HtmlRenderer) -> HtmlRenderer {
+    if parts.iter().any(|part| part.said.envelope.is_opened()) {
+        renderer.for_mail_opened_from_encryption()
+    } else {
+        renderer
+    }
 }
 
 /// The parts as the page renderer takes them.
@@ -819,7 +857,11 @@ pub fn preview_html(subject: &str, parts: &[ConversationPart]) -> String {
             top.to_string()
         }
     });
-    HtmlRenderer::new().render_thread_under_a_bar(bar.as_deref(), subject, &thread_parts(parts))
+    the_renderer_for(parts, HtmlRenderer::new()).render_thread_under_a_bar(
+        bar.as_deref(),
+        subject,
+        &thread_parts(parts),
+    )
 }
 
 /// What the preview says in place of the account of a signature check.
@@ -1753,7 +1795,8 @@ impl ReaderDocument {
         self
     }
 
-    /// Say why an S/MIME encrypted message has nothing in it.
+    /// Say what became of an S/MIME encrypted message: opened here, or why it
+    /// has nothing in it.
     ///
     /// [`WhatTheEnvelopeSays::NotEncrypted`] for nearly all mail, and then
     /// nothing changes anywhere, which is [`with_encryption`](Self::with_encryption)'s
@@ -1796,7 +1839,18 @@ impl ReaderDocument {
         let Some(sentence) = says.said() else {
             return self;
         };
-        self.text = instead_of_nothing_to_read(&self.text, sentence);
+        // An envelope that opened to words is the one case with words below:
+        // they are the body now, so the sentence goes between the header lines
+        // and the first of them, the way a meeting's does. Every other
+        // sentence, an opened envelope holding only files among them, stands
+        // where the body would otherwise say there is no text or that it has
+        // not been downloaded, which is false about all of them.
+        let nothing_below = self.text.ends_with(&format!("{}\n", nothing_to_read()));
+        if says.is_opened() && !nothing_below {
+            self = self.said_above_the_body(sentence);
+        } else {
+            self.text = instead_of_nothing_to_read(&self.text, sentence);
+        }
         self.warning = Some(match self.warning.take() {
             // Under what the filter said, the way a signature verdict goes
             // under it. A bar that reshuffles itself by how bad the news is has

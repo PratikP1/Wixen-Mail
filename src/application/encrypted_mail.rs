@@ -8,21 +8,33 @@
 //! decision can be tested without a database and without the machine this
 //! happens to be running on.
 //!
-//! # Nothing here decrypts anything
+//! # Opened each time it is read, and never kept
 //!
-//! There is no S/MIME decryption in this program and this does not pretend
-//! otherwise. What it produces is a sentence saying the message is encrypted,
-//! how it is addressed, and that it cannot be opened here. That is the whole
-//! point: an enveloped message has no text part, so without a sentence it opens
-//! as a blank message with no explanation, which is exactly the failure the note
-//! editor taught this project to avoid.
+//! Since 13-14 the envelope is offered to this computer's keys, and Windows
+//! opens it where the key lives. What was inside is taken apart in memory and
+//! handed to the reader: the words in place of the empty body the envelope
+//! arrived with, and the files inside in place of the envelope. Nothing of it
+//! is written back. The cache holds the envelope as it arrived, so the message
+//! stays encrypted at rest, it is opened again every time it is read, and
+//! search, which reads the cache, does not look inside it (decision 18 of
+//! phase 13).
 //!
-//! # Three answers about the certificate, and why the third is not a `false`
+//! Four outcomes, each its own sentence: opened, not addressed to a
+//! certificate here, the key here refused, damaged. None of them carries a
+//! word from Windows or from the message. Before this, the sentence said the
+//! message was encrypted and could not be opened here, and an enveloped
+//! message has no text part, so without a sentence it would open as a blank
+//! message with no explanation, which is the failure the note editor taught
+//! this project to avoid. Every outcome still says something for that reason.
+//!
+//! # A store that could not be asked, and why that is not a no
 //!
 //! Whether this computer holds a certificate the message was encrypted to has
 //! three answers, not two: yes, no, and the store could not be asked. A failure
-//! to ask must never come back as no. `Some(false)` tells somebody a private
-//! message was not meant for them, on no evidence.
+//! to ask must never come back as no, which would tell somebody a private
+//! message was not meant for them on no evidence. So a store that cannot be
+//! asked is offered nothing, and the sentence says how the message is
+//! addressed and claims nothing about whose it is.
 //!
 //! This is the distinction
 //! [`crate::service::spellcheck::WhatThisMachineOffers`] draws between an
@@ -32,9 +44,10 @@
 
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
-use crate::service::mime::AttachmentWithBytes;
+use crate::service::mime::{self, AttachmentWithBytes};
 use crate::service::signed_mail::{
-    CertificateStore, EncryptedMessage, claims_a_signature, this_computers_certificates,
+    CertificateStore, EncryptedMessage, WhatTheEnvelopeHeld, claims_a_signature,
+    this_computers_certificates,
 };
 
 /// What can be said about one message's envelope.
@@ -273,30 +286,59 @@ pub fn from_what_was_kept(
     let Ok(envelope) = EncryptedMessage::read(bytes) else {
         return WhatTheEnvelopeSays::EncryptedAndTheDetailsCouldNotBeRead;
     };
-    WhatTheEnvelopeSays::Encrypted {
-        said: envelope.spoken(whether_it_was_encrypted_to_us(&envelope, store)),
+    // Asked first, so a store that cannot be asked is offered nothing and
+    // nothing is claimed about whose the message is. A store that answers no
+    // is still offered the envelope: a recipient named by key identifier
+    // rather than by issuer and serial is one the portable matching cannot
+    // see, and Windows can.
+    if let Err(problem) = store.which_recipient_is_us(&envelope.recipients) {
+        // The reason, never the message. A recipient's name comes out of a
+        // stranger's envelope and this line goes to a log file.
+        tracing::debug!("This computer's certificate store could not be asked: {problem}");
+        return WhatTheEnvelopeSays::Encrypted {
+            said: envelope.spoken(),
+        };
+    }
+    what_opening_it_came_to(store.open_the_envelope(bytes))
+}
+
+/// What offering the envelope to this computer's keys came to, said.
+fn what_opening_it_came_to(held: WhatTheEnvelopeHeld) -> WhatTheEnvelopeSays {
+    match held {
+        WhatTheEnvelopeHeld::Opened(inside) => taken_apart_in_memory(inside),
+        WhatTheEnvelopeHeld::NotAddressedToACertificateHere => {
+            WhatTheEnvelopeSays::NotAddressedHere
+        }
+        WhatTheEnvelopeHeld::TheKeyHereRefused => WhatTheEnvelopeSays::TheKeyRefused,
+        WhatTheEnvelopeHeld::Damaged => WhatTheEnvelopeSays::Damaged,
     }
 }
 
-/// Whether this computer holds a certificate the message was encrypted to.
+/// What was inside an envelope, as the words and files a reader shows.
 ///
-/// `None` where the store could not be asked, which is a different fact from
-/// no and must stay one. The tempting shortcut is a boolean, and the boolean is
-/// wrong in the direction that tells somebody a private message was not meant
-/// for them. On a platform with no store the answer is `None` for the same
-/// reason: nothing was asked, so nothing may be claimed.
-fn whether_it_was_encrypted_to_us(
-    envelope: &EncryptedMessage,
-    store: &dyn CertificateStore,
-) -> Option<bool> {
-    match store.which_recipient_is_us(&envelope.recipients) {
-        Ok(found) => Some(found.is_some()),
-        Err(problem) => {
-            // The reason, never the message. A recipient's name comes out of a
-            // stranger's envelope and this line goes to a log file.
-            tracing::debug!("This computer's certificate store could not be asked: {problem}");
-            None
-        }
+/// A MIME entity the sender wrote, read by the same parser that reads every
+/// message that arrives, and held here only: nothing is written anywhere. An
+/// entity the parser refuses is damage like any other, because the envelope
+/// opened and what it held is not a message.
+fn taken_apart_in_memory(inside: Vec<u8>) -> WhatTheEnvelopeSays {
+    let (Ok(parsed), Ok(parts)) = (mime::parse(&inside), mime::attachments_with_bytes(&inside))
+    else {
+        return WhatTheEnvelopeSays::Damaged;
+    };
+    WhatTheEnvelopeSays::Opened {
+        body: the_body_of(parsed.body_plain, parsed.body_html),
+        parts,
+        inside,
+    }
+}
+
+/// The body a message's text and markup make, the way the cache makes one.
+fn the_body_of(plain: Option<String>, html: Option<String>) -> MessageBody {
+    match (plain, html) {
+        (Some(plain), Some(html)) => MessageBody::Multipart { plain, html },
+        (Some(plain), None) => MessageBody::Plain(plain),
+        (None, Some(html)) => MessageBody::Html(html),
+        (None, None) => MessageBody::Plain(String::new()),
     }
 }
 

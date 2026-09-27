@@ -4014,11 +4014,17 @@ impl EncryptedMessage {
         })
     }
 
-    /// What to say about an encrypted message before anything is opened.
+    /// What to say about an encrypted message this computer's certificate
+    /// store could not be asked about, so nothing tried to open it.
     ///
-    /// Honest about the state of this: nothing here can open one, and a person
-    /// is better told that than shown an empty message body with no
-    /// explanation.
+    /// Since 13-14 an envelope is offered to this computer's keys whenever the
+    /// store can be asked, and what that came to is said by
+    /// `application::encrypted_mail`. This is the sentence for the one case
+    /// left, a store that could not be asked, which is every platform with no
+    /// store yet: it says how the message is addressed and claims nothing about
+    /// whose it is, because nothing was asked. Until then it took whether the
+    /// message was addressed here and said "Wixen Mail cannot open it" either
+    /// way, which stopped being true of a message addressed here.
     ///
     /// **About this message, not about the program.** It used to end "Wixen
     /// Mail cannot open encrypted mail yet", and 04-03 named that sentence when
@@ -4028,23 +4034,12 @@ impl EncryptedMessage {
     /// front of somebody, which was always the stronger thing to say, and
     /// `test_what_is_said_is_about_this_message_and_not_about_the_program`
     /// holds it there.
-    pub fn spoken(&self, addressed_to_us: Option<bool>) -> String {
-        let who = match addressed_to_us {
-            Some(true) => {
-                "This computer holds a certificate this message was encrypted to.".to_string()
-            }
-            Some(false) => {
-                "This message was not encrypted to any certificate on this computer.".to_string()
-            }
-            None => format!(
-                "It is addressed to {} certificate{}.",
-                self.recipients.len(),
-                if self.recipients.len() == 1 { "" } else { "s" }
-            ),
-        };
+    pub fn spoken(&self) -> String {
+        let count = self.recipients.len();
         format!(
-            "This message is encrypted. {who} Wixen Mail cannot open it, so nothing of it can \
-             be read here."
+            "This message is encrypted. It is addressed to {count} {}. Wixen Mail cannot open \
+             it, so nothing of it can be read here.",
+            one_or_more(count, "certificate", "certificates")
         )
     }
 }
@@ -5946,18 +5941,10 @@ mod tests {
         // sentence exists to prevent.
         let envelope = envelope_of(ENCRYPTED_TO_ALICE);
 
-        for asked in [Some(true), Some(false), None] {
-            let said = envelope.spoken(asked);
-            assert!(said.contains("encrypted"), "{said}");
-            assert!(said.contains("cannot open it"), "{said}");
-        }
-        assert!(envelope.spoken(Some(true)).contains("holds a certificate"));
-        assert!(
-            envelope
-                .spoken(Some(false))
-                .contains("not encrypted to any")
-        );
-        assert!(envelope.spoken(None).contains("1 certificate"));
+        let said = envelope.spoken();
+        assert!(said.contains("encrypted"), "{said}");
+        assert!(said.contains("cannot open it"), "{said}");
+        assert!(said.contains("addressed to 1 certificate."), "{said}");
     }
 
     #[test]
@@ -5973,15 +5960,12 @@ mod tests {
         // It has stopped being true. `service::pgp` opens PGP mail, in the
         // same plan as this. So the sentence says what is true of the message
         // in front of somebody, which was always the stronger thing to say.
-        let envelope = envelope_of(ENCRYPTED_TO_ALICE);
+        let said = envelope_of(ENCRYPTED_TO_ALICE).spoken();
 
-        for asked in [Some(true), Some(false), None] {
-            let said = envelope.spoken(asked);
-            assert!(
-                !said.contains("encrypted mail"),
-                "a claim about every encrypted message, not this one: {said}"
-            );
-        }
+        assert!(
+            !said.contains("encrypted mail"),
+            "a claim about every encrypted message, not this one: {said}"
+        );
     }
 
     // ── Opening an envelope ──────────────────────────────────────────────

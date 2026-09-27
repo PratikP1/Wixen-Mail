@@ -520,9 +520,21 @@ impl HtmlRenderer {
     }
 
     /// The same renderer, for a page holding mail that was opened from its
-    /// encryption here.
+    /// encryption here: every picture it points at held back, whatever the
+    /// switch on the Reading tab says.
+    ///
+    /// A fetch made because a message opened tells whoever sent it that it
+    /// opened, and for encrypted mail that is the one thing it must never say.
+    /// It is how EFAIL reads a message, and it is the condition under which
+    /// `.cargo/audit.toml`'s argument about the RSA advisory stops holding. The
+    /// page says how many were held back and why, and names no switch, because
+    /// none fetches these.
     pub fn for_mail_opened_from_encryption(self) -> Self {
-        self
+        Self {
+            fetching: crate::application::pictures::Fetching::Blocked,
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSentEncrypted,
+            ..self
+        }
     }
 
     /// A renderer told outright about both picture answers.
@@ -781,8 +793,14 @@ impl HtmlRenderer {
         // The pictures' sentences first, since they were there first, and
         // the blocks' after; one paragraph, so a reader moving by paragraph
         // meets everything the page left out as one stop.
+        let pictures = match self.whose {
+            WhoseMessage::SomebodyElseSentEncrypted => {
+                crate::application::pictures::what_encrypted_mail_held_back(left_out.pictures)
+            }
+            _ => crate::application::pictures::what_was_held_back(left_out.pictures),
+        };
         let said = [
-            crate::application::pictures::what_was_held_back(left_out.pictures),
+            pictures,
             crate::application::hidden_text::what_was_left_out(left_out.blocks_the_sender_hid),
         ]
         .into_iter()

@@ -26113,6 +26113,25 @@ fn bytes_of_the_attachment(
 ) -> crate::common::Result<Vec<u8>> {
     use crate::common::Error;
 
+    // A file inside an envelope opened here is kept nowhere, and the message's
+    // own files and the server's copy hold only the envelope. So it is taken
+    // from the envelope, opened again with this computer's keys, and handed
+    // over without being written anywhere but where the person saves it.
+    if attachment.inside_the_envelope {
+        return crate::application::encrypted_mail::the_file_inside(
+            cache,
+            attachment.message_row_id,
+            attachment.index,
+        )
+        .ok_or_else(|| {
+            Error::Other(
+                "The message it is in no longer opens here, so the file inside it cannot be \
+                 read"
+                    .into(),
+            )
+        });
+    }
+
     match cache.attachment_content_at(attachment.message_row_id, attachment.index) {
         Ok(Some(kept)) => return Ok(kept),
         Ok(None) => {}

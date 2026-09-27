@@ -538,6 +538,61 @@ fn test_an_opened_envelope_is_said_above_its_words_and_above_the_signature() {
 }
 
 #[test]
+fn test_an_opened_envelope_with_no_words_says_it_opened_and_not_that_nothing_arrived() {
+    // An envelope holding only a file, which is how some senders seal one. It
+    // opened, so "This message has no text, or it has not been downloaded
+    // yet" would be half false and send somebody to fetch it again; the
+    // sentence that it opened stands where that would have been.
+    use wixen_mail::application::answering::AnswerButtons;
+    use wixen_mail::application::checking_signatures::SignatureCheck;
+    use wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays;
+    use wixen_mail::application::invitations::WhatTheInvitationSays;
+    use wixen_mail::application::reading_a_message;
+    use wixen_mail::common::types::MessageBody;
+    use wixen_mail::presentation::date_display::{
+        Clock, DateOrder, DateSettings, DateStyle, DateWording,
+    };
+    use wixen_mail::presentation::read_aloud::Reading;
+    use wixen_mail::presentation::reader_text;
+    use wixen_mail::presentation::ui_types::MessageItem;
+
+    let shown = reading_a_message::put_together(
+        MessageBody::Plain(String::new()),
+        WhatTheEnvelopeSays::Opened {
+            body: MessageBody::Plain(String::new()),
+            parts: Vec::new(),
+            inside: Vec::new(),
+        },
+        WhatTheInvitationSays::Nothing,
+        AnswerButtons::NotAsked,
+        SignatureCheck::NotSigned,
+    );
+    let reading = Reading {
+        dates: DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        },
+        now: chrono::Local::now(),
+    };
+
+    let document = reader_text::single_message(&MessageItem::default(), &shown.body, reading)
+        .with_what_is_said(&shown.said);
+
+    assert!(
+        !document.text.contains("not been downloaded"),
+        "{}",
+        document.text
+    );
+    assert!(
+        document.text.contains("was opened here"),
+        "{}",
+        document.text
+    );
+}
+
+#[test]
 fn test_a_file_inside_an_opened_envelope_is_taken_from_the_envelope() {
     // The reader lists the files inside an opened envelope, and the one place
     // a file's bytes are fetched for saving or reading has to take such a file
