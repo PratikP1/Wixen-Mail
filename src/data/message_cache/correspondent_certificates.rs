@@ -69,13 +69,18 @@ impl MessageCache {
     pub fn certificates_for(&self, address: &str) -> Result<Vec<Vec<u8>>> {
         let could_not_read =
             |e: rusqlite::Error| Error::Other(format!("Could not read the certificates: {e}"));
-        let _ = as_certificates_write_it(address);
         let mut statement = self
             .conn
-            .prepare("SELECT der FROM correspondent_certificates ORDER BY rowid")
+            .prepare(
+                "SELECT der FROM correspondent_certificates WHERE address = ?1
+                 ORDER BY (not_after IS NOT NULL AND not_after < ?2), seen_at DESC, rowid DESC",
+            )
             .map_err(could_not_read)?;
         let rows = statement
-            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .query_map(
+                rusqlite::params![as_certificates_write_it(address), Utc::now().to_rfc3339()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
             .map_err(could_not_read)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(could_not_read)
@@ -85,8 +90,14 @@ impl MessageCache {
     ///
     /// `Ok(false)` when none was kept.
     pub fn forget_correspondent_certificate(&self, fingerprint: &str) -> Result<bool> {
-        let _ = fingerprint;
-        Ok(false)
+        let forgotten = self
+            .conn
+            .execute(
+                "DELETE FROM correspondent_certificates WHERE fingerprint = ?1",
+                [fingerprint],
+            )
+            .map_err(|e| Error::Other(format!("Could not forget the certificate: {e}")))?;
+        Ok(forgotten > 0)
     }
 
     /// Keep the certificate a signed message came with, when its signature
@@ -135,11 +146,12 @@ fn certificates_that_signed_for(
     sender: &str,
     now: DateTime<Utc>,
 ) -> Vec<SignerCertificate> {
-    let _ = SignatureOutcome::Matches;
     examine_signed_message(raw, sender, now)
         .signers
         .into_iter()
+        .filter(|signer| signer.outcome == SignatureOutcome::Matches)
         .filter_map(|signer| signer.certificate)
+        .filter(|certificate| certificate.names(sender))
         .collect()
 }
 
