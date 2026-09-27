@@ -19,13 +19,16 @@ use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
 ///
 /// **True for the build it ships in, clause by clause.** Every later plan that
 /// changes what a key can do here rewrites this, and a case in this module
-/// pins each clause to the code that makes it true: a locked key refused by
-/// [`import`], a private key opening mail sent to it, no reader of the public
-/// keys outside this module, and a removal that leaves nothing behind.
+/// pins each clause to the code that makes it true: a locked key kept locked
+/// by [`import`], a private key opening mail sent to it, no reader of the
+/// public keys outside this module, and a removal that leaves nothing behind.
+/// Until 13-17.1 the second clause said a locked key could not be imported.
 pub const WHAT_KEYS_CAN_DO_HERE: &str = "A private key here opens PGP messages sent to it. \
-     A key locked with a passphrase cannot be imported yet. Public keys are kept here, and \
-     nothing uses them yet. Private keys are kept in the Windows credential store and public \
-     keys in Wixen Mail's own data, and removing a key here removes it from this computer.";
+     A key locked with a passphrase is kept locked. Its passphrase is asked for when you open \
+     a message that needs it in a reader window, and remembered until Wixen Mail closes; it is \
+     never saved. Public keys are kept here, and nothing uses them yet. Private keys are kept \
+     in the Windows credential store and public keys in Wixen Mail's own data, and removing a \
+     key here removes it from this computer.";
 
 /// The question asked before a key is removed, naming the key and what stops
 /// working without it.
@@ -294,6 +297,14 @@ pub fn import(cache: &MessageCache, armoured: &str) -> Vec<Imported> {
 
 fn what_became_of(cache: &MessageCache, answer: WhatBecameOfAKey) -> Imported {
     let (listing, said) = match answer {
+        WhatBecameOfAKey::Imported(listing) if listing.locked => {
+            let said = format!(
+                "The private key for {} was imported. It is locked with a passphrase, which \
+                 Wixen Mail asks for the first time you open a message that needs it.",
+                whose(&listing)
+            );
+            (listing, said)
+        }
         WhatBecameOfAKey::Imported(listing) => {
             let said = format!(
                 "The private key for {} was imported. Messages encrypted to it will open \
@@ -305,14 +316,6 @@ fn what_became_of(cache: &MessageCache, answer: WhatBecameOfAKey) -> Imported {
         WhatBecameOfAKey::AlreadyHere(listing) => {
             let said = format!(
                 "The private key for {} is already here, so nothing changed.",
-                whose(&listing)
-            );
-            (listing, said)
-        }
-        WhatBecameOfAKey::LockedWithAPassphrase(listing) => {
-            let said = format!(
-                "The private key for {} has a passphrase on it. Wixen Mail cannot ask for \
-                 one yet, so it would never open anything and it was not stored.",
                 whose(&listing)
             );
             (listing, said)

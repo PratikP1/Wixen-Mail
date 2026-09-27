@@ -13,9 +13,10 @@
 //! **What is here is reading mail and keeping keys, not the whole of PGP.**
 //! Up to [`KEY_SLOTS`] private keys, kept in the credential store in parts;
 //! other people's public keys described and handed back for the mail database
-//! to keep; one message opened by whichever key it names; four ways of
-//! failing, each said in its own words. Key servers, revocation, and anything
-//! outgoing are outside it.
+//! to keep; one message opened by whichever key it names, a locked key's
+//! passphrase held in memory for the session once somebody types it; four
+//! ways of failing and one of needing a passphrase, each said in its own
+//! words. Key servers, revocation, and anything outgoing are outside it.
 //!
 //! Inline PGP and PGP/MIME. An armoured block in the message's text is what
 //! `application::body_safety::what_the_form_says` finds and hands here. Since
@@ -251,18 +252,9 @@ pub enum WhatImportingAKeyFound {
     NotAPrivateKey,
     /// It is not an OpenPGP key at all.
     NotAKey,
-    /// It is a private key and a passphrase is holding it shut.
-    ///
-    /// Refused rather than stored, for the reason [`Self::NotAPrivateKey`]
-    /// gives: a key that can never open anything is worse than no key at all,
-    /// because every message afterwards reports the wrong reason. Nothing here
-    /// asks for a passphrase, so an export made with one cannot be used, and
-    /// saying so at import is the only moment somebody can act on it.
-    ///
-    /// **A fifth variant, added when the implementation was written.** The four
-    /// below were chosen before there was anything behind them and this case
-    /// was not among them, which is what writing the implementation found.
-    TheKeyIsLockedWithAPassphrase,
+    // A key locked with a passphrase was refused here until 13-17.1, as
+    // `TheKeyIsLockedWithAPassphrase`. It is kept locked now, and its
+    // passphrase asked for when a message needs it, so it reads as imported.
     /// It is a private key and the credential store would not take it.
     ///
     /// The only variant carrying words, and they are the store's reason rather
@@ -311,16 +303,14 @@ pub struct KeyListing {
 /// would hide which of them did not come in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WhatBecameOfAKey {
-    /// A private key, now in the credential store.
+    /// A private key, now in the credential store, locked or not, which its
+    /// listing says.
     Imported(KeyListing),
     /// A private key that was already here, so nothing changed.
     AlreadyHere(KeyListing),
     /// A public key. Not secret, so not this module's to keep: the caller
     /// keeps the armour where the rest of this program's data lives.
     PublicKeyToKeep { armour: String, listing: KeyListing },
-    /// A private key a passphrase is holding shut, refused for the reason
-    /// [`WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase`] gives.
-    LockedWithAPassphrase(KeyListing),
     /// A private key the credential store would not take, and why, in words
     /// about the store and never about the key.
     CouldNotBeStored { listing: KeyListing, reason: String },
@@ -452,6 +442,10 @@ mod tests {
             WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
             WhatOpeningItFound::TheKeyHereCouldNotBeRead,
             WhatOpeningItFound::Damaged,
+            WhatOpeningItFound::TheKeyIsLocked(LockedKey {
+                whose: "Dave Example <dave@example.com>".to_string(),
+                fingerprint: "BC398E0D54261CA0642E99AD469C95C000B5CB12".to_string(),
+            }),
         ];
 
         for (which, one) in all.iter().enumerate() {
@@ -463,13 +457,12 @@ mod tests {
 
     #[test]
     fn test_a_refusal_to_import_carries_no_words_from_the_file() {
-        // Four of the five refusals carry nothing at all, so there is nowhere
-        // for key material to travel. The fifth carries the credential store's
+        // Two of the three refusals carry nothing at all, so there is nowhere
+        // for key material to travel. The third carries the credential store's
         // reason, which is about the store rather than about the file.
         let refusals = [
             WhatImportingAKeyFound::NotAPrivateKey,
             WhatImportingAKeyFound::NotAKey,
-            WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase,
         ];
 
         for refusal in refusals {

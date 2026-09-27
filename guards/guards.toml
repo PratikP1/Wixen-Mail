@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 375 records have arrived since and have not been through it.
+# 377 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32280,6 +32280,7 @@ red = [
     "presentation::wx_pgp_keys::tests::test_the_row_a_press_acts_on_is_the_one_chosen_and_nothing_is_not_a_row",
     "service::pgp::keys::tests::test_a_key_longer_than_its_parts_hold_is_refused_and_nothing_is_written",
     "service::pgp::keys::tests::test_a_key_that_does_not_open_it_is_not_reported_as_no_key",
+    "service::pgp::keys::tests::test_a_key_with_no_passphrase_opens_as_before_beside_an_unlocked_one",
     "service::pgp::keys::tests::test_a_message_encrypted_to_the_imported_key_opens_and_reads",
     "service::pgp::keys::tests::test_a_message_whose_middle_was_corrupted_does_not_come_back_as_text",
     "service::pgp::keys::tests::test_an_ordinary_rsa_key_is_stored_and_opens_mail",
@@ -32296,7 +32297,7 @@ tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/presentation/reader_text.rs", tests = 143 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
-    { file = "src/service/pgp/keys.rs", tests = 25 },
+    { file = "src/service/pgp/keys.rs", tests = 33 },
 ]
 
 # The last part of every slot left off the list uninstalling erases, so a key
@@ -32329,10 +32330,11 @@ file = "src/service/pgp/keys.rs"
 before = """    let every_key: Vec<&SignedSecretKey> = keys.iter().collect();"""
 after = """    let every_key: Vec<&SignedSecretKey> = keys.iter().take(1).collect();"""
 red = [
+    "service::pgp::keys::tests::test_a_key_with_no_passphrase_opens_as_before_beside_an_unlocked_one",
     "service::pgp::keys::tests::test_each_private_key_here_opens_its_own_mail",
 ]
 tests_last_seen = [
-    { file = "src/service/pgp/keys.rs", tests = 25 },
+    { file = "src/service/pgp/keys.rs", tests = 33 },
 ]
 
 # Other people's public keys left off the one list of every key here, so a
@@ -32377,20 +32379,52 @@ tests_last_seen = [
     { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 12 },
 ]
 
-# The key manager's first sentence saying a key locked with a passphrase can
-# be imported, which is false until 13-17.1: somebody reads it, imports their
-# usual export, and is refused. The case pins the clause to `import`'s refusal.
-# Written 2026-09-27 by 13-17, measured by hand with `cargo test --lib`.
+# The key manager's first sentence saying a key locked with a passphrase
+# cannot be imported, which stopped being true at 13-17.1: somebody reads it
+# and never tries their usual export. The case pins the clause to `import`
+# keeping the key locked. Written 2026-09-27 by 13-17 as "the key manager says
+# a locked key cannot be imported yet", which was then the truth; renamed and
+# its anchor rewritten by 13-17.1 when the clause turned round.
 [[guard]]
-name = "the key manager says a locked key cannot be imported yet"
+name = "the key manager says a locked key is kept locked"
 file = "src/application/pgp_keys.rs"
-before = """     A key locked with a passphrase cannot be imported yet. Public keys"""
-after = """     A key locked with a passphrase can be imported now. Public keys"""
+before = """     A key locked with a passphrase is kept locked. Its passphrase is asked for when you open \\"""
+after = """     A key locked with a passphrase cannot be imported yet. Its passphrase is asked for when you open \\"""
 red = [
     "application::pgp_keys::tests::test_the_limits_say_a_locked_key_is_kept_locked_and_one_is",
 ]
 tests_last_seen = [
     { file = "src/application/pgp_keys.rs", tests = 19 },
+]
+
+# A typed passphrase that opens nothing held anyway, so a key reads as unlocked
+# on a wrong guess and the message still does not open. Written 2026-09-27 by
+# 13-17.1, measured by hand with `cargo test --lib`.
+[[guard]]
+name = "a passphrase that opens nothing is never held"
+file = "src/service/pgp/keys.rs"
+before = """    if !it_opens_every_locked_part(&key, &passphrase) {"""
+after = """    if false {"""
+red = [
+    "service::pgp::keys::tests::test_a_wrong_passphrase_opens_nothing_and_nothing_of_it_is_kept",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/keys.rs", tests = 33 },
+]
+
+# The held passphrases no longer offered to the locked keys a message is
+# opened with, so a key unlocked a moment ago asks again on every message.
+# Written 2026-09-27 by 13-17.1, measured by hand with `cargo test --lib`.
+[[guard]]
+name = "a passphrase typed this session opens its key's mail"
+file = "src/service/pgp/keys.rs"
+before = """            .filter_map(|key| held.get(&fingerprint_of(key)))"""
+after = """            .filter_map(|_| None::<&Password>)"""
+red = [
+    "service::pgp::keys::tests::test_the_right_passphrase_opens_the_message_for_the_rest_of_the_session",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/keys.rs", tests = 33 },
 ]
 
 # A key sent as an attachment refused by the reader's gate again, so Enter on

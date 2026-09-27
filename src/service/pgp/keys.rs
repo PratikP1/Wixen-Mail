@@ -26,25 +26,33 @@
 //! finds; PGP/MIME's armour is a part of its own, which
 //! `application::opening_pgp::for_pgp_mime` takes out and hands here.
 //!
-//! Up to [`super::KEY_SLOTS`] private keys, each with no passphrase on it,
-//! kept in the credential store in parts because Windows keeps 1,280
-//! characters in one entry. A key locked with a passphrase is refused at
-//! import rather than stored, because a key that can never open anything is
-//! worse than no key: every message would report the wrong reason for ever
-//! after. Other people's public keys are described and handed back here and
-//! kept by the caller, since they are not secret.
+//! Up to [`super::KEY_SLOTS`] private keys, kept in the credential store in
+//! parts because Windows keeps 1,280 characters in one entry. A key locked
+//! with a passphrase is kept as it came, still locked (13-17.1): the
+//! passphrase is asked for by a reader window when a message first needs it,
+//! and [`unlock`] holds it in memory until the program closes. Other people's
+//! public keys are described and handed back here and kept by the caller,
+//! since they are not secret.
+//!
+//! # A typed passphrase
+//!
+//! Held as the crate's own passphrase type, which overwrites its bytes when it
+//! is dropped, in one map in this file, by fingerprint. Nothing hands it back
+//! out, nothing writes it anywhere and nothing logs it. It goes when the
+//! program closes, or when its key is removed.
 
 use super::{
-    KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, KeyListing, PARTS_PER_KEY, Unlocking,
-    WhatBecameOfAKey, WhatImportingAKeyFound, WhatOpeningItFound, the_entry_for,
+    KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, KeyListing, LockedKey, PARTS_PER_KEY,
+    Unlocking, WhatBecameOfAKey, WhatImportingAKeyFound, WhatOpeningItFound, the_entry_for,
 };
 use crate::service::secret_store::{self, LONGEST_SECRET_ONE_ENTRY_HOLDS};
 use pgp::composed::{
-    ArmorOptions, Deserializable, Message, PublicOrSecret, SignedPublicKey, SignedSecretKey,
+    ArmorOptions, Deserializable, Esk, Message, PublicOrSecret, SignedPublicKey, SignedSecretKey,
 };
 use pgp::errors::Error as OpenPgpError;
 use pgp::packet::{KeyFlags, Signature, UserId};
 use pgp::types::{KeyDetails, Password, SignedUser};
+use std::collections::HashMap;
 use std::io::Read;
 
 /// The most of one decrypted message this will hold in memory.
@@ -76,9 +84,6 @@ pub(super) fn import(armoured: &str) -> WhatImportingAKeyFound {
         (Some(WhatBecameOfAKey::Imported(_) | WhatBecameOfAKey::AlreadyHere(_)), _) => {
             WhatImportingAKeyFound::Imported
         }
-        (Some(WhatBecameOfAKey::LockedWithAPassphrase(_)), _) => {
-            WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase
-        }
         (Some(WhatBecameOfAKey::CouldNotBeStored { reason, .. }), _) => {
             WhatImportingAKeyFound::CouldNotBeStored {
                 reason: reason.clone(),
@@ -107,10 +112,7 @@ fn what_becomes_of(key: PublicOrSecret, armour: &str) -> WhatBecameOfAKey {
         }
         PublicOrSecret::Secret(secret) => secret,
     };
-    let listing = listing_of(&secret.to_public_key(), true);
-    if a_passphrase_is_holding_it_shut(&secret) {
-        return WhatBecameOfAKey::LockedWithAPassphrase(listing);
-    }
+    let listing = listing_of_a_private_key(&secret);
     match slot_holding(&listing.fingerprint) {
         Ok(Some(_)) => return WhatBecameOfAKey::AlreadyHere(listing),
         Ok(None) => {}
@@ -223,6 +225,14 @@ fn listing_of(key: &SignedPublicKey, private: bool) -> KeyListing {
             .iter()
             .any(|flags| flags.encrypt_comms() || flags.encrypt_storage()),
         can_sign: flags.iter().any(KeyFlags::sign),
+    }
+}
+
+/// A private key in this program's words, saying whether it is locked.
+fn listing_of_a_private_key(key: &SignedSecretKey) -> KeyListing {
+    KeyListing {
+        locked: a_passphrase_is_holding_it_shut(key),
+        ..listing_of(&key.to_public_key(), true)
     }
 }
 
@@ -469,8 +479,13 @@ pub(super) fn open(armour: &str) -> WhatOpeningItFound {
 /// **No error out of the crate is logged or passed on.** Not because the crate
 /// is untrustworthy but because of what its error text can hold: a parser
 /// refusing a message can quote the bytes it choked on, and those bytes are a
-/// stranger's mail. What crosses out of here is one of four words this project
+/// stranger's mail. What crosses out of here is one of the words this project
 /// chose.
+///
+/// A key with no passphrase on it needs none, and the crate opens it without
+/// one. A locked key is offered the passphrases typed this session, which is
+/// the only way it opens; one nobody has typed for stays shut, and the answer
+/// then says so if the message was encrypted to it.
 fn open_with(armour: &str, keys: &[SignedSecretKey]) -> WhatOpeningItFound {
     if keys.is_empty() {
         return WhatOpeningItFound::TheKeyHereCouldNotBeRead;
@@ -478,15 +493,26 @@ fn open_with(armour: &str, keys: &[SignedSecretKey]) -> WhatOpeningItFound {
     let Ok((message, _)) = Message::from_armor(armour.as_bytes()) else {
         return WhatOpeningItFound::Damaged;
     };
-    let no_passphrase = Password::empty();
+    let shut = the_locked_key_it_names(&message, keys).map(the_locked_key);
     let every_key: Vec<&SignedSecretKey> = keys.iter().collect();
-    let passphrases = vec![&no_passphrase; every_key.len()];
-    let opened = match message.decrypt_with_keys(passphrases, every_key) {
+    let decrypted = with_the_held_passphrases(|held| {
+        let typed: Vec<&Password> = keys
+            .iter()
+            .filter_map(|key| held.get(&fingerprint_of(key)))
+            .collect();
+        message.decrypt_with_keys(typed, every_key)
+    });
+    let opened = match decrypted {
         Ok(opened) => opened,
-        // The one error worth telling apart, and it is the one that is not
-        // about the message: nothing in the message names a key this computer
-        // holds, so it was encrypted to somebody else.
-        Err(OpenPgpError::MissingKey) => return WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
+        // Nothing here opened it. Either it names a key here that is still
+        // locked, which is the person's to open, or it names no key here and
+        // was encrypted to somebody else.
+        Err(OpenPgpError::MissingKey) => {
+            return shut.map_or(
+                WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
+                WhatOpeningItFound::TheKeyIsLocked,
+            );
+        }
         Err(_) => return WhatOpeningItFound::Damaged,
     };
     // Safe on a message that was never compressed: the crate hands those back
@@ -512,15 +538,137 @@ fn open_with(armour: &str, keys: &[SignedSecretKey]) -> WhatOpeningItFound {
     WhatOpeningItFound::Opened(String::from_utf8_lossy(&words).into_owned())
 }
 
-/// Try a typed passphrase on a key here. Not written yet.
-pub(super) fn unlock(_fingerprint: &str, _typed: &str) -> Unlocking {
-    Unlocking::NoSuchKey
+/// The first locked key here the message says it was encrypted to.
+///
+/// Read from the message's own list of whom it was encrypted to, which is what
+/// the crate reads to choose a key, so the two cannot disagree about which key
+/// a message needs. A message sent to a hidden recipient names every key, and
+/// then the first locked key here is the one asked about.
+fn the_locked_key_it_names<'k>(
+    message: &Message<'_>,
+    keys: &'k [SignedSecretKey],
+) -> Option<&'k SignedSecretKey> {
+    let Message::Encrypted { esk, .. } = message else {
+        return None;
+    };
+    let names = |key: &SignedSecretKey| {
+        esk.iter().any(|sent_to| match sent_to {
+            Esk::PublicKeyEncryptedSessionKey(sent_to) => {
+                sent_to.match_identity(key.primary_key.public_key())
+                    || key
+                        .secret_subkeys
+                        .iter()
+                        .any(|subkey| sent_to.match_identity(subkey.public_key()))
+            }
+            Esk::SymKeyEncryptedSessionKey(_) => false,
+        })
+    };
+    keys.iter()
+        .filter(|key| a_passphrase_is_holding_it_shut(key))
+        .find(|key| names(key))
+}
+
+/// A locked key as the reader window asks about it.
+fn the_locked_key(key: &SignedSecretKey) -> LockedKey {
+    let listing = listing_of_a_private_key(key);
+    LockedKey {
+        whose: listing
+            .user_ids
+            .first()
+            .cloned()
+            .unwrap_or_else(|| format!("key {}", listing.key_id)),
+        fingerprint: listing.fingerprint,
+    }
+}
+
+/// A key's fingerprint the way every listing writes it, in hexadecimal
+/// capitals.
+fn fingerprint_of(key: &SignedSecretKey) -> String {
+    format!("{:X}", key.fingerprint())
+}
+
+/// Try a typed passphrase on the private key here with this fingerprint, and
+/// hold it for the rest of the session if it opens every locked part.
+///
+/// The typed text becomes the crate's passphrase type here and nowhere else.
+/// A passphrase that opens nothing is dropped at once and nothing of it is
+/// kept, so the next message asks again.
+pub(super) fn unlock(fingerprint: &str, typed: &str) -> Unlocking {
+    let armour = match slot_holding(fingerprint) {
+        Ok(Some((_, armour))) => armour,
+        Ok(None) => return Unlocking::NoSuchKey,
+        Err(problem) => {
+            tracing::warn!("The credential store would not give up a key to unlock: {problem}");
+            return Unlocking::TheKeyCouldNotBeRead;
+        }
+    };
+    let Ok((key, _)) = SignedSecretKey::from_string(&armour) else {
+        return Unlocking::TheKeyCouldNotBeRead;
+    };
+    let passphrase = Password::from(typed);
+    if !it_opens_every_locked_part(&key, &passphrase) {
+        return Unlocking::WrongPassphrase;
+    }
+    with_the_held_passphrases(|held| held.insert(fingerprint_of(&key), passphrase));
+    Unlocking::Unlocked
+}
+
+/// Whether a passphrase opens the primary key and every secret subkey.
+///
+/// Every part, for [`a_passphrase_is_holding_it_shut`]'s reason: a message is
+/// encrypted to a subkey where the key has one. A part with no lock on it
+/// opens whatever is typed, so a key with none answers yes.
+fn it_opens_every_locked_part(key: &SignedSecretKey, passphrase: &Password) -> bool {
+    let opened = |tried: pgp::errors::Result<pgp::errors::Result<()>>| matches!(tried, Ok(Ok(())));
+    opened(key.primary_key.unlock(passphrase, |_, _| Ok(())))
+        && key
+            .secret_subkeys
+            .iter()
+            .all(|subkey| opened(subkey.key.unlock(passphrase, |_, _| Ok(()))))
+}
+
+/// The passphrases typed this session, by fingerprint, for `work` to read or
+/// change.
+///
+/// One map for the whole program, since a passphrase typed in one reader
+/// window opens the same key's mail in the next. It lives as long as the
+/// process and is never written anywhere.
+#[cfg(not(test))]
+fn with_the_held_passphrases<T>(work: impl FnOnce(&mut HashMap<String, Password>) -> T) -> T {
+    use std::sync::{LazyLock, Mutex, PoisonError};
+    static HELD: LazyLock<Mutex<HashMap<String, Password>>> = LazyLock::new(Default::default);
+    // A thread that panicked while holding the map left it as it was: every
+    // entry in it was a passphrase that opened its key.
+    let mut held = HELD.lock().unwrap_or_else(PoisonError::into_inner);
+    work(&mut held)
+}
+
+/// The same under test, one map to a test, the way the credential store under
+/// test is one to a test, so a passphrase one test types never opens a key in
+/// another that runs beside it.
+#[cfg(test)]
+fn with_the_held_passphrases<T>(work: impl FnOnce(&mut HashMap<String, Password>) -> T) -> T {
+    thread_local! {
+        static HELD: std::cell::RefCell<HashMap<String, Password>> =
+            std::cell::RefCell::new(HashMap::new());
+    }
+    HELD.with_borrow_mut(work)
+}
+
+/// Forget the passphrase typed for a key, when the key goes.
+fn forget_the_passphrase_for(fingerprint: &str) {
+    with_the_held_passphrases(|held| {
+        held.retain(|kept, _| !kept.eq_ignore_ascii_case(fingerprint))
+    });
 }
 
 /// Whether a passphrase is held for the key with this fingerprint.
 #[cfg(test)]
-fn a_passphrase_is_held_for(_fingerprint: &str) -> bool {
-    false
+fn a_passphrase_is_held_for(fingerprint: &str) -> bool {
+    with_the_held_passphrases(|held| {
+        held.keys()
+            .any(|kept| kept.eq_ignore_ascii_case(fingerprint))
+    })
 }
 
 /// Whether a private key has been imported on this computer.
@@ -538,7 +686,7 @@ pub(super) fn describe(armour: &str) -> Vec<KeyListing> {
         .iter()
         .map(|(key, _)| match key {
             PublicOrSecret::Public(public) => listing_of(public, false),
-            PublicOrSecret::Secret(secret) => listing_of(&secret.to_public_key(), true),
+            PublicOrSecret::Secret(secret) => listing_of_a_private_key(secret),
         })
         .collect()
 }
@@ -562,6 +710,7 @@ pub(super) fn remove_private_key(fingerprint: &str) -> crate::common::Result<boo
         return Ok(false);
     };
     remove_the_slot(slot)?;
+    forget_the_passphrase_for(fingerprint);
     Ok(true)
 }
 
