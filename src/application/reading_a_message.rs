@@ -221,7 +221,34 @@ pub fn for_message(
             ),
         ),
     };
-    put_together(body, envelope, invitation, answering, signature)
+    let shown = put_together(body, envelope, invitation, answering, signature);
+    with_a_clearsigned_body_checked(shown, cache)
+}
+
+/// Check the clearsigned block a body carries, for a message nothing else
+/// said was signed, and show the signed words.
+///
+/// After [`put_together`], so the body checked is the one shown: the words a
+/// key opened where it opened, since a message can be signed inside and then
+/// encrypted. Only where nothing else said the message was signed, because a
+/// message has one signature verdict and the one kept from its arrival speaks
+/// for it.
+fn with_a_clearsigned_body_checked(
+    mut shown: WhatAMessageShowsAndSays,
+    cache: Option<&MessageCache>,
+) -> WhatAMessageShowsAndSays {
+    if shown.said.signature != SignatureCheck::NotSigned {
+        return shown;
+    }
+    if let Some((signature, body)) =
+        checking_signatures::for_a_clearsigned_body(&shown.body, || {
+            crate::application::pgp_keys::every_key_that_checks_signatures(cache)
+        })
+    {
+        shown.said.signature = signature;
+        shown.body = body;
+    }
+    shown
 }
 
 /// The same, for a caller that has the answers already.
@@ -369,6 +396,9 @@ pub fn signature_for(
         &crate::application::receipts::address_of(from),
         crate::service::signed_mail::this_computers_certificates().as_ref(),
         chrono::Utc::now(),
+        // An S/MIME signature sealed inside an S/MIME envelope: no PGP key
+        // has anything to say about it.
+        Vec::new,
     )
 }
 

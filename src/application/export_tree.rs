@@ -270,11 +270,13 @@ pub fn added_to_the_archive(
     let carried = what_can_be_written_of(files);
     let rebuilt = ending_where_a_line_ends(rebuilt_from_what_is_stored(stored, text));
     match arrived_as {
-        SignedOriginal::Kept(raw) => message_files::written_into_an_archive(
-            archive,
-            &rebuilt,
-            message_files::WhatToWrite::ExactlyAsItArrived(raw),
-        ),
+        SignedOriginal::Kept(raw) | SignedOriginal::KeptPgpMime(raw) => {
+            message_files::written_into_an_archive(
+                archive,
+                &rebuilt,
+                message_files::WhatToWrite::ExactlyAsItArrived(raw),
+            )
+        }
         SignedOriginal::NotSigned | SignedOriginal::NotKept => {
             message_files::written_into_an_archive(
                 archive,
@@ -289,7 +291,7 @@ pub fn added_to_the_archive(
             // left behind whatever the store has. Counting the store's answer
             // here would report files missing from a message that has all of
             // them.
-            SignedOriginal::Kept(_) => 0,
+            SignedOriginal::Kept(_) | SignedOriginal::KeptPgpMime(_) => 0,
             _ => carried.not_here,
         },
         signature_could_not_be_kept: matches!(arrived_as, SignedOriginal::NotKept),
@@ -314,7 +316,7 @@ pub fn one_message_written_out(
 ) -> Option<Vec<u8>> {
     let text = text.filter(|text| is_really_there(text))?;
     Some(match arrived_as {
-        SignedOriginal::Kept(raw) => raw.clone(),
+        SignedOriginal::Kept(raw) | SignedOriginal::KeptPgpMime(raw) => raw.clone(),
         // Not through `ending_where_a_line_ends`: that is what a trip through
         // an archive changes, and a message written out on its own keeps its
         // body exactly as it was stored.
@@ -1716,6 +1718,23 @@ mod tests {
             Some(&some_text()),
             &[],
             &SignedOriginal::Kept(arrived.clone()),
+        )
+        .expect("a signed message is written");
+
+        assert_eq!(written, arrived);
+    }
+
+    #[test]
+    fn test_a_pgp_mime_signed_message_saved_as_a_file_is_written_exactly_as_it_arrived() {
+        // The same statement about bytes, made with a PGP key rather than a
+        // certificate. Kept since 13-18, and worth nothing rebuilt.
+        let arrived = crate::service::pgp::for_tests::a_pgp_mime_message_signed_by_carol();
+
+        let written = one_message_written_out(
+            &a_stored_message(),
+            Some(&some_text()),
+            &[],
+            &SignedOriginal::KeptPgpMime(arrived.clone()),
         )
         .expect("a signed message is written");
 

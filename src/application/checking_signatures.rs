@@ -27,10 +27,14 @@
 //! contacting nobody and waiting for nothing. A message opens at the speed it
 //! always did and no authority learns that it was opened.
 
+use crate::application::body_safety::{WhatTheFormSays, what_the_form_says};
+use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::data::message_cache::signed_original::SignedOriginal;
+use crate::service::pgp::{self, PgpVerdict};
 use crate::service::signed_mail::{
-    CertificateStore, Reach, SignatureReport, examine_signed_message, this_computers_certificates,
+    CertificateStore, Reach, SignatureReport, examine_signed_message, take_apart_pgp_signed,
+    this_computers_certificates,
 };
 use chrono::{DateTime, Utc};
 
@@ -50,6 +54,14 @@ pub enum SignatureCheck {
     /// It says it is signed and the form it arrived in was not kept here, so
     /// there is nothing to check the signature against. **Not a failed check.**
     NotKept,
+    /// A PGP signature, inline or PGP/MIME, checked against the PGP keys
+    /// here.
+    Pgp(PgpVerdict),
+    /// It carries a signature part and was stored before this computer kept
+    /// the form signed mail arrives in, so there are no bytes to check it
+    /// against (#52 point 6). **Not a failed check**, and not unsigned either:
+    /// the message says it is signed and only the bytes are missing.
+    StoredBeforeSignaturesWereKept,
 }
 
 /// What can be said about one message's signature, from what the cache holds.
@@ -74,26 +86,116 @@ pub fn for_message(
             tracing::warn!("Could not read what was kept of a signed message: {problem}");
             SignedOriginal::NotSigned
         });
-    from_what_was_kept(kept, sender, this_computers_certificates().as_ref(), now)
+    if matches!(kept, SignedOriginal::NotSigned) && carries_a_signature_part(cache, message_row_id)
+    {
+        return SignatureCheck::StoredBeforeSignaturesWereKept;
+    }
+    from_what_was_kept(
+        kept,
+        sender,
+        this_computers_certificates().as_ref(),
+        now,
+        || crate::application::pgp_keys::every_key_that_checks_signatures(Some(cache)),
+    )
+}
+
+/// The media types a signature part is stored under: S/MIME's two spellings
+/// and PGP/MIME's.
+const SIGNATURE_PARTS: [&str; 3] = [
+    "application/pkcs7-signature",
+    "application/x-pkcs7-signature",
+    "application/pgp-signature",
+];
+
+/// Whether a message with nothing kept of its arrived-in form carries a
+/// signature part among its stored files, which is what a signed message
+/// stored before those forms were kept looks like (#52 point 6).
+///
+/// Its parts are stored, so the signature part is findable; its bytes are
+/// not, so the check cannot be built. A file list that cannot be read answers
+/// no, which is what the message said before this was asked.
+fn carries_a_signature_part(cache: &MessageCache, message_row_id: i64) -> bool {
+    cache
+        .get_attachments_for_message(message_row_id)
+        .unwrap_or_else(|problem| {
+            tracing::warn!("Could not read a message's files to look for a signature: {problem}");
+            Vec::new()
+        })
+        .iter()
+        .any(|file| {
+            SIGNATURE_PARTS
+                .iter()
+                .any(|kind| file.mime_type.trim().eq_ignore_ascii_case(kind))
+        })
 }
 
 /// The same, for a caller that has the bytes and a store already.
 ///
 /// Split out so the whole decision can be tested without a database and
-/// without the machine this happens to be running on.
+/// without the machine this happens to be running on. `pgp_keys` is asked
+/// only for a PGP/MIME message, since the private keys' public halves are a
+/// read of the credential store that S/MIME mail should not cost.
 pub fn from_what_was_kept(
     kept: SignedOriginal,
     sender: &str,
     store: &dyn CertificateStore,
     now: DateTime<Utc>,
+    pgp_keys: impl FnOnce() -> Vec<String>,
 ) -> SignatureCheck {
     let raw = match kept {
         SignedOriginal::NotSigned => return SignatureCheck::NotSigned,
         SignedOriginal::NotKept => return SignatureCheck::NotKept,
+        SignedOriginal::KeptPgpMime(raw) => {
+            return SignatureCheck::Pgp(pgp_mime_verdict(&raw, &pgp_keys()));
+        }
         SignedOriginal::Kept(raw) => raw,
     };
     let report = examine_signed_message(&raw, sender, now);
     SignatureCheck::Checked(Box::new(asking_this_computer(report, store, now)))
+}
+
+/// A PGP/MIME message's signature, checked over the signed part's exact bytes.
+///
+/// A kept message that will not come apart into a signed part and a signature
+/// is damaged as far as anybody reading it can tell: it said it was signed,
+/// and nothing in it can be checked.
+fn pgp_mime_verdict(raw: &[u8], keys: &[String]) -> PgpVerdict {
+    match take_apart_pgp_signed(raw) {
+        Some(parts) => pgp::verify_detached(&parts.content, &parts.signature_armour, keys),
+        None => PgpVerdict::Damaged,
+    }
+}
+
+/// What can be said about the clearsigned block a body carries, and the body
+/// to show, or `None` for a body that carries none.
+///
+/// The plain half is the one checked, because that is where a clearsigned
+/// block is written; the markup half, where there is one, stays the sender's.
+/// The body shown is the signed words where the block is the whole of the
+/// plain half, and the body as it came otherwise: `service::pgp` says why.
+///
+/// `pgp_keys` is asked only once the body is found to carry a signature, so
+/// ordinary mail never reads the credential store.
+pub fn for_a_clearsigned_body(
+    body: &MessageBody,
+    pgp_keys: impl FnOnce() -> Vec<String>,
+) -> Option<(SignatureCheck, MessageBody)> {
+    let form = what_the_form_says(Some(body.as_plain()), body.as_html());
+    if form != WhatTheFormSays::SignedWithPgp {
+        return None;
+    }
+    let (verdict, words) = pgp::verify_cleartext(body.as_plain(), &pgp_keys());
+    let shown = match body {
+        MessageBody::Plain(_) => MessageBody::Plain(words),
+        MessageBody::Multipart { html, .. } => MessageBody::Multipart {
+            plain: words,
+            html: html.clone(),
+        },
+        // No plain half to hold a block: the markup is shown as it came, and
+        // the verdict says the signature could not be read.
+        MessageBody::Html(_) => body.clone(),
+    };
+    Some((SignatureCheck::Pgp(verdict), shown))
 }
 
 /// Fold in the two answers only this computer's own store can give.
@@ -201,6 +303,7 @@ mod tests {
             "alice@example.com",
             &SayingWhatItIsTold::asked_nothing(),
             a_moment_in_2026(),
+            Vec::new,
         );
 
         assert_eq!(check, SignatureCheck::NotSigned);
@@ -216,6 +319,7 @@ mod tests {
             "alice@example.com",
             &SayingWhatItIsTold::asked_nothing(),
             a_moment_in_2026(),
+            Vec::new,
         );
 
         assert_eq!(check, SignatureCheck::NotKept);
@@ -228,6 +332,7 @@ mod tests {
             "alice@example.com",
             &SayingWhatItIsTold::asked_nothing(),
             a_moment_in_2026(),
+            Vec::new,
         );
 
         let SignatureCheck::Checked(report) = check else {
@@ -258,6 +363,7 @@ mod tests {
             "alice@example.com",
             &told,
             a_moment_in_2026(),
+            Vec::new,
         );
 
         let SignatureCheck::Checked(report) = check else {
@@ -277,10 +383,126 @@ mod tests {
                 "alice@example.com",
                 &SayingWhatItIsTold::asked_nothing(),
                 a_moment_in_2026(),
+                Vec::new,
             )
         };
 
         assert_eq!(ask(), ask());
+    }
+
+    // ── PGP signatures ───────────────────────────────────────────────────
+
+    use crate::service::pgp::KeyInYourList;
+    use crate::service::pgp::for_tests::{
+        a_clearsigned_message_by_carol, a_pgp_mime_message_signed_by_carol, carols_public_key,
+        what_carol_signed,
+    };
+
+    fn carol() -> KeyInYourList {
+        KeyInYourList {
+            name: "Carol Example <carol@example.com>".to_string(),
+            fingerprint: "8DE4 DEEC 367D 0866 3793 4A1C 52B5 C043 A2C6 4173".to_string(),
+        }
+    }
+
+    fn a_kept_pgp_mime(raw: Vec<u8>, keys: Vec<String>) -> SignatureCheck {
+        from_what_was_kept(
+            SignedOriginal::KeptPgpMime(raw),
+            "carol@example.com",
+            &SayingWhatItIsTold::asked_nothing(),
+            a_moment_in_2026(),
+            || keys,
+        )
+    }
+
+    #[test]
+    fn test_a_kept_pgp_mime_message_is_checked_against_the_pgp_keys_handed_in() {
+        // The bytes as they arrived, taken apart at the boundary exactly, and
+        // the part checked against Carol's key rather than handed to the
+        // certificate checker, which has nothing to say about a PGP signature.
+        assert_eq!(
+            a_kept_pgp_mime(
+                a_pgp_mime_message_signed_by_carol(),
+                vec![carols_public_key()]
+            ),
+            SignatureCheck::Pgp(PgpVerdict::Holds { whose: carol() })
+        );
+    }
+
+    #[test]
+    fn test_a_kept_pgp_mime_message_changed_after_signing_does_not_hold() {
+        let changed = String::from_utf8(a_pgp_mime_message_signed_by_carol())
+            .expect("the fixture is text")
+            .replace("The figures are final.", "The figures are draft.")
+            .into_bytes();
+
+        assert_eq!(
+            a_kept_pgp_mime(changed, vec![carols_public_key()]),
+            SignatureCheck::Pgp(PgpVerdict::DoesNotHold { whose: carol() })
+        );
+    }
+
+    #[test]
+    fn test_a_kept_pgp_mime_message_with_no_key_for_it_names_the_key() {
+        assert_eq!(
+            a_kept_pgp_mime(a_pgp_mime_message_signed_by_carol(), Vec::new()),
+            SignatureCheck::Pgp(PgpVerdict::NoKeyToCheckIt {
+                key_id: "52B5 C043 A2C6 4173".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_clearsigned_body_is_checked_and_shown_as_the_words_it_signed() {
+        let checked = for_a_clearsigned_body(
+            &MessageBody::Plain(a_clearsigned_message_by_carol()),
+            || vec![carols_public_key()],
+        );
+
+        assert_eq!(
+            checked,
+            Some((
+                SignatureCheck::Pgp(PgpVerdict::Holds { whose: carol() }),
+                MessageBody::Plain(what_carol_signed().to_string())
+            ))
+        );
+    }
+
+    #[test]
+    fn test_a_clearsigned_body_in_the_plain_half_keeps_its_html_half() {
+        // The plain half is the one a clearsigned block is written in and the
+        // one checked; the markup half is the sender's and stays as it came.
+        let checked = for_a_clearsigned_body(
+            &MessageBody::Multipart {
+                plain: a_clearsigned_message_by_carol(),
+                html: "<p>Carol here.</p>".to_string(),
+            },
+            Vec::new,
+        );
+
+        assert_eq!(
+            checked,
+            Some((
+                SignatureCheck::Pgp(PgpVerdict::NoKeyToCheckIt {
+                    key_id: "52B5 C043 A2C6 4173".to_string()
+                }),
+                MessageBody::Multipart {
+                    plain: what_carol_signed().to_string(),
+                    html: "<p>Carol here.</p>".to_string(),
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_body_asks_nothing_and_reads_no_key() {
+        // Nearly all mail. Reading the keys means reading the credential
+        // store, which no ordinary message should cost.
+        let checked = for_a_clearsigned_body(&MessageBody::Plain("One o'clock?".into()), || {
+            panic!("the keys were read for a message that carries no signature")
+        });
+
+        assert_eq!(checked, None);
     }
 }
 
@@ -447,5 +669,145 @@ mod end_to_end {
             .expect("asked");
 
         assert_eq!(opening(&cache, row), None);
+    }
+
+    // ── PGP, through the database and the key manager's keys ─────────────
+
+    use crate::service::pgp::for_tests::{
+        a_clearsigned_message_by_carol, a_pgp_mime_message_signed_by_carol, carols_public_key,
+        what_carol_signed,
+    };
+    use crate::service::pgp::{KeyInYourList, PgpVerdict};
+
+    fn carol() -> KeyInYourList {
+        KeyInYourList {
+            name: "Carol Example <carol@example.com>".to_string(),
+            fingerprint: "8DE4 DEEC 367D 0866 3793 4A1C 52B5 C043 A2C6 4173".to_string(),
+        }
+    }
+
+    /// A message from Carol, stored with nothing else about it.
+    fn a_message_from_carol(cache: &MessageCache, uid: u32) -> i64 {
+        crate::service::secret_store::allow();
+        cache
+            .save_message(&CachedMessage {
+                id: 0,
+                uid,
+                folder_id: 1,
+                message_id: format!("<{uid}@example.com>"),
+                subject: "The figures".to_string(),
+                from_addr: "carol@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-09-27".to_string(),
+                body_plain: None,
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
+            })
+            .expect("a message")
+    }
+
+    fn checked_now(cache: &MessageCache, row: i64) -> SignatureCheck {
+        for_message(
+            cache,
+            row,
+            "carol@example.com",
+            "2026-09-27T12:00:00Z".parse().expect("a fixed moment"),
+        )
+    }
+
+    #[test]
+    fn test_a_pgp_mime_message_reopened_from_the_cache_is_checked_against_the_keys_kept_here() {
+        // The whole path: the arrival keeps the bytes, and opening it checks
+        // them against the public key the key manager kept.
+        let cache = a_cache();
+        let row = a_message_from_carol(&cache, 1);
+        cache
+            .note_the_form_it_arrived_in(row, &a_pgp_mime_message_signed_by_carol())
+            .expect("arrived");
+        crate::application::pgp_keys::import(&cache, &carols_public_key());
+
+        assert_eq!(
+            checked_now(&cache, row),
+            SignatureCheck::Pgp(PgpVerdict::Holds { whose: carol() })
+        );
+    }
+
+    /// A message stored with one file of this type, the way a message stored
+    /// before signed originals were kept has its signature part.
+    fn stored_before_with_a_file(cache: &MessageCache, uid: u32, mime_type: &str) -> i64 {
+        let row = a_message_from_carol(cache, uid);
+        cache
+            .save_attachment(&crate::data::message_cache::CachedAttachment {
+                id: 0,
+                message_id: row,
+                filename: "signature.asc".to_string(),
+                mime_type: mime_type.to_string(),
+                size: 228,
+                content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
+            })
+            .expect("a file");
+        row
+    }
+
+    #[test]
+    fn test_a_signed_message_stored_before_signatures_were_kept_says_so_and_not_unsigned() {
+        // #52 point 6. The bytes are gone, so the check cannot be built; the
+        // signature part is still among its files, and that is enough to say
+        // it is signed and why it cannot be checked, rather than reading it as
+        // a message that never claimed a signature.
+        let cache = a_cache();
+        for (uid, kind) in [
+            (1, "application/pgp-signature"),
+            (2, "application/pkcs7-signature"),
+            (3, "application/x-pkcs7-signature"),
+        ] {
+            let row = stored_before_with_a_file(&cache, uid, kind);
+
+            assert_eq!(
+                checked_now(&cache, row),
+                SignatureCheck::StoredBeforeSignaturesWereKept,
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_stored_before_with_no_signature_among_its_files_is_not_signed() {
+        let cache = a_cache();
+        let row = stored_before_with_a_file(&cache, 1, "application/pdf");
+
+        assert_eq!(checked_now(&cache, row), SignatureCheck::NotSigned);
+    }
+
+    #[test]
+    fn test_a_clearsigned_message_opened_is_checked_against_the_keys_kept_here() {
+        // Through the one composition every reader surface asks, so what a
+        // surface shows is the signed words and what it says is the verdict.
+        let cache = a_cache();
+        let row = a_message_from_carol(&cache, 1);
+        crate::application::pgp_keys::import(&cache, &carols_public_key());
+
+        let shown = crate::application::reading_a_message::for_message(
+            Some(&cache),
+            row,
+            "Carol Example <carol@example.com>",
+            crate::common::types::MessageBody::Plain(a_clearsigned_message_by_carol()),
+            Default::default,
+            |account| crate::application::reading_a_message::AnsweringAs::on(None, account),
+        );
+
+        assert_eq!(
+            shown.said.signature,
+            SignatureCheck::Pgp(PgpVerdict::Holds { whose: carol() })
+        );
+        assert_eq!(
+            shown.body,
+            crate::common::types::MessageBody::Plain(what_carol_signed().to_string())
+        );
     }
 }

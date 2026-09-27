@@ -43,7 +43,7 @@
 
 use super::MessageCache;
 use crate::common::{Error, Result};
-use crate::service::signed_mail::claims_a_signature;
+use crate::service::signed_mail::{claims_a_signature, claims_pgp_signature};
 use rusqlite::OptionalExtension;
 
 /// The largest message whose arrived-in form is kept.
@@ -84,11 +84,57 @@ pub enum SignedOriginal {
     /// start being checked once they are fetched again.
     NotSigned,
     /// The bytes as they arrived, which is the only thing a signature can be
-    /// checked against.
+    /// checked against: an S/MIME signed message.
     Kept(Vec<u8>),
+    /// The same, for a PGP/MIME signed message, which is checked against the
+    /// PGP keys here rather than against a certificate.
+    KeptPgpMime(Vec<u8>),
     /// It says it is signed and the bytes were not kept here, so there is
     /// nothing to check it against. Not a failed check.
     NotKept,
+}
+
+/// Which kind of signature a kept message carries, as the `kind` column holds
+/// it.
+///
+/// A column rather than a wider [`claims_a_signature`], whose own comment says
+/// why that question must stay S/MIME's: the wrapper is the same and only the
+/// protocol tells the two apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SignedKind {
+    Smime,
+    PgpMime,
+}
+
+impl SignedKind {
+    /// Which kind a message's own headers claim, if either.
+    fn claimed_by(raw: &[u8]) -> Option<Self> {
+        if claims_a_signature(raw) {
+            Some(Self::Smime)
+        } else if claims_pgp_signature(raw) {
+            Some(Self::PgpMime)
+        } else {
+            None
+        }
+    }
+
+    fn as_column(self) -> &'static str {
+        match self {
+            Self::Smime => "smime",
+            Self::PgpMime => "pgp-mime",
+        }
+    }
+
+    /// The column as read. NULL is a row a build before 13-18 kept, and those
+    /// were all S/MIME; a value nothing here writes reads the same way, since
+    /// S/MIME's checker says in its own words that it found no signature it
+    /// can read rather than inventing a verdict.
+    fn from_column(value: Option<&str>) -> Self {
+        match value {
+            Some("pgp-mime") => Self::PgpMime,
+            _ => Self::Smime,
+        }
+    }
 }
 
 /// Current time as an RFC 3339 string, which sorts correctly as text.
@@ -106,25 +152,27 @@ impl MessageCache {
     ///
     /// Ordinary mail costs one cheap header read and writes nothing.
     pub fn keep_signed_original(&self, message_id: i64, raw: &[u8]) -> Result<()> {
-        if !claims_a_signature(raw) {
+        let Some(kind) = SignedKind::claimed_by(raw) else {
             return Ok(());
-        }
+        };
         let kept = i64::try_from(raw.len())
             .is_ok_and(|size| size <= LARGEST_SIGNED_MESSAGE_KEPT_BYTES)
             .then_some(raw);
         self.conn
             .execute(
-                "INSERT INTO signed_original (message_id, original, bytes, last_read_at)
-                 VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO signed_original (message_id, original, bytes, last_read_at, kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(message_id) DO UPDATE SET
                      original = excluded.original,
                      bytes = excluded.bytes,
-                     last_read_at = excluded.last_read_at",
+                     last_read_at = excluded.last_read_at,
+                     kind = excluded.kind",
                 rusqlite::params![
                     message_id,
                     kept,
                     kept.map_or(0, |bytes| bytes.len() as i64),
                     now(),
+                    kind.as_column(),
                 ],
             )
             .map_err(|e| {
@@ -192,12 +240,12 @@ impl MessageCache {
     /// Reading counts as the message being worked with, so dropping the least
     /// recently read prefers something else.
     pub fn signed_original(&self, message_id: i64) -> Result<SignedOriginal> {
-        let found: Option<Option<Vec<u8>>> = self
+        let found: Option<(Option<Vec<u8>>, Option<String>)> = self
             .conn
             .query_row(
-                "SELECT original FROM signed_original WHERE message_id = ?1",
+                "SELECT original, kind FROM signed_original WHERE message_id = ?1",
                 rusqlite::params![message_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(|e| {
@@ -209,10 +257,13 @@ impl MessageCache {
 
         match found {
             None => Ok(SignedOriginal::NotSigned),
-            Some(None) => Ok(SignedOriginal::NotKept),
-            Some(Some(original)) => {
+            Some((None, _)) => Ok(SignedOriginal::NotKept),
+            Some((Some(original), kind)) => {
                 self.mark_signed_original_read(message_id)?;
-                Ok(SignedOriginal::Kept(original))
+                Ok(match SignedKind::from_column(kind.as_deref()) {
+                    SignedKind::Smime => SignedOriginal::Kept(original),
+                    SignedKind::PgpMime => SignedOriginal::KeptPgpMime(original),
+                })
             }
         }
     }
@@ -367,6 +418,7 @@ mod tests {
     use super::*;
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
+    use crate::service::pgp::for_tests::a_pgp_mime_message_signed_by_carol;
     use crate::service::signed_mail::for_tests::signed_beside;
 
     fn signed_cache() -> TempHome<MessageCache> {
@@ -427,6 +479,66 @@ mod tests {
         assert_eq!(
             cache.signed_original(row).expect("read"),
             SignedOriginal::Kept(raw)
+        );
+    }
+
+    #[test]
+    fn test_the_form_a_pgp_mime_signed_message_arrived_in_comes_back_as_pgp_mime() {
+        // Kept beside S/MIME's, and read back as what it is: a PGP signature
+        // handed to the certificate checker says it carries no signature that
+        // checker can read, about a message that does carry one.
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+        let raw = a_pgp_mime_message_signed_by_carol();
+
+        cache.keep_signed_original(row, &raw).expect("kept");
+
+        assert_eq!(
+            cache.signed_original(row).expect("read"),
+            SignedOriginal::KeptPgpMime(raw)
+        );
+    }
+
+    #[test]
+    fn test_a_row_kept_before_the_kind_was_written_reads_as_smime() {
+        // Every row a build before 13-18 kept is S/MIME, because nothing else
+        // was kept. A row written without the kind has none, and that has to
+        // read as it did.
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+        let raw = signed_beside();
+        cache
+            .conn
+            .execute(
+                "INSERT INTO signed_original (message_id, original, bytes, last_read_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![row, raw, raw.len() as i64, now()],
+            )
+            .expect("a row the way an older build wrote one");
+
+        assert_eq!(
+            cache.signed_original(row).expect("read"),
+            SignedOriginal::Kept(raw)
+        );
+    }
+
+    #[test]
+    fn test_a_pgp_mime_signed_message_too_large_to_keep_still_says_it_was_signed() {
+        // The same ceiling as S/MIME's, and the same rule over it: the bytes
+        // go, the claim stays.
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+        let mut raw = a_pgp_mime_message_signed_by_carol();
+        raw.extend(std::iter::repeat_n(
+            b'x',
+            LARGEST_SIGNED_MESSAGE_KEPT_BYTES as usize,
+        ));
+
+        cache.keep_signed_original(row, &raw).expect("asked");
+
+        assert_eq!(
+            cache.signed_original(row).expect("read"),
+            SignedOriginal::NotKept
         );
     }
 

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 379 records have arrived since and have not been through it.
+# 384 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3684,9 +3684,9 @@ red = [
     "service::signed_mail::windows_store::tests::test_nothing_asked_about_withdrawal_is_not_the_same_as_nothing_wrong",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_signatures.rs", tests = 8 },
+    { file = "src/application/checking_signatures.rs", tests = 18 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 # ── A runner cannot judge this record, and that is written here rather than
@@ -3717,7 +3717,7 @@ red = [
     "service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 # ── The compiler named in two places ────────────────────────────────────────
@@ -9173,7 +9173,7 @@ red = [
     "presentation::message_rows::tests::test_correspondent_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket",
 ]
 tests_last_seen = [
-    { file = "src/application/export_tree.rs", tests = 38 },
+    { file = "src/application/export_tree.rs", tests = 39 },
     { file = "src/application/looking_people_up.rs", tests = 37 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
@@ -12570,7 +12570,7 @@ red = [
     "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 [[guard]]
@@ -12601,14 +12601,20 @@ red = [
     # it. The composition reads the kept original to say what a signature
     # was worth, so the budget this record is about decides its verdict too.
     "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
+    # Added 2026-09-27 by 13-18, found short by its remedy: PGP/MIME's bytes
+    # are kept under the same ceiling, so the break keeps nothing for them
+    # either and a kept PGP/MIME message reads as not kept.
+    "application::checking_signatures::end_to_end::test_a_pgp_mime_message_reopened_from_the_cache_is_checked_against_the_keys_kept_here",
+    "data::message_cache::signed_original::tests::test_a_pgp_mime_signed_message_too_large_to_keep_still_says_it_was_signed",
+    "data::message_cache::signed_original::tests::test_the_form_a_pgp_mime_signed_message_arrived_in_comes_back_as_pgp_mime",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_signatures.rs", tests = 8 },
+    { file = "src/application/checking_signatures.rs", tests = 18 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
-    { file = "src/data/message_cache/signed_original.rs", tests = 8 },
+    { file = "src/data/message_cache/signed_original.rs", tests = 11 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -16507,7 +16513,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_cancellations_calendar_part_is_called_a_meeting_cancellation",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -16733,6 +16739,12 @@ after = """    let _ = &whole;
 # readings that meet armour redden, and so does the preview's reading of why
 # a message did not open. Four more; 18 now. Found by the count check's
 # remedy, written down from what went red.
+#
+# **Rewritten 2026-09-27 by 13-18.** The sentence saying a PGP signature could
+# not be checked is gone, and with it the reader's case about it. The question
+# now decides whether a clearsigned body is checked at all, so the three cases
+# that meet one redden in `checking_signatures` instead. Corrected by hand
+# and re-measured.
 red = [
     "application::body_safety::tests::test_an_armoured_message_says_it_is_encrypted",
     "application::opening_pgp::tests::test_an_armoured_message_is_handed_to_the_opener",
@@ -16747,17 +16759,25 @@ red = [
     "application::body_safety::tests::test_the_formatted_half_alone_is_read_for_armour",
     "application::body_safety::tests::test_a_signed_message_is_not_mistaken_for_an_encrypted_one",
     "presentation::reader_text::encryption_tests::test_an_encrypted_message_explains_its_armour_instead_of_leaving_it_there",
-    "presentation::reader_text::encryption_tests::test_a_signed_message_says_so_without_saying_the_signature_was_checked",
+    "application::checking_signatures::tests::test_a_clearsigned_body_is_checked_and_shown_as_the_words_it_signed",
+    "application::checking_signatures::tests::test_a_clearsigned_body_in_the_plain_half_keeps_its_html_half",
+    "application::checking_signatures::end_to_end::test_a_clearsigned_message_opened_is_checked_against_the_keys_kept_here",
     "presentation::reader_text::encryption_tests::test_an_encrypted_message_is_not_reported_as_an_unsafe_one",
     "presentation::reader_text::encryption_tests::test_a_filters_warning_keeps_the_top_of_the_bar_and_the_form_goes_under_it",
     "presentation::reader_text::encryption_tests::test_the_form_is_said_before_the_message_even_when_a_signature_verdict_follows",
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_says_it_too",
+    # Added 2026-09-27 by 13-18, found short by its remedy: written by
+    # 13-17.1 in a file this record did not name, so nothing flagged it. The
+    # locked key it asks about is found through this same question.
+    "application::pgp_keys::tests::test_a_message_to_a_locked_key_opens_once_its_passphrase_is_typed",
 ]
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
+    { file = "src/application/checking_signatures.rs", tests = 18 },
     { file = "src/application/opening_pgp.rs", tests = 12 },
+    { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -16785,8 +16805,8 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 14 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 15 },
 ]
 
 # The other half-fix, and the one that reads best in a diff. The question is
@@ -16811,8 +16831,8 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 14 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 15 },
 ]
 
 # ── A reading gate that admits everything ───────────────────────────────────
@@ -16846,7 +16866,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
     { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]
 
@@ -16880,7 +16900,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -16942,7 +16962,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -17669,7 +17689,7 @@ tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 # ── The sentence reached the bar and the body still said "no text" ──────────
@@ -17708,7 +17728,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # ── A PGP key nobody could import, so no message ever opened ────────────────
@@ -17833,7 +17853,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # ── Undo Send: the hold reaching the row, and the clock letting it go ────────
@@ -21794,7 +21814,7 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
@@ -22012,7 +22032,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 # Counting the week from Sunday, which is how a calendar on the wall is
@@ -24841,7 +24861,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The preview pane's bar. The reader window and the conversation window put
@@ -24867,7 +24887,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # A finding about one message of several, said where that message begins.
@@ -24890,7 +24910,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_a_page_of_several_messages_says_where_one_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The guard that names every surface. It named two of six until 2026-09-16,
@@ -31487,7 +31507,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 [[guard]]
@@ -31510,7 +31530,7 @@ red = [
     "test_a_signed_invitation_says_the_meeting_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]
 
@@ -31528,7 +31548,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_one_message_of_several_says_its_meeting_under_its_own_heading",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The kind the message gave put over the one warning that changes what
@@ -31544,7 +31564,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_calendar_part_named_like_a_program_is_still_called_a_program",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The download of everything writing a message's parts over the ones the
@@ -31634,7 +31654,7 @@ red = [
     "presentation::reader_text::answer_button_tests::test_why_an_invitation_cannot_be_answered_is_said_above_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The reader building the three buttons for every tab, answerable or not, which
@@ -31929,7 +31949,7 @@ red = [
     "presentation::reader_text::meeting_change_tests::test_a_move_made_on_opening_is_said_above_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The preview applying what a message changes, so arrowing past an organiser's
@@ -31982,7 +32002,7 @@ red = [
     "service::signed_mail::windows_store::tests::test_what_a_refusal_means_is_read_from_the_code_windows_gave",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 # The envelope's bytes handed back from the call that only sizes them, so every
@@ -32025,8 +32045,8 @@ red = [
 tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 # A page holding mail opened from its encryption left to the Reading tab's
@@ -32052,7 +32072,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 93 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # What an envelope opened to written back to the cache, so an encrypted
@@ -32112,7 +32132,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_files_inside_a_pgp_mime_message_that_opened_are_the_files_listed",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The protocol read out of the raw header rather than through the reading that
@@ -32143,7 +32163,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
-    { file = "src/service/signed_mail.rs", tests = 122 },
+    { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
 # The one call an arrival path makes asking two of its three questions, so a
@@ -32191,7 +32211,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # A PGP/MIME message that opened left out of the mark every rule about
@@ -32213,7 +32233,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]
 
 # The reason a PGP/MIME message did not open dropped on the way to the reader,
@@ -32297,9 +32317,9 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/application/pgp_keys.rs", tests = 21 },
+    { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
     { file = "src/service/pgp/keys.rs", tests = 33 },
 ]
@@ -32359,7 +32379,7 @@ red = [
     "presentation::wx_pgp_keys::tests::test_the_row_a_press_acts_on_is_the_one_chosen_and_nothing_is_not_a_row",
 ]
 tests_last_seen = [
-    { file = "src/application/pgp_keys.rs", tests = 21 },
+    { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
 ]
 
@@ -32398,7 +32418,7 @@ red = [
     "application::pgp_keys::tests::test_the_limits_say_a_locked_key_is_kept_locked_and_one_is",
 ]
 tests_last_seen = [
-    { file = "src/application/pgp_keys.rs", tests = 21 },
+    { file = "src/application/pgp_keys.rs", tests = 22 },
 ]
 
 # A typed passphrase that opens nothing held anyway, so a key reads as unlocked
@@ -32445,7 +32465,7 @@ red = [
     "presentation::wx_reader::tests::test_a_pgp_key_can_be_read_here_whichever_way_it_says_so",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/reader_text.rs", tests = 151 },
     { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]
 
@@ -32487,4 +32507,87 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 8 },
+]
+
+# A PGP signature said to hold once a key in the list is the one it names,
+# without the arithmetic being asked, so changed words and words re-written
+# with bare line feeds both read as made by Carol's key. Written 2026-09-27 by
+# 13-18, measured with `scripts/guards.sh`.
+[[guard]]
+name = "a pgp signature holds only where the arithmetic does"
+file = "src/service/pgp/signatures.rs"
+before = """    match named.iter().find(|key| holds_for(signature, key, content)) {"""
+after = """    match named.first() {"""
+red = [
+    "service::pgp::signatures::tests::test_one_letter_changed_after_signing_does_not_hold",
+    "service::pgp::signatures::tests::test_the_same_part_with_bare_line_feeds_does_not_hold",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/signatures.rs", tests = 11 },
+]
+
+# Every key in the list tried against a signature, not only the key it names,
+# so a signature by a key that is not here reads as not holding against
+# whatever key is: a failed check where nothing could be checked. Written
+# 2026-09-27 by 13-18, measured with `scripts/guards.sh`.
+[[guard]]
+name = "a pgp signature by a key not in the list names that key and fails nothing"
+file = "src/service/pgp/signatures.rs"
+before = """        .filter(|key| names_a_part_of(signature, key))"""
+after = """        .filter(|_| true)"""
+red = [
+    "service::pgp::signatures::tests::test_with_only_somebody_elses_key_it_still_names_the_key_it_would_need",
+    "service::pgp::signatures::tests::test_a_detached_signature_with_no_key_for_it_names_the_key",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/signatures.rs", tests = 11 },
+]
+
+# A PGP/MIME signed message's bytes kept with the kind S/MIME's are, so they
+# come back to the certificate checker, which finds no signature it can read
+# in a message that carries one. Written 2026-09-27 by 13-18, measured with
+# `scripts/guards.sh`.
+[[guard]]
+name = "the bytes a pgp/mime signed message arrived in are kept as pgp/mime"
+file = "src/data/message_cache/signed_original.rs"
+before = """            Self::PgpMime => "pgp-mime","""
+after = """            Self::PgpMime => "smime","""
+red = [
+    "data::message_cache::signed_original::tests::test_the_form_a_pgp_mime_signed_message_arrived_in_comes_back_as_pgp_mime",
+    "application::checking_signatures::end_to_end::test_a_pgp_mime_message_reopened_from_the_cache_is_checked_against_the_keys_kept_here",
+]
+tests_last_seen = [
+    { file = "src/application/checking_signatures.rs", tests = 18 },
+    { file = "src/data/message_cache/signed_original.rs", tests = 11 },
+]
+
+# A signed message stored before its arrived-in form was kept read as never
+# having claimed a signature, which is what it said until 13-18 (#52 point
+# 6). Written 2026-09-27 by 13-18, measured with `scripts/guards.sh`.
+[[guard]]
+name = "a signed message stored before signatures were kept says so rather than unsigned"
+file = "src/application/checking_signatures.rs"
+before = """    if matches!(kept, SignedOriginal::NotSigned) && carries_a_signature_part(cache, message_row_id)"""
+after = """    if false"""
+red = [
+    "application::checking_signatures::end_to_end::test_a_signed_message_stored_before_signatures_were_kept_says_so_and_not_unsigned",
+]
+tests_last_seen = [
+    { file = "src/application/checking_signatures.rs", tests = 18 },
+]
+
+# A PGP signature's verdict dropped from what one message of several says at
+# its own heading, so a conversation says nothing about a signature the same
+# message opened alone says (ledger 497). Written 2026-09-27 by 13-18,
+# measured with `scripts/guards.sh`.
+[[guard]]
+name = "each message of a conversation says its own pgp signature verdict"
+file = "src/presentation/reader_text.rs"
+before = """        .chain(signature.as_deref())"""
+after = ""
+red = [
+    "presentation::reader_text::signature_tests::test_each_message_of_a_conversation_says_its_own_pgp_verdict",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 151 },
 ]

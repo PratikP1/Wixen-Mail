@@ -51,14 +51,16 @@ pub fn the_locked_key_it_needs(
 /// changes what a key can do here rewrites this, and a case in this module
 /// pins each clause to the code that makes it true: a locked key kept locked
 /// by [`import`], a private key opening mail sent to it, no reader of the
-/// public keys outside this module, and a removal that leaves nothing behind.
-/// Until 13-17.1 the second clause said a locked key could not be imported.
+/// public keys outside this module, every key checking the signatures made
+/// with it, and a removal that leaves nothing behind. Until 13-17.1 the second
+/// clause said a locked key could not be imported, and until 13-18 the fourth
+/// said nothing used public keys.
 pub const WHAT_KEYS_CAN_DO_HERE: &str = "A private key here opens PGP messages sent to it. \
      A key locked with a passphrase is kept locked. Its passphrase is asked for when you open \
      a message that needs it in a reader window, and remembered until Wixen Mail closes; it is \
-     never saved. Public keys are kept here, and nothing uses them yet. Private keys are kept \
-     in the Windows credential store and public keys in Wixen Mail's own data, and removing a \
-     key here removes it from this computer.";
+     never saved. Public keys are kept here, and every key here checks the PGP signatures made \
+     with it. Private keys are kept in the Windows credential store and public keys in Wixen \
+     Mail's own data, and removing a key here removes it from this computer.";
 
 /// The question asked before a key is removed, naming the key and what stops
 /// working without it.
@@ -68,10 +70,10 @@ pub const WHAT_KEYS_CAN_DO_HERE: &str = "A private key here opens PGP messages s
 /// answer Enter gives.
 pub fn removal_question(listing: &KeyListing) -> String {
     let what_stops = if listing.private {
-        "Messages encrypted to it will no longer open here, and it cannot be brought back \
-         unless you import it again."
+        "Messages encrypted to it will no longer open here, signatures made with it will no \
+         longer be checked, and it cannot be brought back unless you import it again."
     } else {
-        "It will no longer be kept here."
+        "It will no longer be kept here, and signatures made with it will no longer be checked."
     };
     format!(
         "Remove the {} for {}, {}? {what_stops}",
@@ -286,6 +288,31 @@ pub struct Imported {
     pub said: String,
 }
 
+/// Every key a signature is checked against, as armour: the public keys kept
+/// in the mail database and the public half of every private key here.
+///
+/// Asked only for a message that carries a PGP signature, since the private
+/// halves are a read of the credential store. A half that cannot be read is
+/// said in the log and left out, so the signature is checked against the keys
+/// that can be, and names its key as not in the list if it was that one.
+pub fn every_key_that_checks_signatures(cache: Option<&MessageCache>) -> Vec<String> {
+    let public = cache.map_or_else(Vec::new, |cache| {
+        cache.public_keys().unwrap_or_else(|problem| {
+            tracing::warn!("Could not read the public keys to check a signature: {problem}");
+            Vec::new()
+        })
+    });
+    let halves = pgp::public_halves_of_the_keys_here().unwrap_or_else(|problem| {
+        tracing::warn!("Could not read the private keys to check a signature: {problem}");
+        Vec::new()
+    });
+    public
+        .into_iter()
+        .map(|kept| kept.armour)
+        .chain(halves)
+        .collect()
+}
+
 /// Every key here: private keys first, then public ones, each sorted by the
 /// first name and address it carries.
 pub fn every_key_here(cache: &MessageCache) -> Result<Vec<KeyListing>> {
@@ -441,7 +468,8 @@ mod tests {
     use crate::service::pgp::for_tests::{
         ALICES_FINGERPRINT, CAROLS_FINGERPRINT, DAVES_FINGERPRINT, DAVES_PASSPHRASE,
         a_message_to_alice, a_message_to_dave, alices_private_key, alices_public_key,
-        carols_public_key, daves_locked_key, what_alices_message_says, what_daves_message_says,
+        carols_detached_signature, carols_private_key, carols_public_key, daves_locked_key,
+        what_alices_message_says, what_carols_signature_covers, what_daves_message_says,
     };
     use crate::service::secret_store;
 
@@ -677,18 +705,53 @@ mod tests {
         found
     }
 
+    /// Whether Carol's detached signature holds against the keys `cache` and
+    /// the credential store give.
+    fn carols_signature_holds_against_the_keys_here(cache: &MessageCache) -> bool {
+        matches!(
+            pgp::verify_detached(
+                &what_carols_signature_covers(),
+                &carols_detached_signature(),
+                &every_key_that_checks_signatures(Some(cache)),
+            ),
+            pgp::PgpVerdict::Holds { .. }
+        )
+    }
+
     #[test]
-    fn test_the_limits_say_nothing_uses_public_keys_and_nothing_outside_reads_them() {
+    fn test_the_limits_say_public_keys_check_signatures_and_one_does() {
         assert!(
-            WHAT_KEYS_CAN_DO_HERE.contains("Public keys are kept here, and nothing uses them yet."),
+            WHAT_KEYS_CAN_DO_HERE.contains(
+                "Public keys are kept here, and every key here checks the PGP signatures made \
+                 with it."
+            ),
             "{WHAT_KEYS_CAN_DO_HERE:?}"
         );
-        // The walk has to be able to see a reader, or an empty answer means
-        // nothing: this file reads them, and is left out by name only.
+        let cache = a_cache("pgp-limits-checks");
+        assert!(!carols_signature_holds_against_the_keys_here(&cache));
+
+        import(&cache, &carols_public_key());
+
+        assert!(carols_signature_holds_against_the_keys_here(&cache));
+        // Still read in this file and nowhere else. The walk has to be able to
+        // see a reader, or an empty answer means nothing: this file reads them,
+        // and is left out by name only.
         let here = std::fs::read_to_string("src/application/pgp_keys.rs").expect("this file");
         assert!(here.contains(".public_keys()"));
-
         assert_eq!(readers_of_the_public_keys_elsewhere(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_a_signature_made_with_a_private_key_here_is_checked_against_its_public_half() {
+        // Your own key, or a correspondent's you hold both halves of. Importing
+        // a public key whose private half is here keeps nothing, so the public
+        // half has to come from the private key or it checks nothing.
+        let cache = a_cache("pgp-checks-with-a-private-key");
+
+        import(&cache, &carols_private_key());
+
+        assert!(cache.public_keys().expect("the table").is_empty());
+        assert!(carols_signature_holds_against_the_keys_here(&cache));
     }
 
     #[test]
@@ -764,7 +827,8 @@ mod tests {
             removal_question(&adas_private_key()),
             "Remove the private key for Ada Lovelace <ada@example.com>, 1A2B 3C4D 5E6F 7A8B \
              9C0D 1E2F 3A4B 5C6D 7E8F 9A0B? Messages encrypted to it will no longer open \
-             here, and it cannot be brought back unless you import it again."
+             here, signatures made with it will no longer be checked, and it cannot be \
+             brought back unless you import it again."
         );
     }
 
@@ -773,7 +837,8 @@ mod tests {
         assert_eq!(
             removal_question(&graces_public_key()),
             "Remove the public key for Grace Hopper <grace@example.com>, FEDC BA98 7654 3210 \
-             0123 4567 89AB CDEF 0B1C 2D3E? It will no longer be kept here."
+             0123 4567 89AB CDEF 0B1C 2D3E? It will no longer be kept here, and signatures \
+             made with it will no longer be checked."
         );
     }
 
@@ -957,8 +1022,9 @@ mod tests {
         assert_eq!(
             removal_question(&nameless),
             "Remove the private key for key 9C0D 1E2F 3A4B 5C6D, 1A2B 3C4D 5E6F 7A8B 9C0D 1E2F \
-             3A4B 5C6D 7E8F 9A0B? Messages encrypted to it will no longer open here, and it \
-             cannot be brought back unless you import it again."
+             3A4B 5C6D 7E8F 9A0B? Messages encrypted to it will no longer open here, \
+             signatures made with it will no longer be checked, and it cannot be brought back \
+             unless you import it again."
         );
     }
 }

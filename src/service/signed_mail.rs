@@ -181,6 +181,31 @@ pub fn claims_pgp_encryption(raw: &[u8]) -> bool {
     })
 }
 
+/// Whether a whole message says it is PGP/MIME signed, from its headers alone.
+///
+/// A `multipart/signed` whose `protocol` is `application/pgp-signature` (RFC
+/// 3156, section 5). **Not an answer [`claims_a_signature`] gives**, for the
+/// reason [`layout_of`] says: the wrapper is the same and the protocol is what
+/// tells the two apart, and handing a PGP signature to a reader that only knows
+/// certificates reports it as a signature nobody could check.
+pub fn claims_pgp_signature(raw: &[u8]) -> bool {
+    let (headers, _) = split_headers_from_body(raw);
+    header_value(headers, "content-type")
+        .is_some_and(|value| is_pgp_signed(&ContentType::read(&value)))
+}
+
+/// The media type of a PGP/MIME signature part, and the value a signed
+/// message's `protocol` parameter names (RFC 3156, section 5).
+const PGP_MIME_SIGNATURE: &str = "application/pgp-signature";
+
+/// Whether a `Content-Type` is a PGP/MIME signed message's.
+fn is_pgp_signed(header: &ContentType) -> bool {
+    header.media_type == "multipart/signed"
+        && header
+            .parameter("protocol")
+            .is_some_and(|protocol| protocol.trim().eq_ignore_ascii_case(PGP_MIME_SIGNATURE))
+}
+
 /// Whether one of a message's stored files is the encrypted part of a PGP/MIME
 /// message.
 ///
@@ -388,6 +413,54 @@ fn signature_beside(body: &[u8], boundary: &str) -> Result<SignedParts> {
         content: Some(content.to_vec()),
         signature: decode_body(signature_headers, signature_body)?,
     })
+}
+
+/// A PGP/MIME signed message pulled into the two things its check needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PgpSignedParts {
+    /// Exactly the bytes of the signed part, its own headers included, as
+    /// they arrived: what the signature covers.
+    pub content: Vec<u8>,
+    /// The signature part's armour.
+    pub signature_armour: String,
+}
+
+/// The signed part and the signature out of a PGP/MIME signed message, or
+/// `None` when it is not one or either part is missing.
+///
+/// Through the same private reading of the headers and the same split at the
+/// boundary S/MIME's detached signature is taken apart by, because the rule
+/// that decides whether a signature holds is the same for both: the line break
+/// before a delimiter belongs to the delimiter.
+pub fn take_apart_pgp_signed(raw_message: &[u8]) -> Option<PgpSignedParts> {
+    let (headers, body) = split_headers_from_body(raw_message);
+    let header = ContentType::read(&header_value(headers, "content-type")?);
+    if !is_pgp_signed(&header) {
+        return None;
+    }
+    let boundary = header.parameter("boundary")?;
+    let parts = parts_between(body, &boundary);
+    let (content, signature_part) = (parts.first()?, parts.get(1)?);
+    let (signature_headers, signature_body) = split_headers_from_body(signature_part);
+    Some(PgpSignedParts {
+        content: content.to_vec(),
+        signature_armour: armour_of(signature_headers, signature_body)?,
+    })
+}
+
+/// A signature part's armour, undone from base64 where a sender encoded it.
+///
+/// Not [`decode_body`], which reads no transfer encoding as base64 because
+/// that is what an S/MIME signature always is. An armoured PGP signature is
+/// text, and 7bit is what it nearly always travels as.
+fn armour_of(headers: &[u8], body: &[u8]) -> Option<String> {
+    let encoding = header_value(headers, "content-transfer-encoding").unwrap_or_default();
+    let bytes = if encoding.trim().eq_ignore_ascii_case("base64") {
+        decode_body(headers, body).ok()?
+    } else {
+        body.to_vec()
+    };
+    String::from_utf8(bytes).ok()
 }
 
 /// The raw bytes of each part of a multipart body, in order.
@@ -7710,5 +7783,87 @@ mod the_words_that_were_signed {
             report.findings
         );
         assert!(report.unwrapped_content.is_some());
+    }
+}
+
+/// A PGP/MIME signed message: recognised from its headers, and taken apart
+/// into the exact bytes its signature covers and the signature's armour.
+#[cfg(test)]
+mod a_pgp_mime_signature {
+    use super::*;
+    use crate::service::pgp::for_tests::{
+        a_pgp_mime_message_signed_by_carol, a_pgp_mime_message_to_alice,
+        what_carols_signature_covers,
+    };
+
+    fn carols_message() -> String {
+        String::from_utf8(a_pgp_mime_message_signed_by_carol()).expect("the fixture is text")
+    }
+
+    #[test]
+    fn test_a_pgp_mime_signed_message_claims_a_pgp_signature_however_its_protocol_is_written() {
+        // Folded onto a second line in the fixture, and quoted; a sender who
+        // writes the protocol in capitals and unquoted is saying the same
+        // thing.
+        let shouted = carols_message().replace(
+            "protocol=\"application/pgp-signature\"",
+            "protocol=Application/PGP-Signature",
+        );
+
+        assert!(claims_pgp_signature(carols_message().as_bytes()));
+        assert!(claims_pgp_signature(shouted.as_bytes()));
+    }
+
+    #[test]
+    fn test_only_a_pgp_signature_claims_one() {
+        // The S/MIME question stays S/MIME's, and PGP/MIME encryption is not
+        // a signature: each of the three shapes answers its own question.
+        assert!(!claims_a_signature(carols_message().as_bytes()));
+        assert!(!claims_pgp_signature(&for_tests::signed_beside()));
+        assert!(!claims_pgp_signature(&a_pgp_mime_message_to_alice()));
+        assert!(!claims_pgp_signature(
+            b"Subject: Lunch\r\nContent-Type: text/plain\r\n\r\nOne o'clock?\r\n"
+        ));
+    }
+
+    #[test]
+    fn test_the_signed_part_comes_out_byte_for_byte() {
+        // The line break before the next delimiter belongs to the delimiter,
+        // so one byte too many here fails every signature the way a changed
+        // message does.
+        let parts = take_apart_pgp_signed(carols_message().as_bytes()).expect("taken apart");
+
+        assert_eq!(parts.content, what_carols_signature_covers());
+    }
+
+    #[test]
+    fn test_the_signature_comes_out_as_the_armour_it_was_sent_as() {
+        let parts = take_apart_pgp_signed(carols_message().as_bytes()).expect("taken apart");
+
+        assert!(
+            parts
+                .signature_armour
+                .starts_with("-----BEGIN PGP SIGNATURE-----"),
+            "{}",
+            parts.signature_armour
+        );
+        assert!(
+            parts
+                .signature_armour
+                .trim_end()
+                .ends_with("-----END PGP SIGNATURE-----"),
+            "{}",
+            parts.signature_armour
+        );
+    }
+
+    #[test]
+    fn test_a_pgp_signed_message_missing_its_signature_part_is_not_taken_apart() {
+        let cut = carols_message();
+        let cut = &cut[..cut
+            .find("--signed-13-18\r\nContent-Type: application/pgp-signature")
+            .expect("the signature part")];
+
+        assert_eq!(take_apart_pgp_signed(cut.as_bytes()), None);
     }
 }

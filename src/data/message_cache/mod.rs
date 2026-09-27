@@ -1786,6 +1786,10 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create signed_original table: {}", e)))?;
+        // Which kind of signature the kept bytes carry: `smime` or `pgp-mime`
+        // (13-18). NULL on every row a build before it wrote, and those were
+        // all S/MIME, because nothing else was kept.
+        self.ensure_column_exists("signed_original", "kind", "TEXT")?;
 
         // A message being moved to a folder on another account, held from
         // before the append until the move ends. A row exists exactly while a
