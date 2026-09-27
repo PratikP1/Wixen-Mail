@@ -26,14 +26,23 @@
 //! [`crate::presentation::reader_text::ReaderDocument::with_pgp`] narrows the
 //! general sentence to the reason.
 //!
-//! # Inline PGP only
+//! # Inline PGP, and PGP/MIME
 //!
-//! `what_the_form_says` reads the message's text parts, so what reaches here is
-//! an armoured block sitting in the body. PGP/MIME puts the armour in a
-//! separate part under `multipart/encrypted`, which never becomes body text, so
-//! a PGP/MIME message is not opened and is not reported as failing to open
-//! either: nothing here sees it. That gap is in the changelog and in
-//! `.planning/WINDOWS.md`.
+//! `what_the_form_says` reads the message's text parts, so what [`for_body`]
+//! meets is an armoured block sitting in the body. PGP/MIME puts the armour in
+//! a separate part under `multipart/encrypted`, which never becomes body text.
+//! Until 13-15 nothing saw such a message at all (ledger 145).
+//!
+//! Now the arrival path marks one from its `Content-Type`, and [`for_pgp_mime`]
+//! offers the part it carried to the key. The answer is carried in
+//! [`crate::application::encrypted_mail::WhatTheEnvelopeSays`], beside the
+//! S/MIME envelope's, so the reader, answering a meeting and saving a file
+//! inside ask one question for both families and the rules 13-14 set for
+//! decrypted content apply without a second copy: nothing opened is stored, a
+//! page holding it fetches no picture, and a meeting inside it changes nothing
+//! on the calendar on its own. A PGP/MIME message that did not open is shown as
+//! its armour with inline PGP's reason, so the four sentences are the same
+//! whichever way the armour arrived.
 
 use crate::application::body_safety::{WhatTheFormSays, what_the_form_says};
 use crate::application::encrypted_mail::WhatTheEnvelopeSays;
@@ -69,13 +78,60 @@ pub fn the_body_to_show(body: MessageBody, opened: Option<&WhatOpeningItFound>) 
 
 /// What a PGP/MIME message says, for a message marked as having arrived as
 /// one, and `None` for every other message.
-pub fn for_pgp_mime(_cache: &MessageCache, _message_row_id: i64) -> Option<WhatTheEnvelopeSays> {
-    None
+///
+/// The mark is a column and nearly every message answers no to it, so ordinary
+/// mail costs one read and never reaches the credential store. A mark or a part
+/// that cannot be read is logged by its reason and treated as absent, which
+/// says what is true: the message cannot be opened here.
+pub fn for_pgp_mime(cache: &MessageCache, message_row_id: i64) -> Option<WhatTheEnvelopeSays> {
+    let marked = cache
+        .arrived_pgp_encrypted(message_row_id)
+        .unwrap_or_else(|problem| {
+            tracing::warn!("Could not read whether a message arrived as PGP/MIME: {problem}");
+            false
+        });
+    if !marked {
+        return None;
+    }
+    let armour = cache
+        .the_pgp_mime_part_it_carried(message_row_id)
+        .unwrap_or_else(|problem| {
+            tracing::warn!("Could not read the encrypted part of a PGP/MIME message: {problem}");
+            None
+        });
+    Some(from_the_part(armour.as_deref()))
 }
 
 /// What the armour a PGP/MIME message carried comes to, offered to the key.
-pub fn from_the_part(_armour: Option<&str>) -> WhatTheEnvelopeSays {
-    WhatTheEnvelopeSays::EncryptedAndTheDetailsCouldNotBeRead
+///
+/// Split out so the decision can be tested without a database. The four ways
+/// of not opening are inline PGP's, carried with the armour so the reader
+/// shows and words them the way it already does for armour in the body. What
+/// opens is a whole MIME entity, taken apart in memory by the reading 13-14
+/// wrote for an S/MIME envelope, and nothing of it is written anywhere. An
+/// entity the parser refuses is damage, because the key opened it and what it
+/// held is not a message.
+pub fn from_the_part(armour: Option<&str>) -> WhatTheEnvelopeSays {
+    let Some(armour) = armour else {
+        return WhatTheEnvelopeSays::EncryptedAndTheDetailsCouldNotBeRead;
+    };
+    let not_opened = |found| WhatTheEnvelopeSays::PgpNotOpened {
+        armour: MessageBody::Plain(armour.to_string()),
+        found,
+    };
+    match crate::service::pgp::open_a_message(armour) {
+        WhatOpeningItFound::Opened(inside) => {
+            match crate::application::encrypted_mail::taken_apart(inside.as_bytes()) {
+                Some((body, parts)) => WhatTheEnvelopeSays::OpenedWithPgp {
+                    body,
+                    parts,
+                    inside: inside.into_bytes(),
+                },
+                None => not_opened(WhatOpeningItFound::Damaged),
+            }
+        }
+        found => not_opened(found),
+    }
 }
 
 #[cfg(test)]

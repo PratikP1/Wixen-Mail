@@ -4578,8 +4578,8 @@ mod encryption_tests {
     // ── A PGP/MIME message that opened here ──────────────────────────────
 
     /// The GnuPG-made PGP/MIME message to Alice, opened with her key, as the
-    /// part a page is built from. Its HTML half points at a picture on
-    /// `tracker.example.com`, and it carries one file, `minutes.txt`.
+    /// part a page is built from. Its HTML half points at a described picture
+    /// on `tracker.example.com`, and it carries one file, `minutes.txt`.
     fn the_pgp_mime_message_opened() -> ConversationPart {
         crate::service::secret_store::allow();
         assert_eq!(
@@ -4634,9 +4634,10 @@ mod encryption_tests {
                 .render_thread("The figures", &thread_parts(parts))
         };
 
+        let clear = page(&in_the_clear);
         assert!(
-            page(&in_the_clear).contains("src=\"https://tracker.example.com/opened.png\""),
-            "the opened message's picture is not one a page in the clear fetches"
+            clear.contains("src=\"https://tracker.example.com/chart.png\""),
+            "the opened message's picture is not one a page in the clear fetches: {clear}"
         );
         let held = page(&opened);
         assert!(!held.contains("tracker.example.com"), "{held}");

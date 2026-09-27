@@ -244,7 +244,14 @@ pub fn put_together(
     // Before any document is built, not after. A message that opens has its
     // armour replaced by its words here, so `single_message` finds no armour
     // and adds no sentence about any, and there is nothing to take back out.
-    let opened = opening_pgp::for_body(&body);
+    //
+    // A PGP/MIME message that did not open arrives here as its armour with
+    // the reason already found, and the reason is carried rather than the
+    // armour offered to the key a second time.
+    let opened = envelope
+        .what_the_pgp_key_found()
+        .cloned()
+        .or_else(|| opening_pgp::for_body(&body));
     let body = opening_pgp::the_body_to_show(body, opened.as_ref());
     WhatAMessageShowsAndSays {
         body,

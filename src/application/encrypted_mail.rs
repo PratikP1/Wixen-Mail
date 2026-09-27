@@ -161,38 +161,66 @@ impl WhatTheEnvelopeSays {
         }
     }
 
-    /// Whether this is the words of a message that opened here.
+    /// Whether this is the words of a message that opened here, with either
+    /// family's key.
+    ///
+    /// The mark every rule about decrypted content reads: a page holding one
+    /// fetches no picture, and the files listed are the ones inside. One mark
+    /// for both families, so PGP/MIME meets 13-14's rules rather than a copy
+    /// of them.
     pub fn is_opened(&self) -> bool {
-        matches!(self, Self::Opened { .. })
+        matches!(self, Self::Opened { .. } | Self::OpenedWithPgp { .. })
     }
 
-    /// The words inside, for an envelope that opened.
+    /// The body to show in place of the empty one the message arrived with:
+    /// the words, for a message that opened, and the armour, for a PGP/MIME
+    /// message that did not.
     pub fn body_inside(&self) -> Option<&MessageBody> {
         match self {
-            Self::Opened { body, .. } => Some(body),
+            Self::Opened { body, .. } | Self::OpenedWithPgp { body, .. } => Some(body),
+            Self::PgpNotOpened { armour, .. } => Some(armour),
             _ => None,
         }
     }
 
-    /// The files inside, for an envelope that opened, and none otherwise.
+    /// The files inside, for a message that opened, and none otherwise.
     pub fn parts_inside(&self) -> &[AttachmentWithBytes] {
         match self {
-            Self::Opened { parts, .. } => parts,
+            Self::Opened { parts, .. } | Self::OpenedWithPgp { parts, .. } => parts,
             _ => &[],
         }
     }
 
-    /// The whole signed message inside, for an envelope that opened to one.
+    /// The whole signed message inside, for a message that opened to one.
     pub fn signed_inside(&self) -> Option<&[u8]> {
         match self {
-            Self::Opened { inside, .. } if claims_a_signature(inside) => Some(inside),
+            Self::Opened { inside, .. } | Self::OpenedWithPgp { inside, .. }
+                if claims_a_signature(inside) =>
+            {
+                Some(inside)
+            }
             _ => None,
         }
     }
 
     /// What the PGP key found, for a PGP/MIME message that did not open.
+    ///
+    /// Carried rather than asked again of the armour on the way to the reader,
+    /// so the key is offered the message once.
     pub fn what_the_pgp_key_found(&self) -> Option<&WhatOpeningItFound> {
-        None
+        match self {
+            Self::PgpNotOpened { found, .. } => Some(found),
+            _ => None,
+        }
+    }
+
+    /// The files inside, taken out of the answer, for a caller that wants
+    /// only them.
+    fn into_parts_inside(self) -> Vec<AttachmentWithBytes> {
+        match self {
+            Self::Opened { parts, .. } | Self::OpenedWithPgp { parts, .. } => parts,
+            _ => Vec::new(),
+        }
     }
 }
 
@@ -231,7 +259,11 @@ pub fn for_message_opened_with(
             false
         });
     if !encrypted {
-        return WhatTheEnvelopeSays::NotEncrypted;
+        // The other family, asked here so every surface that asks about the
+        // envelope, the reader, answering a meeting and saving a file inside,
+        // meets a PGP/MIME message through the one question.
+        return crate::application::opening_pgp::for_pgp_mime(cache, message_row_id)
+            .unwrap_or(WhatTheEnvelopeSays::NotEncrypted);
     }
     let envelope = cache
         .the_envelope_it_carried(message_row_id)
@@ -258,10 +290,7 @@ pub fn the_parts_inside_opened_with(
     message_row_id: i64,
     store: &dyn CertificateStore,
 ) -> Vec<AttachmentWithBytes> {
-    match for_message_opened_with(cache, message_row_id, store) {
-        WhatTheEnvelopeSays::Opened { parts, .. } => parts,
-        _ => Vec::new(),
-    }
+    for_message_opened_with(cache, message_row_id, store).into_parts_inside()
 }
 
 /// One file inside a message's envelope, by its place among the files inside,
@@ -346,15 +375,28 @@ fn what_opening_it_came_to(held: WhatTheEnvelopeHeld) -> WhatTheEnvelopeSays {
 /// entity the parser refuses is damage like any other, because the envelope
 /// opened and what it held is not a message.
 fn taken_apart_in_memory(inside: Vec<u8>) -> WhatTheEnvelopeSays {
-    let (Ok(parsed), Ok(parts)) = (mime::parse(&inside), mime::attachments_with_bytes(&inside))
-    else {
+    let Some((body, parts)) = taken_apart(&inside) else {
         return WhatTheEnvelopeSays::Damaged;
     };
     WhatTheEnvelopeSays::Opened {
-        body: the_body_of(parsed.body_plain, parsed.body_html),
+        body,
         parts,
         inside,
     }
+}
+
+/// A decrypted MIME entity's words and files, or `None` for one the parser
+/// refuses.
+///
+/// The one reading of decrypted content, which a PGP/MIME message's inside
+/// goes through as well, so the two families cannot come to different ideas
+/// of what a message holds.
+pub(crate) fn taken_apart(inside: &[u8]) -> Option<(MessageBody, Vec<AttachmentWithBytes>)> {
+    let (Ok(parsed), Ok(parts)) = (mime::parse(inside), mime::attachments_with_bytes(inside))
+    else {
+        return None;
+    };
+    Some((the_body_of(parsed.body_plain, parsed.body_html), parts))
 }
 
 /// The body a message's text and markup make, the way the cache makes one.

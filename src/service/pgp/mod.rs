@@ -17,10 +17,13 @@
 //! deliberate: it proves the whole path rather than four layers with nothing
 //! wired.
 //!
-//! Inline PGP only. An armoured block in the message's text is what
-//! `application::body_safety::what_the_form_says` finds and what this opens.
-//! PGP/MIME, where the armour is a separate part under `multipart/encrypted`,
-//! is not read, and that gap is in the changelog rather than only here.
+//! Inline PGP and PGP/MIME. An armoured block in the message's text is what
+//! `application::body_safety::what_the_form_says` finds and hands here. Since
+//! 13-15, PGP/MIME is read as well: the armour of a `multipart/encrypted`
+//! message is a separate part, which `application::opening_pgp::for_pgp_mime`
+//! hands here, and what opens is a whole MIME entity that the application
+//! layer takes apart in memory. Either way this module sees armour and hands
+//! back one of [`WhatOpeningItFound`]'s answers, and knows nothing of MIME.
 //!
 //! # Which implementation sits behind this
 //!
