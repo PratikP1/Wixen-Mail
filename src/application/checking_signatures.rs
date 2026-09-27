@@ -291,6 +291,14 @@ mod tests {
         ) -> crate::service::signed_mail::WhatTheEnvelopeHeld {
             crate::service::signed_mail::WhatTheEnvelopeHeld::TheKeyHereRefused
         }
+
+        /// Checking a signature never signs anything, so nothing here asks.
+        fn own_certificate_for(
+            &self,
+            _address: &str,
+        ) -> Option<crate::service::signed_mail::sending::OwnCertificate> {
+            None
+        }
     }
 
     #[test]

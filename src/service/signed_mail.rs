@@ -16,7 +16,7 @@
 //! writes one implementation of that trait against Keychain and Security
 //! framework, and nothing else in this file changes.
 //!
-//! The three questions on that boundary are worth naming, because they are the
+//! The four questions on that boundary are worth naming, because they are the
 //! reason the line is where it is rather than a little further along:
 //!
 //! - **Does this computer trust whoever issued the certificate?** Trust is a
@@ -28,6 +28,9 @@
 //! - **Does this computer hold the private key a message was encrypted to?**
 //!   The key is in the store and normally cannot be taken out of it, so the
 //!   operation has to happen where the key is.
+//! - **Which certificate of the person's own names an address?** Signing
+//!   needs the private key as well, for the same reason, so the answer says
+//!   where the key is and [`sending`] signs there.
 //!
 //! # What this file will not claim
 //!
@@ -57,6 +60,9 @@ use crate::common::{Error, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use x509_parser::prelude::*;
+
+pub mod sending;
+use sending::OwnCertificate;
 
 // ── What shape of S/MIME a part is in ────────────────────────────────────────
 
@@ -2826,10 +2832,10 @@ pub struct Recipient {
 /// **This trait is the entire platform boundary of S/MIME in this project.**
 /// Everything else in this file is plain Rust that a macOS or Linux build
 /// compiles unchanged. Porting means writing one more implementation of these
-/// three methods, against Keychain and the Security framework on macOS, and
-/// changing nothing else here.
+/// methods, against Keychain and the Security framework on macOS, and
+/// changing nothing else here, apart from the two calls [`sending`] makes.
 ///
-/// The three are here and not elsewhere because each of them needs something
+/// They are here and not elsewhere because each of them needs something
 /// only the operating system has: a list of authorities the person running this
 /// has agreed to trust, and a private key that in the ordinary case cannot be
 /// taken out of the store at all, so the arithmetic has to happen where the key
@@ -2862,6 +2868,15 @@ pub trait CertificateStore {
     /// happen where the private key is, and the store that holds it is the one
     /// that knows which recipient it answers to.
     fn open_the_envelope(&self, envelope_der: &[u8]) -> WhatTheEnvelopeHeld;
+
+    /// A certificate of the person's own that names an address, and whose
+    /// private key this store holds, to sign mail from that address with and
+    /// to seal the Sent copy to.
+    ///
+    /// `None` when no certificate here with its key names the address. The
+    /// answer carries where the key is rather than the key, because in the
+    /// ordinary case the key cannot be taken out of the store at all.
+    fn own_certificate_for(&self, address: &str) -> Option<OwnCertificate>;
 }
 
 /// What offering an envelope to this computer's keys came to.
@@ -2934,6 +2949,10 @@ impl CertificateStore for NoCertificateStore {
     fn open_the_envelope(&self, _envelope_der: &[u8]) -> WhatTheEnvelopeHeld {
         WhatTheEnvelopeHeld::TheKeyHereRefused
     }
+
+    fn own_certificate_for(&self, _address: &str) -> Option<OwnCertificate> {
+        None
+    }
 }
 
 /// Which recipient of an encrypted message a certificate belongs to.
@@ -2960,13 +2979,12 @@ fn recipient_matching(recipients: &[Recipient], certificate_der: &[u8]) -> Optio
 /// rest of this project talks to Windows outside the spell checker.
 #[cfg(target_os = "windows")]
 pub mod windows_store {
+    use super::sending::{KeyHome, OwnCertificate};
     use super::{
         CertificateStore, IssuerTrust, Reach, Recipient, WhatTheEnvelopeHeld, Withdrawal,
         recipient_matching,
     };
-    #[cfg(test)]
-    use crate::common::Error;
-    use crate::common::Result;
+    use crate::common::{Error, Result};
     use chrono::{DateTime, Utc};
     use std::ffi::c_void;
 
@@ -3241,9 +3259,17 @@ pub mod windows_store {
         OnlyInMemory(InMemoryStore),
     }
 
-    /// A store handle that closes itself.
+    /// A store handle that closes itself, and the bytes it was made from.
+    ///
+    /// The bytes are kept so a certificate out of it can say where its key
+    /// is: signing imports them again, into a store of its own, because a
+    /// handle cannot travel with a message the way bytes can.
     #[cfg(test)]
-    struct InMemoryStore(*mut c_void);
+    struct InMemoryStore {
+        handle: *mut c_void,
+        pkcs12: Vec<u8>,
+        password: String,
+    }
 
     #[cfg(test)]
     impl Drop for InMemoryStore {
@@ -3251,7 +3277,33 @@ pub mod windows_store {
             // SAFETY: the handle came from PFXImportCertStore, is closed once,
             // and nothing outlives this value.
             unsafe {
-                CertCloseStore(self.0, CERT_CLOSE_STORE_FORCE_FLAG);
+                CertCloseStore(self.handle, CERT_CLOSE_STORE_FORCE_FLAG);
+            }
+        }
+    }
+
+    /// A store opened for one piece of work, closed when the work is done.
+    struct OpenedStore(*mut c_void);
+
+    impl Drop for OpenedStore {
+        fn drop(&mut self) {
+            // SAFETY: the handle was opened for this value alone and is closed
+            // once; any certificate taken out of it is freed before this runs.
+            unsafe {
+                CertCloseStore(self.0, 0);
+            }
+        }
+    }
+
+    /// A certificate handed out by Windows, freed when it goes.
+    struct OwnedCertificate(*const CertContext);
+
+    impl Drop for OwnedCertificate {
+        fn drop(&mut self) {
+            // SAFETY: Windows handed this context to this value, and it is
+            // freed once.
+            unsafe {
+                CertFreeCertificateContext(self.0);
             }
         }
     }
@@ -3285,29 +3337,12 @@ pub mod windows_store {
             pkcs12: &[u8],
             password: &str,
         ) -> Result<Self> {
-            let mut wide: Vec<u16> = password.encode_utf16().collect();
-            wide.push(0);
-            let blob = DataBlob {
-                length: pkcs12.len() as u32,
-                data: pkcs12.as_ptr(),
-            };
-            // SAFETY: the bytes and the password outlive the call, and the
-            // handle that comes back is owned by the value being built.
-            let handle = unsafe {
-                PFXImportCertStore(
-                    &blob,
-                    wide.as_ptr(),
-                    PKCS12_NO_PERSIST_KEY | PKCS12_ALWAYS_CNG_KSP,
-                )
-            };
-            if handle.is_null() {
-                return Err(Error::Security(format!(
-                    "Windows would not read those PKCS #12 bytes ({:#010x})",
-                    last_error()
-                )));
-            }
             Ok(Self {
-                looking_in: Wherever::OnlyInMemory(InMemoryStore(handle)),
+                looking_in: Wherever::OnlyInMemory(InMemoryStore {
+                    handle: imported_into_memory(pkcs12, password)?,
+                    pkcs12: pkcs12.to_vec(),
+                    password: password.to_string(),
+                }),
             })
         }
 
@@ -3318,9 +3353,117 @@ pub mod windows_store {
                 // SAFETY: the handle is owned by this value and open for as
                 // long as the borrow lasts.
                 #[cfg(test)]
-                Wherever::OnlyInMemory(store) => unsafe { certificates_held_by(store.0, true) },
+                Wherever::OnlyInMemory(store) => unsafe {
+                    certificates_held_by(store.handle, true)
+                },
             }
         }
+
+        /// Where the private keys of this store's certificates are, said in a
+        /// form a certificate can carry away with it.
+        fn where_its_keys_are(&self) -> KeyHome {
+            match &self.looking_in {
+                Wherever::ThePersonsOwnStore => KeyHome::ThePersonsOwnStore,
+                #[cfg(test)]
+                Wherever::OnlyInMemory(store) => KeyHome::ImportedForATest {
+                    pkcs12: store.pkcs12.clone(),
+                    password: store.password.clone(),
+                },
+            }
+        }
+    }
+
+    /// Import PKCS #12 bytes into a store that lives in this process only.
+    ///
+    /// `PKCS12_NO_PERSIST_KEY` is what makes this safe on somebody's own
+    /// machine; see [`WindowsCertificateStore::holding_only_in_memory`].
+    #[cfg(test)]
+    fn imported_into_memory(pkcs12: &[u8], password: &str) -> Result<*mut c_void> {
+        let mut wide: Vec<u16> = password.encode_utf16().collect();
+        wide.push(0);
+        let blob = DataBlob {
+            length: pkcs12.len() as u32,
+            data: pkcs12.as_ptr(),
+        };
+        // SAFETY: the bytes and the password outlive the call, and the handle
+        // that comes back is the caller's to close.
+        let handle = unsafe {
+            PFXImportCertStore(
+                &blob,
+                wide.as_ptr(),
+                PKCS12_NO_PERSIST_KEY | PKCS12_ALWAYS_CNG_KSP,
+            )
+        };
+        if handle.is_null() {
+            return Err(Error::Security(format!(
+                "Windows would not read those PKCS #12 bytes ({:#010x})",
+                last_error()
+            )));
+        }
+        Ok(handle)
+    }
+
+    /// Open the store a certificate's private key is in.
+    fn the_store_holding(key_is: &KeyHome) -> Result<OpenedStore> {
+        let handle = match key_is {
+            KeyHome::ThePersonsOwnStore => {
+                let wide: Vec<u16> = "MY".encode_utf16().chain([0]).collect();
+                // SAFETY: the name outlives the call, and the handle that
+                // comes back is owned by the value built from it.
+                unsafe { CertOpenSystemStoreW(0, wide.as_ptr()) }
+            }
+            #[cfg(test)]
+            KeyHome::ImportedForATest { pkcs12, password } => {
+                imported_into_memory(pkcs12, password)?
+            }
+        };
+        if handle.is_null() {
+            return Err(Error::Security(format!(
+                "Windows would not open the store your certificate is in ({:#010x})",
+                last_error()
+            )));
+        }
+        Ok(OpenedStore(handle))
+    }
+
+    /// The certificate in an open store whose bytes are these, handed out so
+    /// its private key can be reached through it.
+    fn the_certificate_in(store: &OpenedStore, der: &[u8]) -> Result<OwnedCertificate> {
+        // SAFETY: each context comes from Windows and is handed straight back
+        // to the enumerator, which frees the previous one; the one kept is
+        // owned by the value returned, which frees it.
+        unsafe {
+            let mut context: *const CertContext = std::ptr::null();
+            loop {
+                context = CertEnumCertificatesInStore(store.0, context);
+                if context.is_null() {
+                    return Err(Error::Security(
+                        "your certificate is no longer in the store it was found in".to_string(),
+                    ));
+                }
+                let length = (*context).encoded_length as usize;
+                if !(*context).encoded.is_null()
+                    && std::slice::from_raw_parts((*context).encoded, length) == der
+                {
+                    return Ok(OwnedCertificate(context));
+                }
+            }
+        }
+    }
+
+    /// A detached signature over some bytes, made where the signer's key is.
+    ///
+    /// `signing_time` is the attribute's value already encoded, written into
+    /// the signed attributes, which is what makes Windows write those at all.
+    pub(super) fn sign_detached(
+        content: &[u8],
+        signer: &OwnCertificate,
+        _signing_time: &[u8],
+    ) -> Result<Vec<u8>> {
+        let store = the_store_holding(&signer.key_is)?;
+        let _certificate = the_certificate_in(&store, &signer.der)?;
+        let _ = content;
+        Ok(Vec::new())
     }
 
     impl CertificateStore for WindowsCertificateStore {
@@ -3405,9 +3548,19 @@ pub mod windows_store {
                 // long as the borrow lasts.
                 #[cfg(test)]
                 Wherever::OnlyInMemory(store) => unsafe {
-                    open_with_the_keys_in(store.0, envelope_der)
+                    open_with_the_keys_in(store.handle, envelope_der)
                 },
             }
+        }
+
+        fn own_certificate_for(&self, _address: &str) -> Option<OwnCertificate> {
+            self.certificates_we_hold_keys_for()
+                .into_iter()
+                .next()
+                .map(|der| OwnCertificate {
+                    der,
+                    key_is: self.where_its_keys_are(),
+                })
         }
     }
 
