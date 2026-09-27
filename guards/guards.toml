@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 385 records have arrived since and have not been through it.
+# 388 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3956,7 +3956,7 @@ red = [
     "service::protocols::smtp::against_a_server_that_answers::test_a_blind_copy_reaches_the_server_and_never_the_message",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/smtp.rs", tests = 40 },
+    { file = "src/service/protocols/smtp.rs", tests = 44 },
 ]
 
 # ── Which mailbox a change is applied to ────────────────────────────────────
@@ -5286,11 +5286,12 @@ after = """        .subject(&email.subject);"""
 red = [
     "application::sent_copy::tests::test_a_reply_to_a_message_this_program_sent_joins_its_conversation",
     "service::protocols::smtp::against_a_server_that_answers::test_the_identifier_on_the_wire_is_the_one_filed_in_sent",
+    "service::protocols::smtp::tests::test_a_plain_message_is_byte_for_byte_what_it_always_was",
     "service::protocols::smtp::tests::test_a_sent_message_carries_an_identifier_naming_the_domain_it_is_from",
 ]
 tests_last_seen = [
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/service/protocols/smtp.rs", tests = 40 },
+    { file = "src/service/protocols/smtp.rs", tests = 44 },
 ]
 
 # ── One queued message, one identifier, however many attempts ───────────────
@@ -12447,7 +12448,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pictures.rs", tests = 44 },
-    { file = "src/service/protocols/smtp.rs", tests = 40 },
+    { file = "src/service/protocols/smtp.rs", tests = 44 },
 ]
 
 [[guard]]
@@ -12463,7 +12464,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pictures.rs", tests = 44 },
-    { file = "src/service/protocols/smtp.rs", tests = 40 },
+    { file = "src/service/protocols/smtp.rs", tests = 44 },
 ]
 
 [[guard]]
@@ -32607,4 +32608,53 @@ red = [
 tests_last_seen = [
     { file = "src/service/signed_mail.rs", tests = 127 },
     { file = "src/service/signed_mail/sending.rs", tests = 8 },
+]
+
+# The body signed with its line feeds alone rather than the CRLF endings it
+# goes out with, so every reader, this one included, says a message nobody
+# touched was changed after it was signed. Written 2026-09-27 by 13-19,
+# measured with the whole library by hand and with `scripts/guards.sh`.
+[[guard]]
+name = "an outgoing message is signed over the bytes it goes out with"
+file = "src/service/protocols/smtp.rs"
+before = """    let signature = sign_detached(as_it_sits, own)?;"""
+after = """    let signature = sign_detached(&String::from_utf8_lossy(as_it_sits).replace("\\r\\n", "\\n").into_bytes(), own)?;"""
+red = [
+    "service::protocols::smtp::tests::protected::test_a_signed_message_holds_for_the_reader_that_checks_everybody_elses",
+    "service::protocols::smtp::tests::protected::test_a_signed_and_encrypted_message_opens_to_a_signed_one_that_holds",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/smtp.rs", tests = 44 },
+]
+
+# The sender left out of those an outgoing message is sealed for, so the copy
+# filed in Sent is one the person who wrote it can never open. Written
+# 2026-09-27 by 13-19, measured with the whole library by hand and with
+# `scripts/guards.sh`.
+[[guard]]
+name = "an encrypted message is sealed for its sender too"
+file = "src/service/protocols/smtp.rs"
+before = """        everyone.push(own.der.clone());"""
+after = ""
+red = [
+    "service::protocols::smtp::tests::protected::test_an_encrypted_message_opens_with_the_senders_own_key_to_its_words",
+    "service::protocols::smtp::tests::protected::test_a_signed_and_encrypted_message_opens_to_a_signed_one_that_holds",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/smtp.rs", tests = 44 },
+]
+
+# A message asked to go encrypted sent with its body in the clear, the
+# failure a person would never see from their own side. Written 2026-09-27 by
+# 13-19, measured with the whole library by hand and with `scripts/guards.sh`.
+[[guard]]
+name = "a message asked to go encrypted does not go in the clear"
+file = "src/service/protocols/smtp.rs"
+before = """            builder.singlepart(sealed(&body.formatted(), own, recipients)?)"""
+after = """            builder.multipart(body.first_in(MultiPart::mixed()))"""
+red = [
+    "service::protocols::smtp::tests::protected::test_an_encrypted_message_opens_with_the_senders_own_key_to_its_words",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/smtp.rs", tests = 44 },
 ]
