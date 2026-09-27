@@ -43,7 +43,7 @@ implying they exist.
 |---|---|---|
 | Templates | Repetitive replies without retyping | Not yet |
 | Several identities per account | One mailbox, more than one address to send as | Not yet |
-| Signing or encrypting what you send | Thunderbird has OpenPGP built in | Not yet. Signed mail that arrives is read and checked; nothing goes out signed or encrypted, and there is no OpenPGP at all |
+| Signing or encrypting what you send | Thunderbird has OpenPGP built in | Not yet. Signed mail that arrives is read and checked, S/MIME-encrypted mail to a certificate on this computer is opened, experimentally, and a PGP message written inline opens with a key imported from the File menu; nothing goes out signed or encrypted |
 | Vacation or automatic replies | Usually a server feature, and usually set from the client | Not yet |
 
 Two more are worth stating plainly because their absence is a decision rather

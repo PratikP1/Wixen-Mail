@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **S/MIME encrypted mail opens, experimentally.** The audit of 2026-09-15 (#52 point 1)
+  found that an S/MIME message encrypted to you could only be said to be encrypted: the code
+  that would open it refused, because it could not be tested without a real certificate. It
+  can now, with a key imported into the tests' own process, and it opens. A message encrypted
+  to a certificate in your Windows certificate store is opened by Windows with the key there,
+  and every surface that shows a message shows its words and lists the files inside it. The
+  bar says one of four sentences: that it was opened here and that opening encrypted mail is
+  experimental; that it is encrypted to a certificate this computer holds no key for; that
+  Windows would not let the key be used; or that what arrived is damaged. What was inside is
+  opened again each time you read the message and never stored, so the mail on this computer
+  stays encrypted and search does not look inside it. A page holding opened mail fetches no
+  picture, whatever the Reading tab says. A meeting inside encrypted mail is said and can be
+  answered, and an update or cancellation inside one is said and never applied on opening. A
+  message signed and then encrypted has its signature checked once it opens. The version does
+  not move for this: no build has been cut since 1.0.0-alpha.1. Known limitations: every
+  envelope opened so far was made by OpenSSL, not by Outlook or Thunderbird, and no
+  certificate somebody really uses has opened one; a key that asks for a PIN or lives on a
+  smart card has not been tried; a picture sent inside an encrypted message is not shown yet.
+  Sending signed or encrypted mail is not built.
 - **An organiser's update moves the meeting, and a cancellation can be taken off the
   calendar.** The audit of 2026-09-15 (#50 points 2, 3 and 9) found that a cancellation was
   said and did nothing to the calendar, that an update moved the meeting only if it was
