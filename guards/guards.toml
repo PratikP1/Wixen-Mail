@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 370 records have arrived since and have not been through it.
+# 372 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32257,6 +32257,11 @@ red = [
     "application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_offered_to_bobs_key_says_the_key_here_does_not_open_it",
     "application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key",
     "application::opening_pgp::tests::pgp_mime::test_opening_a_pgp_mime_message_writes_nothing_to_the_cache",
+    "application::pgp_keys::tests::test_every_key_here_lists_private_keys_first_then_public_ones",
+    "application::pgp_keys::tests::test_exporting_gives_the_public_half_as_armour",
+    "application::pgp_keys::tests::test_importing_says_one_sentence_for_each_key",
+    "application::pgp_keys::tests::test_removing_a_key_by_fingerprint_takes_it_off_the_list",
+    "application::pgp_keys::tests::test_the_public_half_of_a_private_key_here_is_not_kept_again",
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
     "presentation::reader_text::encryption_tests::test_a_page_holding_a_pgp_mime_message_that_opened_fetches_no_picture",
     "presentation::reader_text::encryption_tests::test_the_files_inside_a_pgp_mime_message_that_opened_are_the_files_listed",
@@ -32266,13 +32271,18 @@ red = [
     "service::pgp::keys::tests::test_a_message_whose_middle_was_corrupted_does_not_come_back_as_text",
     "service::pgp::keys::tests::test_an_ordinary_rsa_key_is_stored_and_opens_mail",
     "service::pgp::keys::tests::test_damaged_armour_says_it_is_damaged_and_does_not_panic",
+    "service::pgp::keys::tests::test_each_private_key_here_opens_its_own_mail",
     "service::pgp::keys::tests::test_every_entry_a_key_is_stored_under_is_one_uninstalling_erases",
+    "service::pgp::keys::tests::test_one_text_holding_a_private_and_a_public_key_answers_for_each",
+    "service::pgp::keys::tests::test_removing_a_private_key_takes_every_part_of_it_and_leaves_the_others",
+    "service::pgp::keys::tests::test_the_public_half_of_a_key_is_armour_that_describes_as_public",
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
+    { file = "src/application/pgp_keys.rs", tests = 7 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/presentation/reader_text.rs", tests = 143 },
-    { file = "src/service/pgp/keys.rs", tests = 18 },
+    { file = "src/service/pgp/keys.rs", tests = 25 },
 ]
 
 # The last part of every slot left off the list uninstalling erases, so a key
@@ -32293,4 +32303,39 @@ red = [
 tests_last_seen = [
     { file = "src/application/forget.rs", tests = 25 },
     { file = "src/service/pgp/mod.rs", tests = 6 },
+]
+
+# Only the first private key here offered to a message, so a message to any
+# other key says the key here does not open it, with the right key sitting in
+# the next slot. Written 2026-09-27 by 13-16, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "every private key here is offered to a message, not only the first"
+file = "src/service/pgp/keys.rs"
+before = """    let every_key: Vec<&SignedSecretKey> = keys.iter().collect();"""
+after = """    let every_key: Vec<&SignedSecretKey> = keys.iter().take(1).collect();"""
+red = [
+    "service::pgp::keys::tests::test_each_private_key_here_opens_its_own_mail",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/keys.rs", tests = 25 },
+]
+
+# Other people's public keys left off the one list of every key here, so a
+# public key that was kept is never shown, cannot be chosen to remove or
+# export, and importing it again says it is already here with nothing to show
+# for it. Written 2026-09-27 by 13-16, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the list of every key here holds the public keys kept"
+file = "src/application/pgp_keys.rs"
+before = """    every_key.extend(public);"""
+after = """    let _ = public;"""
+red = [
+    "application::pgp_keys::tests::test_a_public_key_imported_twice_is_already_here_the_second_time",
+    "application::pgp_keys::tests::test_every_key_here_lists_private_keys_first_then_public_ones",
+    "application::pgp_keys::tests::test_removing_a_key_by_fingerprint_takes_it_off_the_list",
+]
+tests_last_seen = [
+    { file = "src/application/pgp_keys.rs", tests = 7 },
 ]

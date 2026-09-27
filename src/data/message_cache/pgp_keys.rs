@@ -13,7 +13,7 @@
 //! checks that.
 
 use super::MessageCache;
-use crate::common::Result;
+use crate::common::{Error, Result};
 
 /// One public key as it is kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,20 +31,54 @@ impl MessageCache {
     ///
     /// `Ok(false)` when a key with that fingerprint is already kept, which is
     /// left as it was.
-    pub fn keep_public_key(&self, _fingerprint: &str, _armour: &str) -> Result<bool> {
-        Ok(false)
+    pub fn keep_public_key(&self, fingerprint: &str, armour: &str) -> Result<bool> {
+        let kept = self
+            .conn
+            .execute(
+                "INSERT OR IGNORE INTO pgp_public_keys (fingerprint, armour, added_at)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![fingerprint, armour, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| Error::Other(format!("Could not keep the public key: {e}")))?;
+        Ok(kept == 1)
     }
 
     /// Every public key kept, in the order they were kept.
     pub fn public_keys(&self) -> Result<Vec<KeptPublicKey>> {
-        Ok(Vec::new())
+        let could_not_read =
+            |e: rusqlite::Error| Error::Other(format!("Could not read the public keys: {e}"));
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT fingerprint, armour, added_at FROM pgp_public_keys
+                 ORDER BY added_at, rowid",
+            )
+            .map_err(could_not_read)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(KeptPublicKey {
+                    fingerprint: row.get(0)?,
+                    armour: row.get(1)?,
+                    added_at: row.get(2)?,
+                })
+            })
+            .map_err(could_not_read)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(could_not_read)
     }
 
     /// Forget the public key with this fingerprint.
     ///
     /// `Ok(false)` when none was kept.
-    pub fn forget_public_key(&self, _fingerprint: &str) -> Result<bool> {
-        Ok(false)
+    pub fn forget_public_key(&self, fingerprint: &str) -> Result<bool> {
+        let forgotten = self
+            .conn
+            .execute(
+                "DELETE FROM pgp_public_keys WHERE fingerprint = ?1",
+                [fingerprint],
+            )
+            .map_err(|e| Error::Other(format!("Could not forget the public key: {e}")))?;
+        Ok(forgotten > 0)
     }
 }
 

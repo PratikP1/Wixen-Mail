@@ -11,7 +11,7 @@
 
 use crate::common::Result;
 use crate::data::message_cache::MessageCache;
-use crate::service::pgp::KeyListing;
+use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
 
 /// What importing did with one key, and the sentence that says so.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,26 +24,149 @@ pub struct Imported {
 
 /// Every key here: private keys first, then public ones, each sorted by the
 /// first name and address it carries.
-pub fn every_key_here(_cache: &MessageCache) -> Result<Vec<KeyListing>> {
-    Ok(Vec::new())
+pub fn every_key_here(cache: &MessageCache) -> Result<Vec<KeyListing>> {
+    let mut every_key = pgp::private_keys_here()?;
+    by_first_name(&mut every_key);
+    let mut public: Vec<KeyListing> = cache
+        .public_keys()?
+        .iter()
+        .flat_map(|kept| pgp::describe(&kept.armour))
+        .collect();
+    by_first_name(&mut public);
+    every_key.extend(public);
+    Ok(every_key)
+}
+
+fn by_first_name(keys: &mut [KeyListing]) {
+    keys.sort_by_cached_key(|key| {
+        key.user_ids
+            .first()
+            .map(|name| name.to_lowercase())
+            .unwrap_or_default()
+    });
 }
 
 /// Import every key an armoured text holds, and say what became of each.
-pub fn import(_cache: &MessageCache, _armoured: &str) -> Vec<Imported> {
-    Vec::new()
+///
+/// Private keys go to the credential store through `service::pgp`; public
+/// keys are kept in the mail database. A public key whose private half is
+/// already here is not kept again, since the private key gives it.
+pub fn import(cache: &MessageCache, armoured: &str) -> Vec<Imported> {
+    let answers = pgp::import_keys(armoured);
+    if answers.is_empty() {
+        return vec![Imported {
+            listing: None,
+            said: "That is not a PGP key, so nothing was stored.".to_string(),
+        }];
+    }
+    answers
+        .into_iter()
+        .map(|answer| what_became_of(cache, answer))
+        .collect()
+}
+
+fn what_became_of(cache: &MessageCache, answer: WhatBecameOfAKey) -> Imported {
+    let (listing, said) = match answer {
+        WhatBecameOfAKey::Imported(listing) => {
+            let said = format!(
+                "The private key for {} was imported. Messages encrypted to it will open \
+                 from now on.",
+                whose(&listing)
+            );
+            (listing, said)
+        }
+        WhatBecameOfAKey::AlreadyHere(listing) => {
+            let said = format!(
+                "The private key for {} is already here, so nothing changed.",
+                whose(&listing)
+            );
+            (listing, said)
+        }
+        WhatBecameOfAKey::LockedWithAPassphrase(listing) => {
+            let said = format!(
+                "The private key for {} has a passphrase on it. Wixen Mail cannot ask for \
+                 one yet, so it would never open anything and it was not stored.",
+                whose(&listing)
+            );
+            (listing, said)
+        }
+        WhatBecameOfAKey::CouldNotBeStored { listing, reason } => {
+            let said = format!(
+                "The private key for {} could not be saved: {reason}. Nothing was stored \
+                 for it.",
+                whose(&listing)
+            );
+            (listing, said)
+        }
+        WhatBecameOfAKey::PublicKeyToKeep { armour, listing } => {
+            let said = keep_a_public_key(cache, &armour, &listing);
+            (listing, said)
+        }
+    };
+    Imported {
+        listing: Some(listing),
+        said,
+    }
+}
+
+fn keep_a_public_key(cache: &MessageCache, armour: &str, listing: &KeyListing) -> String {
+    let its_private_half_is_here = pgp::private_keys_here().is_ok_and(|keys| {
+        keys.iter()
+            .any(|key| key.fingerprint == listing.fingerprint)
+    });
+    if its_private_half_is_here {
+        return format!(
+            "The public key for {} is already here, as part of its private key, so nothing \
+             changed.",
+            whose(listing)
+        );
+    }
+    match cache.keep_public_key(&listing.fingerprint, armour) {
+        Ok(true) => format!("The public key for {} was kept.", whose(listing)),
+        Ok(false) => format!(
+            "The public key for {} is already here, so nothing changed.",
+            whose(listing)
+        ),
+        Err(problem) => format!(
+            "The public key for {} could not be kept: {problem}.",
+            whose(listing)
+        ),
+    }
+}
+
+/// The name a key carries first, or its short identifier when it carries none.
+fn whose(listing: &KeyListing) -> String {
+    listing
+        .user_ids
+        .first()
+        .cloned()
+        .unwrap_or_else(|| format!("key {}", listing.key_id))
 }
 
 /// Remove the key with this fingerprint, private or public.
 ///
 /// `Ok(false)` when no key here has it.
-pub fn remove(_cache: &MessageCache, _fingerprint: &str) -> Result<bool> {
-    Ok(false)
+pub fn remove(cache: &MessageCache, fingerprint: &str) -> Result<bool> {
+    if pgp::remove_private_key(fingerprint)? {
+        return Ok(true);
+    }
+    cache.forget_public_key(fingerprint)
 }
 
 /// The public half of the key with this fingerprint, as armour somebody can be
 /// sent, or `None` when no key here has it.
-pub fn export_public(_cache: &MessageCache, _fingerprint: &str) -> Result<Option<String>> {
-    Ok(None)
+///
+/// A private key's is written out from it; a public key's is the armour it
+/// was kept as.
+pub fn export_public(cache: &MessageCache, fingerprint: &str) -> Result<Option<String>> {
+    if let Some(armour) = pgp::public_half_of_a_key_here(fingerprint)? {
+        return Ok(Some(armour));
+    }
+    Ok(cache
+        .public_keys()?
+        .into_iter()
+        .find(|kept| kept.fingerprint.eq_ignore_ascii_case(fingerprint))
+        .map(|kept| kept.armour))
 }
 
 #[cfg(test)]
@@ -102,14 +225,16 @@ mod tests {
             .map(|imported| imported.said)
             .collect();
 
+        // Which key and what became of it, both: a sentence naming the key
+        // and the kind of key reads the same whether it came in or not.
         assert_eq!(said.len(), 2, "{said:?}");
         assert!(
-            said[0].contains("private key") && said[0].contains("Alice Example"),
+            said[0].contains("private key for Alice Example") && said[0].contains("was imported"),
             "{}",
             said[0]
         );
         assert!(
-            said[1].contains("public key") && said[1].contains("Carol Example"),
+            said[1].contains("public key for Carol Example") && said[1].contains("was kept"),
             "{}",
             said[1]
         );

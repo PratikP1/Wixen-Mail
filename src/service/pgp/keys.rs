@@ -7,8 +7,8 @@
 //! nobody makes in a hurry.
 //!
 //! So the crate's own types stop here. What crosses out of this file is
-//! [`WhatOpeningItFound`] and [`WhatImportingAKeyFound`], which are this
-//! project's words.
+//! [`WhatOpeningItFound`], [`WhatImportingAKeyFound`], [`WhatBecameOfAKey`]
+//! and [`KeyListing`], which are this project's words.
 //!
 //! # Nothing here is logged
 //!
@@ -21,26 +21,30 @@
 //!
 //! # What this build reads and what it does not
 //!
-//! Inline PGP: an armoured block sitting in the message's text, which is what
-//! `application::body_safety::what_the_form_says` finds. **PGP/MIME, where the
-//! armour is a separate `application/octet-stream` part under
-//! `multipart/encrypted`, is not read here**, because that part never reaches
-//! the body this is handed. That is a real gap and it is in the changelog and
-//! in `.planning/WINDOWS.md` rather than only here.
+//! Armour, and nothing that knows about MIME. Inline PGP is an armoured block
+//! in the message's text, which `application::body_safety::what_the_form_says`
+//! finds; PGP/MIME's armour is a part of its own, which
+//! `application::opening_pgp::for_pgp_mime` takes out and hands here.
 //!
-//! One key, with no passphrase on it. A key locked with a passphrase is refused
-//! at import rather than stored, because a key that can never open anything is
+//! Up to [`super::KEY_SLOTS`] private keys, each with no passphrase on it,
+//! kept in the credential store in parts because Windows keeps 1,280
+//! characters in one entry. A key locked with a passphrase is refused at
+//! import rather than stored, because a key that can never open anything is
 //! worse than no key: every message would report the wrong reason for ever
-//! after.
+//! after. Other people's public keys are described and handed back here and
+//! kept by the caller, since they are not secret.
 
 use super::{
     KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, KeyListing, PARTS_PER_KEY, WhatBecameOfAKey,
     WhatImportingAKeyFound, WhatOpeningItFound, the_entry_for,
 };
 use crate::service::secret_store::{self, LONGEST_SECRET_ONE_ENTRY_HOLDS};
-use pgp::composed::{Deserializable, Message, SignedPublicKey, SignedSecretKey};
+use pgp::composed::{
+    ArmorOptions, Deserializable, Message, PublicOrSecret, SignedPublicKey, SignedSecretKey,
+};
 use pgp::errors::Error as OpenPgpError;
-use pgp::types::Password;
+use pgp::packet::{KeyFlags, Signature, UserId};
+use pgp::types::{KeyDetails, Password, SignedUser};
 use std::io::Read;
 
 /// The most of one decrypted message this will hold in memory.
@@ -56,39 +60,180 @@ use std::io::Read;
 /// this reads as damaged, which is honest: nothing of it was shown.
 const MOST_A_MESSAGE_MAY_COST: u64 = 25 * 1024 * 1024;
 
-/// Take an armoured private key and put it in the credential store.
+/// Take an armoured private key and put it in the credential store: the File
+/// menu's import, which speaks of one key.
+///
+/// Answered from [`import_keys`], by the first private key the text holds,
+/// because that is the one it stored; a public key is the answer only when the
+/// text holds nothing else. A key already here reads as imported, which is
+/// what importing it again did before several keys were kept.
 pub(super) fn import(armoured: &str) -> WhatImportingAKeyFound {
-    let key = match SignedSecretKey::from_string(armoured) {
-        Ok((key, _)) => key,
-        // Which of the two refusals, decided by asking the crate rather than by
-        // reading the armour header. A header this program read for itself
-        // would be a second opinion about what a key file is, and the crate is
-        // the one that has to agree with it later.
-        Err(_) => {
-            return if SignedPublicKey::from_string(armoured).is_ok() {
-                WhatImportingAKeyFound::NotAPrivateKey
-            } else {
-                WhatImportingAKeyFound::NotAKey
+    let answers = import_keys(armoured);
+    let about_a_private_key = answers
+        .iter()
+        .find(|answer| !matches!(answer, WhatBecameOfAKey::PublicKeyToKeep { .. }));
+    match (about_a_private_key, answers.first()) {
+        (Some(WhatBecameOfAKey::Imported(_) | WhatBecameOfAKey::AlreadyHere(_)), _) => {
+            WhatImportingAKeyFound::Imported
+        }
+        (Some(WhatBecameOfAKey::LockedWithAPassphrase(_)), _) => {
+            WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase
+        }
+        (Some(WhatBecameOfAKey::CouldNotBeStored { reason, .. }), _) => {
+            WhatImportingAKeyFound::CouldNotBeStored {
+                reason: reason.clone(),
+            }
+        }
+        (_, Some(_)) => WhatImportingAKeyFound::NotAPrivateKey,
+        (_, None) => WhatImportingAKeyFound::NotAKey,
+    }
+}
+
+/// Import every key an armoured text holds, answering for each.
+pub(super) fn import_keys(armoured: &str) -> Vec<WhatBecameOfAKey> {
+    keys_in(armoured)
+        .into_iter()
+        .map(|(key, armour)| what_becomes_of(key, &armour))
+        .collect()
+}
+
+fn what_becomes_of(key: PublicOrSecret, armour: &str) -> WhatBecameOfAKey {
+    let secret = match key {
+        PublicOrSecret::Public(public) => {
+            return WhatBecameOfAKey::PublicKeyToKeep {
+                armour: armour.to_string(),
+                listing: listing_of(&public, false),
             };
         }
+        PublicOrSecret::Secret(secret) => secret,
     };
-    if a_passphrase_is_holding_it_shut(&key) {
-        return WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase;
+    let listing = listing_of(&secret.to_public_key(), true);
+    if a_passphrase_is_holding_it_shut(&secret) {
+        return WhatBecameOfAKey::LockedWithAPassphrase(listing);
     }
-    // What arrived, byte for byte, rather than the crate's own re-serialisation
-    // of it. The same reasoning `signed_original` gives about a signed message:
-    // anything that rewrites a cryptographic document, even to tidy it, is a
-    // second chance to change what it says, and the thing coming back out has
-    // to be the thing that went in.
-    match keep(armoured) {
-        Ok(()) => WhatImportingAKeyFound::Imported,
+    match slot_holding(&listing.fingerprint) {
+        Ok(Some(_)) => return WhatBecameOfAKey::AlreadyHere(listing),
+        Ok(None) => {}
+        Err(problem) => {
+            return WhatBecameOfAKey::CouldNotBeStored {
+                listing,
+                reason: problem.to_string(),
+            };
+        }
+    }
+    match keep(armour) {
+        Ok(()) => WhatBecameOfAKey::Imported(listing),
         // The store's reason, which is about the store. Nothing from the file
         // travels in it; `secret_store` already holds itself to reasons and
         // never values.
-        Err(not_kept) => WhatImportingAKeyFound::CouldNotBeStored {
+        Err(not_kept) => WhatBecameOfAKey::CouldNotBeStored {
+            listing,
             reason: not_kept.reason(),
         },
     }
+}
+
+/// Every key an armoured text holds, each with the armour it is kept as.
+///
+/// Which kind each key is, private or public, is the crate's answer rather
+/// than a reading of the armour header: a header this program read for itself
+/// would be a second opinion about what a key file is, and the crate is the one
+/// that has to agree with it later. What is read here is only where one armoured
+/// block ends and the next begins, because a file of several keys exported one
+/// after another is several blocks and the crate reads one.
+///
+/// A block holding one key is kept as it arrived, byte for byte, rather than as
+/// the crate's own re-serialisation of it. The same reasoning `signed_original`
+/// gives about a signed message: anything that rewrites a cryptographic
+/// document, even to tidy it, is a second chance to change what it says. A block
+/// holding several has no one key's bytes to keep, so each is written out by the
+/// crate.
+fn keys_in(text: &str) -> Vec<(PublicOrSecret, String)> {
+    let mut keys = Vec::new();
+    for block in armoured_blocks(text) {
+        let Ok((found, _)) = PublicOrSecret::from_armor_many(block.as_bytes()) else {
+            continue;
+        };
+        let found: Vec<PublicOrSecret> = found.filter_map(Result::ok).collect();
+        if let [_] = found.as_slice() {
+            keys.extend(found.into_iter().map(|key| (key, block.to_string())));
+            continue;
+        }
+        for key in found {
+            if let Ok(armour) = key.to_armored_string(ArmorOptions::default()) {
+                keys.push((key, armour));
+            }
+        }
+    }
+    keys
+}
+
+/// Each `-----BEGIN PGP ...` to the end of its `-----END PGP ...` line.
+fn armoured_blocks(text: &str) -> Vec<&str> {
+    const BEGINS: &str = "-----BEGIN PGP ";
+    const ENDS: &str = "-----END PGP ";
+    let mut blocks = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(BEGINS) {
+        let from = &rest[start..];
+        let Some(end) = from.find(ENDS) else {
+            blocks.push(from);
+            break;
+        };
+        let end_line = &from[end..];
+        let through = end + end_line.find('\n').map_or(end_line.len(), |line| line + 1);
+        blocks.push(&from[..through]);
+        rest = &from[through..];
+    }
+    blocks
+}
+
+/// A key in this program's words.
+fn listing_of(key: &SignedPublicKey, private: bool) -> KeyListing {
+    let mut users: Vec<&SignedUser> = key.details.users.iter().collect();
+    users.sort_by_key(|user| !user.is_primary());
+    let primary_self_signature = users
+        .first()
+        .and_then(|user| user.signatures.first())
+        .or(key.details.direct_signatures.first());
+    let subkey_bindings = key
+        .public_subkeys
+        .iter()
+        .filter_map(|subkey| subkey.signatures.first());
+    let flags: Vec<KeyFlags> = primary_self_signature
+        .into_iter()
+        .chain(subkey_bindings)
+        .map(Signature::key_flags)
+        .collect();
+    let created = in_utc(key.created_at().as_secs());
+    KeyListing {
+        user_ids: users.iter().map(|user| user_id(&user.id)).collect(),
+        key_id: key.legacy_key_id().to_string().to_uppercase(),
+        fingerprint: format!("{:X}", key.fingerprint()),
+        created,
+        // A key expiration time of zero means it never expires, RFC 9580
+        // 5.2.3.13.
+        expires: primary_self_signature
+            .and_then(Signature::key_expiration_time)
+            .filter(|lasts| lasts.as_secs() > 0)
+            .map(|lasts| created + chrono::Duration::seconds(i64::from(lasts.as_secs()))),
+        private,
+        can_encrypt: flags
+            .iter()
+            .any(|flags| flags.encrypt_comms() || flags.encrypt_storage()),
+        can_sign: flags.iter().any(KeyFlags::sign),
+    }
+}
+
+fn user_id(id: &UserId) -> String {
+    id.as_str().map_or_else(
+        || String::from_utf8_lossy(id.id()).into_owned(),
+        str::to_string,
+    )
+}
+
+fn in_utc(seconds: u32) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::from_timestamp(i64::from(seconds), 0).unwrap_or_default()
 }
 
 /// Why a key was not kept.
@@ -197,15 +342,22 @@ fn first_free_slot() -> Result<Option<usize>, NotKept> {
     Ok(None)
 }
 
-/// Remove every part of a slot, as far as the store allows.
+/// Remove every part of a slot, stopping at the first the store refuses.
 ///
 /// The first part first, because a slot whose first part is gone reads as free,
 /// and a later write there clears whatever parts the store refused to let go.
-fn forget_the_slot(slot: usize) {
+fn remove_the_slot(slot: usize) -> crate::common::Result<()> {
     for part in 1..=PARTS_PER_KEY {
-        if let Err(problem) = secret_store::remove(KEYRING_SERVICE, &the_entry_for(slot, part)) {
-            tracing::warn!("A part of a private key could not be removed: {problem}");
-        }
+        secret_store::remove(KEYRING_SERVICE, &the_entry_for(slot, part))?;
+    }
+    Ok(())
+}
+
+/// The same, taking back a write that failed partway, where the failure that
+/// matters is the write's and this one is only said in the log.
+fn forget_the_slot(slot: usize) {
+    if let Err(problem) = remove_the_slot(slot) {
+        tracing::warn!("A part of a private key could not be removed: {problem}");
     }
 }
 
@@ -274,39 +426,61 @@ fn a_passphrase_is_holding_it_shut(key: &SignedSecretKey) -> bool {
             .any(|subkey| subkey.secret_params().is_encrypted())
 }
 
-/// Open an armoured message with the private key this computer holds.
+/// Open an armoured message with the private keys this computer holds.
+///
+/// Every key here is offered, and the crate takes the one the message names:
+/// each encrypted session key in a message says which key it was encrypted to,
+/// so a message is opened by its own key whichever slot that is in.
 pub(super) fn open(armour: &str) -> WhatOpeningItFound {
-    let stored = match keys_here().map(|keys| keys.into_iter().next()) {
-        Ok(None) => return WhatOpeningItFound::NoKeyHere,
-        Ok(Some(stored)) => stored,
+    let stored = match keys_here() {
+        Ok(stored) if stored.is_empty() => return WhatOpeningItFound::NoKeyHere,
+        Ok(stored) => stored,
         // The reason and never the entry. A locked-down credential store is
         // worth a log line; what it holds is not.
         Err(problem) => {
-            tracing::warn!("The credential store would not give up the private key: {problem}");
+            tracing::warn!("The credential store would not give up the private keys: {problem}");
             return WhatOpeningItFound::TheKeyHereCouldNotBeRead;
         }
     };
-    let Ok((key, _)) = SignedSecretKey::from_string(&stored) else {
-        // Import stores only what has already parsed, so this is the store
-        // handing back something other than what went into it.
-        tracing::warn!("The private key in the credential store no longer reads as a key");
-        return WhatOpeningItFound::TheKeyHereCouldNotBeRead;
-    };
-    open_with(armour, &key)
+    let keys: Vec<SignedSecretKey> = stored
+        .iter()
+        .filter_map(|armour| SignedSecretKey::from_string(armour).ok())
+        .map(|(key, _)| key)
+        .collect();
+    // Import stores only what has already parsed, so a key that does not is
+    // the store handing back something other than what went into it. The
+    // message may have been for that key, so "no key here opens it" would be a
+    // guess; it is the key here that could not be read.
+    let some_could_not_be_read = keys.len() < stored.len();
+    if some_could_not_be_read {
+        tracing::warn!("A private key in the credential store no longer reads as a key");
+    }
+    match open_with(armour, &keys) {
+        WhatOpeningItFound::TheKeyHereDoesNotOpenIt if some_could_not_be_read => {
+            WhatOpeningItFound::TheKeyHereCouldNotBeRead
+        }
+        found => found,
+    }
 }
 
-/// The same, once the key is in hand.
+/// The same, once the keys are in hand.
 ///
 /// **No error out of the crate is logged or passed on.** Not because the crate
 /// is untrustworthy but because of what its error text can hold: a parser
 /// refusing a message can quote the bytes it choked on, and those bytes are a
 /// stranger's mail. What crosses out of here is one of four words this project
 /// chose.
-fn open_with(armour: &str, key: &SignedSecretKey) -> WhatOpeningItFound {
+fn open_with(armour: &str, keys: &[SignedSecretKey]) -> WhatOpeningItFound {
+    if keys.is_empty() {
+        return WhatOpeningItFound::TheKeyHereCouldNotBeRead;
+    }
     let Ok((message, _)) = Message::from_armor(armour.as_bytes()) else {
         return WhatOpeningItFound::Damaged;
     };
-    let opened = match message.decrypt(&Password::empty(), key) {
+    let no_passphrase = Password::empty();
+    let every_key: Vec<&SignedSecretKey> = keys.iter().collect();
+    let passphrases = vec![&no_passphrase; every_key.len()];
+    let opened = match message.decrypt_with_keys(passphrases, every_key) {
         Ok(opened) => opened,
         // The one error worth telling apart, and it is the one that is not
         // about the message: nothing in the message names a key this computer
@@ -347,34 +521,69 @@ pub(super) fn a_key_is_here() -> bool {
 }
 
 /// Every key an armoured text holds, described.
-pub(super) fn describe(_armour: &str) -> Vec<KeyListing> {
-    Vec::new()
+pub(super) fn describe(armour: &str) -> Vec<KeyListing> {
+    keys_in(armour)
+        .iter()
+        .map(|(key, _)| match key {
+            PublicOrSecret::Public(public) => listing_of(public, false),
+            PublicOrSecret::Secret(secret) => listing_of(&secret.to_public_key(), true),
+        })
+        .collect()
 }
 
 /// Every private key here, described, in slot order.
+///
+/// A stored key that no longer reads as one is left out and said in the log,
+/// which is all that can be said of it: there is nothing to describe.
 pub(super) fn private_keys_here() -> crate::common::Result<Vec<KeyListing>> {
-    Ok(Vec::new())
+    let stored = keys_here()?;
+    let described: Vec<KeyListing> = stored.iter().flat_map(|armour| describe(armour)).collect();
+    if described.len() < stored.len() {
+        tracing::warn!("A private key in the credential store no longer reads as a key");
+    }
+    Ok(described)
 }
 
-/// Import every key an armoured text holds.
-pub(super) fn import_keys(_armoured: &str) -> Vec<WhatBecameOfAKey> {
-    Vec::new()
-}
-
-/// Remove the private key with this fingerprint.
-pub(super) fn remove_private_key(_fingerprint: &str) -> crate::common::Result<bool> {
-    Ok(false)
+/// Remove the private key with this fingerprint, every part of it.
+pub(super) fn remove_private_key(fingerprint: &str) -> crate::common::Result<bool> {
+    let Some((slot, _)) = slot_holding(fingerprint)? else {
+        return Ok(false);
+    };
+    remove_the_slot(slot)?;
+    Ok(true)
 }
 
 /// A key's public half, armoured.
-pub(super) fn public_half(_armour: &str) -> Option<String> {
-    None
+pub(super) fn public_half(armour: &str) -> Option<String> {
+    let (key, _) = keys_in(armour).into_iter().next()?;
+    let public = match key {
+        PublicOrSecret::Public(public) => public,
+        PublicOrSecret::Secret(secret) => secret.to_public_key(),
+    };
+    public.to_armored_string(ArmorOptions::default()).ok()
 }
 
 /// The public half of the private key here with this fingerprint.
 pub(super) fn public_half_of_a_key_here(
-    _fingerprint: &str,
+    fingerprint: &str,
 ) -> crate::common::Result<Option<String>> {
+    Ok(slot_holding(fingerprint)?.and_then(|(_, armour)| public_half(&armour)))
+}
+
+/// The slot holding the private key with this fingerprint, and its armour.
+fn slot_holding(fingerprint: &str) -> crate::common::Result<Option<(usize, String)>> {
+    move_the_old_entry_into_a_slot();
+    for slot in 1..=KEY_SLOTS {
+        let Some(armour) = the_key_in(slot)? else {
+            continue;
+        };
+        if describe(&armour)
+            .iter()
+            .any(|listing| listing.fingerprint.eq_ignore_ascii_case(fingerprint))
+        {
+            return Ok(Some((slot, armour)));
+        }
+    }
     Ok(None)
 }
 

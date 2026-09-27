@@ -10,12 +10,12 @@
 //! short notice, and a replacement that reaches every caller is one nobody
 //! makes in a hurry.
 //!
-//! **What is here is the thinnest end-to-end path and not the whole of PGP.**
-//! One key, imported; one message, opened; four ways of failing, each said in
-//! its own words. Several keys, choosing between them, public keys, key
-//! servers, revocation, and anything outgoing are all outside it. That is
-//! deliberate: it proves the whole path rather than four layers with nothing
-//! wired.
+//! **What is here is reading mail and keeping keys, not the whole of PGP.**
+//! Up to [`KEY_SLOTS`] private keys, kept in the credential store in parts;
+//! other people's public keys described and handed back for the mail database
+//! to keep; one message opened by whichever key it names; four ways of
+//! failing, each said in its own words. Key servers, revocation, and anything
+//! outgoing are outside it.
 //!
 //! Inline PGP and PGP/MIME. An armoured block in the message's text is what
 //! `application::body_safety::what_the_form_says` finds and hands here. Since
@@ -351,8 +351,8 @@ pub fn import_a_private_key(armoured: &str) -> WhatImportingAKeyFound {
 
 /// Whether a private key has been imported on this computer.
 ///
-/// Asked by the surfaces that offer to import one, so they can say whether
-/// importing again replaces what is there. It answers from the credential store
+/// Asked by the surfaces that offer to import one, so they can say whether a
+/// key is already here. It answers from the credential store
 /// rather than from a stored flag, for the reason [`keyring_entries`] gives
 /// about deciding from a flag whether a secret exists.
 pub fn a_private_key_is_here() -> bool {
