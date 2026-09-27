@@ -16,6 +16,7 @@
 //! without an add-in (the phase's decision 23). The announcement after the
 //! send names the family, so the choice is never silent.
 
+use crate::application::pgp_keys;
 use crate::data::message_cache::MessageCache;
 use crate::service::pgp::{LockedKey, Recipient};
 use crate::service::protocols::smtp::Protection;
@@ -382,20 +383,67 @@ fn who_cannot_be_reached(kept: &[KeptFor], yours: YoursAre) -> CannotProtect {
 
 /// How a message went, as the end of "Sent, ...": which of the two families
 /// protected it and how. `None` for a plain message, which says nothing new.
-pub fn how_it_goes(_protection: &Protection) -> Option<&'static str> {
-    None
+pub fn how_it_goes(protection: &Protection) -> Option<&'static str> {
+    Some(match protection {
+        Protection::Plain => return None,
+        Protection::SmimeSigned { .. } => "signed with S/MIME",
+        Protection::SmimeEncrypted { .. } => "encrypted with S/MIME",
+        Protection::SmimeSignedAndEncrypted { .. } => "signed and encrypted with S/MIME",
+        Protection::PgpSigned { .. } => "signed with OpenPGP",
+        Protection::PgpEncrypted { .. } => "encrypted with OpenPGP",
+        Protection::PgpSignedAndEncrypted { .. } => "signed and encrypted with OpenPGP",
+    })
 }
 
 /// What this computer holds for the sender and for each recipient: the
 /// sender's certificate and PGP key for the From address, and what is kept
 /// for each recipient.
+///
+/// A store that cannot be read is said in the log and counted as holding
+/// nothing, so the answer is a refusal naming what is missing rather than a
+/// message sent some other way.
 pub fn what_is_held(
-    _cache: &MessageCache,
-    _store: &dyn CertificateStore,
-    _from: &str,
-    _recipients: &[String],
+    cache: &MessageCache,
+    store: &dyn CertificateStore,
+    from: &str,
+    recipients: &[String],
 ) -> WhatIsHeld {
-    WhatIsHeld::default()
+    WhatIsHeld {
+        own_certificate: store.own_certificate_for(from),
+        own_key: your_pgp_key_for(from),
+        theirs: recipients
+            .iter()
+            .map(|address| kept_here_for(cache, address))
+            .collect(),
+    }
+}
+
+fn your_pgp_key_for(from: &str) -> Option<YourPgpKey> {
+    let listing = pgp_keys::private_key_for(from).unwrap_or_else(|problem| {
+        tracing::warn!("Could not read the private keys to protect a message: {problem}");
+        None
+    })?;
+    Some(YourPgpKey {
+        waiting_for_its_passphrase: pgp_keys::the_passphrase_signing_needs(&listing.fingerprint),
+        fingerprint: listing.fingerprint,
+        signs: listing.can_sign,
+        can_be_encrypted_to: listing.can_encrypt,
+    })
+}
+
+fn kept_here_for(cache: &MessageCache, address: &str) -> KeptFor {
+    fn or_nothing<T>(what: &str, problem: crate::common::Error) -> Vec<T> {
+        tracing::warn!("Could not read the {what} kept to protect a message: {problem}");
+        Vec::new()
+    }
+    KeptFor {
+        address: address.to_string(),
+        certificates: cache
+            .certificates_for(address)
+            .unwrap_or_else(|problem| or_nothing("certificates", problem)),
+        public_keys: pgp_keys::public_keys_for(cache, address)
+            .unwrap_or_else(|problem| or_nothing("public keys", problem)),
+    }
 }
 
 #[cfg(test)]

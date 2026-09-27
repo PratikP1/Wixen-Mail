@@ -2,7 +2,7 @@
 //!
 //! Bridges the UI with IMAP/SMTP protocols and manages mail operations.
 
-use crate::application::protecting::{Choice, WhatIsHeld};
+use crate::application::protecting::{Choice, WhatIsHeld, what_protection_it_gets};
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
@@ -12,7 +12,7 @@ use crate::service::protocols::imap::{
     MailboxStatus, Moved,
 };
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
-use crate::service::protocols::smtp::{Email, Protection, SmtpClient, SmtpConfig};
+use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
@@ -190,7 +190,7 @@ impl SendEmailRequest {
             body_html: queued.body_html.clone(),
             in_reply_to: queued.in_reply_to.clone(),
             references: queued.references.clone(),
-            protection: Choice::Plain,
+            protection: queued.protection,
             held: WhatIsHeld::default(),
         })
     }
@@ -198,7 +198,12 @@ impl SendEmailRequest {
     /// Every address it goes to, To, Cc and Bcc, which is who the send loop
     /// gathers keys for.
     pub fn every_recipient(&self) -> Vec<String> {
-        Vec::new()
+        self.to
+            .iter()
+            .chain(&self.cc)
+            .chain(&self.bcc)
+            .map(|recipient| recipient.address.clone())
+            .collect()
     }
 }
 
@@ -215,6 +220,9 @@ impl SendEmailRequest {
 /// no credentials, so it sits above the gate rather than beside it: the gate
 /// stays the first thing `send_email` does.
 pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
+    let address_of = |recipient: &EmailAddress| recipient.address.clone();
+    let seen: Vec<String> = req.to.iter().chain(&req.cc).map(address_of).collect();
+    let blind: Vec<String> = req.bcc.iter().map(address_of).collect();
     Ok(Email {
         // Built here, from the same field the From header is built from, so
         // the domain the identifier names and the domain the recipient reads
@@ -243,9 +251,19 @@ pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
         // stops the send and says which one, rather than sending a message
         // without the thing it was written about.
         attachments: crate::application::attaching::read_all(&req.attachments)?,
-        // Nothing yet asks for anything else: the composer's Sign and Encrypt
-        // boxes, and the request carrying them, arrive with 13-21.
-        protection: Protection::Plain,
+        // What the composer's Sign and Encrypt boxes asked for, decided again
+        // now from what is held, since a key can go between Send and the
+        // moment the message goes. A refusal stops the send and the row stays
+        // queued, saying why; nothing goes out plain in place of a message
+        // somebody asked to be private.
+        protection: what_protection_it_gets(
+            req.protection,
+            &req.from_address,
+            &seen,
+            &blind,
+            &req.held,
+        )
+        .map_err(|refused| Error::InPlainWords(refused.said()))?,
     })
 }
 

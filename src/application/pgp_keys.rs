@@ -19,6 +19,49 @@ use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
 /// typed, and what it answers.
 pub use crate::service::pgp::{LockedKey, Unlocking, unlock};
 
+/// Whether signing with a key here waits on a passphrase nobody has typed
+/// since Wixen Mail started: the key, when it does. What the composer asks
+/// before a message is signed, so it can ask for the passphrase at Send.
+pub use crate::service::pgp::the_passphrase_signing_needs;
+
+/// Whether a key carries this address in one of its names.
+///
+/// A name is written `Ada Lovelace <ada@example.com>` or as the bare address;
+/// the address is read out of the brackets where there are some, and compared
+/// without regard to case, as mail addresses are.
+pub fn names_the_address(listing: &KeyListing, address: &str) -> bool {
+    listing.user_ids.iter().any(|user_id| {
+        let written = match (user_id.rfind('<'), user_id.rfind('>')) {
+            (Some(opens), Some(closes)) if opens < closes => &user_id[opens + 1..closes],
+            _ => user_id.as_str(),
+        };
+        written.trim().eq_ignore_ascii_case(address.trim())
+    })
+}
+
+/// The private key here for an address, the first imported where there are
+/// several.
+pub fn private_key_for(address: &str) -> Result<Option<KeyListing>> {
+    Ok(pgp::private_keys_here()?
+        .into_iter()
+        .find(|listing| names_the_address(listing, address)))
+}
+
+/// The public keys kept for an address that mail can be encrypted to, as
+/// armour.
+pub fn public_keys_for(cache: &MessageCache, address: &str) -> Result<Vec<String>> {
+    Ok(cache
+        .public_keys()?
+        .into_iter()
+        .filter(|kept| {
+            pgp::describe(&kept.armour)
+                .iter()
+                .any(|listing| listing.can_encrypt && names_the_address(listing, address))
+        })
+        .map(|kept| kept.armour)
+        .collect())
+}
+
 /// The locked key a message needs before it can open, or `None` when it needs
 /// none: nearly every message, and every message whose key is open already.
 ///

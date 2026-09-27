@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 394 records have arrived since and have not been through it.
+# 395 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32742,9 +32742,10 @@ red = [
     "application::protecting::tests::test_with_only_a_key_held_a_recipient_with_only_a_certificate_is_named",
     "application::protecting::tests::with_a_certificate::test_with_both_held_the_refusal_names_the_recipient_with_neither",
     "application::protecting::tests::with_a_certificate::test_with_both_held_and_no_one_kind_reaching_everybody_one_of_each_is_named",
+    "application::protecting::tests::from_the_queue::test_a_row_whose_certificate_was_forgotten_after_queueing_is_refused_not_sent_plain",
 ]
 tests_last_seen = [
-    { file = "src/application/protecting.rs", tests = 20 },
+    { file = "src/application/protecting.rs", tests = 28 },
 ]
 
 # A draft saved without whether it is to go signed or encrypted, so one
@@ -32760,4 +32761,21 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/drafts.rs", tests = 8 },
+]
+
+# A queued message whose key went after it was queued sent plain rather than
+# refused, so a message asked to go encrypted goes out readable on the next
+# pass of the send loop. Written 2026-09-27 by 13-21, measured with the whole
+# library.
+[[guard]]
+name = "a queued message whose key went is refused at sending, not sent plain"
+file = "src/application/mail_controller.rs"
+before = """        .map_err(|refused| Error::InPlainWords(refused.said()))?,"""
+after = """        .unwrap_or_default(),"""
+red = [
+    "application::protecting::tests::from_the_queue::test_a_row_whose_certificate_was_forgotten_after_queueing_is_refused_not_sent_plain",
+]
+tests_last_seen = [
+    { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/protecting.rs", tests = 28 },
 ]

@@ -414,6 +414,16 @@ pub fn sign_detached(content: &[u8], sender: &str) -> Sending {
     sending::sign_detached(content, sender)
 }
 
+/// The private key here with this fingerprint, when signing with it waits on
+/// a passphrase nobody has typed since Wixen Mail started; `None` when it signs
+/// as it is, or when no key here has the fingerprint.
+///
+/// Asked before a message is signed, so the passphrase is asked for at Send
+/// rather than the send failing later.
+pub fn the_passphrase_signing_needs(fingerprint: &str) -> Option<LockedKey> {
+    keys::the_passphrase_signing_needs(fingerprint)
+}
+
 /// These bytes encrypted to each recipient's key and to the sender's own,
 /// SEIPD version 1, armoured.
 ///

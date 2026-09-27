@@ -22243,6 +22243,26 @@ fn the_conversation_it_was_answering(
     }
 }
 
+/// A request with what this computer holds gathered for it, when the message
+/// was asked to go signed or encrypted.
+///
+/// Gathered here, as the message goes, rather than when it was queued, so a
+/// key or certificate removed in between stops the send with a reason rather
+/// than a message going out some other way. A plain message reads no key
+/// store at all.
+fn protected_as_asked(mut request: SendEmailRequest, cache: &MessageCache) -> SendEmailRequest {
+    use crate::application::protecting::{Choice, what_is_held};
+    if request.protection != Choice::Plain {
+        request.held = what_is_held(
+            cache,
+            &*crate::service::signed_mail::this_computers_certificates(),
+            &request.from_address,
+            &request.every_recipient(),
+        );
+    }
+    request
+}
+
 fn flush_outbox(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
     // The account travels with the task: sending needs its SMTP settings and
@@ -22385,7 +22405,7 @@ fn flush_outbox(app: AppHandles<'_>) {
             let outcome = match auth {
                 Ok(auth) => match SendEmailRequest::from_queued(msg, &account, auth) {
                     Some(request) => controller
-                        .send_email(&request)
+                        .send_email(&protected_as_asked(request, &cache))
                         .await
                         .map_err(|e| e.to_string()),
                     None => Err(
