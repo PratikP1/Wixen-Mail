@@ -154,6 +154,53 @@ pub fn is_an_smime_envelope(filename: &str, mime_type: &str) -> bool {
     }
 }
 
+/// The media type of a PGP/MIME message's control part, and the value its
+/// `protocol` parameter names (RFC 3156, section 4).
+const PGP_MIME_CONTROL: &str = "application/pgp-encrypted";
+
+/// Whether a whole message says it is PGP/MIME encrypted, from its headers
+/// alone.
+///
+/// The other family's sibling of [`claims_encryption`], here because it reads
+/// the same `Content-Type` through the same private reading, so there is one
+/// answer to what a content type says and not two. A PGP/MIME message is a
+/// `multipart/encrypted` whose `protocol` is `application/pgp-encrypted`: its
+/// armour is a file it carries, so its body is empty and nothing in it looks
+/// like armour, and this header is the only thing that says it is encrypted.
+///
+/// Another protocol under the same wrapper answers no. Nothing here opens one,
+/// and saying it is PGP would offer a stranger's format to the PGP key.
+pub fn claims_pgp_encryption(raw: &[u8]) -> bool {
+    let (headers, _) = split_headers_from_body(raw);
+    header_value(headers, "content-type").is_some_and(|value| {
+        let header = ContentType::read(&value);
+        header.media_type == "multipart/encrypted"
+            && header
+                .parameter("protocol")
+                .is_some_and(|protocol| protocol.trim().eq_ignore_ascii_case(PGP_MIME_CONTROL))
+    })
+}
+
+/// Whether one of a message's stored files is the encrypted part of a PGP/MIME
+/// message.
+///
+/// **Not a second opinion about whether a message is encrypted**, for the
+/// reason [`is_an_smime_envelope`] gives: that is [`claims_pgp_encryption`]'s,
+/// asked as the message arrived. This says which of the two files it carries
+/// holds the armour. RFC 3156 makes the second part `application/octet-stream`
+/// and the first the control part, `application/pgp-encrypted`, which says
+/// only "Version: 1"; offered to the key, the control part reads as a damaged
+/// message. A sender who types the armour's part differently usually still
+/// names it `.asc`, so the name is read after the type.
+pub fn is_a_pgp_mime_part(filename: &str, mime_type: &str) -> bool {
+    let media_type = mime_type.trim().to_ascii_lowercase();
+    if media_type == PGP_MIME_CONTROL {
+        return false;
+    }
+    media_type == "application/octet-stream"
+        || matches!(file_suffix(filename).as_str(), "asc" | "gpg" | "pgp")
+}
+
 pub fn layout_of(content_type: &str) -> Option<SmimeLayout> {
     let header = ContentType::read(content_type);
     match header.media_type.as_str() {
@@ -7486,6 +7533,83 @@ mod the_cheap_first_question {
             "application/x-pkcs7-mime"
         ));
         assert!(!is_an_smime_envelope("notes.pdf", "application/pdf"));
+    }
+
+    // ── PGP/MIME, read from the same header ──────────────────────────────
+
+    /// A message whose only header of note is the `Content-Type` given.
+    fn headed(content_type: &str) -> Vec<u8> {
+        format!("From: a@example.com\r\nContent-Type: {content_type}\r\n\r\nx\r\n").into_bytes()
+    }
+
+    #[test]
+    fn test_a_pgp_mime_message_says_it_claims_pgp_encryption_however_the_protocol_is_written() {
+        // RFC 3156 quotes the protocol and every program met so far does too;
+        // the grammar allows it bare, and a header's values have no case. Each
+        // spelling missed is a message that opens blank with nothing said.
+        for content_type in [
+            "multipart/encrypted; protocol=\"application/pgp-encrypted\"; boundary=\"b\"",
+            "multipart/encrypted; protocol=application/pgp-encrypted; boundary=b",
+            "Multipart/Encrypted; boundary=\"b\"; Protocol=\"Application/PGP-Encrypted\"",
+        ] {
+            assert!(
+                claims_pgp_encryption(&headed(content_type)),
+                "{content_type} was not read as PGP/MIME"
+            );
+        }
+    }
+
+    #[test]
+    fn test_only_pgp_mime_claims_pgp_encryption() {
+        // Another protocol under the same wrapper is not something the key here
+        // can open, an S/MIME envelope is the other family's, and ordinary mail
+        // is nearly all of it. The fixture is the positive half, so a reading
+        // that said no to everything is red here too.
+        assert!(claims_pgp_encryption(
+            &crate::service::pgp::for_tests::a_pgp_mime_message_to_alice()
+        ));
+        for content_type in [
+            "multipart/encrypted; protocol=\"application/x-something-else\"; boundary=\"b\"",
+            "multipart/encrypted; boundary=\"b\"",
+            "application/pkcs7-mime; smime-type=enveloped-data; name=\"smime.p7m\"",
+            "multipart/signed; protocol=\"application/pgp-signature\"; boundary=\"b\"",
+            "text/plain",
+        ] {
+            assert!(
+                !claims_pgp_encryption(&headed(content_type)),
+                "{content_type} was read as PGP/MIME"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_two_families_never_claim_each_others_encryption() {
+        // The S/MIME mark and the PGP/MIME mark lead to different openers, and a
+        // message answering yes to both would be offered to both.
+        let pgp_mime = crate::service::pgp::for_tests::a_pgp_mime_message_to_alice();
+        let smime = headed("application/pkcs7-mime; smime-type=enveloped-data");
+
+        assert!(claims_pgp_encryption(&pgp_mime) && !claims_encryption(&pgp_mime));
+        assert!(claims_encryption(&smime) && !claims_pgp_encryption(&smime));
+    }
+
+    #[test]
+    fn test_the_encrypted_part_is_told_from_the_control_part() {
+        // A PGP/MIME message carries two files once it is stored: the control
+        // part saying "Version: 1", and the armour. Offering the control part to
+        // the key reports a good message as damaged.
+        assert!(is_a_pgp_mime_part(
+            "encrypted.asc",
+            "application/octet-stream"
+        ));
+        assert!(is_a_pgp_mime_part("", "Application/Octet-Stream"));
+        assert!(is_a_pgp_mime_part("message.asc", "text/plain"));
+        assert!(!is_a_pgp_mime_part("", "application/pgp-encrypted"));
+        assert!(!is_a_pgp_mime_part(
+            "version.asc",
+            "application/pgp-encrypted"
+        ));
+        assert!(!is_a_pgp_mime_part("notes.pdf", "application/pdf"));
     }
 
     #[test]

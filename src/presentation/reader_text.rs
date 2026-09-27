@@ -4574,6 +4574,86 @@ mod encryption_tests {
         assert_eq!(listed[0].index, 0);
         assert!(listed[0].inside_the_envelope);
     }
+
+    // ── A PGP/MIME message that opened here ──────────────────────────────
+
+    /// The GnuPG-made PGP/MIME message to Alice, opened with her key, as the
+    /// part a page is built from. Its HTML half points at a described picture
+    /// on `tracker.example.com`, and it carries one file, `minutes.txt`.
+    fn the_pgp_mime_message_opened() -> ConversationPart {
+        crate::service::secret_store::allow();
+        assert_eq!(
+            crate::service::pgp::import_a_private_key(
+                &crate::service::pgp::for_tests::alices_private_key()
+            ),
+            crate::service::pgp::WhatImportingAKeyFound::Imported
+        );
+        let raw = crate::service::pgp::for_tests::a_pgp_mime_message_to_alice();
+        let armour = crate::service::mime::attachments_with_bytes(&raw)
+            .expect("the fixture's parts")
+            .into_iter()
+            .find(|part| {
+                crate::service::signed_mail::is_a_pgp_mime_part(
+                    &part.described.display_name(),
+                    &part.described.mime_type,
+                )
+            })
+            .map(|part| String::from_utf8_lossy(&part.bytes).into_owned())
+            .expect("the fixture's encrypted part");
+        let envelope = crate::application::opening_pgp::from_the_part(Some(&armour));
+        let body = envelope
+            .body_inside()
+            .cloned()
+            .unwrap_or_else(|| MessageBody::Plain(String::new()));
+        ConversationPart {
+            message: super::tests::message(),
+            body,
+            said: WhatIsSaidAboutIt {
+                envelope,
+                ..WhatIsSaidAboutIt::nothing()
+            },
+            depth: 0,
+        }
+    }
+
+    #[test]
+    fn test_a_page_holding_a_pgp_mime_message_that_opened_fetches_no_picture() {
+        // The picture rule 13-14 set for decrypted mail, reached by PGP/MIME
+        // through the same mark rather than a second copy of the rule. The
+        // same body in the clear fetches its picture, which is what says the
+        // rule and not the fixture decides.
+        use crate::application::pictures::Fetching;
+        let opened = [the_pgp_mime_message_opened()];
+        let in_the_clear = [ConversationPart {
+            said: WhatIsSaidAboutIt::nothing(),
+            ..opened[0].clone()
+        }];
+
+        let page = |parts: &[ConversationPart]| {
+            the_renderer_for(parts, HtmlRenderer::with_fetching(Fetching::Allowed))
+                .render_thread("The figures", &thread_parts(parts))
+        };
+
+        let clear = page(&in_the_clear);
+        assert!(
+            clear.contains("src=\"https://tracker.example.com/chart.png\""),
+            "the opened message's picture is not one a page in the clear fetches: {clear}"
+        );
+        let held = page(&opened);
+        assert!(!held.contains("tracker.example.com"), "{held}");
+        assert!(held.contains("never fetched"), "{held}");
+    }
+
+    #[test]
+    fn test_the_files_inside_a_pgp_mime_message_that_opened_are_the_files_listed() {
+        // In the clear it carries the control part and the armour, neither of
+        // which anybody could open. What is listed is what was inside.
+        let listed = attachments_in(&[the_pgp_mime_message_opened()]);
+
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        assert_eq!(listed[0].name, "minutes.txt");
+        assert!(listed[0].inside_the_envelope);
+    }
 }
 
 /// What a text attachment's tab is made of.

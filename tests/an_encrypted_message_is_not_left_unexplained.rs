@@ -592,6 +592,71 @@ fn test_an_opened_envelope_with_no_words_says_it_opened_and_not_that_nothing_arr
     );
 }
 
+// ── A PGP/MIME message that opened here ──────────────────────────────────────
+
+#[test]
+fn test_an_opened_pgp_mime_message_is_its_words_with_no_pgp_sentence_in_the_bar() {
+    // Read through the public composition every reader surface uses. A
+    // PGP/MIME message arrives with no body and its armour in a file, so the
+    // words it opened to take the body's place, and nothing about PGP is said,
+    // the way nothing is said above inline PGP that opened: none of the four
+    // reasons it did not open, and not the general sentence either.
+    use wixen_mail::application::answering::AnswerButtons;
+    use wixen_mail::application::checking_signatures::SignatureCheck;
+    use wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays;
+    use wixen_mail::application::invitations::WhatTheInvitationSays;
+    use wixen_mail::application::reading_a_message;
+    use wixen_mail::common::types::MessageBody;
+    use wixen_mail::presentation::date_display::{
+        Clock, DateOrder, DateSettings, DateStyle, DateWording,
+    };
+    use wixen_mail::presentation::read_aloud::Reading;
+    use wixen_mail::presentation::reader_text;
+    use wixen_mail::presentation::ui_types::MessageItem;
+
+    const THE_WORDS: &str = "The figures are in the minutes. See you Thursday.";
+    let shown = reading_a_message::put_together(
+        MessageBody::Plain(String::new()),
+        WhatTheEnvelopeSays::OpenedWithPgp {
+            body: MessageBody::Multipart {
+                plain: THE_WORDS.to_string(),
+                html: format!("<p>{THE_WORDS}</p>"),
+            },
+            parts: Vec::new(),
+            inside: Vec::new(),
+        },
+        WhatTheInvitationSays::Nothing,
+        AnswerButtons::NotAsked,
+        SignatureCheck::NotSigned,
+    );
+    let reading = Reading {
+        dates: DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        },
+        now: chrono::Local::now(),
+    };
+
+    let document = reader_text::single_message(&MessageItem::default(), &shown.body, reading)
+        .with_what_is_said(&shown.said);
+
+    assert!(document.text.contains(THE_WORDS), "{}", document.text);
+    assert!(
+        !document.text.contains("not been downloaded"),
+        "{}",
+        document.text
+    );
+    // The four reasons all begin "This message is encrypted with PGP", and the
+    // general sentence says "Wixen Mail cannot open it"; the reader keeps all
+    // five to itself, so they are read here by the words they share.
+    let bar = document.warning.as_deref().unwrap_or_default();
+    for pgp_words in ["encrypted with PGP", "cannot open it"] {
+        assert!(!bar.contains(pgp_words), "{bar}");
+    }
+}
+
 #[test]
 fn test_a_file_inside_an_opened_envelope_is_taken_from_the_envelope() {
     // The reader lists the files inside an opened envelope, and the one place

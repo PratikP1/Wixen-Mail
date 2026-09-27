@@ -201,6 +201,23 @@ pub(crate) mod for_tests {
     pub(crate) fn what_alices_message_says() -> &'static str {
         "The meeting moved to Thursday at ten.\n"
     }
+
+    /// A whole PGP/MIME message to Alice, as it arrives: `multipart/encrypted`
+    /// with the control part and the encrypted part GnuPG made.
+    pub(crate) fn a_pgp_mime_message_to_alice() -> Vec<u8> {
+        super::tests::armour(super::tests::PGP_MIME_TO_ALICE).into_bytes()
+    }
+
+    /// The words of its plain half.
+    pub(crate) fn what_the_pgp_mime_message_says() -> &'static str {
+        "The figures are in the minutes. See you Thursday."
+    }
+
+    /// Bob's private key, which is a real key and not the one Alice's messages
+    /// were encrypted to.
+    pub(crate) fn bobs_private_key() -> String {
+        super::tests::armour(super::tests::BOB_PRIVATE)
+    }
 }
 
 #[cfg(test)]
@@ -266,7 +283,7 @@ mod tests {
 
     /// Bob's private key. A real key, and not the one the message below was
     /// encrypted to.
-    const BOB_PRIVATE: &str = "
+    pub(super) const BOB_PRIVATE: &str = "
         LS0tLS1CRUdJTiBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0tLQoKbFFPWUJHcWRrWFFCQ0FE
         UTFZcmdQYmF2MWxyenkvaEhBb3FiS2Y3YmdFMDZ3c0tXcm1aWlZoTnB3K0N4d3FlZgpwZ204
         RWNuWXNuQkJESkpVY01IVjRVS0R4MkFZdVFwemN0OG5Zd0xGMzh1WWtJc20xT1YwTTVGN2VM
@@ -340,6 +357,64 @@ mod tests {
         bXM5OHU5NmxQVGg5ZVBIcVZwZnd0M3NaMEd6eE5KNi9ScG1XQ2FhbUtmcVZ3dVlZM0lCCmZT
         a3NzSUFINVpKd3hqTGxDWWRmemIzd081bXJkbGxnMW5pKzE4dkJ3NFQ3ZVE9PQo9OFNXaAot
         LS0tLUVORCBQR1AgTUVTU0FHRS0tLS0tCg==";
+
+    /// A whole PGP/MIME message to Alice, RFC 3156's `multipart/encrypted`,
+    /// with every line ending in a carriage return and a line feed, as mail
+    /// arrives.
+    ///
+    /// The encrypted part was made by GnuPG 2.4.9 on 2026-09-26, in a home
+    /// directory short enough for `gpg-agent`'s socket, with Alice's keys
+    /// imported from the two constants above:
+    ///
+    /// ```text
+    /// GNUPGHOME=/c/g13 gpg --batch --import alice_public.asc
+    /// GNUPGHOME=/c/g13 gpg --batch --armor --trust-model always \
+    ///     --encrypt -r alice@example.com -o inner.asc inner.eml
+    /// GNUPGHOME=/c/g13 gpg --batch --decrypt inner.asc | cmp - inner.eml
+    /// ```
+    ///
+    /// The last line was checked before this was written down. `inner.eml` is
+    /// a `multipart/mixed` holding a `multipart/alternative`, whose plain half
+    /// says "The figures are in the minutes. See you Thursday." and whose HTML
+    /// half says the same with an `img` pointing at
+    /// `https://tracker.example.com/chart.png`, described and sized so a page
+    /// in the clear would fetch it, and a file, `minutes.txt`,
+    /// saying "Item one: the figures.". The armour was then put by hand in the
+    /// second part of a `multipart/encrypted` whose first part is the
+    /// `application/pgp-encrypted` control part saying `Version: 1`, the way
+    /// Thunderbird lays one out, with `name="encrypted.asc"` on the second.
+    pub(super) const PGP_MIME_TO_ALICE: &str = "
+        RnJvbTogQm9iIEV4YW1wbGUgPGJvYkBleGFtcGxlLmNvbT4NClRvOiBBbGljZSBFeGFtcGxl
+        IDxhbGljZUBleGFtcGxlLmNvbT4NClN1YmplY3Q6IFRoZSBmaWd1cmVzDQpEYXRlOiBUaHUs
+        IDI0IFNlcCAyMDI2IDEwOjAwOjAwICswMDAwDQpNZXNzYWdlLUlEOiA8cGdwLW1pbWUtMTMt
+        MTVAZXhhbXBsZS5jb20+DQpNSU1FLVZlcnNpb246IDEuMA0KQ29udGVudC1UeXBlOiBtdWx0
+        aXBhcnQvZW5jcnlwdGVkOyBwcm90b2NvbD0iYXBwbGljYXRpb24vcGdwLWVuY3J5cHRlZCI7
+        DQogYm91bmRhcnk9ImVuY3J5cHRlZC0xMy0xNSINCg0KVGhpcyBpcyBhbiBPcGVuUEdQL01J
+        TUUgZW5jcnlwdGVkIG1lc3NhZ2UgKFJGQyA0ODgwIGFuZCAzMTU2KQ0KLS1lbmNyeXB0ZWQt
+        MTMtMTUNCkNvbnRlbnQtVHlwZTogYXBwbGljYXRpb24vcGdwLWVuY3J5cHRlZA0KQ29udGVu
+        dC1EZXNjcmlwdGlvbjogUEdQL01JTUUgdmVyc2lvbiBpZGVudGlmaWNhdGlvbg0KDQpWZXJz
+        aW9uOiAxDQoNCi0tZW5jcnlwdGVkLTEzLTE1DQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9u
+        L29jdGV0LXN0cmVhbTsgbmFtZT0iZW5jcnlwdGVkLmFzYyINCkNvbnRlbnQtRGVzY3JpcHRp
+        b246IE9wZW5QR1AgZW5jcnlwdGVkIG1lc3NhZ2UNCkNvbnRlbnQtRGlzcG9zaXRpb246IGlu
+        bGluZTsgZmlsZW5hbWU9ImVuY3J5cHRlZC5hc2MiDQoNCi0tLS0tQkVHSU4gUEdQIE1FU1NB
+        R0UtLS0tLQ0KDQpoUUVNQTZsK2U3ZEJBZnMrQVFmL2NLL1EydGdmck9jUmNORnZramJJc0pB
+        enVoUEJGZmxLUHpRUnN2cUcyUUMwDQoyYmVjbTEyRlNYK1lnaGlvMHVLck4rUHV1Zm4wczBw
+        ZmVndk9NU2NxTWtWR3pwQ1JLcmNiUkNzZGE0ZkJyOVhvDQpQelhjUWZaL29LZ0VxK0N5WEdY
+        Rk83MkEwUkNIaWxpcmV3Q2ZueHYydWt3ODJPVCtRVFZ4cVBqZ0cyMEdpL2tiDQp4THdubTRz
+        NTZVRURXSVZ4ZzJkZ0IvQXo4R0x2M2xtRXNtam16SjRVdzJLcVRuU3N6RVJrdkxYNE1MbGVM
+        TktWDQpQbTZBRTFtY0F3c24xeERpNThWWUEvSUZFQ2V2UCs4VnZmV0p1ZnltS3lScGkzR2Rv
+        c2pXZ2lUWW1EdmhSc0pvDQppclVlajVGOGlCVThuTWZlRUlQL2ZzVmRlOUhmSUU0L012R0cy
+        clhqWHRMQXBBSDhEQUZpM3VpZ3pEdUM3YXVBDQpTNmRVcDduMEp6bktKdmR4cWFtVisvWUMr
+        TlBGSmlpdERqYlQxd0JubGhwNWplNGdRbFBqY0c1TUdwQXQzSVRvDQpTWlJuZGpmbkkyR0xW
+        UVBpMU5FNDRMOWVLN3M0OEFEM1Y5Qm5IcXJlcUF5RXcwRTBra3lNTnpXK0FPR0tUN2ExDQox
+        QXlCWGZFMG5zVDNZdWRIZDRadmhJRktmTXRXQzBJVEhpaEZFdkMyZit1VnF5MnNFZVFTK0Nl
+        KzU2KzRyZmZNDQp6eTdZZHUrZlY1RXNLWUZMRHZhWUhPelAvSWZpUEJtOEtQVXk5Y3c4SWdO
+        R2VuOXBjb3FsMzFkbXVFRDVJdUJaDQpTa2l6QTd1NUVwMk43SzJlY1BoeWgvcXZDcyt3QXNX
+        dnI0VGpPVTl0Y01jNXdjMnIzK3lhVlM1dkdNcElGR2N5DQprWEFmVXNhbG1PSnZRMW1WeW5U
+        V1RIUkZXRHlFUHhwenVFdlJOaDJRYzJ3bldLODBOYzZ5a2pOMXRER2JCQVB3DQplL0VGUElG
+        aDM0dFRjcDB6ODFEMHJDWkJOZzdUWENZTXZuLzI4RnVRMEZMY0xBYWoyOEJzT09URTR0MU9W
+        aEgyDQpESml5QzFuZw0KPVBNQ0ENCi0tLS0tRU5EIFBHUCBNRVNTQUdFLS0tLS0NCg0KLS1l
+        bmNyeXB0ZWQtMTMtMTUtLQ0K";
 
     /// The bytes a fixture stands for.
     pub(super) fn armour(encoded: &str) -> String {

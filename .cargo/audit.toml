@@ -167,10 +167,11 @@ ignore = [
     # value, in either direction, and the channel exists. Beside it now,
     # `HtmlRenderer::for_mail_opened_from_encryption` in
     # src/presentation/html_renderer.rs, which `the_renderer_for` in
-    # src/presentation/reader_text.rs asks for any page holding an opened S/MIME
-    # message: it holds every picture back whatever the Reading tab says. Let
-    # the setting decide there and the fetch of a picture says "this decrypted"
-    # to whoever hosts it, and a decrypted S/MIME body is usually HTML.
+    # src/presentation/reader_text.rs asks for any page holding a message that
+    # opened here, S/MIME or PGP/MIME: it holds every picture back whatever the
+    # Reading tab says. Let the setting decide there and the fetch of a picture
+    # says "this decrypted" to whoever hosts it, and a decrypted body of either
+    # kind is usually HTML.
     #
     # Whoever adds such a feature in a year will not connect it to a security
     # advisory. That is why the condition is written in the words they would
@@ -180,14 +181,22 @@ ignore = [
     # records why the condition did not trip. Pictures a message points at
     # are fetched by default from that day (#28, `hold_back_remote_pictures`
     # off), which is a background fetch, and the question is whether its
-    # presence depends on whether a body opened. It does not: a PGP message
-    # that opens is handed on as `MessageBody::Plain`, its words as text, by
-    # `the_body_to_show` in src/application/opening_pgp.rs, and text is
-    # escaped into the page and never parsed for a picture, so an opened
-    # message points at nothing a browser could fetch and a closed one is
-    # shown as its armour. The line this now also turns on: make an opened
-    # PGP body a `MessageBody::Html`, and the fetch of its pictures says
-    # "this decrypted" to whoever hosts them.
+    # presence depends on whether a body opened. It does not, and since 13-15
+    # on 2026-09-26 for two reasons rather than one. An inline PGP message that
+    # opens is still handed on as `MessageBody::Plain`, its words as text, by
+    # `the_body_to_show` in src/application/opening_pgp.rs, and text is escaped
+    # into the page and never parsed for a picture. A PGP/MIME message that
+    # opens can be HTML, because what it holds is a whole MIME entity, so its
+    # pictures are not held back by being text: `for_pgp_mime` in the same file
+    # hands it on as `WhatTheEnvelopeSays::OpenedWithPgp`, `is_opened` in
+    # src/application/encrypted_mail.rs answers yes for it as for an opened
+    # S/MIME envelope, and its page is built by the renderer named above, which
+    # fetches nothing. A message that did not open is shown as its armour. So
+    # the fetch still says nothing about whether anything decrypted. The line
+    # this now also turns on: let decrypted content decide whether a picture is
+    # fetched, by leaving a kind of opened message out of `is_opened` or by
+    # handing its page a renderer that asks the setting, and the fetch says
+    # "this decrypted" to whoever hosts the picture.
     #
     # ## What to watch, and it is not the advisory
     #
