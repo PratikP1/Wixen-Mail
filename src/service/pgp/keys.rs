@@ -640,6 +640,12 @@ pub(crate) mod for_tests {
         super::tests::armour(super::tests::CAROL_PUBLIC)
     }
 
+    /// Dave's private key, with the passphrase `correct horse` still on it,
+    /// which nothing here can open.
+    pub(crate) fn daves_locked_key() -> String {
+        super::tests::armour(super::tests::DAVE_LOCKED)
+    }
+
     /// Alice's fingerprint, as `gpg --list-keys --with-colons` gave it.
     pub(crate) const ALICES_FINGERPRINT: &str = "6EFD87D1527731DE679B8E1BA97E7BB74101FB3E";
 
@@ -835,7 +841,7 @@ mod tests {
     /// GnuPG 2.4.9 on 2026-09-27 with the passphrase still on it: the same
     /// commands as Carol's with `--passphrase 'correct horse'` throughout.
     /// Nothing here can open it, which is what it is for.
-    const DAVE_LOCKED: &str = "
+    pub(super) const DAVE_LOCKED: &str = "
         LS0tLS1CRUdJTiBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0tLQoKbElZRWFyaWhNaFlKS3dZ
         QkJBSGFSdzhCQVFkQUNFWVUrTXQ1Z3BTdDNLKzM1UjR0V1dHdXBaQ1M0YStEQ21segowS2ZJ
         VS9iK0J3TUMwR0ZzRjA3a3A0L3oyclRvY2V5cFNIVEpJSDZqc1V0ODlGc2ZzbksxTGF0Rmt3

@@ -13,6 +13,58 @@ use crate::common::Result;
 use crate::data::message_cache::MessageCache;
 use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
 
+/// What keys can and cannot do in this build, said first in the key manager
+/// where a person reads it (#49).
+///
+/// **True for the build it ships in, clause by clause.** Every later plan that
+/// changes what a key can do here rewrites this, and a case in this module
+/// pins each clause to the code that makes it true: a locked key refused by
+/// [`import`], a private key opening mail sent to it, no reader of the public
+/// keys outside this module, and a removal that leaves nothing behind.
+pub const WHAT_KEYS_CAN_DO_HERE: &str = "";
+
+/// The question asked before a key is removed, naming the key and what stops
+/// working without it.
+pub fn removal_question(listing: &KeyListing) -> String {
+    let _ = listing;
+    String::new()
+}
+
+/// One key as a row of the key manager's list: the person first, the
+/// fingerprint after, so a row is heard as whose key it is before it is heard
+/// as sixty hexadecimal digits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyRow {
+    /// The first name and address the key carries.
+    pub name: String,
+    /// "Private key" or "Public key".
+    pub kind: String,
+    /// The short identifier, in groups of four.
+    pub key_id: String,
+    /// The fingerprint, in groups of four.
+    pub fingerprint: String,
+    /// When the key was made, as a date in words.
+    pub created: String,
+    /// When it stops being valid, or "Never".
+    pub expires: String,
+    /// What it can do: encrypt, sign, both or neither.
+    pub can: String,
+}
+
+/// What a row of the key manager says about one key.
+pub fn what_a_row_says(listing: &KeyListing) -> KeyRow {
+    let _ = listing;
+    KeyRow {
+        name: String::new(),
+        kind: String::new(),
+        key_id: String::new(),
+        fingerprint: String::new(),
+        created: String::new(),
+        expires: String::new(),
+        can: String::new(),
+    }
+}
+
 /// What importing did with one key, and the sentence that says so.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Imported {
@@ -175,8 +227,8 @@ mod tests {
     use crate::common::temp_home::TempHome;
     use crate::service::pgp::describe;
     use crate::service::pgp::for_tests::{
-        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, alices_private_key, alices_public_key,
-        carols_public_key,
+        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, a_message_to_alice, alices_private_key,
+        alices_public_key, carols_public_key, daves_locked_key, what_alices_message_says,
     };
     use crate::service::secret_store;
 
@@ -323,6 +375,223 @@ mod tests {
             export_public(&cache, "0000000000000000000000000000000000000000")
                 .expect("the keys to be read"),
             None
+        );
+    }
+
+    // ── What keys can do here, clause by clause ─────────────────────────────
+    //
+    // Each case reads one clause of the sentence and then asks the code the
+    // clause is about. A sentence that stopped being true would fail the second
+    // half; a sentence that dropped the clause would fail the first.
+
+    #[test]
+    fn test_the_limits_say_a_locked_key_cannot_be_imported_and_none_is() {
+        assert!(
+            WHAT_KEYS_CAN_DO_HERE
+                .contains("A key locked with a passphrase cannot be imported yet."),
+            "{WHAT_KEYS_CAN_DO_HERE:?}"
+        );
+        let cache = a_cache("pgp-limits-locked");
+
+        let answers = import(&cache, &daves_locked_key());
+
+        assert_eq!(answers.len(), 1, "{answers:?}");
+        assert!(
+            answers[0].said.contains("passphrase"),
+            "{}",
+            answers[0].said
+        );
+        assert_eq!(fingerprints_and_halves(&cache), vec![]);
+    }
+
+    #[test]
+    fn test_the_limits_say_a_private_key_opens_mail_sent_to_it_and_one_does() {
+        assert!(
+            WHAT_KEYS_CAN_DO_HERE.contains("A private key here opens PGP messages sent to it."),
+            "{WHAT_KEYS_CAN_DO_HERE:?}"
+        );
+        let cache = a_cache("pgp-limits-opens");
+        import(&cache, &alices_private_key());
+
+        assert_eq!(
+            pgp::open_a_message(&a_message_to_alice()),
+            pgp::WhatOpeningItFound::Opened(what_alices_message_says().to_string())
+        );
+    }
+
+    /// Every line under `src` that reads the kept public keys, outside the two
+    /// files that keep them.
+    fn readers_of_the_public_keys_elsewhere() -> Vec<String> {
+        const KEEPERS: [&str; 2] = [
+            "src/application/pgp_keys.rs",
+            "src/data/message_cache/pgp_keys.rs",
+        ];
+        let mut found = Vec::new();
+        let mut waiting = vec![std::path::PathBuf::from("src")];
+        while let Some(dir) = waiting.pop() {
+            for entry in std::fs::read_dir(&dir).expect("the source tree").flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    waiting.push(path);
+                    continue;
+                }
+                let named = path.to_string_lossy().replace('\\', "/");
+                if !named.ends_with(".rs") || KEEPERS.contains(&named.as_str()) {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).expect("a source file");
+                found.extend(
+                    text.lines()
+                        .filter(|line| !line.trim_start().starts_with("//"))
+                        .filter(|line| line.contains("public_keys("))
+                        .map(|line| format!("{named}: {}", line.trim())),
+                );
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn test_the_limits_say_nothing_uses_public_keys_and_nothing_outside_reads_them() {
+        assert!(
+            WHAT_KEYS_CAN_DO_HERE.contains("Public keys are kept here, and nothing uses them yet."),
+            "{WHAT_KEYS_CAN_DO_HERE:?}"
+        );
+        // The walk has to be able to see a reader, or an empty answer means
+        // nothing: this file reads them, and is left out by name only.
+        let here = std::fs::read_to_string("src/application/pgp_keys.rs").expect("this file");
+        assert!(here.contains(".public_keys()"));
+
+        assert_eq!(readers_of_the_public_keys_elsewhere(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_the_limits_say_where_keys_are_kept_and_removing_one_leaves_nothing() {
+        assert!(
+            WHAT_KEYS_CAN_DO_HERE.contains(
+                "Private keys are kept in the Windows credential store and public keys in \
+                 Wixen Mail's own data, and removing a key here removes it from this computer."
+            ),
+            "{WHAT_KEYS_CAN_DO_HERE:?}"
+        );
+        let cache = a_cache("pgp-limits-removed");
+        import(&cache, &alice_and_carols_public_key());
+        assert!(!secret_store::entries_under(pgp::KEYRING_SERVICE).is_empty());
+
+        remove(&cache, ALICES_FINGERPRINT).expect("removed");
+        remove(&cache, CAROLS_FINGERPRINT).expect("removed");
+
+        assert_eq!(
+            secret_store::entries_under(pgp::KEYRING_SERVICE),
+            Vec::<(String, String)>::new()
+        );
+        assert!(cache.public_keys().expect("the table").is_empty());
+    }
+
+    // ── The question before a removal, and a row of the list ───────────────
+
+    fn adas_private_key() -> KeyListing {
+        KeyListing {
+            user_ids: vec![
+                "Ada Lovelace <ada@example.com>".to_string(),
+                "Ada <ada@example.org>".to_string(),
+            ],
+            key_id: "9C0D1E2F3A4B5C6D".to_string(),
+            fingerprint: "1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B".to_string(),
+            created: chrono::DateTime::parse_from_rfc3339("2026-09-27T10:00:00Z")
+                .expect("a date")
+                .to_utc(),
+            expires: None,
+            private: true,
+            can_encrypt: true,
+            can_sign: true,
+        }
+    }
+
+    fn graces_public_key() -> KeyListing {
+        KeyListing {
+            user_ids: vec!["Grace Hopper <grace@example.com>".to_string()],
+            key_id: "0B1C2D3E4F5A6B7C".to_string(),
+            fingerprint: "FEDCBA98765432100123456789ABCDEF0B1C2D3E".to_string(),
+            created: chrono::DateTime::parse_from_rfc3339("2025-01-05T08:30:00Z")
+                .expect("a date")
+                .to_utc(),
+            expires: Some(
+                chrono::DateTime::parse_from_rfc3339("2028-01-05T08:30:00Z")
+                    .expect("a date")
+                    .to_utc(),
+            ),
+            private: false,
+            can_encrypt: true,
+            can_sign: false,
+        }
+    }
+
+    #[test]
+    fn test_removing_a_private_key_asks_naming_it_and_what_stops_opening() {
+        assert_eq!(
+            removal_question(&adas_private_key()),
+            "Remove the private key for Ada Lovelace <ada@example.com>, 1A2B 3C4D 5E6F 7A8B \
+             9C0D 1E2F 3A4B 5C6D 7E8F 9A0B? Messages encrypted to it will no longer open \
+             here, and it cannot be brought back unless you import it again."
+        );
+    }
+
+    #[test]
+    fn test_removing_a_public_key_asks_naming_it() {
+        assert_eq!(
+            removal_question(&graces_public_key()),
+            "Remove the public key for Grace Hopper <grace@example.com>, FEDC BA98 7654 3210 \
+             0123 4567 89AB CDEF 0B1C 2D3E? It will no longer be kept here."
+        );
+    }
+
+    #[test]
+    fn test_a_row_says_whose_key_it_is_before_its_numbers() {
+        assert_eq!(
+            what_a_row_says(&adas_private_key()),
+            KeyRow {
+                name: "Ada Lovelace <ada@example.com>".to_string(),
+                kind: "Private key".to_string(),
+                key_id: "9C0D 1E2F 3A4B 5C6D".to_string(),
+                fingerprint: "1A2B 3C4D 5E6F 7A8B 9C0D 1E2F 3A4B 5C6D 7E8F 9A0B".to_string(),
+                created: "27 September 2026".to_string(),
+                expires: "Never".to_string(),
+                can: "Encrypt and sign".to_string(),
+            }
+        );
+        assert_eq!(
+            what_a_row_says(&graces_public_key()),
+            KeyRow {
+                name: "Grace Hopper <grace@example.com>".to_string(),
+                kind: "Public key".to_string(),
+                key_id: "0B1C 2D3E 4F5A 6B7C".to_string(),
+                fingerprint: "FEDC BA98 7654 3210 0123 4567 89AB CDEF 0B1C 2D3E".to_string(),
+                created: "5 January 2025".to_string(),
+                expires: "5 January 2028".to_string(),
+                can: "Encrypt only".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_key_with_no_name_is_said_to_have_none_and_can_sign_alone() {
+        let nameless = KeyListing {
+            user_ids: vec![],
+            can_encrypt: false,
+            can_sign: true,
+            ..adas_private_key()
+        };
+
+        let row = what_a_row_says(&nameless);
+
+        assert_eq!(row.name, "No name or address");
+        assert_eq!(row.can, "Sign only");
+        assert_eq!(
+            removal_question(&nameless),
+            "Remove the private key for key 9C0D 1E2F 3A4B 5C6D, 1A2B 3C4D 5E6F 7A8B 9C0D 1E2F \
+             3A4B 5C6D 7E8F 9A0B? Messages encrypted to it will no longer open here, and it \
+             cannot be brought back unless you import it again."
         );
     }
 }
