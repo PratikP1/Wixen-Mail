@@ -56,6 +56,7 @@
 //! See [`WhatOpeningItFound`].
 
 mod keys;
+mod signatures;
 
 /// The GnuPG-made key and message, for the tests of modules that open mail.
 #[cfg(test)]
@@ -314,6 +315,69 @@ pub enum WhatBecameOfAKey {
     /// A private key the credential store would not take, and why, in words
     /// about the store and never about the key.
     CouldNotBeStored { listing: KeyListing, reason: String },
+}
+
+/// What a PGP signature was found to be worth, checked against the keys in the
+/// key manager.
+///
+/// Four answers, and none of them is "signed" on its own. A signature says a
+/// key made it; it never says who holds that key, and a sentence that could be
+/// heard as "this message is genuine" is the reading a forger is buying. So
+/// each answer carries what was found and nothing more, and the words for it
+/// are chosen where they are said.
+///
+/// Like [`WhatOpeningItFound`], nothing here carries text from the crate
+/// behind this module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PgpVerdict {
+    /// The arithmetic holds against a key in the list: that key made it, over
+    /// exactly these words.
+    Holds { whose: KeyInYourList },
+    /// The key the signature names is not in the list, so nothing could be
+    /// checked. Not a failed check: importing that key turns this into one of
+    /// the other answers.
+    NoKeyToCheckIt {
+        /// The key the signature names, sixteen hexadecimal digits in groups
+        /// of four, the way a person reads one to somebody.
+        key_id: String,
+    },
+    /// A key in the list is the one the signature names, and the arithmetic
+    /// does not hold: the words were changed after they were signed, or the
+    /// signature is not that key's.
+    DoesNotHold { whose: KeyInYourList },
+    /// It will not read as a signature at all.
+    Damaged,
+}
+
+/// A key in the key manager's list, named the way its row names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyInYourList {
+    /// The first name and address the key carries, or its short identifier
+    /// where it carries none.
+    pub name: String,
+    /// The whole fingerprint, in groups of four.
+    pub fingerprint: String,
+}
+
+/// Check a clearsigned text against these public keys.
+///
+/// Answers the verdict and the text to show: the signed words where the text
+/// holds nothing but the signed block, and the text as it was given otherwise.
+/// Words outside the block are not covered by the signature, and taking the
+/// armour lines away from around the words that are would leave nothing on the
+/// page saying where the signed part begins and ends.
+pub fn verify_cleartext(text: &str, public_keys: &[String]) -> (PgpVerdict, String) {
+    signatures::verify_cleartext(text, public_keys)
+}
+
+/// Check a detached signature over exactly these bytes against these public
+/// keys.
+pub fn verify_detached(
+    content: &[u8],
+    signature_armour: &str,
+    public_keys: &[String],
+) -> PgpVerdict {
+    signatures::verify_detached(content, signature_armour, public_keys)
 }
 
 /// Every key an armoured text holds, described.
