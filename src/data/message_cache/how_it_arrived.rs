@@ -136,6 +136,17 @@ impl MessageCache {
             .find(|held| is_an_smime_envelope(&held.described.filename, &held.described.mime_type))
             .and_then(|held| held.content))
     }
+
+    /// Whether this message said it was PGP/MIME encrypted when it arrived.
+    pub fn arrived_pgp_encrypted(&self, _message_id: i64) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// The armour of the PGP/MIME message this message arrived as, when this
+    /// computer has it.
+    pub fn the_pgp_mime_part_it_carried(&self, _message_id: i64) -> Result<Option<String>> {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -335,6 +346,103 @@ mod tests {
             .expect("stored");
 
         assert_eq!(cache.the_envelope_it_carried(row).expect("read"), None);
+    }
+
+    // ── PGP/MIME, the third fact ─────────────────────────────────────────
+
+    #[test]
+    fn test_a_pgp_mime_message_is_marked_on_arrival() {
+        // A PGP/MIME message's words are in a file it carries, so its body is
+        // empty and nothing in it looks like armour. Whether it was encrypted
+        // is in the Content-Type, and that is gone by the time it is opened.
+        let cache = a_cache();
+        let row = a_message(&cache, 1);
+
+        cache
+            .note_the_form_it_arrived_in(
+                row,
+                &crate::service::pgp::for_tests::a_pgp_mime_message_to_alice(),
+            )
+            .expect("noted");
+
+        assert!(cache.arrived_pgp_encrypted(row).expect("read"));
+    }
+
+    #[test]
+    fn test_each_family_is_marked_as_itself_and_not_as_the_other() {
+        // Two marks leading to two openers. An S/MIME envelope offered to the
+        // PGP key, or the other way round, says a good message is damaged.
+        let cache = a_cache();
+        let smime = a_message(&cache, 1);
+        let pgp_mime = a_message(&cache, 2);
+        let plain = a_message(&cache, 3);
+
+        cache
+            .note_the_form_it_arrived_in(smime, &encrypted_to_alice())
+            .expect("noted");
+        cache
+            .note_the_form_it_arrived_in(
+                pgp_mime,
+                &crate::service::pgp::for_tests::a_pgp_mime_message_to_alice(),
+            )
+            .expect("noted");
+        cache
+            .note_the_form_it_arrived_in(plain, &ordinary())
+            .expect("noted");
+
+        assert!(cache.arrived_encrypted(smime).expect("read"));
+        assert!(!cache.arrived_pgp_encrypted(smime).expect("read"));
+        assert!(cache.arrived_pgp_encrypted(pgp_mime).expect("read"));
+        assert!(!cache.arrived_encrypted(pgp_mime).expect("read"));
+        assert!(!cache.arrived_pgp_encrypted(plain).expect("read"));
+        assert!(
+            !cache
+                .arrived_pgp_encrypted(9_999)
+                .expect("a row that is not there")
+        );
+    }
+
+    #[test]
+    fn test_the_armour_comes_back_out_of_the_part_and_not_out_of_the_control_part() {
+        // Stored in the order the message carries them: the control part saying
+        // "Version: 1" first, the armour second. Taking the first would offer
+        // the key two words and report the message as damaged.
+        let cache = a_cache();
+        let row = a_message(&cache, 1);
+        cache
+            .replace_attachments_with_content(
+                row,
+                &[
+                    a_file("", "application/pgp-encrypted", b"Version: 1\r\n"),
+                    a_file(
+                        "encrypted.asc",
+                        "application/octet-stream",
+                        b"-----BEGIN PGP MESSAGE-----\r\n",
+                    ),
+                ],
+            )
+            .expect("stored");
+
+        assert_eq!(
+            cache.the_pgp_mime_part_it_carried(row).expect("read"),
+            Some("-----BEGIN PGP MESSAGE-----\r\n".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_pgp_mime_message_with_no_part_kept_answers_that_it_has_none() {
+        // Over the ceiling, dropped under the budget, or never opened: the
+        // reader then says the details could not be read, never a blank.
+        let cache = a_cache();
+        let row = a_message(&cache, 1);
+        cache
+            .replace_attachments_with_content(
+                row,
+                &[a_file("", "application/pgp-encrypted", b"Version: 1\r\n")],
+            )
+            .expect("stored");
+
+        assert_eq!(cache.the_pgp_mime_part_it_carried(row).expect("read"), None);
     }
 
     // ── The guard over the two facts staying together ────────────────────
