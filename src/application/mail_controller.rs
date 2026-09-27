@@ -2633,6 +2633,7 @@ mod send_request_tests {
             body: "Attached.".into(),
             in_reply_to: None,
             references: None,
+            protection: Default::default(),
             attempt_count: 0,
             last_error: None,
             created_at: "2026-07-26".into(),

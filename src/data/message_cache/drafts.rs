@@ -1,6 +1,7 @@
 //! Draft persistence operations
 
 use super::{CachedDraft, MessageCache};
+use crate::application::protecting::Choice;
 use crate::common::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 
@@ -61,6 +62,7 @@ impl MessageCache {
                     references: row.get(10)?,
                     body_html: row.get(11)?,
                     attachments: crate::application::attaching::split(&row.get::<_, String>(12)?),
+                    protection: Choice::Plain,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
@@ -99,6 +101,7 @@ impl MessageCache {
                         attachments: crate::application::attaching::split(
                             &row.get::<_, String>(12)?,
                         ),
+                        protection: Choice::Plain,
                     })
                 },
             )
@@ -166,6 +169,7 @@ mod tests {
             references: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            protection: Choice::Plain,
         };
         cache.save_draft(&draft).expect("the draft to save");
 
@@ -248,6 +252,7 @@ mod tests {
                 references: None,
                 created_at: chrono::Utc::now().to_rfc3339(),
                 updated_at: chrono::Utc::now().to_rfc3339(),
+                protection: Choice::Plain,
             })
             .expect("the draft to save");
 
@@ -297,6 +302,7 @@ mod tests {
             attachments: Vec::new(),
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            protection: Choice::Plain,
         };
         cache.save_draft(&draft).expect("the draft to save");
 
@@ -333,6 +339,7 @@ mod tests {
                     attachments: Vec::new(),
                     created_at: chrono::Utc::now().to_rfc3339(),
                     updated_at: chrono::Utc::now().to_rfc3339(),
+                    protection: Choice::Plain,
                 })
                 .expect("the draft to save");
             for column in ["in_reply_to", "references_header"] {
@@ -351,6 +358,73 @@ mod tests {
             .expect("the draft to survive");
         assert_eq!(back.subject, "Written long ago");
         assert!(back.in_reply_to.is_none());
+    }
+
+    fn a_draft_protected(choice: Choice) -> CachedDraft {
+        CachedDraft {
+            id: "draft-private".to_string(),
+            account_id: "acc-1".to_string(),
+            to_addr: "grace@example.com".to_string(),
+            cc: None,
+            bcc: None,
+            subject: "Private".to_string(),
+            body: "Only for Grace".to_string(),
+            body_html: None,
+            attachments: Vec::new(),
+            in_reply_to: None,
+            references: None,
+            protection: choice,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn test_a_draft_keeps_whether_it_is_to_go_signed_or_encrypted() {
+        // A draft reopened and sent without its Encrypt box is a private
+        // message sent in the clear.
+        let cache = a_cache("draft_protection");
+        for choice in [
+            Choice::Signed,
+            Choice::Encrypted,
+            Choice::SignedAndEncrypted,
+            Choice::Plain,
+        ] {
+            cache
+                .save_draft(&a_draft_protected(choice))
+                .expect("the draft to save");
+            let opened = cache
+                .load_draft("draft-private")
+                .expect("the draft to load")
+                .expect("the draft is there");
+            let listed = cache.load_drafts("acc-1").expect("the drafts to list");
+            assert_eq!(opened.protection, choice, "opened");
+            assert_eq!(listed[0].protection, choice, "listed");
+        }
+    }
+
+    #[test]
+    fn test_a_draft_saved_before_there_was_a_protection_opens_plain() {
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            cache
+                .save_draft(&a_draft_protected(Choice::Plain))
+                .expect("the draft to save");
+            cache
+                .conn
+                .execute("ALTER TABLE drafts DROP COLUMN protection", [])
+                .expect("the column to come off, making this an older database");
+        }
+
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
+        let back = reopened
+            .load_draft("draft-private")
+            .expect("the draft to load")
+            .expect("the draft to survive");
+        assert_eq!(back.protection, Choice::Plain);
     }
 
     #[test]
@@ -372,6 +446,7 @@ mod tests {
             attachments: Vec::new(),
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            protection: Choice::Plain,
         };
 
         cache.save_draft(&draft).unwrap();
@@ -407,6 +482,7 @@ mod tests {
             attachments: Vec::new(),
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            protection: Choice::Plain,
         };
 
         cache.save_draft(&draft).unwrap();

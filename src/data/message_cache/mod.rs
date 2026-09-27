@@ -282,6 +282,11 @@ pub struct CachedDraft {
     /// The conversation before it, oldest first, ending with the message being
     /// answered.
     pub references: Option<String>,
+    /// Whether it is to go signed, encrypted, both or neither.
+    ///
+    /// Kept because a draft reopened and sent without its Encrypt box is a
+    /// private message sent in the clear.
+    pub protection: crate::application::protecting::Choice,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -968,6 +973,12 @@ pub struct QueuedOutboxMessage {
     /// The whole conversation before this reply, oldest first, brackets and
     /// all, ending with the message being answered.
     pub references: Option<String>,
+    /// Whether it goes signed, encrypted, both or neither.
+    ///
+    /// On the row rather than decided when it goes, so a message queued,
+    /// scheduled or tried again goes out as it was asked to. Plain on every
+    /// row queued before the column existed, which is what each of them was.
+    pub protection: crate::application::protecting::Choice,
     pub attempt_count: i64,
     pub last_error: Option<String>,
     pub created_at: String,

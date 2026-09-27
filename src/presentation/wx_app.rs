@@ -17735,6 +17735,7 @@ fn save_as_draft(
         attachments: data.attachments.clone(),
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
+        protection: crate::application::protecting::Choice::Plain,
         created_at: chrono::Local::now().to_rfc3339(),
         updated_at: chrono::Local::now().to_rfc3339(),
     };
@@ -18025,6 +18026,7 @@ fn put_in_the_outbox(
         // the reply was started and carried through the window unchanged.
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
+        protection: crate::application::protecting::Choice::Plain,
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),

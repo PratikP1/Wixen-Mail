@@ -992,6 +992,7 @@ mod tests {
                     references: None,
                     body_html: None,
                     attachments: Vec::new(),
+                    protection: Default::default(),
                     created_at: "2026-08-01".to_string(),
                     updated_at: "2026-08-01".to_string(),
                 })
