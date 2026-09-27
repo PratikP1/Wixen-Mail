@@ -54,6 +54,12 @@ pub fn what_it_asks(whose: &str) -> String {
     )
 }
 
+/// What the dialog says when the composer asks at Send, for a key that is to
+/// sign the message rather than open one.
+pub fn what_signing_asks(whose: &str) -> String {
+    what_it_asks(whose)
+}
+
 /// The dialog, built and not yet shown.
 pub struct PassphraseDialog {
     /// The dialog itself.
@@ -154,6 +160,17 @@ mod tests {
             what_it_asks("Ada Lovelace <ada@example.com>"),
             "The key for Ada Lovelace <ada@example.com> is locked with a passphrase. Type it \
              to open this message. It is remembered until Wixen Mail closes and never saved."
+        );
+    }
+
+    #[test]
+    fn test_asked_at_send_it_says_the_passphrase_is_to_sign_the_message() {
+        // The composer asks for the same passphrase at Send, and "to open this
+        // message" there would name a message that is not the one being sent.
+        assert_eq!(
+            what_signing_asks("Ada Lovelace <ada@example.com>"),
+            "The key for Ada Lovelace <ada@example.com> is locked with a passphrase. Type it \
+             to sign this message. It is remembered until Wixen Mail closes and never saved."
         );
     }
 }
