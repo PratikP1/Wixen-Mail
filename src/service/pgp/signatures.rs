@@ -5,29 +5,233 @@
 //! part and carries the signature in a part of its own beside it. Either way
 //! what comes back is one of [`PgpVerdict`]'s four answers, and nothing from
 //! the crate crosses out.
+//!
+//! # Which key, and how "no key" is told from "does not hold"
+//!
+//! A signature names the key that made it, by its short identifier and, from
+//! every program that has signed mail for years, by its fingerprint. That name
+//! is what separates two answers a person does different things about. When no
+//! key in the list is the one named, nothing here can judge the signature, and
+//! importing the sender's key is the next step. When a key in the list is the
+//! one named and the arithmetic fails, the words are not the words that key
+//! signed. So the name is read first, and only the keys it names are tried.
+//!
+//! A key's subkeys are its parts: a key that signs with a subkey is named by
+//! the subkey's identifier, and it is still that key, under its owner's name.
+//!
+//! # What this does not ask
+//!
+//! Whether the key has expired, been revoked, or belongs to whoever it says.
+//! A signature that holds says the key made it, and the sentence that reports
+//! it says no more than that.
 
-use super::PgpVerdict;
+use super::keys::{keys_in, listing_of};
+use super::{KeyInYourList, PgpVerdict};
+use pgp::composed::{
+    CleartextSignedMessage, Deserializable, DetachedSignature, PublicOrSecret, SignedPublicKey,
+};
+use pgp::packet::Signature;
+use pgp::types::KeyDetails;
+
+/// Where a clearsigned block begins, and the line that ends it.
+const SIGNED_BLOCK_BEGINS: &str = "-----BEGIN PGP SIGNED MESSAGE-----";
+const SIGNATURE_ENDS: &str = "-----END PGP SIGNATURE-----";
 
 /// Check the clearsigned block in `text` against these public keys.
-pub(super) fn verify_cleartext(text: &str, _public_keys: &[String]) -> (PgpVerdict, String) {
-    (
-        PgpVerdict::NoKeyToCheckIt {
-            key_id: String::new(),
-        },
-        text.to_string(),
-    )
+///
+/// The text to show is the signed words where `text` is that block and
+/// nothing else, and `text` as it came otherwise: around words the signature
+/// does not cover, the armour lines are the only thing saying which words it
+/// does.
+pub(super) fn verify_cleartext(text: &str, public_keys: &[String]) -> (PgpVerdict, String) {
+    let as_it_came = || text.to_string();
+    let Some(block) = the_signed_block(text) else {
+        return (PgpVerdict::Damaged, as_it_came());
+    };
+    let Ok((message, _)) = CleartextSignedMessage::from_string(block) else {
+        return (PgpVerdict::Damaged, as_it_came());
+    };
+    // Normalised to CRLF, which is what the signature covers; shown with the
+    // line endings every other body here has.
+    let signed = message.signed_text();
+    let verdict = judged(
+        message.signatures(),
+        &keys_from(public_keys),
+        signed.as_bytes(),
+    );
+    let shown = if block.trim() == text.trim() {
+        signed.replace("\r\n", "\n")
+    } else {
+        as_it_came()
+    };
+    (verdict, shown)
 }
 
 /// Check a detached signature over exactly `content` against these public
 /// keys.
+///
+/// Exactly: a PGP/MIME signature covers the signed part's bytes as they
+/// arrived, CRLF endings and all, and the same words re-written by a program
+/// on the way through fail the way changed words do.
 pub(super) fn verify_detached(
-    _content: &[u8],
-    _signature_armour: &str,
-    _public_keys: &[String],
+    content: &[u8],
+    signature_armour: &str,
+    public_keys: &[String],
 ) -> PgpVerdict {
-    PgpVerdict::NoKeyToCheckIt {
-        key_id: String::new(),
+    let Ok((signature, _)) = DetachedSignature::from_string(signature_armour) else {
+        return PgpVerdict::Damaged;
+    };
+    judged(
+        std::slice::from_ref(&signature.signature),
+        &keys_from(public_keys),
+        content,
+    )
+}
+
+/// From the line that begins a clearsigned block to the end of the line that
+/// ends its signature, or `None` when either is missing.
+fn the_signed_block(text: &str) -> Option<&str> {
+    let from = &text[text.find(SIGNED_BLOCK_BEGINS)?..];
+    let ends = from.find(SIGNATURE_ENDS)? + SIGNATURE_ENDS.len();
+    Some(&from[..ends])
+}
+
+/// Every public key the armours hold, private keys given as their public
+/// halves. An armour that holds no key adds nothing, and costs nothing the
+/// others could answer.
+fn keys_from(armours: &[String]) -> Vec<SignedPublicKey> {
+    armours
+        .iter()
+        .flat_map(|armour| keys_in(armour))
+        .map(|(key, _)| match key {
+            PublicOrSecret::Public(public) => public,
+            PublicOrSecret::Secret(secret) => secret.to_public_key(),
+        })
+        .collect()
+}
+
+/// The best answer any of the signatures earns, holding first.
+///
+/// A text carrying two signatures, one by a key in the list and one by a key
+/// that is not, is still a text that key signed.
+fn judged(signatures: &[Signature], keys: &[SignedPublicKey], content: &[u8]) -> PgpVerdict {
+    signatures
+        .iter()
+        .map(|signature| judged_one(signature, keys, content))
+        .min_by_key(how_much_it_says)
+        .unwrap_or(PgpVerdict::Damaged)
+}
+
+/// How far down the order of what an answer says it sits: a holding
+/// signature first, damage last.
+fn how_much_it_says(verdict: &PgpVerdict) -> u8 {
+    match verdict {
+        PgpVerdict::Holds { .. } => 0,
+        PgpVerdict::DoesNotHold { .. } => 1,
+        PgpVerdict::NoKeyToCheckIt { .. } => 2,
+        PgpVerdict::Damaged => 3,
     }
+}
+
+/// One signature, against the keys it names.
+///
+/// A signature that names no key at all is read as damaged: every program
+/// that signs mail names its key, and one that does not can be matched to
+/// nothing, so no sentence about a key would be true of it.
+fn judged_one(signature: &Signature, keys: &[SignedPublicKey], content: &[u8]) -> PgpVerdict {
+    let Some(key_id) = the_key_it_names(signature) else {
+        return PgpVerdict::Damaged;
+    };
+    let named: Vec<&SignedPublicKey> = keys
+        .iter()
+        .filter(|key| names_a_part_of(signature, key))
+        .collect();
+    let Some(first) = named.first() else {
+        return PgpVerdict::NoKeyToCheckIt {
+            key_id: in_groups_of_four(&key_id),
+        };
+    };
+    match named.iter().find(|key| holds_for(signature, key, content)) {
+        Some(key) => PgpVerdict::Holds {
+            whose: in_your_list(key),
+        },
+        None => PgpVerdict::DoesNotHold {
+            whose: in_your_list(first),
+        },
+    }
+}
+
+/// The short identifier of the key a signature names, in capitals.
+///
+/// From its issuer subpacket, or from the fingerprint where only that is
+/// given: the last sixteen digits of a version 4 fingerprint, the first
+/// sixteen of a version 6 one, which is how each version defines it.
+fn the_key_it_names(signature: &Signature) -> Option<String> {
+    if let Some(id) = signature.issuer_key_id().first() {
+        return Some(id.to_string().to_uppercase());
+    }
+    let fingerprint = format!("{:X}", signature.issuer_fingerprint().first()?);
+    let id = match fingerprint.len() {
+        64 => &fingerprint[..16],
+        length => &fingerprint[length.checked_sub(16)?..],
+    };
+    Some(id.to_string())
+}
+
+/// Whether the signature names this key or one of its subkeys.
+fn names_a_part_of(signature: &Signature, key: &SignedPublicKey) -> bool {
+    names(signature, key)
+        || key
+            .public_subkeys
+            .iter()
+            .any(|subkey| names(signature, subkey))
+}
+
+fn names(signature: &Signature, part: &impl KeyDetails) -> bool {
+    signature
+        .issuer_key_id()
+        .iter()
+        .any(|id| **id == part.legacy_key_id())
+        || signature
+            .issuer_fingerprint()
+            .iter()
+            .any(|fingerprint| **fingerprint == part.fingerprint())
+}
+
+/// Whether the arithmetic holds against this key or one of its subkeys.
+///
+/// Only the answer is kept. The crate's reason for a refusal is written for
+/// somebody reading a stack trace, and nothing of it is said or logged.
+fn holds_for(signature: &Signature, key: &SignedPublicKey, content: &[u8]) -> bool {
+    signature.verify(key, content).is_ok()
+        || key
+            .public_subkeys
+            .iter()
+            .any(|subkey| signature.verify(subkey, content).is_ok())
+}
+
+/// A key the way its row in the key manager names it.
+fn in_your_list(key: &SignedPublicKey) -> KeyInYourList {
+    let listing = listing_of(key, false);
+    KeyInYourList {
+        name: listing
+            .user_ids
+            .first()
+            .cloned()
+            .unwrap_or_else(|| format!("key {}", in_groups_of_four(&listing.key_id))),
+        fingerprint: in_groups_of_four(&listing.fingerprint),
+    }
+}
+
+/// Hexadecimal digits in groups of four, the way one is read to somebody and
+/// the way a screen reader says it as groups rather than as one long word.
+fn in_groups_of_four(digits: &str) -> String {
+    digits
+        .as_bytes()
+        .chunks(4)
+        .map(String::from_utf8_lossy)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -80,9 +284,10 @@ pub(super) mod tests {
         RE04dzAKL1N0dDk5aU5XQTBCQU84cGFhNmFkdWlVUlBmZEMxVlZqVTZsbVpxV0tINkJpZzhK
         a2lma1gzWUUKPTFxL3UKLS0tLS1FTkQgUEdQIFNJR05BVFVSRS0tLS0tCg==";
 
-    /// The words Carol signed, as a reader shows them.
+    /// The words Carol signed, as a reader shows them: `words.txt` ended in a
+    /// line break, and the cleartext framework signs it.
     pub(in crate::service::pgp) const WHAT_CAROL_SIGNED: &str =
-        "Carol here. The minutes are attached, and the vote is on Friday.";
+        "Carol here. The minutes are attached, and the vote is on Friday.\n";
 
     /// A MIME part with CRLF endings, the bytes Carol's detached signature
     /// covers.

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 379 records have arrived since and have not been through it.
+# 381 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32487,4 +32487,38 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 8 },
+]
+
+# A PGP signature said to hold once a key in the list is the one it names,
+# without the arithmetic being asked, so changed words and words re-written
+# with bare line feeds both read as made by Carol's key. Written 2026-09-27 by
+# 13-18, measured with `scripts/guards.sh`.
+[[guard]]
+name = "a pgp signature holds only where the arithmetic does"
+file = "src/service/pgp/signatures.rs"
+before = """    match named.iter().find(|key| holds_for(signature, key, content)) {"""
+after = """    match named.first() {"""
+red = [
+    "service::pgp::signatures::tests::test_one_letter_changed_after_signing_does_not_hold",
+    "service::pgp::signatures::tests::test_the_same_part_with_bare_line_feeds_does_not_hold",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/signatures.rs", tests = 11 },
+]
+
+# Every key in the list tried against a signature, not only the key it names,
+# so a signature by a key that is not here reads as not holding against
+# whatever key is: a failed check where nothing could be checked. Written
+# 2026-09-27 by 13-18, measured with `scripts/guards.sh`.
+[[guard]]
+name = "a pgp signature by a key not in the list names that key and fails nothing"
+file = "src/service/pgp/signatures.rs"
+before = """        .filter(|key| names_a_part_of(signature, key))"""
+after = """        .filter(|_| true)"""
+red = [
+    "service::pgp::signatures::tests::test_with_only_somebody_elses_key_it_still_names_the_key_it_would_need",
+    "service::pgp::signatures::tests::test_a_detached_signature_with_no_key_for_it_names_the_key",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/signatures.rs", tests = 11 },
 ]

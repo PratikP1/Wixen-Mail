@@ -150,7 +150,7 @@ fn what_becomes_of(key: PublicOrSecret, armour: &str) -> WhatBecameOfAKey {
 /// document, even to tidy it, is a second chance to change what it says. A block
 /// holding several has no one key's bytes to keep, so each is written out by the
 /// crate.
-fn keys_in(text: &str) -> Vec<(PublicOrSecret, String)> {
+pub(super) fn keys_in(text: &str) -> Vec<(PublicOrSecret, String)> {
     let mut keys = Vec::new();
     for block in armoured_blocks(text) {
         let Ok((found, _)) = PublicOrSecret::from_armor_many(block.as_bytes()) else {
@@ -191,7 +191,7 @@ fn armoured_blocks(text: &str) -> Vec<&str> {
 }
 
 /// A key in this program's words.
-fn listing_of(key: &SignedPublicKey, private: bool) -> KeyListing {
+pub(super) fn listing_of(key: &SignedPublicKey, private: bool) -> KeyListing {
     let mut users: Vec<&SignedUser> = key.details.users.iter().collect();
     users.sort_by_key(|user| !user.is_primary());
     let primary_self_signature = users

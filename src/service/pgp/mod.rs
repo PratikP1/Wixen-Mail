@@ -16,7 +16,9 @@
 //! to keep; one message opened by whichever key it names, a locked key's
 //! passphrase held in memory for the session once somebody types it; four
 //! ways of failing and one of needing a passphrase, each said in its own
-//! words. Key servers, revocation, and anything outgoing are outside it.
+//! words. And, since 13-18, a signature checked against the keys it is
+//! handed, inline or detached, answering one of four verdicts. Key servers,
+//! revocation, and anything outgoing are outside it.
 //!
 //! Inline PGP and PGP/MIME. An armoured block in the message's text is what
 //! `application::body_safety::what_the_form_says` finds and hands here. Since
