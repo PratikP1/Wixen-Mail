@@ -270,6 +270,13 @@ Written down so you do not spend time reporting things already on the list.
   person the key is for, whether the question before a removal is read in
   full, and, for a locked key, whether pasting its passphrase from your
   password manager works and whether a wrong one is said clearly.
+- **PGP signatures are checked, and no real correspondent's signature has
+  been.** A PGP-signed message says whether its signature holds against a key
+  in File, PGP Keys, and names the key it would need when that key is not
+  there. Every signature it has checked was made with GnuPG for the tests. If
+  somebody sends you PGP-signed mail, import their public key and tell us
+  which of the five sentences you heard, and whether it matched what their
+  own program says.
 - **The download of everything has never met a real provider.** Since the
   build of 2026-09-18, every check for mail ends by bringing down every
   message of every folder you keep up to date, five hundred headers at a time

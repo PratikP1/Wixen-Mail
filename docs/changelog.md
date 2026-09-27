@@ -8,6 +8,39 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **PGP signatures are checked, experimentally (#52 point 3).** A PGP signature, whether it
+  is written into the message's text or sent as a separate part (PGP/MIME), is now checked
+  against the keys in File, PGP Keys: the public keys kept there and the public half of each
+  of your private keys. The bar says one of four things, and none of them says "signed" on
+  its own: the signature holds, made by the key in your list for this name, with its
+  fingerprint, which says the key made it and not who holds the key; it could not be checked
+  because the key that made it, named by its key id, is not in your list; it does not hold,
+  so the words were changed after signing or the signature is not that key's; or it is
+  damaged. The sentence is spoken as the message opens, above "More about this signature:",
+  where the bar says what it was checked against and what a signature does and does not show.
+  A message whose signature is in its text shows the words that were signed. In a
+  conversation, each message says its own verdict under its own heading, which closes the
+  gap where a thread said nothing about a PGP signature. The bytes a PGP/MIME signed message
+  arrives in are kept beside S/MIME's, under the same size limit, and saving such a message
+  as a file writes it as it arrived. The key manager's box now says every key here checks the
+  signatures made with it, and removing a key says those signatures will no longer be
+  checked. The version does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: no signature from a real correspondent's key has been checked, only
+  signatures GnuPG made for tests; whether a key has expired or been withdrawn is not asked;
+  a message with words outside its signed text, such as a list's footer, is shown as it
+  arrived, armour lines and all; a signature written only into the formatted half of a
+  message reads as damaged; a signature in a message's text sent in a character set other
+  than UTF-8, with letters outside plain English, has not been tried and may read as not
+  holding; and nobody has heard the sentences with a screen reader.
+- **Signed mail stored before signatures were kept says so (#52 point 6).** A signed message
+  that was on this computer before Wixen Mail kept the form signed mail arrives in read as
+  unsigned, because nothing was kept to check. Its signature part is still among its files,
+  so it now says: "This message is signed, and it was stored before Wixen Mail kept the form
+  signed mail arrives in, so the signature cannot be checked." That holds for S/MIME and PGP
+  signatures alike. Known limitation: the reason is read from the signature file alone, so a
+  message that merely carries a signature file as an attachment, or a signed message a
+  mailing list wrapped in one of its own, says the same sentence, with a reason that is not
+  its own.
 - **PGP keys locked with a passphrase, experimentally (#49).** Most keys people export
   carry a passphrase, and Wixen Mail refused them, so the key manager served few real keys.
   A locked key is now imported and kept as it came, still locked, and the key manager lists
@@ -37,8 +70,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   PGP Keys Dialog Accelerators. The version does not move for this: no build has been cut
   since 1.0.0-alpha.1. Known limitations: no real key from a real correspondent has been
   through it; a key locked with a passphrase could not be imported until the entry above;
-  public keys are kept and nothing uses them yet; nobody has heard the window with a screen
-  reader.
+  public keys were kept and nothing used them until PGP signatures were checked (above);
+  nobody has heard the window with a screen reader.
 - **Several PGP private keys, experimentally.** Wixen Mail held one PGP private key, and
   importing another replaced it. It now keeps up to eight, and a message opens with whichever
   of them it was encrypted to. File, Import PGP Private Key, since replaced by the key
@@ -669,6 +702,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   made. The counter is on the setup file and in every string; `wixen-mail.exe` itself keeps the
   file version `1.0.0.0` in its own Properties, as it always has, because nothing stamps that
   resource with the build. No build carrying the count has been handed to anybody yet.
+
+### Removed
+
+- **The sentence that a PGP signature cannot be checked.** "This message carries a PGP
+  signature, which Wixen Mail cannot check, so nothing here says whether it is genuine." was
+  said above every PGP-signed message. The signature is checked now, and one of four verdicts
+  takes its place (see Added).
 
 ### Fixed
 
@@ -1394,8 +1434,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   is proven against a key and a message made by GnuPG and a signed message made by OpenSSL, which
   is two implementations agreeing rather than one, and is not the same as working with mail from
   somebody. A PGP signature inside a conversation is still not mentioned there; open the message on
-  its own for that sentence. Nobody has heard the preview's bar or a conversation's per-message
-  sentences with a screen reader.
+  its own for that sentence. **Corrected on 2026-09-27:** each message of a conversation now says
+  its own PGP signature verdict under its heading. Nobody has heard the preview's bar or a
+  conversation's per-message sentences with a screen reader.
 
 - **File, Import Mailbox takes an Outlook data file.** Found on 2026-09-15 in build
   `0.125.1+g3e633252` by the audit of what still separates this program from Outlook (#53, point
@@ -4192,6 +4233,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   cannot check, so nothing here says whether it is genuine." That sentence is
   worded the way it is on purpose. Being told a message is signed is easily
   heard as being told it is genuine, and nothing here has looked.
+  **Corrected on 2026-09-27:** the signature is checked now and that sentence
+  is gone; one of four verdicts takes its place (see "PGP signatures are
+  checked" above).
 
   Ordinary mail is unchanged. There is no new bar, and no extra line to listen
   past.
@@ -4223,7 +4267,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
     the build that carries #51's fix, a PGP message inside a conversation that
     did not open says why under its own heading, and an S/MIME envelope says
     what it says there too. A PGP signature inside a conversation is still not
-    mentioned; open the message on its own for that.
+    mentioned; open the message on its own for that. **Corrected on
+    2026-09-27:** a PGP signature's verdict is said under its message's heading
+    too.
 
 - **A filter rule and a saved search can now ask what the spam and phishing
   check made of a message.**

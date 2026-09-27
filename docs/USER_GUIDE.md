@@ -756,8 +756,9 @@ build:
 - A key locked with a passphrase is kept locked. Its passphrase is asked for
   when you open a message that needs it, and remembered until Wixen Mail
   closes. It is never saved.
-- Public keys are kept, and nothing uses them yet. Sending encrypted mail is
-  not built, so a public key here waits for that.
+- Public keys are kept here, and every key here checks the PGP signatures made
+  with it. See [Signed PGP mail](#signed-pgp-mail). Sending encrypted mail is
+  not built yet.
 - Removing a key here removes it from this computer.
 
 A locked key's row says "Private key, locked with a passphrase".
@@ -774,7 +775,7 @@ The buttons:
 | Paste a Key | `Alt+P` | Opens a box to paste a key's text into, then imports it |
 | Export Public Key | `Alt+X` | Writes the chosen key's public half to a file you choose. The private half never leaves |
 | Copy Public Key | `Alt+C` | Puts the chosen key's public half on the clipboard, to paste into a message |
-| Remove | `Alt+R` | Asks first, naming the key and its fingerprint. For a private key it says that messages encrypted to it will stop opening. `Enter` answers No |
+| Remove | `Alt+R` | Asks first, naming the key and its fingerprint, and says that signatures made with it will no longer be checked. For a private key it also says that messages encrypted to it will stop opening. `Enter` answers No |
 | Close | `Alt+O` | Closes the manager. `Esc` does the same |
 
 Every answer is shown on the line above the buttons and said aloud. A button
@@ -816,6 +817,54 @@ Wixen Mail. It is held in memory only. It is never written to your disk, the
 mail database or the Windows credential store, and it is gone when Wixen Mail
 closes or when you remove the key. There is no command to forget it sooner:
 close Wixen Mail.
+
+#### Signed PGP mail
+
+A PGP signature is checked against the keys in File, PGP Keys: the public keys
+kept there and the public half of each of your private keys. It is checked
+whether the signature is written into the message's text or sent in a separate
+part, which is called PGP/MIME, and it is checked again every time you open the
+message. Checking signatures is experimental.
+
+The bar above the message says one of five things:
+
+| The sentence | What it tells you | What it does not tell you |
+|---|---|---|
+| This message's PGP signature holds: it was made by the key in your list for (a name), fingerprint (the fingerprint). That says the key made it; it does not say who holds the key. | The words are exactly the ones that key signed. | Who holds the key. A key carries whatever name and address its maker typed into it. |
+| This message carries a PGP signature by key (a key id), which is not in your list, so it could not be checked. | The message is signed, by a key you do not have. | Anything about the words. Nothing was checked, so the signature neither holds nor fails. |
+| This message's PGP signature does not hold against the key in your list for (a name). It was changed after it was signed, or the signature is not that key's. | Something is wrong: the words were changed after they were signed, or the signature names a key that did not make it. | Which of the two happened. Read the message as one you cannot trust. |
+| This message's PGP signature is damaged, so it could not be checked. | The signature arrived in a form that cannot be read. | Anything about the words. Ask the sender to send it again. |
+| This message is signed, and it was stored before Wixen Mail kept the form signed mail arrives in, so the signature cannot be checked. | The message was on this computer before Wixen Mail kept the exact form signed mail arrives in, and a signature can only be checked against that form. This is said about S/MIME signatures too. | Anything about the words. Nothing was checked. |
+
+To turn the second sentence into the first, get the sender's public key from
+them, check its fingerprint with them another way, such as on the phone, and
+import it in File, PGP Keys. The next time you open the message, the signature
+is checked against it.
+
+The sentence is spoken as the message opens. Under it, after "More about this
+signature:", the bar says what the signature was checked against and what a
+signature does and does not show. The subject line and the sender line travel
+outside the signature, so a signature never covers them.
+
+A message whose signature is written into its text shows the words that were
+signed, without the lines of signature text around them. When the message has
+words outside the signed text, such as a mailing list's footer, it is shown as
+it arrived, lines and all, because those lines are the only thing showing which
+words the signature covers.
+
+In a conversation, each message says its own verdict under its own heading,
+before its words.
+
+What this does not do yet: no signature from a real correspondent's key has
+been checked here; the signatures tested were made with GnuPG. Whether a key
+has expired, or its owner has withdrawn it, is not checked. A signature written
+only into the formatted half of a message cannot be read, and is said to be
+damaged. A signature written into text sent in a character set other than
+UTF-8, with letters outside plain English in it, has not been tried, and may
+read as not holding. And the last sentence in the table is chosen from the signature file
+among the message's files, so a message that only carries a signature file as
+an attachment, or a signed message a mailing list wrapped in one of its own,
+says it too.
 
 ### Message Actions
 

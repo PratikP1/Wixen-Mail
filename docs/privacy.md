@@ -120,9 +120,11 @@ file names and not contents.
 
 ### Signed mail is kept twice
 
-A message signed with a certificate is stored twice: once the ordinary way, as text and
+A message signed with a certificate, or with a PGP key in a separate part of the message
+(PGP/MIME, since 2026-09-27), is stored twice: once the ordinary way, as text and
 attachments, and once more exactly as it arrived, byte for byte. Both copies are in the same
-`cache` folder and neither is encrypted.
+`cache` folder and neither is encrypted. A PGP signature written into the message's own text
+is checked against that text, and nothing more is kept for it.
 
 The second copy is there because a signature can only be checked against the exact bytes that
 were signed. Reading a message and writing it out again changes small things, such as the
