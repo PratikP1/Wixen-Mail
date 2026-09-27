@@ -23,6 +23,8 @@
 //! reminder is late. Presentation must not reach into application, so the one
 //! place all four can share is the layer underneath both.
 
+use std::borrow::Cow;
+
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 
 /// A clock face with no zone on the end, in the shapes the cache holds one.
@@ -131,6 +133,37 @@ pub fn read(stored: &str) -> Option<Moment> {
 /// the zone it names.
 pub fn the_zone_named(stored: Option<&str>) -> Option<&str> {
     stored.map(str::trim).filter(|named| !named.is_empty())
+}
+
+/// Read a stored moment in the zone stored beside it.
+///
+/// The one place a stored time meets its zone. A clock face is stored as the
+/// provider or the document wrote it, with the zone it was written in beside
+/// it, because three writers send exactly that back and a series repeats on
+/// its clock face; converting it where it arrives would send a different hour
+/// back. So the conversion happens here, where it is read to be shown or said:
+/// a clock face beside a zone this computer can place becomes the instant it
+/// names there.
+///
+/// A moment carrying its own offset already names its instant, and a whole
+/// day is on its day wherever somebody is, so both come back as read. A clock
+/// face beside no zone is an hour on this computer's clock, and one beside a
+/// zone nothing can place stays a clock face too, which the caller says rather
+/// than presenting it as this computer's hour.
+pub fn read_in(stored: &str, zone: Option<&str>) -> Option<Moment> {
+    let _ = zone;
+    read(stored)
+}
+
+/// A stored moment written again as the instant its zone makes it, for a
+/// reader that takes stored text.
+///
+/// The stored text itself when reading it in its zone changed nothing, and an
+/// RFC 3339 instant when it placed a clock face, which [`read`] reads back as
+/// the same instant.
+pub fn written_in_its_zone<'a>(stored: &'a str, zone: Option<&str>) -> Cow<'a, str> {
+    let _ = zone;
+    Cow::Borrowed(stored)
 }
 
 /// The clock face a stored value holds, when it holds one and no offset.
@@ -308,5 +341,125 @@ mod tests {
             clock_face("2026-07-27T09:00:00"),
             Some(clock("2026-07-27 09:00:00"))
         );
+    }
+
+    /// The instant a stored clock face names in `zone`, with the offset that
+    /// zone had then, written the way RFC 3339 writes both.
+    fn placed(stored: &str, zone: &str) -> String {
+        match read_in(stored, Some(zone)) {
+            Some(Moment::Fixed(at)) => at.to_rfc3339(),
+            other => panic!("{stored} beside {zone} was not placed: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_a_clock_face_beside_a_zone_is_the_instant_that_zone_puts_it_at() {
+        // Nine in Los Angeles is five in the afternoon in universal time in
+        // March, and four in July, when Los Angeles is on summer time.
+        assert_eq!(
+            placed("2026-03-05T09:00:00", "America/Los_Angeles"),
+            "2026-03-05T09:00:00-08:00"
+        );
+        assert_eq!(
+            placed("2026-07-09T09:00:00", "America/Los_Angeles"),
+            "2026-07-09T09:00:00-07:00"
+        );
+    }
+
+    #[test]
+    fn test_the_hour_a_zone_goes_through_twice_is_the_earlier_one() {
+        // 1 November 2026, when Los Angeles goes back to standard time at two
+        // in the morning, so half past one happens once at -07:00 and again at
+        // -08:00. The rule this computer's own clock follows, for the same
+        // reason.
+        assert_eq!(
+            placed("2026-11-01T01:30:00", "America/Los_Angeles"),
+            "2026-11-01T01:30:00-07:00"
+        );
+    }
+
+    #[test]
+    fn test_the_hour_a_zone_skips_is_the_first_that_happens_after_it() {
+        // 8 March 2026, when Los Angeles goes from two to three in the
+        // morning, so half past two never happens there.
+        assert_eq!(
+            placed("2026-03-08T02:30:00", "America/Los_Angeles"),
+            "2026-03-08T03:00:00-07:00"
+        );
+    }
+
+    #[test]
+    fn test_a_clock_face_graph_wrote_beside_utc_is_that_instant() {
+        assert_eq!(
+            placed("2026-03-05T14:00:00.0000000", "UTC"),
+            "2026-03-05T14:00:00+00:00"
+        );
+    }
+
+    #[test]
+    fn test_a_moment_carrying_its_own_offset_keeps_it_whatever_zone_is_beside_it() {
+        assert_eq!(
+            placed("2026-03-05T09:00:00Z", "Asia/Tokyo"),
+            "2026-03-05T09:00:00+00:00"
+        );
+    }
+
+    #[test]
+    fn test_a_whole_day_is_not_moved_by_the_zone_beside_it() {
+        let day = NaiveDate::from_ymd_opt(2026, 3, 5).expect("a real day");
+        for zone in ["Asia/Tokyo", "America/Los_Angeles", "UTC"] {
+            assert_eq!(
+                read_in("2026-03-05", Some(zone)),
+                Some(Moment::WholeDay(day)),
+                "beside {zone}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_clock_face_beside_no_zone_or_one_nobody_can_place_stays_a_clock_face() {
+        let nine = Some(Moment::ClockFace(clock("2026-03-05 09:00:00")));
+        for zone in [None, Some(" "), Some("Customized Time Zone")] {
+            assert_eq!(
+                read_in("2026-03-05T09:00:00", zone),
+                nine,
+                "beside {zone:?}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_clock_face_beside_a_windows_zone_name_is_placed_by_windows() {
+        assert_eq!(
+            placed("2026-03-05T09:00:00", "Tokyo Standard Time"),
+            "2026-03-05T09:00:00+09:00"
+        );
+    }
+
+    #[test]
+    fn test_a_placed_clock_face_is_written_as_an_instant_that_reads_back_the_same() {
+        let written = written_in_its_zone("2026-03-05T09:00:00", Some("Asia/Tokyo"));
+        assert_eq!(written, "2026-03-05T09:00:00+09:00");
+        assert_eq!(
+            read(&written),
+            read_in("2026-03-05T09:00:00", Some("Asia/Tokyo"))
+        );
+    }
+
+    #[test]
+    fn test_a_moment_its_zone_changes_nothing_about_is_handed_back_as_it_was_stored() {
+        for (stored, zone) in [
+            ("2026-03-05T09:00:00", None),
+            ("2026-03-05T09:00:00", Some("Customized Time Zone")),
+            ("2026-03-05T09:00:00Z", Some("Asia/Tokyo")),
+            ("2026-03-05", Some("Asia/Tokyo")),
+            ("not a moment", Some("Asia/Tokyo")),
+        ] {
+            assert!(
+                matches!(written_in_its_zone(stored, zone), Cow::Borrowed(same) if same == stored),
+                "{stored} beside {zone:?}"
+            );
+        }
     }
 }

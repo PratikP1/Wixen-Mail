@@ -2113,6 +2113,68 @@ mod tests {
         );
     }
 
+    /// Two instants worded the way the sentence words a meeting, on this
+    /// computer's clock, so a case reads the same wherever it runs.
+    fn worded_here(starts: &str, ends: &str) -> String {
+        use crate::presentation::date_display;
+
+        let here = |instant: &str| {
+            chrono::DateTime::parse_from_rfc3339(instant)
+                .expect("an instant")
+                .with_timezone(&chrono::Local)
+        };
+        let (start, end) = (here(starts), here(ends));
+        let dates = written_out_in_full();
+        if start.date_naive() == end.date_naive() {
+            format!(
+                "{} to {}",
+                date_display::absolute(start, dates),
+                date_display::time_of_day(ends, dates)
+            )
+        } else {
+            format!(
+                "{} to {}",
+                date_display::absolute(start, dates),
+                date_display::absolute(end, dates)
+            )
+        }
+    }
+
+    #[test]
+    fn test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour() {
+        // Nine in Tokyo is midnight in universal time, which is the evening
+        // before on a computer in New York. Said at nine, the meeting is
+        // somebody turning up fourteen hours late (ledger 632).
+        let in_tokyo = an_invitation_at_nine()
+            .replace(
+                "DTSTART:20260305T090000",
+                "DTSTART;TZID=Asia/Tokyo:20260305T090000",
+            )
+            .replace(
+                "DTEND:20260305T100000",
+                "DTEND;TZID=Asia/Tokyo:20260305T100000",
+            );
+        let invitation = read_the_invitation(&in_tokyo).expect("the invitation to read");
+
+        assert_eq!(
+            when_the_invitation_is(&invitation, written_out_in_full()),
+            worded_here("2026-03-05T00:00:00Z", "2026-03-05T01:00:00Z")
+        );
+
+        // An hour on nobody's clock in particular is this computer's, and one
+        // carrying its own Z is already an instant: both as they were.
+        let floating = read_the_invitation(&an_invitation_at_nine()).expect("to read");
+        assert_eq!(
+            when_the_invitation_is(&floating, written_out_in_full()),
+            "05/03/2026 at 09:00 to 10:00"
+        );
+        let universal = read_the_invitation(&an_invitation_that_arrived()).expect("to read");
+        assert_eq!(
+            when_the_invitation_is(&universal, written_out_in_full()),
+            worded_here("2026-03-05T09:00:00Z", "2026-03-05T10:00:00Z")
+        );
+    }
+
     #[test]
     fn test_an_invitation_moving_a_meeting_on_the_calendar_says_when_it_was() {
         // Version 2 of a meeting answered here at version 1, an hour later
