@@ -168,16 +168,51 @@ impl KeyText {
 /// so the name decides only that the bytes are looked at; what they hold
 /// decides whether a key is offered.
 pub fn the_keys_an_attachment_holds(bytes: &[u8]) -> Option<KeyText> {
-    let _ = bytes;
-    None
+    let text = std::str::from_utf8(bytes).ok()?;
+    let offered = KeyText(text.to_string());
+    (!offered.listings().is_empty()).then_some(offered)
 }
 
 /// The question asked when somebody presses Enter on an attachment holding
 /// keys: whose each says it is, its kind and its short identifier, and
 /// whether to import it. Nothing of the key's text is said.
+///
+/// "Naming" rather than "for", because a stranger's attachment says whose key
+/// it is and nothing here checks that.
 pub fn the_attachment_question(listings: &[KeyListing]) -> String {
-    let _ = listings;
-    String::new()
+    let described: Vec<String> = listings.iter().map(a_key_offered).collect();
+    match described.as_slice() {
+        [one] => format!("This attachment holds {one}. Import this key?"),
+        several => format!(
+            "This attachment holds {} keys: {}. Import these keys?",
+            several.len(),
+            in_a_list(several)
+        ),
+    }
+}
+
+/// One key in the attachment question: its kind, the name it carries and its
+/// short identifier.
+fn a_key_offered(listing: &KeyListing) -> String {
+    let naming = listing.user_ids.first().map_or_else(
+        || "with no name".to_string(),
+        |name| format!("naming {name}"),
+    );
+    format!(
+        "a {} {naming}, key id {}",
+        kind_of(listing),
+        in_groups_of_four(&listing.key_id)
+    )
+}
+
+/// Items joined the way a sentence lists them: commas, and "and" before the
+/// last.
+fn in_a_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
 }
 
 /// What the key manager says when a removal is answered No.

@@ -36,6 +36,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::status_line::said_and_shown;
+use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
 use crate::service::pgp::KeyListing;
 use std::cell::RefCell;
@@ -635,6 +636,7 @@ pub fn build_the_paste_dialog<W: WxWidget>(parent: &W) -> PasteDialog {
         .with_style(TextCtrlStyle::MultiLine)
         .build();
     set_accessible_name(&text, &what_the_label_says(THE_KEY_TEXT_LABEL));
+    keep_a_history(&text);
     sizer.add(&text, 1, SizerFlag::Expand | SizerFlag::All, 8);
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
     let ok = Button::builder(&dialog)

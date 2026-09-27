@@ -140,12 +140,12 @@ menu_ids!(
     // until this item (#53, point 3).
     ID_IMPORT_A_FOLDER_OF_MESSAGES,
     ID_EXPORT_MESSAGES,
-    // Reading a key file in from disk. On the File menu beside Import Mailbox,
-    // which is where bringing something in from a file already lives, and with
-    // no shortcut for Import Mailbox's reason: this is done once when somebody
-    // sets up, and a key nobody presses twice is a key in the way of one
-    // somebody presses daily.
-    ID_IMPORT_PGP_KEY,
+    // The PGP key manager (#49, 13-17), where File, Import PGP Private Key was
+    // and on its letter, K (Pratik, 2026-09-24). Beside Import Mailbox, where
+    // bringing something in from a file already lives, and with no shortcut
+    // for Import Mailbox's reason: keys are managed once in a while, and a key
+    // nobody presses twice is a key in the way of one somebody presses daily.
+    ID_PGP_KEYS,
     // File, Print (#45): the message under the cursor, through Windows' own
     // print dialog.
     ID_PRINT,
@@ -5269,8 +5269,8 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
-                        _ if id == ID_IMPORT_PGP_KEY => {
-                            import_a_pgp_private_key(&frame, &a11y);
+                        _ if id == ID_PGP_KEYS => {
+                            manage_pgp_keys(&message_cache, &frame, &ui_tx, &runtime, &a11y);
                         }
                         _ if id == ID_EXPORT_MESSAGES => {
                             export_a_mailbox(
@@ -6922,8 +6922,8 @@ impl WxMailApp {
             // the description is what Windows hands a screen reader and the
             // label is what is read whatever anybody's settings say.
             .append_item(
-                ID_IMPORT_PGP_KEY,
-                "Import PGP Private &Key... (experimental)",
+                ID_PGP_KEYS,
+                "PGP &Keys... (experimental)",
                 crate::application::allowed::READING_PGP_MAIL_IS_EXPERIMENTAL,
             )
             .append_separator()
@@ -14890,72 +14890,73 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
     }
 }
 
-/// Read a PGP private key in from a file and put it in the credential store.
+/// Open the PGP key manager over the keys on this computer (#49, 13-17).
 ///
-/// Everything about the file stops at [`crate::service::pgp`]. This reads the
-/// bytes, hands them over and says what came back. **What it never does is
-/// carry anything out of the file into a sentence, a log line or a status
-/// message**, which is why the outcomes it matches on carry no words except the
-/// credential store's own reason.
-///
-/// Said aloud, and only that. Importing a key is a one-off somebody does
-/// deliberately and then wants to know the answer to. Until 2026-09-16 this
-/// comment said the outcome was put in the status bar as well, and the body
-/// never did; a visible line to match the spoken one is owed and is in the
-/// ledger, on [`import_a_mailbox`]'s pattern, which does both.
-fn import_a_pgp_private_key(frame: &Frame, a11y: &Arc<Accessibility>) {
-    use crate::presentation::accessibility::announcements::Priority;
-    use crate::service::pgp::{self, WhatImportingAKeyFound};
-
-    let picker = FileDialog::builder(frame)
-        .with_message("Import a PGP private key")
-        .with_wildcard("PGP key files (*.asc;*.key;*.gpg)|*.asc;*.key;*.gpg|All files (*.*)|*.*")
-        .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
-        .build();
-    if picker.show_modal() != ID_OK {
-        // Cancelling is a decision and needs no sentence: there is no outcome.
-        return;
-    }
-    let Some(chosen) = picker.get_path() else {
-        let _ = a11y.announce("No file was chosen.", Priority::High);
-        return;
-    };
-
-    // The path and never the contents. A key file's bytes are the highest
-    // value secret this program handles, and a read that failed must say which
-    // file rather than what was in it.
-    let Ok(armoured) = std::fs::read_to_string(&chosen) else {
-        let _ = a11y.announce(
-            "That file could not be read. A PGP key exported as text is what this wants.",
-            Priority::High,
+/// The window is [`crate::presentation::wx_pgp_keys`]'s, and every answer it
+/// gives goes to its own status line and is said, which is what closed ledger
+/// 496: the import this replaced said its answer and showed it nowhere.
+fn manage_pgp_keys(
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    let Some(cache) = cache.clone() else {
+        send_refusal(
+            tx,
+            rt,
+            "Wixen Mail's data on this computer could not be opened, so there is nowhere to \
+             keep keys.",
         );
         return;
     };
+    crate::presentation::wx_pgp_keys::show(frame, cache, a11y);
+}
 
-    let said = match pgp::import_a_private_key(&armoured) {
-        WhatImportingAKeyFound::Imported => {
-            "Your PGP private key was imported. Messages encrypted to it will open from now on."
-                .to_string()
-        }
-        WhatImportingAKeyFound::NotAPrivateKey => {
-            "That is a public key rather than a private one. A public key cannot open anything, \
-             so nothing was stored. Export the private half instead."
-                .to_string()
-        }
-        WhatImportingAKeyFound::NotAKey => {
-            "That file is not a PGP key, so nothing was stored.".to_string()
-        }
-        WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase => {
-            "That key has a passphrase on it. Wixen Mail cannot ask you for one yet, so it \
-             would never open anything and nothing was stored. Export the key without a \
-             passphrase."
-                .to_string()
-        }
-        WhatImportingAKeyFound::CouldNotBeStored { reason } => {
-            format!("Your key could not be saved: {reason}. Nothing was stored.")
-        }
+/// Ask whether to import the key an attachment holds, and import it on a yes
+/// (#49, 13-17).
+///
+/// The question says whose key it names, its kind and its short identifier,
+/// and nothing of its text; Enter answers No, so a second press of the Enter
+/// that opened the attachment imports nothing. Over the reader window when it
+/// is open, since that is where the key was chosen and where focus goes back.
+fn offer_the_key_attachment(
+    over: &Frame,
+    cache: &Option<Arc<MessageCache>>,
+    tx: &Sender<UIUpdate>,
+    offered: &crate::application::pgp_keys::KeyText,
+) {
+    use crate::application::pgp_keys;
+
+    let asked = MessageDialog::builder(
+        over,
+        &pgp_keys::the_attachment_question(&offered.listings()),
+        "Import a PGP Key",
+    )
+    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+    .build()
+    .show_modal();
+    if asked != ID_YES {
+        let _ = tx.try_send(UIUpdate::StatusUpdated(
+            "The key was not imported.".to_string(),
+        ));
+        return;
+    }
+    let Some(cache) = cache else {
+        refuse_a_command(
+            tx,
+            "Wixen Mail's data on this computer could not be opened, so the key was not \
+             imported.",
+        );
+        return;
     };
-    let _ = a11y.announce(&said, Priority::High);
+    let said = pgp_keys::import(cache, offered.text())
+        .into_iter()
+        .map(|imported| imported.said)
+        .collect::<Vec<String>>()
+        .join(" ");
+    let _ = tx.try_send(UIUpdate::StatusUpdated(said));
 }
 
 /// Bring a mailbox in from a file, keeping the folders it was in.
@@ -18268,7 +18269,14 @@ fn open_for_scanning(
             show_who_is_blocked(state, cache, frame, tx, rt, a11y);
             OnReturn::WindowClosed
         }
-        ScanTarget::PgpKeys => OnReturn::WindowClosed,
+        ScanTarget::PgpKeys => {
+            // The way File, PGP Keys opens it. A fresh profile holds no key,
+            // so the scan meets the sentence, an empty list and focus on
+            // Import from File, which is the state that has to sound
+            // deliberate rather than broken.
+            manage_pgp_keys(cache, frame, tx, rt, a11y);
+            OnReturn::WindowClosed
+        }
         ScanTarget::Columns => {
             let inbox = ColumnLayout::defaults_for(message_columns::FolderKind::Inbox);
             let _ = wx_columns::show_column_dialog(frame, &inbox, a11y);
@@ -20858,6 +20866,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // On the UI thread, which is the only place a window may be
             // touched. The fetch and the parse both happened on a worker.
             reader.open((**document).clone());
+        }
+        UIUpdate::KeyAttachmentOffered(offered) => {
+            let over = if reader.is_open() {
+                reader.frame()
+            } else {
+                frame
+            };
+            offer_the_key_attachment(over, message_cache, tx, offered);
         }
         UIUpdate::MessageBodyLoaded(body) => {
             let showing = {
@@ -25921,9 +25937,9 @@ fn read_attachment(
 
     rt.spawn_blocking(move || {
         let outcome = fetch_attachment_bytes(&handle, account, &attachment)
-            .and_then(|bytes| document_of(&attachment, &bytes));
+            .and_then(|bytes| what_an_attachment_opens_as(&attachment, &bytes));
         let _ = match outcome {
-            Ok(document) => tx.try_send(UIUpdate::AttachmentRead(Box::new(document))),
+            Ok(opened) => tx.try_send(opened),
             // Named, because "the attachment" is whichever one they asked for
             // and a person who asked for two is told nothing by that. The
             // producer's own sentence follows it and says what went wrong.
@@ -25933,6 +25949,25 @@ fn read_attachment(
             ))),
         };
     });
+}
+
+/// What an attachment's bytes open as: a tab of their own, or, for a file
+/// holding PGP keys, the question whether to import them (#49, 13-17).
+///
+/// A file that may hold a key and holds none, a `.asc` signature most often,
+/// is read as the text it is.
+fn what_an_attachment_opens_as(
+    attachment: &reader_text::ReaderAttachment,
+    bytes: &[u8],
+) -> crate::common::Result<UIUpdate> {
+    if attachment.how_it_reads() == Some(reader_text::HowItReads::Key)
+        && let Some(offered) = crate::application::pgp_keys::the_keys_an_attachment_holds(bytes)
+    {
+        return Ok(UIUpdate::KeyAttachmentOffered(offered));
+    }
+    Ok(UIUpdate::AttachmentRead(Box::new(document_of(
+        attachment, bytes,
+    )?)))
 }
 
 /// Turn an attachment's bytes into the document its kind gets.
@@ -25953,7 +25988,7 @@ fn document_of(
             &attachment.name,
             &crate::service::pdf::read(bytes)?,
         )),
-        Some(HowItReads::Text) => Ok(reader_text::text_document(
+        Some(HowItReads::Text | HowItReads::Key) => Ok(reader_text::text_document(
             &attachment.name,
             &crate::service::plain_text::read(bytes)?,
         )),

@@ -414,6 +414,10 @@ pub enum UIUpdate {
     /// Boxed because the whole document travels in it and every other variant
     /// would otherwise be sized to fit this one.
     AttachmentRead(Box<crate::presentation::reader_text::ReaderDocument>),
+    /// An attachment was fetched and holds PGP keys, and the person is to be
+    /// asked whether to import them (#49, 13-17). The key's text travels in a
+    /// type whose `Debug` never shows it.
+    KeyAttachmentOffered(crate::application::pgp_keys::KeyText),
     ConnectionStatusChanged(ConnectionStatus),
     ErrorOccurred(String),
     StatusUpdated(String),

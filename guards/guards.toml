@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 374 records have arrived since and have not been through it.
+# 375 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16828,14 +16828,18 @@ tests_last_seen = [
 # was red in that run as well and is not listed, because it was already red
 # before the break was applied: four records were carrying counts from before
 # this task added tests, and they were re-measured afterwards.
+#
+# Re-anchored 2026-09-27 by 13-17: a key is the fourth reading and its test
+# now comes last, so the break is anchored after it; re-measured through
+# `scripts/guards.sh --remeasure`.
 
 [[guard]]
 name = "the reading gate admits text and still refuses what it cannot read"
 file = "src/presentation/reader_text.rs"
-before = """            return Some(HowItReads::Picture);
+before = """            return Some(HowItReads::Key);
         }
         None"""
-after = """            return Some(HowItReads::Picture);
+after = """            return Some(HowItReads::Key);
         }
         Some(HowItReads::Text)"""
 red = [
@@ -16843,7 +16847,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 143 },
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]
 
 # ── A picture whose sender said nothing, and a preview that says nothing ────
@@ -17728,14 +17732,19 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-06 against a green tree, with
 # `cargo test --no-fail-fast --test wired`.
+#
+# Rewritten 2026-09-27 by 13-17: the way in is now the key manager, File, PGP
+# Keys, where File, Import PGP Private Key was and on its letter (Pratik,
+# 2026-09-24), so the anchor is the new item and the two tests are the
+# rewritten ones. Re-measured through `scripts/guards.sh --remeasure`.
 
 [[guard]]
 name = "a PGP private key somebody can import"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
 before = '''            .append_item(
-                ID_IMPORT_PGP_KEY,
-                "Import PGP Private &Key... (experimental)",
+                ID_PGP_KEYS,
+                "PGP &Keys... (experimental)",
                 crate::application::allowed::READING_PGP_MAIL_IS_EXPERIMENTAL,
             )'''
 after = ''''''
@@ -26477,7 +26486,7 @@ red = [
     "test_the_reading_complains_when_the_readers_item_goes_back_to_f8",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
 ]
 
@@ -30754,7 +30763,7 @@ red = [
     "test_no_two_items_on_one_menu_claim_the_same_letter",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/wired.rs", tests = 77 },
 ]
 
@@ -30772,7 +30781,7 @@ red = [
     "test_no_two_menu_items_claim_the_same_shortcut",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/wired.rs", tests = 77 },
 ]
 
@@ -31652,7 +31661,7 @@ red = [
     "test_a_cancellation_has_no_buttons_and_its_bar_says_why",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
 ]
 
@@ -31673,7 +31682,7 @@ red = [
     "test_the_formatted_window_has_the_three_buttons_after_the_page",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
     { file = "tests/the_invitation_is_answered_from_the_reader.rs", tests = 12 },
 ]
 
@@ -32283,7 +32292,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/application/pgp_keys.rs", tests = 15 },
+    { file = "src/application/pgp_keys.rs", tests = 19 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/presentation/reader_text.rs", tests = 143 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
@@ -32344,7 +32353,7 @@ red = [
     "presentation::wx_pgp_keys::tests::test_the_row_a_press_acts_on_is_the_one_chosen_and_nothing_is_not_a_row",
 ]
 tests_last_seen = [
-    { file = "src/application/pgp_keys.rs", tests = 15 },
+    { file = "src/application/pgp_keys.rs", tests = 19 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
 ]
 
@@ -32365,7 +32374,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
-    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 10 },
+    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 12 },
 ]
 
 # The key manager's first sentence saying a key locked with a passphrase can
@@ -32381,5 +32390,23 @@ red = [
     "application::pgp_keys::tests::test_the_limits_say_a_locked_key_cannot_be_imported_and_none_is",
 ]
 tests_last_seen = [
-    { file = "src/application/pgp_keys.rs", tests = 15 },
+    { file = "src/application/pgp_keys.rs", tests = 19 },
+]
+
+# A key sent as an attachment refused by the reader's gate again, so Enter on
+# it says Wixen Mail cannot read an ASC file and never asks whether to import
+# it, in both reader windows. The gate is `how_it_reads`, which the worker
+# asks too, so the break is there rather than in `wx_reader.rs`. Written
+# 2026-09-27 by 13-17, measured by hand with `cargo test --lib`.
+[[guard]]
+name = "a key sent as an attachment can be read in the reader"
+file = "src/presentation/reader_text.rs"
+before = """        if kind == "application/pgp-keys" || MAY_HOLD_A_KEY.contains(&extension.as_str()) {"""
+after = """        if false {"""
+red = [
+    "presentation::wx_reader::tests::test_a_pgp_key_can_be_read_here_whichever_way_it_says_so",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 143 },
+    { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]

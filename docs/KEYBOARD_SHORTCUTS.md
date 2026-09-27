@@ -254,7 +254,7 @@ where the caret is.
 | Previous message in the conversation | `Ctrl+Up` | |
 | Security warning | `F7` | Moves between the message and the warning above it, when there is one |
 | Attachments | `Alt+A` | Moves between the message and the list of attachments, when there is one. Works in the formatted view as well |
-| Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
+| Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same. On a PGP key somebody sent, it says whose key it names and asks whether to import it; `Enter` answers No |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
 | Print this tab | `Ctrl+P` | Prints the message, the conversation or the attachment in this tab through Windows' own print dialog, with every date written in full. The letter is `P` on the reader's File menu. Works in the formatted view as well, where it prints the message or the conversation the window shows |
 | Accept a meeting invitation | `Alt+C` | Presses the Accept button of a message whose invitation can be answered. Works in the formatted view as well, from the message |
@@ -659,7 +659,7 @@ dialog once you have more than one.
 | Import Mailbox | (none) | Read mail in from one file: a zip of mailbox files, a single saved message, a mailbox file, or an Outlook data file. Everything lands under Imported, on this computer, in the folders it was in |
 | Import a Folder of Messages | (none) | Read every saved message and mailbox file in a folder you choose, and in the folders inside it. Same destination. A file picker cannot answer with a folder, which is why this is its own command |
 | Export Mailbox | (none) | Write the folder you are looking at, and everything inside it, into one zip of mailbox files |
-| Import PGP Private Key | (none) | Read a private key in from a file so PGP mail can be opened. Experimental, and the menu says so |
+| PGP Keys | (none) | Open the key manager: every PGP key on this computer, private and public, with import, export and removal. `K` is its letter, as it was for Import PGP Private Key, which this replaced. Experimental, and the menu says so |
 | Print | `Ctrl+P` | Print the message you are on in the message list, through Windows' own print dialog, where you choose the printer, the copies and the pages. Its header lines and its words are printed, not its pictures or formatting. On a conversation's row it prints the whole conversation, every message in order, each headed with its date in full. The reader window and the formatted message window print what they show the same way. In Contacts, Calendar, Tasks, Notes and Reminders it prints the item you are on, with the fields `Shift+Space` reads, one to a line |
 | Quit | `Ctrl+Q` | Exit the application |
 
@@ -1319,6 +1319,23 @@ which case focus goes to Close.
 |--------|----------|-------------|
 | Unblock | `Alt+U` | Take off the block you have chosen in the list |
 | Close | `Alt+C` | Close Blocked Senders |
+
+### PGP Keys Dialog Accelerators
+
+File, PGP Keys. The window opens on the first key in the list, or on Import
+from File when there is no key yet. Above the list is a box saying what keys
+can and cannot do in this build. Each letter is used once.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| What these keys can do here | `Alt+H` | The box saying what keys can and cannot do in this build |
+| Keys | `Alt+K` | The list: one row per key, the name and address first |
+| Import from File | `Alt+F` | Read every key in a file in, private or public |
+| Paste a Key | `Alt+P` | Paste a key's text into a box and import it. `Alt+K` there reaches the box |
+| Export Public Key | `Alt+X` | Write the chosen key's public half to a file |
+| Copy Public Key | `Alt+C` | Put the chosen key's public half on the clipboard |
+| Remove | `Alt+R` | Remove the chosen key, after a question that names it. `Enter` answers No |
+| Close | `Alt+O` or `Esc` | Close PGP Keys |
 
 ### Send Feedback Dialog Accelerators
 
