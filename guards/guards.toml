@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 401 records have arrived since and have not been through it.
+# 402 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -31978,7 +31978,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_meeting_change_reaches_the_calendar.rs", tests = 19 },
+    { file = "tests/a_meeting_change_reaches_the_calendar.rs", tests = 20 },
 ]
 
 # The page's script no longer posting Remove for Alt+R, so in the formatted
@@ -32916,4 +32916,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/invitations.rs", tests = 51 },
+]
+
+# An organiser's move saved with the copy's zone beside the update's clock
+# face: a Graph copy stored beside "UTC" and an update written for ten in Los
+# Angeles leave ten in universal time on the calendar, eight hours early.
+# 13-13 wrote the zone from the start, so this was taken red by hand on
+# 2026-09-27 by 13-21.1 rather than by a red commit, against the target.
+[[guard]]
+name = "a move keeps the zone the update was written in"
+file = "src/application/meeting_changes.rs"
+suite = "a_meeting_change_reaches_the_calendar"
+before = """        // "UTC", ten in Los Angeles would be stored as ten in universal time.
+        time_zone: invitation.time_zone.clone(),"""
+after = """        // "UTC", ten in Los Angeles would be stored as ten in universal time."""
+red = [
+    "test_a_move_keeps_the_zone_the_update_was_written_in",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "tests/a_meeting_change_reaches_the_calendar.rs", tests = 20 },
 ]

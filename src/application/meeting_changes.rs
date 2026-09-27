@@ -339,6 +339,9 @@ pub fn the_copy_moved(copy: &CalendarEventEntry, invitation: &Invitation) -> Cal
         start_date: invitation.is_all_day.then(|| invitation.starts.clone()),
         end_date: invitation.is_all_day.then_some(ends),
         is_all_day: invitation.is_all_day,
+        // A clock face means an hour only in the zone beside it, so the
+        // update's zone goes with the update's times: beside the copy's
+        // "UTC", ten in Los Angeles would be stored as ten in universal time.
         time_zone: invitation.time_zone.clone(),
         // A change this computer made, which is what puts it in front of the
         // push.
