@@ -310,6 +310,7 @@ fn a_key(who: &str, fingerprint: &str, private: bool) -> KeyListing {
             .to_utc(),
         expires: None,
         private,
+        locked: false,
         can_encrypt: true,
         can_sign: private,
     }

@@ -402,8 +402,9 @@ mod tests {
     use crate::common::temp_home::TempHome;
     use crate::service::pgp::describe;
     use crate::service::pgp::for_tests::{
-        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, a_message_to_alice, alices_private_key,
-        alices_public_key, carols_public_key, daves_locked_key, what_alices_message_says,
+        ALICES_FINGERPRINT, CAROLS_FINGERPRINT, DAVES_FINGERPRINT, a_message_to_alice,
+        alices_private_key, alices_public_key, carols_public_key, daves_locked_key,
+        what_alices_message_says,
     };
     use crate::service::secret_store;
 
@@ -560,23 +561,36 @@ mod tests {
     // half; a sentence that dropped the clause would fail the first.
 
     #[test]
-    fn test_the_limits_say_a_locked_key_cannot_be_imported_and_none_is() {
+    fn test_the_limits_say_a_locked_key_is_kept_locked_and_one_is() {
         assert!(
-            WHAT_KEYS_CAN_DO_HERE
-                .contains("A key locked with a passphrase cannot be imported yet."),
+            WHAT_KEYS_CAN_DO_HERE.contains(
+                "A key locked with a passphrase is kept locked. Its passphrase is asked for \
+                 when you open a message that needs it in a reader window, and remembered \
+                 until Wixen Mail closes; it is never saved."
+            ),
             "{WHAT_KEYS_CAN_DO_HERE:?}"
         );
         let cache = a_cache("pgp-limits-locked");
 
         let answers = import(&cache, &daves_locked_key());
 
-        assert_eq!(answers.len(), 1, "{answers:?}");
-        assert!(
-            answers[0].said.contains("passphrase"),
-            "{}",
-            answers[0].said
+        assert_eq!(
+            answers
+                .iter()
+                .map(|imported| imported.said.as_str())
+                .collect::<Vec<&str>>(),
+            vec![
+                "The private key for Dave Example <dave@example.com> was imported. It is \
+                 locked with a passphrase, which Wixen Mail asks for the first time you open \
+                 a message that needs it."
+            ]
         );
-        assert_eq!(fingerprints_and_halves(&cache), vec![]);
+        let listed: Vec<(String, bool, bool)> = every_key_here(&cache)
+            .expect("the keys to be read")
+            .into_iter()
+            .map(|key| (key.fingerprint, key.private, key.locked))
+            .collect();
+        assert_eq!(listed, vec![(DAVES_FINGERPRINT.to_string(), true, true)]);
     }
 
     #[test]
@@ -681,6 +695,7 @@ mod tests {
                 .to_utc(),
             expires: None,
             private: true,
+            locked: false,
             can_encrypt: true,
             can_sign: true,
         }
@@ -700,6 +715,7 @@ mod tests {
                     .to_utc(),
             ),
             private: false,
+            locked: false,
             can_encrypt: true,
             can_sign: false,
         }

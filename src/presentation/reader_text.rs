@@ -2070,6 +2070,9 @@ fn the_reason_it_did_not_open(
         WhatOpeningItFound::TheKeyHereDoesNotOpenIt => Some(THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT),
         WhatOpeningItFound::TheKeyHereCouldNotBeRead => Some(THE_PGP_KEY_HERE_COULD_NOT_BE_READ),
         WhatOpeningItFound::Damaged => Some(THE_PGP_MESSAGE_IS_DAMAGED),
+        // Its own sentence arrives with the prompt; until then the general
+        // one stands, which is true.
+        WhatOpeningItFound::TheKeyIsLocked(_) => None,
     }
 }
 

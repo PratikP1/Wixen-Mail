@@ -201,6 +201,38 @@ pub enum WhatOpeningItFound {
     /// The armour is not readable as an OpenPGP message: truncated, corrupted
     /// in transit, or never an OpenPGP message at all.
     Damaged,
+    /// The message was encrypted to a key here that a passphrase is holding
+    /// shut, and nobody has typed that passphrase since Wixen Mail started.
+    ///
+    /// Not a failure of the message or of the key: the next step is to ask
+    /// the person, which only a reader window does (13-17.1). Which key is the
+    /// key's own first name and address, read out of the credential store,
+    /// and never anything the message says.
+    TheKeyIsLocked(LockedKey),
+}
+
+/// A private key here that a passphrase is holding shut.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockedKey {
+    /// The first name and address the key carries, or its short identifier
+    /// where it carries none.
+    pub whose: String,
+    /// The whole fingerprint in hexadecimal capitals, which [`unlock`] takes.
+    pub fingerprint: String,
+}
+
+/// What came of a typed passphrase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unlocking {
+    /// It opens the key, and it is held until Wixen Mail closes.
+    Unlocked,
+    /// It does not open the key, and nothing was held.
+    WrongPassphrase,
+    /// No private key here has that fingerprint.
+    NoSuchKey,
+    /// The credential store would not give the key back, so nothing could be
+    /// tried.
+    TheKeyCouldNotBeRead,
 }
 
 /// What happened when a private key was imported.
@@ -263,6 +295,9 @@ pub struct KeyListing {
     /// Whether this is a private key, which opens mail, rather than somebody's
     /// public key, which does not.
     pub private: bool,
+    /// Whether a passphrase is holding this private key shut. Always false
+    /// for a public key, which has nothing to lock.
+    pub locked: bool,
     /// Whether mail can be encrypted to it.
     pub can_encrypt: bool,
     /// Whether it can sign.
@@ -338,6 +373,18 @@ pub fn public_half_of_a_key_here(fingerprint: &str) -> crate::common::Result<Opt
 /// tree to that.
 pub fn open_a_message(armour: &str) -> WhatOpeningItFound {
     keys::open(armour)
+}
+
+/// Try a typed passphrase on the private key here with this fingerprint, and
+/// hold it until Wixen Mail closes if it opens the key.
+///
+/// The typed text becomes the crate's own passphrase type at once, and that
+/// is what is held: in memory, in this module and nowhere else, overwritten
+/// when it is dropped. It is never written to the credential store, the
+/// database, a file or a log, and nothing outside this module can read it
+/// back.
+pub fn unlock(fingerprint: &str, typed: &str) -> Unlocking {
+    keys::unlock(fingerprint, typed)
 }
 
 /// Take an armoured private key file and put it in the credential store.

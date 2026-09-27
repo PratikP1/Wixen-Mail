@@ -32387,7 +32387,7 @@ file = "src/application/pgp_keys.rs"
 before = """     A key locked with a passphrase cannot be imported yet. Public keys"""
 after = """     A key locked with a passphrase can be imported now. Public keys"""
 red = [
-    "application::pgp_keys::tests::test_the_limits_say_a_locked_key_cannot_be_imported_and_none_is",
+    "application::pgp_keys::tests::test_the_limits_say_a_locked_key_is_kept_locked_and_one_is",
 ]
 tests_last_seen = [
     { file = "src/application/pgp_keys.rs", tests = 19 },
