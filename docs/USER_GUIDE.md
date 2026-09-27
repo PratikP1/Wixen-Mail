@@ -763,8 +763,8 @@ build:
   when you open a message that needs it, and remembered until Wixen Mail
   closes. It is never saved.
 - Public keys are kept here, and every key here checks the PGP signatures made
-  with it. See [Signed PGP mail](#signed-pgp-mail). Sending encrypted mail is
-  not built yet.
+  with it. See [Signed PGP mail](#signed-pgp-mail). Sending signed or
+  encrypted mail is not offered yet.
 - Removing a key here removes it from this computer.
 
 A locked key's row says "Private key, locked with a passphrase".

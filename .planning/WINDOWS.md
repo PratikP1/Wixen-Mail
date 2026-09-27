@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 591
+open_count: 593
 waived_count: 0
 fixed_count: 64
-total_count: 655
-last_updated: 2026-09-27T16:10:00.000Z
+total_count: 657
+last_updated: 2026-09-27T17:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -670,6 +670,8 @@ last_updated: 2026-09-27T16:10:00.000Z
 | 653 | 13 | todo | src/application/checking_signatures.rs |  | 13-18, a question for Pratik: "This message is signed, and it was stored before Wixen Mail kept the form signed mail arrives in, so the signature cannot be checked." is chosen from a signature file among the message's stored files and nothing else, because the header that said it was signed is gone for mail stored before. So a message that only carries a .asc or .p7s file as an attachment, or a signed message a mailing list wrapped in a multipart/mixed of its own with a footer, arriving today, says it too, with a reason that is not its own. Recommendation: record when this build first kept PGP/MIME originals (the moment the kind column is added) and say "stored before" only for messages downloaded before that; for later ones say "This message carries a signature in a form Wixen Mail does not check." The guide and the changelog say the limitation meanwhile | open |  | 2026-09-27T16:00:00.000Z |  |
 | 654 | 13 | stub | src/service/signed_mail/sending.rs |  | S/MIME signing and encrypting is reached only by tests until 13-21 wires the composer. 13-19 built signed_mail::sending's sign_detached and encrypt_to, CertificateStore::own_certificate_for, smtp::Protection's three S/MIME arms in build_message, and the correspondents' certificates kept at arrival with certificates_for; mail_controller::outgoing always sends Protection::Plain and nothing reads certificates_for. 13-21 closes it, as its premise 0 says. One choice it inherits: own_certificate_for takes the first certificate Windows lists that names the address and holds its key, not the one latest in date, and the changelog says so meanwhile | open |  | 2026-09-27T16:10:00.000Z |  |
 | 655 | 14 | unrun-verify | src/service/protocols/smtp.rs |  | 13-19, phase 14's: nothing signed or encrypted by this program has been opened by another mail program. OpenSSL 3.5.7 verified a signature and opened an envelope made by the same Windows declarations in a scratchpad probe on 2026-09-27, and this program's own reader checks both in the tests; that is all. What a real account settles: that a message signed here with a real certificate reads as signed and unchanged in Outlook, Thunderbird and Apple Mail; that an encrypted one opens in each, which answers whether they accept PKCS #1 v1.5 key transport, and whether they open RSA-OAEP, which would let decision 22 move to the newer padding; that a real correspondent's certificate is kept from their signed mail and a reply sealed to it opens for them; and what Windows shows when the signing key asks for a PIN or lives on a card | open |  | 2026-09-27T16:10:00.000Z |  |
+| 656 | 13 | stub | src/service/pgp/sending.rs |  | OpenPGP signing and encrypting is reached only by tests until 13-21 wires the composer. 13-20 built service::pgp's sign_detached and encrypt_for with the Sending outcomes, the detached signature made in keys.rs beside the held passphrases, and smtp::Protection's three PGP arms with their RFC 3156 wrapping in build_message; mail_controller::outgoing always sends Protection::Plain, and nothing looks up a recipient's public key by address to fill a Recipient. 13-21 closes it, as its premise 0 says | open |  | 2026-09-27T17:45:00.000Z |  |
+| 657 | 14 | unrun-verify | src/service/pgp/sending.rs |  | 13-20, phase 14's: nothing signed or encrypted with OpenPGP by this program has been opened by another mail program. GnuPG 2.4.9 decrypted a message encrypted here to Alice's RSA key and Carol's Curve25519 subkey, byte for byte, and said Good signature for a detached signature by Carol over a CRLF part and BAD over its LF form, once, on 2026-09-27; this program's own reader checks both through the RFC 3156 wrapping in the tests. What a real account settles: that a PGP/MIME message signed here reads as signed and unchanged in Thunderbird and Proton Mail, and one encrypted here opens in each, signed and encrypted laid out as RFC 3156 section 6.1 rather than the combined form of 6.2; whether SEIPD version 2 should be offered beside version 1 once those programs are tried; and whether a real correspondent's key with no key flags at all, which this answers as unusable where GnuPG would go by its algorithm, turns up in practice | open |  | 2026-09-27T17:45:00.000Z |  |
 
 ````json
 [
@@ -8531,6 +8533,30 @@ last_updated: 2026-09-27T16:10:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T16:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 656,
+    "kind": "stub",
+    "phase": "13",
+    "file": "src/service/pgp/sending.rs",
+    "line": null,
+    "description": "OpenPGP signing and encrypting is reached only by tests until 13-21 wires the composer. 13-20 built service::pgp's sign_detached and encrypt_for with the Sending outcomes, the detached signature made in keys.rs beside the held passphrases, and smtp::Protection's three PGP arms with their RFC 3156 wrapping in build_message; mail_controller::outgoing always sends Protection::Plain, and nothing looks up a recipient's public key by address to fill a Recipient. 13-21 closes it, as its premise 0 says",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T17:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 657,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/service/pgp/sending.rs",
+    "line": null,
+    "description": "13-20, phase 14's: nothing signed or encrypted with OpenPGP by this program has been opened by another mail program. GnuPG 2.4.9 decrypted a message encrypted here to Alice's RSA key and Carol's Curve25519 subkey, byte for byte, and said Good signature for a detached signature by Carol over a CRLF part and BAD over its LF form, once, on 2026-09-27; this program's own reader checks both through the RFC 3156 wrapping in the tests. What a real account settles: that a PGP/MIME message signed here reads as signed and unchanged in Thunderbird and Proton Mail, and one encrypted here opens in each, signed and encrypted laid out as RFC 3156 section 6.1 rather than the combined form of 6.2; whether SEIPD version 2 should be offered beside version 1 once those programs are tried; and whether a real correspondent's key with no key flags at all, which this answers as unusable where GnuPG would go by its algorithm, turns up in practice",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T17:45:00.000Z",
     "resolved_at": null
   }
 ]
