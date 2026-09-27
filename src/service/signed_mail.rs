@@ -154,16 +154,51 @@ pub fn is_an_smime_envelope(filename: &str, mime_type: &str) -> bool {
     }
 }
 
+/// The media type of a PGP/MIME message's control part, and the value its
+/// `protocol` parameter names (RFC 3156, section 4).
+const PGP_MIME_CONTROL: &str = "application/pgp-encrypted";
+
 /// Whether a whole message says it is PGP/MIME encrypted, from its headers
 /// alone.
-pub fn claims_pgp_encryption(_raw: &[u8]) -> bool {
-    false
+///
+/// The other family's sibling of [`claims_encryption`], here because it reads
+/// the same `Content-Type` through the same private reading, so there is one
+/// answer to what a content type says and not two. A PGP/MIME message is a
+/// `multipart/encrypted` whose `protocol` is `application/pgp-encrypted`: its
+/// armour is a file it carries, so its body is empty and nothing in it looks
+/// like armour, and this header is the only thing that says it is encrypted.
+///
+/// Another protocol under the same wrapper answers no. Nothing here opens one,
+/// and saying it is PGP would offer a stranger's format to the PGP key.
+pub fn claims_pgp_encryption(raw: &[u8]) -> bool {
+    let (headers, _) = split_headers_from_body(raw);
+    header_value(headers, "content-type").is_some_and(|value| {
+        let header = ContentType::read(&value);
+        header.media_type == "multipart/encrypted"
+            && header
+                .parameter("protocol")
+                .is_some_and(|protocol| protocol.trim().eq_ignore_ascii_case(PGP_MIME_CONTROL))
+    })
 }
 
 /// Whether one of a message's stored files is the encrypted part of a PGP/MIME
 /// message.
-pub fn is_a_pgp_mime_part(_filename: &str, _mime_type: &str) -> bool {
-    false
+///
+/// **Not a second opinion about whether a message is encrypted**, for the
+/// reason [`is_an_smime_envelope`] gives: that is [`claims_pgp_encryption`]'s,
+/// asked as the message arrived. This says which of the two files it carries
+/// holds the armour. RFC 3156 makes the second part `application/octet-stream`
+/// and the first the control part, `application/pgp-encrypted`, which says
+/// only "Version: 1"; offered to the key, the control part reads as a damaged
+/// message. A sender who types the armour's part differently usually still
+/// names it `.asc`, so the name is read after the type.
+pub fn is_a_pgp_mime_part(filename: &str, mime_type: &str) -> bool {
+    let media_type = mime_type.trim().to_ascii_lowercase();
+    if media_type == PGP_MIME_CONTROL {
+        return false;
+    }
+    media_type == "application/octet-stream"
+        || matches!(file_suffix(filename).as_str(), "asc" | "gpg" | "pgp")
 }
 
 pub fn layout_of(content_type: &str) -> Option<SmimeLayout> {

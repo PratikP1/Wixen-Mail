@@ -2815,6 +2815,16 @@ impl MessageCache {
             "arrived_encrypted",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        // The same, for a message whose Content-Type said it was PGP/MIME,
+        // whose armour is a file it carries and whose body is therefore empty.
+        // A column of its own rather than a value in the one above, because the
+        // two lead to different openers and a message nothing was recorded
+        // about has to read as neither.
+        self.ensure_column_exists(
+            "messages",
+            "arrived_pgp_encrypted",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // The References and In-Reply-To headers, space separated. Threading
         // reads them and nothing else; storing them is what makes conversations
         // cost no extra fetch.

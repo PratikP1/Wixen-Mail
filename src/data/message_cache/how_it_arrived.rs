@@ -39,62 +39,90 @@
 //! attachment the mark says only that a message is encrypted and cannot say how
 //! it is addressed.
 //!
-//! # Why one function records both facts
+//! # PGP/MIME, the same shape
 //!
-//! Two things are true of a message's arrival and both are lost the moment the
-//! bytes are dropped: whether it claimed a signature, and whether it claimed
-//! encryption. A caller that asked for one and forgot the other would leave a
-//! message reading as empty, and nothing would say so. So the arrival paths
-//! call [`MessageCache::note_the_form_it_arrived_in`], which asks both
-//! questions itself, and
+//! A PGP/MIME message is a `multipart/encrypted` whose armour is a file it
+//! carries, so it too arrives with no body and nothing in it that looks like
+//! armour. It gets a mark of its own, `arrived_pgp_encrypted`, and
+//! [`MessageCache::the_pgp_mime_part_it_carried`] hands its armour back, for
+//! the same two reasons the S/MIME pair exists. A column of its own rather than
+//! a second value in the first, because the two lead to different openers.
+//!
+//! # Why one function records every fact
+//!
+//! Three things are true of a message's arrival and all are lost the moment the
+//! bytes are dropped: whether it claimed a signature, whether it claimed S/MIME
+//! encryption, and whether it claimed PGP/MIME encryption. A caller that asked
+//! for one and forgot another would leave a message reading as empty, and
+//! nothing would say so. So the arrival paths call
+//! [`MessageCache::note_the_form_it_arrived_in`], which asks every question
+//! itself, and
 //! `test_every_arrival_path_records_both_facts_about_the_form_a_message_came_in`
-//! holds them to it.
+//! holds them to it: nothing that ships records one of the facts on its own.
 
 use super::MessageCache;
 use crate::common::{Error, Result};
-use crate::service::signed_mail::{claims_encryption, is_an_smime_envelope};
+use crate::service::signed_mail::{
+    claims_encryption, claims_pgp_encryption, is_a_pgp_mime_part, is_an_smime_envelope,
+};
 
 impl MessageCache {
     /// Record what a message's own headers said about the form it arrived in.
     ///
-    /// The one call an arrival path makes with the bytes in hand. It asks both
-    /// questions itself, for the reason [`MessageCache::keep_signed_original`]
+    /// The one call an arrival path makes with the bytes in hand. It asks every
+    /// question itself, for the reason [`MessageCache::keep_signed_original`]
     /// gives about asking one of them: a question answered in four places is
     /// four chances to disagree, and the pairs in this program that did that
     /// drifted apart.
     ///
-    /// Ordinary mail costs two cheap header reads and writes nothing.
+    /// Ordinary mail costs three cheap header reads and writes nothing.
     pub fn note_the_form_it_arrived_in(&self, message_id: i64, raw: &[u8]) -> Result<()> {
-        // Both, whatever the first one did. They are two facts about one
-        // message and losing either must not cost the other: an encrypted
-        // message that opens blank and a signed message with nothing to check
-        // are different losses, and neither is the other's fault.
-        let noted = self.note_whether_it_arrived_encrypted(message_id, raw);
+        // All three, whatever the others did. They are three facts about one
+        // message and losing one must not cost another: an encrypted message
+        // that opens blank and a signed message with nothing to check are
+        // different losses, and neither is the other's fault.
+        let noted = self.note_where(claims_encryption(raw), message_id, ARRIVED_AS_SMIME);
+        let noted_pgp =
+            self.note_where(claims_pgp_encryption(raw), message_id, ARRIVED_AS_PGP_MIME);
         let kept = self.keep_signed_original(message_id, raw);
-        noted.and(kept)
+        noted.and(noted_pgp).and(kept)
     }
 
-    /// Write the mark, for a message that said it was encrypted.
+    /// Write a mark, for a message whose headers claimed it.
     ///
     /// Nothing is written for anything else. The column's default is the answer
     /// for ordinary mail, which is nearly all of it, so this is a header read
     /// and no write at all on the common path.
-    fn note_whether_it_arrived_encrypted(&self, message_id: i64, raw: &[u8]) -> Result<()> {
-        if !claims_encryption(raw) {
+    fn note_where(&self, claimed: bool, message_id: i64, mark: &Mark) -> Result<()> {
+        if !claimed {
             return Ok(());
         }
         self.conn
             .execute(
-                "UPDATE messages SET arrived_encrypted = 1 WHERE id = ?1",
+                &format!("UPDATE messages SET {} = 1 WHERE id = ?1", mark.column),
                 [message_id],
             )
             .map_err(|e| {
                 Error::Other(format!(
-                    "Failed to note that a message arrived encrypted: {}",
-                    e
+                    "Failed to note that a message arrived {}: {}",
+                    mark.said, e
                 ))
             })?;
         Ok(())
+    }
+
+    /// Whether a message carries a mark, false for a row nothing was recorded
+    /// about.
+    fn is_marked(&self, message_id: i64, mark: &Mark) -> Result<bool> {
+        let marked: Option<i64> = self
+            .conn
+            .query_row(
+                &format!("SELECT {} FROM messages WHERE id = ?1", mark.column),
+                [message_id],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(marked.unwrap_or(0) != 0)
     }
 
     /// Whether this message said it was S/MIME encrypted when it arrived.
@@ -106,15 +134,7 @@ impl MessageCache {
     /// holds for the same reason: a message nothing was recorded about is in
     /// the same position as one that never claimed anything.
     pub fn arrived_encrypted(&self, message_id: i64) -> Result<bool> {
-        let marked: Option<i64> = self
-            .conn
-            .query_row(
-                "SELECT arrived_encrypted FROM messages WHERE id = ?1",
-                [message_id],
-                |row| row.get(0),
-            )
-            .ok();
-        Ok(marked.unwrap_or(0) != 0)
+        self.is_marked(message_id, ARRIVED_AS_SMIME)
     }
 
     /// The PKCS #7 envelope this message arrived as, when this computer has it.
@@ -138,16 +158,51 @@ impl MessageCache {
     }
 
     /// Whether this message said it was PGP/MIME encrypted when it arrived.
-    pub fn arrived_pgp_encrypted(&self, _message_id: i64) -> Result<bool> {
-        Ok(false)
+    ///
+    /// False for a message that arrived before this was recorded, for the
+    /// reason [`MessageCache::arrived_encrypted`] gives.
+    pub fn arrived_pgp_encrypted(&self, message_id: i64) -> Result<bool> {
+        self.is_marked(message_id, ARRIVED_AS_PGP_MIME)
     }
 
-    /// The armour of the PGP/MIME message this message arrived as, when this
+    /// The armour a PGP/MIME message carried in its encrypted part, when this
     /// computer has it.
-    pub fn the_pgp_mime_part_it_carried(&self, _message_id: i64) -> Result<Option<String>> {
-        Ok(None)
+    ///
+    /// `None` means what it means for [`MessageCache::the_envelope_it_carried`],
+    /// and is asked in the same way: of a message already marked, with the
+    /// part's name and type saying which of its files holds the armour and
+    /// nothing else. Armour is ASCII by definition, so a byte that is not is
+    /// damage; read lossily, it reaches the opener as a replacement character,
+    /// and the opener says the message is damaged, which it is.
+    pub fn the_pgp_mime_part_it_carried(&self, message_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .attachments_with_content(message_id)?
+            .into_iter()
+            .find(|held| is_a_pgp_mime_part(&held.described.filename, &held.described.mime_type))
+            .and_then(|held| held.content)
+            .map(|armour| String::from_utf8_lossy(&armour).into_owned()))
     }
 }
+
+/// One of the marks a message's arrival leaves on its row.
+struct Mark {
+    /// The column on `messages`, written by this module only.
+    column: &'static str,
+    /// How the message arrived, for the error when the mark cannot be written.
+    said: &'static str,
+}
+
+/// That the message's `Content-Type` said it was S/MIME encrypted.
+const ARRIVED_AS_SMIME: &Mark = &Mark {
+    column: "arrived_encrypted",
+    said: "encrypted",
+};
+
+/// That the message's `Content-Type` said it was PGP/MIME encrypted.
+const ARRIVED_AS_PGP_MIME: &Mark = &Mark {
+    column: "arrived_pgp_encrypted",
+    said: "PGP/MIME encrypted",
+};
 
 #[cfg(test)]
 mod tests {

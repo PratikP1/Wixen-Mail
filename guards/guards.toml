@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 362 records have arrived since and have not been through it.
+# 364 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3686,7 +3686,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/service/signed_mail.rs", tests = 118 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
 ]
 
 # ── A runner cannot judge this record, and that is written here rather than
@@ -3717,7 +3717,7 @@ red = [
     "service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 118 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
 ]
 
 # ── The compiler named in two places ────────────────────────────────────────
@@ -12570,7 +12570,7 @@ red = [
     "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 118 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
 ]
 
 [[guard]]
@@ -12607,7 +12607,7 @@ tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
     { file = "src/application/reading_a_message.rs", tests = 19 },
-    { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
@@ -12647,7 +12647,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
 ]
 
 # Two guards from the same stretch of work are deliberately not recorded here,
@@ -17655,12 +17655,16 @@ red = [
     "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_envelope_for_a_key_held_here_opens_to_its_words_from_the_cache",
     "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_invitation_sealed_for_a_key_here_is_found_by_what_answers_it_and_marked",
     "application::encrypted_mail::tests::with_a_key_held_in_memory::test_opening_an_envelope_writes_nothing_to_the_cache",
+    # Added 2026-09-26 by 13-15. Two cases telling the S/MIME mark from the
+    # PGP/MIME one assert the S/MIME half through this claim.
+    "data::message_cache::how_it_arrived::tests::test_each_family_is_marked_as_itself_and_not_as_the_other",
+    "service::signed_mail::the_cheap_first_question::test_the_two_families_never_claim_each_others_encryption",
 ]
 tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
     { file = "src/application/reading_a_message.rs", tests = 19 },
-    { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
-    { file = "src/service/signed_mail.rs", tests = 118 },
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
 ]
 
 # ── The sentence reached the bar and the body still said "no text" ──────────
@@ -21994,7 +21998,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
-    { file = "src/service/signed_mail.rs", tests = 118 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
 ]
 
 # Counting the week from Sunday, which is how a calendar on the wall is
@@ -31964,7 +31968,7 @@ red = [
     "service::signed_mail::windows_store::tests::test_what_a_refusal_means_is_read_from_the_code_windows_gave",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 118 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
 ]
 
 # The envelope's bytes handed back from the call that only sizes them, so every
@@ -31988,9 +31992,27 @@ red = [
     "service::signed_mail::tests::test_an_envelope_offered_to_a_store_holding_no_key_for_it_is_not_addressed_here",
     "service::signed_mail::tests::test_an_envelope_to_somebody_else_is_not_addressed_here_though_a_key_is_held",
     "service::signed_mail::tests::test_a_damaged_envelope_is_said_to_be_damaged_and_never_opens",
+    # Added 2026-09-26 by 13-15, whose re-measure found them red and unnamed.
+    # Every envelope this computer's own store is offered "opens" to zeros
+    # under this break, so the cases that read an envelope addressed to nobody
+    # here through the store, and the cases opening one through a key held in
+    # memory, go red with it. They sit in files this record never named, which
+    # is why the count check could not flag it.
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_a_file_inside_is_found_by_its_place_among_the_files_inside",
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_envelope_around_a_signed_message_hands_on_what_was_signed",
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_envelope_for_a_key_held_here_opens_to_its_words_from_the_cache",
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_invitation_sealed_for_a_key_here_is_found_by_what_answers_it_and_marked",
+    "application::reading_a_message::tests::test_the_envelope_is_folded_in_before_the_signature_so_it_is_spoken",
+    "presentation::reader_text::encryption_tests::test_an_encrypted_message_reads_as_the_sentence_rather_than_as_nothing_to_read",
+    "presentation::reader_text::encryption_tests::test_it_still_reaches_the_spoken_half_when_a_signature_verdict_follows",
+    "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
+    "presentation::reader_text::encryption_tests::test_the_same_sentence_is_spoken_as_the_message_opens",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 118 },
+    { file = "src/application/encrypted_mail.rs", tests = 11 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
 ]
 
 # A page holding mail opened from its encryption left to the Reading tab's
@@ -32071,4 +32093,44 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 141 },
+]
+
+# The protocol read out of the raw header rather than through the reading that
+# takes its quotes off, so the PGP/MIME message every program writes, with
+# `protocol="application/pgp-encrypted"` in quotes, is never marked and opens
+# blank with nothing said. Written 2026-09-26 by 13-15, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a pgp/mime message whose protocol is quoted is still recognised"
+file = "src/service/signed_mail.rs"
+before = """                .is_some_and(|protocol| protocol.trim().eq_ignore_ascii_case(PGP_MIME_CONTROL))"""
+after = """                .is_some_and(|_| value.contains("protocol=application/pgp-encrypted"))"""
+red = [
+    "data::message_cache::how_it_arrived::tests::test_a_pgp_mime_message_is_marked_on_arrival",
+    "data::message_cache::how_it_arrived::tests::test_each_family_is_marked_as_itself_and_not_as_the_other",
+    "service::signed_mail::the_cheap_first_question::test_a_pgp_mime_message_says_it_claims_pgp_encryption_however_the_protocol_is_written",
+    "service::signed_mail::the_cheap_first_question::test_only_pgp_mime_claims_pgp_encryption",
+    "service::signed_mail::the_cheap_first_question::test_the_two_families_never_claim_each_others_encryption",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
+    { file = "src/service/signed_mail.rs", tests = 122 },
+]
+
+# The one call an arrival path makes asking two of its three questions, so a
+# PGP/MIME message is stored with its armour and no mark, and nothing on the
+# path that opens it ever asks whether it was encrypted. Written 2026-09-26 by
+# 13-15, measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "every arrival path marks a pgp/mime message"
+file = "src/data/message_cache/how_it_arrived.rs"
+before = """        let noted_pgp =
+            self.note_where(claims_pgp_encryption(raw), message_id, ARRIVED_AS_PGP_MIME);"""
+after = """        let noted_pgp: Result<()> = Ok(());"""
+red = [
+    "data::message_cache::how_it_arrived::tests::test_a_pgp_mime_message_is_marked_on_arrival",
+    "data::message_cache::how_it_arrived::tests::test_each_family_is_marked_as_itself_and_not_as_the_other",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
 ]
