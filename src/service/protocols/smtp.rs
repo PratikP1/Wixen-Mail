@@ -242,6 +242,13 @@ fn build_message(email: &Email) -> Result<Message> {
     built.map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))
 }
 
+/// A message as it would go on the wire, for a test elsewhere in the crate
+/// that has to read what [`build_message`] makes of a message it built.
+#[cfg(test)]
+pub(crate) fn as_it_would_go(email: &Email) -> Result<Vec<u8>> {
+    Ok(build_message(email)?.formatted())
+}
+
 /// A message's body as one MIME entity: its words, and its files if it has
 /// any.
 enum Body {

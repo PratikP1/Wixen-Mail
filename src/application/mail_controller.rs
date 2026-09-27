@@ -2,6 +2,7 @@
 //!
 //! Bridges the UI with IMAP/SMTP protocols and manages mail operations.
 
+use crate::application::protecting::{Choice, WhatIsHeld};
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
@@ -134,6 +135,15 @@ pub struct SendEmailRequest {
     /// The whole conversation before this reply, ending with the message being
     /// answered.
     pub references: Option<String>,
+    /// Whether it goes signed, encrypted, both or neither, as it was queued.
+    pub protection: Choice,
+    /// What this computer holds for the sender and the recipients.
+    ///
+    /// Nothing until the send loop gathers it, just before the message goes,
+    /// so a key removed after the message was queued is noticed. A message
+    /// asked to be protected with nothing gathered is refused, never sent
+    /// plain.
+    pub held: WhatIsHeld,
 }
 
 impl SendEmailRequest {
@@ -180,7 +190,15 @@ impl SendEmailRequest {
             body_html: queued.body_html.clone(),
             in_reply_to: queued.in_reply_to.clone(),
             references: queued.references.clone(),
+            protection: Choice::Plain,
+            held: WhatIsHeld::default(),
         })
+    }
+
+    /// Every address it goes to, To, Cc and Bcc, which is who the send loop
+    /// gathers keys for.
+    pub fn every_recipient(&self) -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -1117,6 +1135,8 @@ mod tests {
             body_html: None,
             in_reply_to: None,
             references: None,
+            protection: Choice::Plain,
+            held: WhatIsHeld::default(),
         };
         let result = controller.send_email(&req).await;
         assert!(result.is_err()); // expected in tests due placeholder/non-routable SMTP server

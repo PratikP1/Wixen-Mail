@@ -16,8 +16,10 @@
 //! without an add-in (the phase's decision 23). The announcement after the
 //! send names the family, so the choice is never silent.
 
+use crate::data::message_cache::MessageCache;
 use crate::service::pgp::{LockedKey, Recipient};
 use crate::service::protocols::smtp::Protection;
+use crate::service::signed_mail::CertificateStore;
 use crate::service::signed_mail::sending::OwnCertificate;
 
 /// What the person asked for, with the two boxes in the composer.
@@ -376,6 +378,24 @@ fn who_cannot_be_reached(kept: &[KeptFor], yours: YoursAre) -> CannotProtect {
         without_a_certificate: first_without(has_a_certificate),
         without_a_key: first_without(has_a_key),
     }
+}
+
+/// How a message went, as the end of "Sent, ...": which of the two families
+/// protected it and how. `None` for a plain message, which says nothing new.
+pub fn how_it_goes(_protection: &Protection) -> Option<&'static str> {
+    None
+}
+
+/// What this computer holds for the sender and for each recipient: the
+/// sender's certificate and PGP key for the From address, and what is kept
+/// for each recipient.
+pub fn what_is_held(
+    _cache: &MessageCache,
+    _store: &dyn CertificateStore,
+    _from: &str,
+    _recipients: &[String],
+) -> WhatIsHeld {
+    WhatIsHeld::default()
 }
 
 #[cfg(test)]
@@ -797,6 +817,303 @@ mod tests {
                     without_a_key: GRACE.to_string(),
                 })
             );
+        }
+
+        #[test]
+        fn test_the_announcement_names_s_mime_and_what_it_did() {
+            let own = the_keyholders_own();
+            let recipients = Vec::new();
+            assert_eq!(
+                how_it_goes(&Protection::SmimeSigned { own: own.clone() }),
+                Some("signed with S/MIME")
+            );
+            assert_eq!(
+                how_it_goes(&Protection::SmimeEncrypted {
+                    own: own.clone(),
+                    recipients: recipients.clone(),
+                }),
+                Some("encrypted with S/MIME")
+            );
+            assert_eq!(
+                how_it_goes(&Protection::SmimeSignedAndEncrypted { own, recipients }),
+                Some("signed and encrypted with S/MIME")
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_announcement_names_openpgp_and_what_it_did_and_nothing_for_plain() {
+        let sender = adas_key().fingerprint;
+        assert_eq!(how_it_goes(&Protection::Plain), None);
+        assert_eq!(
+            how_it_goes(&Protection::PgpSigned {
+                sender: sender.clone()
+            }),
+            Some("signed with OpenPGP")
+        );
+        assert_eq!(
+            how_it_goes(&Protection::PgpEncrypted {
+                recipients: Vec::new(),
+                sender: sender.clone(),
+            }),
+            Some("encrypted with OpenPGP")
+        );
+        assert_eq!(
+            how_it_goes(&Protection::PgpSignedAndEncrypted {
+                recipients: Vec::new(),
+                sender,
+            }),
+            Some("signed and encrypted with OpenPGP")
+        );
+    }
+
+    /// A queued row through the request the send loop builds from it, with
+    /// what is held gathered the way the loop gathers it: the keyholder's
+    /// certificate held in this process only, the database a temporary one,
+    /// and the credential store this test's own.
+    #[cfg(target_os = "windows")]
+    mod from_the_queue {
+        use super::*;
+        use crate::application::mail_controller::{SendEmailRequest, outgoing};
+        use crate::application::pgp_keys;
+        use crate::common::temp_home::TempHome;
+        use crate::data::account::Account;
+        use crate::data::message_cache::QueuedOutboxMessage;
+        use crate::data::message_cache::correspondent_certificates::fingerprint_of;
+        use crate::service::pgp::for_tests::{
+            ALICES_FINGERPRINT, CAROLS_FINGERPRINT, DAVES_FINGERPRINT, DAVES_PASSPHRASE,
+            alices_public_key, carols_private_key, daves_locked_key,
+        };
+        use crate::service::pgp::{Unlocking, describe, unlock};
+        use crate::service::protocols::MailAuth;
+        use crate::service::protocols::smtp::as_it_would_go;
+        use crate::service::secret_store;
+        use crate::service::signed_mail::for_tests::{
+            a_store_holding_the_keyholders_key, signed_beside,
+        };
+        use crate::service::signed_mail::{
+            SignatureOutcome, WhatTheEnvelopeHeld, examine_signed_message,
+        };
+        use chrono::Utc;
+
+        const KEYHOLDER: &str = "keyholder@example.com";
+        const ALICE: &str = "alice@example.com";
+        const THE_WORDS: &str = "Only for you.";
+
+        fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+            secret_store::allow();
+            TempHome::named(what_for, |dir| {
+                MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+            })
+        }
+
+        /// Alice's certificate, as her signed message carried it.
+        fn alices_certificate() -> Vec<u8> {
+            examine_signed_message(&signed_beside(), ALICE, Utc::now())
+                .signer
+                .expect("the certificate Alice's message carries")
+                .der
+        }
+
+        fn a_row_to_alice(choice: Choice) -> QueuedOutboxMessage {
+            QueuedOutboxMessage {
+                id: "q-protected".to_string(),
+                account_id: "a1".to_string(),
+                to_addr: ALICE.to_string(),
+                cc_addr: String::new(),
+                bcc_addr: String::new(),
+                subject: "Private".to_string(),
+                body: THE_WORDS.to_string(),
+                body_html: None,
+                attachments: String::new(),
+                in_reply_to: None,
+                references: None,
+                protection: choice,
+                attempt_count: 0,
+                last_error: None,
+                created_at: "2026-09-27T09:00:00Z".to_string(),
+            }
+        }
+
+        /// The request the send loop builds from a row sent from `from`, with
+        /// what is held gathered for it.
+        fn gathered(
+            row: &QueuedOutboxMessage,
+            from: &str,
+            cache: &MessageCache,
+        ) -> SendEmailRequest {
+            let account = Account {
+                id: "a1".to_string(),
+                email: from.to_string(),
+                smtp_server: "smtp.example.com".to_string(),
+                smtp_port: "587".to_string(),
+                ..Account::default()
+            };
+            let mut request =
+                SendEmailRequest::from_queued(row, &account, MailAuth::Password("x".into()))
+                    .expect("a request the loop can send");
+            request.held = what_is_held(
+                cache,
+                &*a_store_holding_the_keyholders_key(),
+                &request.from_address,
+                &request.every_recipient(),
+            );
+            request
+        }
+
+        fn as_it_goes(request: &SendEmailRequest) -> Vec<u8> {
+            as_it_would_go(&outgoing(request).expect("a message to build")).expect("its bytes")
+        }
+
+        /// The envelope a sealed message carries, as the reader keeps it.
+        fn the_envelope_in(raw: &[u8]) -> Option<Vec<u8>> {
+            crate::service::mime::attachments_with_bytes(raw)
+                .ok()?
+                .into_iter()
+                .find(|file| file.described.filename.as_deref() == Some("smime.p7m"))
+                .map(|file| file.bytes)
+        }
+
+        #[test]
+        fn test_a_row_queued_signed_goes_out_with_a_signature_that_holds() {
+            let cache = a_cache("queued_signed");
+            let sent = as_it_goes(&gathered(
+                &a_row_to_alice(Choice::Signed),
+                KEYHOLDER,
+                &cache,
+            ));
+
+            let report = examine_signed_message(&sent, KEYHOLDER, Utc::now());
+            assert_eq!(report.outcome, SignatureOutcome::Matches, "{report:?}");
+        }
+
+        #[test]
+        fn test_a_row_queued_encrypted_to_a_kept_certificate_is_a_sent_copy_its_sender_opens() {
+            // The bytes built here are the bytes send_email hands back as the
+            // Sent copy, so what the sender's own key opens is the copy they
+            // find in Sent.
+            let cache = a_cache("queued_encrypted");
+            cache
+                .keep_correspondent_certificate(ALICE, &alices_certificate(), None)
+                .expect("Alice's certificate to be kept");
+
+            let sent = as_it_goes(&gathered(
+                &a_row_to_alice(Choice::Encrypted),
+                KEYHOLDER,
+                &cache,
+            ));
+
+            assert!(
+                !String::from_utf8_lossy(&sent).contains(THE_WORDS),
+                "the words went out in the clear"
+            );
+            let opened = the_envelope_in(&sent)
+                .map(|envelope| a_store_holding_the_keyholders_key().open_the_envelope(&envelope));
+            let Some(WhatTheEnvelopeHeld::Opened(inside)) = opened else {
+                panic!("the sender's own key did not open the Sent copy: {opened:?}");
+            };
+            let words = crate::service::mime::parse(&inside)
+                .ok()
+                .and_then(|read| read.body_plain)
+                .map(|words| words.trim_end().to_string());
+            assert_eq!(words.as_deref(), Some(THE_WORDS));
+        }
+
+        #[test]
+        fn test_a_row_whose_certificate_was_forgotten_after_queueing_is_refused_not_sent_plain() {
+            let cache = a_cache("queued_then_forgotten");
+            let certificate = alices_certificate();
+            cache
+                .keep_correspondent_certificate(ALICE, &certificate, None)
+                .expect("Alice's certificate to be kept");
+            let row = a_row_to_alice(Choice::Encrypted);
+            cache
+                .forget_correspondent_certificate(&fingerprint_of(&certificate))
+                .expect("the certificate to be forgotten");
+
+            let built = outgoing(&gathered(&row, KEYHOLDER, &cache));
+
+            let said = built.err().map(|refused| refused.to_string());
+            assert!(
+                said.as_deref()
+                    .is_some_and(|said| said.contains(ALICE) && said.ends_with("Nothing was sent.")),
+                "{said:?}"
+            );
+        }
+
+        #[test]
+        fn test_a_plain_row_goes_plain_whatever_is_held() {
+            let cache = a_cache("queued_plain");
+            cache
+                .keep_correspondent_certificate(ALICE, &alices_certificate(), None)
+                .expect("Alice's certificate to be kept");
+
+            let email = outgoing(&gathered(&a_row_to_alice(Choice::Plain), KEYHOLDER, &cache))
+                .expect("a message to build");
+            assert!(matches!(email.protection, Protection::Plain));
+        }
+
+        #[test]
+        fn test_what_is_held_finds_your_pgp_key_and_their_public_key() {
+            let cache = a_cache("held_pgp");
+            pgp_keys::import(&cache, &carols_private_key());
+            pgp_keys::import(&cache, &alices_public_key());
+
+            let held = what_is_held(
+                &cache,
+                &*a_store_holding_the_keyholders_key(),
+                "carol@example.com",
+                &[ALICE.to_string()],
+            );
+
+            assert!(held.own_certificate.is_none(), "the keyholder is not Carol");
+            assert_eq!(
+                held.own_key,
+                Some(YourPgpKey {
+                    fingerprint: CAROLS_FINGERPRINT.to_string(),
+                    signs: true,
+                    can_be_encrypted_to: true,
+                    waiting_for_its_passphrase: None,
+                })
+            );
+            let alices: Vec<String> = held
+                .theirs
+                .iter()
+                .filter(|kept| kept.address == ALICE)
+                .flat_map(|kept| kept.public_keys.iter())
+                .flat_map(|armour| describe(armour))
+                .map(|listing| listing.fingerprint)
+                .collect();
+            assert_eq!(alices, vec![ALICES_FINGERPRINT.to_string()]);
+        }
+
+        #[test]
+        fn test_a_locked_key_waits_for_its_passphrase_until_it_is_typed() {
+            let cache = a_cache("held_locked");
+            pgp_keys::import(&cache, &daves_locked_key());
+            let daves = || {
+                what_is_held(
+                    &cache,
+                    &*a_store_holding_the_keyholders_key(),
+                    "dave@example.com",
+                    &[],
+                )
+                .own_key
+                .and_then(|key| key.waiting_for_its_passphrase)
+            };
+
+            assert_eq!(
+                daves(),
+                Some(LockedKey {
+                    whose: "Dave Example <dave@example.com>".to_string(),
+                    fingerprint: DAVES_FINGERPRINT.to_string(),
+                })
+            );
+            assert_eq!(
+                unlock(DAVES_FINGERPRINT, DAVES_PASSPHRASE),
+                Unlocking::Unlocked
+            );
+            assert_eq!(daves(), None);
         }
     }
 }
