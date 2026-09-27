@@ -277,10 +277,15 @@ x509-parser = { version = "0.18", default-features = false }
 # RSA or ECDSA verification hand-rolled for a shipped product handling other
 # people's mail is exactly the code nobody should write twice.
 #
-# `ring` rather than the `cms` crate, which would also do the ASN.1: `cms` has
-# only ever published pre-release versions, and a pre-release is not something
-# to put under a security decision people will read as an answer. The ASN.1 is
-# written out longhand in `service::signed_mail` instead.
+# `ring` rather than the `cms` crate, which would also do the ASN.1. `cms`
+# 0.2.0 to 0.2.3 are stable releases, of 2023-03 to 2024-01; until 2026-09-27
+# this comment said every release of it was a pre-release, which crates.io does
+# not bear out. It is still refused, on three grounds read from
+# the published 0.2.3: it cannot decrypt, so it would do half the job; the crate
+# ships no licence text of its own; and its stable line has not moved in 32
+# months while 0.3 stays in pre-release, which is not something to put under a
+# security decision people will read as an answer. The ASN.1 is written out
+# longhand in `service::signed_mail` instead.
 ring = "0.17"
 # Reading OpenPGP mail: parsing an armoured message, reading an imported
 # private key, and decrypting a message encrypted to it. The same argument
@@ -316,6 +321,17 @@ ring = "0.17"
 # at, and the legitimacy audit of all 78 crates are in
 # `docs/development/pgp-implementation-choice.md`.
 pgp = "0.20"
+# The random source rPGP's message builder takes when it signs or encrypts.
+# Its bounds are `rand` 0.8's `CryptoRng` and `Rng`, which the `rand` 0.10
+# named above does not satisfy, and a newtype bridging the two would be more
+# code than this line. It names the 0.8 already built into this program through
+# `pgp` itself, locked at 0.8.7 with these same default features, so it adds no
+# package: `Cargo.lock` changes only in this package's own list. MIT OR
+# Apache-2.0, both texts in the published crate; the rust-random project cut
+# 0.8.8 on 2026-08-25, a no-std build fix this program does not need.
+# Confirmed by Pratik on 2026-09-24. Renamed so a reader never mistakes it for
+# the `rand` everything else here calls.
+rand08 = { package = "rand", version = "0.8" }
 
 # Translation catalogues, Project Fluent. The first piece of version 2, which
 # translates the interface and the screen reader's speech; what arrives with it

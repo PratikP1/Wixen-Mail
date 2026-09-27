@@ -1592,7 +1592,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 54] = [
+    const A_CRATE_THAT_CANNOT: [&str; 55] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1658,6 +1658,10 @@ mod completeness {
         // servers a key can name, and nothing here calls that half: this
         // project holds one key imported from a file and never looks a key up.
         "pgp",
+        // The random source rPGP's builder takes when it signs or encrypts.
+        // It draws numbers from the operating system and hands them over;
+        // nothing in it knows a destination.
+        "rand08",
         // Reads what this machine calls its own time zone, out of a registry
         // key on Windows and a file on the other two. It asks nobody: the
         // whole point of it is that the answer is already on the computer.
