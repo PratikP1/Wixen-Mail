@@ -455,6 +455,14 @@ mod tests {
         fn open_the_envelope(&self, _envelope_der: &[u8]) -> WhatTheEnvelopeHeld {
             self.opens_to.clone()
         }
+
+        /// Opening mail never signs anything, so nothing here asks.
+        fn own_certificate_for(
+            &self,
+            _address: &str,
+        ) -> Option<crate::service::signed_mail::sending::OwnCertificate> {
+            None
+        }
     }
 
     /// A store whose key opens whatever it is handed, to the keyholder's note.

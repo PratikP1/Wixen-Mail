@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A correspondent's S/MIME certificate is kept when their signature holds (#52 points 4
+  and 5).** When a message signed with an S/MIME certificate arrives, its signature holds, and
+  the certificate names the address the message came from, Wixen Mail keeps that certificate,
+  so a reply to that person can be encrypted to them. A signature that does not hold, or a
+  certificate that names some other address, keeps nothing, because a certificate kept from a
+  forged message is one a private reply would later be encrypted to. Certificates are not
+  secret: they are kept in the mail database beside your mail and, like it, not encrypted.
+  Underneath, Wixen Mail can now sign a message with a certificate of your own in your Windows
+  certificate store, with the time of signing inside the signature, and encrypt a message with
+  S/MIME to every recipient and to you, so the copy in Sent is one you can open. The version
+  does not move for this: no build has been cut since 1.0.0-alpha.1. Known limitations:
+  signing and encrypting are not offered anywhere yet, and nothing you do reaches them; the
+  Sign and Encrypt boxes in the message window arrive in a later change. Each recipient's copy
+  of the message key is wrapped the older way, RSA with PKCS #1 v1.5, rather than the newer
+  RSA-OAEP that Windows picks when not told, because whether Outlook and Apple Mail open OAEP
+  has not been tried, and a message nobody can open is worse than the older padding. Nothing
+  signed or encrypted here has been opened by Outlook, Thunderbird or Apple Mail, and no real
+  correspondent's certificate has been kept, only ones made for tests. When you hold more than
+  one certificate for your address, the first Windows lists is the one used.
 - **PGP signatures are checked, experimentally (#52 point 3).** A PGP signature, whether it
   is written into the message's text or sent as a separate part (PGP/MIME), is now checked
   against the keys in File, PGP Keys: the public keys kept there and the public half of each
@@ -125,7 +144,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   envelope opened so far was made by OpenSSL, not by Outlook or Thunderbird, and no
   certificate somebody really uses has opened one; a key that asks for a PIN or lives on a
   smart card has not been tried; a picture sent inside an encrypted message is not shown yet.
-  Sending signed or encrypted mail is not built.
+  Sending signed or encrypted mail is not built. (Since 2026-09-27 S/MIME signing and
+  encrypting are built underneath and not yet offered; see the entry on keeping a
+  correspondent's certificate.)
 - **An organiser's update moves the meeting, and a cancellation can be taken off the
   calendar.** The audit of 2026-09-15 (#50 points 2, 3 and 9) found that a cancellation was
   said and did nothing to the calendar, that an update moved the meeting only if it was

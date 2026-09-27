@@ -63,6 +63,15 @@ because they are made to be handed out, so they are kept in the mail database in
 folder, beside your mail and, like it, not encrypted. Read from `src/service/pgp/mod.rs` and
 `src/data/message_cache/pgp_keys.rs`.
 
+Other people's S/MIME certificates are kept the same way, in the same database, since
+2026-09-27. When a message signed with a certificate arrives, its signature holds and the
+certificate names the address the message came from, the certificate is kept under that
+address, so a reply can later be encrypted to it. A certificate is a public document and says
+who it was issued to, and keeping it records that this person wrote to you with it and when
+you last had a message signed with it. Nothing else about the message is kept for this. Read
+from
+`src/data/message_cache/correspondent_certificates.rs`.
+
 File, PGP Keys lists both kinds and is where they are imported, exported and removed.
 Removing a private key there erases every part of it from the credential store, and removing a
 public key deletes its row from the mail database; nothing of a removed key is kept anywhere.

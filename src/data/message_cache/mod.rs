@@ -10,6 +10,7 @@ pub mod bodies;
 mod calendar;
 pub mod calendars;
 mod contacts;
+pub mod correspondent_certificates;
 mod drafts;
 mod filters;
 mod folders;
@@ -2742,6 +2743,23 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create the public keys table: {}", e)))?;
+
+        // Other people's S/MIME certificates, kept from signatures that held,
+        // under the address each names. Not secret, for the same reason as the
+        // table above; `correspondent_certificates.rs` says when one is kept.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS correspondent_certificates (
+                fingerprint TEXT NOT NULL,
+                address TEXT NOT NULL,
+                der BLOB NOT NULL,
+                not_after TEXT,
+                seen_at TEXT NOT NULL,
+                PRIMARY KEY (fingerprint, address)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create the certificates table: {}", e)))?;
 
         // Message text is packed before it is stored, and these hold the
         // packed form. The two TEXT columns above stay, because a column that

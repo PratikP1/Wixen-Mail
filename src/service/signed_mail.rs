@@ -16,7 +16,7 @@
 //! writes one implementation of that trait against Keychain and Security
 //! framework, and nothing else in this file changes.
 //!
-//! The three questions on that boundary are worth naming, because they are the
+//! The four questions on that boundary are worth naming, because they are the
 //! reason the line is where it is rather than a little further along:
 //!
 //! - **Does this computer trust whoever issued the certificate?** Trust is a
@@ -28,6 +28,9 @@
 //! - **Does this computer hold the private key a message was encrypted to?**
 //!   The key is in the store and normally cannot be taken out of it, so the
 //!   operation has to happen where the key is.
+//! - **Which certificate of the person's own names an address?** Signing
+//!   needs the private key as well, for the same reason, so the answer says
+//!   where the key is and [`sending`] signs there.
 //!
 //! # What this file will not claim
 //!
@@ -57,6 +60,9 @@ use crate::common::{Error, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use x509_parser::prelude::*;
+
+pub mod sending;
+use sending::OwnCertificate;
 
 // ── What shape of S/MIME a part is in ────────────────────────────────────────
 
@@ -2826,10 +2832,10 @@ pub struct Recipient {
 /// **This trait is the entire platform boundary of S/MIME in this project.**
 /// Everything else in this file is plain Rust that a macOS or Linux build
 /// compiles unchanged. Porting means writing one more implementation of these
-/// three methods, against Keychain and the Security framework on macOS, and
-/// changing nothing else here.
+/// methods, against Keychain and the Security framework on macOS, and
+/// changing nothing else here, apart from the two calls [`sending`] makes.
 ///
-/// The three are here and not elsewhere because each of them needs something
+/// They are here and not elsewhere because each of them needs something
 /// only the operating system has: a list of authorities the person running this
 /// has agreed to trust, and a private key that in the ordinary case cannot be
 /// taken out of the store at all, so the arithmetic has to happen where the key
@@ -2862,6 +2868,15 @@ pub trait CertificateStore {
     /// happen where the private key is, and the store that holds it is the one
     /// that knows which recipient it answers to.
     fn open_the_envelope(&self, envelope_der: &[u8]) -> WhatTheEnvelopeHeld;
+
+    /// A certificate of the person's own that names an address, and whose
+    /// private key this store holds, to sign mail from that address with and
+    /// to seal the Sent copy to.
+    ///
+    /// `None` when no certificate here with its key names the address. The
+    /// answer carries where the key is rather than the key, because in the
+    /// ordinary case the key cannot be taken out of the store at all.
+    fn own_certificate_for(&self, address: &str) -> Option<OwnCertificate>;
 }
 
 /// What offering an envelope to this computer's keys came to.
@@ -2934,6 +2949,10 @@ impl CertificateStore for NoCertificateStore {
     fn open_the_envelope(&self, _envelope_der: &[u8]) -> WhatTheEnvelopeHeld {
         WhatTheEnvelopeHeld::TheKeyHereRefused
     }
+
+    fn own_certificate_for(&self, _address: &str) -> Option<OwnCertificate> {
+        None
+    }
 }
 
 /// Which recipient of an encrypted message a certificate belongs to.
@@ -2960,13 +2979,12 @@ fn recipient_matching(recipients: &[Recipient], certificate_der: &[u8]) -> Optio
 /// rest of this project talks to Windows outside the spell checker.
 #[cfg(target_os = "windows")]
 pub mod windows_store {
+    use super::sending::{KeyHome, OwnCertificate};
     use super::{
-        CertificateStore, IssuerTrust, Reach, Recipient, WhatTheEnvelopeHeld, Withdrawal,
-        recipient_matching,
+        CertificateStore, IssuerTrust, Reach, Recipient, SignerCertificate, WhatTheEnvelopeHeld,
+        Withdrawal, recipient_matching,
     };
-    #[cfg(test)]
-    use crate::common::Error;
-    use crate::common::Result;
+    use crate::common::{Error, Result};
     use chrono::{DateTime, Utc};
     use std::ffi::c_void;
 
@@ -3168,11 +3186,133 @@ pub mod windows_store {
     }
 
     /// A run of bytes, the way Windows takes one.
-    #[cfg(test)]
     #[repr(C)]
     struct DataBlob {
         length: u32,
         data: *const u8,
+    }
+
+    /// A run of bytes that may end part way through its last byte, which is
+    /// how Windows holds a public key.
+    #[repr(C)]
+    struct BitBlob {
+        length: u32,
+        data: *const u8,
+        unused_bits: u32,
+    }
+
+    /// An algorithm by its dotted identifier, and its parameters, if any.
+    #[repr(C)]
+    struct AlgorithmIdentifier {
+        identifier: *const u8,
+        parameters: DataBlob,
+    }
+
+    /// One attribute and its values, each already encoded.
+    #[repr(C)]
+    struct Attribute {
+        identifier: *const u8,
+        value_count: u32,
+        values: *const DataBlob,
+    }
+
+    /// The front of what Windows makes of a certificate, up to its public key.
+    ///
+    /// Windows' structure goes on past this. Only what is read is declared, as
+    /// with [`ChainContext`].
+    #[repr(C)]
+    struct CertificateInfo {
+        version: u32,
+        serial_number: DataBlob,
+        signature_algorithm: AlgorithmIdentifier,
+        issuer: DataBlob,
+        not_before: FileTime,
+        not_after: FileTime,
+        subject: DataBlob,
+        public_key_algorithm: AlgorithmIdentifier,
+        public_key: BitBlob,
+    }
+
+    /// Windows' parameters for signing, all of them up to the flags.
+    ///
+    /// `size` says which fields are present; the two after the inner content
+    /// type are for CMS-only signing algorithms and are not declared, so
+    /// Windows reads none.
+    #[repr(C)]
+    struct SignMessageParameters {
+        size: u32,
+        encoding: u32,
+        signing_certificate: *const CertContext,
+        hash_algorithm: AlgorithmIdentifier,
+        hash_auxiliary: *mut c_void,
+        certificate_count: u32,
+        certificates: *const *const CertContext,
+        withdrawal_list_count: u32,
+        withdrawal_lists: *const c_void,
+        authenticated_attribute_count: u32,
+        authenticated_attributes: *const Attribute,
+        unauthenticated_attribute_count: u32,
+        unauthenticated_attributes: *const Attribute,
+        flags: u32,
+        inner_content_type: u32,
+    }
+
+    /// Who a message key is wrapped for: an issuer's name and the serial
+    /// number it gave, both as Windows holds them.
+    #[repr(C)]
+    struct IssuerAndSerial {
+        issuer: DataBlob,
+        serial_number: DataBlob,
+    }
+
+    /// Windows' way of naming a certificate, here always by issuer and serial.
+    ///
+    /// Windows declares a union of three; the issuer and serial is the largest
+    /// member, so declaring it alone gives the union's size.
+    #[repr(C)]
+    struct CertificateId {
+        choice: u32,
+        issuer_and_serial: IssuerAndSerial,
+    }
+
+    /// One recipient of an envelope and how their copy of the message key is
+    /// wrapped.
+    #[repr(C)]
+    struct KeyTransportRecipient {
+        size: u32,
+        key_encryption_algorithm: AlgorithmIdentifier,
+        key_encryption_auxiliary: *mut c_void,
+        provider: usize,
+        public_key: BitBlob,
+        id: CertificateId,
+    }
+
+    /// One entry in an envelope's list of recipients: which kind, and it.
+    #[repr(C)]
+    struct RecipientEntry {
+        choice: u32,
+        key_transport: *const KeyTransportRecipient,
+    }
+
+    /// Windows' description of an envelope to build, with every field it can
+    /// read, since `size` is how it tells which are present.
+    #[repr(C)]
+    struct EnvelopeToBuild {
+        size: u32,
+        provider: usize,
+        content_encryption_algorithm: AlgorithmIdentifier,
+        encryption_auxiliary: *mut c_void,
+        recipient_count: u32,
+        recipients_by_certificate: *const *const c_void,
+        recipients: *const RecipientEntry,
+        certificate_count: u32,
+        certificates: *const DataBlob,
+        withdrawal_list_count: u32,
+        withdrawal_lists: *const DataBlob,
+        attribute_certificate_count: u32,
+        attribute_certificates: *const DataBlob,
+        unprotected_attribute_count: u32,
+        unprotected_attributes: *const Attribute,
     }
 
     #[link(name = "crypt32")]
@@ -3214,6 +3354,32 @@ pub mod windows_store {
             decrypted_length: *mut u32,
             exchange_certificate: *mut *const CertContext,
         ) -> i32;
+        fn CryptSignMessage(
+            parameters: *const SignMessageParameters,
+            detached: i32,
+            content_count: u32,
+            contents: *const *const u8,
+            content_lengths: *const u32,
+            signed: *mut u8,
+            signed_length: *mut u32,
+        ) -> i32;
+        fn CryptMsgOpenToEncode(
+            encoding: u32,
+            flags: u32,
+            message_type: u32,
+            encode_info: *const c_void,
+            inner_content_type: *const u8,
+            stream_info: *const c_void,
+        ) -> *mut c_void;
+        fn CryptMsgUpdate(message: *mut c_void, data: *const u8, length: u32, last: i32) -> i32;
+        fn CryptMsgGetParam(
+            message: *mut c_void,
+            parameter: u32,
+            index: u32,
+            data: *mut c_void,
+            length: *mut u32,
+        ) -> i32;
+        fn CryptMsgClose(message: *mut c_void) -> i32;
         #[cfg(test)]
         fn PFXImportCertStore(
             pfx: *const DataBlob,
@@ -3241,9 +3407,17 @@ pub mod windows_store {
         OnlyInMemory(InMemoryStore),
     }
 
-    /// A store handle that closes itself.
+    /// A store handle that closes itself, and the bytes it was made from.
+    ///
+    /// The bytes are kept so a certificate out of it can say where its key
+    /// is: signing imports them again, into a store of its own, because a
+    /// handle cannot travel with a message the way bytes can.
     #[cfg(test)]
-    struct InMemoryStore(*mut c_void);
+    struct InMemoryStore {
+        handle: *mut c_void,
+        pkcs12: Vec<u8>,
+        password: String,
+    }
 
     #[cfg(test)]
     impl Drop for InMemoryStore {
@@ -3251,7 +3425,33 @@ pub mod windows_store {
             // SAFETY: the handle came from PFXImportCertStore, is closed once,
             // and nothing outlives this value.
             unsafe {
-                CertCloseStore(self.0, CERT_CLOSE_STORE_FORCE_FLAG);
+                CertCloseStore(self.handle, CERT_CLOSE_STORE_FORCE_FLAG);
+            }
+        }
+    }
+
+    /// A store opened for one piece of work, closed when the work is done.
+    struct OpenedStore(*mut c_void);
+
+    impl Drop for OpenedStore {
+        fn drop(&mut self) {
+            // SAFETY: the handle was opened for this value alone and is closed
+            // once; any certificate taken out of it is freed before this runs.
+            unsafe {
+                CertCloseStore(self.0, 0);
+            }
+        }
+    }
+
+    /// A certificate handed out by Windows, freed when it goes.
+    struct OwnedCertificate(*const CertContext);
+
+    impl Drop for OwnedCertificate {
+        fn drop(&mut self) {
+            // SAFETY: Windows handed this context to this value, and it is
+            // freed once.
+            unsafe {
+                CertFreeCertificateContext(self.0);
             }
         }
     }
@@ -3285,29 +3485,12 @@ pub mod windows_store {
             pkcs12: &[u8],
             password: &str,
         ) -> Result<Self> {
-            let mut wide: Vec<u16> = password.encode_utf16().collect();
-            wide.push(0);
-            let blob = DataBlob {
-                length: pkcs12.len() as u32,
-                data: pkcs12.as_ptr(),
-            };
-            // SAFETY: the bytes and the password outlive the call, and the
-            // handle that comes back is owned by the value being built.
-            let handle = unsafe {
-                PFXImportCertStore(
-                    &blob,
-                    wide.as_ptr(),
-                    PKCS12_NO_PERSIST_KEY | PKCS12_ALWAYS_CNG_KSP,
-                )
-            };
-            if handle.is_null() {
-                return Err(Error::Security(format!(
-                    "Windows would not read those PKCS #12 bytes ({:#010x})",
-                    last_error()
-                )));
-            }
             Ok(Self {
-                looking_in: Wherever::OnlyInMemory(InMemoryStore(handle)),
+                looking_in: Wherever::OnlyInMemory(InMemoryStore {
+                    handle: imported_into_memory(pkcs12, password)?,
+                    pkcs12: pkcs12.to_vec(),
+                    password: password.to_string(),
+                }),
             })
         }
 
@@ -3318,10 +3501,389 @@ pub mod windows_store {
                 // SAFETY: the handle is owned by this value and open for as
                 // long as the borrow lasts.
                 #[cfg(test)]
-                Wherever::OnlyInMemory(store) => unsafe { certificates_held_by(store.0, true) },
+                Wherever::OnlyInMemory(store) => unsafe {
+                    certificates_held_by(store.handle, true)
+                },
+            }
+        }
+
+        /// Where the private keys of this store's certificates are, said in a
+        /// form a certificate can carry away with it.
+        fn where_its_keys_are(&self) -> KeyHome {
+            match &self.looking_in {
+                Wherever::ThePersonsOwnStore => KeyHome::ThePersonsOwnStore,
+                #[cfg(test)]
+                Wherever::OnlyInMemory(store) => KeyHome::ImportedForATest {
+                    pkcs12: store.pkcs12.clone(),
+                    password: store.password.clone(),
+                },
             }
         }
     }
+
+    /// Import PKCS #12 bytes into a store that lives in this process only.
+    ///
+    /// `PKCS12_NO_PERSIST_KEY` is what makes this safe on somebody's own
+    /// machine; see [`WindowsCertificateStore::holding_only_in_memory`].
+    #[cfg(test)]
+    fn imported_into_memory(pkcs12: &[u8], password: &str) -> Result<*mut c_void> {
+        let mut wide: Vec<u16> = password.encode_utf16().collect();
+        wide.push(0);
+        let blob = DataBlob {
+            length: pkcs12.len() as u32,
+            data: pkcs12.as_ptr(),
+        };
+        // SAFETY: the bytes and the password outlive the call, and the handle
+        // that comes back is the caller's to close.
+        let handle = unsafe {
+            PFXImportCertStore(
+                &blob,
+                wide.as_ptr(),
+                PKCS12_NO_PERSIST_KEY | PKCS12_ALWAYS_CNG_KSP,
+            )
+        };
+        if handle.is_null() {
+            return Err(Error::Security(format!(
+                "Windows would not read those PKCS #12 bytes ({:#010x})",
+                last_error()
+            )));
+        }
+        Ok(handle)
+    }
+
+    /// Open the store a certificate's private key is in.
+    fn the_store_holding(key_is: &KeyHome) -> Result<OpenedStore> {
+        let handle = match key_is {
+            KeyHome::ThePersonsOwnStore => {
+                let wide: Vec<u16> = "MY".encode_utf16().chain([0]).collect();
+                // SAFETY: the name outlives the call, and the handle that
+                // comes back is owned by the value built from it.
+                unsafe { CertOpenSystemStoreW(0, wide.as_ptr()) }
+            }
+            #[cfg(test)]
+            KeyHome::ImportedForATest { pkcs12, password } => {
+                imported_into_memory(pkcs12, password)?
+            }
+        };
+        if handle.is_null() {
+            return Err(Error::Security(format!(
+                "Windows would not open the store your certificate is in ({:#010x})",
+                last_error()
+            )));
+        }
+        Ok(OpenedStore(handle))
+    }
+
+    /// The certificate in an open store whose bytes are these, handed out so
+    /// its private key can be reached through it.
+    fn the_certificate_in(store: &OpenedStore, der: &[u8]) -> Result<OwnedCertificate> {
+        // SAFETY: each context comes from Windows and is handed straight back
+        // to the enumerator, which frees the previous one; the one kept is
+        // owned by the value returned, which frees it.
+        unsafe {
+            let mut context: *const CertContext = std::ptr::null();
+            loop {
+                context = CertEnumCertificatesInStore(store.0, context);
+                if context.is_null() {
+                    return Err(Error::Security(
+                        "your certificate is no longer in the store it was found in".to_string(),
+                    ));
+                }
+                let length = (*context).encoded_length as usize;
+                if !(*context).encoded.is_null()
+                    && std::slice::from_raw_parts((*context).encoded, length) == der
+                {
+                    return Ok(OwnedCertificate(context));
+                }
+            }
+        }
+    }
+
+    /// A detached signature over some bytes, made where the signer's key is.
+    ///
+    /// `signing_time` is the attribute's value already encoded, written into
+    /// the signed attributes, which is what makes Windows write those at all.
+    pub(super) fn sign_detached(
+        content: &[u8],
+        signer: &OwnCertificate,
+        signing_time: &[u8],
+    ) -> Result<Vec<u8>> {
+        let store = the_store_holding(&signer.key_is)?;
+        let certificate = the_certificate_in(&store, &signer.der)?;
+        let content_length = byte_count(content, "The message is too long to sign")?;
+        let time = DataBlob {
+            length: byte_count(signing_time, "The signing time is too long")?,
+            data: signing_time.as_ptr(),
+        };
+        let signed_at = Attribute {
+            identifier: SIGNING_TIME.as_ptr(),
+            value_count: 1,
+            values: &time,
+        };
+        let carried = [certificate.0];
+        let parameters = SignMessageParameters {
+            size: std::mem::size_of::<SignMessageParameters>() as u32,
+            encoding: X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+            signing_certificate: certificate.0,
+            hash_algorithm: AlgorithmIdentifier {
+                identifier: SHA_256.as_ptr(),
+                parameters: NO_BYTES,
+            },
+            hash_auxiliary: std::ptr::null_mut(),
+            certificate_count: 1,
+            certificates: carried.as_ptr(),
+            withdrawal_list_count: 0,
+            withdrawal_lists: std::ptr::null(),
+            // The signing time, which is what makes Windows write signed
+            // attributes at all; with none it signs the words bare.
+            authenticated_attribute_count: 1,
+            authenticated_attributes: &signed_at,
+            unauthenticated_attribute_count: 0,
+            unauthenticated_attributes: std::ptr::null(),
+            flags: 0,
+            inner_content_type: 0,
+        };
+        let contents = [content.as_ptr()];
+        let lengths = [content_length];
+        let mut size: u32 = 0;
+        // SAFETY: the parameters, the certificate, the attribute and its value,
+        // and the content all outlive both calls; the first writes only the
+        // size, and the second writes at most `size` bytes into a buffer of
+        // exactly that many.
+        unsafe {
+            let sign = |into: *mut u8, size: &mut u32| {
+                CryptSignMessage(
+                    &parameters,
+                    1,
+                    1,
+                    contents.as_ptr(),
+                    lengths.as_ptr(),
+                    into,
+                    size,
+                )
+            };
+            if sign(std::ptr::null_mut(), &mut size) == 0 {
+                return Err(windows_would_not("sign the message"));
+            }
+            let mut signature = vec![0u8; size as usize];
+            if sign(signature.as_mut_ptr(), &mut size) == 0 {
+                return Err(windows_would_not("sign the message"));
+            }
+            signature.truncate(size as usize);
+            Ok(signature)
+        }
+    }
+
+    /// An envelope around some bytes for these certificates, each copy of the
+    /// message key wrapped with RSA in PKCS #1 v1.5.
+    ///
+    /// Built a step at a time rather than with `CryptEncryptMessage`, which
+    /// wraps the key with RSA-OAEP and has no field to say otherwise: measured
+    /// on 2026-09-24 and 2026-09-27 with `openssl cms -cmsout -print`.
+    pub(super) fn seal_for(content: &[u8], recipients: &[Vec<u8>]) -> Result<Vec<u8>> {
+        if recipients.is_empty() {
+            return Err(Error::Security(
+                "There is nobody to encrypt the message to".to_string(),
+            ));
+        }
+        let certificates = recipients
+            .iter()
+            .map(|der| certificate_from(der))
+            .collect::<Result<Vec<_>>>()?;
+        // SAFETY: every context outlives the entries that point into it, and
+        // the entries outlive the envelope built from them.
+        let wrapped_for: Vec<KeyTransportRecipient> = certificates
+            .iter()
+            .map(|certificate| unsafe { key_transport_to(certificate.0) })
+            .collect();
+        let entries: Vec<RecipientEntry> = wrapped_for
+            .iter()
+            .map(|recipient| RecipientEntry {
+                choice: CMSG_KEY_TRANS_RECIPIENT,
+                key_transport: recipient,
+            })
+            .collect();
+        let envelope = EnvelopeToBuild {
+            size: std::mem::size_of::<EnvelopeToBuild>() as u32,
+            provider: 0,
+            content_encryption_algorithm: AlgorithmIdentifier {
+                identifier: AES_256_CBC.as_ptr(),
+                parameters: NO_BYTES,
+            },
+            encryption_auxiliary: std::ptr::null_mut(),
+            recipient_count: entries.len() as u32,
+            recipients_by_certificate: std::ptr::null(),
+            recipients: entries.as_ptr(),
+            certificate_count: 0,
+            certificates: std::ptr::null(),
+            withdrawal_list_count: 0,
+            withdrawal_lists: std::ptr::null(),
+            attribute_certificate_count: 0,
+            attribute_certificates: std::ptr::null(),
+            unprotected_attribute_count: 0,
+            unprotected_attributes: std::ptr::null(),
+        };
+        // SAFETY: the description, and everything it points at, outlives the
+        // call.
+        unsafe { built_around(&envelope, content) }
+    }
+
+    /// How one recipient's copy of the message key is wrapped, read out of
+    /// Windows' own reading of their certificate.
+    ///
+    /// # Safety
+    ///
+    /// `certificate` has to be a context Windows handed out, and the answer
+    /// points into it, so it must not outlive it.
+    unsafe fn key_transport_to(certificate: *const CertContext) -> KeyTransportRecipient {
+        // SAFETY: a context Windows made always carries its reading of the
+        // certificate, and that reading lives as long as the context.
+        let info = unsafe { &*((*certificate).info as *const CertificateInfo) };
+        KeyTransportRecipient {
+            size: std::mem::size_of::<KeyTransportRecipient>() as u32,
+            key_encryption_algorithm: AlgorithmIdentifier {
+                identifier: RSA_PKCS_1_V1_5.as_ptr(),
+                parameters: NO_BYTES,
+            },
+            key_encryption_auxiliary: std::ptr::null_mut(),
+            provider: 0,
+            public_key: BitBlob {
+                length: info.public_key.length,
+                data: info.public_key.data,
+                unused_bits: info.public_key.unused_bits,
+            },
+            id: CertificateId {
+                choice: CERT_ID_ISSUER_SERIAL_NUMBER,
+                issuer_and_serial: IssuerAndSerial {
+                    issuer: DataBlob {
+                        length: info.issuer.length,
+                        data: info.issuer.data,
+                    },
+                    serial_number: DataBlob {
+                        length: info.serial_number.length,
+                        data: info.serial_number.data,
+                    },
+                },
+            },
+        }
+    }
+
+    /// The whole encoded envelope, built from a description and the bytes.
+    ///
+    /// # Safety
+    ///
+    /// Everything `envelope` points at has to outlive the call.
+    unsafe fn built_around(envelope: &EnvelopeToBuild, content: &[u8]) -> Result<Vec<u8>> {
+        let content_length = byte_count(content, "The message is too long to encrypt")?;
+        // SAFETY: the description outlives the message being built, which is
+        // closed on every path out by the value that owns it; the first size
+        // call writes only the size, and the second at most `size` bytes into
+        // a buffer of exactly that many.
+        unsafe {
+            let message = CryptMsgOpenToEncode(
+                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                0,
+                CMSG_ENVELOPED,
+                (envelope as *const EnvelopeToBuild).cast(),
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+            if message.is_null() {
+                return Err(windows_would_not("encrypt the message"));
+            }
+            let message = MessageBeingBuilt(message);
+            if CryptMsgUpdate(message.0, content.as_ptr(), content_length, 1) == 0 {
+                return Err(windows_would_not("encrypt the message"));
+            }
+            let mut size: u32 = 0;
+            if CryptMsgGetParam(
+                message.0,
+                CMSG_CONTENT_PARAM,
+                0,
+                std::ptr::null_mut(),
+                &mut size,
+            ) == 0
+            {
+                return Err(windows_would_not("encrypt the message"));
+            }
+            let mut sealed = vec![0u8; size as usize];
+            if CryptMsgGetParam(
+                message.0,
+                CMSG_CONTENT_PARAM,
+                0,
+                sealed.as_mut_ptr().cast(),
+                &mut size,
+            ) == 0
+            {
+                return Err(windows_would_not("encrypt the message"));
+            }
+            sealed.truncate(size as usize);
+            Ok(sealed)
+        }
+    }
+
+    /// A message Windows is building, closed when it goes.
+    struct MessageBeingBuilt(*mut c_void);
+
+    impl Drop for MessageBeingBuilt {
+        fn drop(&mut self) {
+            // SAFETY: the handle came from CryptMsgOpenToEncode and is closed
+            // once.
+            unsafe {
+                CryptMsgClose(self.0);
+            }
+        }
+    }
+
+    /// Windows' reading of a certificate given as bytes.
+    fn certificate_from(der: &[u8]) -> Result<OwnedCertificate> {
+        let length = byte_count(der, "A certificate is too long to read")?;
+        // SAFETY: the bytes outlive the call; Windows copies them into the
+        // context it hands back, which the value returned owns.
+        let context = unsafe {
+            CertCreateCertificateContext(
+                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                der.as_ptr(),
+                length,
+            )
+        };
+        if context.is_null() {
+            return Err(windows_would_not("read a recipient's certificate"));
+        }
+        Ok(OwnedCertificate(context))
+    }
+
+    /// How many bytes, as the count Windows takes, or a sentence saying why
+    /// it cannot be told.
+    fn byte_count(bytes: &[u8], too_long: &str) -> Result<u32> {
+        u32::try_from(bytes.len()).map_err(|_| Error::Security(too_long.to_string()))
+    }
+
+    /// A refusal, in this program's words and Windows' number, never in
+    /// Windows' own words, which are in the language Windows is set to.
+    fn windows_would_not(what: &str) -> Error {
+        Error::Security(format!("Windows would not {what} ({:#010x})", last_error()))
+    }
+
+    /// Nothing, as Windows takes it: no algorithm parameters.
+    const NO_BYTES: DataBlob = DataBlob {
+        length: 0,
+        data: std::ptr::null(),
+    };
+    /// The identifiers Windows is handed, as the text it reads them in.
+    const SHA_256: &[u8] = b"2.16.840.1.101.3.4.2.1\0";
+    const SIGNING_TIME: &[u8] = b"1.2.840.113549.1.9.5\0";
+    const AES_256_CBC: &[u8] = b"2.16.840.1.101.3.4.1.42\0";
+    /// `rsaEncryption`, which as a key wrapping names PKCS #1 v1.5.
+    const RSA_PKCS_1_V1_5: &[u8] = b"1.2.840.113549.1.1.1\0";
+    /// Windows' number for an envelope, among the kinds of message it builds.
+    const CMSG_ENVELOPED: u32 = 3;
+    /// Asks a message being built for the whole of it, encoded.
+    const CMSG_CONTENT_PARAM: u32 = 2;
+    /// A recipient whose copy of the key is wrapped with their public key.
+    const CMSG_KEY_TRANS_RECIPIENT: u32 = 1;
+    /// A certificate named by its issuer and serial number.
+    const CERT_ID_ISSUER_SERIAL_NUMBER: u32 = 1;
 
     impl CertificateStore for WindowsCertificateStore {
         fn issuer_trust(&self, certificate_der: &[u8], now: DateTime<Utc>) -> IssuerTrust {
@@ -3405,9 +3967,19 @@ pub mod windows_store {
                 // long as the borrow lasts.
                 #[cfg(test)]
                 Wherever::OnlyInMemory(store) => unsafe {
-                    open_with_the_keys_in(store.0, envelope_der)
+                    open_with_the_keys_in(store.handle, envelope_der)
                 },
             }
+        }
+
+        fn own_certificate_for(&self, address: &str) -> Option<OwnCertificate> {
+            self.certificates_we_hold_keys_for()
+                .into_iter()
+                .find(|der| SignerCertificate::read(der).is_ok_and(|read| read.names(address)))
+                .map(|der| OwnCertificate {
+                    der,
+                    key_is: self.where_its_keys_are(),
+                })
         }
     }
 

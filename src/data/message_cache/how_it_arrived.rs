@@ -50,11 +50,13 @@
 //!
 //! # Why one function records every fact
 //!
-//! Three things are true of a message's arrival and all are lost the moment the
+//! Four things are true of a message's arrival and all are lost the moment the
 //! bytes are dropped: whether it claimed a signature, whether it claimed S/MIME
-//! encryption, and whether it claimed PGP/MIME encryption. A caller that asked
-//! for one and forgot another would leave a message reading as empty, and
-//! nothing would say so. So the arrival paths call
+//! encryption, whether it claimed PGP/MIME encryption, and, for a signature
+//! that holds, the certificate its sender signed with, which
+//! [`super::correspondent_certificates`] keeps. A caller that asked for one and
+//! forgot another would leave a message reading as empty, or a reply that
+//! cannot be sealed, and nothing would say so. So the arrival paths call
 //! [`MessageCache::note_the_form_it_arrived_in`], which asks every question
 //! itself, and
 //! `test_every_arrival_path_records_both_facts_about_the_form_a_message_came_in`
@@ -75,17 +77,19 @@ impl MessageCache {
     /// four chances to disagree, and the pairs in this program that did that
     /// drifted apart.
     ///
-    /// Ordinary mail costs three cheap header reads and writes nothing.
+    /// Ordinary mail costs four cheap header reads and writes nothing.
     pub fn note_the_form_it_arrived_in(&self, message_id: i64, raw: &[u8]) -> Result<()> {
-        // All three, whatever the others did. They are three facts about one
+        // All four, whatever the others did. They are four facts about one
         // message and losing one must not cost another: an encrypted message
-        // that opens blank and a signed message with nothing to check are
-        // different losses, and neither is the other's fault.
+        // that opens blank, a signed message with nothing to check and a
+        // sender whose certificate was not kept are different losses, and
+        // none is another's fault.
         let noted = self.note_where(claims_encryption(raw), message_id, ARRIVED_AS_SMIME);
         let noted_pgp =
             self.note_where(claims_pgp_encryption(raw), message_id, ARRIVED_AS_PGP_MIME);
         let kept = self.keep_signed_original(message_id, raw);
-        noted.and(noted_pgp).and(kept)
+        let kept_certificate = self.keep_the_senders_certificate(message_id, raw);
+        noted.and(noted_pgp).and(kept).and(kept_certificate)
     }
 
     /// Write a mark, for a message whose headers claimed it.

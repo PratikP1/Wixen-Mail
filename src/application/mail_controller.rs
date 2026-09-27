@@ -11,7 +11,7 @@ use crate::service::protocols::imap::{
     MailboxStatus, Moved,
 };
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
-use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
+use crate::service::protocols::smtp::{Email, Protection, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
@@ -225,6 +225,9 @@ pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
         // stops the send and says which one, rather than sending a message
         // without the thing it was written about.
         attachments: crate::application::attaching::read_all(&req.attachments)?,
+        // Nothing yet asks for anything else: the composer's Sign and Encrypt
+        // boxes, and the request carrying them, arrive with 13-21.
+        protection: Protection::Plain,
     })
 }
 

@@ -5,10 +5,14 @@
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::service::protocols::MailAuth;
+use crate::service::signed_mail::sending::{OwnCertificate, encrypt_to, sign_detached};
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
     address::Envelope,
-    message::{Mailbox, Message, MultiPart, SinglePart, header::ContentType},
+    message::{
+        Mailbox, Message, MultiPart, MultiPartBuilder, SinglePart,
+        header::{ContentDisposition, ContentTransferEncoding, ContentType},
+    },
     transport::smtp::authentication::{Credentials, Mechanism},
 };
 
@@ -92,6 +96,37 @@ pub struct Email {
     /// checkable: what goes on the wire is decided by [`build_message`], which
     /// is pure.
     pub attachments: Vec<crate::application::attaching::Ready>,
+    /// Whether the message goes signed, sealed, both or neither.
+    ///
+    /// Carried on the message rather than decided here, so what a person chose
+    /// is what [`build_message`] does and nothing on the way can quietly send
+    /// in the clear what was meant to be sealed.
+    pub protection: Protection,
+}
+
+/// How a message is protected on its way out.
+///
+/// S/MIME only, until OpenPGP's half arrives (13-20). The composer does not
+/// offer any of these yet (13-21), so every message sent today is `Plain`.
+#[derive(Debug, Clone, Default)]
+pub enum Protection {
+    /// As it always went, with nothing added.
+    #[default]
+    Plain,
+    /// Signed with a certificate of the sender's own: `multipart/signed`.
+    SmimeSigned { own: OwnCertificate },
+    /// Sealed for each recipient's certificate and for the sender's own, so
+    /// the copy filed in Sent can be read by the person who sent it.
+    SmimeEncrypted {
+        own: OwnCertificate,
+        recipients: Vec<Vec<u8>>,
+    },
+    /// Signed, then the signed message sealed, the order every S/MIME reader
+    /// expects.
+    SmimeSignedAndEncrypted {
+        own: OwnCertificate,
+        recipients: Vec<Vec<u8>>,
+    },
 }
 
 impl Email {
@@ -110,27 +145,18 @@ impl Email {
             in_reply_to: None,
             references: None,
             attachments: Vec::new(),
+            protection: Protection::Plain,
         }
     }
 }
 
 /// Turn an email into the message that goes on the wire.
 ///
-/// Separate from sending, and pure, because this is the half that can be
-/// checked without a server. Whether a file ends up on the message, and whether
-/// the plain-text half survives being wrapped, are both decided here.
-///
-/// # The shape, and why it changes with the files
-///
-/// With no attachments the message is what it always was: one part for a plain
-/// message, `multipart/alternative` for one with HTML. Wrapping those in
-/// `multipart/mixed` anyway, to leave room for the case with files, would
-/// change what every message without files looks like.
-///
-/// With attachments it is `multipart/mixed`: the body, whichever of those two
-/// shapes it is, then one part per file. That is the nesting every mail client
-/// expects. The other way round, files inside the alternative, makes them
-/// alternatives to the message rather than things sent with it.
+/// Separate from sending, and pure apart from asking the store to sign or seal,
+/// because this is the half that can be checked without a server. Whether a
+/// file ends up on the message, whether the plain-text half survives being
+/// wrapped, and whether the body goes signed or sealed are all decided here.
+/// [`the_body`] says why the body's shape changes with the files.
 fn build_message(email: &Email) -> Result<Message> {
     let mut builder = Message::builder()
         .from(parse_mailbox(&email.from, email.from_name.as_deref())?)
@@ -170,83 +196,199 @@ fn build_message(email: &Email) -> Result<Message> {
         builder = builder.bcc(parse_mailbox(&bcc.address, bcc.name.as_deref())?);
     }
 
-    // The pictures come out of the body here and go as parts of their own.
-    //
-    // A picture is written into the body as a `data:` address, which is how
-    // this program shows one and is not how mail carries one: Gmail and
-    // Outlook both drop `data:` pictures out of a message they receive, so a
-    // body sent the way it is displayed arrives with nothing where each
-    // picture was, and looks perfectly right to whoever sent it. So the body
-    // is turned back into what the same pictures arrived as, which is
-    // `multipart/related` with a `cid:` in the body for each part.
-    let both_ways = |html: &str| -> Result<MultiPart> {
-        let (rewritten, pictures) = crate::application::pictures::pictures_out_of(html);
-        // The plain half is what the page rendered, and a page renders a
-        // picture as no text at all, so the descriptions have to be put back
-        // or the plain half of the message has a silent hole in it.
-        let plain = format!(
-            "{}{}",
-            email.body_text,
-            crate::application::pictures::what_the_plain_text_should_say(&pictures)
-        );
-        let words = MultiPart::alternative()
-            .singlepart(
-                SinglePart::builder()
-                    .header(ContentType::TEXT_PLAIN)
-                    .body(plain),
-            )
-            .singlepart(
-                SinglePart::builder()
-                    .header(ContentType::TEXT_HTML)
-                    .body(rewritten),
-            );
-        if pictures.is_empty() {
-            return Ok(words);
+    // Protection wraps the body and nothing above it: who a message is from
+    // and to, and which message it answers, are read before it is opened.
+    let body = the_body(email)?;
+    let built = match &email.protection {
+        // A plain message with no files and no markup is its words, as it
+        // always was; sent as a part it would carry headers it never had.
+        Protection::Plain => match body {
+            Body::Single(_) => builder.body(email.body_text.clone()),
+            Body::Multi(parts) => builder.multipart(parts),
+        },
+        Protection::SmimeSigned { own } => builder.multipart(signed(body, own)?),
+        Protection::SmimeEncrypted { own, recipients } => {
+            builder.singlepart(sealed(&body.formatted(), own, recipients)?)
         }
-        let mut related = MultiPart::related().multipart(words);
-        for picture in pictures {
-            let kind = picture.kind.parse::<ContentType>().map_err(|e| {
-                Error::Protocol(format!(
-                    "a picture in the message is of a kind this cannot write: {e}"
-                ))
-            })?;
-            related = related.singlepart(
-                lettre::message::Attachment::new_inline(picture.content_id)
-                    .body(picture.bytes, kind),
-            );
+        Protection::SmimeSignedAndEncrypted { own, recipients } => {
+            let signed = signed(body, own)?;
+            builder.singlepart(sealed(&signed.formatted(), own, recipients)?)
         }
-        Ok(related)
-    };
-    let plain_only = || {
-        SinglePart::builder()
-            .header(ContentType::TEXT_PLAIN)
-            .body(email.body_text.clone())
-    };
-
-    let built = if email.attachments.is_empty() {
-        match &email.body_html {
-            Some(html) => builder.multipart(both_ways(html)?),
-            None => builder.body(email.body_text.clone()),
-        }
-    } else {
-        let mut mixed = match &email.body_html {
-            Some(html) => MultiPart::mixed().multipart(both_ways(html)?),
-            None => MultiPart::mixed().singlepart(plain_only()),
-        };
-        for file in &email.attachments {
-            let kind = file.content_type.parse::<ContentType>().map_err(|e| {
-                Error::Protocol(format!(
-                    "{} has a content type this cannot write: {e}",
-                    file.name
-                ))
-            })?;
-            mixed = mixed.singlepart(
-                lettre::message::Attachment::new(file.name.clone()).body(file.bytes.clone(), kind),
-            );
-        }
-        builder.multipart(mixed)
     };
     built.map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))
+}
+
+/// A message's body as one MIME entity: its words, and its files if it has
+/// any.
+enum Body {
+    Single(SinglePart),
+    Multi(MultiPart),
+}
+
+impl Body {
+    /// The entity as it is written into a message, CRLF line endings and all.
+    fn formatted(&self) -> Vec<u8> {
+        match self {
+            Body::Single(part) => part.formatted(),
+            Body::Multi(parts) => parts.formatted(),
+        }
+    }
+
+    /// A multipart whose first part is this body.
+    fn first_in(self, multipart: MultiPartBuilder) -> MultiPart {
+        match self {
+            Body::Single(part) => multipart.singlepart(part),
+            Body::Multi(parts) => multipart.multipart(parts),
+        }
+    }
+}
+
+/// The body a message carries, before anything protects it.
+///
+/// # The shape, and why it changes with the files
+///
+/// With no attachments it is what it always was: one part for a plain
+/// message, `multipart/alternative` for one with HTML. Wrapping those in
+/// `multipart/mixed` anyway, to leave room for the case with files, would
+/// change what every message without files looks like.
+///
+/// With attachments it is `multipart/mixed`: the body, whichever of those two
+/// shapes it is, then one part per file. That is the nesting every mail client
+/// expects. The other way round, files inside the alternative, makes them
+/// alternatives to the message rather than things sent with it.
+fn the_body(email: &Email) -> Result<Body> {
+    let words = match &email.body_html {
+        Some(html) => Body::Multi(both_ways(email, html)?),
+        None => Body::Single(
+            SinglePart::builder()
+                .header(ContentType::TEXT_PLAIN)
+                .body(email.body_text.clone()),
+        ),
+    };
+    if email.attachments.is_empty() {
+        return Ok(words);
+    }
+    let mut mixed = words.first_in(MultiPart::mixed());
+    for file in &email.attachments {
+        let kind = file.content_type.parse::<ContentType>().map_err(|e| {
+            Error::Protocol(format!(
+                "{} has a content type this cannot write: {e}",
+                file.name
+            ))
+        })?;
+        mixed = mixed.singlepart(
+            lettre::message::Attachment::new(file.name.clone()).body(file.bytes.clone(), kind),
+        );
+    }
+    Ok(Body::Multi(mixed))
+}
+
+/// The words both ways, plain and HTML, with the pictures as parts of their
+/// own.
+///
+/// A picture is written into the body as a `data:` address, which is how
+/// this program shows one and is not how mail carries one: Gmail and Outlook
+/// both drop `data:` pictures out of a message they receive, so a body sent
+/// the way it is displayed arrives with nothing where each picture was, and
+/// looks perfectly right to whoever sent it. So the body is turned back into
+/// what the same pictures arrived as, which is `multipart/related` with a
+/// `cid:` in the body for each part.
+fn both_ways(email: &Email, html: &str) -> Result<MultiPart> {
+    let (rewritten, pictures) = crate::application::pictures::pictures_out_of(html);
+    // The plain half is what the page rendered, and a page renders a picture
+    // as no text at all, so the descriptions have to be put back or the plain
+    // half of the message has a silent hole in it.
+    let plain = format!(
+        "{}{}",
+        email.body_text,
+        crate::application::pictures::what_the_plain_text_should_say(&pictures)
+    );
+    let words = MultiPart::alternative()
+        .singlepart(
+            SinglePart::builder()
+                .header(ContentType::TEXT_PLAIN)
+                .body(plain),
+        )
+        .singlepart(
+            SinglePart::builder()
+                .header(ContentType::TEXT_HTML)
+                .body(rewritten),
+        );
+    if pictures.is_empty() {
+        return Ok(words);
+    }
+    let mut related = MultiPart::related().multipart(words);
+    for picture in pictures {
+        let kind = picture.kind.parse::<ContentType>().map_err(|e| {
+            Error::Protocol(format!(
+                "a picture in the message is of a kind this cannot write: {e}"
+            ))
+        })?;
+        related = related.singlepart(
+            lettre::message::Attachment::new_inline(picture.content_id).body(picture.bytes, kind),
+        );
+    }
+    Ok(related)
+}
+
+/// What a detached S/MIME signature is labelled, as `multipart/signed`'s
+/// protocol and as the signature part's own type.
+const SMIME_SIGNATURE: &str = "application/pkcs7-signature";
+
+/// The body signed with the sender's own certificate, as `multipart/signed`.
+///
+/// The signature is over the body exactly as it sits between the boundaries:
+/// its formatted bytes with their CRLF line endings, less the last CRLF, which
+/// RFC 2046 gives to the boundary that follows. Signing anything else signs
+/// bytes that are not the ones sent, and every reader then says the message
+/// was changed.
+fn signed(body: Body, own: &OwnCertificate) -> Result<MultiPart> {
+    let formatted = body.formatted();
+    let as_it_sits = formatted.strip_suffix(b"\r\n").unwrap_or(&formatted);
+    let signature = sign_detached(as_it_sits, own)?;
+    Ok(body
+        .first_in(MultiPart::signed(
+            SMIME_SIGNATURE.to_string(),
+            "sha-256".to_string(),
+        ))
+        .singlepart(
+            lettre::message::Attachment::new("smime.p7s".to_string())
+                .body(signature, content_type(SMIME_SIGNATURE)?),
+        ))
+}
+
+/// An entity sealed for the recipients and for the sender, as
+/// `application/pkcs7-mime`.
+fn sealed(entity: &[u8], own: &OwnCertificate, recipients: &[Vec<u8>]) -> Result<SinglePart> {
+    let envelope = encrypt_to(entity, &everyone_it_is_sealed_for(own, recipients))?;
+    Ok(SinglePart::builder()
+        .header(content_type(
+            "application/pkcs7-mime; smime-type=enveloped-data; name=smime.p7m",
+        )?)
+        .header(ContentDisposition::attachment("smime.p7m"))
+        .header(ContentTransferEncoding::Base64)
+        .body(envelope))
+}
+
+/// The recipients' certificates and the sender's own, each once.
+///
+/// The sender always, because the copy filed in Sent is this same envelope,
+/// and sealed only for the recipients it is a message the person who wrote it
+/// can never read again.
+fn everyone_it_is_sealed_for(own: &OwnCertificate, recipients: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let mut everyone = recipients.to_vec();
+    if !everyone.contains(&own.der) {
+        everyone.push(own.der.clone());
+    }
+    everyone
+}
+
+/// A content type this module writes, read into the form the mail library
+/// takes.
+fn content_type(written: &str) -> Result<ContentType> {
+    written
+        .parse::<ContentType>()
+        .map_err(|e| Error::Protocol(format!("{written} is not a content type: {e}")))
 }
 
 /// Read one address into the form the mail library takes.
@@ -808,6 +950,186 @@ mod tests {
         assert!(sent.contains("multipart/alternative"), "{sent}");
         assert!(sent.contains("multipart/mixed"), "{sent}");
         assert!(sent.contains("<p>See attached.</p>"), "{sent}");
+    }
+
+    // ── A message sent signed, encrypted, or both ────────────────────────
+
+    /// What a plain note looked like on the wire before protection existed,
+    /// taken from `build_message` on 2026-09-27 before it was changed.
+    ///
+    /// Every line but the date, which the mail library writes at the moment
+    /// of building.
+    const A_PLAIN_NOTE_AS_IT_ALWAYS_WENT: &str = "From: ada@example.com\r\n\
+        Subject: Tomorrow\r\n\
+        Message-ID: <the-same-every-time@example.com>\r\n\
+        To: sam@example.com\r\n\
+        Content-Transfer-Encoding: 7bit\r\n\
+        \r\n\
+        See attached.";
+
+    /// A message the way it went on the wire, with its date line taken out.
+    fn undated(email: &Email) -> String {
+        on_the_wire(email)
+            .split_inclusive("\r\n")
+            .filter(|line| !line.starts_with("Date: "))
+            .collect()
+    }
+
+    #[test]
+    fn test_a_plain_message_is_byte_for_byte_what_it_always_was() {
+        let note = Email {
+            message_id: "<the-same-every-time@example.com>".to_string(),
+            ..plain_note()
+        };
+
+        assert_eq!(undated(&note), A_PLAIN_NOTE_AS_IT_ALWAYS_WENT);
+    }
+
+    /// The cases that sign and seal, with the keyholder's key held in this
+    /// process only, so the person's own certificate store is never touched.
+    #[cfg(target_os = "windows")]
+    mod protected {
+        use super::*;
+        use crate::service::signed_mail::for_tests::{
+            a_store_holding_the_keyholders_key, signed_beside,
+        };
+        use crate::service::signed_mail::{
+            EncryptedMessage, SignatureOutcome, WhatTheEnvelopeHeld, examine_signed_message,
+        };
+        use chrono::Utc;
+
+        const KEYHOLDER: &str = "keyholder@example.com";
+
+        fn the_keyholders_own() -> OwnCertificate {
+            a_store_holding_the_keyholders_key()
+                .own_certificate_for(KEYHOLDER)
+                .expect("the keyholder's own certificate, held in memory")
+        }
+
+        /// Alice's certificate, as her signed message carried it.
+        fn alices_certificate() -> Vec<u8> {
+            examine_signed_message(&signed_beside(), "alice@example.com", Utc::now())
+                .signer
+                .expect("the certificate Alice's message carries")
+                .der
+        }
+
+        /// The keyholder answering Alice, protected the way asked.
+        fn a_reply_to_alice(protection: Protection) -> Email {
+            Email {
+                from: KEYHOLDER.to_string(),
+                to: vec![EmailAddress::new("alice@example.com".to_string(), None)],
+                message_id: "<a-reply@example.com>".to_string(),
+                in_reply_to: Some("<asked@example.com>".to_string()),
+                protection,
+                ..plain_note()
+            }
+        }
+
+        fn formatted(email: &Email) -> Vec<u8> {
+            build_message(email).expect("a message").formatted()
+        }
+
+        /// The envelope a sealed message carries, as the reader keeps it.
+        fn the_envelope_in(raw: &[u8]) -> Option<Vec<u8>> {
+            crate::service::mime::attachments_with_bytes(raw)
+                .ok()?
+                .into_iter()
+                .find(|file| file.described.filename.as_deref() == Some("smime.p7m"))
+                .map(|file| file.bytes)
+        }
+
+        /// One header's line, out of the part of a message above its body.
+        fn the_header(raw: &[u8], name: &str) -> Option<String> {
+            let text = String::from_utf8_lossy(raw).into_owned();
+            let above_the_body = text.split("\r\n\r\n").next().unwrap_or_default();
+            above_the_body
+                .split("\r\n")
+                .find(|line| line.starts_with(&format!("{name}: ")))
+                .map(str::to_string)
+        }
+
+        #[test]
+        fn test_a_signed_message_holds_for_the_reader_that_checks_everybody_elses() {
+            let sent = formatted(&a_reply_to_alice(Protection::SmimeSigned {
+                own: the_keyholders_own(),
+            }));
+
+            let report = examine_signed_message(&sent, KEYHOLDER, Utc::now());
+
+            assert_eq!(report.outcome, SignatureOutcome::Matches, "{report:?}");
+            assert!(
+                String::from_utf8_lossy(&sent).contains("See attached."),
+                "the words are not beside the signature"
+            );
+        }
+
+        #[test]
+        fn test_an_encrypted_message_opens_with_the_senders_own_key_to_its_words() {
+            // Sealed for Alice alone by the person sending it, and the
+            // keyholder's own key opens it: the sender is always one of those
+            // it is sealed for, or the copy filed in Sent is one nobody who
+            // sent it can read.
+            let sent = formatted(&a_reply_to_alice(Protection::SmimeEncrypted {
+                own: the_keyholders_own(),
+                recipients: vec![alices_certificate()],
+            }));
+            let envelope = the_envelope_in(&sent);
+
+            let opened = envelope
+                .as_deref()
+                .map(|envelope| a_store_holding_the_keyholders_key().open_the_envelope(envelope));
+            let Some(WhatTheEnvelopeHeld::Opened(inside)) = opened else {
+                panic!("the sender's own key did not open it: {opened:?}");
+            };
+            let words = crate::service::mime::parse(&inside).map(|read| read.body_plain);
+            assert_eq!(
+                words
+                    .ok()
+                    .flatten()
+                    .map(|words| words.trim_end().to_string()),
+                Some("See attached.".to_string())
+            );
+            assert_eq!(
+                envelope
+                    .and_then(|envelope| EncryptedMessage::read(&envelope).ok())
+                    .map(|read| read.recipients.len()),
+                Some(2),
+                "not sealed for Alice and the sender both"
+            );
+            assert!(
+                !String::from_utf8_lossy(&sent).contains("See attached."),
+                "the words went out in the clear beside the envelope"
+            );
+        }
+
+        #[test]
+        fn test_a_signed_and_encrypted_message_opens_to_a_signed_one_that_holds() {
+            let plain = formatted(&a_reply_to_alice(Protection::Plain));
+            let sent = formatted(&a_reply_to_alice(Protection::SmimeSignedAndEncrypted {
+                own: the_keyholders_own(),
+                recipients: vec![alices_certificate()],
+            }));
+
+            let opened = the_envelope_in(&sent)
+                .map(|envelope| a_store_holding_the_keyholders_key().open_the_envelope(&envelope));
+            let Some(WhatTheEnvelopeHeld::Opened(inside)) = opened else {
+                panic!("the sender's own key did not open it: {opened:?}");
+            };
+            let report = examine_signed_message(&inside, KEYHOLDER, Utc::now());
+            assert_eq!(report.outcome, SignatureOutcome::Matches, "{report:?}");
+
+            // What the envelope changed is the body; the lines above it that
+            // say who it is from and to, and which message it answers, are
+            // the ones a plain message carries.
+            for name in ["From", "To", "Message-ID", "In-Reply-To"] {
+                assert_eq!(
+                    the_header(&sent, name),
+                    the_header(&plain, name),
+                    "{name} changed when the message was protected"
+                );
+            }
+        }
     }
 
     #[test]

@@ -738,7 +738,13 @@ tried, so what Windows shows then is not known. No PGP/MIME message from
 Thunderbird or Proton Mail has been read here either: the one tested was made
 with GnuPG. A picture sent inside an encrypted message is not shown yet, and it
 is counted among the pictures not shown. Sending signed or encrypted mail is
-not built.
+not offered yet.
+
+When a message signed with an S/MIME certificate arrives, its signature holds,
+and the certificate names the address the message came from, Wixen Mail keeps
+that certificate, so a reply to that person can be encrypted to them once
+encrypting is offered. A signature that does not hold, or a certificate naming
+some other address, keeps nothing.
 
 #### PGP keys
 
