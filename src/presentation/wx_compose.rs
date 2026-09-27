@@ -124,6 +124,8 @@ pub struct ComposeData {
     /// Send, which goes on being held for the length of the hold and nothing
     /// else.
     pub send_at: Option<String>,
+    /// Whether it goes signed, encrypted, both or neither, from the two boxes.
+    pub protection: crate::application::protecting::Choice,
 }
 
 /// Ask when this message should go, and close the composer if a time was set.
@@ -766,6 +768,10 @@ pub struct ComposeDialogWidgets {
     pub draft_btn: Button,
     pub discard_btn: Button,
     pub cancel_btn: Button,
+    /// Whether the message goes signed, beside Schedule.
+    pub sign_box: CheckBox,
+    /// Whether the message goes encrypted, beside Sign.
+    pub encrypt_box: CheckBox,
 }
 
 /// Build the compose dialog and every control it holds, without showing it
@@ -1111,10 +1117,15 @@ pub fn build_compose_dialog(
         .with_id(ID_CANCEL)
         .build();
 
+    let sign_box = CheckBox::builder(&dialog).with_label("Sign").build();
+    let encrypt_box = CheckBox::builder(&dialog).with_label("Encrypt").build();
+
     button_sizer.add_spacer(0); // Push buttons right
     button_sizer.add(&draft_btn, 0, SizerFlag::All, 4);
     button_sizer.add(&discard_btn, 0, SizerFlag::All, 4);
     button_sizer.add(&cancel_btn, 0, SizerFlag::All, 4);
+    sign_box.hide();
+    encrypt_box.hide();
 
     main_sizer.add_sizer(&button_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
 
@@ -1168,7 +1179,40 @@ pub fn build_compose_dialog(
         draft_btn,
         discard_btn,
         cancel_btn,
+        sign_box,
+        encrypt_box,
     }
+}
+
+/// Tick or clear Sign or Encrypt from inside the message, where the box does
+/// not have the keyboard, and say which way it went. Anything else reached
+/// is not a box and is left alone.
+pub fn tick_from_the_page(
+    _reached: Reached,
+    _sign_box: &CheckBox,
+    _encrypt_box: &CheckBox,
+    _a11y: &crate::presentation::accessibility::Accessibility,
+) {
+}
+
+/// How the composer asks whether a message can go as its Sign and Encrypt
+/// boxes ask: from what the window holds, the answer or the reason.
+pub type ProtectionCheck =
+    Box<dyn Fn(&ComposeData) -> Result<(), crate::application::protecting::CannotProtect>>;
+
+/// Whether a message can go as its Sign and Encrypt boxes ask, which is what
+/// Send decides before anything is queued.
+///
+/// A key locked with a passphrase is asked for through `ask`, once each, and
+/// the message asked about again when it opens; any other answer is said
+/// through `say` and the message does not go.
+pub fn may_it_go(
+    _data: &ComposeData,
+    _check: &ProtectionCheck,
+    _ask: &mut dyn FnMut(&crate::application::pgp_keys::LockedKey) -> bool,
+    _say: &mut dyn FnMut(&str),
+) -> bool {
+    true
 }
 
 /// The compose dialog, with automatic draft saving.
@@ -1233,6 +1277,8 @@ pub fn show_compose_dialog_full(
         draft_btn,
         discard_btn,
         cancel_btn,
+        sign_box: _,
+        encrypt_box: _,
     } = build_compose_dialog(
         parent,
         title,
@@ -1908,6 +1954,7 @@ pub fn show_compose_dialog_full(
                     .collect(),
                 answering: answering.clone(),
                 send_at: chosen_moment.borrow().clone(),
+                protection: crate::application::protecting::Choice::Plain,
             })
         }
     };
@@ -2471,6 +2518,7 @@ pub fn show_compose_dialog_full(
                         Reached::SaveDraft => dialog.end_modal(ID_SAVE_DRAFT),
                         Reached::Discard => dialog.end_modal(ID_DISCARD),
                         Reached::Cancel => dialog.end_modal(ID_CANCEL),
+                        Reached::Sign | Reached::Encrypt => {}
                     }
                 }
                 // Tab, which outside a table used to do nothing at all, so the
@@ -4258,6 +4306,7 @@ mod tests {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         }
     }
 

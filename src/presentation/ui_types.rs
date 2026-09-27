@@ -331,6 +331,9 @@ pub struct CompositionData {
     /// Carried through the window so that a reply put aside and reopened still
     /// goes out inside its thread instead of starting a new one.
     pub answering: Option<crate::application::threading::Continuing>,
+    /// Whether it was to go signed, encrypted, both or neither, so the
+    /// composer reopens with its boxes as they were left.
+    pub protection: crate::application::protecting::Choice,
 }
 
 /// Why the open folder's conversations were read again.

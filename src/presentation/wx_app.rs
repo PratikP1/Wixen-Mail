@@ -15530,6 +15530,7 @@ fn send_the_answer(
         // Nothing offers to delay one and nothing should: the person who sent
         // the invitation is waiting on the answer.
         send_at: None,
+        protection: crate::application::protecting::Choice::Plain,
     };
     match queue_for_sending(state, &Some(cache.clone()), &data) {
         Ok((_, waiting_on)) => HowItWent::Queued {
@@ -22186,6 +22187,7 @@ fn a_message_taken_back(
         // it, so carrying one through would be a schedule somebody cannot
         // see and cannot cancel. Pressing Schedule again is one press.
         send_at: None,
+        protection: crate::application::protecting::Choice::Plain,
     }
 }
 
@@ -22208,6 +22210,7 @@ fn the_draft_it_became(
         body: written.body.clone(),
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
+        protection: crate::application::protecting::Choice::Plain,
     }
 }
 
@@ -28636,6 +28639,7 @@ fn send_the_report(
         attachments,
         answering: None,
         send_at: None,
+        protection: crate::application::protecting::Choice::Plain,
     };
     let (recipient, waiting_on) = put_in_the_outbox(cache, sender.account.id.clone(), &data)?;
     Ok((recipient, waiting_on, kept_in.display().to_string()))
@@ -33045,6 +33049,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         // The existing test-only cache builder, not a second one: it already
@@ -33155,6 +33160,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         let cache = super::tests::test_cache();
@@ -33261,6 +33267,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         let cache = super::tests::test_cache();
@@ -33360,6 +33367,7 @@ mod reply_recipients_reach_the_wire {
             attachments: Vec::new(),
             answering: None,
             send_at: None,
+            protection: crate::application::protecting::Choice::Plain,
         };
 
         let cache = super::tests::test_cache();

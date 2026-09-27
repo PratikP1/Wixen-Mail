@@ -59,6 +59,11 @@ impl Choice {
         .unwrap_or(Choice::Plain)
     }
 
+    /// The choice the composer's two boxes make.
+    pub const fn from_boxes(_sign: bool, _encrypt: bool) -> Self {
+        Choice::Plain
+    }
+
     const fn signs(self) -> bool {
         matches!(self, Choice::Signed | Choice::SignedAndEncrypted)
     }
@@ -379,6 +384,27 @@ fn who_cannot_be_reached(kept: &[KeptFor], yours: YoursAre) -> CannotProtect {
         without_a_certificate: first_without(has_a_certificate),
         without_a_key: first_without(has_a_key),
     }
+}
+
+/// Whether a message written in the composer can go as its boxes ask, from its
+/// three recipient lines as typed.
+///
+/// What Send asks before anything is queued, so a message that cannot be
+/// protected is never put in the Outbox at all.
+pub fn at_send(
+    _choice: Choice,
+    _from: &str,
+    _to: &str,
+    _cc: &str,
+    _bcc: &str,
+    _held: &WhatIsHeld,
+) -> Result<(), CannotProtect> {
+    Err(CannotProtect::ABlindCopyWouldShow)
+}
+
+/// Every address in some recipient lines as typed, without the names.
+pub fn addresses_in(_lines: &[&str]) -> Vec<String> {
+    Vec::new()
 }
 
 /// How a message went, as the end of "Sent, ...": which of the two families
@@ -912,6 +938,74 @@ mod tests {
                 sender,
             }),
             Some("signed and encrypted with OpenPGP")
+        );
+    }
+
+    #[test]
+    fn test_the_two_boxes_make_the_four_choices() {
+        assert_eq!(
+            [
+                Choice::from_boxes(false, false),
+                Choice::from_boxes(true, false),
+                Choice::from_boxes(false, true),
+                Choice::from_boxes(true, true),
+            ],
+            [
+                Choice::Plain,
+                Choice::Signed,
+                Choice::Encrypted,
+                Choice::SignedAndEncrypted,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_the_addresses_in_the_recipient_lines_are_read_without_their_names() {
+        assert_eq!(
+            addresses_in(&[
+                "ada@example.com, Grace Hopper <grace@example.com>",
+                "",
+                "alan@example.com"
+            ]),
+            addresses(&[ADA, GRACE, ALAN])
+        );
+    }
+
+    #[test]
+    fn test_at_send_a_recipient_written_with_a_name_is_found_by_address() {
+        let held = WhatIsHeld {
+            theirs: vec![a_key_for(GRACE)],
+            ..a_key_only()
+        };
+        assert_eq!(
+            at_send(
+                Choice::Encrypted,
+                ADA,
+                "Grace Hopper <grace@example.com>",
+                "",
+                "",
+                &held
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn test_at_send_a_recipient_with_nothing_kept_is_named_and_a_blind_copy_refused() {
+        let held = WhatIsHeld {
+            theirs: vec![a_key_for(GRACE)],
+            ..a_key_only()
+        };
+        assert_eq!(
+            at_send(Choice::Encrypted, ADA, GRACE, "alan@example.com", "", &held),
+            Err(CannotProtect::NoKeyFor {
+                address: ALAN.to_string(),
+                yours: YoursAre::PgpKey,
+            })
+        );
+        assert_eq!(
+            at_send(Choice::Encrypted, ADA, GRACE, "", ALAN, &held),
+            Err(CannotProtect::ABlindCopyWouldShow)
         );
     }
 
