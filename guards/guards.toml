@@ -17741,8 +17741,8 @@ before = '''            .append_item(
 after = ''''''
 red = [
     "test_every_handled_command_has_something_that_raises_it",
-    "test_importing_a_pgp_private_key_is_on_a_menu_and_reaches_the_importer",
-    "test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen",
+    "test_the_menu_says_the_pgp_key_manager_is_experimental_before_it_is_chosen",
+    "test_the_pgp_key_manager_is_on_the_file_menu_and_reaches_the_manager",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },

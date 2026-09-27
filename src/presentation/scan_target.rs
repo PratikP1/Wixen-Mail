@@ -221,12 +221,17 @@ pub enum ScanTarget {
     /// real page process would also put the scan on the wrong process, since
     /// it walks the tree of the one it launched.
     PageWindow,
+    /// The PGP key manager, File, PGP Keys (#49, 13-17): the sentence saying
+    /// what keys can do, a report list read row by row, and six buttons, one
+    /// of them destructive. A fresh profile holds no key, so the scan meets
+    /// it empty, with focus on Import from File.
+    PgpKeys,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 40] = [
+    pub const ALL: [ScanTarget; 41] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -267,6 +272,7 @@ impl ScanTarget {
         ScanTarget::PhoneNumber,
         ScanTarget::Page,
         ScanTarget::PageWindow,
+        ScanTarget::PgpKeys,
     ];
 
     /// The name used on the command line.
@@ -312,6 +318,7 @@ impl ScanTarget {
             Self::PhoneNumber => "phone-number",
             Self::Page => "page",
             Self::PageWindow => "page-window",
+            Self::PgpKeys => "pgp-keys",
         }
     }
 

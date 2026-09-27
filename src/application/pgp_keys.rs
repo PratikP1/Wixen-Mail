@@ -135,6 +135,51 @@ pub fn what_a_row_says(listing: &KeyListing, which: WhichLocale<'_>) -> KeyRow {
     }
 }
 
+/// The text of a key somebody was sent as an attachment, on its way to the
+/// question that asks whether to import it.
+///
+/// Its own type so no log line or debug print can carry it: a stranger may
+/// have sent a private key, and even a public one is nobody's business in a
+/// log. `Debug` says what it is and never what it holds.
+#[derive(Clone, PartialEq, Eq)]
+pub struct KeyText(String);
+
+impl std::fmt::Debug for KeyText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KeyText(not shown)")
+    }
+}
+
+impl KeyText {
+    /// Every key the text holds, described.
+    pub fn listings(&self) -> Vec<KeyListing> {
+        pgp::describe(&self.0)
+    }
+
+    /// The text, for [`import`] and nothing else.
+    pub fn text(&self) -> &str {
+        &self.0
+    }
+}
+
+/// The keys an attachment's bytes hold, or `None` when they hold none.
+///
+/// A `.asc` file is as often a signature or an encrypted message as a key,
+/// so the name decides only that the bytes are looked at; what they hold
+/// decides whether a key is offered.
+pub fn the_keys_an_attachment_holds(bytes: &[u8]) -> Option<KeyText> {
+    let _ = bytes;
+    None
+}
+
+/// The question asked when somebody presses Enter on an attachment holding
+/// keys: whose each says it is, its kind and its short identifier, and
+/// whether to import it. Nothing of the key's text is said.
+pub fn the_attachment_question(listings: &[KeyListing]) -> String {
+    let _ = listings;
+    String::new()
+}
+
 /// What the key manager says when a removal is answered No.
 pub const NOTHING_WAS_REMOVED: &str = "Nothing was removed.";
 
@@ -669,6 +714,68 @@ mod tests {
                 expires: "5 January 2028".to_string(),
                 can: "Encrypt only".to_string(),
             }
+        );
+    }
+
+    // ── A key sent as an attachment ─────────────────────────────────────────
+
+    #[test]
+    fn test_an_attachment_holding_a_key_is_offered_and_one_holding_none_is_not() {
+        let offered = the_keys_an_attachment_holds(carols_public_key().as_bytes())
+            .expect("Carol's key offered");
+        let fingerprints: Vec<String> = offered
+            .listings()
+            .into_iter()
+            .map(|key| key.fingerprint)
+            .collect();
+        assert_eq!(fingerprints, vec![CAROLS_FINGERPRINT.to_string()]);
+
+        // A signature is what a `.asc` most often is, and it is not a key.
+        let a_signature =
+            "-----BEGIN PGP SIGNATURE-----\n\niHUEARYKAB0WIQQ=\n-----END PGP SIGNATURE-----\n";
+        assert_eq!(the_keys_an_attachment_holds(a_signature.as_bytes()), None);
+        assert_eq!(
+            the_keys_an_attachment_holds(&[0xff, 0xfe, 0x00, 0x41]),
+            None
+        );
+    }
+
+    #[test]
+    fn test_the_key_an_attachment_holds_never_reaches_a_debug_line() {
+        let offered = the_keys_an_attachment_holds(carols_public_key().as_bytes())
+            .expect("Carol's key offered");
+
+        let printed = format!("{offered:?}");
+
+        assert!(!printed.contains("BEGIN PGP"), "{printed}");
+        assert!(offered.text().contains("BEGIN PGP PUBLIC KEY BLOCK"));
+    }
+
+    #[test]
+    fn test_the_attachment_question_says_whose_key_it_names_and_asks() {
+        assert_eq!(
+            the_attachment_question(&[graces_public_key()]),
+            "This attachment holds a public key naming Grace Hopper <grace@example.com>, key \
+             id 0B1C 2D3E 4F5A 6B7C. Import this key?"
+        );
+        let nameless = KeyListing {
+            user_ids: vec![],
+            ..graces_public_key()
+        };
+        assert_eq!(
+            the_attachment_question(&[nameless]),
+            "This attachment holds a public key with no name, key id 0B1C 2D3E 4F5A 6B7C. \
+             Import this key?"
+        );
+    }
+
+    #[test]
+    fn test_the_attachment_question_names_every_key_it_holds() {
+        assert_eq!(
+            the_attachment_question(&[adas_private_key(), graces_public_key()]),
+            "This attachment holds 2 keys: a private key naming Ada Lovelace \
+             <ada@example.com>, key id 9C0D 1E2F 3A4B 5C6D, and a public key naming Grace \
+             Hopper <grace@example.com>, key id 0B1C 2D3E 4F5A 6B7C. Import these keys?"
         );
     }
 

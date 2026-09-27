@@ -1242,6 +1242,26 @@ mod tests {
     }
 
     #[test]
+    fn test_a_pgp_key_can_be_read_here_whichever_way_it_says_so() {
+        // Enter on a key somebody sent asks whether to import it (#49,
+        // 13-17), so the gate has to admit one. A client that labels a key
+        // application/pgp-keys has said what it is; one that labels it
+        // application/octet-stream has named it `.asc` or `.key`. A `.asc`
+        // is admitted to be looked at, and what it holds decides whether a
+        // key is offered or its text is read.
+        let mut by_type = attachment("publickey");
+        by_type.mime_type = "application/pgp-keys".to_string();
+        let mut by_asc = attachment("grace.ASC");
+        by_asc.mime_type = "application/octet-stream".to_string();
+        let mut by_key = attachment("grace.key");
+        by_key.mime_type = "application/octet-stream".to_string();
+
+        assert!(can_be_read_here(&by_type));
+        assert!(can_be_read_here(&by_asc));
+        assert!(can_be_read_here(&by_key));
+    }
+
+    #[test]
     fn test_everything_else_is_not_pretended_to_be_readable() {
         // What the gate admits is three readings and no more: a PDF, a text
         // file, and a picture. Everything here is outside all three and stays

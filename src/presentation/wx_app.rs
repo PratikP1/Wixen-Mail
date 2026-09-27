@@ -18268,6 +18268,7 @@ fn open_for_scanning(
             show_who_is_blocked(state, cache, frame, tx, rt, a11y);
             OnReturn::WindowClosed
         }
+        ScanTarget::PgpKeys => OnReturn::WindowClosed,
         ScanTarget::Columns => {
             let inbox = ColumnLayout::defaults_for(message_columns::FolderKind::Inbox);
             let _ = wx_columns::show_column_dialog(frame, &inbox, a11y);

@@ -629,6 +629,99 @@ fn test_an_import_is_said_and_the_list_is_read_again() {
     );
 }
 
+// ── A key sent as an attachment, read as text ──────────────────────────────
+//
+// The question and the import happen inside the main window's own update
+// handling, with its accounts, database and runtime, which this file does not
+// start. So the path is read in `src/presentation/wx_app.rs` as text, and a
+// companion plants the fault the reading exists for and is refused.
+
+const WX_APP: &str = "src/presentation/wx_app.rs";
+
+fn the_main_window() -> String {
+    std::fs::read_to_string(WX_APP)
+        .expect("the main window's source")
+        .replace("\r\n", "\n")
+}
+
+/// One top-level function's text, from its signature to the brace that
+/// closes it at the left margin, which is where rustfmt puts it.
+fn body_of<'a>(source: &'a str, signature: &str) -> Option<&'a str> {
+    let start = source.find(signature)?;
+    let rest = &source[start..];
+    rest.find("\n}\n").map(|end| &rest[..end])
+}
+
+/// Lines of text that are code rather than comments.
+fn code_of(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<&str>>()
+        .join("\n")
+}
+
+fn what_is_wrong_with_the_key_attachment_path(source: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let offered = code_of(source)
+        .matches("UIUpdate::KeyAttachmentOffered(")
+        .count();
+    if offered < 2 {
+        wrong.push(format!(
+            "UIUpdate::KeyAttachmentOffered appears {offered} times in code, where a worker \
+             sending it and an arm answering it are wanted"
+        ));
+    }
+    let Some(body) = body_of(source, "fn offer_the_key_attachment(").map(code_of) else {
+        wrong.push("fn offer_the_key_attachment( is not in the main window".to_string());
+        return wrong;
+    };
+    for wanted in [
+        "the_attachment_question(",
+        "yes_no_where_enter_answers_no()",
+    ] {
+        if !body.contains(wanted) {
+            wrong.push(format!("the offer does not call {wanted}"));
+        }
+    }
+    match (body.find("ID_YES"), body.find("pgp_keys::import(")) {
+        (Some(asked), Some(imported)) if asked < imported => {}
+        (_, None) => wrong.push("the offer never imports the key".to_string()),
+        _ => wrong.push("the offer imports the key before it asks".to_string()),
+    }
+    wrong
+}
+
+#[test]
+fn test_a_key_attachment_is_imported_only_after_a_yes() {
+    let found = what_is_wrong_with_the_key_attachment_path(&the_main_window());
+
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn test_the_attachment_reading_refuses_an_import_before_the_question() {
+    let source = the_main_window();
+    let Some(body) = body_of(&source, "fn offer_the_key_attachment(") else {
+        panic!("fn offer_the_key_attachment( is not in {WX_APP}, so there is nowhere to plant");
+    };
+    let Some(opens) = body.find("{\n") else {
+        panic!("the offer's body has no opening brace to plant after");
+    };
+    let mut planted_body = body.to_string();
+    planted_body.insert_str(
+        opens + 2,
+        "    let planted = crate::application::pgp_keys::import(cache, offered.text());\n",
+    );
+    let planted = source.replacen(body, &planted_body, 1);
+
+    let found = what_is_wrong_with_the_key_attachment_path(&planted);
+
+    assert!(
+        found.iter().any(|it| it.contains("before it asks")),
+        "the reading accepted an import before the question: {found:?}"
+    );
+}
+
 #[test]
 fn test_the_paste_dialog_names_its_box_and_its_buttons() {
     assert_eq!(

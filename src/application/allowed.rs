@@ -745,8 +745,11 @@ mod tests {
         // the one somebody meets: a message it will not open that another
         // program opens.
         //
-        // And the two limits, because meeting either without warning reads as
-        // the feature being broken rather than as a boundary somebody drew.
+        // And the limit and the door, because meeting the limit without
+        // warning reads as the feature being broken rather than as a boundary
+        // somebody drew. "One key at a time" stopped being true at 13-16,
+        // which keeps several; since 13-17 the sentence names where keys are
+        // managed instead.
         assert!(
             READING_PGP_MAIL_IS_EXPERIMENTAL.contains("experimental"),
             "{READING_PGP_MAIL_IS_EXPERIMENTAL}"
@@ -760,10 +763,15 @@ mod tests {
             "it does not say what could go wrong: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
         );
         assert!(
-            READING_PGP_MAIL_IS_EXPERIMENTAL.contains("one key at a time")
-                && READING_PGP_MAIL_IS_EXPERIMENTAL.contains("passphrase"),
-            "it does not name the two limits somebody meets first: \
+            !READING_PGP_MAIL_IS_EXPERIMENTAL.contains("one key at a time"),
+            "it still says one key at a time, which stopped being true at 13-16: \
              {READING_PGP_MAIL_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            READING_PGP_MAIL_IS_EXPERIMENTAL.contains("File, PGP Keys")
+                && READING_PGP_MAIL_IS_EXPERIMENTAL.contains("passphrase"),
+            "it does not say where keys are managed and the limit somebody meets \
+             first: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
         );
         assert!(
             !READING_PGP_MAIL_IS_EXPERIMENTAL.contains("  "),
