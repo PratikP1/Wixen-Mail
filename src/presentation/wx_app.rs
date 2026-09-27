@@ -14369,6 +14369,10 @@ fn open_single_message(
 ) {
     use crate::application::reading_style::Style;
 
+    // Before anything is built, so the message opens to its words once its
+    // passphrase is typed, and before the reading is timed, so the time spent
+    // typing a passphrase is not counted as reading the message (13-17.1).
+    ask_for_the_passphrases_they_need(frame, cache, &[message.message_id]);
     lock_state(state).reading_began = Some((message.message_id, std::time::Instant::now()));
 
     // Asked before either document is built, so a move is already on the
@@ -14424,6 +14428,69 @@ fn open_single_message(
     }
     reader.on_closed(closed);
     open_in_the_text_reader(reader, cache, message, out, change);
+}
+
+/// Ask for the passphrase of each locked key these messages need, before a
+/// reader window builds them (#49, 13-17.1).
+///
+/// Asked by the reader windows and by nothing else: the preview opens a
+/// message as the cursor passes over it, and a dialog appearing while
+/// somebody arrows through a list is a trap, so it says the key is locked
+/// instead. `tests/a_locked_key_asks_for_its_passphrase.rs` reads that it
+/// stays that way.
+///
+/// Each key is asked about once, however many of the messages need it. A
+/// wrong passphrase asks again, saying so first; Cancel stops asking for this
+/// key, and the message is shown with the sentence saying it is locked. What
+/// is typed goes straight to `unlock` and is dropped; nothing here keeps or
+/// logs it.
+fn ask_for_the_passphrases_they_need(
+    frame: &Frame,
+    cache: &Option<Arc<MessageCache>>,
+    message_ids: &[i64],
+) {
+    let mut asked: Vec<String> = Vec::new();
+    for &message_id in message_ids {
+        let body = body_as_written(
+            cache
+                .as_ref()
+                .and_then(|c| c.get_message_body(message_id).ok().flatten()),
+        );
+        let Some(locked) = crate::application::pgp_keys::the_locked_key_it_needs(
+            cache.as_deref(),
+            message_id,
+            &body,
+        ) else {
+            continue;
+        };
+        if asked.contains(&locked.fingerprint) {
+            continue;
+        }
+        asked.push(locked.fingerprint.clone());
+        ask_until_it_opens_or_is_cancelled(frame, &locked);
+    }
+}
+
+/// Ask for one key's passphrase until it opens the key or somebody cancels.
+fn ask_until_it_opens_or_is_cancelled(
+    frame: &Frame,
+    locked: &crate::application::pgp_keys::LockedKey,
+) {
+    use crate::application::pgp_keys::{Unlocking, unlock};
+    let mut said = None;
+    while let Some(typed) = crate::presentation::wx_passphrase::ask(frame, &locked.whose, said) {
+        match unlock(&locked.fingerprint, &typed) {
+            Unlocking::WrongPassphrase => {
+                said = Some(crate::presentation::wx_passphrase::THAT_DID_NOT_OPEN_IT);
+            }
+            // Opened, or the key went or could not be read while the dialog
+            // was up: either way there is nothing more to ask, and the
+            // message says what became of it.
+            Unlocking::Unlocked | Unlocking::NoSuchKey | Unlocking::TheKeyCouldNotBeRead => {
+                return;
+            }
+        }
+    }
 }
 
 /// What opening a message in a reader window changes on the calendar, with a
@@ -25325,6 +25392,17 @@ fn open_conversation_again(
             );
         }) as Rc<dyn Fn()>
     };
+
+    // A whole conversation in a reader window asks for the passphrases its
+    // messages need before it is built, as one message does (13-17.1); one
+    // message chosen from it asks in `open_single_message`.
+    if matches!(
+        choice,
+        wx_thread_view::ThreadChoice::AsHeadings | wx_thread_view::ThreadChoice::WholeConversation
+    ) {
+        let message_ids: Vec<i64> = nodes.iter().map(|node| node.message_id).collect();
+        ask_for_the_passphrases_they_need(frame, cache, &message_ids);
+    }
 
     match choice {
         wx_thread_view::ThreadChoice::AsHeadings => {

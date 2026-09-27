@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 377 records have arrived since and have not been through it.
+# 379 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17817,13 +17817,17 @@ tests_last_seen = [
 # `cargo test --no-fail-fast --lib`.
 
 [[guard]]
-name = "the reasons a PGP message did not open stay four different sentences"
+name = "the reasons a PGP message did not open stay five different sentences"
 file = "src/presentation/reader_text.rs"
 # The four arms moved out of `with_pgp` into `the_reason_it_did_not_open` on
 # 2026-09-16 (09-07), so a thread can say the reason at the message it is
 # about. The break is the same wrong-key arm; measured again the same day.
-before = '''        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => Some(THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT),'''
-after = '''        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => Some(NO_PGP_KEY_ON_THIS_COMPUTER),'''
+# Named "... stay four different sentences" until 13-17.1 added the fifth,
+# a key locked with a passphrase, and the function began answering a
+# sentence of its own words for that one; the arms lost their `Some(...)`,
+# so the anchor was rewritten and the record measured again on 2026-09-27.
+before = '''        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT,'''
+after = '''        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => NO_PGP_KEY_ON_THIS_COMPUTER,'''
 red = [
     "presentation::reader_text::encryption_tests::test_each_reason_a_pgp_message_did_not_open_is_said_in_its_own_words",
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
@@ -32293,7 +32297,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/application/pgp_keys.rs", tests = 19 },
+    { file = "src/application/pgp_keys.rs", tests = 21 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/presentation/reader_text.rs", tests = 143 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
@@ -32355,7 +32359,7 @@ red = [
     "presentation::wx_pgp_keys::tests::test_the_row_a_press_acts_on_is_the_one_chosen_and_nothing_is_not_a_row",
 ]
 tests_last_seen = [
-    { file = "src/application/pgp_keys.rs", tests = 19 },
+    { file = "src/application/pgp_keys.rs", tests = 21 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
 ]
 
@@ -32394,7 +32398,7 @@ red = [
     "application::pgp_keys::tests::test_the_limits_say_a_locked_key_is_kept_locked_and_one_is",
 ]
 tests_last_seen = [
-    { file = "src/application/pgp_keys.rs", tests = 19 },
+    { file = "src/application/pgp_keys.rs", tests = 21 },
 ]
 
 # A typed passphrase that opens nothing held anyway, so a key reads as unlocked
@@ -32443,4 +32447,44 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 143 },
     { file = "src/presentation/wx_reader.rs", tests = 15 },
+]
+
+# The passphrase field named after the dialog's title rather than its label,
+# so the field focus lands on is heard as "Unlock a PGP Key, edit" and never
+# says what to type into it. Written 2026-09-27 by 13-17.1, measured by hand
+# with `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+[[guard]]
+name = "the passphrase field is named for what goes in it"
+file = "src/presentation/wx_passphrase.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = """    set_accessible_name(&field, &name_from_label(THE_PASSPHRASE_LABEL));"""
+after = """    set_accessible_name(&field, TITLE);"""
+red = [
+    "test_focus_lands_on_the_field_and_it_is_named_passphrase_there",
+    "test_the_field_and_the_buttons_are_named_in_tab_order",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_passphrase.rs", tests = 1 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 8 },
+]
+
+# A single message opened in a reader window no longer asking for the
+# passphrase its locked key needs, so it opens to the sentence saying the key
+# is locked and the sentence sends the person to the very window they are in.
+# The plan's break, the preview asking too, cannot be compiled: the preview
+# has no window to hang a dialog on. That direction is held by the target's
+# planted companion instead. Written 2026-09-27 by 13-17.1, measured by hand
+# with `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+[[guard]]
+name = "a message opened in a reader window asks for its locked key's passphrase"
+file = "src/presentation/wx_app.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = """    ask_for_the_passphrases_they_need(frame, cache, &[message.message_id]);"""
+after = ""
+red = [
+    "test_only_a_reader_window_asks_and_the_preview_never_does",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 8 },
 ]

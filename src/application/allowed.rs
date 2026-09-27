@@ -393,16 +393,19 @@ pub const DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL: &str = "The download of everyt
 /// matter: a message reported as unopenable that a working client opens, and a
 /// message shown as opened that was not.
 ///
-/// And it says where keys are managed and the limit somebody meets first,
-/// because meeting it without warning reads as the feature being broken: only
-/// a key with no passphrase on it. Until 13-17 it also said one key at a time,
-/// which stopped being true when 13-16 kept several.
+/// And it says where keys are managed and what happens to a passphrase,
+/// because a mail program asking for a secret is something somebody should
+/// hear about before it happens. Until 13-17 it also said one key at a time,
+/// which stopped being true when 13-16 kept several; until 13-17.1 it said a
+/// key locked with a passphrase could not be imported, which stopped being
+/// true when the reader learned to ask.
 pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experimental. No message from a real correspondent has \
      ever been through it and no real key has ever been imported, so it may \
      say a message cannot be opened when another mail program opens it. \
      Nothing is sent anywhere and nothing on your account is changed. Keys \
-     are managed from File, PGP Keys, and a key locked with a passphrase \
-     cannot be imported yet, because nothing here asks you for one.";
+     are managed from File, PGP Keys. A key locked with a passphrase asks \
+     for it the first time a reader window opens a message that needs it, \
+     and the passphrase is remembered until Wixen Mail closes and never saved.";
 
 /// What Undo and Redo say, as their help on the Edit menu, while they name a
 /// mark, a star or a label on messages (13-07), a move, a delete or a copy

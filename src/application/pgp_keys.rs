@@ -21,13 +21,27 @@ pub use crate::service::pgp::{LockedKey, Unlocking, unlock};
 
 /// The locked key a message needs before it can open, or `None` when it needs
 /// none: nearly every message, and every message whose key is open already.
-/// Not written yet.
+///
+/// Asked by a reader window before it builds the message, so it can ask for
+/// the passphrase first. The same two questions the reader's composition asks
+/// ([`crate::application::reading_a_message::put_together`]): what a PGP/MIME
+/// part came to, and otherwise what the body's armour came to. Ordinary mail
+/// costs one read of a column and a look at the body's form, and never
+/// reaches the credential store.
 pub fn the_locked_key_it_needs(
-    _cache: Option<&MessageCache>,
-    _message_row_id: i64,
-    _body: &MessageBody,
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    body: &MessageBody,
 ) -> Option<LockedKey> {
-    None
+    use crate::application::opening_pgp;
+    let found = cache
+        .and_then(|cache| opening_pgp::for_pgp_mime(cache, message_row_id))
+        .and_then(|envelope| envelope.what_the_pgp_key_found().cloned())
+        .or_else(|| opening_pgp::for_body(body));
+    match found? {
+        pgp::WhatOpeningItFound::TheKeyIsLocked(key) => Some(key),
+        _ => None,
+    }
 }
 
 /// What keys can and cannot do in this build, said first in the key manager
@@ -117,7 +131,8 @@ fn what_it_can_do(listing: &KeyListing) -> &'static str {
 pub struct KeyRow {
     /// The first name and address the key carries.
     pub name: String,
-    /// "Private key" or "Public key".
+    /// "Private key", "Private key, locked with a passphrase" or "Public
+    /// key".
     pub kind: String,
     /// The short identifier, in groups of four.
     pub key_id: String,
@@ -136,6 +151,9 @@ pub struct KeyRow {
 pub fn what_a_row_says(listing: &KeyListing, which: WhichLocale<'_>) -> KeyRow {
     let mut kind = kind_of(listing).to_string();
     kind[..1].make_ascii_uppercase();
+    if listing.locked {
+        kind.push_str(", locked with a passphrase");
+    }
     KeyRow {
         name: listing
             .user_ids

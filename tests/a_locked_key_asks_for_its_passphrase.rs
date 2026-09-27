@@ -472,12 +472,13 @@ fn names_and_roles(controls: &[Control]) -> Vec<(String, i64)> {
         .collect()
 }
 
-/// What the dialog says in lines of text, in the order Windows holds them.
+/// What the dialog says in lines of text, in the order Windows holds them,
+/// with the line breaks wrapping put in read as the spaces they replaced.
 fn what_it_says(controls: &[Control]) -> Vec<String> {
     controls
         .iter()
         .filter(|control| control.class == "Static")
-        .map(|control| control.text.clone())
+        .map(|control| control.text.replace("\r\n", " ").replace('\n', " "))
         .collect()
 }
 
@@ -522,7 +523,7 @@ fn test_it_says_whose_key_it_is_and_that_the_passphrase_is_never_saved() {
         said,
         vec![
             wx_passphrase::what_it_asks(WHOSE),
-            "&Passphrase:".to_string()
+            "&Passphrase".to_string()
         ]
     );
     assert!(
