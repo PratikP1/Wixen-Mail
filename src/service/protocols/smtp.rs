@@ -5,6 +5,7 @@
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::service::protocols::MailAuth;
+use crate::service::signed_mail::sending::OwnCertificate;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
     address::Envelope,
@@ -92,6 +93,37 @@ pub struct Email {
     /// checkable: what goes on the wire is decided by [`build_message`], which
     /// is pure.
     pub attachments: Vec<crate::application::attaching::Ready>,
+    /// Whether the message goes signed, sealed, both or neither.
+    ///
+    /// Carried on the message rather than decided here, so what a person chose
+    /// is what [`build_message`] does and nothing on the way can quietly send
+    /// in the clear what was meant to be sealed.
+    pub protection: Protection,
+}
+
+/// How a message is protected on its way out.
+///
+/// S/MIME only, until OpenPGP's half arrives (13-20). The composer does not
+/// offer any of these yet (13-21), so every message sent today is `Plain`.
+#[derive(Debug, Clone, Default)]
+pub enum Protection {
+    /// As it always went, with nothing added.
+    #[default]
+    Plain,
+    /// Signed with a certificate of the sender's own: `multipart/signed`.
+    SmimeSigned { own: OwnCertificate },
+    /// Sealed for each recipient's certificate and for the sender's own, so
+    /// the copy filed in Sent can be read by the person who sent it.
+    SmimeEncrypted {
+        own: OwnCertificate,
+        recipients: Vec<Vec<u8>>,
+    },
+    /// Signed, then the signed message sealed, the order every S/MIME reader
+    /// expects.
+    SmimeSignedAndEncrypted {
+        own: OwnCertificate,
+        recipients: Vec<Vec<u8>>,
+    },
 }
 
 impl Email {
@@ -110,6 +142,7 @@ impl Email {
             in_reply_to: None,
             references: None,
             attachments: Vec::new(),
+            protection: Protection::Plain,
         }
     }
 }
@@ -808,6 +841,186 @@ mod tests {
         assert!(sent.contains("multipart/alternative"), "{sent}");
         assert!(sent.contains("multipart/mixed"), "{sent}");
         assert!(sent.contains("<p>See attached.</p>"), "{sent}");
+    }
+
+    // ── A message sent signed, encrypted, or both ────────────────────────
+
+    /// What a plain note looked like on the wire before protection existed,
+    /// taken from `build_message` on 2026-09-27 before it was changed.
+    ///
+    /// Every line but the date, which the mail library writes at the moment
+    /// of building.
+    const A_PLAIN_NOTE_AS_IT_ALWAYS_WENT: &str = "From: ada@example.com\r\n\
+        Subject: Tomorrow\r\n\
+        Message-ID: <the-same-every-time@example.com>\r\n\
+        To: sam@example.com\r\n\
+        Content-Transfer-Encoding: 7bit\r\n\
+        \r\n\
+        See attached.";
+
+    /// A message the way it went on the wire, with its date line taken out.
+    fn undated(email: &Email) -> String {
+        on_the_wire(email)
+            .split_inclusive("\r\n")
+            .filter(|line| !line.starts_with("Date: "))
+            .collect()
+    }
+
+    #[test]
+    fn test_a_plain_message_is_byte_for_byte_what_it_always_was() {
+        let note = Email {
+            message_id: "<the-same-every-time@example.com>".to_string(),
+            ..plain_note()
+        };
+
+        assert_eq!(undated(&note), A_PLAIN_NOTE_AS_IT_ALWAYS_WENT);
+    }
+
+    /// The cases that sign and seal, with the keyholder's key held in this
+    /// process only, so the person's own certificate store is never touched.
+    #[cfg(target_os = "windows")]
+    mod protected {
+        use super::*;
+        use crate::service::signed_mail::for_tests::{
+            a_store_holding_the_keyholders_key, signed_beside,
+        };
+        use crate::service::signed_mail::{
+            EncryptedMessage, SignatureOutcome, WhatTheEnvelopeHeld, examine_signed_message,
+        };
+        use chrono::Utc;
+
+        const KEYHOLDER: &str = "keyholder@example.com";
+
+        fn the_keyholders_own() -> OwnCertificate {
+            a_store_holding_the_keyholders_key()
+                .own_certificate_for(KEYHOLDER)
+                .expect("the keyholder's own certificate, held in memory")
+        }
+
+        /// Alice's certificate, as her signed message carried it.
+        fn alices_certificate() -> Vec<u8> {
+            examine_signed_message(&signed_beside(), "alice@example.com", Utc::now())
+                .signer
+                .expect("the certificate Alice's message carries")
+                .der
+        }
+
+        /// The keyholder answering Alice, protected the way asked.
+        fn a_reply_to_alice(protection: Protection) -> Email {
+            Email {
+                from: KEYHOLDER.to_string(),
+                to: vec![EmailAddress::new("alice@example.com".to_string(), None)],
+                message_id: "<a-reply@example.com>".to_string(),
+                in_reply_to: Some("<asked@example.com>".to_string()),
+                protection,
+                ..plain_note()
+            }
+        }
+
+        fn formatted(email: &Email) -> Vec<u8> {
+            build_message(email).expect("a message").formatted()
+        }
+
+        /// The envelope a sealed message carries, as the reader keeps it.
+        fn the_envelope_in(raw: &[u8]) -> Option<Vec<u8>> {
+            crate::service::mime::attachments_with_bytes(raw)
+                .ok()?
+                .into_iter()
+                .find(|file| file.described.filename.as_deref() == Some("smime.p7m"))
+                .map(|file| file.bytes)
+        }
+
+        /// One header's line, out of the part of a message above its body.
+        fn the_header(raw: &[u8], name: &str) -> Option<String> {
+            let text = String::from_utf8_lossy(raw).into_owned();
+            let above_the_body = text.split("\r\n\r\n").next().unwrap_or_default();
+            above_the_body
+                .split("\r\n")
+                .find(|line| line.starts_with(&format!("{name}: ")))
+                .map(str::to_string)
+        }
+
+        #[test]
+        fn test_a_signed_message_holds_for_the_reader_that_checks_everybody_elses() {
+            let sent = formatted(&a_reply_to_alice(Protection::SmimeSigned {
+                own: the_keyholders_own(),
+            }));
+
+            let report = examine_signed_message(&sent, KEYHOLDER, Utc::now());
+
+            assert_eq!(report.outcome, SignatureOutcome::Matches, "{report:?}");
+            assert!(
+                String::from_utf8_lossy(&sent).contains("See attached."),
+                "the words are not beside the signature"
+            );
+        }
+
+        #[test]
+        fn test_an_encrypted_message_opens_with_the_senders_own_key_to_its_words() {
+            // Sealed for Alice alone by the person sending it, and the
+            // keyholder's own key opens it: the sender is always one of those
+            // it is sealed for, or the copy filed in Sent is one nobody who
+            // sent it can read.
+            let sent = formatted(&a_reply_to_alice(Protection::SmimeEncrypted {
+                own: the_keyholders_own(),
+                recipients: vec![alices_certificate()],
+            }));
+            let envelope = the_envelope_in(&sent);
+
+            let opened = envelope
+                .as_deref()
+                .map(|envelope| a_store_holding_the_keyholders_key().open_the_envelope(envelope));
+            let Some(WhatTheEnvelopeHeld::Opened(inside)) = opened else {
+                panic!("the sender's own key did not open it: {opened:?}");
+            };
+            let words = crate::service::mime::parse(&inside).map(|read| read.body_plain);
+            assert_eq!(
+                words
+                    .ok()
+                    .flatten()
+                    .map(|words| words.trim_end().to_string()),
+                Some("See attached.".to_string())
+            );
+            assert_eq!(
+                envelope
+                    .and_then(|envelope| EncryptedMessage::read(&envelope).ok())
+                    .map(|read| read.recipients.len()),
+                Some(2),
+                "not sealed for Alice and the sender both"
+            );
+            assert!(
+                !String::from_utf8_lossy(&sent).contains("See attached."),
+                "the words went out in the clear beside the envelope"
+            );
+        }
+
+        #[test]
+        fn test_a_signed_and_encrypted_message_opens_to_a_signed_one_that_holds() {
+            let plain = formatted(&a_reply_to_alice(Protection::Plain));
+            let sent = formatted(&a_reply_to_alice(Protection::SmimeSignedAndEncrypted {
+                own: the_keyholders_own(),
+                recipients: vec![alices_certificate()],
+            }));
+
+            let opened = the_envelope_in(&sent)
+                .map(|envelope| a_store_holding_the_keyholders_key().open_the_envelope(&envelope));
+            let Some(WhatTheEnvelopeHeld::Opened(inside)) = opened else {
+                panic!("the sender's own key did not open it: {opened:?}");
+            };
+            let report = examine_signed_message(&inside, KEYHOLDER, Utc::now());
+            assert_eq!(report.outcome, SignatureOutcome::Matches, "{report:?}");
+
+            // What the envelope changed is the body; the lines above it that
+            // say who it is from and to, and which message it answers, are
+            // the ones a plain message carries.
+            for name in ["From", "To", "Message-ID", "In-Reply-To"] {
+                assert_eq!(
+                    the_header(&sent, name),
+                    the_header(&plain, name),
+                    "{name} changed when the message was protected"
+                );
+            }
+        }
     }
 
     #[test]
