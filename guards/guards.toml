@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 389 records have arrived since and have not been through it.
+# 391 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32673,4 +32673,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/correspondent_certificates.rs", tests = 6 },
+]
+
+# The sender's own key left out of those an OpenPGP message is encrypted to,
+# so the copy filed in Sent is one the person who wrote it can never open.
+# Written 2026-09-27 by 13-20, measured with the whole library by hand.
+[[guard]]
+name = "an openpgp message is encrypted to its sender too"
+file = "src/service/pgp/sending.rs"
+before = """        Some(destination) => destinations.push(destination),
+        None => return Sending::YourKeyCannotBeEncryptedTo,"""
+after = """        Some(_) => {}
+        None => return Sending::YourKeyCannotBeEncryptedTo,"""
+red = [
+    "service::pgp::sending::tests::test_the_senders_own_key_opens_what_they_sent",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/sending.rs", tests = 14 },
+]
+
+# An OpenPGP signature made over the content with its line endings rewritten to
+# line feeds, so every reader says a part nobody touched was changed after it
+# was signed. Written 2026-09-27 by 13-20, measured with the whole library by
+# hand.
+[[guard]]
+name = "an openpgp signature covers the bytes it is handed, line endings and all"
+file = "src/service/pgp/keys.rs"
+before = """        HashAlgorithm::Sha256,
+        content,"""
+after = """        HashAlgorithm::Sha256,
+        String::from_utf8_lossy(content).replace("\\r\\n", "\\n").as_bytes(),"""
+red = [
+    "service::pgp::sending::tests::test_a_detached_signature_over_a_crlf_part_holds_for_the_signers_key",
+    "service::pgp::sending::tests::test_once_its_passphrase_is_held_a_locked_key_signs",
+]
+tests_last_seen = [
+    { file = "src/service/pgp/keys.rs", tests = 33 },
+    { file = "src/service/pgp/sending.rs", tests = 14 },
 ]
