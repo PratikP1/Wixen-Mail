@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 589
+open_count: 591
 waived_count: 0
 fixed_count: 64
-total_count: 653
-last_updated: 2026-09-27T16:00:00.000Z
+total_count: 655
+last_updated: 2026-09-27T16:10:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -668,6 +668,8 @@ last_updated: 2026-09-27T16:00:00.000Z
 | 651 | 14 | unrun-verify | src/service/pgp/keys.rs |  | 13-17.1, phase 14's: no real correspondent's key locked with a passphrase has been through this. Dave's key, locked by GnuPG 2.4.9 with the default protection, is the only one tried. What a real account settles: that a key exported by Thunderbird, Kleopatra or GnuPG with other protection settings is kept locked, that its passphrase opens it through every locked part, and that a message a real correspondent sent to it asks once and then opens | open |  | 2026-09-27T10:33:40.000Z |  |
 | 652 | 14 | unrun-verify | src/service/pgp/signatures.rs |  | 13-18, phase 14's: no signature from a real correspondent's key has been checked. Every one tried was made by GnuPG 2.4.9 with Carol's Ed25519 fixture key, a clearsigned text and a detached signature over a CRLF part in an envelope written by the tests. What a real account settles: that PGP/MIME signed mail from Thunderbird, Proton Mail and Mutt holds against the sender's imported public key, byte for byte through the arrival path; that an inline signature from a client sending ISO-8859-1 or another non-UTF-8 character set, with letters outside plain English, holds rather than reading as not holding, since the words are checked as stored and not as sent; and that a key signing with a subkey, or an RSA key, is named and holds | open |  | 2026-09-27T16:00:00.000Z |  |
 | 653 | 13 | todo | src/application/checking_signatures.rs |  | 13-18, a question for Pratik: "This message is signed, and it was stored before Wixen Mail kept the form signed mail arrives in, so the signature cannot be checked." is chosen from a signature file among the message's stored files and nothing else, because the header that said it was signed is gone for mail stored before. So a message that only carries a .asc or .p7s file as an attachment, or a signed message a mailing list wrapped in a multipart/mixed of its own with a footer, arriving today, says it too, with a reason that is not its own. Recommendation: record when this build first kept PGP/MIME originals (the moment the kind column is added) and say "stored before" only for messages downloaded before that; for later ones say "This message carries a signature in a form Wixen Mail does not check." The guide and the changelog say the limitation meanwhile | open |  | 2026-09-27T16:00:00.000Z |  |
+| 654 | 13 | stub | src/service/signed_mail/sending.rs |  | S/MIME signing and encrypting is reached only by tests until 13-21 wires the composer. 13-19 built signed_mail::sending's sign_detached and encrypt_to, CertificateStore::own_certificate_for, smtp::Protection's three S/MIME arms in build_message, and the correspondents' certificates kept at arrival with certificates_for; mail_controller::outgoing always sends Protection::Plain and nothing reads certificates_for. 13-21 closes it, as its premise 0 says. One choice it inherits: own_certificate_for takes the first certificate Windows lists that names the address and holds its key, not the one latest in date, and the changelog says so meanwhile | open |  | 2026-09-27T16:10:00.000Z |  |
+| 655 | 14 | unrun-verify | src/service/protocols/smtp.rs |  | 13-19, phase 14's: nothing signed or encrypted by this program has been opened by another mail program. OpenSSL 3.5.7 verified a signature and opened an envelope made by the same Windows declarations in a scratchpad probe on 2026-09-27, and this program's own reader checks both in the tests; that is all. What a real account settles: that a message signed here with a real certificate reads as signed and unchanged in Outlook, Thunderbird and Apple Mail; that an encrypted one opens in each, which answers whether they accept PKCS #1 v1.5 key transport, and whether they open RSA-OAEP, which would let decision 22 move to the newer padding; that a real correspondent's certificate is kept from their signed mail and a reply sealed to it opens for them; and what Windows shows when the signing key asks for a PIN or lives on a card | open |  | 2026-09-27T16:10:00.000Z |  |
 
 ````json
 [
@@ -8505,6 +8507,30 @@ last_updated: 2026-09-27T16:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 654,
+    "kind": "stub",
+    "phase": "13",
+    "file": "src/service/signed_mail/sending.rs",
+    "line": null,
+    "description": "S/MIME signing and encrypting is reached only by tests until 13-21 wires the composer. 13-19 built signed_mail::sending's sign_detached and encrypt_to, CertificateStore::own_certificate_for, smtp::Protection's three S/MIME arms in build_message, and the correspondents' certificates kept at arrival with certificates_for; mail_controller::outgoing always sends Protection::Plain and nothing reads certificates_for. 13-21 closes it, as its premise 0 says. One choice it inherits: own_certificate_for takes the first certificate Windows lists that names the address and holds its key, not the one latest in date, and the changelog says so meanwhile",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T16:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 655,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/service/protocols/smtp.rs",
+    "line": null,
+    "description": "13-19, phase 14's: nothing signed or encrypted by this program has been opened by another mail program. OpenSSL 3.5.7 verified a signature and opened an envelope made by the same Windows declarations in a scratchpad probe on 2026-09-27, and this program's own reader checks both in the tests; that is all. What a real account settles: that a message signed here with a real certificate reads as signed and unchanged in Outlook, Thunderbird and Apple Mail; that an encrypted one opens in each, which answers whether they accept PKCS #1 v1.5 key transport, and whether they open RSA-OAEP, which would let decision 22 move to the newer padding; that a real correspondent's certificate is kept from their signed mail and a reply sealed to it opens for them; and what Windows shows when the signing key asks for a PIN or lives on a card",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T16:10:00.000Z",
     "resolved_at": null
   }
 ]
