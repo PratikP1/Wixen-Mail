@@ -2735,8 +2735,32 @@ pub trait CertificateStore {
     /// recipients, and which one.
     fn which_recipient_is_us(&self, recipients: &[Recipient]) -> Result<Option<usize>>;
 
-    /// Undo the wrapping on the key a message's content was encrypted with.
-    fn unwrap_content_key(&self, recipient: &Recipient) -> Result<Vec<u8>>;
+    /// Open an encrypted message's envelope with a key this store holds, where
+    /// the key lives, and hand back what was inside.
+    ///
+    /// The whole envelope and not a recipient, because the arithmetic has to
+    /// happen where the private key is, and the store that holds it is the one
+    /// that knows which recipient it answers to.
+    fn open_the_envelope(&self, envelope_der: &[u8]) -> WhatTheEnvelopeHeld;
+}
+
+/// What offering an envelope to this computer's keys came to.
+///
+/// Four answers, each a different thing to do next, and none of them carries
+/// text from the operating system or from the message: a stranger's envelope
+/// decides which of these it is and never what is said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatTheEnvelopeHeld {
+    /// It opened, and these are the bytes inside: a MIME entity, as the sender
+    /// wrote it, held in memory and never stored.
+    Opened(Vec<u8>),
+    /// No certificate this computer holds a key for is one it was encrypted to.
+    NotAddressedToACertificateHere,
+    /// It is addressed to a certificate here and the key would not be used:
+    /// refused, cancelled at a prompt, or on a card that is not there.
+    TheKeyHereRefused,
+    /// What arrived will not open: cut short, altered, or not an envelope.
+    Damaged,
 }
 
 /// The store belonging to the computer this is running on.
@@ -2787,10 +2811,8 @@ impl CertificateStore for NoCertificateStore {
         ))
     }
 
-    fn unwrap_content_key(&self, _recipient: &Recipient) -> Result<Vec<u8>> {
-        Err(Error::Security(
-            "Wixen Mail cannot read this operating system's certificate store yet".to_string(),
-        ))
+    fn open_the_envelope(&self, _envelope_der: &[u8]) -> WhatTheEnvelopeHeld {
+        WhatTheEnvelopeHeld::TheKeyHereRefused
     }
 }
 
@@ -2818,8 +2840,13 @@ fn recipient_matching(recipients: &[Recipient], certificate_der: &[u8]) -> Optio
 /// rest of this project talks to Windows outside the spell checker.
 #[cfg(target_os = "windows")]
 pub mod windows_store {
-    use super::{CertificateStore, IssuerTrust, Reach, Recipient, Withdrawal, recipient_matching};
-    use crate::common::{Error, Result};
+    use super::{
+        CertificateStore, IssuerTrust, Reach, Recipient, WhatTheEnvelopeHeld, Withdrawal,
+        recipient_matching,
+    };
+    #[cfg(test)]
+    use crate::common::Error;
+    use crate::common::Result;
     use chrono::{DateTime, Utc};
     use std::ffi::c_void;
 
@@ -3059,6 +3086,14 @@ pub mod windows_store {
             data: *mut c_void,
             size: *mut u32,
         ) -> i32;
+        fn CryptDecryptMessage(
+            parameters: *const DecryptMessageParameters,
+            encrypted: *const u8,
+            encrypted_length: u32,
+            decrypted: *mut u8,
+            decrypted_length: *mut u32,
+            exchange_certificate: *mut *const CertContext,
+        ) -> i32;
         #[cfg(test)]
         fn PFXImportCertStore(
             pfx: *const DataBlob,
@@ -3222,18 +3257,154 @@ pub mod windows_store {
             Ok(None)
         }
 
-        fn unwrap_content_key(&self, _recipient: &Recipient) -> Result<Vec<u8>> {
-            // Deliberately refused rather than half-built. Undoing the wrapping
-            // means driving Windows' key API with a key that never leaves the
-            // store, and there is no way to test that here without a real
-            // S/MIME certificate installed on the machine running the tests.
-            // Code that looks like it decrypts and has never once decrypted
-            // anything is the worst thing this file could contain.
-            Err(Error::Security(
-                "Wixen Mail cannot open an S/MIME encrypted message yet. Reading it needs a \
-                 private key out of the Windows certificate store, and that part is not built."
-                    .to_string(),
-            ))
+        /// Opened by Windows, with the key where it lives.
+        ///
+        /// Tested with a key imported into this process only, which is how
+        /// every test of the private key here works: the envelopes OpenSSL made
+        /// for the keyholder certificate open, and nothing is written to the
+        /// person's store. What no test here can reach is a key that asks for
+        /// something before it is used, a protected key or a card, where
+        /// Windows shows its own prompt; that waits for a real certificate.
+        fn open_the_envelope(&self, envelope_der: &[u8]) -> WhatTheEnvelopeHeld {
+            match &self.looking_in {
+                Wherever::ThePersonsOwnStore => {
+                    let wide: Vec<u16> = "MY".encode_utf16().chain([0]).collect();
+                    // SAFETY: the store is opened here, used once and closed
+                    // on the one path out, and the name outlives the call.
+                    unsafe {
+                        let store = CertOpenSystemStoreW(0, wide.as_ptr());
+                        if store.is_null() {
+                            return what_a_refusal_means(last_error());
+                        }
+                        let held = open_with_the_keys_in(store, envelope_der);
+                        CertCloseStore(store, 0);
+                        held
+                    }
+                }
+                // SAFETY: the handle is owned by this value and open for as
+                // long as the borrow lasts.
+                #[cfg(test)]
+                Wherever::OnlyInMemory(store) => unsafe {
+                    open_with_the_keys_in(store.0, envelope_der)
+                },
+            }
+        }
+    }
+
+    /// Windows' parameters for opening an envelope: the encodings, and the
+    /// stores to look for a key in.
+    #[repr(C)]
+    struct DecryptMessageParameters {
+        size: u32,
+        encoding: u32,
+        store_count: u32,
+        stores: *mut *mut c_void,
+    }
+
+    /// Open an envelope with a key one open store holds.
+    ///
+    /// Asked twice, the way Windows sizes an answer: once for how many bytes
+    /// are inside, and once to write them. The first call does not decrypt,
+    /// so an envelope to nobody here passes it and is refused by the second.
+    ///
+    /// # Safety
+    ///
+    /// `store` has to be an open certificate store handle.
+    unsafe fn open_with_the_keys_in(
+        store: *mut c_void,
+        envelope_der: &[u8],
+    ) -> WhatTheEnvelopeHeld {
+        // Nothing to hand over, and a length Windows cannot be told, are both
+        // an envelope that will not open, and neither is worth a call.
+        let Ok(length) = u32::try_from(envelope_der.len()) else {
+            return WhatTheEnvelopeHeld::Damaged;
+        };
+        if length == 0 {
+            return WhatTheEnvelopeHeld::Damaged;
+        }
+        let mut stores = [store];
+        let parameters = DecryptMessageParameters {
+            size: std::mem::size_of::<DecryptMessageParameters>() as u32,
+            encoding: X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+            store_count: 1,
+            stores: stores.as_mut_ptr(),
+        };
+        let mut size: u32 = 0;
+        // SAFETY: the envelope, the parameters and the store array outlive
+        // both calls, the first writes only the size, and the second writes at
+        // most `size` bytes into a buffer of exactly that many.
+        unsafe {
+            let sized = CryptDecryptMessage(
+                &parameters,
+                envelope_der.as_ptr(),
+                length,
+                std::ptr::null_mut(),
+                &mut size,
+                std::ptr::null_mut(),
+            );
+            if sized == 0 {
+                return what_a_refusal_means(last_error());
+            }
+            let mut inside = vec![0u8; size as usize];
+            let opened = CryptDecryptMessage(
+                &parameters,
+                envelope_der.as_ptr(),
+                length,
+                inside.as_mut_ptr(),
+                &mut size,
+                std::ptr::null_mut(),
+            );
+            if opened == 0 {
+                return what_a_refusal_means(last_error());
+            }
+            inside.truncate(size as usize);
+            WhatTheEnvelopeHeld::Opened(inside)
+        }
+    }
+
+    /// Windows' answer for an envelope addressed to no certificate whose key
+    /// the store holds.
+    const CRYPT_E_NO_DECRYPT_CERT: u32 = 0x8009_200C;
+
+    /// Windows' answers for a key that is here and would not be used.
+    ///
+    /// Permission refused, a key that needs a prompt where none may be shown,
+    /// a prompt cancelled, a card missing, taken out, or locked by a wrong PIN,
+    /// and a certificate that says nothing of where its key is. The last two
+    /// numbers are the same cancellation, once as Windows' plain code and once
+    /// as the form most of its calls hand back.
+    const THE_KEY_WOULD_NOT_BE_USED: [u32; 14] = [
+        0x8009_0010, // NTE_PERM
+        0x8009_0016, // NTE_BAD_KEYSET
+        0x8009_000D, // NTE_NO_KEY
+        0x8009_0019, // NTE_KEYSET_NOT_DEF
+        0x8009_0022, // NTE_SILENT_CONTEXT
+        0x8009_0036, // NTE_USER_CANCELLED
+        0x8010_006E, // SCARD_W_CANCELLED_BY_USER
+        0x8010_000C, // SCARD_E_NO_SMARTCARD
+        0x8010_0069, // SCARD_W_REMOVED_CARD
+        0x8010_006B, // SCARD_W_WRONG_CHV
+        0x8010_006C, // SCARD_W_CHV_BLOCKED
+        0x8009_200B, // CRYPT_E_NO_KEY_PROPERTY
+        0x8007_04C7, // ERROR_CANCELLED, as Windows' calls hand it back
+        1223,        // ERROR_CANCELLED
+    ];
+
+    /// What Windows refusing to open an envelope means, read from its code.
+    ///
+    /// A code and never Windows' own words, which are in the language Windows
+    /// is set to and say things like "bad data" that tell nobody what to do.
+    /// Everything that is neither of the two named answers is the envelope:
+    /// measured on 2026-09-26, a changed byte, a cut, words that are not an
+    /// envelope and a signed document offered as one each gave a code of their
+    /// own and none of them was about the key.
+    fn what_a_refusal_means(code: u32) -> WhatTheEnvelopeHeld {
+        match code {
+            CRYPT_E_NO_DECRYPT_CERT => WhatTheEnvelopeHeld::NotAddressedToACertificateHere,
+            code if THE_KEY_WOULD_NOT_BE_USED.contains(&code) => {
+                WhatTheEnvelopeHeld::TheKeyHereRefused
+            }
+            _ => WhatTheEnvelopeHeld::Damaged,
         }
     }
 
@@ -3721,6 +3892,65 @@ pub mod windows_store {
             assert!(asking_out & CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL != 0);
             assert!(wait > 0, "asking with no limit on the wait");
         }
+
+        #[test]
+        fn test_what_a_refusal_means_is_read_from_the_code_windows_gave() {
+            // The numbers are the ones Windows really gave on 2026-09-26, each
+            // from the fixture named beside it, written as numbers rather than
+            // as this file's constants so the reading is checked against what
+            // was measured and not against itself.
+            // From an envelope to nobody this store holds a key for.
+            assert_eq!(
+                what_a_refusal_means(0x8009_200C),
+                WhatTheEnvelopeHeld::NotAddressedToACertificateHere
+            );
+            for (code, what_gave_it) in [
+                (0xC000_003E, "the last byte of the ciphertext changed"),
+                (0x8009_0027, "a byte of the wrapped key changed"),
+                (0x8009_3102, "the envelope cut short, or no bytes at all"),
+                (0x8009_3103, "a byte of the envelope's structure changed"),
+                (0x8009_310B, "words that are not an envelope"),
+                (0x8009_200A, "a signed document where an envelope should be"),
+                // Not measured: nothing here produced these two. Whatever this
+                // file does not know as a key refusing falls here.
+                (0x8009_1004, "a message type Windows does not take"),
+                (0x8009_0005, "data Windows called bad"),
+            ] {
+                assert_eq!(
+                    what_a_refusal_means(code),
+                    WhatTheEnvelopeHeld::Damaged,
+                    "{code:#010x}, from {what_gave_it}"
+                );
+            }
+            // Not measured, because no key here asks for anything: the codes
+            // Windows documents for a key that is there and would not be used.
+            // Phase 14's run with a protected key or a card is what hears one.
+            for (code, what_it_means) in [
+                (0x8009_0010, "permission refused"),
+                (0x8009_0016, "the key's container cannot be opened"),
+                (0x8009_000D, "the key is not there"),
+                (0x8009_0019, "the key's set is not defined"),
+                (0x8009_0022, "the key needs a prompt and none may be shown"),
+                (0x8009_0036, "the prompt was cancelled"),
+                (0x8007_04C7, "the operation was cancelled"),
+                (1223, "the operation was cancelled, as a plain code"),
+                (0x8010_006E, "the card's prompt was cancelled"),
+                (0x8010_000C, "the card is not in the reader"),
+                (0x8010_0069, "the card was taken out"),
+                (0x8010_006B, "the card's PIN was wrong"),
+                (0x8010_006C, "the card's PIN is blocked"),
+                (
+                    0x8009_200B,
+                    "the certificate says nothing of where its key is",
+                ),
+            ] {
+                assert_eq!(
+                    what_a_refusal_means(code),
+                    WhatTheEnvelopeHeld::TheKeyHereRefused,
+                    "{code:#010x}: {what_it_means}"
+                );
+            }
+        }
     }
 }
 
@@ -3784,11 +4014,17 @@ impl EncryptedMessage {
         })
     }
 
-    /// What to say about an encrypted message before anything is opened.
+    /// What to say about an encrypted message this computer's certificate
+    /// store could not be asked about, so nothing tried to open it.
     ///
-    /// Honest about the state of this: nothing here can open one, and a person
-    /// is better told that than shown an empty message body with no
-    /// explanation.
+    /// Since 13-14 an envelope is offered to this computer's keys whenever the
+    /// store can be asked, and what that came to is said by
+    /// `application::encrypted_mail`. This is the sentence for the one case
+    /// left, a store that could not be asked, which is every platform with no
+    /// store yet: it says how the message is addressed and claims nothing about
+    /// whose it is, because nothing was asked. Until then it took whether the
+    /// message was addressed here and said "Wixen Mail cannot open it" either
+    /// way, which stopped being true of a message addressed here.
     ///
     /// **About this message, not about the program.** It used to end "Wixen
     /// Mail cannot open encrypted mail yet", and 04-03 named that sentence when
@@ -3798,23 +4034,12 @@ impl EncryptedMessage {
     /// front of somebody, which was always the stronger thing to say, and
     /// `test_what_is_said_is_about_this_message_and_not_about_the_program`
     /// holds it there.
-    pub fn spoken(&self, addressed_to_us: Option<bool>) -> String {
-        let who = match addressed_to_us {
-            Some(true) => {
-                "This computer holds a certificate this message was encrypted to.".to_string()
-            }
-            Some(false) => {
-                "This message was not encrypted to any certificate on this computer.".to_string()
-            }
-            None => format!(
-                "It is addressed to {} certificate{}.",
-                self.recipients.len(),
-                if self.recipients.len() == 1 { "" } else { "s" }
-            ),
-        };
+    pub fn spoken(&self) -> String {
+        let count = self.recipients.len();
         format!(
-            "This message is encrypted. {who} Wixen Mail cannot open it, so nothing of it can \
-             be read here."
+            "This message is encrypted. It is addressed to {count} {}. Wixen Mail cannot open \
+             it, so nothing of it can be read here.",
+            one_or_more(count, "certificate", "certificates")
         )
     }
 }
@@ -3895,6 +4120,37 @@ pub(crate) mod for_tests {
         let raw = encrypted_to_alice();
         let (headers, body) = super::split_headers_from_body(&raw);
         super::decode_body(headers, body).expect("a fixture that decodes")
+    }
+
+    /// An envelope OpenSSL sealed for the keyholder, around a short plain
+    /// note, as DER, the form the cache keeps an envelope in.
+    pub(crate) fn the_envelope_for_the_keyholder() -> Vec<u8> {
+        super::tests::message(super::tests::ENVELOPE_FOR_THE_KEYHOLDER)
+    }
+
+    /// The note inside it, as OpenSSL was given it.
+    pub(crate) fn what_the_keyholders_envelope_holds() -> Vec<u8> {
+        super::tests::WHAT_THE_KEYHOLDERS_ENVELOPE_HOLDS.to_vec()
+    }
+
+    /// A message the keyholder signed, then sealed for the keyholder.
+    pub(crate) fn a_signed_message_sealed_for_the_keyholder() -> Vec<u8> {
+        super::tests::message(super::tests::SIGNED_THEN_SEALED_FOR_THE_KEYHOLDER)
+    }
+
+    /// A covering note and an invitation, sealed for the keyholder.
+    pub(crate) fn an_invitation_sealed_for_the_keyholder() -> Vec<u8> {
+        super::tests::message(super::tests::AN_INVITATION_SEALED_FOR_THE_KEYHOLDER)
+    }
+
+    /// A store holding the keyholder's key, in this process only.
+    ///
+    /// The person's own store is never touched, which
+    /// `test_importing_a_key_for_a_test_writes_nothing_to_the_persons_own_store`
+    /// holds.
+    #[cfg(target_os = "windows")]
+    pub(crate) fn a_store_holding_the_keyholders_key() -> Box<dyn super::CertificateStore> {
+        Box::new(super::tests::the_keyholders_store())
     }
 }
 
@@ -4543,6 +4799,148 @@ mod tests {
     /// this test and nothing else, and a password nobody can read is a fixture
     /// nobody can regenerate.
     const THE_TEST_KEYS_PASSWORD: &str = "wixen-test";
+
+    /// What the envelope below was made from: a short `text/plain` MIME entity,
+    /// with the carriage returns a message carries.
+    pub(super) const WHAT_THE_KEYHOLDERS_ENVELOPE_HOLDS: &[u8] =
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\nThe meeting moves to Thursday. Bring the figures.\r\n";
+
+    /// An envelope sealed for the keyholder's certificate by OpenSSL 3.5.7 on
+    /// 2026-09-26, as DER.
+    ///
+    /// Made from the fixture above, with the certificate and key taken out of
+    /// it and the bytes of `WHAT_THE_KEYHOLDERS_ENVELOPE_HOLDS` in `inner.txt`:
+    ///
+    /// ```text
+    /// openssl pkcs12 -in keyholder.p12 -passin pass:wixen-test -nokeys -clcerts -out keyholder.pem
+    /// openssl pkcs12 -in keyholder.p12 -passin pass:wixen-test -nocerts -nodes -out keyholder.key
+    /// openssl smime -encrypt -aes256 -binary -outform DER -in inner.txt -out sealed.p7m keyholder.pem
+    /// ```
+    ///
+    /// AES-256 in CBC mode, the key wrapped with RSA in PKCS #1 v1.5. The
+    /// research's probe also opened the same words sealed with RSA-OAEP and as
+    /// `authEnvelopedData` with AES-GCM; this is the first of the three because
+    /// it is what OpenSSL and most mail programs write when nothing is asked.
+    pub(super) const ENVELOPE_FOR_THE_KEYHOLDER: &str = "
+        MIICFwYJKoZIhvcNAQcDoIICCDCCAgQCAQAxggFuMIIBagIBADBSMDoxHTAbBgNVBAMMFFdpeGVu
+        IFRlc3QgQXV0aG9yaXR5MRkwFwYDVQQKDBBXaXhlbiBNYWlsIFRlc3RzAhRSwENM6oa/b6Do66ne
+        oaK95G5tjzANBgkqhkiG9w0BAQEFAASCAQAEiaT1LQMyB8lt7eEdo35z72XmTrcrUyBr6HfH9hAH
+        BuYlDqaWsaSagpQ43fr6LYaBOXjOgxWoyEilhj7NeKy81ZwLOWMWQ478hk7QdvRPK67Ubbi6nv4U
+        ZRmIRfWPXhQN3iJst8YDnYB/sEliF7aM/2XEHRDqCys9Di6rnXETOVoZ1uXEYrbY56Z543CtnwSi
+        cw4ARFAA9oxVvqUIZdQhPS2pFVCBplAFz1QuMBPZXcFh0b3OPxaLi9HXOYwwlTlQTHajMfoXZzJ/
+        gm6fGAPm4WnTNsoSnO18Lf1zm5gE7pEX4PnGwsBcYqwEaIMtuHaRdi0Dtfba61BpBT6WvFoEMIGM
+        BgkqhkiG9w0BBwEwHQYJYIZIAWUDBAEqBBBn+7ZTx558LeQkLiU2LrjogGDgF02579tXjaimi32N
+        ZRJiH1tNDB8zHA4GBhTd4WBtFUE77v/r9P5BaWeKObTsnRvO0wfNnOwQ93iNHZIKpxPyzi0VHWkI
+        JWNKJZDy5HBySMabTxxgT/QGCxUexB681BE=";
+
+    /// A message signed by the keyholder and then sealed for the keyholder, by
+    /// OpenSSL 3.5.7 on 2026-09-26, as DER.
+    ///
+    /// Signed the usual way, the words beside the signature, from a body
+    /// written with bare line feeds so OpenSSL canonicalises it:
+    ///
+    /// ```text
+    /// openssl smime -sign -signer keyholder.pem -inkey keyholder.key -in body.txt -out signed.eml
+    /// openssl smime -encrypt -aes256 -binary -outform DER -in signed.eml -out sealed.p7m keyholder.pem
+    /// ```
+    ///
+    /// One repair between the two, which is worth knowing before remaking it:
+    /// the Windows build of OpenSSL writes `signed.eml` in text mode, so the
+    /// signed part came out with each carriage return doubled. Those were put
+    /// back to one each, and `openssl smime -verify -noverify -binary` checked
+    /// the result before it was sealed.
+    pub(super) const SIGNED_THEN_SEALED_FOR_THE_KEYHOLDER: &str = "
+        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
+        aOqk+C6oWrx1Kq5MMPNPTj9mjNEoLw==";
+
+    /// A covering note and an invitation, sealed together for the keyholder by
+    /// OpenSSL 3.5.7 on 2026-09-26, as DER.
+    ///
+    /// Inside, a `multipart/mixed` of "Are you free?" and `invite.ics`, a
+    /// `REQUEST` for version 2 of meeting `m-1@example.com` at nine on
+    /// 2026-03-05, organised by ada@example.com and addressed to
+    /// me@example.com: the invitation `reading_a_message`'s own tests store in
+    /// the clear, so the two can be told apart only by where it was found.
+    /// Sealed the same way as the envelope above:
+    ///
+    /// ```text
+    /// openssl smime -encrypt -aes256 -binary -outform DER -in invite.eml -out sealed.p7m keyholder.pem
+    /// ```
+    pub(super) const AN_INVITATION_SEALED_FOR_THE_KEYHOLDER: &str = "
+        MIIECgYJKoZIhvcNAQcDoIID+zCCA/cCAQAxggFuMIIBagIBADBSMDoxHTAbBgNVBAMMFFdpeGVu
+        IFRlc3QgQXV0aG9yaXR5MRkwFwYDVQQKDBBXaXhlbiBNYWlsIFRlc3RzAhRSwENM6oa/b6Do66ne
+        oaK95G5tjzANBgkqhkiG9w0BAQEFAASCAQA4vRpIsq321RkGWim/+SuixtIjSwjh8UaBgL7muzxJ
+        7BSB/izjvPCKixb+NNSgSmMPO+RroKIbTmUs+yHQLGy8db+5bXGxiPmlhVVE7s6N7wyH+IHcs//d
+        Y2qkfNpIvqcS8iNa49N5ZArk+wa8HUdRWOClMP3FU20o38Wv7n7ffT7bS2HRa4KtuHGOZezsiMuc
+        iyC5ovzLl2zZv0XcUSDqiAdEObnwQRJiRHFgVv1p3lAnUAZ5A7Oo70FDiu/B8vAn/lqYqu7XXzzd
+        7Zwwu8cHkGejh12lfR1sJ1c66Wc+u30S2e0P1G+XkhQsKTlxb7YOTevI3x7Ro10mzPCt4YQTMIIC
+        fgYJKoZIhvcNAQcBMB0GCWCGSAFlAwQBKgQQpmq4h4QwAdExfm6/E6TboICCAlA1VhYMm6mUHQ2N
+        pbx1bNWYD0vskApsDFvx/lulLBaEppdyFrZqVdrl8s/+Ae/PRT4QGiRxSOsZkCR4m3v/Mgeb7OFx
+        FEV5C0MNpc9sDsLXYF11yQ7hWw2UvSHp/eb0uaEyDli8vcHcb93jTz/FdvG5vSChl7ur38s2nm03
+        uF4/wUZ0bBeutLCRJRrGYCRv/NJB0MCV7oQegmvgsIWud35uVxFrdflfJ6o/f1Iwd7axwQTLZHCN
+        NOUzgiePwRRxSdNYBnO464bRJg98+Wgg85YbX9SE2wSkRR8x7OJojtYAjiXNfqsrmYBCAavXQhiP
+        5iUE2+Rk/7EICUPC6Deug61W8e6eqQ1NB8/nWKnAedB8B6upBBn/tnrORZ8SLzLu3l3rVoPz85Pl
+        CsaRq2+HxDgv0AzJTbO3l/nqAtogdxtvhQLzPpvmN2ZzRVPOzb/UdFZ6xqoWX8L4wntxSKit8qwN
+        jLtAEaIJczA5WPzakfOgTRAfrChyIW/qGK3w3yEtobdrR2siW6LU7XrbfbAx+ynqiGqrT1OBvOQV
+        L0h+q+fEsIOsXsT1tP1S7MAXwIJ8dNfRf4L3ZnXIe0PnNy9ACg9Ruo7zKmTt5+C5Y83bXjsPG44w
+        bMH0Rral090FJL112xh/MHSUYqbOstBY/jeFQsEUXZWCDPOXA2xtc5NDv3McsS+WLmvr/h4IhEfC
+        BX+qV+7ahAO4ME0Uu5O3dxUQ58TNpiuCQDEdLT1fMez8NhFpoP9lTigcJlnJOQYTyR+Fw7Ks5tli
+        tnU+sAQw3Lg7SM6S";
 
     /// The bytes a fixture stands for.
     pub(super) fn message(encoded: &str) -> Vec<u8> {
@@ -5543,18 +5941,10 @@ mod tests {
         // sentence exists to prevent.
         let envelope = envelope_of(ENCRYPTED_TO_ALICE);
 
-        for asked in [Some(true), Some(false), None] {
-            let said = envelope.spoken(asked);
-            assert!(said.contains("encrypted"), "{said}");
-            assert!(said.contains("cannot open it"), "{said}");
-        }
-        assert!(envelope.spoken(Some(true)).contains("holds a certificate"));
-        assert!(
-            envelope
-                .spoken(Some(false))
-                .contains("not encrypted to any")
-        );
-        assert!(envelope.spoken(None).contains("1 certificate"));
+        let said = envelope.spoken();
+        assert!(said.contains("encrypted"), "{said}");
+        assert!(said.contains("cannot open it"), "{said}");
+        assert!(said.contains("addressed to 1 certificate."), "{said}");
     }
 
     #[test]
@@ -5570,38 +5960,124 @@ mod tests {
         // It has stopped being true. `service::pgp` opens PGP mail, in the
         // same plan as this. So the sentence says what is true of the message
         // in front of somebody, which was always the stronger thing to say.
-        let envelope = envelope_of(ENCRYPTED_TO_ALICE);
+        let said = envelope_of(ENCRYPTED_TO_ALICE).spoken();
 
-        for asked in [Some(true), Some(false), None] {
-            let said = envelope.spoken(asked);
-            assert!(
-                !said.contains("encrypted mail"),
-                "a claim about every encrypted message, not this one: {said}"
+        assert!(
+            !said.contains("encrypted mail"),
+            "a claim about every encrypted message, not this one: {said}"
+        );
+    }
+
+    // ── Opening an envelope ──────────────────────────────────────────────
+
+    /// The keyholder's key, in a store that lives in this process only.
+    #[cfg(target_os = "windows")]
+    pub(super) fn the_keyholders_store() -> windows_store::WindowsCertificateStore {
+        windows_store::WindowsCertificateStore::holding_only_in_memory(
+            &message(A_KEY_AND_ITS_CERTIFICATE),
+            THE_TEST_KEYS_PASSWORD,
+        )
+        .expect("a key and a certificate that Windows will take")
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_envelope_made_for_the_keyholder_opens_with_the_key_held_in_memory() {
+        // Until this, nothing here had ever decrypted anything, and the refusal
+        // said so because it could not be tested. It can: Windows opens an
+        // envelope with a key imported into this process and nowhere else.
+        let opened = the_keyholders_store().open_the_envelope(&message(ENVELOPE_FOR_THE_KEYHOLDER));
+
+        assert_eq!(
+            opened,
+            WhatTheEnvelopeHeld::Opened(WHAT_THE_KEYHOLDERS_ENVELOPE_HOLDS.to_vec()),
+            "the bytes inside are not the ones OpenSSL sealed"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_envelope_offered_to_a_store_holding_no_key_for_it_is_not_addressed_here() {
+        // The person's own store, which the test above never writes to, so it
+        // holds no key for the keyholder's certificate on any machine.
+        let offered = windows_store::WindowsCertificateStore::the_persons_own()
+            .open_the_envelope(&message(ENVELOPE_FOR_THE_KEYHOLDER));
+
+        assert_eq!(offered, WhatTheEnvelopeHeld::NotAddressedToACertificateHere);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_envelope_to_somebody_else_is_not_addressed_here_though_a_key_is_held() {
+        // Alice's envelope names another serial. A store that holds a key is
+        // not thereby a store that holds her key.
+        let raw = message(ENCRYPTED_TO_ALICE);
+        let (headers, body) = split_headers_from_body(&raw);
+        let alices = decode_body(headers, body).expect("the envelope decodes");
+
+        assert_eq!(
+            the_keyholders_store().open_the_envelope(&alices),
+            WhatTheEnvelopeHeld::NotAddressedToACertificateHere
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_damaged_envelope_is_said_to_be_damaged_and_never_opens() {
+        // Measured on 2026-09-26. The last byte of the ciphertext breaks the
+        // padding and Windows answers 0xC000003E; a byte of the wrapped key
+        // makes the key unwrap fail with 0x80090027; a cut makes 0x80093102.
+        //
+        // Not every changed byte is refused, and this is the reason the case
+        // changes the last one. A byte changed earlier in the ciphertext opens,
+        // to words that differ from the ones sealed, because an envelope in
+        // this mode carries nothing that says the words were not changed.
+        // Only a signature says that.
+        let whole = message(ENVELOPE_FOR_THE_KEYHOLDER);
+        let store = the_keyholders_store();
+        let changed_at = |at: usize| {
+            let mut bytes = whole.clone();
+            bytes[at] ^= 1;
+            bytes
+        };
+
+        for (what, bytes) in [
+            ("the last byte changed", changed_at(whole.len() - 1)),
+            ("a byte of the wrapped key changed", changed_at(200)),
+            ("cut short", whole[..whole.len() - 20].to_vec()),
+            ("no bytes at all", Vec::new()),
+        ] {
+            assert_eq!(
+                store.open_the_envelope(&bytes),
+                WhatTheEnvelopeHeld::Damaged,
+                "{what}"
             );
         }
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
-    fn test_opening_an_encrypted_message_is_refused_in_words_rather_than_pretended() {
-        // The one thing here that is not built. It has to fail loudly, because
-        // a silent empty answer looks exactly like an empty message.
-        let store = this_computers_certificates();
-        let recipient = Recipient {
-            issuer: Vec::new(),
-            serial: Vec::new(),
-            key_wrapping_algorithm: oid::RSA_ENCRYPTION.to_string(),
-            wrapped_key: vec![1, 2, 3],
+    fn test_an_envelope_wrapping_a_signature_opens_to_a_message_the_checker_reads_as_signed() {
+        // Signed first and sealed after, the way Outlook sends both. What comes
+        // out of the envelope is a whole signed message, and the checker that
+        // reads any other signed message reads this one.
+        let WhatTheEnvelopeHeld::Opened(inside) = the_keyholders_store()
+            .open_the_envelope(&message(SIGNED_THEN_SEALED_FOR_THE_KEYHOLDER))
+        else {
+            panic!("the envelope around the signed message did not open");
         };
 
-        let refused = store
-            .unwrap_content_key(&recipient)
-            .expect_err("nothing here can open an encrypted message");
+        let report = examine_signed_message(
+            &inside,
+            "keyholder@example.com",
+            while_the_certificate_was_good(),
+        );
 
-        assert!(
-            refused
-                .to_string()
-                .contains("cannot open an S/MIME encrypted message yet"),
-            "{refused}"
+        assert_eq!(
+            report.outcome,
+            SignatureOutcome::Matches,
+            "{:?}",
+            report.findings
         );
     }
 

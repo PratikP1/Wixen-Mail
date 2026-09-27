@@ -453,3 +453,168 @@ fn test_the_body_cut_stops_at_the_function_it_is_about() {
         "the cut ran past the end of the function and read the next one"
     );
 }
+
+// ── An S/MIME envelope that opened here ──────────────────────────────────────
+
+#[test]
+fn test_an_opened_envelope_is_said_above_its_words_and_above_the_signature() {
+    // Read through the public composition every reader surface uses: the
+    // words inside take the body's place, the sentence saying it opened and
+    // that opening is experimental goes above them, and in the bar it sits
+    // above "More about this signature:", which is where the reader stops
+    // speaking. A sentence below that line is on screen and never heard.
+    use wixen_mail::application::answering::AnswerButtons;
+    use wixen_mail::application::checking_signatures::SignatureCheck;
+    use wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays;
+    use wixen_mail::application::invitations::WhatTheInvitationSays;
+    use wixen_mail::application::reading_a_message;
+    use wixen_mail::common::types::MessageBody;
+    use wixen_mail::presentation::date_display::{
+        Clock, DateOrder, DateSettings, DateStyle, DateWording,
+    };
+    use wixen_mail::presentation::read_aloud::Reading;
+    use wixen_mail::presentation::reader_text;
+    use wixen_mail::presentation::ui_types::MessageItem;
+
+    const THE_WORDS: &str = "The meeting moves to Thursday. Bring the figures.";
+    const THE_SENTENCE: &str =
+        "This message was encrypted to your certificate and was opened here.";
+    let shown = reading_a_message::put_together(
+        MessageBody::Plain(String::new()),
+        WhatTheEnvelopeSays::Opened {
+            body: MessageBody::Plain(THE_WORDS.to_string()),
+            parts: Vec::new(),
+            inside: Vec::new(),
+        },
+        WhatTheInvitationSays::Nothing,
+        AnswerButtons::NotAsked,
+        // A signature the form was not kept for, which is the shortest way to
+        // put the line the reader stops at into the bar.
+        SignatureCheck::NotKept,
+    );
+    let item = MessageItem {
+        subject: "Figures".to_string(),
+        from: "Keyholder <keyholder@example.com>".to_string(),
+        ..Default::default()
+    };
+    let reading = Reading {
+        dates: DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        },
+        now: chrono::Local::now(),
+    };
+
+    let document =
+        reader_text::single_message(&item, &shown.body, reading).with_what_is_said(&shown.said);
+
+    let bar = document
+        .warning
+        .as_deref()
+        .expect("an opened envelope says so");
+    assert!(
+        bar.contains("More about this signature:"),
+        "the fixture did not put the line the reader stops at into the bar: {bar}"
+    );
+    assert!(
+        reader_text::said_before_the_message(bar).contains(THE_SENTENCE),
+        "the sentence is below the line the reader stops at: {bar}"
+    );
+    let sentence_at = document
+        .text
+        .find(THE_SENTENCE)
+        .unwrap_or_else(|| panic!("the sentence is not in the text: {}", document.text));
+    let words_at = document
+        .text
+        .find(THE_WORDS)
+        .unwrap_or_else(|| panic!("the words are not in the text: {}", document.text));
+    assert!(
+        sentence_at < words_at,
+        "the sentence comes after the words it is about: {}",
+        document.text
+    );
+}
+
+#[test]
+fn test_an_opened_envelope_with_no_words_says_it_opened_and_not_that_nothing_arrived() {
+    // An envelope holding only a file, which is how some senders seal one. It
+    // opened, so "This message has no text, or it has not been downloaded
+    // yet" would be half false and send somebody to fetch it again; the
+    // sentence that it opened stands where that would have been.
+    use wixen_mail::application::answering::AnswerButtons;
+    use wixen_mail::application::checking_signatures::SignatureCheck;
+    use wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays;
+    use wixen_mail::application::invitations::WhatTheInvitationSays;
+    use wixen_mail::application::reading_a_message;
+    use wixen_mail::common::types::MessageBody;
+    use wixen_mail::presentation::date_display::{
+        Clock, DateOrder, DateSettings, DateStyle, DateWording,
+    };
+    use wixen_mail::presentation::read_aloud::Reading;
+    use wixen_mail::presentation::reader_text;
+    use wixen_mail::presentation::ui_types::MessageItem;
+
+    let shown = reading_a_message::put_together(
+        MessageBody::Plain(String::new()),
+        WhatTheEnvelopeSays::Opened {
+            body: MessageBody::Plain(String::new()),
+            parts: Vec::new(),
+            inside: Vec::new(),
+        },
+        WhatTheInvitationSays::Nothing,
+        AnswerButtons::NotAsked,
+        SignatureCheck::NotSigned,
+    );
+    let reading = Reading {
+        dates: DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        },
+        now: chrono::Local::now(),
+    };
+
+    let document = reader_text::single_message(&MessageItem::default(), &shown.body, reading)
+        .with_what_is_said(&shown.said);
+
+    assert!(
+        !document.text.contains("not been downloaded"),
+        "{}",
+        document.text
+    );
+    assert!(
+        document.text.contains("was opened here"),
+        "{}",
+        document.text
+    );
+}
+
+#[test]
+fn test_a_file_inside_an_opened_envelope_is_taken_from_the_envelope() {
+    // The reader lists the files inside an opened envelope, and the one place
+    // a file's bytes are fetched for saving or reading has to take such a file
+    // from the envelope, opened again, rather than from the message's own
+    // files, which hold only the envelope. A source reading, because the
+    // fetch runs on a worker against the profile's own store.
+    const THE_FETCH: &str = "fn bytes_of_the_attachment(";
+    const THE_ENVELOPE_ASKED: &str = "encrypted_mail::the_file_inside(";
+    const THE_ROW_SAYS_WHERE: &str = ".inside_the_envelope";
+
+    let source = fs::read_to_string("src/presentation/wx_app.rs")
+        .expect("the window's source to be readable")
+        .replace("\r\n", "\n");
+    let lines = the_shipping_lines_of(&source);
+    let body = the_body_of(&lines, THE_FETCH);
+
+    for wanted in [THE_ROW_SAYS_WHERE, THE_ENVELOPE_ASKED] {
+        assert!(
+            body.iter().any(|(_, line)| code_of(line).contains(wanted)),
+            "`{THE_FETCH}` in src/presentation/wx_app.rs never reaches `{wanted}`, so saving \
+             or reading a file from an opened envelope hands over the message's own file at \
+             that place, which is the envelope or nothing"
+        );
+    }
+}

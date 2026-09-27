@@ -436,6 +436,7 @@ fn attachments_of(message: &MessageItem) -> Vec<ReaderAttachment> {
             size: item.size,
             description: item.description.clone(),
             kind_the_message_gave: None,
+            inside_the_envelope: false,
         })
         .collect()
 }
@@ -458,9 +459,39 @@ fn named_from(says: &WhatTheInvitationSays, attachments: &mut [ReaderAttachment]
 /// Per message, because a conversation holds a decision per message and one
 /// list covers all of them.
 fn attachments_of_part(part: &ConversationPart) -> Vec<ReaderAttachment> {
-    let mut attachments = attachments_of(&part.message);
+    let mut attachments = if part.said.envelope.is_opened() {
+        the_files_inside(part)
+    } else {
+        attachments_of(&part.message)
+    };
     named_from(&part.said.invitation, &mut attachments);
     attachments
+}
+
+/// The files inside an envelope that opened, listed in place of the envelope.
+///
+/// The envelope is the one file an encrypted message carries in the clear,
+/// and there is nothing in it anybody could open. Each file inside is found
+/// again by its place among the files inside, from the envelope opened again,
+/// because none of them is kept.
+fn the_files_inside(part: &ConversationPart) -> Vec<ReaderAttachment> {
+    part.said
+        .envelope
+        .parts_inside()
+        .iter()
+        .enumerate()
+        .map(|(index, file)| ReaderAttachment {
+            message_row_id: part.message.message_id,
+            uid: part.message.uid,
+            index,
+            name: file.described.display_name(),
+            mime_type: file.described.mime_type.clone(),
+            size: file.described.size,
+            description: file.described.description.clone(),
+            kind_the_message_gave: None,
+            inside_the_envelope: true,
+        })
+        .collect()
 }
 
 /// The warning shown above a message, when it has earned one.
@@ -746,7 +777,20 @@ pub fn conversation_html(subject: &str, parts: &[ConversationPart]) -> String {
     // same composition. Two of them would be two chances to disagree about
     // what level a reply is at, and the whole point of this surface is that
     // the levels are right.
-    HtmlRenderer::new().render_thread(subject, &thread_parts(parts))
+    the_renderer_for(parts, HtmlRenderer::new()).render_thread(subject, &thread_parts(parts))
+}
+
+/// The renderer a page of these messages is built with: one that fetches no
+/// picture when any of them was opened from its encryption here.
+///
+/// The whole page and not only that message's part, because a page is one
+/// document and one fetch from it is enough to say it opened (T-13-14-01).
+fn the_renderer_for(parts: &[ConversationPart], renderer: HtmlRenderer) -> HtmlRenderer {
+    if parts.iter().any(|part| part.said.envelope.is_opened()) {
+        renderer.for_mail_opened_from_encryption()
+    } else {
+        renderer
+    }
 }
 
 /// The parts as the page renderer takes them.
@@ -813,7 +857,11 @@ pub fn preview_html(subject: &str, parts: &[ConversationPart]) -> String {
             top.to_string()
         }
     });
-    HtmlRenderer::new().render_thread_under_a_bar(bar.as_deref(), subject, &thread_parts(parts))
+    the_renderer_for(parts, HtmlRenderer::new()).render_thread_under_a_bar(
+        bar.as_deref(),
+        subject,
+        &thread_parts(parts),
+    )
 }
 
 /// What the preview says in place of the account of a signature check.
@@ -1346,6 +1394,13 @@ pub struct ReaderAttachment {
     /// say which. `None` for every other attachment, whose kind is read from
     /// its type.
     pub kind_the_message_gave: Option<&'static str>,
+    /// Whether this is a file inside an envelope opened here, found by its
+    /// place among the files inside rather than among the message's own.
+    ///
+    /// Such a file is never kept on this computer, so the message's store and
+    /// the server both hold only the envelope: its bytes come from opening the
+    /// envelope again when somebody saves or reads it.
+    pub inside_the_envelope: bool,
 }
 
 impl ReaderAttachment {
@@ -1740,7 +1795,8 @@ impl ReaderDocument {
         self
     }
 
-    /// Say why an S/MIME encrypted message has nothing in it.
+    /// Say what became of an S/MIME encrypted message: opened here, or why it
+    /// has nothing in it.
     ///
     /// [`WhatTheEnvelopeSays::NotEncrypted`] for nearly all mail, and then
     /// nothing changes anywhere, which is [`with_encryption`](Self::with_encryption)'s
@@ -1783,7 +1839,18 @@ impl ReaderDocument {
         let Some(sentence) = says.said() else {
             return self;
         };
-        self.text = instead_of_nothing_to_read(&self.text, sentence);
+        // An envelope that opened to words is the one case with words below:
+        // they are the body now, so the sentence goes between the header lines
+        // and the first of them, the way a meeting's does. Every other
+        // sentence, an opened envelope holding only files among them, stands
+        // where the body would otherwise say there is no text or that it has
+        // not been downloaded, which is false about all of them.
+        let nothing_below = self.text.ends_with(&format!("{}\n", nothing_to_read()));
+        if says.is_opened() && !nothing_below {
+            self = self.said_above_the_body(sentence);
+        } else {
+            self.text = instead_of_nothing_to_read(&self.text, sentence);
+        }
         self.warning = Some(match self.warning.take() {
             // Under what the filter said, the way a signature verdict goes
             // under it. A bar that reshuffles itself by how bad the news is has
@@ -2069,6 +2136,7 @@ mod tests {
             size,
             description: WhatTheSenderSaid::Nothing,
             kind_the_message_gave: None,
+            inside_the_envelope: false,
         }
     }
 
@@ -4425,6 +4493,87 @@ mod encryption_tests {
             assert!(!sentence.contains("  "), "{sentence}");
         }
     }
+
+    // ── An envelope that opened here ─────────────────────────────────────
+
+    /// A message whose envelope opened, carrying `body` and one file inside,
+    /// and in the clear only the envelope itself.
+    fn opened_from_its_envelope(body: MessageBody) -> ConversationPart {
+        let inside = "Content-Type: multipart/mixed; boundary=\"sealed\"\r\n\r\n--sealed\r\n\
+             Content-Type: text/plain\r\n\r\nThe figures.\r\n--sealed\r\n\
+             Content-Type: text/csv\r\n\
+             Content-Disposition: attachment; filename=\"figures.csv\"\r\n\r\n\
+             month,total\r\nMarch,12\r\n--sealed--\r\n"
+            .as_bytes()
+            .to_vec();
+        let mut message = super::tests::message();
+        message.attachments = vec![crate::presentation::ui_types::AttachmentItem {
+            filename: "smime.p7m".to_string(),
+            mime_type: "application/pkcs7-mime".to_string(),
+            size: 900,
+            description: WhatTheSenderSaid::Nothing,
+        }];
+        ConversationPart {
+            message,
+            body: body.clone(),
+            said: WhatIsSaidAboutIt {
+                envelope: crate::application::encrypted_mail::WhatTheEnvelopeSays::Opened {
+                    body,
+                    parts: crate::service::mime::attachments_with_bytes(&inside)
+                        .expect("the fixture's files"),
+                    inside,
+                },
+                ..WhatIsSaidAboutIt::nothing()
+            },
+            depth: 0,
+        }
+    }
+
+    #[test]
+    fn test_a_page_holding_an_opened_envelope_fetches_no_picture_whatever_the_setting_says() {
+        // Asked of a renderer allowed to fetch, so the answer is the page's
+        // own and not this machine's setting. The same body in the clear
+        // fetches its picture, which is what says the rule decides (T-13-14-01).
+        use crate::application::pictures::Fetching;
+        let body = MessageBody::Html(
+            "<p>The figures.</p>\
+             <img src=\"https://tracker.example.com/chart.png\" alt=\"chart\" width=\"400\">"
+                .to_string(),
+        );
+        let opened = [opened_from_its_envelope(body.clone())];
+        let in_the_clear = [ConversationPart {
+            said: WhatIsSaidAboutIt::nothing(),
+            ..opened[0].clone()
+        }];
+
+        let page = |parts: &[ConversationPart]| {
+            the_renderer_for(parts, HtmlRenderer::with_fetching(Fetching::Allowed))
+                .render_thread("Figures", &thread_parts(parts))
+        };
+
+        assert!(
+            page(&in_the_clear).contains("src=\"https://tracker.example.com/chart.png\""),
+            "the fixture's picture is not one a page in the clear fetches"
+        );
+        let held = page(&opened);
+        assert!(!held.contains("tracker.example.com"), "{held}");
+        assert!(held.contains("never fetched"), "{held}");
+    }
+
+    #[test]
+    fn test_the_files_inside_an_opened_envelope_are_the_files_listed() {
+        // The envelope is the one file the message carried in the clear, and
+        // nothing in it is anybody's to open. What is listed is what was
+        // inside, each found by its place among the files inside.
+        let part = opened_from_its_envelope(MessageBody::Plain("The figures.".to_string()));
+
+        let listed = attachments_in(&[part]);
+
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        assert_eq!(listed[0].name, "figures.csv");
+        assert_eq!(listed[0].index, 0);
+        assert!(listed[0].inside_the_envelope);
+    }
 }
 
 /// What a text attachment's tab is made of.
@@ -4514,6 +4663,7 @@ mod picture_preview_tests {
             size: 240 * 1024,
             description: said,
             kind_the_message_gave: None,
+            inside_the_envelope: false,
         }
     }
 
@@ -4706,6 +4856,7 @@ mod picture_shown_tests {
             size: 4096,
             description: said,
             kind_the_message_gave: None,
+            inside_the_envelope: false,
         }
     }
 

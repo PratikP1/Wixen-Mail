@@ -663,6 +663,7 @@ a meeting, so a change from anybody else is said and never applied.
 | Either, from somebody other than the organiser | Nothing on your calendar changes, and the bar says who it came from and who the organiser is. |
 | Either, for a meeting your calendar does not record an organiser for | Nothing changes, and the bar says the meeting on your calendar does not say who organised it. A meeting put on your calendar by an earlier version records nobody until your calendar provider sends it again, or you answer it here. |
 | Either, for a repeating meeting | Nothing changes, and the bar says changing one day of a repeating meeting is not done here yet, because applied to the series it would change every day. |
+| Either, inside an encrypted message | Your calendar is left as it was, and the bar says the change came inside encrypted mail, which is never applied on opening. [Signed and encrypted mail](#signed-and-encrypted-mail) says why. |
 
 The preview pane never changes your calendar. It says what the message is,
 as above, because it opens a message just by moving past it, and a meeting
@@ -682,6 +683,48 @@ meeting from somebody in another zone is said at the hour they wrote. A
 message whose text was downloaded in the background before this version has no
 record of its attachments, and opening it does not make one, so it lists none
 and its meeting is not said.
+
+### Signed and encrypted mail
+
+A message can be encrypted to a certificate, so that only somebody holding the
+certificate's key can read it. This is S/MIME, the kind Outlook and most
+workplace mail use. When one arrives, Wixen Mail offers it to the certificates
+in your Windows certificate store, and Windows opens it with the key there.
+Opening encrypted mail is experimental.
+
+The bar above the message says one of four things, and the same sentence is at
+the top of the message itself:
+
+| The sentence | What it means, and what to do |
+|---|---|
+| This message was encrypted to your certificate and was opened here. Opening encrypted mail is experimental. | It opened. Its words are below and its files are in the attachment list, as in any message. |
+| This message is encrypted to a certificate this computer does not hold a key for, so it cannot be opened here. | It was sent to a certificate whose key is on another computer, or to somebody else. Open it where that key is, or ask the sender to send it to a certificate you hold. |
+| This message is encrypted to a certificate on this computer, and Windows would not let its key be used, so it was not opened. | The key is here and Windows would not use it: a prompt was cancelled, a PIN was wrong, or the card holding the key is not in its reader. Open the message again once the key can be used. |
+| This message is encrypted, and what arrived is damaged, so it cannot be opened. | The message was changed or cut short on the way. Ask the sender to send it again. |
+
+An encrypted message is opened again every time you read it, and what was
+inside is never stored: the mail kept on this computer holds the message
+still encrypted. Two things follow. Search does not look inside encrypted
+mail, so a word that is only in an encrypted message is not found. And a file
+inside one is opened from the message again each time you save or read it.
+
+Pictures in encrypted mail are never fetched, whatever the Reading tab says,
+because fetching one would tell the sender the message was opened here. The
+message says how many were not shown and why. A meeting inside encrypted mail
+is said and can be answered with its buttons, as any other can, and an
+organiser's update or cancellation inside one is said and never applied when
+you open it.
+
+A message that was signed and then encrypted has its signature checked once it
+opens, and the signature is said the way any signature is.
+
+What this does not do yet: no encrypted message from Outlook or Thunderbird,
+and no certificate somebody really uses, has been opened here; the messages
+tested were made with OpenSSL for a key held only while the tests run. A key
+that asks for a PIN or a password, or that lives on a smart card, has not been
+tried, so what Windows shows then is not known. A picture sent inside an
+encrypted message is not shown yet, and it is counted among the pictures not
+shown. Sending signed or encrypted mail is not built.
 
 ### Message Actions
 

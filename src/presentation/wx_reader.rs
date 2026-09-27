@@ -1192,6 +1192,7 @@ mod tests {
             size: 1024,
             description: crate::service::mime::WhatTheSenderSaid::Nothing,
             kind_the_message_gave: None,
+            inside_the_envelope: false,
         }
     }
 

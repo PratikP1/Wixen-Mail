@@ -82,6 +82,23 @@ pub enum Why {
     ChangesAreOff,
     /// The move was decided and the calendar could not be written to.
     CouldNotBeSaved,
+    /// It came inside an envelope opened here, and opening encrypted mail
+    /// never changes anything on its own (decision 14 of phase 13).
+    InsideEncryptedMail,
+}
+
+/// Where the meeting a message describes was found.
+///
+/// Asked because a change that follows from opening a message is something
+/// other people can see: a calendar a provider shares, a free or busy answer.
+/// Made from inside an envelope, it would say to whoever sent the envelope that
+/// it opened, which is the signal decrypted mail must never give.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhereItWasFound {
+    /// Among the files the message carried in the clear.
+    InTheMessage,
+    /// Inside an envelope opened here.
+    InsideEncryptedMail,
 }
 
 /// The calendar's copy of the meeting a message names, and the two facts about
@@ -144,6 +161,10 @@ impl Why {
                  Changes."
             ),
             Why::CouldNotBeSaved => format!("{NOT_CHANGED} it could not be written to."),
+            Why::InsideEncryptedMail => format!(
+                "{NOT_CHANGED} this change came inside encrypted mail, and opening encrypted \
+                 mail never changes your calendar on its own."
+            ),
         }
     }
 }
@@ -163,20 +184,22 @@ const CALLED_OFF: &str = "cancelled";
 ///
 /// `asked` is what the message's calendar document asks, `invitation` the
 /// meeting it describes, `held` the calendar's copy of that meeting when there
-/// is one, `sender` the message's From as its header carried it, `allowed`
-/// what the account it arrived on may change, and `dates` how this reader
-/// words a date.
+/// is one, `sender` the message's From as its header carried it, `found` where
+/// the meeting was found, `allowed` what the account it arrived on may change,
+/// and `dates` how this reader words a date.
 ///
 /// What the message would change is asked first, so a message that would
 /// change nothing says nothing: a reason not to apply a change nobody asked
-/// for is a sentence to listen past on every message. Then who sent it, before
-/// whether changes are allowed, because a stranger's message is the reason
-/// that matters and switching changes on would not make it apply.
+/// for is a sentence to listen past on every message. Then where it was found,
+/// because a change inside encrypted mail is never made on opening. Then who
+/// sent it, before whether changes are allowed, because a stranger's message is
+/// the reason that matters and switching changes on would not make it apply.
 pub fn what_opening_it_changes(
     asked: WhatItAsks,
     invitation: &Invitation,
     held: Option<TheCalendarsCopy<'_>>,
     sender: &str,
+    found: WhereItWasFound,
     allowed: Allowed,
     dates: DateSettings,
 ) -> MeetingChange {
@@ -186,6 +209,11 @@ pub fn what_opening_it_changes(
     let Some(wanted) = what_it_would_change(asked, invitation, &held, dates) else {
         return MeetingChange::Nothing;
     };
+    // Before who sent it: a change found inside encrypted mail is not made
+    // whoever sent it, organiser or not, so no other reason is the one to say.
+    if found == WhereItWasFound::InsideEncryptedMail {
+        return MeetingChange::SaidNotApplied(Why::InsideEncryptedMail);
+    }
     if let Some(why) = why_it_is_not_applied(&held, sender, allowed) {
         return MeetingChange::SaidNotApplied(why);
     }
@@ -405,6 +433,24 @@ mod tests {
         organiser: Option<&str>,
         answered_version: Option<u32>,
     ) -> MeetingChange {
+        opening_found(
+            WhereItWasFound::InTheMessage,
+            document,
+            sender,
+            copy,
+            organiser,
+            answered_version,
+        )
+    }
+
+    fn opening_found(
+        found: WhereItWasFound,
+        document: &str,
+        sender: &str,
+        copy: &CalendarEventEntry,
+        organiser: Option<&str>,
+        answered_version: Option<u32>,
+    ) -> MeetingChange {
         what_opening_it_changes(
             invitations::what_it_asks(document),
             &read(document),
@@ -414,9 +460,61 @@ mod tests {
                 answered_version,
             }),
             sender,
+            found,
             Allowed::EVERYTHING,
             written_out_in_full(),
         )
+    }
+
+    #[test]
+    fn test_a_change_found_inside_encrypted_mail_is_said_and_not_applied() {
+        // The organiser's own update and the organiser's own cancellation,
+        // which would move the meeting and offer its removal in the clear, say
+        // why they do not, because a calendar change made on opening would
+        // tell whoever sealed the message that it opened (T-13-14-02).
+        for document in [THE_UPDATE.to_string(), the_cancellation()] {
+            let change = opening_found(
+                WhereItWasFound::InsideEncryptedMail,
+                &document,
+                ADA,
+                &the_copy(),
+                Some("ada@example.com"),
+                Some(2),
+            );
+
+            assert_eq!(change, not_applied_because(Why::InsideEncryptedMail));
+            assert_eq!(change.offered_removal(), None);
+            assert_eq!(
+                change.said().as_deref(),
+                Some(
+                    "Your calendar was not changed, because this change came inside encrypted \
+                     mail, and opening encrypted mail never changes your calendar on its own."
+                )
+            );
+        }
+        // And a message that would change nothing says nothing, wherever it
+        // was found: an update the calendar already has.
+        let already = the_copy_at_the_updates_time();
+        assert_eq!(
+            opening_found(
+                WhereItWasFound::InsideEncryptedMail,
+                THE_UPDATE,
+                ADA,
+                &already,
+                Some("ada@example.com"),
+                Some(3),
+            ),
+            MeetingChange::Nothing
+        );
+    }
+
+    /// The calendar's copy already at the update's time.
+    fn the_copy_at_the_updates_time() -> CalendarEventEntry {
+        CalendarEventEntry {
+            start_datetime: "2026-03-06T14:00:00".to_string(),
+            end_datetime: "2026-03-06T15:00:00".to_string(),
+            ..the_copy()
+        }
     }
 
     fn not_applied_because(why: Why) -> MeetingChange {
@@ -521,6 +619,7 @@ mod tests {
                     answered_version: Some(2),
                 }),
                 ADA,
+                WhereItWasFound::InTheMessage,
                 Allowed::NOTHING,
                 written_out_in_full(),
             );
@@ -655,6 +754,7 @@ mod tests {
             &read(&the_cancellation()),
             None,
             ADA,
+            WhereItWasFound::InTheMessage,
             Allowed::EVERYTHING,
             written_out_in_full(),
         );
@@ -697,6 +797,7 @@ mod tests {
                     answered_version: Some(2),
                 }),
                 ADA,
+                WhereItWasFound::InTheMessage,
                 Allowed::EVERYTHING,
                 written_out_in_full(),
             );

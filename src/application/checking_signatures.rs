@@ -183,8 +183,11 @@ mod tests {
             Ok(None)
         }
 
-        fn unwrap_content_key(&self, _recipient: &Recipient) -> crate::common::Result<Vec<u8>> {
-            Err(crate::common::Error::Security("not in this test".into()))
+        fn open_the_envelope(
+            &self,
+            _envelope_der: &[u8],
+        ) -> crate::service::signed_mail::WhatTheEnvelopeHeld {
+            crate::service::signed_mail::WhatTheEnvelopeHeld::TheKeyHereRefused
         }
     }
 

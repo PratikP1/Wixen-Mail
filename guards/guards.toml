@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 356 records have arrived since and have not been through it.
+# 362 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2439,8 +2439,8 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
     { file = "src/application/invitations.rs", tests = 50 },
-    { file = "src/application/meeting_changes.rs", tests = 18 },
-    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
@@ -3686,7 +3686,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # ── A runner cannot judge this record, and that is written here rather than
@@ -3717,7 +3717,7 @@ red = [
     "service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # ── The compiler named in two places ────────────────────────────────────────
@@ -12570,7 +12570,7 @@ red = [
     "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 [[guard]]
@@ -12606,7 +12606,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
-    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -16507,7 +16507,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_cancellations_calendar_part_is_called_a_meeting_cancellation",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -16756,8 +16756,8 @@ red = [
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
     { file = "src/application/opening_pgp.rs", tests = 5 },
-    { file = "src/application/reading_a_message.rs", tests = 15 },
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -16785,8 +16785,8 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 13 },
 ]
 
 # The other half-fix, and the one that reads best in a diff. The question is
@@ -16811,8 +16811,8 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 13 },
 ]
 
 # ── A reading gate that admits everything ───────────────────────────────────
@@ -16842,7 +16842,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
     { file = "src/presentation/wx_reader.rs", tests = 14 },
 ]
 
@@ -16876,7 +16876,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -16938,7 +16938,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -17368,7 +17368,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/drafts.rs", tests = 6 },
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
 # ── An empty description quietly becoming a decorative mark ─────────────────
@@ -17496,7 +17496,7 @@ red = [
     "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
 # ── This reader's words reaching somebody else's message ────────────────────
@@ -17540,7 +17540,7 @@ red = [
     "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
 # ── An owner of credential store entries that nobody registered ─────────────
@@ -17647,11 +17647,20 @@ red = [
     # read as saying about its own form goes through the same claim, in a file
     # this record had never named.
     "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
+    # Added 2026-09-26 by 13-14. An envelope is opened only for a message
+    # marked as having arrived encrypted, and these cases mark theirs the way
+    # the fetch path does, through this claim.
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_a_file_inside_is_found_by_its_place_among_the_files_inside",
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_envelope_around_a_signed_message_hands_on_what_was_signed",
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_envelope_for_a_key_held_here_opens_to_its_words_from_the_cache",
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_an_invitation_sealed_for_a_key_here_is_found_by_what_answers_it_and_marked",
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_opening_an_envelope_writes_nothing_to_the_cache",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/application/encrypted_mail.rs", tests = 11 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # ── The sentence reached the bar and the body still said "no text" ──────────
@@ -17690,7 +17699,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # ── A PGP key nobody could import, so no message ever opened ────────────────
@@ -17806,7 +17815,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # ── Undo Send: the hold reaching the row, and the clock letting it go ────────
@@ -18081,9 +18090,12 @@ red = [
     "presentation::html_renderer::tests::test_a_reader_is_told_how_many_were_held_back_and_where_the_switch_is",
     "presentation::html_renderer::tests::test_one_held_back_picture_is_not_reported_in_the_plural",
     "presentation::html_renderer::tests::test_a_message_being_written_is_not_told_its_own_sender_would_have_learned",
+    # Added 2026-09-26 by 13-14: a page of encrypted mail says why its
+    # pictures were held back through the same sentence.
+    "presentation::html_renderer::tests::test_mail_opened_from_encryption_fetches_no_picture_whatever_the_setting_says",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 [[guard]]
 name = "the composer asks for the renderer that does not name a sender"
@@ -18112,7 +18124,7 @@ red = [
     "presentation::html_renderer::tests::test_the_constructor_the_composer_calls_is_the_one_that_stays_quiet",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
 # ── An ordinary message grows nothing ───────────────────────────────────────
@@ -18149,7 +18161,7 @@ red = [
     "presentation::html_renderer::tests::test_a_message_with_nothing_held_back_says_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
 # ── Unblocking one address, by taking off the domain block over it ──────────
@@ -21764,7 +21776,7 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
@@ -21982,7 +21994,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
-    { file = "src/service/signed_mail.rs", tests = 113 },
+    { file = "src/service/signed_mail.rs", tests = 118 },
 ]
 
 # Counting the week from Sunday, which is how a calendar on the wall is
@@ -24768,7 +24780,7 @@ red = [
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
 ]
 
 # The order of the fold: a signature verdict puts "More about this signature:"
@@ -24810,8 +24822,8 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 15 },
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # The preview pane's bar. The reader window and the conversation window put
@@ -24828,14 +24840,16 @@ tests_last_seen = [
 [[guard]]
 name = "the preview pane carries the bar above the message"
 file = "src/presentation/reader_text.rs"
-before = """    HtmlRenderer::new().render_thread_under_a_bar(bar.as_deref(), subject, &thread_parts(parts))"""
-after = """    HtmlRenderer::new().render_thread_under_a_bar(None, subject, &thread_parts(parts))"""
+before = """    the_renderer_for(parts, HtmlRenderer::new()).render_thread_under_a_bar(
+        bar.as_deref(),"""
+after = """    the_renderer_for(parts, HtmlRenderer::new()).render_thread_under_a_bar(
+        None,"""
 red = [
     "presentation::reader_text::encryption_tests::test_the_preview_carries_the_bar_above_the_message",
     "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # A finding about one message of several, said where that message begins.
@@ -24858,7 +24872,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_a_page_of_several_messages_says_where_one_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # The guard that names every surface. It named two of six until 2026-09-16,
@@ -28352,7 +28366,7 @@ red = [
     "test_the_testers_message_shown_as_a_page_has_its_three_addresses_as_links",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
     { file = "tests/an_address_written_out_is_a_link.rs", tests = 11 },
 ]
 
@@ -28398,7 +28412,7 @@ red = [
     "presentation::html_renderer::tests::test_safe_external_url_allows_a_telephone_number_and_refuses_an_empty_one",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
 # ── Pictures shown by default, except the ones that look like trackers ──────
@@ -28526,7 +28540,7 @@ red = [
     "test_the_sending_path_calls_none_of_the_three_rules_and_the_reading_path_calls_all",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
     { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
 ]
 
@@ -28618,7 +28632,7 @@ red = [
     "test_a_message_on_its_way_out_keeps_what_its_writer_hid",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 92 },
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -31455,7 +31469,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 [[guard]]
@@ -31478,7 +31492,7 @@ red = [
     "test_a_signed_invitation_says_the_meeting_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]
 
@@ -31496,7 +31510,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_one_message_of_several_says_its_meeting_under_its_own_heading",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # The kind the message gave put over the one warning that changes what
@@ -31512,7 +31526,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_calendar_part_named_like_a_program_is_still_called_a_program",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # The download of everything writing a message's parts over the ones the
@@ -31533,7 +31547,7 @@ red = [
     "test_a_download_leaves_the_files_the_reader_kept_where_they_are",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
 ]
 
@@ -31558,7 +31572,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 22 },
-    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
     { file = "src/data/message_cache/calendar.rs", tests = 47 },
 ]
 
@@ -31602,7 +31616,7 @@ red = [
     "presentation::reader_text::answer_button_tests::test_why_an_invitation_cannot_be_answered_is_said_above_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # The reader building the three buttons for every tab, answerable or not, which
@@ -31765,7 +31779,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 22 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/reading_a_message.rs", tests = 15 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
     { file = "src/data/message_cache/calendar.rs", tests = 47 },
 ]
 
@@ -31834,7 +31848,7 @@ red = [
     "application::meeting_changes::tests::test_an_update_from_somebody_other_than_the_organiser_moves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 18 },
+    { file = "src/application/meeting_changes.rs", tests = 19 },
 ]
 
 # The Allow Changes question left out, so an account whose calendar changes
@@ -31853,7 +31867,7 @@ red = [
     "application::meeting_changes::tests::test_nothing_changes_while_calendar_changes_are_switched_off",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 18 },
+    { file = "src/application/meeting_changes.rs", tests = 19 },
 ]
 
 # Remove from Calendar deleting the meeting instead of marking it, so a
@@ -31897,7 +31911,7 @@ red = [
     "presentation::reader_text::meeting_change_tests::test_a_move_made_on_opening_is_said_above_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 139 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]
 
 # The preview applying what a message changes, so arrowing past an organiser's
@@ -31933,4 +31947,128 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/page_jumps.rs", tests = 8 },
+]
+
+# An envelope to nobody here read as a key that refused, so a message meant for
+# somebody else tells its reader their own key would not open it, and sends
+# them looking for a key problem they do not have. Written 2026-09-26 by 13-14,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an envelope to nobody here is said to be addressed to nobody here"
+file = "src/service/signed_mail.rs"
+before = """            CRYPT_E_NO_DECRYPT_CERT => WhatTheEnvelopeHeld::NotAddressedToACertificateHere,"""
+after = """            CRYPT_E_NO_DECRYPT_CERT => WhatTheEnvelopeHeld::TheKeyHereRefused,"""
+red = [
+    "service::signed_mail::tests::test_an_envelope_offered_to_a_store_holding_no_key_for_it_is_not_addressed_here",
+    "service::signed_mail::tests::test_an_envelope_to_somebody_else_is_not_addressed_here_though_a_key_is_held",
+    "service::signed_mail::windows_store::tests::test_what_a_refusal_means_is_read_from_the_code_windows_gave",
+]
+tests_last_seen = [
+    { file = "src/service/signed_mail.rs", tests = 118 },
+]
+
+# The envelope's bytes handed back from the call that only sizes them, so every
+# envelope Windows can size "opens" to zeros: the keyholder's words, a message
+# to somebody else and a damaged one alike. Written 2026-09-26 by 13-14,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an opened envelope hands back what windows wrote, not the buffer it sized"
+file = "src/service/signed_mail.rs"
+before = """            let mut inside = vec![0u8; size as usize];
+            let opened = CryptDecryptMessage("""
+after = """            let inside = vec![0u8; size as usize];
+            if size > 0 {
+                return WhatTheEnvelopeHeld::Opened(inside);
+            }
+            let mut inside = inside;
+            let opened = CryptDecryptMessage("""
+red = [
+    "service::signed_mail::tests::test_an_envelope_made_for_the_keyholder_opens_with_the_key_held_in_memory",
+    "service::signed_mail::tests::test_an_envelope_wrapping_a_signature_opens_to_a_message_the_checker_reads_as_signed",
+    "service::signed_mail::tests::test_an_envelope_offered_to_a_store_holding_no_key_for_it_is_not_addressed_here",
+    "service::signed_mail::tests::test_an_envelope_to_somebody_else_is_not_addressed_here_though_a_key_is_held",
+    "service::signed_mail::tests::test_a_damaged_envelope_is_said_to_be_damaged_and_never_opens",
+]
+tests_last_seen = [
+    { file = "src/service/signed_mail.rs", tests = 118 },
+]
+
+# A page holding mail opened from its encryption left to the Reading tab's
+# switch, which fetches pictures by default since #28, so opening an encrypted
+# message tells whoever sealed it that it opened: EFAIL's exfiltration, and the
+# condition `.cargo/audit.toml` says would end the RSA advisory's argument.
+# Written 2026-09-26 by 13-14, measured through `scripts/guards.sh
+# --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a page holding mail opened from its encryption fetches no picture"
+file = "src/presentation/html_renderer.rs"
+before = """        Self {
+            fetching: crate::application::pictures::Fetching::Blocked,
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSentEncrypted,"""
+after = """        Self {
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSentEncrypted,"""
+red = [
+    "presentation::html_renderer::tests::test_mail_opened_from_encryption_fetches_no_picture_whatever_the_setting_says",
+    "presentation::reader_text::encryption_tests::test_a_page_holding_an_opened_envelope_fetches_no_picture_whatever_the_setting_says",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 141 },
+]
+
+# What an envelope opened to written back to the cache, so an encrypted
+# message sits decrypted at rest from the first time it is read, which
+# decision 18 of phase 13 and the privacy page both say never happens.
+# Written 2026-09-26 by 13-14, measured through `scripts/guards.sh
+# --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an envelope opened here writes nothing to the cache"
+file = "src/application/encrypted_mail.rs"
+before = """    from_what_was_kept(true, envelope.as_deref(), store)"""
+after = """    let opened = from_what_was_kept(true, envelope.as_deref(), store);
+    if let Some(MessageBody::Plain(words)) = opened.body_inside() {
+        let _ = cache.save_message_body(message_row_id, Some(words), None);
+    }
+    opened"""
+red = [
+    "application::encrypted_mail::tests::with_a_key_held_in_memory::test_opening_an_envelope_writes_nothing_to_the_cache",
+]
+tests_last_seen = [
+    { file = "src/application/encrypted_mail.rs", tests = 11 },
+]
+
+# A meeting change found inside encrypted mail applied like one in the clear,
+# so the organiser's update moves the meeting and a provider's calendar says
+# to anybody who shares it that the message opened. Written 2026-09-26 by
+# 13-14, measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a meeting change found inside encrypted mail is said and not applied"
+file = "src/application/meeting_changes.rs"
+before = """    if found == WhereItWasFound::InsideEncryptedMail {
+        return MeetingChange::SaidNotApplied(Why::InsideEncryptedMail);
+    }"""
+after = """    let _ = found;"""
+red = [
+    "application::meeting_changes::tests::test_a_change_found_inside_encrypted_mail_is_said_and_not_applied",
+    "application::reading_a_message::tests::test_a_change_inside_an_opened_envelope_is_said_and_the_calendar_is_left_as_it_was",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 19 },
+    { file = "src/application/reading_a_message.rs", tests = 19 },
+]
+
+# The envelope listed as the message's one file after it opened, so the files
+# inside are nowhere a person can reach and the envelope, which nothing opens,
+# is what Alt+A offers. Written 2026-09-26 by 13-14, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the files inside an opened envelope are the files the reader lists"
+file = "src/presentation/reader_text.rs"
+before = """    let mut attachments = if part.said.envelope.is_opened() {"""
+after = """    let mut attachments = if part.said.envelope.is_opened() && false {"""
+red = [
+    "presentation::reader_text::encryption_tests::test_the_files_inside_an_opened_envelope_are_the_files_listed",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 141 },
 ]

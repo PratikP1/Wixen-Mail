@@ -275,6 +275,11 @@ pub struct TheInvitationMessage {
     pub message_id: String,
     /// The `References` the message carried, which the answer carries on.
     pub references: Option<String>,
+    /// Whether the invitation was found inside an envelope opened here rather
+    /// than among the files the message carried in the clear. Such a meeting is
+    /// said and offered its buttons, and opening it changes nothing on the
+    /// calendar on its own (decision 14 of phase 13).
+    pub inside_encrypted_mail: bool,
 }
 
 /// The invitation a stored message carries, with its account and the headers a
@@ -283,6 +288,39 @@ pub struct TheInvitationMessage {
 pub fn the_invitation_on(
     cache: &MessageCache,
     message_row_id: i64,
+) -> Result<Option<TheInvitationMessage>> {
+    the_invitation_opened_with(
+        cache,
+        message_row_id,
+        crate::service::signed_mail::this_computers_certificates().as_ref(),
+    )
+}
+
+/// The same, with the keys a store the caller names holds, for an invitation
+/// sealed inside an envelope.
+pub fn the_invitation_opened_with(
+    cache: &MessageCache,
+    message_row_id: i64,
+    store: &dyn crate::service::signed_mail::CertificateStore,
+) -> Result<Option<TheInvitationMessage>> {
+    // Ordinary mail answers this with one column and opens nothing.
+    let inside = crate::application::encrypted_mail::the_parts_inside_opened_with(
+        cache,
+        message_row_id,
+        store,
+    );
+    the_invitation_among(cache, message_row_id, &inside)
+}
+
+/// The same, for a caller holding the files inside an envelope already.
+///
+/// The files the message carried in the clear first, then the ones inside:
+/// an envelope is the only file an encrypted message carries in the clear, so
+/// the two never both hold a meeting unless somebody built one to.
+pub fn the_invitation_among(
+    cache: &MessageCache,
+    message_row_id: i64,
+    inside: &[crate::service::mime::AttachmentWithBytes],
 ) -> Result<Option<TheInvitationMessage>> {
     let Some(message) = cache.get_message(message_row_id)? else {
         return Ok(None);
@@ -298,15 +336,26 @@ pub fn the_invitation_on(
         .into_iter()
         .filter_map(|file| Some((file.described.mime_type, file.content?)))
         .collect();
-    let Some(document) = crate::application::answering::the_invitation_a_message_carries(&parts)
-    else {
-        return Ok(None);
+    let in_the_clear = crate::application::answering::the_invitation_a_message_carries(&parts);
+    let (document, inside_encrypted_mail) = match in_the_clear {
+        Some(document) => (document, false),
+        None => {
+            let sealed: Vec<(String, Vec<u8>)> = inside
+                .iter()
+                .map(|file| (file.described.mime_type.clone(), file.bytes.clone()))
+                .collect();
+            match crate::application::answering::the_invitation_a_message_carries(&sealed) {
+                Some(document) => (document, true),
+                None => return Ok(None),
+            }
+        }
     };
     Ok(Some(TheInvitationMessage {
         account,
         document,
         message_id: message.message_id,
         references: cache.the_references_of(message_row_id)?,
+        inside_encrypted_mail,
     }))
 }
 
@@ -1068,6 +1117,7 @@ mod tests {
                 // As the store keeps them, bare: the brackets are the reply
                 // builder's to add, as `threading::continuing` says.
                 references: Some("root-1@example.com".to_string()),
+                inside_encrypted_mail: false,
             })
         );
     }

@@ -812,6 +812,12 @@ pub enum WhoseMessage {
     /// browser and would fetch them; what is not said is that a sender learned
     /// anything, because the sender is them.
     BeingWrittenHere,
+    /// Mail that arrived encrypted and was opened here. Its pictures are held
+    /// back whatever the switch says, because a fetch whose presence depends
+    /// on the message having opened tells whoever sealed it that it did, and
+    /// that is how EFAIL reads a message. So the sentence cannot point at the
+    /// switch: turning it off would fetch nothing here.
+    SomebodyElseSentEncrypted,
 }
 
 /// How many of a message's pictures were not fetched, and why.
@@ -864,6 +870,24 @@ pub fn what_was_held_back(held: HeldBack) -> String {
         .filter(|sentence| !sentence.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// What to say about the pictures of a message opened from its encryption.
+///
+/// Every picture such a message points at is held back, a beacon or not, so
+/// one count says it. It names no switch, because no switch fetches these, and
+/// it says why in the words of what a fetch would tell.
+pub fn what_encrypted_mail_held_back(held: HeldBack) -> String {
+    match held.by_the_switch + held.as_beacons {
+        0 => String::new(),
+        1 => "1 picture was not shown. Pictures in encrypted mail are never fetched, because \
+              fetching one would tell the sender this message was opened."
+            .to_string(),
+        many => format!(
+            "{many} pictures were not shown. Pictures in encrypted mail are never fetched, \
+             because fetching one would tell the sender this message was opened."
+        ),
+    }
 }
 
 #[cfg(test)]

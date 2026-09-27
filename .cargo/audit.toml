@@ -128,12 +128,16 @@ ignore = [
     # when a PGP message was opened is shown to the person reading and goes
     # nowhere else.
     #
-    # Two things narrow it further and both are already true. S/MIME decryption
-    # is refused rather than half-built, in src/service/signed_mail.rs, which
-    # says in as many words that code which looks like it decrypts and never has
-    # is the worst thing that file could contain. And PGP private key import is
-    # labelled experimental in the File menu, so very few machines hold a key for
-    # anything to be an oracle about.
+    # Two things narrow it further. S/MIME decryption now happens, since 13-14 on
+    # 2026-09-26, and it goes through Windows' own CNG with the key where it
+    # lives, in src/service/signed_mail.rs, which is not the `rsa` crate this
+    # advisory is about. It is held to the same rules all the same, because an
+    # oracle about any key is one: a page holding decrypted content fetches no
+    # picture whatever the setting says, a meeting found inside it changes
+    # nothing on the calendar on its own, and the read receipt is still decided
+    # from the header alone. And PGP private key import is labelled experimental
+    # in the File menu, so very few machines hold a key for anything to be an
+    # oracle about.
     #
     # The one automatic outbound response this program has was checked rather
     # than assumed, because "this program sends nothing back" is exactly the kind
@@ -158,8 +162,15 @@ ignore = [
     #
     # The line it turns on, named so it can be recognised: today
     # `receipt_for_the_open_message` decides what to send without reading
-    # `crate::service::pgp::WhatOpeningItFound` at all. Make what is sent depend
-    # on that value, in either direction, and the channel exists.
+    # `crate::service::pgp::WhatOpeningItFound` at all, and without reading
+    # whether an S/MIME envelope opened. Make what is sent depend on either
+    # value, in either direction, and the channel exists. Beside it now,
+    # `HtmlRenderer::for_mail_opened_from_encryption` in
+    # src/presentation/html_renderer.rs, which `the_renderer_for` in
+    # src/presentation/reader_text.rs asks for any page holding an opened S/MIME
+    # message: it holds every picture back whatever the Reading tab says. Let
+    # the setting decide there and the fetch of a picture says "this decrypted"
+    # to whoever hosts it, and a decrypted S/MIME body is usually HTML.
     #
     # Whoever adds such a feature in a year will not connect it to a security
     # advisory. That is why the condition is written in the words they would

@@ -249,6 +249,16 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
+- **Opening S/MIME encrypted mail is experimental, and it has met no message
+  from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
+  encrypted to a certificate in your Windows certificate store is opened with
+  the key there, and the bar says so and says it is experimental. Every
+  message it has opened was made with OpenSSL for a key held only while the
+  tests ran. What we do not know, one thing at a time: whether an envelope
+  Outlook or Thunderbird writes opens, whether a certificate you really use
+  opens it, and what Windows shows for a key that asks for a PIN or a
+  password or sits on a smart card. If you have encrypted mail, try it, and
+  tell us which of the four sentences you got.
 - **The download of everything has never met a real provider.** Since the
   build of 2026-09-18, every check for mail ends by bringing down every
   message of every folder you keep up to date, five hundred headers at a time
