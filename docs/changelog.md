@@ -8,20 +8,34 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A PGP key manager, experimentally (#49).** File, PGP Keys lists every PGP key on this
+  computer, your private keys and other people's public keys, one row each, the name and
+  address first, then the kind, key id, fingerprint, when it was made, when it expires and
+  what it can do. It imports keys from a file or from pasted text, exports a key's public half
+  to a file or copies it to the clipboard, and removes a key only after a question naming it
+  and saying what will stop working, with `Enter` answering No. A box at the top says what keys
+  can and cannot do in this build. Every answer is shown on a line and said. A key somebody
+  sends as an attachment can be imported too: `Enter` on it in either reader window says what
+  kind of key it is and the name it gives, and asks. The keys are on the shortcuts page under
+  PGP Keys Dialog Accelerators. The version does not move for this: no build has been cut
+  since 1.0.0-alpha.1. Known limitations: no real key from a real correspondent has been
+  through it; a key locked with a passphrase cannot be imported yet; public keys are kept and
+  nothing uses them yet; nobody has heard the window with a screen reader.
 - **Several PGP private keys, experimentally.** Wixen Mail held one PGP private key, and
   importing another replaced it. It now keeps up to eight, and a message opens with whichever
-  of them it was encrypted to. File, Import PGP Private Key adds the key it is given, says the
+  of them it was encrypted to. File, Import PGP Private Key, since replaced by the key
+  manager above, adds the key it is given, says the
   sentences it said before, and treats a key already here as imported. Its sentence for a key
   that could not be saved has two new reasons: the key is too long, or eight keys are already
   here. Underneath, a
   file holding several keys is read one key at a time: a private key goes to the Windows
   credential store, one with a passphrase on it is refused on its own, and somebody else's
-  public key can be kept in the mail database, where it is not secret. Nothing you can reach
-  yet keeps a public key, lists your keys, removes one or exports one: that is the key
-  manager, which is not built yet. The version does not move for this: no build has been cut
-  since 1.0.0-alpha.1. Known limitations: no real key from a real correspondent has been
-  imported, only keys GnuPG made for tests; and the experimental note on the File menu still
-  says Wixen Mail holds one key at a time, until the key manager rewrites it.
+  public key can be kept in the mail database, where it is not secret. Until the key manager
+  above, nothing you could reach kept a public key, listed your keys, removed one or exported
+  one. The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: no real key from a real correspondent has been imported, only keys GnuPG made
+  for tests. The experimental note on the File menu said Wixen Mail holds one key at a time
+  until the key manager rewrote it.
 - **PGP/MIME mail opens, experimentally.** The audit of 2026-09-15 (#52 point 2) found that
   only PGP mail with its encrypted text in the body of the message ever reached your key. A
   PGP/MIME message, the kind Thunderbird sends, keeps its encrypted text in a separate part,
@@ -228,6 +242,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **File, Import PGP Private Key is now File, PGP Keys (#49).** The key manager takes its
+  place on the File menu and its letter, `K`, and importing a key is one of the manager's
+  buttons. The menu's experimental note no longer says Wixen Mail holds one key at a time,
+  which stopped being true when it began to keep several, and says keys are managed from File,
+  PGP Keys.
 - **Labels can be made, renamed and put in order, and the Label menu shows yours.** The
   tester on 2026-09-15 (#48): "There is NO UI for creating these labels. Create a UI for this
   functionality for additional labels as well as for editing and moving labels' order." The
