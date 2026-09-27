@@ -264,9 +264,15 @@ fn the_move(
     let started = invitations::when_it_starts(
         copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
         copy.is_all_day,
+        copy.time_zone.as_deref(),
         dates,
     );
-    let starts = invitations::when_it_starts(&invitation.starts, invitation.is_all_day, dates);
+    let starts = invitations::when_it_starts(
+        &invitation.starts,
+        invitation.is_all_day,
+        invitation.time_zone.as_deref(),
+        dates,
+    );
     Some(if started == starts {
         Wanted::Move { from: was, to: now }
     } else {

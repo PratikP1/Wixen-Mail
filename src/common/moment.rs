@@ -151,8 +151,14 @@ pub fn the_zone_named(stored: Option<&str>) -> Option<&str> {
 /// zone nothing can place stays a clock face too, which the caller says rather
 /// than presenting it as this computer's hour.
 pub fn read_in(stored: &str, zone: Option<&str>) -> Option<Moment> {
-    let _ = zone;
-    read(stored)
+    let moment = read(stored)?;
+    let Moment::ClockFace(clock) = moment else {
+        return Some(moment);
+    };
+    let placed = the_zone_named(zone)
+        .and_then(super::zones::the_zone_called)
+        .and_then(|its_zone| placed_in(clock, &its_zone));
+    Some(placed.map_or(moment, |at| Moment::Fixed(at.fixed_offset())))
 }
 
 /// A stored moment written again as the instant its zone makes it, for a
@@ -162,8 +168,10 @@ pub fn read_in(stored: &str, zone: Option<&str>) -> Option<Moment> {
 /// RFC 3339 instant when it placed a clock face, which [`read`] reads back as
 /// the same instant.
 pub fn written_in_its_zone<'a>(stored: &'a str, zone: Option<&str>) -> Cow<'a, str> {
-    let _ = zone;
-    Cow::Borrowed(stored)
+    match read_in(stored, zone) {
+        Some(Moment::Fixed(at)) if clock_face(stored).is_some() => Cow::Owned(at.to_rfc3339()),
+        _ => Cow::Borrowed(stored),
+    }
 }
 
 /// The clock face a stored value holds, when it holds one and no offset.
@@ -175,6 +183,14 @@ fn clock_face(stored: &str) -> Option<NaiveDateTime> {
 }
 
 /// Where a clock face falls on this computer's clock, on every day of the year.
+///
+/// [`placed_in`] this computer's zone, by the one rule for the two days a year
+/// that have no single answer.
+pub fn on_this_computer(clock: NaiveDateTime) -> Option<chrono::DateTime<chrono::Local>> {
+    placed_in(clock, &chrono::Local)
+}
+
+/// Where a clock face falls in a zone, on every day of the year.
 ///
 /// Two days a year have no single answer and both used to come back as no
 /// answer at all.
@@ -190,18 +206,18 @@ fn clock_face(stored: &str) -> Option<NaiveDateTime> {
 /// A reminder already set for it, or one carried in from a calendar in
 /// another zone, is due when the clock reaches the hour it jumped to, rather
 /// than never.
-pub fn on_this_computer(clock: NaiveDateTime) -> Option<chrono::DateTime<chrono::Local>> {
-    use chrono::TimeZone;
-
-    if let Some(found) = chrono::Local.from_local_datetime(&clock).earliest() {
+///
+/// One rule for this computer's zone and for the zone a meeting was written
+/// in, so a time read in either is placed the same way.
+pub fn placed_in<Z: chrono::TimeZone>(clock: NaiveDateTime, zone: &Z) -> Option<DateTime<Z>> {
+    if let Some(found) = zone.from_local_datetime(&clock).earliest() {
         return Some(found);
     }
     // Skipped by the clocks going forward. The jump is an hour almost
     // everywhere and half an hour in a few places, so this walks forward in
     // small steps rather than assuming which.
     (1..=8).find_map(|quarters| {
-        chrono::Local
-            .from_local_datetime(&(clock + chrono::Duration::minutes(15 * quarters)))
+        zone.from_local_datetime(&(clock + chrono::Duration::minutes(15 * quarters)))
             .earliest()
     })
 }

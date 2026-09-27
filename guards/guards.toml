@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 397 records have arrived since and have not been through it.
+# 401 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2433,18 +2433,28 @@ red = [
     # when to when, worded from stored moments with a T.
     "application::meeting_changes::tests::test_a_meeting_that_only_grows_longer_says_both_whole_times",
     "application::meeting_changes::tests::test_an_update_from_the_organiser_moves_the_meeting_and_says_from_what_to_what",
+    # Added 2026-09-27 by 13-21.1: a clock face read in its zone is read with
+    # a T first, and an invitation from Tokyo is worded from one.
+    "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
+    "common::moment::tests::test_a_clock_face_beside_a_windows_zone_name_is_placed_by_windows",
+    "common::moment::tests::test_a_clock_face_beside_a_zone_is_the_instant_that_zone_puts_it_at",
+    "common::moment::tests::test_a_clock_face_beside_no_zone_or_one_nobody_can_place_stays_a_clock_face",
+    "common::moment::tests::test_a_clock_face_graph_wrote_beside_utc_is_that_instant",
+    "common::moment::tests::test_a_placed_clock_face_is_written_as_an_instant_that_reads_back_the_same",
+    "common::moment::tests::test_the_hour_a_zone_goes_through_twice_is_the_earlier_one",
+    "common::moment::tests::test_the_hour_a_zone_skips_is_the_first_that_happens_after_it",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
-    { file = "src/application/invitations.rs", tests = 50 },
+    { file = "src/application/invitations.rs", tests = 51 },
     { file = "src/application/meeting_changes.rs", tests = 19 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
-    { file = "src/common/moment.rs", tests = 10 },
+    { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
@@ -2511,7 +2521,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/common/moment.rs", tests = 10 },
+    { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
@@ -31462,7 +31472,7 @@ red = [
     "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 50 },
+    { file = "src/application/invitations.rs", tests = 51 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31532,7 +31542,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 151 },
-    { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
+    { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 12 },
 ]
 
 # The calendar part's row back to one word for every calendar part, which is
@@ -31587,7 +31597,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 10 },
+    { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 12 },
 ]
 
 # The version written and the answer dropped, which is the calendar as it was
@@ -32822,4 +32832,88 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/signing_and_encrypting_from_the_composer.rs", tests = 20 },
+]
+
+# A Windows zone name no longer asked of Windows, so every time Outlook writes
+# in "Pacific Standard Time" is kept at the hour it was written and said as
+# unplaced. Written 2026-09-27 by 13-21.1, measured against the library on
+# Windows; off Windows these cases are not compiled.
+[[guard]]
+name = "a zone windows names is asked of windows"
+file = "src/common/zones.rs"
+before = """        .or_else(|| the_zone_a_path_ends_in(name))
+        .or_else(|| the_zone_windows_calls(name)?.parse().ok())"""
+after = """        .or_else(|| the_zone_a_path_ends_in(name))
+        .or_else(|| None)"""
+red = [
+    "common::moment::tests::test_a_clock_face_beside_a_windows_zone_name_is_placed_by_windows",
+    "common::zones::tests::test_a_windows_name_is_the_zone_windows_says_it_means",
+    "common::zones::tests::test_a_windows_name_with_space_round_it_is_asked_without_the_space",
+]
+tests_last_seen = [
+    { file = "src/common/moment.rs", tests = 20 },
+    { file = "src/common/zones.rs", tests = 11 },
+]
+
+# A clock face read without the zone stored beside it, which is how every
+# stored time was read before 13-21.1: a meeting at nine in Tokyo is nine
+# here. Written 2026-09-27 by 13-21.1, measured against the library.
+[[guard]]
+name = "a clock face is read in the zone stored beside it"
+file = "src/common/moment.rs"
+before = """        .and_then(|its_zone| placed_in(clock, &its_zone));
+    Some(placed.map_or(moment, |at| Moment::Fixed(at.fixed_offset())))"""
+after = """        .and_then(|its_zone| placed_in(clock, &its_zone));
+    let _ = placed;
+    Some(moment)"""
+red = [
+    "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
+    "common::moment::tests::test_a_clock_face_beside_a_windows_zone_name_is_placed_by_windows",
+    "common::moment::tests::test_a_clock_face_beside_a_zone_is_the_instant_that_zone_puts_it_at",
+    "common::moment::tests::test_a_clock_face_graph_wrote_beside_utc_is_that_instant",
+    "common::moment::tests::test_a_placed_clock_face_is_written_as_an_instant_that_reads_back_the_same",
+    "common::moment::tests::test_the_hour_a_zone_goes_through_twice_is_the_earlier_one",
+    "common::moment::tests::test_the_hour_a_zone_skips_is_the_first_that_happens_after_it",
+]
+tests_last_seen = [
+    { file = "src/application/invitations.rs", tests = 51 },
+    { file = "src/common/moment.rs", tests = 20 },
+]
+
+# The same break seen from the raw message: an invitation from Tokyo parsed,
+# stored and said through the reader's own path. Written 2026-09-27 by
+# 13-21.1, measured against the target.
+[[guard]]
+name = "a clock face is read in the zone stored beside it, seen from a raw invitation"
+file = "src/common/moment.rs"
+suite = "an_invitation_is_said_before_the_body"
+before = """        .and_then(|its_zone| placed_in(clock, &its_zone));
+    Some(placed.map_or(moment, |at| Moment::Fixed(at.fixed_offset())))"""
+after = """        .and_then(|its_zone| placed_in(clock, &its_zone));
+    let _ = placed;
+    Some(moment)"""
+red = [
+    "test_an_invitation_naming_its_zone_as_windows_does_is_said_at_this_computers_hour",
+    "test_an_invitation_written_in_another_zone_is_said_at_this_computers_hour",
+]
+tests_last_seen = [
+    { file = "src/common/moment.rs", tests = 20 },
+    { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 12 },
+]
+
+# The invitation's times read with no zone, while the moment reader places
+# them: the sentence says the hour the organiser wrote. Written 2026-09-27 by
+# 13-21.1, measured against the library.
+[[guard]]
+name = "an invitation's time is read in the zone it was written in"
+file = "src/application/invitations.rs"
+before = """fn on_this_computer(stored: &str, zone: Option<&str>) -> Option<chrono::DateTime<chrono::Local>> {
+    crate::common::moment::read_in(stored, zone)?.on_this_computer()"""
+after = """fn on_this_computer(stored: &str, _zone: Option<&str>) -> Option<chrono::DateTime<chrono::Local>> {
+    crate::common::moment::read(stored)?.on_this_computer()"""
+red = [
+    "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
+]
+tests_last_seen = [
+    { file = "src/application/invitations.rs", tests = 51 },
 ]

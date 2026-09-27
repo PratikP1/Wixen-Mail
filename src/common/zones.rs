@@ -30,9 +30,83 @@ use chrono_tz::Tz;
 /// nothing for it; then the zone database's own names, then a calendar
 /// server's path ending in one, then Windows' names through Windows.
 pub fn the_zone_called(name: &str) -> Option<Tz> {
-    let _ = name;
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    name.parse()
+        .ok()
+        .or_else(|| the_zone_a_path_ends_in(name))
+        .or_else(|| the_zone_windows_calls(name)?.parse().ok())
+}
+
+/// The zone a calendar server's path names, by the longest run of its last
+/// parts that is a zone's name: `/mozilla.org/20050126_1/America/New_York` is
+/// `America/New_York`. Longest first, so a zone named in two parts is never
+/// read by its last part alone.
+fn the_zone_a_path_ends_in(name: &str) -> Option<Tz> {
+    let parts: Vec<&str> = name.strip_prefix('/')?.split('/').collect();
+    (0..parts.len()).find_map(|from| parts[from..].join("/").parse().ok())
+}
+
+/// The zone database's name for a zone Windows names, asked of Windows' own
+/// ICU, which keeps the table between the two current.
+#[cfg(target_os = "windows")]
+fn the_zone_windows_calls(name: &str) -> Option<String> {
+    // Only this half calls Windows, so only this half imports it: an import
+    // the other half does not use is a warning, and warnings fail the build.
+    use windows::Win32::Globalization::{U_ZERO_ERROR, UErrorCode, ucal_getTimeZoneIDForWindowsID};
+
+    let asked: Vec<u16> = name.encode_utf16().collect();
+    let asked_length = i32::try_from(asked.len()).ok()?;
+    let mut answer = [0u16; 128];
+    let capacity = i32::try_from(answer.len()).ok()?;
+    let mut status: UErrorCode = U_ZERO_ERROR;
+    // SAFETY: the name is read for exactly `asked_length` units from a buffer
+    // that holds that many, and ICU writes at most `capacity` units into
+    // `answer`, which is the buffer's own length. No region is passed, so
+    // Windows' default mapping is the one asked for. The name comes from a
+    // stranger's calendar document; nothing here trusts what it says beyond
+    // handing it over and reading back only what ICU says it wrote.
+    let written = unsafe {
+        ucal_getTimeZoneIDForWindowsID(
+            asked.as_ptr(),
+            asked_length,
+            windows::core::PCSTR::null(),
+            answer.as_mut_ptr(),
+            capacity,
+            &mut status,
+        )
+    };
+    // A status above zero is ICU's failure, below it a warning such as an
+    // answer that exactly filled the buffer with no terminator, which is still
+    // an answer.
+    let written = usize::try_from(written)
+        .ok()
+        .filter(|written| (1..=answer.len()).contains(written))?;
+    (status.0 <= 0).then(|| String::from_utf16_lossy(&answer[..written]))
+}
+
+/// Where there is no Windows, a Windows name places nothing. No table is kept
+/// here to stand in for Windows, so the hour is kept as it was written.
+#[cfg(not(target_os = "windows"))]
+fn the_zone_windows_calls(_name: &str) -> Option<String> {
     None
 }
+
+/// The zone database's ways of writing universal time, beside the `Etc/`
+/// family, none of which is a place anybody is.
+const UNIVERSAL_TIME: [&str; 9] = [
+    "UTC",
+    "UCT",
+    "GMT",
+    "GMT0",
+    "GMT+0",
+    "GMT-0",
+    "Greenwich",
+    "Universal",
+    "Zulu",
+];
 
 /// Whether a zone is somewhere people are, rather than a way of writing
 /// universal time.
@@ -41,8 +115,8 @@ pub fn the_zone_called(name: &str) -> Option<Tz> {
 /// meeting's organiser sits, so a time written in it is worth nothing said
 /// about its own clock.
 pub fn names_a_place(zone: Tz) -> bool {
-    let _ = zone;
-    true
+    let name = zone.name();
+    !(name.starts_with("Etc/") || UNIVERSAL_TIME.contains(&name))
 }
 
 #[cfg(test)]

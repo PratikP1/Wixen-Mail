@@ -888,25 +888,32 @@ fn the_title_of(document: &str) -> String {
 /// came and is no way to say when a meeting is. A whole day is its date. A
 /// moment that does not read is said as it was written, which is the date
 /// reading's own answer for the same thing.
+///
+/// Both times are read in `zone`, the zone the meeting was written in, and
+/// said on this computer's clock: a meeting at nine in Tokyo is said at the
+/// hour that is here. A whole day is on its day wherever somebody is.
 fn when_the_meeting_is(
     starts: &str,
     ends: Option<&str>,
     is_all_day: bool,
+    zone: Option<&str>,
     dates: DateSettings,
 ) -> String {
+    use crate::common::moment::written_in_its_zone;
     use crate::presentation::date_display;
 
     if is_all_day {
         return format!("{}, all day", date_display::a_day_in_words(starts, dates));
     }
-    let Some(start) = on_this_computer(starts) else {
+    let Some(start) = on_this_computer(starts, zone) else {
         return plainly(starts);
     };
     let begins = date_display::absolute(start, dates);
-    match ends.and_then(|ends| Some((ends, on_this_computer(ends)?))) {
-        Some((ends, end)) if end.date_naive() == start.date_naive() => {
-            format!("{begins} to {}", date_display::time_of_day(ends, dates))
-        }
+    match ends.and_then(|ends| Some((ends, on_this_computer(ends, zone)?))) {
+        Some((ends, end)) if end.date_naive() == start.date_naive() => format!(
+            "{begins} to {}",
+            date_display::time_of_day(&written_in_its_zone(ends, zone), dates)
+        ),
         Some((_, end)) => format!("{begins} to {}", date_display::absolute(end, dates)),
         None => begins,
     }
@@ -919,6 +926,7 @@ pub fn when_the_invitation_is(invitation: &Invitation, dates: DateSettings) -> S
         &invitation.starts,
         invitation.ends.as_deref(),
         invitation.is_all_day,
+        invitation.time_zone.as_deref(),
         dates,
     )
 }
@@ -933,19 +941,26 @@ pub fn when_the_copy_is(
         copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
         Some(&copy.end_datetime),
         copy.is_all_day,
+        copy.time_zone.as_deref(),
         dates,
     )
 }
 
 /// When a meeting starts, and nothing about when it ends: the whole date and
 /// the hour, or the date alone for a meeting of whole days.
-pub fn when_it_starts(starts: &str, is_all_day: bool, dates: DateSettings) -> String {
-    when_the_meeting_is(starts, None, is_all_day, dates)
+pub fn when_it_starts(
+    starts: &str,
+    is_all_day: bool,
+    zone: Option<&str>,
+    dates: DateSettings,
+) -> String {
+    when_the_meeting_is(starts, None, is_all_day, zone, dates)
 }
 
-/// Where a stored moment falls on this computer's clock.
-fn on_this_computer(stored: &str) -> Option<chrono::DateTime<chrono::Local>> {
-    crate::common::moment::read(stored)?.on_this_computer()
+/// Where a stored moment, read in the zone it was written in, falls on this
+/// computer's clock.
+fn on_this_computer(stored: &str, zone: Option<&str>) -> Option<chrono::DateTime<chrono::Local>> {
+    crate::common::moment::read_in(stored, zone)?.on_this_computer()
 }
 
 /// The name the meeting a document describes goes by, when it names one.
