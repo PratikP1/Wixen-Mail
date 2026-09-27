@@ -8,6 +8,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **PGP keys locked with a passphrase, experimentally (#49).** Most keys people export
+  carry a passphrase, and Wixen Mail refused them, so the key manager served few real keys.
+  A locked key is now imported and kept as it came, still locked, and the key manager lists
+  it as "Private key, locked with a passphrase". The first time you open a message that
+  needs it in either reader window, a dialog, Unlock a PGP Key, names the key and asks for
+  its passphrase. The field takes a paste, so a password manager can fill it, and focus
+  starts there. A wrong passphrase asks again and says so first. The right one opens the
+  message, and every later message to that key, until Wixen Mail closes. It is held in
+  memory only: never written to disk, the mail database or the credential store, and gone
+  when the program closes or the key is removed. Cancel shows the message still encrypted,
+  with a sentence saying the key is locked and how to open it; the preview pane never asks
+  and says the same sentence. The dialog's one letter, `Alt+P`, is on the shortcuts page.
+  The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: no real key from a real correspondent has been through it, only one GnuPG
+  locked for a test; nobody has heard the dialog with a screen reader or pasted into it from
+  a real password manager; and there is no command to forget typed passphrases before Wixen
+  Mail closes.
 - **A PGP key manager, experimentally (#49).** File, PGP Keys lists every PGP key on this
   computer, your private keys and other people's public keys, one row each, the name and
   address first, then the kind, key id, fingerprint, when it was made, when it expires and
@@ -19,8 +36,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   kind of key it is and the name it gives, and asks. The keys are on the shortcuts page under
   PGP Keys Dialog Accelerators. The version does not move for this: no build has been cut
   since 1.0.0-alpha.1. Known limitations: no real key from a real correspondent has been
-  through it; a key locked with a passphrase cannot be imported yet; public keys are kept and
-  nothing uses them yet; nobody has heard the window with a screen reader.
+  through it; a key locked with a passphrase could not be imported until the entry above;
+  public keys are kept and nothing uses them yet; nobody has heard the window with a screen
+  reader.
 - **Several PGP private keys, experimentally.** Wixen Mail held one PGP private key, and
   importing another replaced it. It now keeps up to eight, and a message opens with whichever
   of them it was encrypted to. File, Import PGP Private Key, since replaced by the key
@@ -29,7 +47,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   that could not be saved has two new reasons: the key is too long, or eight keys are already
   here. Underneath, a
   file holding several keys is read one key at a time: a private key goes to the Windows
-  credential store, one with a passphrase on it is refused on its own, and somebody else's
+  credential store, one with a passphrase on it was refused on its own until locked keys
+  were kept (above), and somebody else's
   public key can be kept in the mail database, where it is not secret. Until the key manager
   above, nothing you could reach kept a public key, listed your keys, removed one or exported
   one. The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known

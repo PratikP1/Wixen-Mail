@@ -71,6 +71,13 @@ somebody sends you as an attachment is read only when you press `Enter` on it, a
 only if you answer Yes. Read from `src/application/pgp_keys.rs` and
 `src/presentation/wx_pgp_keys.rs`.
 
+A private key locked with a passphrase is stored as it came, still locked, so what is in the
+credential store is the locked key. The passphrase you type when a message needs it is held in
+memory only, in the running program, and cleared when Wixen Mail closes or the key is removed.
+It is never written to disk, to the mail database, to the credential store or to the log. A
+wrong one is dropped as soon as it has failed. Read from `src/service/pgp/keys.rs` and
+`src/presentation/wx_passphrase.rs`.
+
 **The downloaded mail is not encrypted.** Windows stops other people who use the computer from
 reading the folder, but anything running as you can read it, and so can anyone who takes the
 drive out unless the disk itself is encrypted. Turn on BitLocker if that matters to you. This

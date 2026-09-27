@@ -263,10 +263,13 @@ Written down so you do not spend time reporting things already on the list.
   it.** File, PGP Keys lists your PGP keys, imports them from a file, from
   pasted text or from an attachment somebody sent, exports or copies a
   public key, and removes a key after asking. Every key it has met was made
-  with GnuPG for the tests. A key locked with a passphrase cannot be imported
-  yet. If you use PGP, import your key and tell us whether each row reads as
-  the person the key is for, and whether the question before a removal is
-  read in full.
+  with GnuPG for the tests. A key locked with a passphrase is kept locked,
+  and the first time you open a message to it in a reader window, Wixen Mail
+  asks for the passphrase and remembers it until you close the program. If
+  you use PGP, import your key and tell us whether each row reads as the
+  person the key is for, whether the question before a removal is read in
+  full, and, for a locked key, whether pasting its passphrase from your
+  password manager works and whether a wrong one is said clearly.
 - **The download of everything has never met a real provider.** Since the
   build of 2026-09-18, every check for mail ends by bringing down every
   message of every folder you keep up to date, five hundred headers at a time
