@@ -240,6 +240,97 @@ pub enum WhatImportingAKeyFound {
     CouldNotBeStored { reason: String },
 }
 
+/// One key, described in this program's words rather than the crate's.
+///
+/// Everything a person choosing between keys needs to hear, and nothing that
+/// names a packet or an algorithm. Nothing here says a key is trusted: a key
+/// says whose it claims to be and nothing in this program checks that.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyListing {
+    /// The names and addresses the key carries, as written in it, the one it
+    /// marks as primary first.
+    pub user_ids: Vec<String>,
+    /// The short identifier, sixteen hexadecimal digits in capitals, the way
+    /// GnuPG shows it.
+    pub key_id: String,
+    /// The whole fingerprint in hexadecimal capitals, which is what tells two
+    /// keys apart and what a person reads to somebody to check one.
+    pub fingerprint: String,
+    /// When the key was made.
+    pub created: chrono::DateTime<chrono::Utc>,
+    /// When the key stops being valid, if its owner set a date.
+    pub expires: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether this is a private key, which opens mail, rather than somebody's
+    /// public key, which does not.
+    pub private: bool,
+    /// Whether mail can be encrypted to it.
+    pub can_encrypt: bool,
+    /// Whether it can sign.
+    pub can_sign: bool,
+}
+
+/// What became of one key in a text that was imported.
+///
+/// One of these for every key the text holds, because a file exported from
+/// another program often holds several, and one sentence for the whole file
+/// would hide which of them did not come in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatBecameOfAKey {
+    /// A private key, now in the credential store.
+    Imported(KeyListing),
+    /// A private key that was already here, so nothing changed.
+    AlreadyHere(KeyListing),
+    /// A public key. Not secret, so not this module's to keep: the caller
+    /// keeps the armour where the rest of this program's data lives.
+    PublicKeyToKeep { armour: String, listing: KeyListing },
+    /// A private key a passphrase is holding shut, refused for the reason
+    /// [`WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase`] gives.
+    LockedWithAPassphrase(KeyListing),
+    /// A private key the credential store would not take, and why, in words
+    /// about the store and never about the key.
+    CouldNotBeStored { listing: KeyListing, reason: String },
+}
+
+/// Every key an armoured text holds, described.
+pub fn describe(armour: &str) -> Vec<KeyListing> {
+    keys::describe(armour)
+}
+
+/// Every private key on this computer, described, in the order they were
+/// imported.
+pub fn private_keys_here() -> crate::common::Result<Vec<KeyListing>> {
+    keys::private_keys_here()
+}
+
+/// Import every key an armoured text holds: private keys into the credential
+/// store, public keys handed back for the caller to keep.
+///
+/// An empty answer means nothing in the text was a key.
+pub fn import_keys(armoured: &str) -> Vec<WhatBecameOfAKey> {
+    keys::import_keys(armoured)
+}
+
+/// Remove the private key with this fingerprint from the credential store.
+///
+/// `Ok(false)` when no key here has it.
+pub fn remove_private_key(fingerprint: &str) -> crate::common::Result<bool> {
+    keys::remove_private_key(fingerprint)
+}
+
+/// The public half of a key, as armour somebody can be sent.
+///
+/// `None` when the text is not a key.
+pub fn public_half(armour: &str) -> Option<String> {
+    keys::public_half(armour)
+}
+
+/// The public half of the private key here with this fingerprint, as armour.
+///
+/// Never the private half: nothing outside this module is handed that.
+pub fn public_half_of_a_key_here(fingerprint: &str) -> crate::common::Result<Option<String>> {
+    keys::public_half_of_a_key_here(fingerprint)
+}
+
 /// Open an armoured PGP message with the private key this computer holds.
 ///
 /// The one way in. Everything outside this module calls it and knows no crate

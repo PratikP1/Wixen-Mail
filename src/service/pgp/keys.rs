@@ -34,8 +34,8 @@
 //! after.
 
 use super::{
-    KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, PARTS_PER_KEY, WhatImportingAKeyFound,
-    WhatOpeningItFound, the_entry_for,
+    KEY_SLOTS, KEYRING_PRIVATE_KEY, KEYRING_SERVICE, KeyListing, PARTS_PER_KEY, WhatBecameOfAKey,
+    WhatImportingAKeyFound, WhatOpeningItFound, the_entry_for,
 };
 use crate::service::secret_store::{self, LONGEST_SECRET_ONE_ENTRY_HOLDS};
 use pgp::composed::{Deserializable, Message, SignedPublicKey, SignedSecretKey};
@@ -346,6 +346,38 @@ pub(super) fn a_key_is_here() -> bool {
     keys_here().is_ok_and(|keys| !keys.is_empty())
 }
 
+/// Every key an armoured text holds, described.
+pub(super) fn describe(_armour: &str) -> Vec<KeyListing> {
+    Vec::new()
+}
+
+/// Every private key here, described, in slot order.
+pub(super) fn private_keys_here() -> crate::common::Result<Vec<KeyListing>> {
+    Ok(Vec::new())
+}
+
+/// Import every key an armoured text holds.
+pub(super) fn import_keys(_armoured: &str) -> Vec<WhatBecameOfAKey> {
+    Vec::new()
+}
+
+/// Remove the private key with this fingerprint.
+pub(super) fn remove_private_key(_fingerprint: &str) -> crate::common::Result<bool> {
+    Ok(false)
+}
+
+/// A key's public half, armoured.
+pub(super) fn public_half(_armour: &str) -> Option<String> {
+    None
+}
+
+/// The public half of the private key here with this fingerprint.
+pub(super) fn public_half_of_a_key_here(
+    _fingerprint: &str,
+) -> crate::common::Result<Option<String>> {
+    Ok(None)
+}
+
 /// A key and a message for the tests of other modules.
 ///
 /// The same GnuPG-made fixtures this file's own tests open, for the reason
@@ -387,6 +419,23 @@ pub(crate) mod for_tests {
     pub(crate) fn bobs_private_key() -> String {
         super::tests::armour(super::tests::BOB_PRIVATE)
     }
+
+    /// Alice's public key, as GnuPG exported it.
+    pub(crate) fn alices_public_key() -> String {
+        super::tests::armour(super::tests::ALICE_PUBLIC)
+    }
+
+    /// Carol's public key, as GnuPG exported it: somebody else's key, the
+    /// kind kept so mail can be encrypted to them later.
+    pub(crate) fn carols_public_key() -> String {
+        super::tests::armour(super::tests::CAROL_PUBLIC)
+    }
+
+    /// Alice's fingerprint, as `gpg --list-keys --with-colons` gave it.
+    pub(crate) const ALICES_FINGERPRINT: &str = "6EFD87D1527731DE679B8E1BA97E7BB74101FB3E";
+
+    /// Carol's fingerprint, as `gpg --list-keys --with-colons` gave it.
+    pub(crate) const CAROLS_FINGERPRINT: &str = "8DE4DEEC367D086637934A1C52B5C043A2C64173";
 }
 
 #[cfg(test)]
@@ -490,7 +539,7 @@ mod tests {
 
     /// Alice's public key. A real key and not a private one, which is the
     /// mistake somebody makes at three in the morning.
-    const ALICE_PUBLIC: &str = "
+    pub(super) const ALICE_PUBLIC: &str = "
         LS0tLS1CRUdJTiBQR1AgUFVCTElDIEtFWSBCTE9DSy0tLS0tCgptUUVOQkdxZGtYUUJDQUMy
         R0cwRHRTYVZvU3hSRmcxMnVCUDRjOGp2dDM2OGIwL1FZc0pBU09KMGUyeVZNOWN4CnBJS205
         Ni8yaHYvVnV3bDQxNFYwUkFKbnJ3a1J0R1NJNVVMRjAreXZDT3FadytkM1JxNGUvcWNqNjBK
@@ -555,6 +604,46 @@ mod tests {
         U3RjQkRvc1pCY3o0RkFRRENqWE1xMzRab2RVRFAKamV1Ni8vZ0pVeXpSd2hSdDNqSkhVMExH
         R2o2WHV3RUFvVyt2L0pnRmdVSXVvWk02NEQzWVlkK3p2V2FBTEZzbApZMkNFN3hGYzhRWT0K
         PUJ4eGUKLS0tLS1FTkQgUEdQIFBSSVZBVEUgS0VZIEJMT0NLLS0tLS0K";
+
+    /// Carol's public key, from `gpg --armor --export carol@example.com` in
+    /// the same home directory. GnuPG lists it as `scESC` with an `e`
+    /// subkey: it signs, and mail can be encrypted to it.
+    pub(super) const CAROL_PUBLIC: &str = "
+        LS0tLS1CRUdJTiBQR1AgUFVCTElDIEtFWSBCTE9DSy0tLS0tCgptRE1FYXJpWTVCWUpLd1lC
+        QkFIYVJ3OEJBUWRBK1RzRzlFNmJ1bGVWZmtHU2ZENDZHdTdYdFFuYTA3ZHhJRllOClpKb0Rj
+        WUswSVVOaGNtOXNJRVY0WVcxd2JHVWdQR05oY205c1FHVjRZVzF3YkdVdVkyOXRQb2lRQkJN
+        V0NnQTQKRmlFRWplVGU3RFo5Q0dZM2swb2NVclhBUTZMR1FYTUZBbXE0bU9RQ0d3TUZDd2tJ
+        QndJR0ZRb0pDQXNDQkJZQwpBd0VDSGdFQ0Y0QUFDZ2tRVXJYQVE2TEdRWFBLaUFFQXRMSkNY
+        czVIYldLN2c2czhnMVdJQzNKbytBRi9mdFdoCmdxOUE1a1JVdkxNQS8yc0VzYlhVTEI3NFdz
+        clBvekZJcVNQYTVOT01EL1ZPSitwVnBCSFdON3dKdURnRWFyaVkKNVJJS0t3WUJCQUdYVlFF
+        RkFRRUhRRWR3dUtjRFBBQW5OZ3ZGY2xYYTRtNCtZdzZEMDF1UGxyaTdjbEgzUUFJMwpBd0VJ
+        QjRoNEJCZ1dDZ0FnRmlFRWplVGU3RFo5Q0dZM2swb2NVclhBUTZMR1FYTUZBbXE0bU9VQ0d3
+        d0FDZ2tRClVyWEFRNkxHUVhNK0JRRUF3bzF6S3QrR2FIVkF6NDNydXYvNENWTXMwY0lVYmQ0
+        eVIxTkN4aG8rbDdzQkFLRnYKci95WUJZRkNMcUdUT3VBOTJHSGZzNzFtZ0N4YkpXTmdoTzhS
+        WFBFRwo9WmtSUwotLS0tLUVORCBQR1AgUFVCTElDIEtFWSBCTE9DSy0tLS0tCg==";
+
+    /// Dave's private key, Ed25519 with a Curve25519 subkey, exported by
+    /// GnuPG 2.4.9 on 2026-09-27 with the passphrase still on it: the same
+    /// commands as Carol's with `--passphrase 'correct horse'` throughout.
+    /// Nothing here can open it, which is what it is for.
+    const DAVE_LOCKED: &str = "
+        LS0tLS1CRUdJTiBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0tLQoKbElZRWFyaWhNaFlKS3dZ
+        QkJBSGFSdzhCQVFkQUNFWVUrTXQ1Z3BTdDNLKzM1UjR0V1dHdXBaQ1M0YStEQ21segowS2ZJ
+        VS9iK0J3TUMwR0ZzRjA3a3A0L3oyclRvY2V5cFNIVEpJSDZqc1V0ODlGc2ZzbksxTGF0Rmt3
+        cFh0V3BXCldzYmhaTXJTTy83QytFczcxTkRod2lYM1hLa2gwckVZYTdBNUtpci9mSnlNaWlB
+        WnZrVUM1YlFmUkdGMlpTQkYKZUdGdGNHeGxJRHhrWVhabFFHVjRZVzF3YkdVdVkyOXRQb2lR
+        QkJNV0NnQTRGaUVFdkRtT0RWUW1IS0JrTHBtdApScHlWd0FDMXl4SUZBbXE0b1RJQ0d3TUZD
+        d2tJQndJR0ZRb0pDQXNDQkJZQ0F3RUNIZ0VDRjRBQUNna1FScHlWCndBQzF5eEp4TFFEK0k3
+        TjVVOWViN0UyaU5ZU1RuSGtsUVJaQmpZejgzN2pnSWNpeEZPTit1T0FCQUkwYXpQcjEKeTNK
+        N3B4Q2kySk15azVTWDBpa1NpaWFxcEhqMHV3VkJqNUVJbklzRWFyaWhOQklLS3dZQkJBR1hW
+        UUVGQVFFSApRRm9Dayt0YStzNHIwNHNUcHEwcTFIK0VrQXFkWG5KWjJEenNXVmRkNFNNU0F3
+        RUlCLzRIQXdMSi94NkZTR3ZuCnFmTUdFTFVrYTY5TFQzdEJJZDlkNU9NWWFSMWdOWDJDdU1h
+        V1J3ZSt5c0lEaWl1VHR3WkRmUWQ3QSs2TmlSQ3AKSWpoU2VSRFdYelZ1OG4rUzhmeWVQaXlM
+        R3VITnhMUEZpSGdFR0JZS0FDQVdJUVM4T1k0TlZDWWNvR1F1bWExRwpuSlhBQUxYTEVnVUNh
+        cmloTkFJYkRBQUtDUkJHbkpYQUFMWExFdlM0QVFEUFQxRGc5MytwTFY4UklOZlNkd0g2Clox
+        ZUNRTDNYQVp4UHEvNmJhUGxDQ3dEL1o1eGd4Q0NNclVmK2drQWk0L1lBUTZtM05ZbGZ4Z0VG
+        K1g4SzdRK3cKTGdBPQo9VVF3egotLS0tLUVORCBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0t
+        LQo=";
 
     /// "Carol, the key fits in one entry.", encrypted to Carol by GnuPG with
     /// `gpg --batch --armor --trust-model always --encrypt -r carol@example.com`,
@@ -968,5 +1057,218 @@ mod tests {
             open(&armour(TO_ALICE)),
             WhatOpeningItFound::TheKeyHereCouldNotBeRead
         );
+    }
+
+    // ── Several keys, and public ones ────────────────────────────────────
+    //
+    // Every expected listing below is what `gpg --list-keys --with-colons`
+    // said about the same key in the home directory that made or imported
+    // it, on 2026-09-27, rather than anything this file or the crate
+    // computed. Alice's key is `ecEC` there: it encrypts and certifies and
+    // does not sign, which is the one field a listing that answered yes to
+    // everything would get wrong.
+
+    fn at(when: &str) -> chrono::DateTime<chrono::Utc> {
+        when.parse().expect("a time written in the test")
+    }
+
+    fn alice_as_gnupg_lists_her(private: bool) -> KeyListing {
+        KeyListing {
+            user_ids: vec!["Alice Example <alice@example.com>".to_string()],
+            key_id: "A97E7BB74101FB3E".to_string(),
+            fingerprint: "6EFD87D1527731DE679B8E1BA97E7BB74101FB3E".to_string(),
+            created: at("2026-09-06T16:14:44Z"),
+            expires: None,
+            private,
+            can_encrypt: true,
+            can_sign: false,
+        }
+    }
+
+    fn carol_as_gnupg_lists_her(private: bool) -> KeyListing {
+        KeyListing {
+            user_ids: vec!["Carol Example <carol@example.com>".to_string()],
+            key_id: "52B5C043A2C64173".to_string(),
+            fingerprint: "8DE4DEEC367D086637934A1C52B5C043A2C64173".to_string(),
+            created: at("2026-09-27T04:17:40Z"),
+            expires: None,
+            private,
+            can_encrypt: true,
+            can_sign: true,
+        }
+    }
+
+    #[test]
+    fn test_a_key_is_described_in_this_programs_words() {
+        assert_eq!(
+            describe(&armour(ALICE_PRIVATE)),
+            vec![alice_as_gnupg_lists_her(true)]
+        );
+        assert_eq!(
+            describe(&armour(CAROL_PUBLIC)),
+            vec![carol_as_gnupg_lists_her(false)]
+        );
+        assert_eq!(describe("hello"), vec![]);
+    }
+
+    #[test]
+    fn test_one_text_holding_a_private_and_a_public_key_answers_for_each() {
+        // What a file exported from another program often is: more than one
+        // key, of both halves. Each gets its own answer; the private one goes
+        // to the credential store and the public one is handed back to keep.
+        with_no_key();
+        let text = format!("{}\n{}", armour(ALICE_PRIVATE), armour(CAROL_PUBLIC));
+
+        let answers = import_keys(&text);
+
+        assert_eq!(answers.len(), 2, "{answers:?}");
+        assert_eq!(
+            answers[0],
+            WhatBecameOfAKey::Imported(alice_as_gnupg_lists_her(true))
+        );
+        match &answers[1] {
+            WhatBecameOfAKey::PublicKeyToKeep { armour, listing } => {
+                assert_eq!(listing, &carol_as_gnupg_lists_her(false));
+                assert_eq!(describe(armour), vec![carol_as_gnupg_lists_her(false)]);
+            }
+            other => panic!("Carol's public key came back as {other:?}"),
+        }
+        assert_eq!(
+            private_keys_here().expect("the store"),
+            vec![alice_as_gnupg_lists_her(true)]
+        );
+    }
+
+    #[test]
+    fn test_each_private_key_here_opens_its_own_mail() {
+        // Two keys, each the only one a message was encrypted to. Imported in
+        // this order, Carol's is not the first key here, which is the case a
+        // reading that tried only the first would get wrong.
+        with_no_key();
+        assert_eq!(
+            import(&armour(ALICE_PRIVATE)),
+            WhatImportingAKeyFound::Imported
+        );
+        assert_eq!(
+            import(&armour(CAROL_PRIVATE)),
+            WhatImportingAKeyFound::Imported
+        );
+
+        assert_eq!(
+            open(&armour(TO_ALICE)),
+            WhatOpeningItFound::Opened("The meeting moved to Thursday at ten.\n".to_string())
+        );
+        assert_eq!(
+            open(&armour(TO_CAROL)),
+            WhatOpeningItFound::Opened("Carol, the key fits in one entry.\n".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_private_key_imported_twice_is_already_here_the_second_time() {
+        with_no_key();
+        assert_eq!(
+            import_keys(&armour(CAROL_PRIVATE)),
+            vec![WhatBecameOfAKey::Imported(carol_as_gnupg_lists_her(true))]
+        );
+
+        assert_eq!(
+            import_keys(&armour(CAROL_PRIVATE)),
+            vec![WhatBecameOfAKey::AlreadyHere(carol_as_gnupg_lists_her(
+                true
+            ))]
+        );
+        assert_eq!(
+            secret_store::entries_under(KEYRING_SERVICE).len(),
+            1,
+            "the second import wrote a second copy"
+        );
+    }
+
+    #[test]
+    fn test_a_locked_key_in_a_text_of_several_is_refused_by_itself() {
+        // Dave's key has its passphrase on it. It is refused and nothing of
+        // it is written, and the key after it in the same text still comes in.
+        with_no_key();
+        let text = format!("{}\n{}", armour(DAVE_LOCKED), armour(CAROL_PRIVATE));
+
+        let answers = import_keys(&text);
+
+        assert_eq!(answers.len(), 2, "{answers:?}");
+        match &answers[0] {
+            WhatBecameOfAKey::LockedWithAPassphrase(listing) => {
+                assert_eq!(
+                    listing.fingerprint,
+                    "BC398E0D54261CA0642E99AD469C95C000B5CB12"
+                );
+                assert_eq!(listing.key_id, "469C95C000B5CB12");
+            }
+            other => panic!("Dave's locked key came back as {other:?}"),
+        }
+        assert_eq!(
+            answers[1],
+            WhatBecameOfAKey::Imported(carol_as_gnupg_lists_her(true))
+        );
+        assert_eq!(
+            secret_store::entries_under(KEYRING_SERVICE).len(),
+            1,
+            "something of the locked key was written"
+        );
+        assert_eq!(
+            import(&armour(DAVE_LOCKED)),
+            WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase,
+            "the File menu's import says the same"
+        );
+    }
+
+    #[test]
+    fn test_removing_a_private_key_takes_every_part_of_it_and_leaves_the_others() {
+        with_no_key();
+        import(&armour(ALICE_PRIVATE));
+        import(&armour(CAROL_PRIVATE));
+
+        assert!(remove_private_key("6EFD87D1527731DE679B8E1BA97E7BB74101FB3E").expect("the store"));
+
+        assert_eq!(
+            private_keys_here().expect("the store"),
+            vec![carol_as_gnupg_lists_her(true)]
+        );
+        assert_eq!(
+            secret_store::entries_under(KEYRING_SERVICE),
+            vec![("key-2-part-1".to_string(), armour(CAROL_PRIVATE))],
+            "a part of Alice's key was left behind"
+        );
+        assert!(
+            !remove_private_key("6EFD87D1527731DE679B8E1BA97E7BB74101FB3E").expect("the store"),
+            "a key that is not here was reported removed"
+        );
+    }
+
+    #[test]
+    fn test_the_public_half_of_a_key_is_armour_that_describes_as_public() {
+        with_no_key();
+        import(&armour(ALICE_PRIVATE));
+
+        let exported = public_half_of_a_key_here("6EFD87D1527731DE679B8E1BA97E7BB74101FB3E")
+            .expect("the store")
+            .expect("Alice's key is here");
+
+        assert_eq!(describe(&exported), vec![alice_as_gnupg_lists_her(false)]);
+        assert!(
+            exported.contains("BEGIN PGP PUBLIC KEY BLOCK"),
+            "{exported}"
+        );
+        assert!(
+            !exported.contains("PRIVATE"),
+            "the private half was handed out"
+        );
+        assert_eq!(
+            public_half_of_a_key_here("8DE4DEEC367D086637934A1C52B5C043A2C64173")
+                .expect("the store"),
+            None,
+            "a key that is not here had a public half"
+        );
+        let carols = public_half(&armour(CAROL_PUBLIC)).expect("Carol's public key");
+        assert_eq!(describe(&carols), vec![carol_as_gnupg_lists_her(false)]);
     }
 }

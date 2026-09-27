@@ -30,6 +30,7 @@ pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub use tasks::MovedWhatTheProviderHolds;
 pub mod notes;
 mod outbox;
+pub mod pgp_keys;
 pub mod reminders;
 pub mod saved_searches;
 #[cfg(test)]
