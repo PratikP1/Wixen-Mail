@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 593
+open_count: 595
 waived_count: 0
-fixed_count: 64
-total_count: 657
-last_updated: 2026-09-27T17:45:00.000Z
+fixed_count: 66
+total_count: 661
+last_updated: 2026-09-27T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -668,10 +668,14 @@ last_updated: 2026-09-27T17:45:00.000Z
 | 651 | 14 | unrun-verify | src/service/pgp/keys.rs |  | 13-17.1, phase 14's: no real correspondent's key locked with a passphrase has been through this. Dave's key, locked by GnuPG 2.4.9 with the default protection, is the only one tried. What a real account settles: that a key exported by Thunderbird, Kleopatra or GnuPG with other protection settings is kept locked, that its passphrase opens it through every locked part, and that a message a real correspondent sent to it asks once and then opens | open |  | 2026-09-27T10:33:40.000Z |  |
 | 652 | 14 | unrun-verify | src/service/pgp/signatures.rs |  | 13-18, phase 14's: no signature from a real correspondent's key has been checked. Every one tried was made by GnuPG 2.4.9 with Carol's Ed25519 fixture key, a clearsigned text and a detached signature over a CRLF part in an envelope written by the tests. What a real account settles: that PGP/MIME signed mail from Thunderbird, Proton Mail and Mutt holds against the sender's imported public key, byte for byte through the arrival path; that an inline signature from a client sending ISO-8859-1 or another non-UTF-8 character set, with letters outside plain English, holds rather than reading as not holding, since the words are checked as stored and not as sent; and that a key signing with a subkey, or an RSA key, is named and holds | open |  | 2026-09-27T16:00:00.000Z |  |
 | 653 | 13 | todo | src/application/checking_signatures.rs |  | 13-18, a question for Pratik: "This message is signed, and it was stored before Wixen Mail kept the form signed mail arrives in, so the signature cannot be checked." is chosen from a signature file among the message's stored files and nothing else, because the header that said it was signed is gone for mail stored before. So a message that only carries a .asc or .p7s file as an attachment, or a signed message a mailing list wrapped in a multipart/mixed of its own with a footer, arriving today, says it too, with a reason that is not its own. Recommendation: record when this build first kept PGP/MIME originals (the moment the kind column is added) and say "stored before" only for messages downloaded before that; for later ones say "This message carries a signature in a form Wixen Mail does not check." The guide and the changelog say the limitation meanwhile | open |  | 2026-09-27T16:00:00.000Z |  |
-| 654 | 13 | stub | src/service/signed_mail/sending.rs |  | S/MIME signing and encrypting is reached only by tests until 13-21 wires the composer. 13-19 built signed_mail::sending's sign_detached and encrypt_to, CertificateStore::own_certificate_for, smtp::Protection's three S/MIME arms in build_message, and the correspondents' certificates kept at arrival with certificates_for; mail_controller::outgoing always sends Protection::Plain and nothing reads certificates_for. 13-21 closes it, as its premise 0 says. One choice it inherits: own_certificate_for takes the first certificate Windows lists that names the address and holds its key, not the one latest in date, and the changelog says so meanwhile | open |  | 2026-09-27T16:10:00.000Z |  |
+| 654 | 13 | stub | src/service/signed_mail/sending.rs |  | S/MIME signing and encrypting is reached only by tests until 13-21 wires the composer. 13-19 built signed_mail::sending's sign_detached and encrypt_to, CertificateStore::own_certificate_for, smtp::Protection's three S/MIME arms in build_message, and the correspondents' certificates kept at arrival with certificates_for; mail_controller::outgoing always sends Protection::Plain and nothing reads certificates_for. 13-21 closes it, as its premise 0 says. One choice it inherits: own_certificate_for takes the first certificate Windows lists that names the address and holds its key, not the one latest in date, and the changelog says so meanwhile. Fixed 2026-09-27 by 13-21: the composer's Sign and Encrypt boxes and the send loop reach it through application::protecting, held by its from_the_queue cases and tests/signing_and_encrypting_from_the_composer.rs; the first certificate Windows lists is still the one used | fixed |  | 2026-09-27T16:10:00.000Z | 2026-09-27T23:30:00.000Z |
 | 655 | 14 | unrun-verify | src/service/protocols/smtp.rs |  | 13-19, phase 14's: nothing signed or encrypted by this program has been opened by another mail program. OpenSSL 3.5.7 verified a signature and opened an envelope made by the same Windows declarations in a scratchpad probe on 2026-09-27, and this program's own reader checks both in the tests; that is all. What a real account settles: that a message signed here with a real certificate reads as signed and unchanged in Outlook, Thunderbird and Apple Mail; that an encrypted one opens in each, which answers whether they accept PKCS #1 v1.5 key transport, and whether they open RSA-OAEP, which would let decision 22 move to the newer padding; that a real correspondent's certificate is kept from their signed mail and a reply sealed to it opens for them; and what Windows shows when the signing key asks for a PIN or lives on a card | open |  | 2026-09-27T16:10:00.000Z |  |
-| 656 | 13 | stub | src/service/pgp/sending.rs |  | OpenPGP signing and encrypting is reached only by tests until 13-21 wires the composer. 13-20 built service::pgp's sign_detached and encrypt_for with the Sending outcomes, the detached signature made in keys.rs beside the held passphrases, and smtp::Protection's three PGP arms with their RFC 3156 wrapping in build_message; mail_controller::outgoing always sends Protection::Plain, and nothing looks up a recipient's public key by address to fill a Recipient. 13-21 closes it, as its premise 0 says | open |  | 2026-09-27T17:45:00.000Z |  |
+| 656 | 13 | stub | src/service/pgp/sending.rs |  | OpenPGP signing and encrypting is reached only by tests until 13-21 wires the composer. 13-20 built service::pgp's sign_detached and encrypt_for with the Sending outcomes, the detached signature made in keys.rs beside the held passphrases, and smtp::Protection's three PGP arms with their RFC 3156 wrapping in build_message; mail_controller::outgoing always sends Protection::Plain, and nothing looks up a recipient's public key by address to fill a Recipient. 13-21 closes it, as its premise 0 says. Fixed 2026-09-27 by 13-21: the composer's Sign and Encrypt boxes and the send loop reach it through application::protecting, which finds a recipient's public key by the address in its names through pgp_keys::public_keys_for, held by its from_the_queue cases and tests/signing_and_encrypting_from_the_composer.rs | fixed |  | 2026-09-27T17:45:00.000Z | 2026-09-27T23:30:00.000Z |
 | 657 | 14 | unrun-verify | src/service/pgp/sending.rs |  | 13-20, phase 14's: nothing signed or encrypted with OpenPGP by this program has been opened by another mail program. GnuPG 2.4.9 decrypted a message encrypted here to Alice's RSA key and Carol's Curve25519 subkey, byte for byte, and said Good signature for a detached signature by Carol over a CRLF part and BAD over its LF form, once, on 2026-09-27; this program's own reader checks both through the RFC 3156 wrapping in the tests. What a real account settles: that a PGP/MIME message signed here reads as signed and unchanged in Thunderbird and Proton Mail, and one encrypted here opens in each, signed and encrypted laid out as RFC 3156 section 6.1 rather than the combined form of 6.2; whether SEIPD version 2 should be offered beside version 1 once those programs are tried; and whether a real correspondent's key with no key flags at all, which this answers as unusable where GnuPG would go by its algorithm, turns up in practice | open |  | 2026-09-27T17:45:00.000Z |  |
+| 658 | 13 | unrun-verify | src/presentation/wx_compose.rs |  | 13-21: the composer's Sign and Encrypt boxes have not been heard with a screen reader. Their names and descriptions on arrival by Tab, Alt+G and Alt+Y pressed inside the message with "Sign on" or "Encrypt off" said there, the refusal at Send read and shown in its message box, the passphrase asked at Send, and the sentence after a protected message goes. tests/signing_and_encrypting_from_the_composer.rs reads the boxes over MSAA at their own handles and the accessibility scan reaches the composer; neither is a listening | open |  | 2026-09-27T23:30:00.000Z |  |
+| 659 | 13 | todo | src/application/protecting.rs |  | 13-21, a question for Pratik: encrypting a message that has a Bcc is refused at Send, because S/MIME and OpenPGP both write every recipient's key on the envelope where anybody who received the message can read it, so a blind copy would not stay blind. The other shapes: encrypt to the Bcc recipients too and say their keys show, or send each Bcc recipient an encrypted copy of their own. Recommendation: keep the refusal until phase 14 has tried a real correspondent, then offer the separate copies, the only shape that keeps a blind copy blind. The guide and the changelog say the refusal meanwhile | open |  | 2026-09-27T23:30:00.000Z |  |
+| 660 | 13 | todo | src/presentation/wx_app.rs |  | 13-21: the composer's From list chooses nothing the Outbox reads. ComposeData.account_index is read by nothing in wx_app.rs, queue_for_sending puts the row under the active account, and the send loop sends from that account's address. So the Sign and Encrypt check at Send reads what is held for the active account's address, the one the message really goes from, and the changelog says so. 13-34, which puts the From on the queued row, is where the check at Send and the gathering in the send loop have to read the row's address instead; its plan names this entry | open |  | 2026-09-27T23:30:00.000Z |  |
+| 661 | 13 | deviation | src/presentation/wx_compose.rs |  | 13-21: a red commit's stub put two visible check boxes after Cancel in the composer's button row, and three window targets that build the composer, a_marker_counts_at_the_start_of_any_line, a_signature_follows_the_from_account and signing_and_encrypting_from_the_composer, ended with exit 0xc000041d after a wxStaticCast assert from wx/object.h, every time under scripts/check.sh (three runs, two of them the hook) and never by hand, alone, after the gate's lib runs, after clippy with every feature, or as the gate's whole list of 134 targets. Hidden, or where the green puts them in the toolbar after Schedule, all three pass under the gate. Not diagnosed; it has the look of ledger 466's WebView2 completion reaching a control it no longer fits. Whoever next adds a control to the composer's button row should expect it | open |  | 2026-09-27T23:30:00.000Z |  |
 
 ````json
 [
@@ -8517,11 +8521,11 @@ last_updated: 2026-09-27T17:45:00.000Z
     "phase": "13",
     "file": "src/service/signed_mail/sending.rs",
     "line": null,
-    "description": "S/MIME signing and encrypting is reached only by tests until 13-21 wires the composer. 13-19 built signed_mail::sending's sign_detached and encrypt_to, CertificateStore::own_certificate_for, smtp::Protection's three S/MIME arms in build_message, and the correspondents' certificates kept at arrival with certificates_for; mail_controller::outgoing always sends Protection::Plain and nothing reads certificates_for. 13-21 closes it, as its premise 0 says. One choice it inherits: own_certificate_for takes the first certificate Windows lists that names the address and holds its key, not the one latest in date, and the changelog says so meanwhile",
-    "status": "open",
+    "description": "S/MIME signing and encrypting is reached only by tests until 13-21 wires the composer. 13-19 built signed_mail::sending's sign_detached and encrypt_to, CertificateStore::own_certificate_for, smtp::Protection's three S/MIME arms in build_message, and the correspondents' certificates kept at arrival with certificates_for; mail_controller::outgoing always sends Protection::Plain and nothing reads certificates_for. 13-21 closes it, as its premise 0 says. One choice it inherits: own_certificate_for takes the first certificate Windows lists that names the address and holds its key, not the one latest in date, and the changelog says so meanwhile. Fixed 2026-09-27 by 13-21: the composer's Sign and Encrypt boxes and the send loop reach it through application::protecting, held by its from_the_queue cases and tests/signing_and_encrypting_from_the_composer.rs; the first certificate Windows lists is still the one used",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-27T16:10:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-27T23:30:00.000Z"
   },
   {
     "id": 655,
@@ -8541,11 +8545,11 @@ last_updated: 2026-09-27T17:45:00.000Z
     "phase": "13",
     "file": "src/service/pgp/sending.rs",
     "line": null,
-    "description": "OpenPGP signing and encrypting is reached only by tests until 13-21 wires the composer. 13-20 built service::pgp's sign_detached and encrypt_for with the Sending outcomes, the detached signature made in keys.rs beside the held passphrases, and smtp::Protection's three PGP arms with their RFC 3156 wrapping in build_message; mail_controller::outgoing always sends Protection::Plain, and nothing looks up a recipient's public key by address to fill a Recipient. 13-21 closes it, as its premise 0 says",
-    "status": "open",
+    "description": "OpenPGP signing and encrypting is reached only by tests until 13-21 wires the composer. 13-20 built service::pgp's sign_detached and encrypt_for with the Sending outcomes, the detached signature made in keys.rs beside the held passphrases, and smtp::Protection's three PGP arms with their RFC 3156 wrapping in build_message; mail_controller::outgoing always sends Protection::Plain, and nothing looks up a recipient's public key by address to fill a Recipient. 13-21 closes it, as its premise 0 says. Fixed 2026-09-27 by 13-21: the composer's Sign and Encrypt boxes and the send loop reach it through application::protecting, which finds a recipient's public key by the address in its names through pgp_keys::public_keys_for, held by its from_the_queue cases and tests/signing_and_encrypting_from_the_composer.rs",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-27T17:45:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-27T23:30:00.000Z"
   },
   {
     "id": 657,
@@ -8557,6 +8561,54 @@ last_updated: 2026-09-27T17:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T17:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 658,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13-21: the composer's Sign and Encrypt boxes have not been heard with a screen reader. Their names and descriptions on arrival by Tab, Alt+G and Alt+Y pressed inside the message with \"Sign on\" or \"Encrypt off\" said there, the refusal at Send read and shown in its message box, the passphrase asked at Send, and the sentence after a protected message goes. tests/signing_and_encrypting_from_the_composer.rs reads the boxes over MSAA at their own handles and the accessibility scan reaches the composer; neither is a listening",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 659,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/protecting.rs",
+    "line": null,
+    "description": "13-21, a question for Pratik: encrypting a message that has a Bcc is refused at Send, because S/MIME and OpenPGP both write every recipient's key on the envelope where anybody who received the message can read it, so a blind copy would not stay blind. The other shapes: encrypt to the Bcc recipients too and say their keys show, or send each Bcc recipient an encrypted copy of their own. Recommendation: keep the refusal until phase 14 has tried a real correspondent, then offer the separate copies, the only shape that keeps a blind copy blind. The guide and the changelog say the refusal meanwhile",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 660,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-21: the composer's From list chooses nothing the Outbox reads. ComposeData.account_index is read by nothing in wx_app.rs, queue_for_sending puts the row under the active account, and the send loop sends from that account's address. So the Sign and Encrypt check at Send reads what is held for the active account's address, the one the message really goes from, and the changelog says so. 13-34, which puts the From on the queued row, is where the check at Send and the gathering in the send loop have to read the row's address instead; its plan names this entry",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 661,
+    "kind": "deviation",
+    "phase": "13",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13-21: a red commit's stub put two visible check boxes after Cancel in the composer's button row, and three window targets that build the composer, a_marker_counts_at_the_start_of_any_line, a_signature_follows_the_from_account and signing_and_encrypting_from_the_composer, ended with exit 0xc000041d after a wxStaticCast assert from wx/object.h, every time under scripts/check.sh (three runs, two of them the hook) and never by hand, alone, after the gate's lib runs, after clippy with every feature, or as the gate's whole list of 134 targets. Hidden, or where the green puts them in the toolbar after Schedule, all three pass under the gate. Not diagnosed; it has the look of ledger 466's WebView2 completion reaching a control it no longer fits. Whoever next adds a control to the composer's button row should expect it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-27T23:30:00.000Z",
     "resolved_at": null
   }
 ]

@@ -738,13 +738,14 @@ tried, so what Windows shows then is not known. No PGP/MIME message from
 Thunderbird or Proton Mail has been read here either: the one tested was made
 with GnuPG. A picture sent inside an encrypted message is not shown yet, and it
 is counted among the pictures not shown. Sending signed or encrypted mail is
-not offered yet.
+offered in the composer, experimentally: see [Signing and encrypting what you
+send](#signing-and-encrypting-what-you-send).
 
 When a message signed with an S/MIME certificate arrives, its signature holds,
 and the certificate names the address the message came from, Wixen Mail keeps
-that certificate, so a reply to that person can be encrypted to them once
-encrypting is offered. A signature that does not hold, or a certificate naming
-some other address, keeps nothing.
+that certificate, so a message to that person can be encrypted to them. A
+signature that does not hold, or a certificate naming some other address,
+keeps nothing.
 
 #### PGP keys
 
@@ -763,8 +764,10 @@ build:
   when you open a message that needs it, and remembered until Wixen Mail
   closes. It is never saved.
 - Public keys are kept here, and every key here checks the PGP signatures made
-  with it. See [Signed PGP mail](#signed-pgp-mail). Sending signed or
-  encrypted mail is not offered yet.
+  with it. See [Signed PGP mail](#signed-pgp-mail). Your key signs and your
+  correspondents' keys encrypt what you send when you tick Sign or Encrypt in
+  the composer; see [Signing and encrypting what you
+  send](#signing-and-encrypting-what-you-send).
 - Removing a key here removes it from this computer.
 
 A locked key's row says "Private key, locked with a passphrase".
@@ -1159,6 +1162,61 @@ structure is now written to the log, so a report can say which line it was on.
 - You can return to edit it later
 - Files you attached and any formatting are kept with it. If a file has been
   moved or deleted by the time you reopen the draft, it says which one
+- Whether Sign and Encrypt were ticked is kept with it too, so a draft you
+  reopen goes out the way you meant it to
+
+### Signing and encrypting what you send
+
+Two check boxes sit beside Send and Schedule: **Sign (experimental)**,
+`Alt+G`, and **Encrypt (experimental)**, `Alt+Y`. Both keys work from
+anywhere in the composer, the message included, and from inside the message
+the new state is read out, "Sign on" or "Encrypt off". Neither box is ever
+greyed out; when one cannot be honoured, Send says why.
+
+Signing needs a certificate or a PGP key of your own for the address the
+message goes from. Encrypting needs that too, because a message is always
+encrypted to you as well, so the copy in Sent is one you can open. It also
+needs something kept here for every person the message goes to: a
+certificate, which Wixen Mail keeps when that person sends you S/MIME signed
+mail, or a PGP public key, which you import in File, PGP Keys.
+
+**Which kind is used.** S/MIME when you have a certificate for your address
+and, to encrypt, every recipient has a certificate kept here. OpenPGP
+otherwise, when you have a PGP key and every recipient has a public key. The
+sentence after the message goes says which, for example "Message sent, from
+the Outbox, signed and encrypted with OpenPGP".
+
+**When it cannot be done.** Send, `Ctrl+Enter` and `Alt+N` check the boxes
+before anything is put in the Outbox. When a box cannot be honoured the
+reason is read out and shown, the composer stays open with your message as it
+was, and nothing is sent:
+
+| What you hear | What to do |
+|---|---|
+| You have no certificate or PGP key for (your address) that can sign, so this message cannot be signed. | Import your PGP private key in File, PGP Keys, or install your certificate in Windows. |
+| There is no certificate or PGP key here for (an address), so this message cannot be encrypted to that address. | Ask that person for signed mail or their public key, or send without Encrypt. |
+| No one kind of encryption reaches everybody this message is to. | Some recipients have only a certificate and others only a PGP key. Send them separate messages. |
+| An encrypted message names everybody it is encrypted to, so a blind copy would not stay blind. | Move the Bcc addresses to Cc, or send them a message of their own. |
+
+Each of these ends "Nothing was sent."
+
+**A locked PGP key.** When your key is locked with a passphrase, Send asks for
+it before the message is signed. It is remembered until Wixen Mail closes and
+never saved. Cancel leaves the composer open with nothing sent.
+
+**Later on.** A message waits in the Outbox for the Undo Send hold, or until
+the time you scheduled. The check is made again when it goes, and if a key or
+certificate has been removed in between, the message stays in the Outbox with
+the reason instead of going out in the clear.
+
+**What is sent, and what Sent holds.** The copy filed in Sent is the message
+exactly as it went, signed or encrypted, and it opens here because you are one
+of the people it is encrypted to.
+
+This is experimental. No message signed or encrypted here has yet been opened
+by Outlook, Thunderbird, Apple Mail or Proton Mail, so another program may say
+a signature does not hold, or may not open a message, when Wixen Mail says it
+went.
 
 ### Replying to Messages
 

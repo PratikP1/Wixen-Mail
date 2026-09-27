@@ -8,17 +8,40 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
-- **OpenPGP signing and encrypting are built underneath, and not offered yet (#52 points 4
-  and 5).** Wixen Mail can now sign a message with a PGP private key of yours and encrypt one
+- **Sign and Encrypt in the composer, experimental (#52 points 4 and 5, GAP-05).** Two check
+  boxes sit beside Send and Schedule, Sign (experimental) on `Alt+G` and Encrypt
+  (experimental) on `Alt+Y`, and both keys work from inside the message, where the new state
+  is read out, "Sign on" or "Encrypt off". A message goes with S/MIME when you have a
+  certificate for the address it is from and, to encrypt, every recipient has a certificate
+  kept here; with OpenPGP otherwise, when you have a PGP key and every recipient has a public
+  key. Send, `Ctrl+Enter` and `Alt+N` check the boxes before anything is put in the Outbox, and
+  when one cannot be honoured they say why, naming the recipient with nothing kept or saying
+  you have no key for your address, and the composer stays open with nothing sent. The boxes
+  are never greyed. A PGP key locked with a passphrase asks for it at Send. Encrypting a
+  message with a Bcc is refused, because an encrypted message names every key it is
+  encrypted to where everyone who received it can read them, so a blind copy would not stay
+  blind. The choice is kept on the queued message and on a draft, so a message scheduled,
+  held for Undo Send, tried again or reopened as a draft goes out as it was asked to; when it
+  goes, the check is made again, and a key removed in between leaves it in the Outbox with the
+  reason rather than sending it in the clear. The sentence after it goes says how, "Message
+  sent, from the Outbox, signed with S/MIME". The copy in Sent is the message as it went, and
+  it opens here because you are always one of those it is encrypted to. This closes the two
+  known limitations below that said signing and encrypting were built underneath and not
+  offered. The version does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: nothing signed or encrypted here has been opened by Outlook,
+  Thunderbird, Apple Mail or Proton Mail; the boxes, the sentences at Send and the passphrase
+  asked at Send have not been heard with a screen reader; and the address a message is
+  checked against is the account the Outbox sends from, which is the active account rather
+  than the one chosen in the From list.
+- **OpenPGP signing and encrypting are built underneath (#52 points 4 and 5).** Wixen Mail can now sign a message with a PGP private key of yours and encrypt one
   to each recipient's public key and to your own, laid out the PGP/MIME way Thunderbird and
   other mail programs read, so the copy in Sent is one you can open. Encrypting uses only the
   public half of your key, so a key locked with a passphrase needs its passphrase only to
   sign. A recipient with no key that mail can be encrypted to, or a key of yours that is
   locked with nothing typed since Wixen Mail started, stops the message with a sentence
   saying which, and nothing goes out unprotected. The version does not move for this: no
-  build has been cut since 1.0.0-alpha.1. Known limitations: signing and encrypting are not
-  offered anywhere yet, and nothing you do reaches them; the Sign and Encrypt boxes in the
-  message window arrive in a later change. A message is encrypted with the older of
+  build has been cut since 1.0.0-alpha.1. Known limitations: the composer's Sign and Encrypt
+  boxes, above, are what reach this. A message is encrypted with the older of
   OpenPGP's two forms of encrypted data, because every program a correspondent may be using
   reads it; whether to offer the newer one waits until real recipients' programs have been
   tried. Nothing signed or encrypted here has been opened by Thunderbird or Proton Mail.
@@ -36,9 +59,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Underneath, Wixen Mail can now sign a message with a certificate of your own in your Windows
   certificate store, with the time of signing inside the signature, and encrypt a message with
   S/MIME to every recipient and to you, so the copy in Sent is one you can open. The version
-  does not move for this: no build has been cut since 1.0.0-alpha.1. Known limitations:
-  signing and encrypting are not offered anywhere yet, and nothing you do reaches them; the
-  Sign and Encrypt boxes in the message window arrive in a later change. Each recipient's copy
+  does not move for this: no build has been cut since 1.0.0-alpha.1. Known limitations: the
+  composer's Sign and Encrypt boxes, above, are what reach this. Each recipient's copy
   of the message key is wrapped the older way, RSA with PKCS #1 v1.5, rather than the newer
   RSA-OAEP that Windows picks when not told, because whether Outlook and Apple Mail open OAEP
   has not been tried, and a message nobody can open is worse than the older padding. Nothing
