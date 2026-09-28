@@ -487,3 +487,36 @@ fn test_the_flag_reading_names_a_folder_handed_and_never_used() {
         .expect_err("a folder handed and never used");
     assert!(why.contains("never uses it"), "{why}");
 }
+
+// ── The runner has a caller (13-25) ────────────────────────────────────────
+//
+// 13-24.1 built the runner with no caller and an expectation that the build
+// would fail the day one arrived. The block's move of the mail already here
+// is the first (13-25); this holds that something outside the runner calls
+// it, so it cannot drift back to code nothing reaches.
+
+/// Somewhere other than the runner's own signature calls it.
+fn the_runner_has_a_caller(app: &str) -> Result<(), String> {
+    let callers = calls_of(app, "run_these_actions_over")
+        .into_iter()
+        .filter(|&at| !app[..at].ends_with("fn "))
+        .count();
+    match callers {
+        0 => Err(format!(
+            "nothing calls {THE_RUNNER} so a block, a Quick Step or a rule over a folder reaches \
+             none of it"
+        )),
+        _ => Ok(()),
+    }
+}
+
+#[test]
+fn test_the_runner_has_a_caller_outside_itself() {
+    the_runner_has_a_caller(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_caller_reading_names_a_runner_nobody_calls() {
+    let why = the_runner_has_a_caller(A_RUNNER_AS_IT_SHOULD_BE).expect_err("a runner alone");
+    assert!(why.contains("nothing calls"), "{why}");
+}

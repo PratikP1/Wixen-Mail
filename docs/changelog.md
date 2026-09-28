@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A block moves the sender's mail already here when you say so, and Block This Sender is on
+  `Ctrl+Shift+B`, experimental (#54's second and third points, GAP-06).** After Action,
+  Block, This Sender or Everyone at This Domain saves the block, the messages already on this
+  computer that it catches are counted without holding the window, in every folder of the
+  account except Junk, Trash, Sent, Drafts and the Outbox. When there are any, one question
+  asks "Also move the 14 messages already here from ada@example.com to Junk?", with Yes on
+  Enter; Yes moves them through the same path every command over a set uses, so each
+  account's permission to change mail is checked before anything moves, and `Ctrl+Z` in the
+  message list moves them back. No leaves them. Over 5,000 nothing is asked or moved, and the
+  sentence gives the count and says to search for the sender and use Move to. With mail
+  changes off nothing is asked and the sentence says the messages stay. Everyone at This
+  Domain has no key. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: the move has never been run against a real mail server;
+  nobody has listened to the question by hand; and a block uses the account you have open,
+  which in All Inboxes may not be the account the message came to.
 - **Report as Junk, experimental (#54's first point, GAP-06).** Action, Report as Junk, on
   `Ctrl+Shift+J` and `J` on the Action menu, moves every selected message to its account's
   junk folder and says one sentence per account about what the provider was told. On a mail
@@ -371,6 +386,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **What a block says is true of what happened (#54).** Before a block, the sentence no longer
+  promises that the messages already here stay where they are. After it, the sentence says how
+  many were moved to the junk folder, how many were not, or that they stay because you
+  answered No, and says nothing about them when there were none. The sentence that the mail
+  provider is told nothing now says Report as Junk on the Action menu is what tells a provider
+  that takes reports. Both Block items say on the menu that the block is experimental.
 - **Marking, starring, labelling, moving, copying, reporting and deleting a set of messages
   say what they said before, through new pieces.** Each of these commands now hands the work of
   changing the messages, here and at the server, to a part of its own that says nothing, and

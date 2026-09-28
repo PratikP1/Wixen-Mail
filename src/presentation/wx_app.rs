@@ -7111,13 +7111,17 @@ impl WxMailApp {
         let blocking_menu = Menu::builder()
             .append_item(
                 ID_BLOCK_SENDER,
-                "&This Sender",
-                "File mail from this address in Junk from now on",
+                "&This Sender\tCtrl+Shift+B",
+                "File mail from this address in Junk from now on, and offer to move what is \
+                 already here. Experimental: the move has never been run against a real mail \
+                 server.",
             )
             .append_item(
                 ID_BLOCK_DOMAIN,
                 "Everyone at This &Domain",
-                "File mail from anybody at this address's domain in Junk from now on",
+                "File mail from anybody at this address's domain in Junk from now on, and offer \
+                 to move what is already here. Experimental: the move has never been run against \
+                 a real mail server.",
             )
             .build();
 
@@ -21526,6 +21530,20 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 move_what_was_reported(AppHandles { state, tx, rt }, msg_list, cache, ready);
             }
         }
+        UIUpdate::WhatABlockCaught(caught) => {
+            // Counted on a worker; asked about and moved here, on the
+            // window's thread, where a question can be put (13-25).
+            if let Some(cache) = message_cache {
+                answer_what_a_block_caught(
+                    AppHandles { state, tx, rt },
+                    frame,
+                    msg_list,
+                    cache,
+                    a11y,
+                    caught,
+                );
+            }
+        }
         UIUpdate::TheNetworkIsBack => {
             back_online_offer.panel.show(true);
             // The list below it has changed size.
@@ -24293,13 +24311,8 @@ fn delete_these(
 /// `acting_on_a_set::said` by default. Each do-half remembers its own action
 /// for Edit, Undo, so after a run of several the last one is the undo step.
 ///
-/// Nothing calls it until 13-25's block, which is its first caller. Expected
-/// rather than allowed, so the attribute fails the build the day that caller
-/// arrives and has to be taken off with it rather than outliving its reason.
-#[expect(
-    dead_code,
-    reason = "no caller until 13-25 blocks a sender through it (13-24.1's ledger entry)"
-)]
+/// Its first caller is the block's move of the mail already here (13-25,
+/// `answer_what_a_block_caught`).
 fn run_these_actions_over(
     app: AppHandles<'_>,
     list: &ListCtrl,
@@ -34909,10 +34922,135 @@ fn block_the_sender(
         tracing::warn!("The junk folder could not be switched on: {why}");
         junk_folder = blocking::TheJunkFolder::IsNotBeingDownloaded;
     }
-    told(
-        &blocking::what_blocking_did(&block, &junk, allowed, junk_folder),
-        Priority::Normal,
+    // What blocking did is said once the mail already here that the rule
+    // catches has been counted and, when there is any, asked about (13-25).
+    // Counted on a worker: it reads every message the account holds and runs
+    // the rule's pattern over each, which on a large mailbox would hold the
+    // window still.
+    let tx = ui_tx.clone();
+    let handle = runtime.handle().clone();
+    runtime.spawn_blocking(move || {
+        use crate::application::filters::FilterEngine;
+        use crate::application::what_a_rule_catches_here::{
+            the_messages_caught, which_messages_here_a_rule_catches,
+        };
+        use crate::data::message_cache::saved_searches::TheMessageText;
+        let here = the_store_on_this_worker()
+            .ok_or_else(|| "The mail on this computer could not be opened.".to_string())
+            .and_then(|store| {
+                let messages = store
+                    .messages_a_saved_search_reads(&account, None, TheMessageText::LeftAlone)
+                    .map_err(|why| why.to_string())?;
+                let folders = store
+                    .get_folders_for_account(&account)
+                    .map_err(|why| why.to_string())?;
+                let caught = FilterEngine::from_persisted_rule(&rule)
+                    .map(|rule| which_messages_here_a_rule_catches(&rule, &messages, &folders))
+                    .unwrap_or_default();
+                Ok(the_messages_caught(&messages, &caught))
+            });
+        let caught = blocking::WhatABlockCaught {
+            block,
+            junk_folder: junk,
+            allowed,
+            junk: junk_folder,
+            here,
+        };
+        handle.block_on(async {
+            let _ = tx.send(UIUpdate::WhatABlockCaught(caught)).await;
+        });
+    });
+}
+
+/// Answer what a block caught among the mail already here, on the window's
+/// thread (13-25, #54 point 2).
+///
+/// Nothing caught says what blocking did and nothing more. More than one
+/// command moves is refused with the count and the bound, before anything
+/// is asked. With mail changes off nothing could be moved, so nothing is
+/// asked either and the sentence says the mail stays. Otherwise one
+/// question, Yes on Enter (decision 4: the move goes to the junk folder and
+/// is what was asked for a moment earlier); Yes moves the mail through the
+/// one runner, which meets each account's gate and the bound before
+/// anything changes, and anything else leaves it. One sentence afterwards,
+/// every word of it `blocking`'s.
+fn answer_what_a_block_caught(
+    app: AppHandles<'_>,
+    frame: &Frame,
+    list: &ListCtrl,
+    cache: &Arc<MessageCache>,
+    a11y: &Accessibility,
+    caught: &crate::application::blocking::WhatABlockCaught,
+) {
+    use crate::application::blocking::{self, MailAlreadyHere};
+    use crate::application::choosing_messages::too_many;
+    use crate::presentation::asking::{Answered, which_of_the_two, yes_no_where_enter_answers_yes};
+    let AppHandles { tx, rt, .. } = app;
+    let chosen = match &caught.here {
+        Ok(chosen) => chosen.clone(),
+        Err(why) => {
+            send_refusal(
+                tx,
+                rt,
+                &format!(
+                    "The mail already here could not be read ({why}), so none of it was moved."
+                ),
+            );
+            Default::default()
+        }
+    };
+    let count = chosen.messages.len();
+    let here = if count == 0 {
+        MailAlreadyHere::Nothing
+    } else if too_many(count).is_some() {
+        MailAlreadyHere::TooMany(count)
+    } else if !caught.allowed.mail {
+        MailAlreadyHere::Left(count)
+    } else {
+        let asked = MessageDialog::builder(
+            frame,
+            &blocking::the_question_about_mail_already_here(
+                &caught.block,
+                count,
+                &caught.junk_folder,
+            ),
+            "Block",
+        )
+        .with_style(yes_no_where_enter_answers_yes())
+        .build()
+        .show_modal();
+        match which_of_the_two(asked) {
+            Answered::Yes => {
+                let outcome = crate::application::filters::Outcome {
+                    move_to: Some(caught.junk_folder.clone()),
+                    ..Default::default()
+                };
+                let moved = match run_these_actions_over(app, list, cache, &chosen, &outcome) {
+                    Ok(done) => done.went.map_or(0, |(_, moved)| moved),
+                    Err(why) => {
+                        send_refusal(tx, rt, &why);
+                        0
+                    }
+                };
+                MailAlreadyHere::Moved {
+                    moved,
+                    not_moved: count.saturating_sub(moved),
+                }
+            }
+            Answered::No | Answered::Neither => MailAlreadyHere::Left(count),
+        }
+    };
+    let said = blocking::what_blocking_did(
+        &caught.block,
+        &caught.junk_folder,
+        caught.allowed,
+        caught.junk,
+        here,
     );
+    send_status(tx, rt, &said);
+    if let MailAlreadyHere::Moved { moved: 1.., .. } = here {
+        let _ = a11y.signal(FeedbackEvent::Confirmed, "Filed in junk");
+    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

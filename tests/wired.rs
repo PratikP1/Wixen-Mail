@@ -4462,10 +4462,17 @@ fn test_a_surface_that_stopped_asking_the_composition_is_named() {
 /// and a message. Whether the two are one clear answer or two competing ones,
 /// where `may_block` also warns, is a screen reader question and is in the
 /// broken windows ledger.
+///
+/// Since 13-25 the sentence after is said once the mail already here has been
+/// counted on a worker and, when there was any, asked about: the making path
+/// sends the count after the rule is written, and the function that answers
+/// it says what blocking did. Followed there rather than read in the making
+/// path alone, which no longer says it.
 #[test]
 fn test_blocking_says_what_it_will_do_before_it_writes_the_rule() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     let making = body_of(&app, "fn block_the_sender(");
+    let answering = body_of(&app, "fn answer_what_a_block_caught(");
 
     let before = making
         .find("what_blocking_will_do")
@@ -4473,9 +4480,9 @@ fn test_blocking_says_what_it_will_do_before_it_writes_the_rule() {
     let writes_the_rule = making
         .find("create_filter_rule")
         .expect("the making path no longer writes a rule");
-    let after = making
-        .find("what_blocking_did")
-        .expect("the making path never says what blocking did");
+    let hands_on_the_count = making.find("UIUpdate::WhatABlockCaught").expect(
+        "the making path never hands on what the block caught, so nothing says what blocking did",
+    );
 
     assert!(
         before < writes_the_rule,
@@ -4483,8 +4490,12 @@ fn test_blocking_says_what_it_will_do_before_it_writes_the_rule() {
          reports in the future tense something that has already happened"
     );
     assert!(
-        writes_the_rule < after,
+        writes_the_rule < hands_on_the_count,
         "what blocking did is said before the rule is written"
+    );
+    assert!(
+        answering.contains("what_blocking_did"),
+        "the answer to what a block caught never says what blocking did"
     );
     assert!(
         making.contains("MayBlock::YesButFirst"),

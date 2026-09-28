@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 436 records have arrived since and have not been through it.
+# 440 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -18262,7 +18262,7 @@ red = [
     "application::blocking::tests::test_unblocking_one_address_leaves_the_domain_block_that_covers_it_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/blocking.rs", tests = 67 },
+    { file = "src/application/blocking.rs", tests = 79 },
 ]
 
 # ── Unblocking a domain, by taking off the address block under it ───────────
@@ -18289,7 +18289,7 @@ red = [
     "application::blocking::tests::test_unblocking_a_domain_leaves_the_narrower_block_underneath_it_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/blocking.rs", tests = 67 },
+    { file = "src/application/blocking.rs", tests = 79 },
 ]
 
 # ── The direction a page sends is read, rather than posted and dropped ──────
@@ -33611,7 +33611,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 18 },
 ]
 
 # The runner meets no gate: an account whose changes are off has its
@@ -33636,7 +33636,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 18 },
 ]
 
 # The flag's worker reads the message's folder again when it runs, rather
@@ -33656,5 +33656,87 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 18 },
+]
+
+# A block's count takes in the Sent folder, so a sender whose messages were
+# forwarded or answered from there has somebody's own sent mail offered for
+# a move into Junk. Written 2026-09-28 by 13-25.
+[[guard]]
+name = "the mail a block catches here passes over the Sent folder"
+file = "src/application/what_a_rule_catches_here.rs"
+before = '''        FolderType::Spam
+            | FolderType::Trash
+            | FolderType::Sent
+            | FolderType::Drafts'''
+after = '''        FolderType::Spam
+            | FolderType::Trash
+            | FolderType::Drafts'''
+red = [
+    "application::what_a_rule_catches_here::tests::test_the_senders_mail_in_sent_is_passed_over",
+]
+tests_last_seen = [
+    { file = "src/application/what_a_rule_catches_here.rs", tests = 11 },
+]
+
+# The sentence after a block that moved the mail already here says it stayed
+# where it was, which is the sentence the block said before 13-25 and would
+# send somebody looking in the wrong folder. Written 2026-09-28 by 13-25.
+[[guard]]
+name = "a block that moved the mail already here does not say it stayed"
+file = "src/application/blocking.rs"
+before = '''            " {} already here {} moved to {junk_folder}.",
+            messages(moved),
+            was_or_were(moved)'''
+after = '''            " The {} already here from them stay where they are.{}",
+            messages(moved),
+            ""'''
+red = [
+    "application::blocking::tests::test_mail_moved_is_said_with_the_count_and_the_folder_and_nothing_stays",
+]
+tests_last_seen = [
+    { file = "src/application/blocking.rs", tests = 79 },
+]
+
+# A block moves the mail already here before asking: the sender's whole
+# history goes to Junk on a keystroke meant for future mail, with the
+# question arriving after the fact. Written 2026-09-28 by 13-25; the planted
+# move compiles and is called before the question.
+[[guard]]
+name = "a block asks about the mail already here before it moves any"
+file = "src/presentation/wx_app.rs"
+suite = "a_block_moves_the_mail_already_here"
+before = '''    let here = if count == 0 {'''
+after = '''    let _ = run_these_actions_over(app, list, cache, &chosen, &Default::default());
+    let here = if count == 0 {'''
+red = [
+    "test_the_question_is_asked_before_anything_moves",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
+]
+
+# A block reads every message the account holds on the window's thread, so
+# a large mailbox holds the window still, and the screen reader with it,
+# while the count is taken. Written 2026-09-28 by 13-25.
+[[guard]]
+name = "a block counts the mail already here on a worker"
+file = "src/presentation/wx_app.rs"
+suite = "a_block_moves_the_mail_already_here"
+before = '''    runtime.spawn_blocking(move || {
+        use crate::application::filters::FilterEngine;'''
+after = '''    let _ = cache.messages_a_saved_search_reads(
+        &account,
+        None,
+        crate::data::message_cache::saved_searches::TheMessageText::LeftAlone,
+    );
+    runtime.spawn_blocking(move || {
+        use crate::application::filters::FilterEngine;'''
+red = [
+    "test_the_count_is_taken_on_a_worker_after_the_rule_is_written",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
 ]
