@@ -290,6 +290,9 @@ Written down so you do not spend time reporting things already on the list.
   Google account, invite a colleague and somebody outside your organisation,
   ask, and tell us which times were offered, which sentence you heard about
   each person, and whether the times match what their calendars really hold.
+  An account with calendars in more than one place, a calendar server and
+  Google say, now asks every one of them; tell us if a guest one of them knows
+  is still said as not checked.
 - **Opening S/MIME encrypted mail is experimental, and it has met no message
   from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
   encrypted to a certificate in your Windows certificate store is opened with

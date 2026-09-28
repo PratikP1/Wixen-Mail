@@ -1076,7 +1076,9 @@ fn asking_when_people_are_free(
                 true => crate::service::oauth::a_google_token_for(&asking_for).await,
                 false => None,
             };
-            let where_to = asking_when_free::where_to_ask(
+            // Every place the account keeps a calendar, asked at once, and each
+            // person's answer built from all of them in `free_busy`.
+            let places = asking_when_free::every_place_to_ask(
                 &calendars,
                 crate::service::caldav::sign_in::load,
                 token
@@ -1086,7 +1088,7 @@ fn asking_when_people_are_free(
                     .as_deref()
                     .map(|token| (crate::service::free_busy::GOOGLE_CALENDAR_BASE, token)),
             );
-            let questions = asking_when_free::one_question(where_to, people);
+            let questions = asking_when_free::questions_for_every_place(places, people);
             // Read-only is enough: asking when somebody is free changes
             // nothing, and `Outward` keeps a door of its own for exactly this
             // question that the gate on changes does not stand in front of.

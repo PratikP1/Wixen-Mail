@@ -16,8 +16,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   carries only the guest list's addresses and the window of dates. A guest Google cannot
   find for you, usually somebody outside your organisation, is said as "their calendar is
   not shared with you" and is never counted free; any other refusal is said as before.
-  Google is asked only when there is no calendar server or Microsoft sign-in on the
-  account; asking every place an account has comes later. While it asks, the waiting window
+  Google was asked only when there was no calendar server or Microsoft sign-in on the
+  account; every place is asked now, as the first entry under Changed says. While it asks, the waiting window
   now says "Asking where your calendar is kept about everybody on the guest list. This is
   experimental and can take a few seconds.", where it used to name your calendar server on
   every account. The version does not move for this: no build has been cut since
@@ -447,6 +447,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Find when everyone is free asks every place the account keeps a calendar, experimental
+  (GAP-08's second point, #57 point 2).** It used to ask one place: the first calendar
+  server the account signs in to, else Microsoft, else Google. Now every calendar server the
+  account signs in to, Microsoft and Google are all asked the same question at the same
+  time, so a guest whose diary is at the second place is checked rather than said as not
+  checked, and one slow place costs only what it would have said. Two calendars on one
+  server under one sign-in ask that server once. What the places say about a guest is put
+  together: a guest any place answered for is checked, with every place's busy time kept,
+  so one place's quiet week never hides another's meeting, and a guest no place answered
+  for is said once, with the first place's reason, and never counted free. Two guests with
+  the same name and different addresses stay two people. The version does not move for
+  this: no build has been cut since 1.0.0-alpha.1. Known limitation: no account with a
+  calendar in two places has been asked for real, and what Microsoft answers a personal
+  Microsoft account is not known yet.
 - **The directory's two boxes moved off the account editor's second page (#55).** Directory
   address and Where in it to look are in Look People Up at Work on the Account Manager now,
   beside the sign-in name and password they belong with, so `Alt+Y` and `Alt+H` are free on

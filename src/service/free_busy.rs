@@ -416,7 +416,10 @@ struct TheOutbox {
 /// put themselves in the middle, would be handed both. Refused, and the account
 /// is told the server does not offer this rather than being quietly pointed
 /// somewhere it never agreed to.
-fn the_same_server(address: &str, server: &str) -> bool {
+///
+/// Public because the same question decides when two calendars are one server
+/// to ask rather than two: `asking_when_free` asks each server once.
+pub fn the_same_server(address: &str, server: &str) -> bool {
     let (Ok(address), Ok(server)) = (url::Url::parse(address), url::Url::parse(server)) else {
         return false;
     };
@@ -811,10 +814,11 @@ const HOW_MANY_IN_ONE_REQUEST: usize = 20;
 
 /// Ask, for everybody named, when they are free.
 ///
-/// One answer per person, in the order they appear across `places`, because
-/// every list `when_people_are_free` reads out is in the order people were
-/// invited and a name that moves between sentences is a name somebody has to
-/// place again each time they hear it.
+/// One answer per person, in the order they first appear across `places`,
+/// because every list `when_people_are_free` reads out is in the order people
+/// were invited and a name that moves between sentences is a name somebody has
+/// to place again each time they hear it. A person asked about at several
+/// places gets one answer built from all of them: see [`one_answer_each`].
 ///
 /// Never fails. A place that could not be asked leaves its people's time
 /// unknown, which is the whole discipline of this module: an error carried up
@@ -857,31 +861,104 @@ async fn everybody_asked(
     )
     .await;
 
-    batches
-        .iter()
-        .zip(answers.iter())
-        .flat_map(|((_, some), answered)| everybody_in(some, answered.as_ref()))
-        .collect()
+    one_answer_each(
+        batches
+            .iter()
+            .zip(answers.iter())
+            .flat_map(|((_, some), answered)| everybody_in(some, answered.as_ref())),
+    )
 }
 
-/// One batch of people, turned into answers.
+/// One batch of people, each with what this place said about them.
 ///
 /// The two ways somebody's time stays unknown both land here. The server was
 /// never asked or would not answer at all, which is the `Err`; or it answered
 /// and said nothing about this person, which is the missing key. Neither is an
 /// empty diary.
-fn everybody_in(
-    people: &[AskAbout],
-    answered: std::result::Result<&WhatTheySaid, &Error>,
-) -> Vec<Invited> {
+fn everybody_in<'a>(
+    people: &'a [AskAbout],
+    answered: std::result::Result<&'a WhatTheySaid, &'a Error>,
+) -> impl Iterator<Item = (&'a AskAbout, TheirCalendar)> + 'a {
     people
         .iter()
-        .map(|person| Invited {
+        .map(move |person| (person, what_was_said_about(person, answered)))
+}
+
+/// One answer per person, however many places were asked about them.
+///
+/// People are told apart by address, here where the address is still known:
+/// two guests who share a name are two people, and merged on the name one of
+/// them would vanish from every sentence and take the other's busy week. In the
+/// order each person was first asked about, which is the order they were
+/// invited in.
+fn one_answer_each<'a>(
+    heard: impl IntoIterator<Item = (&'a AskAbout, TheirCalendar)>,
+) -> Vec<Invited> {
+    let mut people: Vec<(String, &AskAbout, Vec<TheirCalendar>)> = Vec::new();
+    for (person, said) in heard {
+        let address = the_same_person(&person.address);
+        match people.iter_mut().find(|(known, _, _)| *known == address) {
+            Some((_, _, answers)) => answers.push(said),
+            None => people.push((address, person, vec![said])),
+        }
+    }
+    people
+        .into_iter()
+        .map(|(_, person, answers)| Invited {
             called: person.called.clone(),
             zone: person.zone,
-            calendar: what_was_said_about(person, answered),
+            calendar: what_every_place_said(answers),
         })
         .collect()
+}
+
+/// One person's diary, out of what every place said about it.
+///
+/// Answered wherever any place answered, with every place's busy time kept:
+/// one place's quiet week never replaces another's meeting, because either
+/// alone would offer a time the other is busy at. Unknown only where no place
+/// answered, with the first place's reason, so the sentence can still say why.
+fn what_every_place_said(answers: Vec<TheirCalendar>) -> TheirCalendar {
+    answers
+        .into_iter()
+        .reduce(|kept, said| match (kept, said) {
+            (
+                TheirCalendar::Answered {
+                    covering,
+                    mut stretches,
+                },
+                TheirCalendar::Answered {
+                    covering: also_covering,
+                    stretches: more,
+                },
+            ) => {
+                stretches.extend(more);
+                TheirCalendar::Answered {
+                    covering: what_both_cover(covering, also_covering),
+                    stretches,
+                }
+            }
+            (TheirCalendar::NotKnown(_), answered @ TheirCalendar::Answered { .. }) => answered,
+            (kept, _) => kept,
+        })
+        // Nobody is asked about at no place at all; were they, never free.
+        .unwrap_or(TheirCalendar::NotKnown(WhyNot::ThereIsNowhereToAsk))
+}
+
+/// How much of the window two answers cover between them.
+///
+/// Joined where the two meet. Where they do not, the longer, because the gap
+/// between them is time nobody spoke about and a covering stretched across it
+/// would read that gap as free.
+fn what_both_cover(one: Span, other: Span) -> Span {
+    match one.from <= other.until && other.from <= one.until {
+        true => Span {
+            from: one.from.min(other.from),
+            until: one.until.max(other.until),
+        },
+        false if one.until - one.from >= other.until - other.from => one,
+        false => other,
+    }
 }
 
 /// What one person's diary came back as.
@@ -2453,6 +2530,267 @@ mod tests {
         assert_eq!(
             found[0].calendar,
             TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay)
+        );
+    }
+
+    // ── One answer per person from every place asked ───────────────────────
+
+    /// A diary that answered for the whole week, busy at these times.
+    fn busy_at(times: &[(&str, &str)]) -> TheirCalendar {
+        TheirCalendar::Answered {
+            covering: the_week(),
+            stretches: times
+                .iter()
+                .map(|(from, until)| Stretch {
+                    span: span(from, until),
+                    how_busy: HowBusy::Busy,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_a_person_one_place_answers_about_is_answered_even_where_another_did_not() {
+        // Their calendar server could not be reached, and Microsoft answered.
+        // Read the other way round, one place falling over would cost this
+        // person an answer another place gave.
+        let ada = somebody("Ada", "ada@example.com");
+
+        let found = one_answer_each([
+            (&ada, TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay)),
+            (
+                &ada,
+                busy_at(&[("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z")]),
+            ),
+        ]);
+
+        assert_eq!(who_came_back(&found), ["Ada"]);
+        assert_eq!(
+            found[0].calendar,
+            busy_at(&[("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z")])
+        );
+    }
+
+    #[test]
+    fn test_busy_time_from_two_places_is_united_not_replaced() {
+        // Two diaries for one person, overlapping. Either one alone would
+        // offer a time the other is busy at, and a meeting lands on it.
+        let ada = somebody("Ada", "ada@example.com");
+
+        let found = one_answer_each([
+            (
+                &ada,
+                busy_at(&[("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z")]),
+            ),
+            (
+                &ada,
+                busy_at(&[
+                    ("2026-03-02T09:30:00Z", "2026-03-02T10:30:00Z"),
+                    ("2026-03-04T14:00:00Z", "2026-03-04T15:00:00Z"),
+                ]),
+            ),
+        ]);
+
+        assert_eq!(
+            found,
+            [Invited {
+                called: "Ada".to_string(),
+                zone: Some(Tz::UTC),
+                calendar: busy_at(&[
+                    ("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z"),
+                    ("2026-03-02T09:30:00Z", "2026-03-02T10:30:00Z"),
+                    ("2026-03-04T14:00:00Z", "2026-03-04T15:00:00Z"),
+                ]),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_a_person_no_place_answered_about_is_unknown_with_the_first_places_reason() {
+        // Never free, and still one person rather than one per place, so the
+        // sentence names them once and gives a reason.
+        let ada = somebody("Ada", "ada@example.com");
+
+        let found = one_answer_each([
+            (&ada, TheirCalendar::NotKnown(WhyNot::NotSharedWithYou)),
+            (&ada, TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay)),
+        ]);
+
+        assert_eq!(who_came_back(&found), ["Ada"]);
+        assert_eq!(
+            found[0].calendar,
+            TheirCalendar::NotKnown(WhyNot::NotSharedWithYou)
+        );
+    }
+
+    #[test]
+    fn test_two_people_with_one_name_and_two_addresses_stay_two_people() {
+        // Merged by name, one Sam's busy week would become the other's, and
+        // the second Sam would vanish from every sentence.
+        let one_sam = somebody("Sam", "sam@example.com");
+        let another_sam = somebody("Sam", "sam@elsewhere.test");
+
+        let found = one_answer_each([
+            (
+                &one_sam,
+                busy_at(&[("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z")]),
+            ),
+            (
+                &another_sam,
+                TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay),
+            ),
+        ]);
+
+        assert_eq!(who_came_back(&found), ["Sam", "Sam"]);
+        assert_eq!(
+            found[1].calendar,
+            TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay)
+        );
+    }
+
+    #[test]
+    fn test_one_person_is_found_at_every_place_however_each_spells_their_address() {
+        // One place is asked with the address as typed and a server answers
+        // about the calendar address; it is still one person.
+        let typed = somebody("Ada", "Ada@Example.com");
+        let as_asked = somebody("Ada", "mailto:ada@example.com");
+
+        let found = one_answer_each([
+            (
+                &typed,
+                busy_at(&[("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z")]),
+            ),
+            (&as_asked, busy_at(&[])),
+        ]);
+
+        assert_eq!(found.len(), 1, "{found:?}");
+    }
+
+    #[test]
+    fn test_answers_from_one_place_come_back_as_they_were_said_in_the_order_asked() {
+        let (ada, bob) = (
+            somebody("Ada", "ada@example.com"),
+            somebody("Bob", "bob@example.com"),
+        );
+
+        let found = one_answer_each([
+            (&ada, busy_at(&[])),
+            (
+                &bob,
+                TheirCalendar::NotKnown(WhyNot::TheReplyCouldNotBeRead),
+            ),
+        ]);
+
+        assert_eq!(who_came_back(&found), ["Ada", "Bob"]);
+        assert_eq!(found[0].calendar, busy_at(&[]));
+        assert_eq!(
+            found[1].calendar,
+            TheirCalendar::NotKnown(WhyNot::TheReplyCouldNotBeRead)
+        );
+    }
+
+    #[test]
+    fn test_what_two_places_cover_is_joined_only_where_the_two_meet() {
+        // A gap between two coverings is time nobody spoke about. Joined
+        // across it, that gap would read as free.
+        let covering = |from: &str, until: &str| TheirCalendar::Answered {
+            covering: span(from, until),
+            stretches: Vec::new(),
+        };
+        let ada = somebody("Ada", "ada@example.com");
+        let covered = |first: TheirCalendar, then: TheirCalendar| match &one_answer_each([
+            (&ada, first),
+            (&ada, then),
+        ])[0]
+            .calendar
+        {
+            TheirCalendar::Answered { covering, .. } => *covering,
+            unknown => panic!("an answer became {unknown:?}"),
+        };
+
+        assert_eq!(
+            covered(
+                covering("2026-03-02T00:00:00Z", "2026-03-04T00:00:00Z"),
+                covering("2026-03-03T00:00:00Z", "2026-03-07T00:00:00Z"),
+            ),
+            the_week()
+        );
+        assert_eq!(
+            covered(
+                covering("2026-03-02T00:00:00Z", "2026-03-03T00:00:00Z"),
+                covering("2026-03-05T00:00:00Z", "2026-03-07T00:00:00Z"),
+            ),
+            span("2026-03-05T00:00:00Z", "2026-03-07T00:00:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_every_place_is_asked_and_each_person_comes_back_once_from_all_of_them() {
+        // Microsoft knows Ada and not Bob; Google knows both. Ada's busy time
+        // from the two is united, and Bob is answered because Google said.
+        let (microsoft, _heard_by_microsoft) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{\"value\":[{\"scheduleId\":\"ada@example.com\",\"scheduleItems\":[\
+                 {\"status\":\"busy\",\
+                 \"start\":{\"dateTime\":\"2026-03-02T09:00:00.0000000\",\"timeZone\":\"UTC\"},\
+                 \"end\":{\"dateTime\":\"2026-03-02T10:00:00.0000000\",\"timeZone\":\"UTC\"}}]}]}"
+                    .to_string(),
+            ],
+        )
+        .await;
+        let (google, _heard_by_google) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{\"kind\":\"calendar#freeBusy\",\"calendars\":{\
+                 \"ada@example.com\":{\"busy\":[\
+                 {\"start\":\"2026-03-02T09:30:00Z\",\"end\":\"2026-03-02T10:30:00Z\"}]},\
+                 \"bob@example.com\":{\"busy\":[\
+                 {\"start\":\"2026-03-04T14:00:00Z\",\"end\":\"2026-03-04T15:00:00Z\"}]}}}"
+                    .to_string(),
+            ],
+        )
+        .await;
+        let everybody = vec![
+            somebody("Ada", "ada@example.com"),
+            somebody("Bob", "bob@example.com"),
+        ];
+
+        let found = when_they_are_free(
+            &a_client(),
+            &[
+                AskHere {
+                    server: WhereToAsk::Microsoft {
+                        base: format!("http://{microsoft}"),
+                        token: "a-fake-token".to_string(),
+                    },
+                    people: everybody.clone(),
+                },
+                AskHere {
+                    server: WhereToAsk::Google {
+                        base: format!("http://{google}/calendar/v3"),
+                        token: "a-fake-token".to_string(),
+                    },
+                    people: everybody,
+                },
+            ],
+            the_week(),
+        )
+        .await;
+
+        assert_eq!(who_came_back(&found), ["Ada", "Bob"]);
+        assert_eq!(
+            found[0].calendar,
+            busy_at(&[
+                ("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z"),
+                ("2026-03-02T09:30:00Z", "2026-03-02T10:30:00Z"),
+            ])
+        );
+        assert_eq!(
+            found[1].calendar,
+            busy_at(&[("2026-03-04T14:00:00Z", "2026-03-04T15:00:00Z")])
         );
     }
 }

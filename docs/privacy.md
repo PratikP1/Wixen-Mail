@@ -369,12 +369,18 @@ to the people named.
 
 Saving the meeting is a separate matter, covered below.
 
-When you do ask, the question goes to whichever of these holds the account's calendar: your
-own calendar server, Microsoft, or Google. It is asked of one of them, in that order, and it
-names the whole guest list in one request. So that server learns that you are thinking
-about a meeting with these named people, in this window. Where it passes the question on
-to another organisation's server, that organisation learns the same about its own person.
-Both are how asking works and cannot be avoided while still asking.
+When you do ask, the question goes to every place the account keeps a calendar: each
+calendar server it signs in to, Microsoft, and Google. Every one of them is asked the same
+question at the same time, and each names the whole guest list in one request, because
+nothing here knows whose diary is at which. So each of those places learns that you are
+thinking about a meeting with these named people, in this window. Where one passes the
+question on to another organisation's server, that organisation learns the same about its
+own person. Both are how asking works and cannot be avoided while still asking. A place
+the account keeps no calendar at is never asked.
+
+What each place says about a guest is put together: a guest any place answered for is
+checked, with their busy time from every place kept, and a guest no place answered for is
+said as not checked and never counted as free.
 
 Google is asked only for an account whose calendar is at Google. It uses the Google sign-in
 the account already has, whose calendar permission covers this question, so nothing new is
@@ -582,8 +588,8 @@ four bytes of a hash, sometimes, and never the address.
 which is the whole point of answering, and tells them nothing more than the answer. Saving a
 meeting with people on it may make your provider write to them;
 [Saving a meeting with people on it](#saving-a-meeting-with-people-on-it) says when. Asking
-when people are free asks the one place holding the account's calendar, your own calendar
-server, Microsoft or Google, and nobody else;
+when people are free asks every place the account keeps a calendar, your own calendar
+servers, Microsoft and Google, the same question, and nobody else;
 [Asking when the people invited to a meeting are free](#asking-when-the-people-invited-to-a-meeting-are-free)
 says what goes. Read from `src/application/attaching.rs`, which builds the reply, and
 `src/service/free_busy.rs`.

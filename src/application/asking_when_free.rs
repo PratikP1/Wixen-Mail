@@ -26,7 +26,7 @@ use crate::application::when_people_are_free::{
 };
 use crate::application::who_is_coming::Coming;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry};
-use crate::service::free_busy::{AskAbout, AskHere, WhereToAsk};
+use crate::service::free_busy::{AskAbout, AskHere, WhereToAsk, the_same_server};
 
 /// How far ahead the search looks when somebody asks.
 ///
@@ -157,7 +157,7 @@ fn how_long_it_lasts(event: &TheEventSoFar) -> chrono::Duration {
     (event.ends - event.starts).max(chrono::Duration::minutes(AT_LEAST_THIS_LONG))
 }
 
-/// Where one account's free/busy questions go.
+/// Every place one account's free/busy questions go.
 ///
 /// `sign_in` looks a calendar server's stored name and password up by calendar
 /// id; `microsoft` and `google` are where each service is and this account's
@@ -165,34 +165,35 @@ fn how_long_it_lasts(event: &TheEventSoFar) -> chrono::Duration {
 /// machine's credential store and the others have to be refreshed over the
 /// network, and a test can reach none of them.
 ///
-/// A calendar server first, because an account that has one has been pointed at
-/// it deliberately, then Microsoft, then Google. Google only for an account
-/// that keeps a calendar there, because asking Google about a guest list tells
-/// Google who is meeting whom. Nowhere is a real answer and not a failure: a
-/// mail account with no calendar on it has nobody to ask, and everybody on it
-/// comes back unknown rather than free.
-pub fn where_to_ask(
+/// Every calendar server the account signed in to, then Microsoft, then Google,
+/// all of them asked at once, so a place that is slow or refuses costs only
+/// what it would have said. Google only for an account that keeps a calendar
+/// there, because asking Google about a guest list tells Google who is meeting
+/// whom. No place at all is a real answer and not a failure: a mail account
+/// with no calendar on it has nobody to ask, and
+/// [`questions_for_every_place`] then asks nowhere, so everybody on it comes
+/// back unknown rather than free.
+pub fn every_place_to_ask(
     calendars: &[CalendarContainer],
     sign_in: impl Fn(&str) -> Option<(String, String)>,
     microsoft: Option<(&str, &str)>,
     google: Option<(&str, &str)>,
-) -> WhereToAsk {
-    if let Some(asking) = the_first_calendar_server_signed_in_to(calendars, sign_in) {
-        return asking;
-    }
-    if let Some((base, token)) = microsoft {
-        return WhereToAsk::Microsoft {
+) -> Vec<WhereToAsk> {
+    let microsoft = microsoft.map(|(base, token)| WhereToAsk::Microsoft {
+        base: base.to_string(),
+        token: token.to_string(),
+    });
+    let google = google
+        .filter(|_| holds_a_google_calendar(calendars))
+        .map(|(base, token)| WhereToAsk::Google {
             base: base.to_string(),
             token: token.to_string(),
-        };
-    }
-    match google.filter(|_| holds_a_google_calendar(calendars)) {
-        Some((base, token)) => WhereToAsk::Google {
-            base: base.to_string(),
-            token: token.to_string(),
-        },
-        None => WhereToAsk::Nowhere,
-    }
+        });
+    every_calendar_server_signed_in_to(calendars, sign_in)
+        .into_iter()
+        .chain(microsoft)
+        .chain(google)
+        .collect()
 }
 
 /// Whether any of these calendars is a Google account's calendar.
@@ -205,23 +206,27 @@ pub fn holds_a_google_calendar(calendars: &[CalendarContainer]) -> bool {
     })
 }
 
-/// The first calendar server among these this account can sign in to.
+/// Every calendar server among these this account can sign in to, each once.
 ///
-/// A calendar with no sign-in stored is passed over rather than being the
-/// answer, because half a sign-in is not a sign-in: asked with one the question
-/// comes back refused, which is the same answer arrived at through a round trip
-/// and somebody's waiting.
-fn the_first_calendar_server_signed_in_to(
+/// A calendar with no sign-in stored is passed over rather than being asked,
+/// because half a sign-in is not a sign-in: asked with one the question comes
+/// back refused, which is the same answer arrived at through a round trip and
+/// somebody's waiting.
+///
+/// Two calendars on one server under one sign-in are asked once. The question
+/// goes to the account's outbox rather than to a calendar, so both would post
+/// the same guest list to the same place for the same answer.
+fn every_calendar_server_signed_in_to(
     calendars: &[CalendarContainer],
     sign_in: impl Fn(&str) -> Option<(String, String)>,
-) -> Option<WhereToAsk> {
+) -> Vec<WhereToAsk> {
     calendars
         .iter()
         .filter(|calendar| {
             calendar.source_provider.as_deref()
                 == Some(crate::application::calendar_source::ON_A_SERVER)
         })
-        .find_map(|calendar| {
+        .filter_map(|calendar| {
             let server = calendar
                 .caldav_url
                 .as_deref()
@@ -234,6 +239,32 @@ fn the_first_calendar_server_signed_in_to(
                 password,
             })
         })
+        .fold(Vec::new(), |mut servers, found| {
+            if !servers
+                .iter()
+                .any(|kept| the_same_account_asked_twice(kept, &found))
+            {
+                servers.push(found);
+            }
+            servers
+        })
+}
+
+/// Whether two calendar servers are one sign-in on one server.
+fn the_same_account_asked_twice(one: &WhereToAsk, other: &WhereToAsk) -> bool {
+    match (one, other) {
+        (
+            WhereToAsk::CalendarServer {
+                server, user_name, ..
+            },
+            WhereToAsk::CalendarServer {
+                server: another_server,
+                user_name: another_name,
+                ..
+            },
+        ) => user_name == another_name && the_same_server(server, another_server),
+        _ => false,
+    }
 }
 
 /// The guest list, as people to ask a server about.
@@ -253,12 +284,29 @@ pub fn people_to_ask_about(invited: &[Coming]) -> Vec<AskAbout> {
         .collect()
 }
 
-/// One place to ask, and everybody to ask it about.
-pub fn one_question(server: WhereToAsk, people: Vec<AskAbout>) -> Vec<AskHere> {
-    match people.is_empty() {
-        true => Vec::new(),
-        false => vec![AskHere { server, people }],
+/// Every place to ask, and everybody to ask each of them about.
+///
+/// Everybody goes to every place, because nothing here knows whose diary is
+/// where: a colleague may be at the calendar server and a friend at Google, and
+/// `free_busy` builds each person's one answer out of whatever every place
+/// said. With no place at all, everybody is asked about nowhere, which brings
+/// them back as people nobody could check rather than dropping them unheard.
+/// Nobody to ask about is no question anywhere.
+pub fn questions_for_every_place(places: Vec<WhereToAsk>, people: Vec<AskAbout>) -> Vec<AskHere> {
+    if people.is_empty() {
+        return Vec::new();
     }
+    let places = match places.is_empty() {
+        true => vec![WhereToAsk::Nowhere],
+        false => places,
+    };
+    places
+        .into_iter()
+        .map(|server| AskHere {
+            server,
+            people: people.clone(),
+        })
+        .collect()
 }
 
 /// Where the person arranging the meeting is standing.
@@ -466,15 +514,15 @@ mod tests {
             ),
         ];
 
-        let asking = where_to_ask(&calendars, signed_in_to("cal-1"), None, None);
+        let asking = every_place_to_ask(&calendars, signed_in_to("cal-1"), None, None);
 
         assert_eq!(
             asking,
-            WhereToAsk::CalendarServer {
+            [WhereToAsk::CalendarServer {
                 server: "https://cal.example.com/dav/calendars/sam/work/".to_string(),
                 user_name: "sam".to_string(),
                 password: "not-a-real-password".to_string(),
-            }
+            }]
         );
     }
 
@@ -490,9 +538,9 @@ mod tests {
             Some("https://cal.example.com/dav/"),
         )];
 
-        let asking = where_to_ask(&calendars, signed_in_to("another-calendar"), None, None);
+        let asking = every_place_to_ask(&calendars, signed_in_to("another-calendar"), None, None);
 
-        assert_eq!(asking, WhereToAsk::Nowhere);
+        assert_eq!(asking, []);
     }
 
     #[test]
@@ -502,7 +550,7 @@ mod tests {
         // question.
         let calendars = [a_calendar("cal-1", "outlook", None)];
 
-        let asking = where_to_ask(
+        let asking = every_place_to_ask(
             &calendars,
             signed_in_to("nothing"),
             Some(("https://graph.example.com/v1.0", "a-fake-token")),
@@ -511,10 +559,10 @@ mod tests {
 
         assert_eq!(
             asking,
-            WhereToAsk::Microsoft {
+            [WhereToAsk::Microsoft {
                 base: "https://graph.example.com/v1.0".to_string(),
                 token: "a-fake-token".to_string(),
-            }
+            }]
         );
     }
 
@@ -524,8 +572,8 @@ mod tests {
         // answer for everybody on it is that their time is unknown rather
         // than that they are free.
         assert_eq!(
-            where_to_ask(&[], signed_in_to("nothing"), None, None),
-            WhereToAsk::Nowhere
+            every_place_to_ask(&[], signed_in_to("nothing"), None, None),
+            []
         );
     }
 
@@ -542,7 +590,7 @@ mod tests {
             None,
         )];
 
-        let asking = where_to_ask(
+        let asking = every_place_to_ask(
             &calendars,
             signed_in_to("nothing"),
             None,
@@ -551,10 +599,10 @@ mod tests {
 
         assert_eq!(
             asking,
-            WhereToAsk::Google {
+            [WhereToAsk::Google {
                 base: GOOGLE_BASE.to_string(),
                 token: "a-fake-google-token".to_string(),
-            }
+            }]
         );
     }
 
@@ -569,8 +617,8 @@ mod tests {
         )];
 
         assert_eq!(
-            where_to_ask(&calendars, signed_in_to("nothing"), None, None),
-            WhereToAsk::Nowhere
+            every_place_to_ask(&calendars, signed_in_to("nothing"), None, None),
+            []
         );
     }
 
@@ -585,20 +633,21 @@ mod tests {
         )];
 
         assert_eq!(
-            where_to_ask(
+            every_place_to_ask(
                 &calendars,
                 signed_in_to("nothing"),
                 None,
                 Some((GOOGLE_BASE, "a-fake-google-token")),
             ),
-            WhereToAsk::Nowhere
+            []
         );
     }
 
     #[test]
-    fn test_a_calendar_server_and_then_microsoft_come_before_google() {
-        // One place per account until every place is asked: the order is the
-        // one the account was set up in, extended.
+    fn test_every_place_the_account_keeps_a_calendar_is_asked() {
+        // A calendar server, Microsoft and Google all at once. Asking only the
+        // first leaves everybody whose diary is at the other two unknown, when
+        // either could have said.
         let calendars = [
             a_calendar("google-1", crate::application::calendar::GOOGLE, None),
             a_calendar(
@@ -607,17 +656,136 @@ mod tests {
                 Some("https://cal.example.com/dav/"),
             ),
         ];
-        let google = Some((GOOGLE_BASE, "a-fake-google-token"));
-        let microsoft = Some(("https://graph.example.com/v1.0", "a-fake-token"));
 
-        assert!(matches!(
-            where_to_ask(&calendars, signed_in_to("cal-1"), microsoft, google),
-            WhereToAsk::CalendarServer { .. }
-        ));
-        assert!(matches!(
-            where_to_ask(&calendars, signed_in_to("nothing"), microsoft, google),
-            WhereToAsk::Microsoft { .. }
-        ));
+        let asking = every_place_to_ask(
+            &calendars,
+            signed_in_to("cal-1"),
+            Some(("https://graph.example.com/v1.0", "a-fake-token")),
+            Some((GOOGLE_BASE, "a-fake-google-token")),
+        );
+
+        assert_eq!(
+            asking,
+            [
+                WhereToAsk::CalendarServer {
+                    server: "https://cal.example.com/dav/".to_string(),
+                    user_name: "sam".to_string(),
+                    password: "not-a-real-password".to_string(),
+                },
+                WhereToAsk::Microsoft {
+                    base: "https://graph.example.com/v1.0".to_string(),
+                    token: "a-fake-token".to_string(),
+                },
+                WhereToAsk::Google {
+                    base: GOOGLE_BASE.to_string(),
+                    token: "a-fake-google-token".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_every_calendar_server_signed_in_to_is_asked_once() {
+        // Two calendars on one server with one sign-in are one diary's owner
+        // asked twice: the same outbox, the same answer, twice the waiting. A
+        // second server is a second place.
+        let calendars = [
+            a_calendar(
+                "work",
+                crate::application::calendar_source::ON_A_SERVER,
+                Some("https://cal.example.com/dav/calendars/sam/work/"),
+            ),
+            a_calendar(
+                "home",
+                crate::application::calendar_source::ON_A_SERVER,
+                Some("https://cal.example.com/dav/calendars/sam/home/"),
+            ),
+            a_calendar(
+                "club",
+                crate::application::calendar_source::ON_A_SERVER,
+                Some("https://dav.club.example.org/sam/"),
+            ),
+        ];
+        let everywhere = |_: &str| Some(("sam".to_string(), "not-a-real-password".to_string()));
+
+        let servers: Vec<String> = every_place_to_ask(&calendars, everywhere, None, None)
+            .into_iter()
+            .map(|place| match place {
+                WhereToAsk::CalendarServer { server, .. } => server,
+                elsewhere => panic!("not a calendar server: {elsewhere:?}"),
+            })
+            .collect();
+
+        assert_eq!(
+            servers,
+            [
+                "https://cal.example.com/dav/calendars/sam/work/",
+                "https://dav.club.example.org/sam/",
+            ]
+        );
+    }
+
+    /// Two people on a guest list.
+    fn ada_and_bob() -> Vec<AskAbout> {
+        ["ada@example.com", "bob@example.com"]
+            .into_iter()
+            .map(|address| AskAbout {
+                called: address.to_string(),
+                address: address.to_string(),
+                zone: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_everybody_is_asked_about_at_every_place() {
+        let places = vec![
+            WhereToAsk::Microsoft {
+                base: "https://graph.example.com/v1.0".to_string(),
+                token: "a-fake-token".to_string(),
+            },
+            WhereToAsk::Google {
+                base: GOOGLE_BASE.to_string(),
+                token: "a-fake-google-token".to_string(),
+            },
+        ];
+
+        let questions = questions_for_every_place(places.clone(), ada_and_bob());
+
+        assert_eq!(
+            questions,
+            places
+                .into_iter()
+                .map(|server| AskHere {
+                    server,
+                    people: ada_and_bob(),
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_place_asks_nowhere_so_everybody_is_unknown() {
+        // Nowhere is still a question: it is what brings everybody back as
+        // somebody nobody could check, rather than dropping them unheard.
+        assert_eq!(
+            questions_for_every_place(Vec::new(), ada_and_bob()),
+            [AskHere {
+                server: WhereToAsk::Nowhere,
+                people: ada_and_bob(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_nobody_to_ask_about_is_no_question_anywhere() {
+        let places = vec![WhereToAsk::Google {
+            base: GOOGLE_BASE.to_string(),
+            token: "a-fake-google-token".to_string(),
+        }];
+
+        assert_eq!(questions_for_every_place(places, Vec::new()), []);
+        assert_eq!(questions_for_every_place(Vec::new(), Vec::new()), []);
     }
 
     #[test]
