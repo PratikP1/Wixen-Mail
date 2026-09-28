@@ -2486,7 +2486,7 @@ tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
-    { file = "src/application/when_people_are_free.rs", tests = 50 },
+    { file = "src/application/when_people_are_free.rs", tests = 54 },
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/event_times.rs", tests = 23 },
@@ -33991,7 +33991,7 @@ red = [
     "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 52 },
+    { file = "src/service/free_busy.rs", tests = 56 },
 ]
 
 # Google's free/busy question sent with no sign-in on it, so every answer is a
@@ -34012,7 +34012,7 @@ red = [
     "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 52 },
+    { file = "src/service/free_busy.rs", tests = 56 },
 ]
 
 # An account whose calendar is at Google passed over, so every guest on it
@@ -34084,7 +34084,7 @@ red = [
     "service::free_busy::tests::test_every_place_is_asked_and_each_person_comes_back_once_from_all_of_them",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 52 },
+    { file = "src/service/free_busy.rs", tests = 56 },
 ]
 
 # The event form's worker cuts every place down to the first before asking, so

@@ -340,6 +340,13 @@ pub struct InTheWay {
     pub free_from: Option<DateTime<Utc>>,
 }
 
+/// Somebody whose own zone is known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placed {
+    pub called: String,
+    pub zone: Tz,
+}
+
 /// Somebody whose calendar said nothing, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotKnown {
@@ -358,6 +365,9 @@ pub struct WhenWeCouldMeet {
     /// Anybody nobody said where they were, whose working day was therefore
     /// judged by the zone of the person arranging the meeting.
     pub where_they_are_not_known: Vec<String>,
+    /// Everybody whose own zone is known, in the order invited, so a time can
+    /// be said on their clock as well as this one.
+    pub where_they_are_known: Vec<Placed>,
     /// When nothing works, who is filling the times that would have, the
     /// fullest diary first.
     pub in_the_way: Vec<InTheWay>,
@@ -401,12 +411,12 @@ const HOW_MANY_TIMES_ARE_SAID: usize = 3;
 
 impl WhenWeCouldMeet {
     /// The whole answer, in sentences somebody can listen to.
-    pub fn in_words(&self, say: InWords, _on_their_clock: OnTheirClock) -> String {
+    pub fn in_words(&self, say: InWords, on_their_clock: OnTheirClock) -> String {
         if self.how_many_invited == 0 {
             return "Nobody has been invited, so there is nothing to work out.".to_string();
         }
         let mut sentences = match self.times.is_empty() {
-            false => vec![self.the_times_in_words(say)],
+            false => vec![self.the_times_in_words(say, on_their_clock)],
             true => self.why_there_is_no_time(say),
         };
         sentences.extend(self.how_the_times_said_suit_people(say));
@@ -506,15 +516,45 @@ impl WhenWeCouldMeet {
         ))
     }
 
-    /// The times themselves, which is what somebody asked for.
-    fn the_times_in_words(&self, say: InWords) -> String {
+    /// The times themselves, which is what somebody asked for, each with the
+    /// clocks of the guests whose own clock says another hour.
+    fn the_times_in_words(&self, say: InWords, on_their_clock: OnTheirClock) -> String {
         let said: Vec<String> = self
             .times
             .iter()
             .take(HOW_MANY_TIMES_ARE_SAID)
-            .map(|time| say(time.span.from))
+            .map(|time| self.a_time_on_every_clock(time.span.from, say, on_their_clock))
             .collect();
         format!("Everyone is free {}.", one_after_another(&said, "or"))
+    }
+
+    /// One time, "Tuesday at 10:00, which is 15:00 for Ada and 13:00 for Bo".
+    ///
+    /// Only the guests whose clock differs from this one then, because a
+    /// clause repeating the hour already said says nothing; and only the first
+    /// few, in the order invited.
+    fn a_time_on_every_clock(
+        &self,
+        at: DateTime<Utc>,
+        say: InWords,
+        on_their_clock: OnTheirClock,
+    ) -> String {
+        let here = at.with_timezone(&self.asked.here);
+        let their_clocks: Vec<String> = self
+            .where_they_are_known
+            .iter()
+            .filter(|person| keeps_another_clock(at, person.zone, self.asked.here))
+            .take(HOW_MANY_CLOCKS_ARE_SAID)
+            .map(|person| on_their_clock_for(here, person, on_their_clock))
+            .collect();
+        match their_clocks.is_empty() {
+            true => say(at),
+            false => format!(
+                "{}, which is {}",
+                say(at),
+                one_after_another(&their_clocks, "and")
+            ),
+        }
     }
 
     /// Why there is no time, and the nearest thing to one.
@@ -545,6 +585,37 @@ impl WhenWeCouldMeet {
         );
         sentences
     }
+}
+
+/// How many guests' own clocks are said beside one time.
+///
+/// Three, as with the times themselves: past that a meeting of twenty is
+/// twenty clauses on every time, and nobody still holds the first hour by the
+/// time the last is said.
+const HOW_MANY_CLOCKS_ARE_SAID: usize = 3;
+
+/// Whether somebody's clock says another hour from this one at an instant.
+///
+/// Asked of the clocks rather than the zones' names: London keeps Greenwich's
+/// hour all winter, and a clause saying so would be a clause saying nothing.
+fn keeps_another_clock(at: DateTime<Utc>, theirs: Tz, here: Tz) -> bool {
+    use chrono::Offset;
+    at.with_timezone(&theirs).offset().fix() != at.with_timezone(&here).offset().fix()
+}
+
+/// "15:00 for Ada", or "Wednesday 12:00 for Ada" where their clock is already
+/// on another day, so a meeting is never heard on the wrong one.
+fn on_their_clock_for(here: DateTime<Tz>, person: &Placed, on_their_clock: OnTheirClock) -> String {
+    let there = here.with_timezone(&person.zone);
+    let day = match there.date_naive() == here.date_naive() {
+        true => TheirDay::TheSame,
+        false => TheirDay::Another,
+    };
+    format!(
+        "{} for {}",
+        on_their_clock(there.naive_local(), day),
+        person.called
+    )
 }
 
 /// How many of the people in the way are named.
@@ -645,6 +716,7 @@ pub fn when_we_could_meet(people: &[Invited], asking: Asking) -> WhenWeCouldMeet
             times: Vec::new(),
             calendars_not_known: Vec::new(),
             where_they_are_not_known: Vec::new(),
+            where_they_are_known: Vec::new(),
             in_the_way: Vec::new(),
             times_tried: 0,
             how_many_invited: 0,
@@ -674,6 +746,15 @@ pub fn when_we_could_meet(people: &[Invited], asking: Asking) -> WhenWeCouldMeet
             .iter()
             .filter(|person| person.zone.is_none())
             .map(|person| person.called.clone())
+            .collect(),
+        where_they_are_known: people
+            .iter()
+            .filter_map(|person| {
+                Some(Placed {
+                    called: person.called.clone(),
+                    zone: person.zone?,
+                })
+            })
             .collect(),
         in_the_way: if times.is_empty() {
             who_is_filling_the_times(people, asking)
@@ -1845,7 +1926,8 @@ mod tests {
 
         assert_eq!(
             found.in_words(&plainly, &plainly_there),
-            "Everyone is free Monday at 9, Monday at 9:30, or Monday at 10. \
+            "Everyone is free Monday at 9, which is 04:00 for Grace, Monday at 9:30, \
+             which is 04:30 for Grace, or Monday at 10, which is 05:00 for Grace. \
              Monday at 9, Monday at 9:30, and Monday at 10 are outside \
              Grace's working day."
         );

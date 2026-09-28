@@ -519,6 +519,41 @@ struct OneDiary {
     /// Present when the service would not answer about this person.
     #[serde(default)]
     error: Option<serde_json::Value>,
+    /// The hours this person works, and the zone they keep them in.
+    #[serde(default)]
+    working_hours: Option<TheirWorkingHours>,
+}
+
+/// A person's working hours in a reply from Microsoft, read only for the zone.
+///
+/// The hours themselves are not read: the working day a time is judged against
+/// is the one set here, in each person's own zone.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TheirWorkingHours {
+    #[serde(default)]
+    time_zone: Option<ANamedZone>,
+}
+
+/// A zone as Microsoft writes one: a Windows name, "Pacific Standard Time", or
+/// "Customized Time Zone" beside offsets for one somebody built by hand.
+#[derive(serde::Deserialize)]
+struct ANamedZone {
+    #[serde(default)]
+    name: String,
+}
+
+impl OneDiary {
+    /// Where this person is, by the zone their working hours are kept in.
+    ///
+    /// Asked of the one resolver every stored zone name goes through, so a
+    /// Windows name is placed by Windows. A zone built by hand, or a name this
+    /// computer cannot place, is nowhere rather than a guess: the working day
+    /// is then judged where the organiser is, and the answer says so.
+    fn where_they_are(&self) -> Option<Tz> {
+        let named = self.working_hours.as_ref()?.time_zone.as_ref()?;
+        crate::common::zones::the_zone_called(&named.name)
+    }
 }
 
 /// One stretch of somebody's time in a reply from Microsoft.
@@ -561,7 +596,10 @@ fn what_microsoft_said(reply: &str, about: Span) -> Result<WhatTheySaid> {
         .map(|diary| {
             (
                 the_same_person(&diary.schedule_id),
-                what_this_diary_said(&diary, about).into(),
+                Heard {
+                    calendar: what_this_diary_said(&diary, about),
+                    zone: diary.where_they_are(),
+                },
             )
         })
         .collect())
