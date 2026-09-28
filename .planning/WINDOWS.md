@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 606
+open_count: 609
 waived_count: 0
 fixed_count: 68
-total_count: 674
-last_updated: 2026-09-28T03:44:00.000Z
+total_count: 677
+last_updated: 2026-09-28T05:37:20.000Z
 ---
 
 # Broken Windows Ledger
@@ -689,6 +689,9 @@ last_updated: 2026-09-28T03:44:00.000Z
 | 672 | 13 | todo | src/application/parts_left_behind.rs |  | 13-21.3: the rule Pratik accepted on 2026-09-26 fetches an earlier download for its parts when its row says it has attachments, and two cases are not reached. An invitation carried only as a text/calendar alternative with no disposition, the shape Outlook often sends and the audit of 2026-09-15 found, is stored by the header sync with the bit at 0 (imap/structure.rs counts a text part only with an attachment disposition), so it is never found; one that also carries an .ics file, Google's shape, is. And a message only ever opened inside a conversation window is composed from the store and fetches nothing (conversation_parts), for parts as for bodies. Reaching the first means fetching every message the download brought before 13-10 once when selected: a whole-message fetch per message rather than one per message with attachments. Recommendation: leave both; the first shrinks as older mail ages out, and selecting the message in the list reaches the second. Pratik's to answer; test_an_invitation_carried_only_as_an_alternative_is_not_reached_while_its_row_says_none holds today's answer | open |  | 2026-09-28T03:44:00.000Z |  |
 | 673 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-21.3: the parts fetch on selection has not been heard. Under NVDA and Narrator, landing on a message the download brought before 13-10 that carries a meeting: the row heard once, no second reading when the preview loads again with the meeting, the attachment tone once, and the meeting heard on Enter. If the row is heard twice, the PartsKept arm's reload is the one line to drop | open |  | 2026-09-28T03:44:00.000Z |  |
 | 674 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-21.3, for phase 14: the whole-message fetch of an earlier download (spawn_parts_fetch through the_whole_message_from_its_own_account) has not met a real IMAP server, and a body fetched under All Inboxes has not been fetched from a second real account; every test works on stored bytes and on the source that ships | open |  | 2026-09-28T03:44:00.000Z |  |
+| 675 | 13 | unrun-verify | src/application/reporting_junk.rs |  | 13-22, for phase 14: Report as Junk has met no real mail server. A report against Pratik's Gmail account (the move into Spam) and against an IMAP server whose folders keep keywords ($NotJunk off, then $Junk on, then the move), each read back from another client: the message in the junk folder, and the keyword on it where one was set. Whether any server keeps $Junk and trains on it, and whether Gmail counts the move, are open; every test here is a loopback server and the source that ships | open |  | 2026-09-28T05:37:20.000Z |  |
+| 676 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-22: Report as Junk has not been heard. Under NVDA and Narrator: the item on Action read with its letter J and Ctrl+Shift+J, and its description; the one word "Report" at the key; the sentence per account kind, heard once for a set of several messages and not beside Move's; a refusal for a POP account or one whose changes are off heard once | open |  | 2026-09-28T05:37:20.000Z |  |
+| 677 | 13 | todo | src/presentation/wx_app.rs |  | 13-22: Edit, Undo after Report as Junk takes the messages back out of the junk folder through Move's undo and leaves $Junk set on them at the server, so a server that trains on the mark still counts them as junk. Pratik's to answer: whether undoing a report should also take $Junk off and put $NotJunk on. Recommendation: yes, since it is one more write through the same gated flag change; no plan carries it until he answers, and today the guide and the changelog say the mark stays | open |  | 2026-09-28T05:37:20.000Z |  |
 
 ````json
 [
@@ -8778,6 +8781,42 @@ last_updated: 2026-09-28T03:44:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T03:44:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 675,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/reporting_junk.rs",
+    "line": null,
+    "description": "13-22, for phase 14: Report as Junk has met no real mail server. A report against Pratik's Gmail account (the move into Spam) and against an IMAP server whose folders keep keywords ($NotJunk off, then $Junk on, then the move), each read back from another client: the message in the junk folder, and the keyword on it where one was set. Whether any server keeps $Junk and trains on it, and whether Gmail counts the move, are open; every test here is a loopback server and the source that ships",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T05:37:20.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 676,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-22: Report as Junk has not been heard. Under NVDA and Narrator: the item on Action read with its letter J and Ctrl+Shift+J, and its description; the one word \"Report\" at the key; the sentence per account kind, heard once for a set of several messages and not beside Move's; a refusal for a POP account or one whose changes are off heard once",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T05:37:20.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 677,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-22: Edit, Undo after Report as Junk takes the messages back out of the junk folder through Move's undo and leaves $Junk set on them at the server, so a server that trains on the mark still counts them as junk. Pratik's to answer: whether undoing a report should also take $Junk off and put $NotJunk on. Recommendation: yes, since it is one more write through the same gated flag change; no plan carries it until he answers, and today the guide and the changelog say the mark stays",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T05:37:20.000Z",
     "resolved_at": null
   }
 ]

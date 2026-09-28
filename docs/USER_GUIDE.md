@@ -1082,6 +1082,55 @@ account this way; the loopback servers the tests use answer the four ways a
 server can, at each of the two servers, and a real account settles the
 rest.
 
+### Reporting junk
+
+Action, Report as Junk (`Ctrl+Shift+J`, or `Alt+A` then `J`) moves the
+selected messages to the junk folder and tells the mail provider they are
+junk, where the provider has a way to be told. It acts on every selected
+message, the way Move to does, and a conversation row contributes the
+messages in the folder you are reading. It is experimental: it has never
+been run against a real mail server, and the item's description on the menu
+says so.
+
+What happens depends on the account, and one sentence for each account says
+which:
+
+| Account | What is done | What you hear |
+|---|---|---|
+| A mail server that keeps a junk mark | The mark is set, then the messages move to the junk folder | "3 messages reported as junk and moved to Junk." |
+| Gmail | The messages move to Spam, which Google's own help page says is the report | "3 messages moved to Spam, which tells Google they are junk." |
+| A mail server that keeps no junk mark | The messages move to the junk folder, and nothing else can be told | "3 messages moved to Junk. This server does not keep a junk mark, so only the folder says they are junk." |
+| Outlook.com or Microsoft 365 | The messages move to Junk Email | "3 messages moved to Junk Email. Microsoft offers no supported way for a mail program to report junk, so Microsoft has not been told." |
+
+Microsoft's only way for a program to report junk is a preview interface it
+does not support in production, and it needs permission to read and change
+all of your mail, which Wixen Mail does not ask for. So the sentence says
+plainly that Microsoft was not told.
+
+Some reports send nothing, and say why in one sentence:
+
+- An account that collects its mail with POP, which has no junk folder at the
+  server.
+- An account whose folders include no junk folder. Make one on the account,
+  check for mail once, and try again.
+- An account that has not learned its folders yet. Check for mail once, and
+  try again.
+- An account whose mail changes are off under Allow Changes in Settings, or
+  for that account alone. The sentence is the one a refused move says.
+
+A message already in the junk folder is passed over, and the sentence counts
+it: "3 messages reported as junk and moved to Junk, and 1 already in Junk was
+passed over." If the mark could not be set, the messages still move and the
+sentence adds "The junk mark could not be set", with the server's reason.
+
+The move is the same as Move to: it happens on this computer first and the
+server is told in the background, so `Ctrl+Z` in the message list moves the
+messages back. A junk mark already set stays on them.
+
+Reporting junk is not blocking. A report deals with the messages in front of
+you; a block, on the Action menu's Block submenu, files everything a sender
+sends from now on into the junk folder.
+
 ### Printing
 
 Press `Ctrl+P`, or choose File, Print, to print what you are on. Windows' own

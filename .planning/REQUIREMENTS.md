@@ -6226,6 +6226,16 @@ stays at 122.
   - [S] #54, from the audit, in the tester's list.
   - [D] Report Junk on the Action menu for a provider with an endpoint, said when there is
     none; a block that moves what is already here, said with the count; through the gate.
+    **The report half done 2026-09-28** by 13-22: Action, Report as Junk on `J` and
+    `Ctrl+Shift+J` over the selection, `$Junk` set where a folder keeps it with `$NotJunk`
+    taken off first, Gmail told by the move into Spam, Microsoft said not to be told, POP,
+    no junk folder and changes off each said, one sentence per account. Held by
+    `application::reporting_junk::tests` (21), `service::protocols::imap::flag::tests` (9)
+    and `tests/report_as_junk_is_on_the_action_menu.rs` (14), among them
+    `test_a_server_that_keeps_keywords_has_not_junk_taken_off_before_junk_goes_on`,
+    `test_microsoft_says_it_has_not_been_told` and
+    `test_the_action_menu_offers_report_as_junk_on_j_and_ctrl_shift_j`. The block half is
+    13-25's, which ticks this requirement.
   - [S] Whether Gmail takes the report is his account's.
 
 - [ ] **GAP-07**: Directory lookup answers from Graph for a Microsoft account and from an LDAP
