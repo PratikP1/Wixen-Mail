@@ -160,30 +160,49 @@ fn how_long_it_lasts(event: &TheEventSoFar) -> chrono::Duration {
 /// Where one account's free/busy questions go.
 ///
 /// `sign_in` looks a calendar server's stored name and password up by calendar
-/// id, and `microsoft` is where Graph is and this account's token for it. Both
-/// are handed in rather than fetched here: one lives in the machine's
-/// credential store and the other has to be refreshed over the network, and a
-/// test can reach neither.
+/// id; `microsoft` and `google` are where each service is and this account's
+/// token for it. All are handed in rather than fetched here: one lives in the
+/// machine's credential store and the others have to be refreshed over the
+/// network, and a test can reach none of them.
 ///
 /// A calendar server first, because an account that has one has been pointed at
-/// it deliberately. Nowhere is a real answer and not a failure: a mail account
-/// with no calendar on it has nobody to ask, and everybody on it comes back
-/// unknown rather than free.
+/// it deliberately, then Microsoft, then Google. Google only for an account
+/// that keeps a calendar there, because asking Google about a guest list tells
+/// Google who is meeting whom. Nowhere is a real answer and not a failure: a
+/// mail account with no calendar on it has nobody to ask, and everybody on it
+/// comes back unknown rather than free.
 pub fn where_to_ask(
     calendars: &[CalendarContainer],
     sign_in: impl Fn(&str) -> Option<(String, String)>,
     microsoft: Option<(&str, &str)>,
+    google: Option<(&str, &str)>,
 ) -> WhereToAsk {
     if let Some(asking) = the_first_calendar_server_signed_in_to(calendars, sign_in) {
         return asking;
     }
-    match microsoft {
-        Some((base, token)) => WhereToAsk::Microsoft {
+    if let Some((base, token)) = microsoft {
+        return WhereToAsk::Microsoft {
+            base: base.to_string(),
+            token: token.to_string(),
+        };
+    }
+    match google.filter(|_| holds_a_google_calendar(calendars)) {
+        Some((base, token)) => WhereToAsk::Google {
             base: base.to_string(),
             token: token.to_string(),
         },
         None => WhereToAsk::Nowhere,
     }
+}
+
+/// Whether any of these calendars is a Google account's calendar.
+///
+/// Asked before a Google token is fetched as well as before one is used, so an
+/// account with no calendar at Google never refreshes a token for nothing.
+pub fn holds_a_google_calendar(calendars: &[CalendarContainer]) -> bool {
+    calendars.iter().any(|calendar| {
+        calendar.source_provider.as_deref() == Some(crate::application::calendar::GOOGLE)
+    })
 }
 
 /// The first calendar server among these this account can sign in to.
@@ -447,7 +466,7 @@ mod tests {
             ),
         ];
 
-        let asking = where_to_ask(&calendars, signed_in_to("cal-1"), None);
+        let asking = where_to_ask(&calendars, signed_in_to("cal-1"), None, None);
 
         assert_eq!(
             asking,
@@ -471,7 +490,7 @@ mod tests {
             Some("https://cal.example.com/dav/"),
         )];
 
-        let asking = where_to_ask(&calendars, signed_in_to("another-calendar"), None);
+        let asking = where_to_ask(&calendars, signed_in_to("another-calendar"), None, None);
 
         assert_eq!(asking, WhereToAsk::Nowhere);
     }
@@ -487,6 +506,7 @@ mod tests {
             &calendars,
             signed_in_to("nothing"),
             Some(("https://graph.example.com/v1.0", "a-fake-token")),
+            None,
         );
 
         assert_eq!(
@@ -504,9 +524,114 @@ mod tests {
         // answer for everybody on it is that their time is unknown rather
         // than that they are free.
         assert_eq!(
-            where_to_ask(&[], signed_in_to("nothing"), None),
+            where_to_ask(&[], signed_in_to("nothing"), None, None),
             WhereToAsk::Nowhere
         );
+    }
+
+    /// Where Google's calendar service is, as a test hands it in.
+    const GOOGLE_BASE: &str = "https://google.example.com/calendar/v3";
+
+    #[test]
+    fn test_an_account_whose_calendar_is_at_google_asks_google() {
+        // The commonest calendar a tester has. Asked nowhere, every guest on a
+        // Google account came back unknown although Google could have said.
+        let calendars = [a_calendar(
+            "google-1",
+            crate::application::calendar::GOOGLE,
+            None,
+        )];
+
+        let asking = where_to_ask(
+            &calendars,
+            signed_in_to("nothing"),
+            None,
+            Some((GOOGLE_BASE, "a-fake-google-token")),
+        );
+
+        assert_eq!(
+            asking,
+            WhereToAsk::Google {
+                base: GOOGLE_BASE.to_string(),
+                token: "a-fake-google-token".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_google_account_with_no_token_is_nowhere_to_ask_rather_than_a_failure() {
+        // Signed out, or a refresh that did not work: nobody can be asked, and
+        // that is an answer, with everybody's time unknown and nobody free.
+        let calendars = [a_calendar(
+            "google-1",
+            crate::application::calendar::GOOGLE,
+            None,
+        )];
+
+        assert_eq!(
+            where_to_ask(&calendars, signed_in_to("nothing"), None, None),
+            WhereToAsk::Nowhere
+        );
+    }
+
+    #[test]
+    fn test_a_google_token_is_never_used_for_an_account_with_no_google_calendar() {
+        // Asking Google about a guest list tells Google who is meeting whom.
+        // An account that keeps no calendar there has not chosen to tell it.
+        let calendars = [a_calendar(
+            "feed-1",
+            crate::application::calendar_source::FROM_A_FEED,
+            None,
+        )];
+
+        assert_eq!(
+            where_to_ask(
+                &calendars,
+                signed_in_to("nothing"),
+                None,
+                Some((GOOGLE_BASE, "a-fake-google-token")),
+            ),
+            WhereToAsk::Nowhere
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_server_and_then_microsoft_come_before_google() {
+        // One place per account until every place is asked: the order is the
+        // one the account was set up in, extended.
+        let calendars = [
+            a_calendar("google-1", crate::application::calendar::GOOGLE, None),
+            a_calendar(
+                "cal-1",
+                crate::application::calendar_source::ON_A_SERVER,
+                Some("https://cal.example.com/dav/"),
+            ),
+        ];
+        let google = Some((GOOGLE_BASE, "a-fake-google-token"));
+        let microsoft = Some(("https://graph.example.com/v1.0", "a-fake-token"));
+
+        assert!(matches!(
+            where_to_ask(&calendars, signed_in_to("cal-1"), microsoft, google),
+            WhereToAsk::CalendarServer { .. }
+        ));
+        assert!(matches!(
+            where_to_ask(&calendars, signed_in_to("nothing"), microsoft, google),
+            WhereToAsk::Microsoft { .. }
+        ));
+    }
+
+    #[test]
+    fn test_only_a_google_calendar_is_one_worth_asking_google_about() {
+        let one_of = |source: &str| [a_calendar("c", source, None)];
+
+        assert!(holds_a_google_calendar(&one_of(
+            crate::application::calendar::GOOGLE
+        )));
+        assert!(!holds_a_google_calendar(&one_of("outlook")));
+        assert!(!holds_a_google_calendar(&one_of(
+            crate::application::calendar_source::ON_A_SERVER
+        )));
+        assert!(!holds_a_google_calendar(&[]));
     }
 
     #[test]

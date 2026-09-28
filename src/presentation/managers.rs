@@ -976,8 +976,12 @@ fn a_day_taken_off(
 /// What the waiting window is called while the servers are being asked.
 const WAITING_TO_HEAR_WHEN_PEOPLE_ARE_FREE: &str = "Finding when everyone is free";
 /// What it says while it waits.
-const ASKING_THE_CALENDARS: &str =
-    "Asking your calendar server about everybody on the guest list. This can take a few seconds.";
+///
+/// True of every place the question can go: a calendar server, Microsoft or
+/// Google. And it says the asking is experimental, because none of those has
+/// answered it for a real account yet.
+const ASKING_THE_CALENDARS: &str = "Asking where your calendar is kept about everybody on the guest list. This is \
+     experimental and can take a few seconds.";
 /// The way out of the waiting window.
 const STOP_ASKING: &str = "&Stop";
 /// What is said when somebody stopped the asking.
@@ -1062,16 +1066,25 @@ fn asking_when_people_are_free(
         let window = asking.inside;
         let asking_for = account.clone();
         rt.spawn(async move {
-            // The sign-ins and, for an account on Microsoft's service, a token
-            // that may have to be refreshed. Both belong out here rather than
-            // on the thread drawing the window.
+            // The sign-ins and, for an account on Microsoft's or Google's
+            // service, a token that may have to be refreshed. All belong out
+            // here rather than on the thread drawing the window.
             let token = a_microsoft_token(&asking_for).await;
+            // Only for an account keeping a calendar at Google, so no other
+            // account refreshes a Google token for nothing.
+            let google = match asking_when_free::holds_a_google_calendar(&calendars) {
+                true => crate::service::oauth::a_google_token_for(&asking_for).await,
+                false => None,
+            };
             let where_to = asking_when_free::where_to_ask(
                 &calendars,
                 crate::service::caldav::sign_in::load,
                 token
                     .as_deref()
                     .map(|token| (crate::service::microsoft_graph::GRAPH_BASE, token)),
+                google
+                    .as_deref()
+                    .map(|token| (crate::service::free_busy::GOOGLE_CALENDAR_BASE, token)),
             );
             let questions = asking_when_free::one_question(where_to, people);
             // Read-only is enough: asking when somebody is free changes

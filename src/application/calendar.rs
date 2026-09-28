@@ -70,8 +70,9 @@ use crate::service::microsoft_graph::{
 ///
 /// The same word the stored sync marker is filed under, so the two must not
 /// drift apart: a container found under one name and a marker saved under
-/// another would resync the whole diary every time.
-const GOOGLE: &str = "gmail";
+/// another would resync the whole diary every time. Public because asking
+/// when people are free asks Google only for an account holding one.
+pub const GOOGLE: &str = "gmail";
 
 /// How a Microsoft account's calendar is named in what is stored.
 const MICROSOFT: &str = "outlook";

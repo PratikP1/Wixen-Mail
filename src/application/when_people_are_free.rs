@@ -113,6 +113,12 @@ pub enum WhyNot {
     TheServerWouldNotSay,
     /// A reply arrived and this could not read it.
     TheReplyCouldNotBeRead,
+    /// The service could not find this person's calendar for this account.
+    ///
+    /// What Google says about a guest outside the organisation whose calendar
+    /// nobody has shared. Asking again will not change it, which is what tells
+    /// it apart from a server that would not say.
+    NotSharedWithYou,
 }
 
 /// Every reason there is, in the order they are said.
@@ -120,10 +126,11 @@ pub enum WhyNot {
 /// Written out so grouping people by reason cannot quietly drop one: a reason
 /// left out of this list is a person left out of the answer, which is the
 /// failure this whole module is careful about.
-const EVERY_REASON_A_CALENDAR_IS_NOT_KNOWN: [WhyNot; 3] = [
+const EVERY_REASON_A_CALENDAR_IS_NOT_KNOWN: [WhyNot; 4] = [
     WhyNot::ThereIsNowhereToAsk,
     WhyNot::TheServerWouldNotSay,
     WhyNot::TheReplyCouldNotBeRead,
+    WhyNot::NotSharedWithYou,
 ];
 
 impl WhyNot {
@@ -133,6 +140,7 @@ impl WhyNot {
             WhyNot::ThereIsNowhereToAsk => "there is no calendar to ask",
             WhyNot::TheServerWouldNotSay => "the server would not say",
             WhyNot::TheReplyCouldNotBeRead => "the reply could not be read",
+            WhyNot::NotSharedWithYou => "their calendar is not shared with you",
         }
     }
 }
@@ -1792,6 +1800,53 @@ mod tests {
              Charles could not be checked, because there is no calendar to ask. \
              Charles is not counted as free."
         );
+    }
+
+    #[test]
+    fn test_a_guest_whose_calendar_is_not_shared_is_told_apart_from_a_server_that_would_not_say() {
+        // A guest outside the organisation is the commonest person nobody can
+        // check, and asking again will not help: somebody has to share a
+        // calendar first. Said as "the server would not say", it sends the
+        // person arranging the meeting to ask again for nothing.
+        let people = [
+            busy("Ada", &[]),
+            not_known("Bob", WhyNot::NotSharedWithYou),
+            not_known("Charles", WhyNot::TheServerWouldNotSay),
+        ];
+        let monday = span("2026-03-02T09:00:00Z", "2026-03-02T10:30:00Z");
+
+        let found = when_we_could_meet(&people, an_hour_inside(monday));
+
+        assert_eq!(
+            found.in_words(&plainly),
+            "Everyone is free Monday at 9 or Monday at 9:30. \
+             Charles could not be checked, because the server would not say. \
+             Bob could not be checked, because their calendar is not shared with you. \
+             None of them is counted as free."
+        );
+    }
+
+    #[test]
+    fn test_every_reason_is_said_and_no_two_are_said_alike() {
+        // A reason left out of the list that is said is a person left out of
+        // the answer, and two reasons in the same words are one reason to
+        // whoever hears them.
+        let every = [
+            WhyNot::ThereIsNowhereToAsk,
+            WhyNot::TheServerWouldNotSay,
+            WhyNot::TheReplyCouldNotBeRead,
+            WhyNot::NotSharedWithYou,
+        ];
+        for why in every {
+            assert!(
+                EVERY_REASON_A_CALENDAR_IS_NOT_KNOWN.contains(&why),
+                "{why:?} is never said"
+            );
+            assert!(!why.in_words().is_empty(), "{why:?} has no words");
+        }
+        let words: std::collections::HashSet<&str> =
+            every.iter().map(|why| why.in_words()).collect();
+        assert_eq!(words.len(), every.len(), "{words:?}");
     }
 
     #[test]

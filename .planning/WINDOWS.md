@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 631
+open_count: 633
 waived_count: 0
 fixed_count: 72
-total_count: 703
-last_updated: 2026-09-28T20:00:00.000Z
+total_count: 705
+last_updated: 2026-09-28T22:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -718,6 +718,8 @@ last_updated: 2026-09-28T20:00:00.000Z
 | 701 | 13 | unrun-verify | src/presentation/finding_people.rs | 228 | 13-28, the tester's ear: nobody has heard a row from Microsoft's people search. Whether a row is read as the name, the address and "from Microsoft"; whether "Sign in again from the Account Manager to let Microsoft find people for this account." is heard once with a search on an account signed in before People.Read and does not flood while typing; and how Microsoft's refusal sentence reads after "Nobody found" | open |  | 2026-09-28T20:00:00.000Z |  |
 | 702 | 13 | unrun-verify | src/service/oauth.rs | 1002 | 13-28, for phase 14: nothing here has met Microsoft. On Pratik's account: whether the browser's list of permissions names reading your relevant people, and whether a personal account grants People.Read without an administrator (RESEARCH-3 A4); whether /me/people finds colleagues on his tenant or an administrator has switched it off; whether a task made, ticked off or deleted here reaches Microsoft To Do with the tasks token; and whether an account signed in before Tasks.ReadWrite is refused its tasks token, so its Microsoft tasks stop syncing both ways until it signs in again (ledger 703). The token 13-28 asks for is used at once and never stored, so ledger 645's length question is not answered here either | open |  | 2026-09-28T20:00:00.000Z |  |
 | 703 | 13 | todo | src/presentation/wx_app.rs | 28749 | 13-28, a design question for Pratik: the tasks sync now asks Microsoft for a token carrying Tasks.ReadWrite alone. Microsoft's documentation says a refresh may ask only for what the sign-in granted, so an account signed in before tasks synced both ways, which granted the read-only permission, is expected to be refused that token and to sync no Microsoft tasks at all until it signs in again, where before it may have read them and had every change refused. Nothing here can measure which. The recommendation is to keep it: signing in again once fixes both directions, the sync's line counts the failed sign-in, and the provider page says so. The alternative is to fall back to the shared token for reading when the tasks token is refused | open |  | 2026-09-28T20:00:00.000Z |  |
+| 704 | 13 | unrun-verify | src/service/free_busy.rs | 1100 | 13-29, for phase 14: Google's freeBusy has never been asked from a real account. On a Google account whose calendar is at Google: whether the stored sign-in's token is accepted for POST /freeBusy with the calendar permission alone (RESEARCH-3 C6 says it is); whether a colleague in the same Google Workspace comes back with their busy stretches; whether a guest outside the domain comes back notFound and is said as not shared, or in some other shape this does not read; and whether the times offered match what those calendars really hold | open |  | 2026-09-28T22:00:00.000Z |  |
+| 705 | 13 | unrun-verify | src/application/when_people_are_free.rs | 143 | 13-29, the tester's ear: nobody has heard "Bob could not be checked, because their calendar is not shared with you." beside the other reasons, or the waiting window's "Asking where your calendar is kept about everybody on the guest list. This is experimental and can take a few seconds." Whether the not-shared sentence is told apart from "the server would not say" when both are said, and whether the waiting sentence reads plainly | open |  | 2026-09-28T22:00:00.000Z |  |
 
 ````json
 [
@@ -9155,6 +9157,30 @@ last_updated: 2026-09-28T20:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 704,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/service/free_busy.rs",
+    "line": 1100,
+    "description": "13-29, for phase 14: Google's freeBusy has never been asked from a real account. On a Google account whose calendar is at Google: whether the stored sign-in's token is accepted for POST /freeBusy with the calendar permission alone (RESEARCH-3 C6 says it is); whether a colleague in the same Google Workspace comes back with their busy stretches; whether a guest outside the domain comes back notFound and is said as not shared, or in some other shape this does not read; and whether the times offered match what those calendars really hold",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 705,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/when_people_are_free.rs",
+    "line": 143,
+    "description": "13-29, the tester's ear: nobody has heard \"Bob could not be checked, because their calendar is not shared with you.\" beside the other reasons, or the waiting window's \"Asking where your calendar is kept about everybody on the guest list. This is experimental and can take a few seconds.\" Whether the not-shared sentence is told apart from \"the server would not say\" when both are said, and whether the waiting sentence reads plainly",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T22:00:00.000Z",
     "resolved_at": null
   }
 ]
