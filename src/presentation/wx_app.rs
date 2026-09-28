@@ -3389,6 +3389,17 @@ impl WxMailApp {
                                 let _ = cache.touch_message_body(id);
                             }
                             let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(body));
+                            // A message the download brought before 13-10
+                            // has its text here and its parts still on the
+                            // server (ledger 633). It is fetched once more,
+                            // whole, for them, and nothing is said.
+                            if crate::application::parts_left_behind::were_left_behind(
+                                body_cache.as_deref(),
+                                id,
+                            ) && let Some((_, uid)) = selected
+                            {
+                                spawn_parts_fetch(app, id, uid);
+                            }
                         }
                         None => {
                             // After a sync a folder holds headers and no
@@ -13517,6 +13528,27 @@ impl PageHost {
         self.view.set_page(html, "about:blank");
     }
 
+    /// Show a message again only if its page differs from the one held, and
+    /// say whether it loaded.
+    ///
+    /// For the preview after a message's parts were kept (ledger 633). Every
+    /// load takes focus and gives it back, so a page the same as the one
+    /// shown loads nothing. With a followed page in the message's place,
+    /// nothing loads over the page somebody is reading; the held message is
+    /// replaced, so Backspace brings back the new one.
+    fn show_again_if_changed(&self, html: &str, before_the_load: impl FnOnce()) -> bool {
+        if *self.message.borrow() == html {
+            return false;
+        }
+        if self.showing_a_page.get() {
+            self.message.replace(html.to_string());
+            return false;
+        }
+        before_the_load();
+        self.show_the_message(html);
+        true
+    }
+
     /// Load a page where the message was, saying whose it is first (T-11-67).
     fn show_the_page(&self, address: &str, a11y: &Arc<Accessibility>) {
         (self.before_a_page)();
@@ -21013,6 +21045,35 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             focus_home_cell.set(focus_home(folder_tree.has_focus(), msg_list.has_focus()));
             preview.show_the_message(&html);
         }
+        UIUpdate::PartsKept { message_row_id } => {
+            // A meeting kept for the message under the cursor, which is the
+            // one thing kept parts change in the preview: its bar. Composed
+            // again from the body already shown, and loaded again only if the
+            // page changed. The body a reply quotes stays as it is, and
+            // nothing is said, so the message is not announced twice.
+            let showing = {
+                let s = lock_state(state);
+                s.what_the_cursor_stands_for()
+                    .is_some_and(|row| row.id == *message_row_id)
+                    .then(|| {
+                        (
+                            s.selected_message_index.and_then(|index| {
+                                s.the_loaded_message_the_row_stands_for(index).cloned()
+                            }),
+                            s.message_preview.clone(),
+                        )
+                    })
+            };
+            if let Some((row_message, body)) = showing {
+                let html = the_preview_of(message_cache, row_message, &body);
+                let loaded = preview.show_again_if_changed(&html, || {
+                    focus_home_cell.set(focus_home(folder_tree.has_focus(), msg_list.has_focus()));
+                });
+                tracing::debug!(
+                    "The meeting kept for message {message_row_id} reloaded the preview: {loaded}"
+                );
+            }
+        }
         UIUpdate::ConnectionStatusChanged(status) => {
             let report = {
                 let mut s = lock_state(state);
@@ -26363,53 +26424,27 @@ fn bytes_of_the_attachment(
 /// the check at the end: a body only reaches the preview if its message is
 /// still the selected one, so passing over a message costs a fetch and never a
 /// preview that belongs to a different row.
+///
+/// Through the account the message is filed under, which under All Inboxes is
+/// not the account last opened; see `the_whole_message_from_its_own_account`.
 fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let state = state.clone();
-    let (accounts, account_id) = {
-        let s = lock_state(&state);
-        (s.accounts.clone(), s.active_account_id.clone())
-    };
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
-        .or_else(|| accounts.first().cloned());
+    let accounts = lock_state(&state).accounts.clone();
 
     rt.spawn_blocking(move || {
         // Nothing here is announced. A message that cannot be downloaded is
         // reported when somebody asks for it by opening it, not as a sentence
         // spoken over every row they pass.
-        let Some(account) = account else { return };
-        if account.imap_server.trim().is_empty() {
-            return;
-        }
-        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+        let Some(cache) = the_store_on_this_worker() else {
             return;
         };
-        let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
+        let Some(raw) =
+            the_whole_message_from_its_own_account(&handle, &cache, &accounts, message_row_id, uid)
+        else {
             return;
-        };
-        let Ok(Some(folder_path)) = cache.folder_path_for_message(message_row_id) else {
-            return;
-        };
-
-        let controller =
-            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
-                Ok(session) => session,
-                Err(why) => {
-                    tracing::warn!("Could not sign in to fetch a message body: {why}");
-                    return;
-                }
-            };
-
-        let raw = match handle.block_on(controller.fetch_message_body(&folder_path, uid)) {
-            Ok(raw) => raw,
-            Err(e) => {
-                tracing::warn!("Could not fetch message {}: {}", uid, e);
-                return;
-            }
         };
 
         let parsed = match crate::service::mime::parse(&raw) {
@@ -26505,34 +26540,16 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         // messages with their attachments missing and opening one had to ask
         // the server again for something this computer had already had.
         //
-        // Taken through one walk of the message rather than one per file: the
-        // other way parses the whole message again for each attachment, which
-        // on a message carrying twenty of them is twenty parses.
-        let files = crate::service::mime::attachments_with_bytes(&raw).unwrap_or_default();
-        let records: Vec<crate::data::message_cache::attachment_content::AttachmentWithContent> =
-            parsed
-                .attachments
-                .iter()
-                .enumerate()
-                .map(|(at, attachment)| {
-                    // The conversion is a function with a test on it rather
-                    // than a struct literal here. It used to be a literal, and
-                    // it wrote `content_id: None` over a content id the parse
-                    // had in hand: a field set to nothing compiles exactly like
-                    // a field set correctly, and nothing could tell them apart.
-                    //
-                    // By position, which both lists are in: the walk that reads
-                    // the files and the parse that names them go through the
-                    // message the same way round. A file missing here is a file
-                    // the walk could not read, and the attachment still lists.
-                    crate::data::message_cache::attachment_content::AttachmentWithContent::from_a_parsed_part(
-                        message_row_id,
-                        attachment,
-                        files.get(at).map(|file| file.bytes.clone()),
-                    )
-                })
-                .collect();
-        if let Err(e) = cache.replace_attachments_with_content(message_row_id, &records) {
+        // One walk of the message, by position, through the same keeping a
+        // message fetched for its parts alone goes through
+        // (`application::parts_left_behind`), so the two cannot come to keep
+        // different things.
+        if let Err(e) = crate::application::parts_left_behind::keep_every_part(
+            &cache,
+            message_row_id,
+            &parsed.attachments,
+            &raw,
+        ) {
             tracing::warn!("Could not record the attachments: {}", e);
         }
 
@@ -26557,6 +26574,144 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         handle.block_on(async {
             let _ = tx.send(UIUpdate::MessageBodyLoaded(body)).await;
         });
+    });
+}
+
+/// The store, opened on a worker thread, which cannot borrow the window's.
+fn the_store_on_this_worker() -> Option<MessageCache> {
+    let dir = AppPaths::resolve().ok()?.cache_dir();
+    MessageCache::new(dir, None).ok()
+}
+
+/// A whole message's bytes, fetched through the account it is filed under.
+///
+/// The one place a message is fetched whole on selection, for its text or for
+/// its parts. The account is the message's own, read from its folder, and
+/// never the account last opened: under All Inboxes that is another account's
+/// server, asked for this folder and number, and whatever it holds there
+/// would be stored under this row. Until 13-21.3 the body fetch took the
+/// account last opened, which was rare while the download brought nearly
+/// every body and would have been common once stored bodies were fetched
+/// again for their parts.
+///
+/// Every failure is logged by row and number and nothing the message says,
+/// and ends the fetch: nothing is said aloud about a row somebody passed.
+/// The Message Text box is asked by the fetch itself, which reads with
+/// `BODY.PEEK` and marks nothing read.
+fn the_whole_message_from_its_own_account(
+    handle: &tokio::runtime::Handle,
+    cache: &MessageCache,
+    accounts: &[Account],
+    message_row_id: i64,
+    uid: u32,
+) -> Option<Vec<u8>> {
+    let filed_under = cache
+        .the_account_a_message_is_in(message_row_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read the account message {message_row_id} is in: {e}");
+            None
+        });
+    let Some(account) = crate::application::parts_left_behind::the_account_to_fetch_through(
+        accounts,
+        filed_under.as_deref(),
+    ) else {
+        tracing::warn!(
+            "Message {message_row_id} is filed under no account here, so it is not fetched"
+        );
+        return None;
+    };
+    if account.imap_server.trim().is_empty() {
+        return None;
+    }
+    let Ok(Some(folder_path)) = cache.folder_path_for_message(message_row_id) else {
+        return None;
+    };
+    let controller =
+        match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+            Ok(session) => session,
+            Err(why) => {
+                tracing::warn!("Could not sign in to fetch message {message_row_id}: {why}");
+                return None;
+            }
+        };
+    match handle.block_on(controller.fetch_message_body(&folder_path, uid)) {
+        Ok(raw) => Some(raw),
+        Err(e) => {
+            tracing::warn!("Could not fetch message {uid} (row {message_row_id}): {e}");
+            None
+        }
+    }
+}
+
+/// Fetch the parts of a message whose text is here and whose parts were left
+/// behind, once, when it is selected (ledger 633).
+///
+/// The download of everything kept a message's text and nothing about its
+/// parts until 13-10's build, and the reader fetches nothing for a message
+/// whose text is here, so such a message listed no attachments and never said
+/// its meeting. Pratik's answer of 2026-09-26: fetch the whole message once,
+/// keep what it carries, and do not announce it twice.
+///
+/// So this keeps the parts and does nothing else: the text is here already,
+/// its verdict with it, and the body went to the preview when the row was
+/// selected. It tells the preview only when a calendar document was kept,
+/// since that is the one kept part the preview shows, through its own update
+/// rather than the body's. Nothing is said.
+///
+/// Returns before asking the server when the row is no longer under the
+/// cursor, so arrowing past a run of such messages does not fetch every one,
+/// and when another fetch has kept the parts meanwhile.
+fn spawn_parts_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
+    let AppHandles { state, tx, rt } = app;
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let state = state.clone();
+    let accounts = lock_state(&state).accounts.clone();
+
+    rt.spawn_blocking(move || {
+        let still_under_the_cursor = lock_state(&state)
+            .what_the_cursor_stands_for()
+            .is_some_and(|row| row.id == message_row_id);
+        if !still_under_the_cursor {
+            return;
+        }
+        let Some(cache) = the_store_on_this_worker() else {
+            return;
+        };
+        if !crate::application::parts_left_behind::were_left_behind(Some(&cache), message_row_id) {
+            return;
+        }
+        let Some(raw) =
+            the_whole_message_from_its_own_account(&handle, &cache, &accounts, message_row_id, uid)
+        else {
+            return;
+        };
+        let parsed = match crate::service::mime::parse(&raw) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                tracing::warn!(
+                    "Could not read message {uid} (row {message_row_id}) for its parts: {e}"
+                );
+                return;
+            }
+        };
+        let kept = match crate::application::parts_left_behind::keep_every_part(
+            &cache,
+            message_row_id,
+            &parsed.attachments,
+            &raw,
+        ) {
+            Ok(kept) => kept,
+            Err(e) => {
+                tracing::warn!("Could not keep the parts of message {message_row_id}: {e}");
+                return;
+            }
+        };
+        if kept.carries_a_calendar_part {
+            handle.block_on(async {
+                let _ = tx.send(UIUpdate::PartsKept { message_row_id }).await;
+            });
+        }
     });
 }
 

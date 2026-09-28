@@ -93,6 +93,7 @@ pub mod opening;
 pub mod opening_links;
 pub mod opening_pgp;
 pub mod other_items;
+pub mod parts_left_behind;
 /// Every OpenPGP key here in one list, and importing, removing and exporting them.
 pub mod pgp_keys;
 pub mod phone_numbers;

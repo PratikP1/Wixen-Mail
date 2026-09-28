@@ -31,6 +31,7 @@ pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub use tasks::MovedWhatTheProviderHolds;
 pub mod notes;
 mod outbox;
+mod parts_left_behind;
 pub mod pgp_keys;
 pub mod reminders;
 pub mod saved_searches;
