@@ -281,6 +281,15 @@ Written down so you do not spend time reporting things already on the list.
   organisation, so tell us if yours says Microsoft refused it. The same sign-in
   lets Microsoft task changes reach Microsoft for the first time, so tell us too
   whether a task you tick off here is ticked off on your phone.
+- **Asking Google when people are free has never met a real Google account.**
+  On an account whose calendar is at Google, Find when everyone is free in the
+  event window now asks Google, with the sign-in the account already has. Only
+  answers written in its tests have ever been read. A guest outside your
+  organisation is likely to come back "their calendar is not shared with you",
+  which is Google keeping their calendar private, not a fault. If you have a
+  Google account, invite a colleague and somebody outside your organisation,
+  ask, and tell us which times were offered, which sentence you heard about
+  each person, and whether the times match what their calendars really hold.
 - **Opening S/MIME encrypted mail is experimental, and it has met no message
   from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
   encrypted to a certificate in your Windows certificate store is opened with

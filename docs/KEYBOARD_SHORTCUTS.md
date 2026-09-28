@@ -181,7 +181,7 @@ Four controls work together on the first page, in tab order:
 | Control | What it does |
 |---------|--------------|
 | Who is coming | One person to a line: a name and an address, or an address on its own. A name holding a comma needs quotation marks around it |
-| Find when everyone is free | Asks your calendar server about everybody on the guest list at once. A small window says what is happening and offers **Stop** while it waits |
+| Find when everyone is free | Asks your calendar about everybody on the guest list at once. A small window says what is happening and offers **Stop** while it waits |
 | What came back | The answer in full, read-only and several lines, so you can move through it a line at a time. It always names anybody whose calendar could not be checked, and says they are not counted as free |
 | Times offered | The times that work, the most useful first. Choosing one changes nothing yet |
 | Put this time in the event | Writes the chosen time over the start and end already in the boxes, and says what they now are |

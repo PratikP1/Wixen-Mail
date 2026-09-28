@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Find when everyone is free asks Google on a Google account, experimental (GAP-08's first
+  point, #57).** On an account whose calendar is at Google, Find when everyone is free in the
+  event window now asks Google's free/busy service, where before it asked nobody and every
+  guest came back unknown. It uses the Google sign-in the account already has, whose
+  calendar permission covers the question, so nobody signs in again, and the question
+  carries only the guest list's addresses and the window of dates. A guest Google cannot
+  find for you, usually somebody outside your organisation, is said as "their calendar is
+  not shared with you" and is never counted free; any other refusal is said as before.
+  Google is asked only when there is no calendar server or Microsoft sign-in on the
+  account; asking every place an account has comes later. While it asks, the waiting window
+  now says "Asking where your calendar is kept about everybody on the guest list. This is
+  experimental and can take a few seconds.", where it used to name your calendar server on
+  every account. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitation: Google's answer has never been read from a real account.
 - **Microsoft's people search in People found, experimental (GAP-07's Microsoft half, #55).**
   On an Outlook or Office 365 account signed in through the browser, typing three letters or
   more of a name into To, Cc or Bcc also asks Microsoft, which looks through the people that

@@ -369,11 +369,17 @@ to the people named.
 
 Saving the meeting is a separate matter, covered below.
 
-When you do ask, the question goes to your own calendar server, and it names the whole
-guest list in one request. So that server learns that you are thinking about a meeting
-with these named people, in this window. Where it passes the question on to another
-organisation's server, that organisation learns the same about its own person. Both are
-how the standard works and cannot be avoided while still asking.
+When you do ask, the question goes to whichever of these holds the account's calendar: your
+own calendar server, Microsoft, or Google. It is asked of one of them, in that order, and it
+names the whole guest list in one request. So that server learns that you are thinking
+about a meeting with these named people, in this window. Where it passes the question on
+to another organisation's server, that organisation learns the same about its own person.
+Both are how asking works and cannot be avoided while still asking.
+
+Google is asked only for an account whose calendar is at Google. It uses the Google sign-in
+the account already has, whose calendar permission covers this question, so nothing new is
+asked of you. A guest outside your organisation whose calendar is not shared with you comes
+back as exactly that, and is never counted as free.
 
 What is avoidable is left out. The question carries no title, no description, no location
 and no note: only who is asking, who is being asked about, and the window of dates. Nobody
@@ -576,7 +582,8 @@ four bytes of a hash, sometimes, and never the address.
 which is the whole point of answering, and tells them nothing more than the answer. Saving a
 meeting with people on it may make your provider write to them;
 [Saving a meeting with people on it](#saving-a-meeting-with-people-on-it) says when. Asking
-when people are free asks your own calendar server and nobody else;
+when people are free asks the one place holding the account's calendar, your own calendar
+server, Microsoft or Google, and nobody else;
 [Asking when the people invited to a meeting are free](#asking-when-the-people-invited-to-a-meeting-are-free)
 says what goes. Read from `src/application/attaching.rs`, which builds the reply, and
 `src/service/free_busy.rs`.
