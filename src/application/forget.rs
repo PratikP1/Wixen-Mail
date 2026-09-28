@@ -738,6 +738,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_the_directory_password_is_an_entry_uninstalling_erases() {
+        // The second shape the guard below asks the next owner for: the entry
+        // itself, spelled out, not only the module named. Every account is
+        // listed whether or not it names a directory, because uninstalling
+        // reads nothing before it deletes.
+        let entries = entries_for(&[account("a1", "me@example.com")], &[], &[]);
+
+        assert!(
+            entries.contains(&CredentialEntry {
+                service: "wixen-mail-directory".to_string(),
+                user: "a1".to_string(),
+            }),
+            "uninstalling does not name the account's directory password, so it \
+             outlives the program that kept it: {entries:?}"
+        );
+    }
+
     /// Every module under `src/service/` that owns credential store entries.
     ///
     /// # How this enumerates, and the two ways the obvious version is blind
@@ -897,6 +915,7 @@ mod tests {
             "caldav",
             "carddav",
             "credentials",
+            "directory",
             "oauth",
             "pgp",
             "security",

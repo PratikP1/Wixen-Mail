@@ -937,6 +937,28 @@ mod tests {
     }
 
     #[test]
+    fn test_deleting_an_account_takes_its_directory_password_with_it() {
+        // Uninstalling names a directory password by walking the accounts
+        // that exist, so one left behind by a removed account is never named
+        // again.
+        let cache = a_cache("directory_password_deletion");
+        cache
+            .save_account(&an_account("acc-going", "going@example.com", "secret123"))
+            .expect("an account to save");
+        crate::service::secret_store::write("wixen-mail-directory", "acc-going", "hunter2")
+            .expect("the directory password to be kept");
+
+        cache.delete_account("acc-going").expect("it to be deleted");
+
+        assert_eq!(
+            crate::service::secret_store::read("wixen-mail-directory", "acc-going")
+                .expect("the credential store to answer"),
+            None,
+            "the directory password outlived the account"
+        );
+    }
+
+    #[test]
     fn test_deleting_an_account_takes_its_mail_with_it() {
         // Removing an account left every folder, message, body and draft it
         // owned in the database, with nothing left in the application able to

@@ -293,6 +293,28 @@ fn a_contact_from(entry: &SearchEntry, account_id: &str, found_at: &str) -> Opti
     })
 }
 
+/// Credential store service name holding each account's directory password.
+/// Stub for the red half.
+pub const KEYRING_SERVICE: &str = "wixen-mail-directory";
+
+/// Keep the directory password for an account. Stub for the red half.
+pub fn keep_the_password(account_id: &str, password: &str) -> Result<()> {
+    let _ = (account_id, password);
+    Ok(())
+}
+
+/// The directory password kept for an account. Stub for the red half.
+pub fn the_saved_password(account_id: &str) -> Result<Option<String>> {
+    let _ = account_id;
+    Ok(None)
+}
+
+/// Forget the directory password kept for an account. Stub for the red half.
+pub fn forget_the_password(account_id: &str) -> Result<()> {
+    let _ = account_id;
+    Ok(())
+}
+
 /// What to say when the account names no directory at all.
 const NO_DIRECTORY_IS_SET_UP: &str = "This account does not name a directory to look people up in. Add one in the account's \
      settings: the address of the directory, and the part of it to search under.";
@@ -1707,6 +1729,74 @@ mod tests {
 
         assert!(matches!(refused, Error::Authentication(_)), "{refused:?}");
         assert!(asking.the_query_it_was_asked().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod the_password_kept_for_it {
+    use super::*;
+    use crate::service::secret_store;
+
+    /// Spelled out rather than read from the constant: changing the name
+    /// strands every directory password already kept, and this is what makes
+    /// that a decision.
+    const THE_SERVICE: &str = "wixen-mail-directory";
+
+    #[test]
+    fn test_a_directory_password_comes_back_the_way_it_went_in() {
+        keep_the_password("acc-1", "hunter2").expect("the store to keep it");
+
+        assert_eq!(
+            the_saved_password("acc-1").expect("the store to answer"),
+            Some("hunter2".to_string())
+        );
+        assert_eq!(
+            secret_store::entries_under(THE_SERVICE),
+            vec![("acc-1".to_string(), "hunter2".to_string())],
+            "the password is not kept under one service with the account as its user"
+        );
+    }
+
+    #[test]
+    fn test_a_forgotten_directory_password_is_gone() {
+        secret_store::write(THE_SERVICE, "acc-1", "hunter2").expect("the store to keep it");
+
+        forget_the_password("acc-1").expect("the store to let it go");
+
+        assert_eq!(
+            secret_store::read(THE_SERVICE, "acc-1").expect("the store to answer"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_an_empty_directory_password_is_forgotten_rather_than_kept() {
+        // A box emptied on the screen is somebody taking the password away,
+        // and an empty entry would read back as a password that is saved.
+        secret_store::write(THE_SERVICE, "acc-1", "hunter2").expect("the store to keep it");
+
+        keep_the_password("acc-1", "").expect("the store to let it go");
+
+        assert_eq!(
+            secret_store::read(THE_SERVICE, "acc-1").expect("the store to answer"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_directory_password_the_store_will_not_give_up_is_an_error_not_nothing() {
+        // Nothing saved means a password to add; a store that will not answer
+        // means one that exists and cannot be got at. Told apart, or the
+        // second reads as the first and somebody types a password again.
+        secret_store::refuse("the credential store is locked");
+        let answered = the_saved_password("acc-1");
+        secret_store::allow();
+
+        let refused = answered.expect_err("an error, not nothing saved");
+        let said = refused.to_string();
+        assert!(said.contains("directory"), "{said}");
+        assert!(said.contains("acc-1"), "{said}");
+        assert!(said.contains("the credential store is locked"), "{said}");
     }
 }
 
