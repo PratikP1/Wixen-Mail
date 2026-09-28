@@ -976,8 +976,12 @@ fn a_day_taken_off(
 /// What the waiting window is called while the servers are being asked.
 const WAITING_TO_HEAR_WHEN_PEOPLE_ARE_FREE: &str = "Finding when everyone is free";
 /// What it says while it waits.
-const ASKING_THE_CALENDARS: &str =
-    "Asking your calendar server about everybody on the guest list. This can take a few seconds.";
+///
+/// True of every place the question can go: a calendar server, Microsoft or
+/// Google. And it says the asking is experimental, because none of those has
+/// answered it for a real account yet.
+const ASKING_THE_CALENDARS: &str = "Asking where your calendar is kept about everybody on the guest list. This is \
+     experimental and can take a few seconds.";
 /// The way out of the waiting window.
 const STOP_ASKING: &str = "&Stop";
 /// What is said when somebody stopped the asking.
