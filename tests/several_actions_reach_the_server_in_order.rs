@@ -347,3 +347,143 @@ fn test_the_readings_name_a_do_half_the_runner_never_calls() {
     let why = the_do_halves_are_called_in_order(&planted).expect_err("a label never put on");
     assert!(why.contains("never calls label_these("), "{why}");
 }
+
+// ── A flag change names the folder it was asked in (RESEARCH-4, F4) ────────
+//
+// The flag's worker used to read the message's folder when it ran. A move
+// recorded here between the key and the worker, which the runner's own
+// order makes routine and M then Ctrl+Shift+V pressed quickly made
+// possible before it, left the worker reading the folder the message was
+// going to, and sending the flag there with the number the message had in
+// the folder it left: a flag on whatever message holds that number there.
+// The folder is read when the change is asked for and handed to the worker.
+
+const THE_FLAG_CHANGE: &str = "fn spawn_server_change(";
+
+/// The parameter the folder arrives in, and the type it has: the folder
+/// read by the caller when the change was asked for, or nothing when it is
+/// in no folder this program knows.
+const THE_FOLDER_ASKED_IN: &str = "asked_in: Option<String>";
+
+/// Where `name` stands as a whole identifier in `code`.
+fn mentions_of(code: &str, name: &str) -> Vec<usize> {
+    let is_part_of_a_name = |c: char| c.is_alphanumeric() || c == '_';
+    code.match_indices(name)
+        .map(|(at, _)| at)
+        .filter(|&at| {
+            let before = code[..at].chars().next_back();
+            let after = code[at + name.len()..].chars().next();
+            !before.is_some_and(is_part_of_a_name) && !after.is_some_and(is_part_of_a_name)
+        })
+        .collect()
+}
+
+fn the_flag_change_names_the_folder_it_was_asked_in(app: &str) -> Result<(), String> {
+    let code = code_of(app, THE_FLAG_CHANGE)?;
+    let closes = code.find("\n)").ok_or(format!(
+        "{THE_FLAG_CHANGE} has no parameter list closing at column nought, so this reads nothing"
+    ))?;
+    let (parameters, body) = code.split_at(closes);
+    if mentions_of(parameters, "asked_in").is_empty() || !parameters.contains(THE_FOLDER_ASKED_IN) {
+        return Err(format!(
+            "{THE_FLAG_CHANGE} takes no {THE_FOLDER_ASKED_IN} from its caller, so its worker \
+             finds the folder when it runs, after a move may have recorded the message in \
+             another"
+        ));
+    }
+    if !calls_of(body, "folder_path_for_message").is_empty() {
+        return Err(format!(
+            "{THE_FLAG_CHANGE} still calls folder_path_for_message( itself, so the flag goes \
+             to the folder the message is in when the worker runs rather than when the change \
+             was asked for"
+        ));
+    }
+    if mentions_of(body, "asked_in").is_empty() {
+        return Err(format!(
+            "{THE_FLAG_CHANGE} is handed the folder asked in and never uses it, so the server \
+             is told some other folder"
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_a_flag_change_names_the_folder_it_was_asked_in() {
+    the_flag_change_names_the_folder_it_was_asked_in(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// A flag change shaped as the window's should be: the folder handed in by
+/// the caller and named to the server, with a comment naming the read it
+/// no longer makes.
+const A_FLAG_CHANGE_AS_IT_SHOULD_BE: &str = "\
+fn spawn_server_change(
+    app: AppHandles<'_>,
+    message_row_id: i64,
+    uid: u32,
+    subject: String,
+    asked_in: Option<String>,
+    change: ServerChange,
+) {
+    rt.spawn_blocking(move || {
+        // Not cache.folder_path_for_message(message_row_id): see above.
+        let Some(folder_path) = asked_in else {
+            return;
+        };
+        controller.set_flag(&folder_path, uid, flag, true);
+    });
+}
+";
+
+#[test]
+fn test_the_flag_reading_passes_a_worker_shaped_as_it_should_be() {
+    the_flag_change_names_the_folder_it_was_asked_in(A_FLAG_CHANGE_AS_IT_SHOULD_BE)
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_flag_reading_names_the_folder_read_when_the_worker_runs() {
+    let planted = A_FLAG_CHANGE_AS_IT_SHOULD_BE.replacen(
+        "        let Some(folder_path) = asked_in else {",
+        "        let _ = asked_in;\n        let Some(folder_path) = cache.folder_path_for_message(message_row_id).ok().flatten() else {",
+        1,
+    );
+    assert_ne!(
+        planted, A_FLAG_CHANGE_AS_IT_SHOULD_BE,
+        "nothing was planted"
+    );
+    let why = the_flag_change_names_the_folder_it_was_asked_in(&planted)
+        .expect_err("a worker that reads the folder when it runs");
+    assert!(
+        why.contains("still calls folder_path_for_message("),
+        "{why}"
+    );
+}
+
+#[test]
+fn test_the_flag_reading_names_a_worker_handed_no_folder() {
+    let planted = A_FLAG_CHANGE_AS_IT_SHOULD_BE.replacen("    asked_in: Option<String>,\n", "", 1);
+    assert_ne!(
+        planted, A_FLAG_CHANGE_AS_IT_SHOULD_BE,
+        "nothing was removed"
+    );
+    let why = the_flag_change_names_the_folder_it_was_asked_in(&planted)
+        .expect_err("a worker handed no folder");
+    assert!(why.contains("takes no asked_in"), "{why}");
+}
+
+#[test]
+fn test_the_flag_reading_names_a_folder_handed_and_never_used() {
+    let planted = A_FLAG_CHANGE_AS_IT_SHOULD_BE.replacen(
+        "        let Some(folder_path) = asked_in else {",
+        "        let Some(folder_path) = the_inbox() else {",
+        1,
+    );
+    assert_ne!(
+        planted, A_FLAG_CHANGE_AS_IT_SHOULD_BE,
+        "nothing was planted"
+    );
+    let why = the_flag_change_names_the_folder_it_was_asked_in(&planted)
+        .expect_err("a folder handed and never used");
+    assert!(why.contains("never uses it"), "{why}");
+}
