@@ -107,6 +107,14 @@ impl OAuthService {
                     // OneNote yet; this is asked for now so the account that
                     // meets the first notes sync already has it.
                     "https://graph.microsoft.com/Notes.ReadWrite".to_string(),
+                    // Microsoft's people search, asked while somebody types a
+                    // recipient. Read only, and the narrowest permission that
+                    // answers it: no directory-wide read, nothing of the mail.
+                    // An account signed in before this was asked for has no
+                    // people search until it signs in again, and keeps
+                    // everything else, because the token that asks for this
+                    // asks for nothing else.
+                    "https://graph.microsoft.com/People.Read".to_string(),
                 ],
             },
         ]
@@ -837,9 +845,11 @@ impl AuthManager {
     /// running account holds, which looks from the screen exactly like an
     /// account that needs signing in again.
     ///
-    /// `Tasks.ReadWrite` is in that state today. It is on the consent list and
-    /// not here, it is a live defect on another feature, and it is recorded in
-    /// `.planning/WINDOWS.md` rather than fixed in a plan about notes.
+    /// `Tasks.ReadWrite` was in that state from 05.2 until 13-28 (ledger 282).
+    /// It is asked for now in a token of its own, [`Self::THE_TASKS_PERMISSION`],
+    /// and People.Read the same way, rather than added here: this list may only
+    /// hold what every account's sign-in already granted, or a refresh asking
+    /// for more takes every feature on this token down with it.
     ///
     /// A named constant rather than an array written inside the method, and
     /// private on purpose. Private means the build fails if
@@ -856,6 +866,21 @@ impl AuthManager {
         "https://graph.microsoft.com/Notes.ReadWrite",
     ];
 
+    /// What Microsoft's people search needs, asked for in a token of its own.
+    ///
+    /// Not added to [`Self::THE_SCOPES_A_GRAPH_TOKEN_CARRIES`], and the reason
+    /// is the accounts that signed in before this permission was asked for.
+    /// Microsoft says a refresh may ask for the scopes the sign-in granted or
+    /// fewer, never more, so a shared list holding a permission an older
+    /// sign-in never granted would take contacts, the calendar, free/busy and
+    /// notes down with it. Asked alone, the refusal costs people search and
+    /// nothing else, and signing in again once brings it back.
+    const THE_PEOPLE_PERMISSION: [&'static str; 1] = ["https://graph.microsoft.com/People.Read"];
+
+    /// What writing a Microsoft task needs, asked for in a token of its own
+    /// for the same reason as [`Self::THE_PEOPLE_PERMISSION`].
+    const THE_TASKS_PERMISSION: [&'static str; 1] = ["https://graph.microsoft.com/Tasks.ReadWrite"];
+
     /// Get a valid Microsoft Graph API token.
     ///
     /// Microsoft v2.0 issues resource-specific tokens. The main token stored in
@@ -865,6 +890,27 @@ impl AuthManager {
     /// For Google accounts, this falls back to `get_valid_token()` since a
     /// single Google token covers all `googleapis.com` resources.
     pub async fn get_valid_graph_token(&self) -> Result<String> {
+        self.a_graph_token_carrying(&Self::THE_SCOPES_A_GRAPH_TOKEN_CARRIES)
+            .await
+    }
+
+    /// A Graph token carrying Microsoft's people search and nothing else.
+    pub async fn a_people_token(&self) -> Result<String> {
+        self.a_graph_token_carrying(&Self::THE_PEOPLE_PERMISSION)
+            .await
+    }
+
+    /// A Graph token carrying the tasks permission and nothing else.
+    pub async fn a_tasks_token(&self) -> Result<String> {
+        self.a_graph_token_carrying(&Self::THE_TASKS_PERMISSION)
+            .await
+    }
+
+    /// A Graph token asked for exactly these permissions.
+    ///
+    /// Short-lived and used at once, so it is never written to the credential
+    /// store: the stored token is the one mail signs in with.
+    async fn a_graph_token_carrying(&self, scopes: &[&str]) -> Result<String> {
         if self.provider.eq_ignore_ascii_case("gmail") {
             return self.get_valid_token().await;
         }
@@ -886,7 +932,7 @@ impl AuthManager {
             refresh_token,
             &self.client_id,
             self.client_secret.as_deref(),
-            &Self::THE_SCOPES_A_GRAPH_TOKEN_CARRIES,
+            scopes,
         )
         .await?;
 
@@ -940,16 +986,46 @@ impl AuthManager {
 /// caller branches on, so the caller can say "nobody is signed in" in its own
 /// words rather than reporting a failure somebody cannot act on.
 pub async fn a_graph_token_for(account_id: &str) -> Option<String> {
-    let held = crate::service::oauth_credentials::credentials_for("outlook")?;
-    AuthManager::new(
+    a_microsoft_sign_in_for(account_id)
+        .ok()?
+        .get_valid_graph_token()
+        .await
+        .ok()
+}
+
+/// A token for Microsoft's people search, or nothing at all.
+///
+/// `None` for the same three reasons as [`a_graph_token_for`], and for a
+/// fourth that matters more here: an account signed in before people search
+/// asked for its permission, which Microsoft refuses until the person signs
+/// in again.
+pub async fn a_people_token_for(account_id: &str) -> Option<String> {
+    a_microsoft_sign_in_for(account_id)
+        .ok()?
+        .a_people_token()
+        .await
+        .ok()
+}
+
+/// A token for writing this account's Microsoft tasks, or why there is none.
+///
+/// The reason is kept, unlike [`a_graph_token_for`], because the tasks sync
+/// already says why a sign-in failed and this must not make it say less.
+pub async fn a_tasks_token_for(account_id: &str) -> Result<String> {
+    a_microsoft_sign_in_for(account_id)?.a_tasks_token().await
+}
+
+/// This account's Microsoft sign-in, when this build can sign in to Microsoft.
+fn a_microsoft_sign_in_for(account_id: &str) -> Result<AuthManager> {
+    let held = crate::service::oauth_credentials::credentials_for("outlook").ok_or_else(|| {
+        Error::Authentication("this build holds no credentials for signing in to Microsoft".into())
+    })?;
+    Ok(AuthManager::new(
         account_id,
         "outlook",
         &held.client_id,
         held.client_secret.as_deref(),
-    )
-    .get_valid_graph_token()
-    .await
-    .ok()
+    ))
 }
 
 /// What to say when signing in worked and could not be kept.
@@ -1329,6 +1405,91 @@ mod tests {
             "{:?}",
             AuthManager::THE_SCOPES_A_GRAPH_TOKEN_CARRIES
         );
+    }
+
+    /// Microsoft's people search, spelled once.
+    const THE_PEOPLE_SEARCH_PERMISSION: &str = "https://graph.microsoft.com/People.Read";
+
+    /// Writing Microsoft tasks, spelled once.
+    const THE_TASKS_WRITE_PERMISSION: &str = "https://graph.microsoft.com/Tasks.ReadWrite";
+
+    #[test]
+    fn test_a_new_microsoft_sign_in_asks_for_the_people_permission() {
+        // The consent screen's half, beside the notes one: a token can only
+        // be asked for what the sign-in granted.
+        let outlook = OAuthService::provider_by_name("outlook").expect("the outlook provider");
+
+        assert!(
+            outlook
+                .default_scopes
+                .iter()
+                .any(|scope| scope == THE_PEOPLE_SEARCH_PERMISSION),
+            "{:?}",
+            outlook.default_scopes
+        );
+    }
+
+    #[test]
+    fn test_the_people_token_is_asked_for_the_people_permission_and_nothing_else() {
+        // Alone, so an account signed in before the permission existed loses
+        // people search and nothing it already had. The constant is private
+        // and `a_people_token` is the one thing that reads it, so the build
+        // says it is used and this says what it holds.
+        assert_eq!(
+            AuthManager::THE_PEOPLE_PERMISSION,
+            [THE_PEOPLE_SEARCH_PERMISSION]
+        );
+    }
+
+    #[test]
+    fn test_the_tasks_token_is_asked_for_the_tasks_permission_and_nothing_else() {
+        // Ledger 282: the shared token never carried this, so every Microsoft
+        // task write was refused. Its own token, for the same reason as the
+        // people token.
+        assert_eq!(
+            AuthManager::THE_TASKS_PERMISSION,
+            [THE_TASKS_WRITE_PERMISSION]
+        );
+    }
+
+    #[test]
+    fn test_the_shared_graph_token_asks_for_no_permission_an_older_sign_in_never_granted() {
+        // Microsoft: a refresh's scopes "must be equivalent to or a subset of
+        // the scopes requested in the original authorization_code request
+        // leg". A permission added here is one every older sign-in never
+        // granted, and this token feeds contacts, the calendar, free/busy and
+        // notes, so all four could stop until those people signed in again.
+        //
+        // Compared as slices, so a list that grew is a failing test rather
+        // than a build that stops.
+        assert_eq!(
+            AuthManager::THE_SCOPES_A_GRAPH_TOKEN_CARRIES.as_slice(),
+            [
+                "https://graph.microsoft.com/Contacts.ReadWrite",
+                "https://graph.microsoft.com/Calendars.ReadWrite",
+                THE_NOTES_PERMISSION,
+            ]
+            .as_slice()
+        );
+    }
+
+    #[test]
+    fn test_every_permission_a_graph_token_is_asked_for_is_one_the_sign_in_asks_for() {
+        // The shape of ledger 282 read the other way: a token asked for a
+        // permission the consent screen never showed is refused for everybody.
+        let outlook = OAuthService::provider_by_name("outlook").expect("the outlook provider");
+        let every_token = AuthManager::THE_SCOPES_A_GRAPH_TOKEN_CARRIES
+            .iter()
+            .chain(&AuthManager::THE_PEOPLE_PERMISSION)
+            .chain(&AuthManager::THE_TASKS_PERMISSION);
+
+        for scope in every_token {
+            assert!(
+                outlook.default_scopes.iter().any(|asked| asked == scope),
+                "a token is asked for {scope:?}, which the sign-in never asks for: {:?}",
+                outlook.default_scopes
+            );
+        }
     }
 
     #[test]

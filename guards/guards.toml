@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 447 records have arrived since and have not been through it.
+# 452 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -9203,7 +9203,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/export_tree.rs", tests = 39 },
-    { file = "src/application/looking_people_up.rs", tests = 37 },
+    { file = "src/application/looking_people_up.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
     { file = "src/application/reply.rs", tests = 28 },
@@ -10807,7 +10807,7 @@ before = """    if tidy.chars().count() > MOST_CHARACTERS_FROM_A_REPLY {"""
 after = """    if tidy.chars().count() >= MOST_CHARACTERS_FROM_A_REPLY {"""
 red = ["service::oauth::tests::test_as_one_short_line_leaves_exactly_the_bound_alone_and_cuts_one_more"]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 51 },
+    { file = "src/service/oauth.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -10820,7 +10820,7 @@ red = [
     "service::oauth::tests::test_a_success_status_is_read_as_the_token_it_carries",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 51 },
+    { file = "src/service/oauth.rs", tests = 56 },
 ]
 
 # ── calendar.rs, contacts_sync.rs, tasks_sync.rs, message_cache/tasks.rs, ──
@@ -12710,7 +12710,7 @@ red = [
     "service::oauth::when_the_credential_store_refuses::test_nothing_keeps_going_after_a_token_it_could_not_keep",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 51 },
+    { file = "src/service/oauth.rs", tests = 56 },
 ]
 
 # The first measurement of this one reddened nothing, which is the whole reason
@@ -21034,7 +21034,7 @@ red = [
     "service::onenote_notes::tests::test_an_account_that_may_only_be_read_makes_no_page_and_says_why",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 59 },
+    { file = "src/service/microsoft_graph.rs", tests = 65 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
 ]
 
@@ -21070,7 +21070,7 @@ red = [
     "service::microsoft_graph::tests::test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 59 },
+    { file = "src/service/microsoft_graph.rs", tests = 65 },
 ]
 
 # A change to a page is built from a read of that page taken immediately before
@@ -21109,7 +21109,7 @@ red = [
     "service::onenote_notes::tests::test_the_marker_handed_back_after_a_change_is_the_one_the_page_carries_afterwards",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 59 },
+    { file = "src/service/microsoft_graph.rs", tests = 65 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
 ]
 
@@ -33864,4 +33864,96 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 13 },
+]
+
+# People.Read added to the list the shared Graph token is refreshed with, the
+# shape Microsoft's refresh rule warns against: every account signed in before
+# the permission was asked for would ask a refresh for more than its sign-in
+# granted, and contacts, the calendar, free/busy and notes could all stop
+# until it signed in again. Written 2026-09-28 by 13-28.
+[[guard]]
+name = "the shared graph token asks for nothing an older sign-in never granted"
+file = "src/service/oauth.rs"
+before = '''    const THE_SCOPES_A_GRAPH_TOKEN_CARRIES: [&'static str; 3] = ['''
+after = '''    const THE_SCOPES_A_GRAPH_TOKEN_CARRIES: [&'static str; 4] = [
+        "https://graph.microsoft.com/People.Read",'''
+red = [
+    "service::oauth::tests::test_the_shared_graph_token_asks_for_no_permission_an_older_sign_in_never_granted",
+]
+tests_last_seen = [
+    { file = "src/service/oauth.rs", tests = 56 },
+]
+
+# The tasks sync sent back to the shared Graph token, which has never carried
+# Tasks.ReadWrite, so every Microsoft task change is refused again (ledger
+# 282). Written 2026-09-28 by 13-28.
+[[guard]]
+name = "the tasks sync asks for the token carrying the tasks permission"
+file = "src/presentation/wx_app.rs"
+suite = "microsoft_people_join_the_people_found_list"
+before = '''            match handle.block_on(crate::service::oauth::a_tasks_token_for(aid)) {'''
+after = '''            match handle.block_on(async {
+                crate::service::oauth::AuthManager::new(aid, "outlook", "", None)
+                    .get_valid_graph_token()
+                    .await
+            }) {'''
+red = [
+    "test_the_tasks_sync_asks_for_the_token_that_carries_the_tasks_permission",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/microsoft_people_join_the_people_found_list.rs", tests = 6 },
+]
+
+# Microsoft's people search asked without naming where to look, so Microsoft
+# searches the mailbox alone and a colleague nobody has written to yet is not
+# found. Written 2026-09-28 by 13-28.
+[[guard]]
+name = "a people search names both places microsoft looks"
+file = "src/service/microsoft_graph.rs"
+before = '''            .header(header, sources)'''
+after = '''            .header("X-Nothing", sources)'''
+red = [
+    "service::microsoft_graph::tests::test_a_people_search_asks_for_the_typed_name_quoted_in_both_places_microsoft_looks",
+]
+tests_last_seen = [
+    { file = "src/service/microsoft_graph.rs", tests = 65 },
+]
+
+# Microsoft's rows put ahead of the contacts, so a person saved here under a
+# name they chose is offered under Microsoft's spelling instead, and the list
+# no longer starts with the people somebody chose to keep. Written 2026-09-28
+# by 13-28.
+[[guard]]
+name = "a person microsoft also found keeps the row already in the list"
+file = "src/application/looking_people_up.rs"
+before = '''    for person in from_your_contacts
+        .into_iter()
+        .chain(from_the_directory)
+        .chain(from_microsoft)'''
+after = '''    for person in from_microsoft
+        .into_iter()
+        .chain(from_your_contacts)
+        .chain(from_the_directory)'''
+red = [
+    "application::looking_people_up::tests::test_microsofts_people_come_after_the_contacts_and_the_directory",
+    "application::looking_people_up::tests::test_one_person_microsoft_also_found_keeps_the_row_already_there",
+]
+tests_last_seen = [
+    { file = "src/application/looking_people_up.rs", tests = 43 },
+]
+
+# Microsoft asked about a typed name for every account, not only an Outlook or
+# Office 365 browser sign-in, so a name typed on a Gmail or IMAP account would
+# be offered to Microsoft (T-13-28-01). Written 2026-09-28 by 13-28.
+[[guard]]
+name = "microsoft is asked about a typed name only for a microsoft browser sign-in"
+file = "src/presentation/finding_people.rs"
+before = '''    let Some(account) = account.filter(|account| looking::microsoft_is_asked_for(account)) else {'''
+after = '''    let Some(account) = account else {'''
+red = [
+    "presentation::finding_people::asking_microsoft::test_an_account_that_does_not_sign_in_to_microsoft_is_never_asked_about_people",
+]
+tests_last_seen = [
+    { file = "src/presentation/finding_people.rs", tests = 7 },
 ]

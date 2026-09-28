@@ -221,6 +221,7 @@ group changes nothing about their contact.
 | The same provider, for your contacts, calendar and tasks | Syncing, which a new installation allows | The contacts, events and tasks |
 | A separate calendar or contacts server | Syncing, if you set one up | The events and contacts |
 | Your organisation's directory | Only if you name one in Look People Up at Work, see below | The part of a name you have typed into To, Cc or Bcc, and, for a directory that asks you to sign in, the name and password for it, only over an address beginning `ldaps://` |
+| Microsoft's people search | Only for an Outlook or Office 365 account you signed in to through the browser, while you type in To, Cc or Bcc, since the build of 2026-09-28, see below | The part of a name you have typed, with that account's sign-in |
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
 | GitHub | Checking whether a newer version has been published, which you ask for or switch on, see below | The request, which carries nothing about you |
@@ -339,6 +340,26 @@ People Up at Work, since 2026-09-28. The password box there opens empty and neve
 saved password back; it says when one is saved, and leaving it empty keeps that one.
 Clearing the sign-in name and pressing OK forgets it. A directory with no sign-in name is
 asked without signing in.
+
+### Microsoft's people search
+
+Since the build of 2026-09-28, an Outlook or Office 365 account you signed in to through
+the browser also sends the search to Microsoft. What goes is the part of the name you have
+typed, after the same three letters and the same pause as the directory, and nothing about
+the message. Microsoft looks through the people that mailbox writes to and your
+organisation's directory, and the people it finds join the list, each row ending "from
+Microsoft".
+
+Nothing is sent to Microsoft for any other account: not for a Gmail account, not for an
+Outlook account that signs in with a password, and not for any other mail server. What you
+type is never written to the log, and neither is Microsoft's answer.
+
+It needs a permission the sign-in did not ask for before, Microsoft's `People.Read`, which
+reads that list of people and nothing of your mail. Wixen Mail asks Microsoft for it on its
+own, so an account signed in before that build keeps its mail, contacts, calendar, tasks
+and notes as they were, and each search says to sign in again until you do.
+[Setting up a provider](PROVIDER_SETUP.md) says how. An administrator can switch people
+search off for an organisation, and then each search says Microsoft refused it.
 
 ## Asking when the people invited to a meeting are free
 

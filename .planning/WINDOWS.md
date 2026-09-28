@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 628
+open_count: 631
 waived_count: 0
-fixed_count: 71
-total_count: 699
-last_updated: 2026-09-28T16:27:15.000Z
+fixed_count: 72
+total_count: 703
+last_updated: 2026-09-28T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -296,7 +296,7 @@ last_updated: 2026-09-28T16:27:15.000Z
 | 279 | 05.2 | unrun-verify | src/data/message_cache/notes.rs |  | Two calendars sharing a display name give a folder named Work and one named Work (2). Nobody has heard that read aloud. At a screen reader's default punctuation level the brackets are expected to be silent, so it should read Work 2, and that is an expectation rather than a measurement. | open |  | 2026-09-11T18:00:11.003Z |  |
 | 280 | 05.2 | todo | src/presentation/managers.rs |  | A note a backend holds, moved into a folder somebody made here, leaves the backend holding its copy for ever. The removal waits for a copy that sits in a folder no push reaches, so it never goes. The task move has the same shape and docs/ALPHA_TESTING.md says so, but nothing in the program tells the person their server still has it. | open |  | 2026-09-11T18:00:11.768Z |  |
 | 281 | 05.2 | todo | docs/development/the-notes-seam.md |  | A folder name carrying a flattened path, Work / Projects / Q3, arrives only when a backend with levels above a note ships. Nothing chooses that separator today and what a screen reader makes of it is unmeasured. | open |  | 2026-09-11T18:00:12.574Z |  |
-| 282 | 05.2 | unmet-truth | src/service/oauth.rs |  | Tasks.ReadWrite is in the outlook provider's default_scopes and absent from THE_SCOPES_A_GRAPH_TOKEN_CARRIES, the array get_valid_graph_token refreshes with, so no running Microsoft account holds it and every Graph task write is refused. 05.2-02 found it and did not fix it: it is a live defect on another feature. docs/PROVIDER_SETUP.md's 'If you signed in before tasks synced both ways' tells somebody signing in again will send their waiting task changes, which this gap would make false. | open |  | 2026-09-12T00:07:09.234Z |  |
+| 282 | 05.2 | unmet-truth | src/service/oauth.rs |  | Tasks.ReadWrite is in the outlook provider's default_scopes and absent from THE_SCOPES_A_GRAPH_TOKEN_CARRIES, the array get_valid_graph_token refreshes with, so no running Microsoft account holds it and every Graph task write is refused. 05.2-02 found it and did not fix it: it is a live defect on another feature. docs/PROVIDER_SETUP.md's 'If you signed in before tasks synced both ways' tells somebody signing in again will send their waiting task changes, which this gap would make false. Fixed 2026-09-28 by 13-28, on Pratik's answer (c) of 2026-09-24: spawn_tasks_sync asks oauth::a_tasks_token_for, a token asked for Tasks.ReadWrite alone, rather than the shared Graph token, whose list is unchanged so older sign-ins keep contacts, the calendar, free/busy and notes; held by service::oauth::tests::test_the_tasks_token_is_asked_for_the_tasks_permission_and_nothing_else and the reading test_the_tasks_sync_asks_for_the_token_that_carries_the_tasks_permission in tests/microsoft_people_join_the_people_found_list.rs, with a guard record; the provider page's promise is true again. No task change has reached a real Microsoft account (ledger 702) | fixed |  | 2026-09-12T00:07:09.234Z | 2026-09-28T20:00:00.000Z |
 | 283 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether Graph accepts the input HTML service::onenote_page produces when a page is created, or normalises it into something the fidelity table did not predict. Every request has been read off a loopback socket and none has met Microsoft. | open |  | 2026-09-12T00:07:29.659Z |  |
 | 284 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether OneNote's generated identifiers really change on every page update or only on some. That decides whether reading before every write is necessary or merely safe, and the read inside change_page is built on the reference's word for it. | open |  | 2026-09-12T00:07:30.352Z |  |
 | 285 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether removing a page's elements one at a time by generated identifier and appending new ones leaves a page a person recognises, or leaves it reordered and restyled. Remove-and-append was chosen over delete-and-recreate on a failure argument, not on a measurement of the result. | open |  | 2026-09-12T00:07:31.045Z |  |
@@ -659,7 +659,7 @@ last_updated: 2026-09-28T16:27:15.000Z
 | 642 | 13 | todo | src/service/pgp/keys.rs |  | 13-15: what the key opens is handed back as text read lossily as UTF-8, which was right for inline PGP's words and is not for a PGP/MIME message, whose inside is a whole MIME entity that can carry words in another character set or a file as raw bytes; either comes out with replacement marks in it. Recommendation: hand the opened bytes to the application layer and let the MIME parser read each part's own charset, the next time a plan touches service::pgp | open |  | 2026-09-27T03:36:08.000Z |  |
 | 643 | 13 | todo | src/presentation/reader_text.rs |  | 13-15: a PGP/MIME message that opens to files and no words shows "This message has no text, or it has not been downloaded yet.", which is half false, because an opened PGP message says nothing above its words the way inline PGP says nothing. 13-14 fixed the same case for S/MIME by putting its opened sentence there. Recommendation: say "This message was encrypted with PGP and was opened here. It holds files and no words." in that place and only there, which needs Pratik's word on the sentence | open |  | 2026-09-27T03:36:08.000Z |  |
 | 644 | 13 | deviation | src/service/secret_store.rs |  | 13-16: the credential store under test took a secret of any length while Windows keeps 1,280 characters, 2,560 bytes of UTF-16, in one credential, so an ordinary RSA private key (1,836 characters for the test key, 6,618 for an RSA-4096 key with a subkey) imported in every test and could not be stored on any real Windows machine. Found by 13-16's research and fixed in 13-16: the test store refuses what Windows refuses, and a key is split across key-N-part-M entries under wixen-mail-pgp. Shown by service::secret_store::tests::test_a_secret_windows_would_refuse_is_refused_here_too and service::pgp::keys::tests::test_an_ordinary_rsa_key_is_stored_and_opens_mail, red at 92784f28 and 658d420d | fixed |  | 2026-09-27T05:28:15.000Z | 2026-09-27T05:28:15.000Z |
-| 645 | 13 | todo | src/service/oauth.rs |  | 13-16: the same 1,280-character limit applies to service::oauth, which writes a sign-in's token JSON through secret_store::write (oauth.rs:910 on 2026-09-27). A Microsoft access token is commonly over 1,280 characters (13-16 research assumption A2, not measured), so an Outlook sign-in may fail to save on Windows. No OAuth test went red under 13-16's honest test store, because the tests store short tokens: the whole library ran 8,111 passed and 13 failed, every failure a PGP case. 13-28, which asks Microsoft for a token of its own, is the place to measure a real token's length and, if it is over, split it the way 13-16 splits a PGP key | open |  | 2026-09-27T05:28:15.000Z |  |
+| 645 | 13 | todo | src/service/oauth.rs |  | 13-16: the same 1,280-character limit applies to service::oauth, which writes a sign-in's token JSON through secret_store::write (oauth.rs:910 on 2026-09-27). A Microsoft access token is commonly over 1,280 characters (13-16 research assumption A2, not measured), so an Outlook sign-in may fail to save on Windows. No OAuth test went red under 13-16's honest test store, because the tests store short tokens: the whole library ran 8,111 passed and 13 failed, every failure a PGP case. 13-28, which asks Microsoft for a token of its own, is the place to measure a real token's length and, if it is over, split it the way 13-16 splits a PGP key. 13-28 could not: no real Microsoft account is reachable from the machine that ran it, and the people and tasks tokens it asks for are used at once and never written to the store, so the stored sign-in is still the only token that meets the limit. Left open for phase 14 (ledger 702) | open |  | 2026-09-27T05:28:15.000Z |  |
 | 646 | 13 | unrun-verify | src/presentation/wx_pgp_keys.rs |  | 13-17: nobody has heard the PGP key manager with a screen reader. Whether each row is read as the person first and the fingerprint after, whether the question before a removal is read in full with its fingerprint, and whether the eight letters land where the shortcuts page says. tests/the_key_manager_lists_and_names_its_controls.rs reads names, roles and rows over MSAA at each control's handle, which proves structure and not how it sounds | open |  | 2026-09-27T08:08:59.000Z |  |
 | 647 | 13 | todo | src/service/pgp/mod.rs |  | 13-17: service::pgp::import_a_private_key and WhatImportingAKeyFound are reached only by tests since the File menu's import was replaced by the key manager, which imports through import_keys. The tests in application::opening_pgp, application::reading_a_message and presentation::reader_text that put a key in place through it want moving to import_keys, and the old path deleting | open |  | 2026-09-27T08:08:59.000Z |  |
 | 648 | 13 | todo | src/presentation/wx_app.rs |  | 13-17: the question before a key attachment is imported is asked over the text reader when that is open and over the main window otherwise, so Enter on a key in the formatted message window asks over the main window and focus goes back there once it is answered, not to the formatted window. Read in the code, not tried. Carrying the asking window through UIUpdate::KeyAttachmentOffered would fix it | open |  | 2026-09-27T08:08:59.000Z |  |
@@ -714,6 +714,10 @@ last_updated: 2026-09-28T16:27:15.000Z
 | 694 | 13 | todo | src/service/directory.rs | 510 | 13-26, decisions 1 and 2: signing in to a directory as the Windows user, with no password typed, is later work and not built. The two routes the research named: Windows' own LDAP, wldap32 through the windows crate's Win32_Networking_Ldap feature (not on today), which also brings Windows' own certificate store; or ldap3's gssapi feature. And ldap3 is kept while its issue #157 asks whether the crate is still maintained: when that is answered, or when a fix ldap3 needs goes unmerged, re-take the audit in RESEARCH-3 against wldap32 | open |  | 2026-09-28T16:00:00.000Z |  |
 | 695 | 13 | unrun-verify | src/service/directory.rs | 666 | 13-26, for phase 14: no real directory has been asked with a sign-in. A check against Pratik's directory once 13-27's window exists: a sign-in name and password over ldaps:// find people; the same over ldap:// is refused with the sentence and nothing is sent; a search whose base is an Active Directory domain root, which answers with continuation references beside the entries, still finds the people; and removing the account leaves no wixen-mail-directory entry in Credential Manager | open |  | 2026-09-28T16:00:00.000Z |  |
 | 696 | 13 | todo | src/service/credentials.rs | 102 | 13-26, found and left: credentials.rs words a store failure as "Could not remove the password for {account_id}", and account_id is a UUID, so the refusal delete_account says when Windows will not let go of a password reads a string of hexadecimal aloud. 13-26's directory password words the same failure as "this account's directory password". Recommendation: the same wording in credentials.rs, with its tests | open |  | 2026-09-28T16:00:00.000Z |  |
+| 700 | 13 | todo | src/service/microsoft_graph.rs | 518 | 13-28, decision 3: people search asks GET /me/people on v1.0, which Microsoft calls maintenance mode and whose replacement it recommends is /search/query with the person entity, worked on the beta endpoint. Nothing moved; the move is later work, and the request, its parse and the People.Read permission would all change with it | open |  | 2026-09-28T20:00:00.000Z |  |
+| 701 | 13 | unrun-verify | src/presentation/finding_people.rs | 228 | 13-28, the tester's ear: nobody has heard a row from Microsoft's people search. Whether a row is read as the name, the address and "from Microsoft"; whether "Sign in again from the Account Manager to let Microsoft find people for this account." is heard once with a search on an account signed in before People.Read and does not flood while typing; and how Microsoft's refusal sentence reads after "Nobody found" | open |  | 2026-09-28T20:00:00.000Z |  |
+| 702 | 13 | unrun-verify | src/service/oauth.rs | 1002 | 13-28, for phase 14: nothing here has met Microsoft. On Pratik's account: whether the browser's list of permissions names reading your relevant people, and whether a personal account grants People.Read without an administrator (RESEARCH-3 A4); whether /me/people finds colleagues on his tenant or an administrator has switched it off; whether a task made, ticked off or deleted here reaches Microsoft To Do with the tasks token; and whether an account signed in before Tasks.ReadWrite is refused its tasks token, so its Microsoft tasks stop syncing both ways until it signs in again (ledger 703). The token 13-28 asks for is used at once and never stored, so ledger 645's length question is not answered here either | open |  | 2026-09-28T20:00:00.000Z |  |
+| 703 | 13 | todo | src/presentation/wx_app.rs | 28749 | 13-28, a design question for Pratik: the tasks sync now asks Microsoft for a token carrying Tasks.ReadWrite alone. Microsoft's documentation says a refresh may ask only for what the sign-in granted, so an account signed in before tasks synced both ways, which granted the read-only permission, is expected to be refused that token and to sync no Microsoft tasks at all until it signs in again, where before it may have read them and had every change refused. Nothing here can measure which. The recommendation is to keep it: signing in again once fixes both directions, the sync's line counts the failed sign-in, and the provider page says so. The alternative is to fall back to the shared token for reading when the tasks token is refused | open |  | 2026-09-28T20:00:00.000Z |  |
 
 ````json
 [
@@ -4095,11 +4099,11 @@ last_updated: 2026-09-28T16:27:15.000Z
     "phase": "05.2",
     "file": "src/service/oauth.rs",
     "line": null,
-    "description": "Tasks.ReadWrite is in the outlook provider's default_scopes and absent from THE_SCOPES_A_GRAPH_TOKEN_CARRIES, the array get_valid_graph_token refreshes with, so no running Microsoft account holds it and every Graph task write is refused. 05.2-02 found it and did not fix it: it is a live defect on another feature. docs/PROVIDER_SETUP.md's 'If you signed in before tasks synced both ways' tells somebody signing in again will send their waiting task changes, which this gap would make false.",
-    "status": "open",
+    "description": "Tasks.ReadWrite is in the outlook provider's default_scopes and absent from THE_SCOPES_A_GRAPH_TOKEN_CARRIES, the array get_valid_graph_token refreshes with, so no running Microsoft account holds it and every Graph task write is refused. 05.2-02 found it and did not fix it: it is a live defect on another feature. docs/PROVIDER_SETUP.md's 'If you signed in before tasks synced both ways' tells somebody signing in again will send their waiting task changes, which this gap would make false. Fixed 2026-09-28 by 13-28, on Pratik's answer (c) of 2026-09-24: spawn_tasks_sync asks oauth::a_tasks_token_for, a token asked for Tasks.ReadWrite alone, rather than the shared Graph token, whose list is unchanged so older sign-ins keep contacts, the calendar, free/busy and notes; held by service::oauth::tests::test_the_tasks_token_is_asked_for_the_tasks_permission_and_nothing_else and the reading test_the_tasks_sync_asks_for_the_token_that_carries_the_tasks_permission in tests/microsoft_people_join_the_people_found_list.rs, with a guard record; the provider page's promise is true again. No task change has reached a real Microsoft account (ledger 702)",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-12T00:07:09.234Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-28T20:00:00.000Z"
   },
   {
     "id": 283,
@@ -8451,7 +8455,7 @@ last_updated: 2026-09-28T16:27:15.000Z
     "phase": "13",
     "file": "src/service/oauth.rs",
     "line": null,
-    "description": "13-16: the same 1,280-character limit applies to service::oauth, which writes a sign-in's token JSON through secret_store::write (oauth.rs:910 on 2026-09-27). A Microsoft access token is commonly over 1,280 characters (13-16 research assumption A2, not measured), so an Outlook sign-in may fail to save on Windows. No OAuth test went red under 13-16's honest test store, because the tests store short tokens: the whole library ran 8,111 passed and 13 failed, every failure a PGP case. 13-28, which asks Microsoft for a token of its own, is the place to measure a real token's length and, if it is over, split it the way 13-16 splits a PGP key",
+    "description": "13-16: the same 1,280-character limit applies to service::oauth, which writes a sign-in's token JSON through secret_store::write (oauth.rs:910 on 2026-09-27). A Microsoft access token is commonly over 1,280 characters (13-16 research assumption A2, not measured), so an Outlook sign-in may fail to save on Windows. No OAuth test went red under 13-16's honest test store, because the tests store short tokens: the whole library ran 8,111 passed and 13 failed, every failure a PGP case. 13-28, which asks Microsoft for a token of its own, is the place to measure a real token's length and, if it is over, split it the way 13-16 splits a PGP key. 13-28 could not: no real Microsoft account is reachable from the machine that ran it, and the people and tasks tokens it asks for are used at once and never written to the store, so the stored sign-in is still the only token that meets the limit. Left open for phase 14 (ledger 702)",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T05:28:15.000Z",
@@ -9103,6 +9107,54 @@ last_updated: 2026-09-28T16:27:15.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T16:27:15.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 700,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/microsoft_graph.rs",
+    "line": 518,
+    "description": "13-28, decision 3: people search asks GET /me/people on v1.0, which Microsoft calls maintenance mode and whose replacement it recommends is /search/query with the person entity, worked on the beta endpoint. Nothing moved; the move is later work, and the request, its parse and the People.Read permission would all change with it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 701,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/finding_people.rs",
+    "line": 228,
+    "description": "13-28, the tester's ear: nobody has heard a row from Microsoft's people search. Whether a row is read as the name, the address and \"from Microsoft\"; whether \"Sign in again from the Account Manager to let Microsoft find people for this account.\" is heard once with a search on an account signed in before People.Read and does not flood while typing; and how Microsoft's refusal sentence reads after \"Nobody found\"",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 702,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/service/oauth.rs",
+    "line": 1002,
+    "description": "13-28, for phase 14: nothing here has met Microsoft. On Pratik's account: whether the browser's list of permissions names reading your relevant people, and whether a personal account grants People.Read without an administrator (RESEARCH-3 A4); whether /me/people finds colleagues on his tenant or an administrator has switched it off; whether a task made, ticked off or deleted here reaches Microsoft To Do with the tasks token; and whether an account signed in before Tasks.ReadWrite is refused its tasks token, so its Microsoft tasks stop syncing both ways until it signs in again (ledger 703). The token 13-28 asks for is used at once and never stored, so ledger 645's length question is not answered here either",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 703,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": 28749,
+    "description": "13-28, a design question for Pratik: the tasks sync now asks Microsoft for a token carrying Tasks.ReadWrite alone. Microsoft's documentation says a refresh may ask only for what the sign-in granted, so an account signed in before tasks synced both ways, which granted the read-only permission, is expected to be refused that token and to sync no Microsoft tasks at all until it signs in again, where before it may have read them and had every change refused. Nothing here can measure which. The recommendation is to keep it: signing in again once fixes both directions, the sync's line counts the failed sign-in, and the provider page says so. The alternative is to fall back to the shared token for reading when the tasks token is refused",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T20:00:00.000Z",
     "resolved_at": null
   }
 ]

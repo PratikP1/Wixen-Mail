@@ -28801,14 +28801,11 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
             }
         }
 
-        if let Some(creds) = crate::service::oauth_credentials::credentials_for("outlook") {
-            let auth = crate::service::oauth::AuthManager::new(
-                aid,
-                "outlook",
-                &creds.client_id,
-                creds.client_secret.as_deref(),
-            );
-            match handle.block_on(auth.get_valid_graph_token()) {
+        // Its own token, carrying the tasks permission, which the shared Graph
+        // token has never carried: with that one every write was refused
+        // (ledger 282).
+        if crate::service::oauth_credentials::credentials_for("outlook").is_some() {
+            match handle.block_on(crate::service::oauth::a_tasks_token_for(aid)) {
                 Ok(token) => {
                     match handle.block_on(sync_microsoft_tasks(&cache, &client, &token, aid)) {
                         Ok(result) => total.absorb(result),

@@ -13,6 +13,8 @@
 
 use crate::application::looking_people_up as looking;
 use crate::common::paths::AppPaths;
+use crate::data::account::Account;
+use crate::data::message_cache::MessageCache;
 use crate::presentation::wx_compose::FindingPeople;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -72,13 +74,22 @@ fn who_matches(
     handle: &tokio::runtime::Handle,
 ) -> looking::WhoWasFound {
     let mut trouble: Vec<String> = Vec::new();
-    let from_your_contacts = the_contacts_here(account_id, &asked.name, &mut trouble);
+    let address_book = the_address_book(&mut trouble);
+    let from_your_contacts = address_book
+        .as_ref()
+        .map(|cache| the_contacts_here(cache, account_id, &asked.name, &mut trouble))
+        .unwrap_or_default();
     let from_the_directory = the_organisation(account_id, &asked.name, handle, &mut trouble);
+    let account = address_book
+        .as_ref()
+        .and_then(|cache| the_account(cache, account_id));
+    let from_microsoft =
+        the_people_microsoft_knows(account.as_ref(), &asked.name, handle, &mut trouble);
 
     looking::WhoWasFound {
         search: asked.search,
         name: asked.name.clone(),
-        everybody: looking::everybody_found(from_your_contacts, from_the_directory),
+        everybody: looking::everybody_found(from_your_contacts, from_the_directory, from_microsoft),
         trouble: match trouble.is_empty() {
             true => None,
             false => Some(trouble.join(" ")),
@@ -86,28 +97,51 @@ fn who_matches(
     }
 }
 
-/// The people in the address book on this computer who match.
+/// The address book on this computer, which also holds the accounts.
 ///
 /// The worker opens the cache itself rather than carrying the window's, which
 /// is how every other worker here reaches it: a database handle belongs to the
-/// thread that opened it.
+/// thread that opened it. Opened once for a search, for the contacts and for
+/// the account Microsoft may be asked for.
+fn the_address_book(trouble: &mut Vec<String>) -> Option<MessageCache> {
+    let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+        trouble.push("There is nowhere on this computer to keep contacts yet.".to_string());
+        return None;
+    };
+    match MessageCache::new(dir, None) {
+        Ok(cache) => Some(cache),
+        Err(why) => {
+            tracing::warn!("The contacts on this computer could not be opened: {why}");
+            trouble.push("Your contacts on this computer could not be read.".to_string());
+            None
+        }
+    }
+}
+
+/// The account a search is made from, as it is stored.
+///
+/// Nothing when it cannot be read, which asks Microsoft nothing: a search
+/// that cannot tell which account it is for has no business telling any
+/// provider a typed name.
+fn the_account(cache: &MessageCache, account_id: &str) -> Option<Account> {
+    match cache.load_accounts() {
+        Ok(accounts) => accounts
+            .into_iter()
+            .find(|account| account.id == account_id),
+        Err(why) => {
+            tracing::warn!("The accounts could not be read, so Microsoft was not asked: {why}");
+            None
+        }
+    }
+}
+
+/// The people in the address book on this computer who match.
 fn the_contacts_here(
+    cache: &MessageCache,
     account_id: &str,
     name: &str,
     trouble: &mut Vec<String>,
 ) -> Vec<looking::Somebody> {
-    let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
-        trouble.push("There is nowhere on this computer to keep contacts yet.".to_string());
-        return Vec::new();
-    };
-    let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
-        Ok(cache) => cache,
-        Err(why) => {
-            tracing::warn!("The contacts on this computer could not be opened: {why}");
-            trouble.push("Your contacts on this computer could not be read.".to_string());
-            return Vec::new();
-        }
-    };
     // One more than will be shown, so that "exactly as many as the limit" and
     // "more than the limit" do not arrive looking the same. The same reason
     // `service::directory` asks for one more than it shows.
@@ -182,6 +216,42 @@ fn the_organisation(
     }
 }
 
+/// The people Microsoft finds for this account, if it is one Microsoft is
+/// asked for.
+///
+/// Only an Outlook or Office 365 account signed in through the browser, which
+/// [`looking::microsoft_is_asked_for`] decides; for every other account
+/// nothing is asked and nothing is said. A sign-in that cannot ask, which is
+/// every Microsoft account signed in before people search asked for its
+/// permission, and a search Microsoft refuses each add one sentence to the
+/// same trouble line the directory uses.
+fn the_people_microsoft_knows(
+    account: Option<&Account>,
+    name: &str,
+    handle: &tokio::runtime::Handle,
+    trouble: &mut Vec<String>,
+) -> Vec<looking::Somebody> {
+    let Some(account) = account.filter(|account| looking::microsoft_is_asked_for(account)) else {
+        return Vec::new();
+    };
+    let Some(token) = handle.block_on(crate::service::oauth::a_people_token_for(&account.id))
+    else {
+        trouble.push(looking::SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH.to_string());
+        return Vec::new();
+    };
+    let asked = handle.block_on(
+        crate::service::microsoft_graph::MsGraphClient::new().people_matching(
+            &token,
+            name,
+            looking::AT_MOST_TO_READ_THROUGH,
+        ),
+    );
+    asked.unwrap_or_else(|why| {
+        trouble.push(why.to_string());
+        Vec::new()
+    })
+}
+
 /// The password to offer the directory, or the sentence saying why none can
 /// be.
 ///
@@ -251,6 +321,58 @@ mod the_password_offered {
         let said = offered.expect_err("a sentence rather than no password");
         assert!(said.contains("the credential store is locked"), "{said}");
         assert!(said.contains("not asked"), "{said}");
+    }
+}
+
+#[cfg(test)]
+mod asking_microsoft {
+    use super::the_people_microsoft_knows;
+    use crate::application::looking_people_up::SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH;
+    use crate::data::account::Account;
+
+    fn an_account(id: &str, email: &str, provider: Option<&str>, oauth: bool) -> Account {
+        let mut account = Account::new("Work".to_string(), email.to_string());
+        account.id = id.to_string();
+        account.provider = provider.map(str::to_string);
+        account.use_oauth = oauth;
+        account
+    }
+
+    /// What asking Microsoft for this account found, and what it said.
+    fn asking_for(account: Option<&Account>) -> (usize, Vec<String>) {
+        let runtime = tokio::runtime::Runtime::new().expect("a runtime");
+        let mut trouble = Vec::new();
+        let found = the_people_microsoft_knows(account, "ada", runtime.handle(), &mut trouble);
+        (found.len(), trouble)
+    }
+
+    #[test]
+    fn test_an_account_that_does_not_sign_in_to_microsoft_is_never_asked_about_people() {
+        // None of these has a people token, so an account asked about would
+        // come back with the sentence saying to sign in again. Silence is the
+        // proof that nothing was asked.
+        let never = [
+            an_account("13-28-imap", "ada@example.com", None, false),
+            an_account("13-28-gmail", "ada@gmail.com", None, true),
+            an_account("13-28-outlook-password", "ada@outlook.com", None, false),
+        ];
+
+        for account in &never {
+            assert_eq!(asking_for(Some(account)), (0, Vec::new()), "{account:?}");
+        }
+        assert_eq!(asking_for(None), (0, Vec::new()));
+    }
+
+    #[test]
+    fn test_an_outlook_browser_sign_in_with_no_people_token_is_told_to_sign_in_again() {
+        // The account signed in before people search asked for its
+        // permission, which is every account on the day this arrives.
+        let account = an_account("13-28-outlook-browser", "ada@outlook.com", None, true);
+
+        assert_eq!(
+            asking_for(Some(&account)),
+            (0, vec![SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH.to_string()])
+        );
     }
 }
 

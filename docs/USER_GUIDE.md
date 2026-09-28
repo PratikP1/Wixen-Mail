@@ -1255,8 +1255,8 @@ Type three letters or more of a name into To, Cc or Bcc and pause. A list of
 the people who match, **People found**, appears under the recipient lines, and
 how many were found is read out with `Alt+E`, the key that goes to the list.
 Each row says the name, the address, and whether the person came from your
-contacts or from your organisation's directory. `Enter` on a row puts that
-person in the line you were typing in.
+contacts, from your organisation's directory or from Microsoft. `Enter` on a row
+puts that person in the line you were typing in.
 
 Your contacts on this computer are always searched. Your organisation's
 directory is searched only once you have set one up:
@@ -1290,6 +1290,15 @@ the window stays open, says so, and puts you in the password box.
 
 This is **experimental**. Looking people up in a directory has not been
 tried against a real directory yet, and the window says so first.
+
+On an Outlook or Office 365 account you signed in to through the browser,
+Microsoft's people search is asked as well, with nothing to set up. It looks
+through the people that mailbox writes to and your organisation's directory,
+and its rows end "from Microsoft". A person already in your contacts or found
+in the directory keeps that row, so nobody is listed twice. An account signed
+in before the build of 2026-09-28 needs signing in again once for this, and
+until then each search says so. This is **experimental** too: it has not been
+tried against a real Microsoft account.
 
 ### Structure, typed as Markdown
 
