@@ -33676,7 +33676,7 @@ red = [
     "application::what_a_rule_catches_here::tests::test_the_senders_mail_in_sent_is_passed_over",
 ]
 tests_last_seen = [
-    { file = "src/application/what_a_rule_catches_here.rs", tests = 9 },
+    { file = "src/application/what_a_rule_catches_here.rs", tests = 11 },
 ]
 
 # The sentence after a block that moved the mail already here says it stayed

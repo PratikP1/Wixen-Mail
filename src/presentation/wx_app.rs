@@ -34931,7 +34931,9 @@ fn block_the_sender(
     let handle = runtime.handle().clone();
     runtime.spawn_blocking(move || {
         use crate::application::filters::FilterEngine;
-        use crate::application::what_a_rule_catches_here::which_messages_here_a_rule_catches;
+        use crate::application::what_a_rule_catches_here::{
+            the_messages_caught, which_messages_here_a_rule_catches,
+        };
         use crate::data::message_cache::saved_searches::TheMessageText;
         let here = the_store_on_this_worker()
             .ok_or_else(|| "The mail on this computer could not be opened.".to_string())
@@ -34958,31 +34960,6 @@ fn block_the_sender(
             let _ = tx.send(UIUpdate::WhatABlockCaught(caught)).await;
         });
     });
-}
-
-/// The messages with these row ids, as a command over a set meets them: the
-/// shape `chosen_messages` builds from a selection, so the runner meets the
-/// same thing whoever chose them.
-fn the_messages_caught(
-    messages: &[crate::data::message_cache::CachedMessage],
-    caught: &[i64],
-) -> crate::application::choosing_messages::Chosen {
-    use crate::application::choosing_messages::{Chosen, MessageRef};
-    let caught: std::collections::HashSet<i64> = caught.iter().copied().collect();
-    Chosen {
-        messages: messages
-            .iter()
-            .filter(|message| caught.contains(&message.id))
-            .map(|message| MessageRef {
-                row_id: message.id,
-                uid: message.uid,
-                subject: message.subject.clone(),
-                read: message.read,
-                starred: message.starred,
-            })
-            .collect(),
-        ..Chosen::default()
-    }
 }
 
 /// Answer what a block caught among the mail already here, on the window's

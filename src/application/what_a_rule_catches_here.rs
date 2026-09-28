@@ -18,7 +18,7 @@
 
 use std::collections::HashSet;
 
-use crate::application::choosing_messages::Chosen;
+use crate::application::choosing_messages::{Chosen, MessageRef};
 use crate::application::filters::{FilterEngine, FilterRule};
 use crate::common::types::FolderType;
 use crate::data::message_cache::{CachedFolder, CachedMessage};
@@ -48,8 +48,21 @@ pub fn which_messages_here_a_rule_catches(
 /// `messages` holds them: the shape a selection is turned into, so the
 /// runner meets the same thing whoever chose the messages.
 pub fn the_messages_caught(messages: &[CachedMessage], caught: &[i64]) -> Chosen {
-    let _ = (messages, caught);
-    Chosen::default()
+    let caught: HashSet<i64> = caught.iter().copied().collect();
+    Chosen {
+        messages: messages
+            .iter()
+            .filter(|message| caught.contains(&message.id))
+            .map(|message| MessageRef {
+                row_id: message.id,
+                uid: message.uid,
+                subject: message.subject.clone(),
+                read: message.read,
+                starred: message.starred,
+            })
+            .collect(),
+        ..Chosen::default()
+    }
 }
 
 /// Whether mail in a folder of this kind stays where it is whatever a rule
