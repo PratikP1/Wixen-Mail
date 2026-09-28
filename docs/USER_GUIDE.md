@@ -702,8 +702,8 @@ address can be forged, and nothing here checks the provider's own verdict on
 it yet. Nobody has listened to the buttons with a screen reader yet, nor to the
 other clock the sentence says for a meeting set in another time zone, and no
 invitation from a real organiser in another time zone has been read here. The
-calendar itself still shows and says such a meeting at the hour it was written.
-A message whose text was downloaded in the background before this version has no
+calendar shows and says such a meeting on your clock too, as Time zones under
+Other modules describes. A message whose text was downloaded in the background before this version has no
 record of its attachments, and opening it does not make one, so it lists none
 and its meeting is not said.
 
@@ -1619,6 +1619,51 @@ a key or by typing, it stays where you put it. Choosing a time with **Put this
 time in the event** sets both.
 
 A task has a due date and no time, so none of this changes the task window.
+
+### Time zones
+
+Every time in the calendar is on your computer's clock: the list, what `Space`
+says, the full reading, the printed page, the Calendar window's Date/Time
+column, the header's range of dates and the alert when a meeting is about to
+start. A meeting keeps the time zone it was written in, and Wixen Mail works
+out the hour it is where you are each time it shows or says it.
+
+Outlook is the case where this matters most. Microsoft sends every Outlook
+event in universal time (UTC), so a meeting at ten in the morning in New York
+in summer arrives as 14:00. It is shown, said and alerted at 10:00 on a
+computer in New York, and at 15:00 on one in London.
+
+The full reading and the printed page also say the clock the meeting was
+written on, once, when that clock differs from yours and names a place. A
+meeting set for nine in the morning on 5 March in Tokyo, read on a computer in
+New York with dates written day first, says "04/03/2026 at 19:00 to 20:00,
+which is 05/03/2026 at 09:00 to 10:00 Tokyo time". The rows, the short reading
+`Space` gives and the alerts say your time only, so a calendar that is syncing
+does not read out a second clock on every line. Nothing is added for universal
+time, which says how a server sent the time rather than where anybody is.
+
+The event editor shows your clock too. Opened in New York, that meeting from
+Tokyo shows 19:00 on the 4th. When you change the time, Wixen Mail saves it in
+the meeting's own time zone, so moving it to 20:00 here reaches Outlook or
+Google as 10:00 on the 5th in Tokyo. Opening a meeting and saving it without
+changing anything changes nothing. A time you type in the hour the clocks skip
+in spring, such as 2:30 on the morning they go forward, is saved at the first
+quarter hour after the skip, 3:00.
+
+These keep the hour as it was written:
+
+| Case | What you see |
+|---|---|
+| An event you made here | The hour you typed, on your clock, as before |
+| An event that lasts all day | Its day, wherever you are |
+| A time zone this computer cannot place, such as one an organiser built by hand in Outlook | The hour as it was written; the full reading says the zone could not be placed |
+
+Near midnight, a meeting from another time zone can sit in the day it was
+written on in the Day and Week views while saying the day it is here. A
+meeting at five in the morning on the 5th in Tokyo, seen in New York, is listed
+under the 5th and says 15:00 on the 4th. The row's own words are right; the
+view it sits in follows the organiser's day. This is known and not yet
+changed.
 
 ## Keyboard Shortcuts
 

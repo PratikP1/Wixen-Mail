@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 601
+open_count: 604
 waived_count: 0
-fixed_count: 66
-total_count: 667
-last_updated: 2026-09-27T23:32:00.000Z
+fixed_count: 67
+total_count: 671
+last_updated: 2026-09-28T01:48:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -646,7 +646,7 @@ last_updated: 2026-09-27T23:32:00.000Z
 | 629 | 13 | todo | src/presentation/managers.rs |  | 13-09: two things an item's undo does not bring back. A deleted task's subtasks are taken out from under it by the delete (drop_synced_task sets their parent to nothing) and stay that way after Undo, because the record is the task's own row. And a day taken off a repeating event is a save rather than a delete, so it clears the undo step instead of being undone; undoing it would mean putting the series' exception dates back and taking back the day's change at the provider. Recommendation: build both beside an undo of an item's edit, if Pratik wants edits undoable; open until he asks | open |  | 2026-09-25T20:00:00.000Z |  |
 | 630 | 13 | unrun-verify | src/presentation/reader_text.rs |  | 13-10: the meeting sentence under NVDA and Narrator, in the text reader, the formatted window and the preview. What only a person settles: that the sentence is heard as the message opens and once more at the top of the message without that reading as too much; that the whole date reads well in the tester's date settings; that the calendar part's row is heard as meeting invitation, meeting cancellation, reply to your meeting or calendar file; and, on a signed invitation, that the meeting comes before the signature's verdict. Shift+Space reads the sentence twice, from the bar and from the body, as it already reads an S/MIME envelope's sentence twice | open |  | 2026-09-26T03:00:00.000Z |  |
 | 631 | 13 | unrun-verify | src/application/invitations.rs |  | 13-10: no invitation from a real organiser has been read here. The two raw messages in tests/an_invitation_is_said_before_the_body.rs are shaped from the standards and the audit of 2026-09-15, not taken from Outlook, Google Calendar or a CalDAV server. What a real account settles, for phase 14: whether each sender's invitation, cancellation and answer is found (text/calendar or application/ics, an alternative or an attachment), whether the title, place, organiser and hours read right, and whether "already on your calendar" is said for an invitation Google filed itself. Phase 14's planner decides the REAL line; none names invitations yet | open |  | 2026-09-26T03:00:00.000Z |  |
-| 632 | 13 | todo | src/application/invitations.rs |  | 13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as "Pacific Standard Time", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule. 13-21.1 on 2026-09-27, the invitation half: common::moment::read_in reads a stored clock face in the zone stored beside it, common::zones places a zone database name, a calendar server's path or a Windows name through Windows' ICU, and the invitation's sentence and answer buttons say this computer's hour, the sentence adding the other clock once; the standing and an organiser's move compare instants. The calendar half, its list, readings, printed page, alerts and editor, is 13-21.2's, which closes this | open |  | 2026-09-26T03:00:00.000Z |  |
+| 632 | 13 | todo | src/application/invitations.rs |  | 13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as "Pacific Standard Time", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule. 13-21.1 on 2026-09-27, the invitation half: common::moment::read_in reads a stored clock face in the zone stored beside it, common::zones places a zone database name, a calendar server's path or a Windows name through Windows' ICU, and the invitation's sentence and answer buttons say this computer's hour, the sentence adding the other clock once; the standing and an organiser's move compare instants. The calendar half, its list, readings, printed page, alerts and editor, is 13-21.2's, which closes this. 13-21.2 on 2026-09-27, the calendar half: the calendar's item carries the zone stored beside its times and presentation::event_times reads them there, so the list and its order, Space, the full reading and the printed page, the Calendar window's Date/Time column, the header's range, the due window and the event editor all use this computer's hour, the full reading saying the other clock once and the editor saving a typed time on the event's own clock. Fixed by 13-21.1's bb2b05f1, b6a1ed25, fa158fbb, af3094b6 and 054d7430 and 13-21.2's 3b7ff68d, 25d52411, 6093fb7c, f239c5d1, 7c1c193b and 00350376; left and ledgered: 670 (the Day and Week views' day windows) and 671 (a Google series' offset across a change of the clocks) | fixed |  | 2026-09-26T03:00:00.000Z | 2026-09-28T01:48:00.000Z |
 | 633 | 13 | todo | src/presentation/wx_app.rs |  | 13-10: a message whose text the download of everything brought before this build has no parts recorded, and nothing records them later: the text pass skips a message whose text is here, and the reader fetches nothing for one (the selection handler sends the cached body and spawns no fetch). Such a message shows no list of its attachments and its meeting is not said. From this build the text pass keeps every part's name and the calendar document (reading_a_message::keep_what_a_download_carried). Recommendation: the reader fetches the whole message once when a row says it has attachments and none are recorded, the way it fetches a body it does not hold, with care that the second MessageBodyLoaded does not announce the message twice. Whether the text pass should keep every file rather than names and calendar documents is a question of disk, the attachment store's 512 MB budget; recommendation no | open |  | 2026-09-26T03:00:00.000Z |  |
 | 634 | 13 | unrun-verify | src/presentation/wx_reader.rs |  | 13-11: the answer buttons have not been heard. Under NVDA and Narrator, in the text reader and the formatted window: each button's name and its description, what pressing it will do and who will be told, read after the name; Alt+C, Alt+T and Alt+D pressing them from inside the message in both windows; the reason in the bar heard for an invitation that cannot be answered; the three answers on the message list's context menu on I, E and L; and the one sentence after answering. Where the keyboard lands after Alt+C in the text reader is also the ear's: the plan said the button pressed, and a window the target builds, which is not in front, kept it in the message. Recommendation: keep it in the message, where somebody was reading; the question is Pratik's if the ear disagrees | open |  | 2026-09-26T16:00:00.000Z |  |
 | 635 | 13 | unrun-verify | src/application/calendar.rs |  | 13-12: whether Google's iCalUID and Microsoft Graph's iCalUId equal the UID in the invitation each provider's own servers mail out, and whether organizer.email and organizer.emailAddress.address name the organiser the invitation names, is read from each provider's reference page and has never met a real account; phase 14's. Graph gives each day of a repeating series its own iCalUId and this program reads Graph through a calendar view, which answers with days, so an invitation to a repeating meeting finds nothing on a Microsoft account and is said to be new (decision 17, said in the changelog); the fix, if wanted, reads the series master, a request this program does not make today. Not written either: the days of a Google series stored as rows of their own, which keep no UID so a series invitation finds the series, and subscribed feeds, whose rows are found by their provider identifier, which is already the UID | open |  | 2026-09-26T20:00:00.000Z |  |
@@ -682,6 +682,10 @@ last_updated: 2026-09-27T23:32:00.000Z
 | 665 | 13 | todo | src/common/zones.rs |  | 13-21.1: a zone defined only by the VTIMEZONE block in its own document (a name neither the zone database nor Windows knows, such as Outlook's "Customized Time Zone") cannot be placed, so its hour is kept as written and said to be unplaced; reading that block's STANDARD and DAYLIGHT rules would place it | open |  | 2026-09-27T23:32:00.000Z |  |
 | 666 | 13 | todo | src/application/answered_meetings.rs | 112 | 13-21.1: an Outlook invitation answered on a Google or calendar-server account keeps its Windows zone name (answered_meetings.rs:112) and is pushed; Google's reference asks for a zone database name for start.timeZone, and the calendar-server writer refuses a Windows name by name, so the answer's event may not reach either. Recommendation: the writers ask common::zones for the zone database name before sending | open |  | 2026-09-27T23:32:00.000Z |  |
 | 667 | 13 | todo | docs/USER_GUIDE.md | 23 | 13-21.1: the guide says Windows 10 or later, while the program imports UiaRaiseNotificationEvent statically, which Windows added in version 1709, so a Windows 10 older than 1709 cannot start it. Recommendation: say version 1709 or later, or check for it in the installer | open |  | 2026-09-27T23:32:00.000Z |  |
+| 668 | 13 | unrun-verify | src/presentation/event_times.rs |  | 13-21.2: nobody has heard an Outlook meeting on this computer's clock with a screen reader: its list row, Space, the full reading with the other clock said once, its alert in the due window, and the event editor's boxes | open |  | 2026-09-28T01:48:00.000Z |  |
+| 669 | 13 | unrun-verify | src/service/microsoft_graph.rs |  | 13-21.2: no real Outlook account's events have been read since the calendar reads the zone stored beside them, and no meeting moved in the event editor has reached Outlook or Google at the hour typed; phase 14's, with a real account | open |  | 2026-09-28T01:48:00.000Z |  |
+| 670 | 13 | todo | src/presentation/ui_types.rs | 1671 | 13-21.2: the Day and Week views choose rows by the day in the event's own zone (CalendarEventItem::shown_days through occurrences::falls_on), so near midnight a meeting from another zone sits in the neighbouring day's view while its row says its own day here. Choosing by this computer's day moves rows in the named-zone fixtures in managers.rs and ui_types.rs, and moves them differently on this machine, on Eastern time, and on CI, on universal time. Recommendation: a plan of its own that widens the stored-day window by a day each side and keeps the rows whose when_it_starts falls on the day shown here, with the fixtures seen from a zone handed in | open |  | 2026-09-28T01:48:00.000Z |  |
+| 671 | 13 | todo | src/application/occurrences.rs | 144 | 13-21.2: a Google series is kept whole with its rule (google_api.rs, singleEvents=false) and occurrences::same_day_as carries the first day's characters, offset included, to each day, so a series whose first day is "2026-01-08T10:00:00-05:00" is written for a July day with -05:00 and shown at 11:00 in New York. Not a zone reading: the offset is read correctly and is the wrong offset for that day. Recommendation: a plan of its own that writes each day of a series as a clock face in the series' zone where one is stored, with the series edits in managers.rs that read those days re-measured | open |  | 2026-09-28T01:48:00.000Z |  |
 
 ````json
 [
@@ -8263,11 +8267,11 @@ last_updated: 2026-09-27T23:32:00.000Z
     "phase": "13",
     "file": "src/application/invitations.rs",
     "line": null,
-    "description": "13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as \"Pacific Standard Time\", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule. 13-21.1 on 2026-09-27, the invitation half: common::moment::read_in reads a stored clock face in the zone stored beside it, common::zones places a zone database name, a calendar server's path or a Windows name through Windows' ICU, and the invitation's sentence and answer buttons say this computer's hour, the sentence adding the other clock once; the standing and an organiser's move compare instants. The calendar half, its list, readings, printed page, alerts and editor, is 13-21.2's, which closes this",
-    "status": "open",
+    "description": "13-10: an invitation's times carrying a TZID are read as that hour on this computer's clock, as the whole calendar reads a clock face (common::moment::Moment::ClockFace), so a meeting from somebody in another zone is said at the hour they wrote. chrono-tz is already a dependency and parses IANA names; Outlook writes Windows names such as \"Pacific Standard Time\", which need a map. Recommendation: convert where the zone can be read, once in common::moment, for the calendar and the sentence together, as a plan of its own; Pratik's to schedule. 13-21.1 on 2026-09-27, the invitation half: common::moment::read_in reads a stored clock face in the zone stored beside it, common::zones places a zone database name, a calendar server's path or a Windows name through Windows' ICU, and the invitation's sentence and answer buttons say this computer's hour, the sentence adding the other clock once; the standing and an organiser's move compare instants. The calendar half, its list, readings, printed page, alerts and editor, is 13-21.2's, which closes this. 13-21.2 on 2026-09-27, the calendar half: the calendar's item carries the zone stored beside its times and presentation::event_times reads them there, so the list and its order, Space, the full reading and the printed page, the Calendar window's Date/Time column, the header's range, the due window and the event editor all use this computer's hour, the full reading saying the other clock once and the editor saving a typed time on the event's own clock. Fixed by 13-21.1's bb2b05f1, b6a1ed25, fa158fbb, af3094b6 and 054d7430 and 13-21.2's 3b7ff68d, 25d52411, 6093fb7c, f239c5d1, 7c1c193b and 00350376; left and ledgered: 670 (the Day and Week views' day windows) and 671 (a Google series' offset across a change of the clocks)",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-26T03:00:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-28T01:48:00.000Z"
   },
   {
     "id": 633,
@@ -8687,6 +8691,54 @@ last_updated: 2026-09-27T23:32:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T23:32:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 668,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/event_times.rs",
+    "line": null,
+    "description": "13-21.2: nobody has heard an Outlook meeting on this computer's clock with a screen reader: its list row, Space, the full reading with the other clock said once, its alert in the due window, and the event editor's boxes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T01:48:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 669,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "13-21.2: no real Outlook account's events have been read since the calendar reads the zone stored beside them, and no meeting moved in the event editor has reached Outlook or Google at the hour typed; phase 14's, with a real account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T01:48:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 670,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/ui_types.rs",
+    "line": 1671,
+    "description": "13-21.2: the Day and Week views choose rows by the day in the event's own zone (CalendarEventItem::shown_days through occurrences::falls_on), so near midnight a meeting from another zone sits in the neighbouring day's view while its row says its own day here. Choosing by this computer's day moves rows in the named-zone fixtures in managers.rs and ui_types.rs, and moves them differently on this machine, on Eastern time, and on CI, on universal time. Recommendation: a plan of its own that widens the stored-day window by a day each side and keeps the rows whose when_it_starts falls on the day shown here, with the fixtures seen from a zone handed in",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T01:48:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 671,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/occurrences.rs",
+    "line": 144,
+    "description": "13-21.2: a Google series is kept whole with its rule (google_api.rs, singleEvents=false) and occurrences::same_day_as carries the first day's characters, offset included, to each day, so a series whose first day is \"2026-01-08T10:00:00-05:00\" is written for a July day with -05:00 and shown at 11:00 in New York. Not a zone reading: the offset is read correctly and is the wrong offset for that day. Recommendation: a plan of its own that writes each day of a series as a clock face in the series' zone where one is stored, with the series edits in managers.rs that read those days re-measured",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T01:48:00.000Z",
     "resolved_at": null
   }
 ]
