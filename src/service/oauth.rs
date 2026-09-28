@@ -107,6 +107,14 @@ impl OAuthService {
                     // OneNote yet; this is asked for now so the account that
                     // meets the first notes sync already has it.
                     "https://graph.microsoft.com/Notes.ReadWrite".to_string(),
+                    // Microsoft's people search, asked while somebody types a
+                    // recipient. Read only, and the narrowest permission that
+                    // answers it: no directory-wide read, nothing of the mail.
+                    // An account signed in before this was asked for has no
+                    // people search until it signs in again, and keeps
+                    // everything else, because the token that asks for this
+                    // asks for nothing else.
+                    "https://graph.microsoft.com/People.Read".to_string(),
                 ],
             },
         ]
@@ -837,9 +845,11 @@ impl AuthManager {
     /// running account holds, which looks from the screen exactly like an
     /// account that needs signing in again.
     ///
-    /// `Tasks.ReadWrite` is in that state today. It is on the consent list and
-    /// not here, it is a live defect on another feature, and it is recorded in
-    /// `.planning/WINDOWS.md` rather than fixed in a plan about notes.
+    /// `Tasks.ReadWrite` was in that state from 05.2 until 13-28 (ledger 282).
+    /// It is asked for now in a token of its own, [`Self::THE_TASKS_PERMISSION`],
+    /// and People.Read the same way, rather than added here: this list may only
+    /// hold what every account's sign-in already granted, or a refresh asking
+    /// for more takes every feature on this token down with it.
     ///
     /// A named constant rather than an array written inside the method, and
     /// private on purpose. Private means the build fails if
@@ -865,11 +875,11 @@ impl AuthManager {
     /// sign-in never granted would take contacts, the calendar, free/busy and
     /// notes down with it. Asked alone, the refusal costs people search and
     /// nothing else, and signing in again once brings it back.
-    const THE_PEOPLE_PERMISSION: [&'static str; 1] = [""];
+    const THE_PEOPLE_PERMISSION: [&'static str; 1] = ["https://graph.microsoft.com/People.Read"];
 
     /// What writing a Microsoft task needs, asked for in a token of its own
     /// for the same reason as [`Self::THE_PEOPLE_PERMISSION`].
-    const THE_TASKS_PERMISSION: [&'static str; 1] = [""];
+    const THE_TASKS_PERMISSION: [&'static str; 1] = ["https://graph.microsoft.com/Tasks.ReadWrite"];
 
     /// Get a valid Microsoft Graph API token.
     ///
@@ -1449,13 +1459,17 @@ mod tests {
         // leg". A permission added here is one every older sign-in never
         // granted, and this token feeds contacts, the calendar, free/busy and
         // notes, so all four could stop until those people signed in again.
+        //
+        // Compared as slices, so a list that grew is a failing test rather
+        // than a build that stops.
         assert_eq!(
-            AuthManager::THE_SCOPES_A_GRAPH_TOKEN_CARRIES,
+            AuthManager::THE_SCOPES_A_GRAPH_TOKEN_CARRIES.as_slice(),
             [
                 "https://graph.microsoft.com/Contacts.ReadWrite",
                 "https://graph.microsoft.com/Calendars.ReadWrite",
                 THE_NOTES_PERMISSION,
             ]
+            .as_slice()
         );
     }
 
