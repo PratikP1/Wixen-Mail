@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 405 records have arrived since and have not been through it.
+# 407 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33013,4 +33013,45 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/meeting_changes.rs", tests = 21 },
+]
+
+# The calendar's item built without the zone its times were written in: every
+# surface reads a stored clock face as this computer's hour again, and an
+# Outlook meeting stored in universal time is listed, said and alerted at that
+# hour. Written 2026-09-27 by 13-21.2, measured against the library.
+[[guard]]
+name = "the calendar's item carries the zone its times were written in"
+file = "src/presentation/ui_types.rs"
+before = """            time_zone: entry.time_zone.clone(),"""
+after = """            time_zone: None,"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_a_meeting_written_in_a_windows_zone_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_an_outlook_meeting_stored_in_universal_time_is_read_as_that_instant",
+    "presentation::event_times::tests::test_the_due_identity_is_still_the_stored_start",
+    "presentation::event_times::tests::test_the_list_is_in_the_order_the_instants_come",
+    "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 7 },
+    { file = "src/presentation/ui_types.rs", tests = 79 },
+]
+
+# The calendar list's first cell worded from the stored text again, while the
+# out-of-hours note beside it reads the zone: the cell says the stored hour and
+# the note judges another. Written 2026-09-27 by 13-21.2, measured against the
+# library.
+[[guard]]
+name = "the calendar list says an event's hour as it is on this computer"
+file = "src/presentation/pim_rows.rs"
+before = """                date(&starts, dates, now)"""
+after = """                date(&event.start, dates, now)"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_a_meeting_written_in_a_windows_zone_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 7 },
+    { file = "src/presentation/pim_rows.rs", tests = 25 },
 ]

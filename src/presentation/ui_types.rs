@@ -1655,7 +1655,7 @@ impl CalendarEventItem {
             changed_on_its_own: entry.cut_from_event_id.is_some()
                 || entry.provider_recurrence_id.is_some(),
             attendees_json: entry.attendees_json.clone(),
-            time_zone: None,
+            time_zone: entry.time_zone.clone(),
         }
     }
 
@@ -1703,13 +1703,15 @@ impl CalendarEventItem {
         // typed here listed above a morning one that came from a provider, on
         // the same day, every time. Falling back to the text keeps two rows
         // this cannot read in a stable order rather than an arbitrary one.
+        // Each read in its own zone, so nine in Tokyo sorts where its instant
+        // falls rather than where its clock face would here.
         rows.sort_by(|one, other| {
-            let moment = |shown: &str| {
-                crate::common::moment::read(shown)
+            let moment = |shown: &Self| {
+                crate::common::moment::read(&shown.when_it_starts())
                     .and_then(crate::common::moment::Moment::on_this_computer)
             };
-            moment(&one.start)
-                .cmp(&moment(&other.start))
+            moment(one)
+                .cmp(&moment(other))
                 .then_with(|| one.start.cmp(&other.start))
         });
         rows

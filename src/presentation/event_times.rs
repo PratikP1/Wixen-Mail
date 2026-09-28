@@ -16,6 +16,7 @@
 use std::borrow::Cow;
 
 use super::ui_types::CalendarEventItem;
+use crate::common::moment;
 
 impl CalendarEventItem {
     /// When this event starts, written so any reader of a stored time says the
@@ -26,12 +27,23 @@ impl CalendarEventItem {
     /// offset, a clock face with no zone or one nothing can place, comes back
     /// exactly as stored.
     pub fn when_it_starts(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.start)
+        self.in_its_zone(&self.start)
     }
 
     /// When this event ends, by the same rule as [`Self::when_it_starts`].
     pub fn when_it_ends(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.end)
+        self.in_its_zone(&self.end)
+    }
+
+    /// One of this event's stored times, read in the zone stored beside it.
+    ///
+    /// A whole day is never moved, even where its day was stored with a clock
+    /// face at midnight: it is on its day wherever somebody is.
+    fn in_its_zone<'a>(&self, stored: &'a str) -> Cow<'a, str> {
+        if self.is_all_day {
+            return Cow::Borrowed(stored);
+        }
+        moment::written_in_its_zone(stored, self.time_zone.as_deref())
     }
 }
 
@@ -182,15 +194,17 @@ mod tests {
 
     /// The defect at its largest: every Outlook event was said at its
     /// universal hour on every machine outside universal time.
+    ///
+    /// Held at the instant the list is worded from and not at the cell: on a
+    /// machine that is on universal time, which is where CI runs, the stored
+    /// hour and the right one are the same words, so a case about the cell
+    /// would be red here and green there. The Tokyo cases hold the cell.
     #[test]
-    fn test_an_outlook_meeting_stored_in_universal_time_is_listed_at_this_computers_hour() {
+    fn test_an_outlook_meeting_stored_in_universal_time_is_read_as_that_instant() {
         let row = a_meeting_from_outlook();
 
         assert_eq!(row.when_it_starts(), "2026-03-05T14:00:00+00:00");
         assert_eq!(the_instant(&row.when_it_ends()), utc(15));
-        let said = date_display::spoken("2026-03-05T14:00:00Z", now(), at_a_desk());
-        let cell = the_first_cell(&row);
-        assert!(cell.starts_with(&said), "{cell:?} does not begin {said:?}");
     }
 
     /// The note and the hour beside it come from one reading, so they cannot
