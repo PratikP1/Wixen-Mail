@@ -412,6 +412,16 @@ pub enum UIUpdate {
     /// one up by name would break the moment two accounts both have an INBOX.
     FolderIdsLoaded(Vec<(String, i64)>),
     MessageBodyLoaded(crate::common::types::MessageBody),
+    /// The parts of a message the download brought before 13-10 were
+    /// fetched and kept, and one of them is a calendar document.
+    ///
+    /// Not a second `MessageBodyLoaded`: the body was sent once when the row
+    /// was selected, and sending it again would announce the message twice.
+    /// This says only that the preview may now say a meeting, and the arm
+    /// loads it again only if the page it would show has changed.
+    PartsKept {
+        message_row_id: i64,
+    },
     /// An attachment was fetched and read, and is ready to open as a tab.
     ///
     /// Boxed because the whole document travels in it and every other variant

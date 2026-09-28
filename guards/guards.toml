@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 419 records have arrived since and have not been through it.
+# 421 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33198,7 +33198,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/parts_left_behind.rs", tests = 5 },
-    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 5 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
 ]
 
 # A message this computer holds the only copy of, collected over POP, asked
@@ -33217,7 +33217,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/parts_left_behind.rs", tests = 5 },
-    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 5 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
 ]
 
 # The same break seen from the library: a message filed here asked of a
@@ -33277,4 +33277,46 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/parts_left_behind.rs", tests = 8 },
+]
+
+# Selecting a message whose parts were left behind fetching nothing: it lists
+# no attachments and never says its meeting (ledger 633). Written 2026-09-27
+# by 13-21.3, measured against the target.
+[[guard]]
+name = "selecting a message whose parts were left behind starts their fetch"
+file = "src/presentation/wx_app.rs"
+suite = "an_earlier_download_is_fetched_once_for_its_parts"
+before = """                            ) && let Some((_, uid)) = selected
+                            {
+                                spawn_parts_fetch(app, id, uid);"""
+after = """                            ) && let Some((_, uid)) = selected
+                            {
+                                let _ = uid;"""
+red = [
+    "test_selecting_a_message_whose_parts_were_left_behind_starts_their_fetch",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
+]
+
+# The preview loaded again whenever parts were kept, changed or not: every
+# load takes focus and gives it back, which is heard. Written 2026-09-27 by
+# 13-21.3, measured against the target.
+[[guard]]
+name = "the preview is loaded again for kept parts only when its page changed"
+file = "src/presentation/wx_app.rs"
+suite = "an_earlier_download_is_fetched_once_for_its_parts"
+before = """                let loaded = preview.show_again_if_changed(&html, || {
+                    focus_home_cell.set(focus_home(folder_tree.has_focus(), msg_list.has_focus()));
+                });"""
+after = """                focus_home_cell.set(focus_home(folder_tree.has_focus(), msg_list.has_focus()));
+                preview.show_the_message(&html);
+                let loaded = true;"""
+red = [
+    "test_the_parts_kept_arm_loads_the_preview_again_only_when_it_changed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
 ]
