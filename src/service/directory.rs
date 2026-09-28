@@ -349,6 +349,16 @@ fn the_store_would_not(what: &str, cause: &Error) -> Error {
     ))
 }
 
+/// Where a person sets up the directory an account looks people up in, in
+/// the words of the button that opens it and the manager it is on.
+///
+/// Every sentence that sends somebody to change the directory, its sign-in or
+/// its password names this place. They said "the account's settings" until
+/// 2026-09-28, which was the account editor's second page; 13-27 moved the
+/// boxes into a window of their own, and a sentence pointing at the editor
+/// would have sent somebody to a page with nothing on it to change.
+pub const WHERE_A_DIRECTORY_IS_SET_UP: &str = "Look People Up at Work on the Account Manager";
+
 /// What to say when the account names no directory at all.
 const NO_DIRECTORY_IS_SET_UP: &str = "This account does not name a directory to look people up in. Add one in the account's \
      settings: the address of the directory, and the part of it to search under.";
@@ -517,9 +527,8 @@ fn the_password_to_sign_in_with<'a>(
     };
     let named = &place.host;
     match password.map(str::trim).filter(|held| !held.is_empty()) {
-        None => Err(Error::Authentication(format!(
-            "This account signs in to the directory at {named} as {sign_in_as}, and no password \
-             for it has been saved. Add the password in the account's settings."
+        None => Err(Error::Authentication(no_password_is_saved_for(
+            named, sign_in_as,
         ))),
         Some(_) if !place.is_encrypted => Err(Error::Config(format!(
             "The directory at {named} is reached without encryption (its address begins \
@@ -528,6 +537,19 @@ fn the_password_to_sign_in_with<'a>(
         ))),
         Some(_) => Ok(password),
     }
+}
+
+/// What to say when a directory signs somebody in and no password for it is
+/// saved.
+///
+/// One sentence for the two places that meet it: a lookup, which would be
+/// refused on every search, and the Look People Up at Work window, which
+/// refuses to save it so the lookup never has to.
+pub fn no_password_is_saved_for(named: &str, sign_in_as: &str) -> String {
+    format!(
+        "This account signs in to the directory at {named} as {sign_in_as}, and no password \
+         for it has been saved. Add the password in the account's settings."
+    )
 }
 
 /// What to say when a search matched more people than can be shown.
@@ -1999,5 +2021,70 @@ mod an_answer_this_cannot_read {
         let said = how_the_directory_failed(unreachable, "ldap.example.com", "Ada").to_string();
 
         assert!(said.contains("did not answer"), "{said}");
+    }
+}
+
+#[cfg(test)]
+mod where_the_sentences_send_somebody {
+    use super::*;
+
+    #[test]
+    fn test_every_sentence_that_sends_somebody_to_set_up_a_directory_names_the_window_it_is_in() {
+        // The directory's boxes left the account editor for a window of their
+        // own on 2026-09-28 (13-27). A sentence still saying "the account's
+        // settings" would send somebody to a page with nothing on it to change.
+        let refused_with = |code| {
+            what_the_directory_answered(
+                ldap3::LdapResult {
+                    rc: code,
+                    matched: String::new(),
+                    text: "no".to_string(),
+                    refs: Vec::new(),
+                    ctrls: Vec::new(),
+                },
+                "directory.example.com",
+                "Ada",
+            )
+            .to_string()
+        };
+        let with_no_place_to_search = Directory {
+            url: "ldaps://directory.example.com".to_string(),
+            search_under: String::new(),
+            sign_in_as: None,
+        };
+        let unreachable = LdapError::Io {
+            source: std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
+        };
+        let said = [
+            ("no directory", NO_DIRECTORY_IS_SET_UP.to_string()),
+            (
+                "no place to search",
+                match where_this_directory_is(&with_no_place_to_search) {
+                    Ok(_) => String::new(),
+                    Err(refused) => refused.to_string(),
+                },
+            ),
+            (
+                "no password",
+                no_password_is_saved_for("directory.example.com", "reader"),
+            ),
+            ("the sign-in not accepted", refused_with(49)),
+            ("nothing at the place", refused_with(32)),
+            (
+                "no answer",
+                how_the_directory_failed(unreachable, "directory.example.com", "Ada").to_string(),
+            ),
+        ];
+
+        let elsewhere: Vec<String> = said
+            .iter()
+            .filter(|(_, sentence)| {
+                !sentence.contains(WHERE_A_DIRECTORY_IS_SET_UP)
+                    || sentence.contains("account's settings")
+            })
+            .map(|(what, sentence)| format!("{what}: {sentence}"))
+            .collect();
+
+        assert!(elsewhere.is_empty(), "{elsewhere:#?}");
     }
 }
