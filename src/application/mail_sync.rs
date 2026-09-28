@@ -307,12 +307,15 @@ pub struct Filtered {
     /// into a folder and does not, on a build where writing to the server is
     /// off, is a rule somebody believes is working.
     pub held_back: usize,
-    /// Mail a rule meant to file that could not be filed, one sentence each.
+    /// Mail a rule meant to file or label that could not be filed or
+    /// labelled, one sentence each.
     ///
     /// Said as well as logged. A rule that files invoices and does not is a
     /// rule somebody believes is working, and this project's own rule is that
     /// a warning nobody gets is not a warning. Sentences rather than a count,
-    /// because which folder and why are the useful part.
+    /// because which folder or label and why are the useful part. A label the
+    /// account does not have is said by [`apply_rules`] and a filing that
+    /// failed by the mover after it, both here.
     ///
     /// One per message, and the summary folds the repeats: the same rule fails
     /// the same way on every message it matches, and a hundred copies of one
@@ -1071,6 +1074,14 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
             // it read and another filed it, and counting it here alone
             // reported a move the server went on to refuse as done.
             Ok(Carried::ExceptTheMove) => {}
+            // Said as well as logged, the way a folder a rule names and the
+            // account lacks is. Label names and nothing from the message.
+            Ok(Carried::NotTheLabels(said)) => {
+                for reason in &said {
+                    tracing::warn!("A rule could not label a message: {reason}");
+                }
+                done.could_not_be_filed.extend(said);
+            }
             Err(e) => tracing::warn!("A rule could not be carried out: {}", e),
         }
     }
@@ -1097,8 +1108,24 @@ fn carry_out(
             outcome.starred.unwrap_or(message.starred),
         )?;
     }
-    for tag in &outcome.tags {
-        cache.add_tag_to_message(id, tag)?;
+    // A rule names a label as somebody typed it, and the message's labels are
+    // keyed on the label's id. Resolved against the message's own account, so
+    // a label of the same name elsewhere is never taken, and read only when a
+    // rule asked for a label, so a check with no label rules reads nothing.
+    let mut not_labelled = Vec::new();
+    if !outcome.tags.is_empty() {
+        let account = cache
+            .account_of_folder(message.folder_id)?
+            .ok_or_else(|| Error::Other("the message's folder belongs to no account".into()))?;
+        let labels = cache.get_tags_for_account(&account)?;
+        for named in &outcome.tags {
+            match crate::application::tagging::the_label_a_rule_names(&labels, named) {
+                Some(label) => cache.add_tag_to_message(id, &label.id)?,
+                None => {
+                    not_labelled.push(crate::application::tagging::no_label_of_that_name(named))
+                }
+            }
+        }
     }
     // Kept on the message, where every listing reads it (#62). The rules
     // run once, when the mail arrives, so the phrase stays whatever the
@@ -1107,9 +1134,10 @@ fn carry_out(
     if let Some(phrase) = &outcome.say_first {
         cache.set_says_first(id, Some(phrase))?;
     }
-    Ok(match outcome.move_to.is_some() {
-        true => Carried::ExceptTheMove,
-        false => Carried::Everything,
+    Ok(match (not_labelled.is_empty(), outcome.move_to.is_some()) {
+        (false, _) => Carried::NotTheLabels(not_labelled),
+        (true, true) => Carried::ExceptTheMove,
+        (true, false) => Carried::Everything,
     })
 }
 
@@ -1120,7 +1148,7 @@ fn carry_out(
 /// which stopped being true when moves were built: the count of rules nobody
 /// had built counted rules that were carried out a moment later, and the
 /// message was counted a second time when the move landed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Carried {
     /// Everything the rules asked for is done.
     Everything,
@@ -1128,6 +1156,11 @@ pub(crate) enum Carried {
     /// [`carry_out_the_moves`] and is counted there, once, when it has really
     /// happened.
     ExceptTheMove,
+    /// A label the rules named is not one the account has, one sentence each.
+    ///
+    /// Everything else was done, and the message is not counted here: the
+    /// whole of what its rules asked for did not happen.
+    NotTheLabels(Vec<String>),
 }
 
 /// Do the moves the rules asked for, and say how many really happened.
@@ -1488,7 +1521,10 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         // rule as its body.
         tracing::warn!("A rule could not file a message: {reason}");
     }
-    filtered.could_not_be_filed = could_not;
+    // After what the rules said, not in place of it: a label the account
+    // does not have is said by `apply_rules`, and an assignment here dropped
+    // it before anybody heard it.
+    filtered.could_not_be_filed.extend(could_not);
 
     // Messages already held, whose flags may have changed elsewhere. The
     // header fetch above only asks about messages this cache does not have, so

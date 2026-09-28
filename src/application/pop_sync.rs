@@ -352,7 +352,8 @@ pub(crate) async fn sync<M: PopMailbox>(
         // close enough to the message to be held to the same rule as its body.
         tracing::warn!("A rule could not file a message: {reason}");
     }
-    filtered.could_not_be_filed = could_not;
+    // After what the rules said, not in place of it, as on the IMAP path.
+    filtered.could_not_be_filed.extend(could_not);
 
     Ok(PopSync {
         fetched: written.len(),
