@@ -220,7 +220,7 @@ group changes nothing about their contact.
 | Your mail provider | Checking, reading, sending, and, since the build of 2026-09-18, downloading everything after every check, see below | The mail itself, over TLS: the whole of every folder you keep up to date, a chunk at a time, and the text of each message unless you turn that off |
 | The same provider, for your contacts, calendar and tasks | Syncing, which a new installation allows | The contacts, events and tasks |
 | A separate calendar or contacts server | Syncing, if you set one up | The events and contacts |
-| Your organisation's directory | Only if you name one on the account, see below | The part of a name you have typed into To, Cc or Bcc, and, for a directory that asks you to sign in, the name and password for it, only over an address beginning `ldaps://` |
+| Your organisation's directory | Only if you name one in Look People Up at Work, see below | The part of a name you have typed into To, Cc or Bcc, and, for a directory that asks you to sign in, the name and password for it, only over an address beginning `ldaps://` |
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
 | GitHub | Checking whether a newer version has been published, which you ask for or switch on, see below | The request, which carries nothing about you |
@@ -308,9 +308,11 @@ on this computer are always searched, and nothing leaves the machine to do it.
 Your organisation's directory is a different matter, and it is off until you turn it on.
 It is a server somebody else runs, and asking it means sending it part of a name you are
 typing, before you have decided to send anything at all. So nothing is asked of any
-directory unless the account names one: the two boxes for it, on the second page of the
-Add or Edit Account window, are empty on a new installation and on every account that
-existed before this was written. Clearing them stops it again.
+directory unless the account names one: the directory address and where in it to look, in
+Look People Up at Work on the Account Manager, are empty on a new installation and on every
+account that existed before this was written. Clearing both stops it again, and forgets
+any password saved for it. Until 2026-09-28 the two boxes were on the second page of the
+Add or Edit Account window; what an account already named was kept when they moved.
 
 With a directory named, what goes to it is the part of the name you have typed, and only
 that. It is sent after you stop typing rather than on every keystroke, and only once you
@@ -332,8 +334,11 @@ readable by anybody on the network between you and the directory, so Wixen Mail 
 send it there and says to ask for an address beginning `ldaps://` instead. The password is
 kept in the Windows credential store, beside your account passwords, and nowhere else: not
 in the settings, not in the mail database, and never in the log. Removing the account
-erases it, and so does uninstalling. Nothing on screen sets a sign-in name or a password
-yet, so until something does, every directory is asked without signing in.
+erases it, and so does uninstalling. The sign-in name and the password are typed in Look
+People Up at Work, since 2026-09-28. The password box there opens empty and never shows a
+saved password back; it says when one is saved, and leaving it empty keeps that one.
+Clearing the sign-in name and pressing OK forgets it. A directory with no sign-in name is
+asked without signing in.
 
 ## Asking when the people invited to a meeting are free
 

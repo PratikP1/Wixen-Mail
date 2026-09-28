@@ -78,7 +78,7 @@ fixed list of waits until the same day.
 
 ### Adding an account
 
-1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
 3. Type your email address. Wixen Mail recognises the domain of the
    popular providers and fills in the server settings, and turns the
@@ -96,10 +96,13 @@ ProtonMail Bridge, and what to do for a provider not listed there.
 
 ### Managing accounts
 
-The Account Manager (`Ctrl+A`) is also where you manage the accounts you
-have already added:
+The Account Manager (`Ctrl+Shift+A`) is also where you manage the accounts
+you have already added:
 
 - **Edit** changes an account's settings.
+- **Look People Up at Work** (`Alt+L`) sets up your organisation's directory
+  for the account you chose, so a colleague's name typed into a message can
+  be found. See [Looking people up](#looking-people-up).
 - **Delete** removes an account and its stored credentials.
 - **Set Active** switches which account's mail you are looking at.
 - **Sign In Again** re-authorises an account using browser sign-in, for
@@ -1245,6 +1248,48 @@ places, or looked at a page on paper from this build.
 4. Enter a subject
 5. Type your message in the body field
 6. Click **Send** or press `Ctrl+Enter`
+
+### Looking people up
+
+Type three letters or more of a name into To, Cc or Bcc and pause. A list of
+the people who match, **People found**, appears under the recipient lines, and
+how many were found is read out with `Alt+E`, the key that goes to the list.
+Each row says the name, the address, and whether the person came from your
+contacts or from your organisation's directory. `Enter` on a row puts that
+person in the line you were typing in.
+
+Your contacts on this computer are always searched. Your organisation's
+directory is searched only once you have set one up:
+
+1. Open the Account Manager (`Ctrl+Shift+A`) and choose the account.
+2. Choose **Look People Up at Work** (`Alt+L`).
+3. Fill in **Directory address** (`Alt+D`), such as
+   `ldaps://directory.example.com`, and **Where in it to look** (`Alt+W`),
+   such as `ou=people,dc=example,dc=com`. Whoever looks after the directory
+   at work will know both.
+4. If the directory asks you to sign in, fill in **Sign-in name** (`Alt+N`)
+   and **Password** (`Alt+P`). Leave both empty for a directory that answers
+   anybody.
+5. Choose **OK**.
+
+The password is kept in the Windows credential store, never in the settings,
+and it is only ever sent to an address beginning `ldaps://`, which is
+encrypted. An address beginning `ldap://` is not, so a password is never
+sent there, and looking a name up says to ask for an `ldaps://` address
+instead.
+
+When you open the window again, the password box is empty and never shows
+the saved password. The box, and a line under it, say that one is saved:
+
+- Leave the box empty and choose OK to keep the saved password.
+- Type a new one to replace it.
+- Clear the sign-in name and choose OK to forget it.
+
+A sign-in name with an empty password box and no password saved is refused:
+the window stays open, says so, and puts you in the password box.
+
+This is **experimental**. Looking people up in a directory has not been
+tried against a real directory yet, and the window says so first.
 
 ### Structure, typed as Markdown
 
