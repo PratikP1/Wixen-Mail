@@ -1636,6 +1636,24 @@ mod tests {
     }
 
     #[test]
+    fn test_times_each_said_on_a_guests_clock_are_kept_apart_by_semicolons() {
+        // Each time carries a comma of its own once a clock is said beside
+        // it. Joined by more commas, where one time ends and the next begins
+        // is lost, and "15:00 for Ada, Tuesday at 10:30" sounds like one.
+        let ninety_minutes = span("2026-03-03T10:00:00Z", "2026-03-03T11:30:00Z");
+        let found = when_we_could_meet(
+            &[free_in("Ada", chrono_tz::Asia::Karachi)],
+            an_hour_inside(ninety_minutes),
+        );
+
+        assert_eq!(
+            found.in_words(&plainly, &plainly_there),
+            "Everyone is free Tuesday at 10, which is 15:00 for Ada; or Tuesday \
+             at 10:30, which is 15:30 for Ada."
+        );
+    }
+
+    #[test]
     fn test_a_guests_clock_on_another_day_says_which_day() {
         // Eleven at night on Tuesday here is noon on Wednesday in Auckland,
         // which keeps summer time in March. The hour alone would put Ada's
@@ -1926,8 +1944,8 @@ mod tests {
 
         assert_eq!(
             found.in_words(&plainly, &plainly_there),
-            "Everyone is free Monday at 9, which is 04:00 for Grace, Monday at 9:30, \
-             which is 04:30 for Grace, or Monday at 10, which is 05:00 for Grace. \
+            "Everyone is free Monday at 9, which is 04:00 for Grace; Monday at 9:30, \
+             which is 04:30 for Grace; or Monday at 10, which is 05:00 for Grace. \
              Monday at 9, Monday at 9:30, and Monday at 10 are outside \
              Grace's working day."
         );
