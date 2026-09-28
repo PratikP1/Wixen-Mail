@@ -39,12 +39,20 @@ pub const JUNK: &str = "$Junk";
 /// off before the other is put on.
 pub const NOT_JUNK: &str = "$NotJunk";
 
-/// Whether a folder keeps this keyword, from its PERMANENTFLAGS.
+/// Whether a folder keeps this keyword, from the PERMANENTFLAGS it named when
+/// it was opened.
 ///
-/// Stub for the red: the rows below say what it answers.
+/// RFC 9051's SELECT: a keyword is kept where the list names it, or where it
+/// holds `\*`, which lets a client make keywords of its own. A server that sent
+/// no list at all has said nothing about what it keeps, so nothing is claimed,
+/// and a keyword sent into that may be gone when the session ends. Keywords are
+/// matched without case, as IMAP matches them.
 pub fn keeps_keyword(permanent: Option<&[String]>, keyword: &str) -> bool {
-    let _ = (permanent, keyword);
-    false
+    permanent.is_some_and(|flags| {
+        flags
+            .iter()
+            .any(|flag| flag == "\\*" || flag.eq_ignore_ascii_case(keyword))
+    })
 }
 
 #[cfg(test)]

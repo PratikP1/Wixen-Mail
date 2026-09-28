@@ -24,6 +24,7 @@
 use crate::application::blocking::BlockedMailGoesTo;
 use crate::common::Result;
 use crate::data::account::Account;
+use crate::service::caldav::how_many;
 
 /// The kinds of account a report treats differently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,12 +40,37 @@ pub enum AccountKind {
 }
 
 impl AccountKind {
-    /// Which kind this account is. Stub for the red.
+    /// Which kind this account is: POP first, whatever its provider, since a
+    /// Gmail account collecting over POP has no Spam folder here to move into;
+    /// then the provider the account was set up with.
     pub fn of(account: &Account) -> Self {
-        let _ = account;
-        AccountKind::OtherImap
+        if account.protocol() == crate::common::types::Protocol::Pop3 {
+            return AccountKind::Pop;
+        }
+        match account.provider.as_deref() {
+            Some(provider) if provider.eq_ignore_ascii_case("gmail") => AccountKind::Gmail,
+            Some(provider) if provider.eq_ignore_ascii_case("outlook") => AccountKind::Microsoft,
+            _ => AccountKind::OtherImap,
+        }
     }
 }
+
+/// What a POP account's report says.
+pub const POP_HAS_NO_JUNK_FOLDER: &str = "This account collects its mail with POP, which has no \
+     junk folder at the server, so nothing was reported.";
+
+/// What a report says on an account with folders and no junk folder among
+/// them. Its own words rather than blocking's, which begin "Nothing has been
+/// blocked".
+pub const NO_JUNK_FOLDER_TO_REPORT_INTO: &str = "Nothing was reported. This account does not \
+     say which of its folders it keeps junk mail in, so there is nowhere to move it. Make a \
+     folder for it on the account, check for mail once so this program can see it, and try \
+     again.";
+
+/// What a report says on an account that has never been asked what folders
+/// it has.
+pub const NO_FOLDERS_KNOWN_YET_TO_REPORT_INTO: &str = "Nothing was reported. This account has \
+     not learned what folders it has yet. Check for mail once, and try again.";
 
 /// What a report does on one account, decided before anything is sent.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,14 +83,36 @@ pub enum Report {
 }
 
 /// What a report does on an account of this kind, with this junk folder,
-/// under this answer from the write gate. Stub for the red.
+/// under this answer from the write gate.
+///
+/// POP first, because nothing about its folders or its gate changes the
+/// answer. Then the gate, in its own words, the way a refused move says it.
+/// Then the junk folder, found the way blocking finds it. Gmail is moved and
+/// not marked: Google's page says the move into Spam is the report, and a
+/// keyword beside it is a signal nothing documented reads.
 pub fn what_a_report_does(
     kind: AccountKind,
     junk: BlockedMailGoesTo<'_>,
     may_change_mail: std::result::Result<(), String>,
 ) -> Report {
-    let _ = (kind, junk, may_change_mail);
-    Report::NothingSent(String::new())
+    if kind == AccountKind::Pop {
+        return Report::NothingSent(POP_HAS_NO_JUNK_FOLDER.to_string());
+    }
+    if let Err(why) = may_change_mail {
+        return Report::NothingSent(why);
+    }
+    match junk {
+        BlockedMailGoesTo::TheJunkFolder(path) => Report::MarkThenMove {
+            junk: path.to_string(),
+            mark: kind != AccountKind::Gmail,
+        },
+        BlockedMailGoesTo::NoJunkFolderFound => {
+            Report::NothingSent(NO_JUNK_FOLDER_TO_REPORT_INTO.to_string())
+        }
+        BlockedMailGoesTo::NoFoldersKnownYet => {
+            Report::NothingSent(NO_FOLDERS_KNOWN_YET_TO_REPORT_INTO.to_string())
+        }
+    }
 }
 
 /// What became of the junk mark at the server.
@@ -81,14 +129,28 @@ pub enum Marked {
 }
 
 impl Marked {
-    /// One account's answer from two of its folders. Stub for the red.
+    /// One account's answer from two of its folders: the worse of the two,
+    /// so the sentence never claims a mark one folder did not keep. A failure
+    /// first, then a folder that keeps no mark, then a mark kept.
     pub fn and(self, other: Marked) -> Marked {
-        let _ = other;
-        self
+        match (self, other) {
+            (Marked::Failed(why), _) | (_, Marked::Failed(why)) => Marked::Failed(why),
+            (Marked::NotKept, _) | (_, Marked::NotKept) => Marked::NotKept,
+            (Marked::Kept, _) | (_, Marked::Kept) => Marked::Kept,
+            (Marked::NotAsked, Marked::NotAsked) => Marked::NotAsked,
+        }
     }
 }
 
-/// The one sentence a report says for one account. Stub for the red.
+/// The one sentence a report says for one account, at the end, never one per
+/// message (#30's rule).
+///
+/// Its verb is what was really done, so it is told apart from Move's
+/// sentence and never claims a provider was told when it was not: "reported
+/// as junk" only where the server kept the mark; on Gmail the move is what
+/// tells Google; on Microsoft the sentence says Microsoft was not told; on a
+/// server that keeps no mark, only the folder says so. A mark that failed is
+/// said after the move, which still happened.
 pub fn what_reporting_did(
     kind: AccountKind,
     how_many_went: usize,
@@ -96,8 +158,50 @@ pub fn what_reporting_did(
     passed_over: usize,
     marked: &Marked,
 ) -> String {
-    let _ = (kind, how_many_went, junk_name, passed_over, marked);
-    String::new()
+    let was = |count: usize| if count == 1 { "was" } else { "were" };
+    if how_many_went == 0 {
+        return format!(
+            "Nothing was reported: {passed_over} already in {junk_name} {} passed over.",
+            was(passed_over)
+        );
+    }
+    let passed = match passed_over {
+        0 => String::new(),
+        count => format!(
+            ", and {count} already in {junk_name} {} passed over",
+            was(count)
+        ),
+    };
+    let went = how_many(how_many_went, "message");
+    let they_are = if how_many_went == 1 {
+        "it is"
+    } else {
+        "they are"
+    };
+    let mut said = match (kind, marked) {
+        (AccountKind::Microsoft, _) => format!(
+            "{went} moved to {junk_name}{passed}. Microsoft offers no supported way for a mail \
+             program to report junk, so Microsoft has not been told."
+        ),
+        (AccountKind::Gmail, _) => {
+            format!("{went} moved to {junk_name}, which tells Google {they_are} junk{passed}.")
+        }
+        (_, Marked::Kept) => format!("{went} reported as junk and moved to {junk_name}{passed}."),
+        (_, Marked::NotKept) => format!(
+            "{went} moved to {junk_name}{passed}. This server does not keep a junk mark, so \
+             only the folder says {they_are} junk."
+        ),
+        (_, Marked::NotAsked | Marked::Failed(_)) => {
+            format!("{went} moved to {junk_name}{passed}.")
+        }
+    };
+    if let Marked::Failed(why) = marked {
+        said.push_str(&format!(
+            " The junk mark could not be set: {}.",
+            why.trim_end_matches('.')
+        ));
+    }
+    said
 }
 
 /// What marking a message as junk asks of a mail server.
@@ -133,14 +237,22 @@ pub async fn mark_as_junk_at_the_server(
     marking(controller, folder, uids).await
 }
 
-/// The marking over whatever answers as a server. Stub for the red: it asks
-/// in the wrong order and whatever the folder keeps.
+/// The marking over whatever answers as a server.
+///
+/// The folder is opened first, because only its PERMANENTFLAGS say whether a
+/// keyword sent to it is kept; one that keeps none is sent nothing. Where it
+/// keeps one, `$NotJunk` comes off before `$Junk` goes on, message by message:
+/// RFC 9051 reads a message carrying both as carrying neither, and the other
+/// order leaves every message in that state for a moment, or for good if the
+/// second write fails. Each write goes through the gated flag change.
 async fn marking<S: MarksMessages>(server: &S, folder: &str, uids: &[u32]) -> Result<Marked> {
     use crate::service::protocols::imap::flag::{JUNK, NOT_JUNK};
-    server.open(folder).await?;
+    if !server.open(folder).await?.keeps_the_junk_mark {
+        return Ok(Marked::NotKept);
+    }
     for uid in uids {
-        server.set_flag(folder, *uid, JUNK, true).await?;
         server.set_flag(folder, *uid, NOT_JUNK, false).await?;
+        server.set_flag(folder, *uid, JUNK, true).await?;
     }
     Ok(Marked::Kept)
 }
