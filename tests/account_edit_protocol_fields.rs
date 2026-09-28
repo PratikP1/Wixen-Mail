@@ -95,6 +95,24 @@ fn alt_key_of(label: &str) -> Option<char> {
     None
 }
 
+/// The text of every label and button the page is showing.
+fn labels_showing(dialog: &Dialog) -> Vec<String> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumChildWindows(dialog.get_handle() as isize, collect, 0) };
+    let windows = FOUND.with(|found| found.borrow().clone());
+    windows
+        .into_iter()
+        .filter(|&hwnd| {
+            // SAFETY: a window this thread just enumerated.
+            let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
+            let class = win32_text(hwnd, GetClassNameW);
+            style & WS_VISIBLE != 0 && (class == "Static" || class == "Button")
+        })
+        .map(|hwnd| win32_text(hwnd, GetWindowTextW))
+        .collect()
+}
+
 /// Every letter more than one control on the page as it stands claims.
 ///
 /// Read from the dialog's own windows: every label and button that is
@@ -186,8 +204,6 @@ fn expect_no_connection_field_shown(name: &'static str, w: &AccountEditWidgets, 
             &w.allow_personal_information_here,
         ),
         ("fetch message text for this account", &w.allow_reading_here),
-        ("directory address", &w.directory_url_f),
-        ("where in the directory to look", &w.directory_base_f),
     ] {
         if widget.is_shown() {
             into.push((name, format!("{field} is shown on the identity page")));
@@ -279,23 +295,22 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                 true,
                 &mut wrong,
             );
-            // Where this account looks people up. On the connection page
-            // whatever the account, because it is about a server this account
-            // reaches, like every other box on that page. Built and never
-            // shown would be two boxes nobody could fill in, and a directory
-            // nobody can name is a lookup that never happens.
-            expect_shown(
-                "connection page: directory address shown",
-                &w.directory_url_f,
-                true,
-                &mut wrong,
-            );
-            expect_shown(
-                "connection page: where in the directory to look shown",
-                &w.directory_base_f,
-                true,
-                &mut wrong,
-            );
+            // Where this account looks people up is not on this page. Until
+            // 2026-09-28 it was, and this case held that it was shown; 13-27
+            // moved the directory's boxes to Look People Up at Work on the
+            // Account Manager, a window of their own, so its sign-in and
+            // password could join them without a third page, and so this
+            // page's Y and H were free again. The labels are read from the
+            // showing windows, since the fields are no longer the dialog's.
+            let showing = labels_showing(&w.dialog);
+            for gone in ["Director&y address:", "W&here in it to look:"] {
+                if showing.iter().any(|label| label == gone) {
+                    wrong.push((
+                        "connection page: the directory's boxes are in their own window",
+                        format!("{gone} is still shown here"),
+                    ));
+                }
+            }
             // What this account may change: three boxes on the connection
             // page, one per answer in `Allowed`, each carrying its own label
             // on the control rather than on a StaticText beside it, so the

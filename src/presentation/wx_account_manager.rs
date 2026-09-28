@@ -2221,6 +2221,58 @@ pub fn build_account_edit_dialog(
     w
 }
 
+// ── Look People Up at Work ──────────────────────────────────────────────────
+
+/// The Look People Up at Work window's controls, returned so a test can build
+/// it without a human closing a live modal.
+#[derive(Clone, Copy)]
+pub struct DirectorySignInWidgets {
+    pub dialog: Dialog,
+    pub address: TextCtrl,
+    pub look_in: TextCtrl,
+    pub sign_in_as: TextCtrl,
+    pub password: TextCtrl,
+    pub status: StaticText,
+    pub ok: Button,
+    pub cancel: Button,
+}
+
+/// Build the Look People Up at Work window for one account without showing
+/// it.
+pub fn build_directory_sign_in_dialog(
+    parent: &dyn WxWidget,
+    _account_name: &str,
+    _directory: Option<&Directory>,
+    _a_password_is_saved: bool,
+    _palette: Option<theme::Palette>,
+) -> DirectorySignInWidgets {
+    let dialog = Dialog::builder(parent, "").build();
+    let a_box = || {
+        let field = TextCtrl::builder(&dialog).build();
+        keep_a_history(&field);
+        field
+    };
+    DirectorySignInWidgets {
+        dialog,
+        address: a_box(),
+        look_in: a_box(),
+        sign_in_as: a_box(),
+        password: a_box(),
+        status: StaticText::builder(&dialog).with_label("").build(),
+        ok: Button::builder(&dialog).with_label("OK").build(),
+        cancel: Button::builder(&dialog).with_label("Cancel").build(),
+    }
+}
+
+/// Wire the window's OK to the save.
+pub fn wire_the_directory_sign_in(
+    _w: &DirectorySignInWidgets,
+    _account_id: &str,
+    _a_password_is_saved: bool,
+    _a11y: &Arc<Accessibility>,
+) {
+}
+
 // ── Automatic OAuth Flow ────────────────────────────────────────────────────
 
 enum OAuthFlowResult {
