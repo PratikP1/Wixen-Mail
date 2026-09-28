@@ -220,7 +220,7 @@ group changes nothing about their contact.
 | Your mail provider | Checking, reading, sending, and, since the build of 2026-09-18, downloading everything after every check, see below | The mail itself, over TLS: the whole of every folder you keep up to date, a chunk at a time, and the text of each message unless you turn that off |
 | The same provider, for your contacts, calendar and tasks | Syncing, which a new installation allows | The contacts, events and tasks |
 | A separate calendar or contacts server | Syncing, if you set one up | The events and contacts |
-| Your organisation's directory | Only if you name one on the account, see below | The part of a name you have typed into To, Cc or Bcc |
+| Your organisation's directory | Only if you name one on the account, see below | The part of a name you have typed into To, Cc or Bcc, and, for a directory that asks you to sign in, the name and password for it, only over an address beginning `ldaps://` |
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
 | GitHub | Checking whether a newer version has been published, which you ask for or switch on, see below | The request, which carries nothing about you |
@@ -322,9 +322,18 @@ What you type is never written to the log. The log records that a search failed 
 and never what was searched for.
 
 The connection is encrypted where the directory offers it. An address beginning `ldaps://`
-is encrypted from the start, and one beginning `ldap://` is not; both are accepted, because
-some internal directories offer only the second, and which one you get is the address your
-organisation gives you.
+is encrypted from the start, and one beginning `ldap://` is not; both are accepted for a
+directory that answers anybody, because some internal directories offer only the second,
+and which one you get is the address your organisation gives you.
+
+A directory that asks you to sign in is sent a name and a password, and the password goes
+only to an address beginning `ldaps://`. Over `ldap://` it would travel as you typed it,
+readable by anybody on the network between you and the directory, so Wixen Mail refuses to
+send it there and says to ask for an address beginning `ldaps://` instead. The password is
+kept in the Windows credential store, beside your account passwords, and nowhere else: not
+in the settings, not in the mail database, and never in the log. Removing the account
+erases it, and so does uninstalling. Nothing on screen sets a sign-in name or a password
+yet, so until something does, every directory is asked without signing in.
 
 ## Asking when the people invited to a meeting are free
 

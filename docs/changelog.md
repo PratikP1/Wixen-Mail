@@ -8,6 +8,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A directory password is kept in the Windows credential store and sent over encrypted
+  addresses only, with nothing on screen to set it yet (GAP-07's directory half, #55).** When
+  an account's directory names somebody to sign in as, looking a name up reads that
+  account's directory password from the Windows credential store and signs in with it. The
+  password goes only to an address beginning `ldaps://`; over `ldap://` it is refused with a
+  sentence saying to ask for an `ldaps://` address, because a sign-in there carries the
+  password as typed. A directory that asks nobody to sign in is still asked over either.
+  Removing an account erases its directory password, and so does uninstalling. A
+  directory's answer is also read past any continuation reference in it, which Active
+  Directory sends when a search starts at the domain root and which makes the library this
+  uses panic (ldap3 #156). The search made today already had them skipped inside the
+  library, so nothing you can see changes; the skip is here so that a later way of
+  searching cannot lose the people beside one. The version does not move for this: no build
+  has been cut since 1.0.0-alpha.1. Known limitations: nothing on screen sets a sign-in
+  name or a password until the next change, so no account signs in yet; and no real
+  directory has been asked with a sign-in or searched from its domain root.
 - **A block moves the sender's mail already here when you say so, and Block This Sender is on
   `Ctrl+Shift+B`, experimental (#54's second and third points, GAP-06).** After Action,
   Block, This Sender or Everyone at This Domain saves the block, the messages already on this

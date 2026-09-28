@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 622
+open_count: 626
 waived_count: 0
 fixed_count: 70
-total_count: 692
-last_updated: 2026-09-28T13:10:00.000Z
+total_count: 696
+last_updated: 2026-09-28T16:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -707,6 +707,10 @@ last_updated: 2026-09-28T13:10:00.000Z
 | 690 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, the tester's ear: nobody has heard the block's question or its answer. Whether the question is read on open with its count, sender and folder; whether Enter answers Yes and Escape closes it (decision 4 says Escape answers No, and a Yes and No box with no Cancel may not answer Escape on Windows; closing it by any means leaves the mail, which the code treats as No); whether the sentence said before the block at High, then the question, then the sentence after it are one clear sequence; and whether block_the_sender's told, which both announces and sends a status line that is itself spoken, is heard twice | open |  | 2026-09-28T11:59:28.000Z |  |
 | 691 | 13 | todo | src/presentation/wx_app.rs | 34776 | 13-25, premise 2, still true on 2026-09-28: block_the_sender writes the block to the open account, held.active_account_id, not to the account the selected message is in. In All Inboxes the two differ, so a block on a message from a second account is written to the first account's rules and counts that account's mail. A question for Pratik, left unfixed because it is a decision about blocking and not about the move. Recommendation: block on the message's own account, as Report as Junk already does per message | open |  | 2026-09-28T11:59:28.000Z |  |
 | 692 | 13 | todo | tests/every_way_a_file_goes_on_a_message.rs | 264 | 13-25, found by CI: test_nothing_else_in_the_presentation_layer_attaches_a_file reads every file under src/presentation for a Chosen spelled by hand, and the one guard record naming its target, "every route that attaches a file goes through the one model", has file = src/presentation/wx_compose.rs, so the commit hook runs it for a change to wx_compose.rs and to no other presentation file. 13-25 built a choosing_messages::Chosen in wx_app.rs, which the test reads as an attachment, and only CI's Test Suite saw it. Recommendation: a record whose file is wx_app.rs and whose break plants a Chosen literal there, so the hook couples the target to the window as well; the textual match on "Chosen {" also meets choosing_messages::Chosen, which 13-42 and 13-44 may build | open |  | 2026-09-28T13:10:00.000Z |  |
+| 693 | 13 | todo | src/service/directory.rs | 316 | 13-26: nothing outside tests writes a directory password, and nothing on screen writes a sign-in name either: directory::keep_the_password has no caller but its tests, and wx_account_manager.rs writes sign_in_as as None. So the lookup's reading of the saved password, the refusal over ldap:// and the erasure are reached in the running program only by a sign-in name typed into the stored settings by hand. 13-27's window writes both, and its premise 1 names this entry, which it closes in both halves | open |  | 2026-09-28T16:00:00.000Z |  |
+| 694 | 13 | todo | src/service/directory.rs | 510 | 13-26, decisions 1 and 2: signing in to a directory as the Windows user, with no password typed, is later work and not built. The two routes the research named: Windows' own LDAP, wldap32 through the windows crate's Win32_Networking_Ldap feature (not on today), which also brings Windows' own certificate store; or ldap3's gssapi feature. And ldap3 is kept while its issue #157 asks whether the crate is still maintained: when that is answered, or when a fix ldap3 needs goes unmerged, re-take the audit in RESEARCH-3 against wldap32 | open |  | 2026-09-28T16:00:00.000Z |  |
+| 695 | 13 | unrun-verify | src/service/directory.rs | 666 | 13-26, for phase 14: no real directory has been asked with a sign-in. A check against Pratik's directory once 13-27's window exists: a sign-in name and password over ldaps:// find people; the same over ldap:// is refused with the sentence and nothing is sent; a search whose base is an Active Directory domain root, which answers with continuation references beside the entries, still finds the people; and removing the account leaves no wixen-mail-directory entry in Credential Manager | open |  | 2026-09-28T16:00:00.000Z |  |
+| 696 | 13 | todo | src/service/credentials.rs | 102 | 13-26, found and left: credentials.rs words a store failure as "Could not remove the password for {account_id}", and account_id is a UUID, so the refusal delete_account says when Windows will not let go of a password reads a string of hexadecimal aloud. 13-26's directory password words the same failure as "this account's directory password". Recommendation: the same wording in credentials.rs, with its tests | open |  | 2026-09-28T16:00:00.000Z |  |
 
 ````json
 [
@@ -9012,6 +9016,54 @@ last_updated: 2026-09-28T13:10:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T13:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 693,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/directory.rs",
+    "line": 316,
+    "description": "13-26: nothing outside tests writes a directory password, and nothing on screen writes a sign-in name either: directory::keep_the_password has no caller but its tests, and wx_account_manager.rs writes sign_in_as as None. So the lookup's reading of the saved password, the refusal over ldap:// and the erasure are reached in the running program only by a sign-in name typed into the stored settings by hand. 13-27's window writes both, and its premise 1 names this entry, which it closes in both halves",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 694,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/directory.rs",
+    "line": 510,
+    "description": "13-26, decisions 1 and 2: signing in to a directory as the Windows user, with no password typed, is later work and not built. The two routes the research named: Windows' own LDAP, wldap32 through the windows crate's Win32_Networking_Ldap feature (not on today), which also brings Windows' own certificate store; or ldap3's gssapi feature. And ldap3 is kept while its issue #157 asks whether the crate is still maintained: when that is answered, or when a fix ldap3 needs goes unmerged, re-take the audit in RESEARCH-3 against wldap32",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 695,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/service/directory.rs",
+    "line": 666,
+    "description": "13-26, for phase 14: no real directory has been asked with a sign-in. A check against Pratik's directory once 13-27's window exists: a sign-in name and password over ldaps:// find people; the same over ldap:// is refused with the sentence and nothing is sent; a search whose base is an Active Directory domain root, which answers with continuation references beside the entries, still finds the people; and removing the account leaves no wixen-mail-directory entry in Credential Manager",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 696,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/credentials.rs",
+    "line": 102,
+    "description": "13-26, found and left: credentials.rs words a store failure as \"Could not remove the password for {account_id}\", and account_id is a UUID, so the refusal delete_account says when Windows will not let go of a password reads a string of hexadecimal aloud. 13-26's directory password words the same failure as \"this account's directory password\". Recommendation: the same wording in credentials.rs, with its tests",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T16:00:00.000Z",
     "resolved_at": null
   }
 ]
