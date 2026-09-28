@@ -256,7 +256,11 @@ Written down so you do not spend time reporting things already on the list.
   move into Spam counts as a report, nobody knows whether any server learns
   from the junk mark, and Microsoft is not told at all. If you try it, tell
   us which sentence you heard, and whether the message and its mark look the
-  same in another mail program or on your phone.
+  same in another mail program or on your phone. Blocking a sender
+  (`Ctrl+Shift+B`) now asks whether to move the mail already here from them
+  to the junk folder, and that move has never been tried on a real server
+  either. If you try it, tell us the count the question gave and whether the
+  messages reached the junk folder in another mail program too.
 - **Opening S/MIME encrypted mail is experimental, and it has met no message
   from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
   encrypted to a certificate in your Windows certificate store is opened with

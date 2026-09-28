@@ -1091,7 +1091,7 @@ account this way; the loopback servers the tests use answer the four ways a
 server can, at each of the two servers, and a real account settles the
 rest.
 
-### Reporting junk
+### Reporting junk and blocking a sender
 
 Action, Report as Junk (`Ctrl+Shift+J`, or `Alt+A` then `J`) moves the
 selected messages to the junk folder and tells the mail provider they are
@@ -1137,8 +1137,39 @@ server is told in the background, so `Ctrl+Z` in the message list moves the
 messages back. A junk mark already set stays on them.
 
 Reporting junk is not blocking. A report deals with the messages in front of
-you; a block, on the Action menu's Block submenu, files everything a sender
-sends from now on into the junk folder.
+you and tells the provider; a block files everything a sender sends from now
+on into the junk folder and tells the provider nothing.
+
+To block a sender, open or select a message from them and choose Action,
+Block, This Sender (`Ctrl+Shift+B`), or Everyone at This Domain, which has no
+key. Blocking is experimental: the move of the mail already here has never
+been run against a real mail server.
+
+1. The block is saved as a rule, and mail from them goes to the junk folder
+   from now on. You can see it under Tools, Blocked Senders.
+2. If messages from them are already on this computer, one question asks
+   whether to move them too, with the count: "Also move the 14 messages
+   already here from ada@example.com to Junk?" Enter answers Yes. No leaves
+   them where they are, and so does closing the question without an answer.
+3. One sentence says what happened, for example "14 messages already here
+   were moved to Junk."
+
+What the question counts and what it leaves alone:
+
+| Case | What happens |
+|---|---|
+| Messages in the inbox and your other folders | Counted, and moved on Yes |
+| Messages in Junk, Trash, Sent, Drafts or the Outbox | Left alone and not counted |
+| More than 5,000 messages | Nothing is asked and nothing moves. The sentence gives the count and says to search for the sender and use Move to |
+| Mail changes switched off under Allow Changes | Nothing is asked. The sentence says the messages stay where they are and that the block waits for mail changes |
+| None already here | Nothing is asked |
+
+The move is the same as Move to: it happens on this computer first and the
+server is told in the background, and it is refused whole if mail changes
+are off for the account. `Ctrl+Z` in the message list moves the messages back.
+
+A block uses the account you have open. In All Inboxes that may not be the
+account the message came to.
 
 ### Printing
 

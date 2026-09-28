@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 619
+open_count: 621
 waived_count: 0
-fixed_count: 69
-total_count: 688
-last_updated: 2026-09-28T10:41:21.000Z
+fixed_count: 70
+total_count: 691
+last_updated: 2026-09-28T11:59:28.000Z
 ---
 
 # Broken Windows Ledger
@@ -699,10 +699,13 @@ last_updated: 2026-09-28T10:41:21.000Z
 | 682 | 13 | todo | src/presentation/wx_app.rs | 11157 | 13-24, for 13-24.1: the five quiet do-halves (mark_these_read, star_these, label_these, move_these, delete_these) have no caller but their own commands, and delete_these's answer, how many messages it reached, is read by nobody. 13-24.1's premise 1 names this entry; it closes when run_these_actions_over calls them. Fixed 2026-09-28 by 13-24.1: run_these_actions_over calls all five, in the order held by tests/several_actions_reach_the_server_in_order.rs, and counts delete_these's answer into WhatWasDone; the runner itself has no caller until 13-25 (ledger 685) | fixed |  | 2026-09-28T08:59:28.000Z | 2026-09-28T10:41:21.000Z |
 | 683 | 13 | todo | src/presentation/wx_app.rs | 22893 | 13-24, found and left: Move to's and Copy to's one sentence for a set counts every chosen message as moved even when some were refused here in words or went server first because the store could not hold them, since move_these answers not_moved as 0, as the sentence was built before this plan. Recommendation: move_these answers not_moved as the set less what was made here, the messages sent server first keeping their own sentence; small, and no plan carries it yet | open |  | 2026-09-28T08:59:28.000Z |  |
 | 684 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-24: Mark as Read, Star, a label, Move to, Copy to, Report as Junk and Delete were split into a read half, a quiet do-half and a say half, and nothing heard was meant to change. The pull request's NVDA job reads the cases it has; nobody has listened to the seven commands by hand since the split | open |  | 2026-09-28T08:59:28.000Z |  |
-| 685 | 13 | todo | src/presentation/wx_app.rs | 24303 | 13-24.1, for 13-25: run_these_actions_over has no caller, so it carries #[expect(dead_code)] with that reason, which fails the build the day a caller arrives and is taken off with it. 13-25's block is its first caller and its premise 1 names this; 13-42 (Quick Steps) and 13-44 (a rule over a folder) call it after. It closes when 13-25 calls it | open |  | 2026-09-28T10:41:21.000Z |  |
+| 685 | 13 | todo | src/presentation/wx_app.rs | 24303 | 13-24.1, for 13-25: run_these_actions_over has no caller, so it carries #[expect(dead_code)] with that reason, which fails the build the day a caller arrives and is taken off with it. 13-25's block is its first caller and its premise 1 names this; 13-42 (Quick Steps) and 13-44 (a rule over a folder) call it after. It closes when 13-25 calls it. Fixed 2026-09-28 by 13-25: answer_what_a_block_caught calls it for the block's move of the mail already here, the expectation came off with it, and tests/several_actions_reach_the_server_in_order.rs holds that something outside the runner calls it | fixed |  | 2026-09-28T10:41:21.000Z | 2026-09-28T11:59:28.000Z |
 | 686 | 13 | unrun-verify | src/presentation/wx_app.rs | 24303 | 13-24.1, for phase 14: a run of several actions over a set has not reached a real mail server. A check on an IMAP account with a set marked read, labelled and moved in one run: the server's own record of the commands, the flags on the messages in the folder they reached, and whether the next check keeps them (ledger 688); every test here reads the source or a pure function | open |  | 2026-09-28T10:41:21.000Z |  |
 | 687 | 13 | todo | src/presentation/wx_app.rs | 25901 | 13-24.1: no behavioural case proves a message's flag reaches the server before its move. The flag goes through spawn_server_change's worker, which opens its own store at AppPaths and signs in through the_session_at, and the move through complete_here_then_tell_the_server's push, which does the same; neither is reachable from a target or from the library's own tests, so no scripted server from common::answering can be put under both. A harness would need both workers to take the store and the session they use as parameters, so a test can hand them a temporary store and one scripted session and read the server's record of commands. The readings in tests/several_actions_reach_the_server_in_order.rs hold the order of asking and the folder a flag names, not the order at the server | open |  | 2026-09-28T10:41:21.000Z |  |
 | 688 | 13 | todo | src/presentation/wx_app.rs | 25901 | 13-24.1, found and left: a message's mark and its move still reach the server in whichever order their two workers get the account's session. Carrying the folder means a late mark names the folder the message was in and the number it had there, so it can no longer land on another message; but if the move arrives first, that number is gone from the folder, the server answers the STORE without changing anything, the mark is said as done, and the next check puts the old mark back here from the folder the message reached. Quick Steps that mark and move (13-42) meet this on every run. Recommendation, a question for Pratik: the runner hands each message's marks to the move's push, so one worker on the account's session sends the marks and then the move; small beside 13-42, and no plan carries it yet | open |  | 2026-09-28T10:41:21.000Z |  |
+| 689 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, for phase 14: a block's move of the mail already here has not reached a real mail server. A check on an IMAP account and on Gmail: block a sender with several messages in the inbox and one in a folder of their own, answer Yes, and read from another client that the messages reached the junk folder and that the next check keeps them there; every test here reads the source or a pure function | open |  | 2026-09-28T11:59:28.000Z |  |
+| 690 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, the tester's ear: nobody has heard the block's question or its answer. Whether the question is read on open with its count, sender and folder; whether Enter answers Yes and Escape closes it (decision 4 says Escape answers No, and a Yes and No box with no Cancel may not answer Escape on Windows; closing it by any means leaves the mail, which the code treats as No); whether the sentence said before the block at High, then the question, then the sentence after it are one clear sequence; and whether block_the_sender's told, which both announces and sends a status line that is itself spoken, is heard twice | open |  | 2026-09-28T11:59:28.000Z |  |
+| 691 | 13 | todo | src/presentation/wx_app.rs | 34776 | 13-25, premise 2, still true on 2026-09-28: block_the_sender writes the block to the open account, held.active_account_id, not to the account the selected message is in. In All Inboxes the two differ, so a block on a message from a second account is written to the first account's rules and counts that account's mail. A question for Pratik, left unfixed because it is a decision about blocking and not about the move. Recommendation: block on the message's own account, as Report as Junk already does per message | open |  | 2026-09-28T11:59:28.000Z |  |
 
 ````json
 [
@@ -8920,11 +8923,11 @@ last_updated: 2026-09-28T10:41:21.000Z
     "phase": "13",
     "file": "src/presentation/wx_app.rs",
     "line": 24303,
-    "description": "13-24.1, for 13-25: run_these_actions_over has no caller, so it carries #[expect(dead_code)] with that reason, which fails the build the day a caller arrives and is taken off with it. 13-25's block is its first caller and its premise 1 names this; 13-42 (Quick Steps) and 13-44 (a rule over a folder) call it after. It closes when 13-25 calls it",
-    "status": "open",
+    "description": "13-24.1, for 13-25: run_these_actions_over has no caller, so it carries #[expect(dead_code)] with that reason, which fails the build the day a caller arrives and is taken off with it. 13-25's block is its first caller and its premise 1 names this; 13-42 (Quick Steps) and 13-44 (a rule over a folder) call it after. It closes when 13-25 calls it. Fixed 2026-09-28 by 13-25: answer_what_a_block_caught calls it for the block's move of the mail already here, the expectation came off with it, and tests/several_actions_reach_the_server_in_order.rs holds that something outside the runner calls it",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-28T10:41:21.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-28T11:59:28.000Z"
   },
   {
     "id": 686,
@@ -8960,6 +8963,42 @@ last_updated: 2026-09-28T10:41:21.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T10:41:21.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 689,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": 35000,
+    "description": "13-25, for phase 14: a block's move of the mail already here has not reached a real mail server. A check on an IMAP account and on Gmail: block a sender with several messages in the inbox and one in a folder of their own, answer Yes, and read from another client that the messages reached the junk folder and that the next check keeps them there; every test here reads the source or a pure function",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T11:59:28.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 690,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": 35000,
+    "description": "13-25, the tester's ear: nobody has heard the block's question or its answer. Whether the question is read on open with its count, sender and folder; whether Enter answers Yes and Escape closes it (decision 4 says Escape answers No, and a Yes and No box with no Cancel may not answer Escape on Windows; closing it by any means leaves the mail, which the code treats as No); whether the sentence said before the block at High, then the question, then the sentence after it are one clear sequence; and whether block_the_sender's told, which both announces and sends a status line that is itself spoken, is heard twice",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T11:59:28.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 691,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": 34776,
+    "description": "13-25, premise 2, still true on 2026-09-28: block_the_sender writes the block to the open account, held.active_account_id, not to the account the selected message is in. In All Inboxes the two differ, so a block on a message from a second account is written to the first account's rules and counts that account's mail. A question for Pratik, left unfixed because it is a decision about blocking and not about the move. Recommendation: block on the message's own account, as Report as Junk already does per message",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T11:59:28.000Z",
     "resolved_at": null
   }
 ]
