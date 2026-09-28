@@ -157,19 +157,6 @@ fn how_long_it_lasts(event: &TheEventSoFar) -> chrono::Duration {
     (event.ends - event.starts).max(chrono::Duration::minutes(AT_LEAST_THIS_LONG))
 }
 
-/// The first of [`every_place_to_ask`], until the event form asks them all.
-pub fn where_to_ask(
-    calendars: &[CalendarContainer],
-    sign_in: impl Fn(&str) -> Option<(String, String)>,
-    microsoft: Option<(&str, &str)>,
-    google: Option<(&str, &str)>,
-) -> WhereToAsk {
-    every_place_to_ask(calendars, sign_in, microsoft, google)
-        .into_iter()
-        .next()
-        .unwrap_or(WhereToAsk::Nowhere)
-}
-
 /// Every place one account's free/busy questions go.
 ///
 /// `sign_in` looks a calendar server's stored name and password up by calendar
@@ -295,14 +282,6 @@ pub fn people_to_ask_about(invited: &[Coming]) -> Vec<AskAbout> {
             zone: None,
         })
         .collect()
-}
-
-/// One place to ask, and everybody to ask it about.
-pub fn one_question(server: WhereToAsk, people: Vec<AskAbout>) -> Vec<AskHere> {
-    match people.is_empty() {
-        true => Vec::new(),
-        false => vec![AskHere { server, people }],
-    }
 }
 
 /// Every place to ask, and everybody to ask each of them about.

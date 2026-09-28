@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 459 records have arrived since and have not been through it.
+# 460 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34051,10 +34051,11 @@ tests_last_seen = [
 ]
 
 # Find when everyone is free stops handing the Google token it fetched to
-# where_to_ask, so a Google account is asked nowhere again. Written 2026-09-28
-# by 13-29.
+# every_place_to_ask, so a Google account is asked nowhere again. Written
+# 2026-09-28 by 13-29 against where_to_ask, renamed the same day by 13-30 when
+# every_place_to_ask replaced it.
 [[guard]]
-name = "find when everyone is free hands the google token to where_to_ask"
+name = "find when everyone is free hands the google token to every_place_to_ask"
 file = "src/presentation/managers.rs"
 suite = "item_form_free_busy"
 before = '''                google
@@ -34066,7 +34067,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/item_form_free_busy.rs", tests = 5 },
+    { file = "tests/item_form_free_busy.rs", tests = 7 },
 ]
 
 # One place's busy time replacing another's rather than joining it, so a guest
@@ -34083,6 +34084,23 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/free_busy.rs", tests = 52 },
+]
+
+# The event form's worker cuts every place down to the first before asking, so
+# everybody whose diary is at another place comes back unknown. Written
+# 2026-09-28 by 13-30.
+[[guard]]
+name = "find when everyone is free asks every place the account has, not the first"
+file = "src/presentation/managers.rs"
+suite = "item_form_free_busy"
+before = '''            let questions = asking_when_free::questions_for_every_place(places, people);'''
+after = '''            let questions = asking_when_free::questions_for_every_place(places.into_iter().take(1).collect(), people);'''
+red = [
+    "test_find_when_everyone_is_free_asks_every_place_the_account_has",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/item_form_free_busy.rs", tests = 7 },
 ]
 
 # Only the first place an account keeps a calendar at is asked, so everybody
