@@ -71,7 +71,9 @@ The rest is #49 (a key manager) and #52 (PGP/MIME, signing, encrypting), both op
 **Several calendars per account sync and show; free/busy asks one place per account.**
 `application::asking_when_free::where_to_ask` (`grep -rn 'pub fn where_to_ask' src`, line 172)
 asks the first calendar server the account can sign in to, else Microsoft Graph, else nobody.
-Every source an account has is #57, open.
+Every source an account has is #57, open. Since 2026-09-28 (13-30) that function is gone:
+`every_place_to_ask` in the same module asks every calendar server, Microsoft and Google at
+once, and the rest of #57 is still open.
 
 **Sound schemes exist, with an import.** The generated tones, the bundled schemes and
 `import_zip` are built:

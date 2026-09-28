@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 633
+open_count: 635
 waived_count: 0
 fixed_count: 72
-total_count: 705
-last_updated: 2026-09-28T22:00:00.000Z
+total_count: 707
+last_updated: 2026-09-28T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -720,6 +720,8 @@ last_updated: 2026-09-28T22:00:00.000Z
 | 703 | 13 | todo | src/presentation/wx_app.rs | 28749 | 13-28, a design question for Pratik: the tasks sync now asks Microsoft for a token carrying Tasks.ReadWrite alone. Microsoft's documentation says a refresh may ask only for what the sign-in granted, so an account signed in before tasks synced both ways, which granted the read-only permission, is expected to be refused that token and to sync no Microsoft tasks at all until it signs in again, where before it may have read them and had every change refused. Nothing here can measure which. The recommendation is to keep it: signing in again once fixes both directions, the sync's line counts the failed sign-in, and the provider page says so. The alternative is to fall back to the shared token for reading when the tasks token is refused | open |  | 2026-09-28T20:00:00.000Z |  |
 | 704 | 13 | unrun-verify | src/service/free_busy.rs | 1100 | 13-29, for phase 14: Google's freeBusy has never been asked from a real account. On a Google account whose calendar is at Google: whether the stored sign-in's token is accepted for POST /freeBusy with the calendar permission alone (RESEARCH-3 C6 says it is); whether a colleague in the same Google Workspace comes back with their busy stretches; whether a guest outside the domain comes back notFound and is said as not shared, or in some other shape this does not read; and whether the times offered match what those calendars really hold | open |  | 2026-09-28T22:00:00.000Z |  |
 | 705 | 13 | unrun-verify | src/application/when_people_are_free.rs | 143 | 13-29, the tester's ear: nobody has heard "Bob could not be checked, because their calendar is not shared with you." beside the other reasons, or the waiting window's "Asking where your calendar is kept about everybody on the guest list. This is experimental and can take a few seconds." Whether the not-shared sentence is told apart from "the server would not say" when both are said, and whether the waiting sentence reads plainly | open |  | 2026-09-28T22:00:00.000Z |  |
+| 706 | 13 | todo | src/service/free_busy.rs | 1141 | 13-30, decision 2: now that every place is asked, a personal Microsoft account (outlook.com, hotmail.com) is asked getSchedule like any other. RESEARCH-3 pitfall 6 says getSchedule does not serve personal accounts, and what Microsoft answers such an account, its status and error code, is not known here. Until it is read, such an account's guests come back unknown from Microsoft for whatever reason that status maps to, and are answered by any other place the account has. Phase 14 reads the real reply on a personal account; a later plan words a sentence keyed on it, rather than on a guessed error | open |  | 2026-09-28T23:30:00.000Z |  |
+| 707 | 13 | unrun-verify | src/application/asking_when_free.rs | 176 | 13-30, for phase 14: no account with calendars in two places has been asked for real. On an account with a calendar server and a Google calendar, or a Microsoft sign-in and a Google calendar: whether every place is asked; whether a guest one place knows is answered and a guest no place knows is said once as not checked; whether busy time from both places shows as busy; whether two calendars on one server are asked once; and whether one slow place costs only its own answers within the twenty seconds each is given | open |  | 2026-09-28T23:30:00.000Z |  |
 
 ````json
 [
@@ -9181,6 +9183,30 @@ last_updated: 2026-09-28T22:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 706,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/free_busy.rs",
+    "line": 1141,
+    "description": "13-30, decision 2: now that every place is asked, a personal Microsoft account (outlook.com, hotmail.com) is asked getSchedule like any other. RESEARCH-3 pitfall 6 says getSchedule does not serve personal accounts, and what Microsoft answers such an account, its status and error code, is not known here. Until it is read, such an account's guests come back unknown from Microsoft for whatever reason that status maps to, and are answered by any other place the account has. Phase 14 reads the real reply on a personal account; a later plan words a sentence keyed on it, rather than on a guessed error",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 707,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/asking_when_free.rs",
+    "line": 176,
+    "description": "13-30, for phase 14: no account with calendars in two places has been asked for real. On an account with a calendar server and a Google calendar, or a Microsoft sign-in and a Google calendar: whether every place is asked; whether a guest one place knows is answered and a guest no place knows is said once as not checked; whether busy time from both places shows as busy; whether two calendars on one server are asked once; and whether one slow place costs only its own answers within the twenty seconds each is given",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T23:30:00.000Z",
     "resolved_at": null
   }
 ]
