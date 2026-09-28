@@ -614,20 +614,23 @@ fn test_focus_lands_on_the_directory_address_and_it_is_named_there() {
 
     assert_eq!(
         focused.map(|control| (control.class.as_str(), control.name.as_str(), control.role)),
-        Some(("Edit", "Directory address", ROLE_SYSTEM_TEXT)),
+        Some(("Edit", "Directory address,", ROLE_SYSTEM_TEXT)),
         "{focused:?}"
     );
 }
 
+/// Each field's name ends in the comma `name_from_label` puts where its
+/// label's colon was, which is the pause a screen reader makes before the
+/// role; every labelled field in the program is named that way.
 #[test]
 fn test_every_field_and_button_is_named_on_msaa_at_its_own_handle_in_tab_order() {
     assert_eq!(
         names_and_roles(&the_harvest().saved),
         vec![
-            ("Directory address".to_string(), ROLE_SYSTEM_TEXT),
-            ("Where in it to look".to_string(), ROLE_SYSTEM_TEXT),
-            ("Sign-in name".to_string(), ROLE_SYSTEM_TEXT),
-            ("Password".to_string(), ROLE_SYSTEM_TEXT),
+            ("Directory address,".to_string(), ROLE_SYSTEM_TEXT),
+            ("Where in it to look,".to_string(), ROLE_SYSTEM_TEXT),
+            ("Sign-in name,".to_string(), ROLE_SYSTEM_TEXT),
+            ("Password,".to_string(), ROLE_SYSTEM_TEXT),
             ("OK".to_string(), ROLE_SYSTEM_PUSHBUTTON),
             ("Cancel".to_string(), ROLE_SYSTEM_PUSHBUTTON),
         ]
@@ -700,8 +703,9 @@ fn test_a_refused_save_keeps_the_window_open_says_why_and_puts_focus_on_the_pass
     let refused = &the_harvest().refused;
 
     assert!(refused.still_shown, "the window closed on a refused save");
+    // The line wraps, so its breaks are read as the spaces they replaced.
     assert_eq!(
-        refused.status,
+        refused.status.replace("\r\n", " ").replace('\n', " "),
         directory::no_password_is_saved_for("directory.example.com", NAME)
     );
     assert_eq!(
@@ -709,7 +713,7 @@ fn test_a_refused_save_keeps_the_window_open_says_why_and_puts_focus_on_the_pass
             .focused
             .as_ref()
             .map(|control| (control.name.as_str(), control.password)),
-        Some(("Password", true)),
+        Some(("Password,", true)),
         "{:?}",
         refused.focused
     );

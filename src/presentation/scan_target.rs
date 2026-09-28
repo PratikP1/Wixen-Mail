@@ -231,12 +231,17 @@ pub enum ScanTarget {
     /// is opened for a made-up one: the field and its name are the same
     /// whoever's key it asks about.
     UnlockAPgpKey,
+    /// Look People Up at Work, the window the Account Manager opens for an
+    /// account's directory and its sign-in (#55, 13-27). Opened on the
+    /// scan-only account with a made-up directory and a password said to be
+    /// saved, so the line saying so is walked too. Nothing is saved.
+    DirectorySignIn,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 42] = [
+    pub const ALL: [ScanTarget; 43] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -279,6 +284,7 @@ impl ScanTarget {
         ScanTarget::PageWindow,
         ScanTarget::PgpKeys,
         ScanTarget::UnlockAPgpKey,
+        ScanTarget::DirectorySignIn,
     ];
 
     /// The name used on the command line.
@@ -326,6 +332,7 @@ impl ScanTarget {
             Self::PageWindow => "page-window",
             Self::PgpKeys => "pgp-keys",
             Self::UnlockAPgpKey => "unlock-a-pgp-key",
+            Self::DirectorySignIn => "directory-sign-in",
         }
     }
 
@@ -456,6 +463,8 @@ mod tests {
         //
         // The account editor's first page arrived on 2026-09-24 (#43), with
         // the signature choice on it.
+        //
+        // Look People Up at Work arrived on 2026-09-28 (#55), with the window.
         for name in [
             "columns",
             "which-copy",
@@ -486,6 +495,7 @@ mod tests {
             "account-details",
             "page",
             "page-window",
+            "directory-sign-in",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));
