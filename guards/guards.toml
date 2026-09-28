@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 429 records have arrived since and have not been through it.
+# 430 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -31266,13 +31266,23 @@ tests_last_seen = [
 # changes that were never made. Written 2026-09-25 by 13-07, the break taken
 # by hand against `cargo test --test undoing_a_mark_names_the_message` first:
 # the Mark as Read reading went red and nothing else in the target did.
+#
+# Rewritten 2026-09-28 by 13-24: the writes and the remembering moved out
+# of `toggle_read_state` into its quiet do-half `mark_these_read`, so the
+# anchor is that function's opening, and the reading follows it there.
 [[guard]]
 name = "Mark as Read remembers its action after its writes, not before"
 file = "src/presentation/wx_app.rs"
 suite = "undoing_a_mark_names_the_message"
-before = '''    let new_read = what_mark_read_does(&chosen);
+before = '''    read: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
     for message in &chosen.messages {'''
-after = '''    let new_read = what_mark_read_does(&chosen);
+after = '''    read: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
     remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });
     for message in &chosen.messages {'''
 red = [
@@ -33481,4 +33491,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 50 },
+]
+
+# A do-half that says something: Star's sentence said from inside the
+# piece 13-24.1's runner calls, so a runner starring with other actions
+# would say Star's sentence as well as its own. Written 2026-09-28 by
+# 13-24, measured against the target; the planted call is a closure so the
+# break compiles.
+[[guard]]
+name = "star's do-half says nothing, not the sentence its command says"
+file = "src/presentation/wx_app.rs"
+suite = "each_set_command_has_a_quiet_do_half"
+before = '''    starred: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;'''
+after = '''    starred: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
+    let _ = |a11y: &Accessibility| a11y.announce("Starred", crate::presentation::accessibility::announcements::Priority::Normal);'''
+red = [
+    "test_star_carries_its_change_out_in_a_quiet_do_half",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/each_set_command_has_a_quiet_do_half.rs", tests = 8 },
 ]

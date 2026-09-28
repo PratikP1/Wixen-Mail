@@ -4273,12 +4273,11 @@ impl WxMailApp {
                             // chosen message is not, else unstarred, which
                             // for one message is the toggle it always was.
                             // A conversation row contributes every message
-                            // of it. Each row is flipped and kept here
-                            // before the next, the server is told about
-                            // each, and one sentence is said with the
-                            // count.
+                            // of it. The starring is `star_these`'s, which
+                            // says nothing (13-24), and one sentence is
+                            // said here with the count.
                             use crate::application::choosing_messages::{
-                                Outcome, too_many, what_star_does, what_was_done,
+                                too_many, what_star_does, what_was_done,
                             };
                             let chosen = match chosen_messages(
                                 &state,
@@ -4298,59 +4297,10 @@ impl WxMailApp {
                                 return send_refusal(&ui_tx, &runtime, &why);
                             }
                             let starred = what_star_does(&chosen);
-                            for message in &chosen.messages {
-                                {
-                                    let mut s = lock_state(&state);
-                                    if let Some(row) = s
-                                        .messages
-                                        .iter_mut()
-                                        .find(|row| row.message_id == message.row_id)
-                                    {
-                                        row.starred = starred;
-                                    }
-                                }
-                                // Nothing is confirmed and nothing goes to
-                                // the server unless it was kept here
-                                // first. This used to log the refusal and
-                                // then say "Flagged" and play the tone
-                                // that means it worked. A cache that
-                                // refused one write will refuse the rest,
-                                // so the loop stops at the first.
-                                if let Some(cache) = message_cache.as_ref()
-                                    && !write_flags_or_put_the_row_back(
-                                        cache,
-                                        app.state,
-                                        app.tx,
-                                        message.row_id,
-                                        (message.read, starred),
-                                        (message.read, message.starred),
-                                    )
-                                {
-                                    msg_list.refresh(true, None);
-                                    return;
-                                }
-                                // And the server, so the flag is still
-                                // there on another device.
-                                spawn_server_change(
-                                    app,
-                                    message.row_id,
-                                    message.uid,
-                                    message.subject.clone(),
-                                    ServerChange::Flag(FlagChange::Flagged(starred)),
-                                );
-                            }
-                            remember_the_last_action(
-                                app.state,
-                                crate::application::undoing::LastAction::Marked {
-                                    mark: crate::application::undoing::Mark::Starred(starred),
-                                    before: as_they_were(&chosen.messages, &[]),
-                                },
-                            );
-                            msg_list.refresh(true, None);
-                            let outcome = if starred {
-                                Outcome::Starred
-                            } else {
-                                Outcome::Unstarred
+                            let Ok(outcome) =
+                                star_these(app, &message_cache, &msg_list, &chosen, starred)
+                            else {
+                                return;
                             };
                             let said = what_was_done(&chosen, &outcome);
                             let _ = a11y.announce(
@@ -11260,13 +11210,12 @@ fn how_far_a_conversation_delete_reaches() -> crate::application::conversations:
 /// Over the selection since 2026-09-19 (#30): read when any chosen message
 /// is unread, else unread, which is what the label says it will do; a
 /// conversation row contributes every message of it, so the thread is
-/// marked from its row, which is the last sentence of #27. Each row in
-/// state is flipped and written before the next, the server is told about
-/// each through the queue one message uses, and one sentence is announced,
-/// the one word under the key for one message row and the count otherwise,
-/// with `Confirmed` signalled once so the earcon channel hears it. The
-/// server puts a row back if it refuses. Then the command's words are
-/// refreshed, so what the item says after the toggle is what the state is.
+/// marked from its row, which is the last sentence of #27. The marking is
+/// [`mark_these_read`]'s, which says nothing (13-24); then one sentence is
+/// announced, the one word under the key for one message row and the count
+/// otherwise, with `Confirmed` signalled once so the earcon channel hears
+/// it. Then the command's words are refreshed, so what the item says after
+/// the toggle is what the state is.
 fn toggle_read_state(
     app: AppHandles<'_>,
     a11y: &Accessibility,
@@ -11276,9 +11225,7 @@ fn toggle_read_state(
     list: &ListCtrl,
     cache: &Option<Arc<MessageCache>>,
 ) {
-    use crate::application::choosing_messages::{
-        Outcome, too_many, what_mark_read_does, what_was_done,
-    };
+    use crate::application::choosing_messages::{too_many, what_mark_read_does, what_was_done};
     let AppHandles { state, tx, rt } = app;
     let chosen = match chosen_messages(
         state,
@@ -11296,55 +11243,10 @@ fn toggle_read_state(
         return send_refusal(tx, rt, &why);
     }
     let new_read = what_mark_read_does(&chosen);
-    for message in &chosen.messages {
-        {
-            let mut s = lock_state(state);
-            if let Some(row) = s
-                .messages
-                .iter_mut()
-                .find(|row| row.message_id == message.row_id)
-            {
-                row.read = new_read;
-            }
-        }
-        // Kept here first, and the server told only if it stuck. A write
-        // the cache refused puts the row back and says why, once, and a
-        // cache that refused one will refuse the rest, so the loop stops.
-        if let Some(cache) = cache.as_ref()
-            && !write_flags_or_put_the_row_back(
-                cache,
-                state,
-                tx,
-                message.row_id,
-                (new_read, message.starred),
-                (message.read, message.starred),
-            )
-        {
-            list.refresh(true, None);
-            return;
-        }
-        spawn_server_change(
-            app,
-            message.row_id,
-            message.uid,
-            message.subject.clone(),
-            ServerChange::Flag(FlagChange::Read(new_read)),
-        );
-    }
-    remember_the_last_action(
-        state,
-        crate::application::undoing::LastAction::Marked {
-            mark: crate::application::undoing::Mark::Read(new_read),
-            before: as_they_were(&chosen.messages, &[]),
-        },
-    );
-    list.refresh(true, None);
-    let word = crate::application::marking_read::what_the_key_says(new_read);
-    let outcome = if new_read {
-        Outcome::MarkedRead
-    } else {
-        Outcome::MarkedUnread
+    let Ok(outcome) = mark_these_read(app, cache, list, &chosen, new_read) else {
+        return;
     };
+    let word = crate::application::marking_read::what_the_key_says(new_read);
     let done = what_was_done(&chosen, &outcome);
     let said = match (how, chosen.the_one_message()) {
         (How::TheKey, Some(_)) => word.to_string(),
@@ -11362,6 +11264,145 @@ fn toggle_read_state(
     };
     let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
     refresh_mark_read_wording(frame, toolbar, state, list);
+}
+
+/// A do-half stopped at a write this computer refused. The row is put back
+/// and the reason said where the write was refused, and the list is
+/// refreshed, so the command that called it says nothing more.
+struct StoppedAtARefusedWrite;
+
+/// Mark each chosen message read or unread, here and at its server, and say
+/// nothing: Mark as Read's do-half (13-24), the piece 13-24.1's runner
+/// calls as well as the command.
+///
+/// Each row in state is set and written before the next, and the server is
+/// told about each through the queue one message uses, which puts a row
+/// back if the server refuses. Remembered for Edit, Undo once every write
+/// is made, and the list refreshed. Answers the outcome the command words.
+fn mark_these_read(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    list: &ListCtrl,
+    chosen: &crate::application::choosing_messages::Chosen,
+    read: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
+    for message in &chosen.messages {
+        {
+            let mut s = lock_state(state);
+            if let Some(row) = s
+                .messages
+                .iter_mut()
+                .find(|row| row.message_id == message.row_id)
+            {
+                row.read = read;
+            }
+        }
+        // Kept here first, and the server told only if it stuck. A write
+        // the cache refused puts the row back and says why, once, and a
+        // cache that refused one will refuse the rest, so the loop stops.
+        if let Some(cache) = cache.as_ref()
+            && !write_flags_or_put_the_row_back(
+                cache,
+                state,
+                tx,
+                message.row_id,
+                (read, message.starred),
+                (message.read, message.starred),
+            )
+        {
+            list.refresh(true, None);
+            return Err(StoppedAtARefusedWrite);
+        }
+        spawn_server_change(
+            app,
+            message.row_id,
+            message.uid,
+            message.subject.clone(),
+            ServerChange::Flag(FlagChange::Read(read)),
+        );
+    }
+    remember_the_last_action(
+        state,
+        crate::application::undoing::LastAction::Marked {
+            mark: crate::application::undoing::Mark::Read(read),
+            before: as_they_were(&chosen.messages, &[]),
+        },
+    );
+    list.refresh(true, None);
+    Ok(match read {
+        true => Outcome::MarkedRead,
+        false => Outcome::MarkedUnread,
+    })
+}
+
+/// Star or unstar each chosen message, here and at its server, and say
+/// nothing: Star's do-half (13-24), the piece 13-24.1's runner calls as
+/// well as the command.
+///
+/// Each row is flipped and kept here before the next, and the server told
+/// about each, so the flag is still there on another device. Remembered for
+/// Edit, Undo once every write is made, and the list refreshed. Answers the
+/// outcome the command words.
+fn star_these(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    list: &ListCtrl,
+    chosen: &crate::application::choosing_messages::Chosen,
+    starred: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
+    for message in &chosen.messages {
+        {
+            let mut s = lock_state(state);
+            if let Some(row) = s
+                .messages
+                .iter_mut()
+                .find(|row| row.message_id == message.row_id)
+            {
+                row.starred = starred;
+            }
+        }
+        // Nothing is confirmed and nothing goes to the server unless it was
+        // kept here first. This used to log the refusal and then say
+        // "Flagged" and play the tone that means it worked. A cache that
+        // refused one write will refuse the rest, so the loop stops at the
+        // first.
+        if let Some(cache) = cache.as_ref()
+            && !write_flags_or_put_the_row_back(
+                cache,
+                state,
+                tx,
+                message.row_id,
+                (message.read, starred),
+                (message.read, message.starred),
+            )
+        {
+            list.refresh(true, None);
+            return Err(StoppedAtARefusedWrite);
+        }
+        spawn_server_change(
+            app,
+            message.row_id,
+            message.uid,
+            message.subject.clone(),
+            ServerChange::Flag(FlagChange::Flagged(starred)),
+        );
+    }
+    remember_the_last_action(
+        state,
+        crate::application::undoing::LastAction::Marked {
+            mark: crate::application::undoing::Mark::Starred(starred),
+            before: as_they_were(&chosen.messages, &[]),
+        },
+    );
+    list.refresh(true, None);
+    Ok(match starred {
+        true => Outcome::Starred,
+        false => Outcome::Unstarred,
+    })
 }
 
 /// Whether any selected row is unread: a message row's own flag, or on a
@@ -11767,8 +11808,8 @@ fn attach_labels(
 /// Over the selection since 2026-09-19 (#30): the label goes on when any
 /// chosen message lacks it, else comes off, which for one message is the
 /// toggle it always was; a conversation row contributes every message of
-/// it. Each message is written and the server told about it before the
-/// next, and one sentence says the label and the count.
+/// it. The labelling is [`label_these`]'s, which says nothing (13-24), and
+/// one sentence says the label and the count.
 fn label_the_message(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
@@ -11777,7 +11818,7 @@ fn label_the_message(
     number: Option<usize>,
 ) {
     let AppHandles { state, tx, rt } = app;
-    use crate::application::choosing_messages::{Outcome, too_many, what_was_done};
+    use crate::application::choosing_messages::{too_many, what_was_done};
     use crate::application::tagging;
     use crate::presentation::accessibility::announcements::Priority;
 
@@ -11805,30 +11846,98 @@ fn label_the_message(
         return send_refusal(tx, rt, "No account is open.");
     };
 
-    let labels = match labels_for(cache_handle, &account_id) {
-        Ok(labels) => labels,
+    let held = match TheLabelsOnTheSet::read(cache_handle, &account_id, &chosen) {
+        Ok(held) => held,
         // Not swallowed: no labels and labels that could not be read look the
         // same from the outside and are different problems.
         Err(e) => return send_status(tx, rt, &format!("The labels could not be read: {e}.")),
     };
-    let on_each: Vec<Vec<String>> = chosen
-        .messages
-        .iter()
-        .map(|message| {
-            cache_handle
-                .get_tags_for_message(message.row_id)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|tag| tag.name)
-                .collect()
-        })
-        .collect();
-    // Each message's labels as they were, for Edit, Undo to put back.
-    let before = {
-        let labels_on_each: Vec<Vec<crate::application::undoing::Label>> = on_each
+    let change = match number {
+        None => LabelChange::AllOff,
+        Some(number) => {
+            let Some(label) = tagging::at_number(&held.labels, number) else {
+                return send_status(tx, rt, &tagging::nothing_there(number));
+            };
+            LabelChange::One {
+                on: held.goes_on(&label.name),
+                label: label.clone(),
+            }
+        }
+    };
+    let outcome = match label_these(app, cache_handle, &chosen, &held, change) {
+        Ok(outcome) => outcome,
+        Err(why) => return send_status(tx, rt, &why),
+    };
+
+    // Spoken rather than left in the status line. A label is not visible from
+    // the row it is on, so somebody who pressed the wrong number has no other
+    // way to find out what they just did. Once for the set, and written for
+    // the eye.
+    let said = what_was_done(&chosen, &outcome);
+    let _ = a11y.announce(&said, Priority::Normal);
+    send_shown(tx, rt, &said);
+}
+
+/// What a label command does to the chosen messages.
+enum LabelChange {
+    /// Every label on them comes off.
+    AllOff,
+    /// This label goes on, or comes off.
+    One {
+        label: crate::data::message_cache::Tag,
+        on: bool,
+    },
+}
+
+/// The labels an account has and the names on each chosen message, read
+/// once for a label command over the set.
+struct TheLabelsOnTheSet {
+    /// Every label the account has, the starting five made if it had none.
+    labels: Vec<crate::data::message_cache::Tag>,
+    /// The names of the labels on each chosen message, in the set's order.
+    on_each: Vec<Vec<String>>,
+}
+
+impl TheLabelsOnTheSet {
+    fn read(
+        cache: &MessageCache,
+        account_id: &str,
+        chosen: &crate::application::choosing_messages::Chosen,
+    ) -> crate::common::Result<Self> {
+        let labels = labels_for(cache, account_id)?;
+        let on_each = chosen
+            .messages
+            .iter()
+            .map(|message| {
+                cache
+                    .get_tags_for_message(message.row_id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|tag| tag.name)
+                    .collect()
+            })
+            .collect();
+        Ok(Self { labels, on_each })
+    }
+
+    /// Whether the label named goes on: when any chosen message lacks it,
+    /// which for one message is the toggle it always was.
+    fn goes_on(&self, name: &str) -> bool {
+        self.on_each
+            .iter()
+            .any(|on_it| crate::application::tagging::turns_on(on_it, name))
+    }
+
+    /// Each message's labels as they were, for Edit, Undo to put back.
+    fn before_the_change(
+        &self,
+        chosen: &crate::application::choosing_messages::Chosen,
+    ) -> Vec<crate::application::undoing::Before> {
+        let labels_on_each: Vec<Vec<crate::application::undoing::Label>> = self
+            .on_each
             .iter()
             .map(|on_it| {
-                labels
+                self.labels
                     .iter()
                     .filter(|tag| on_it.contains(&tag.name))
                     .map(crate::application::undoing::Label::from)
@@ -11836,14 +11945,34 @@ fn label_the_message(
             })
             .collect();
         as_they_were(&chosen.messages, &labels_on_each)
-    };
+    }
+}
 
-    let (outcome, action) = match number {
-        None => {
+/// Put a label on the chosen messages or take labels off, here and at the
+/// server, and say nothing: a label's do-half (13-24), the piece 13-24.1's
+/// runner calls as well as the command.
+///
+/// Each message is written and the server told about it before the next.
+/// A message that already has the label going on, or lacks the one coming
+/// off, is passed over. Remembered for Edit, Undo once every write is made.
+/// Answers the outcome the command words, or the sentence saying the label
+/// did not stick, which the command says in place of the outcome.
+fn label_these(
+    app: AppHandles<'_>,
+    cache: &MessageCache,
+    chosen: &crate::application::choosing_messages::Chosen,
+    held: &TheLabelsOnTheSet,
+    change: LabelChange,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, String> {
+    use crate::application::choosing_messages::Outcome;
+    use crate::application::tagging;
+    let before = held.before_the_change(chosen);
+    let (outcome, action) = match change {
+        LabelChange::AllOff => {
             let mut removed = 0;
-            for (message, on_it) in chosen.messages.iter().zip(&on_each) {
-                for tag in labels.iter().filter(|tag| on_it.contains(&tag.name)) {
-                    if cache_handle
+            for (message, on_it) in chosen.messages.iter().zip(&held.on_each) {
+                for tag in held.labels.iter().filter(|tag| on_it.contains(&tag.name)) {
+                    if cache
                         .remove_tag_from_message(message.row_id, &tag.id)
                         .is_err()
                     {
@@ -11873,26 +12002,18 @@ fn label_the_message(
                 crate::application::undoing::LastAction::LabelsRemoved { before },
             )
         }
-        Some(number) => {
-            let Some(label) = tagging::at_number(&labels, number) else {
-                return send_status(tx, rt, &tagging::nothing_there(number));
-            };
-            // On when any chosen message lacks it, which for one message is
-            // the toggle it always was.
-            let turning_on = on_each
-                .iter()
-                .any(|on_it| tagging::turns_on(on_it, &label.name));
-            for (message, on_it) in chosen.messages.iter().zip(&on_each) {
-                if tagging::turns_on(on_it, &label.name) != turning_on {
+        LabelChange::One { label, on } => {
+            for (message, on_it) in chosen.messages.iter().zip(&held.on_each) {
+                if tagging::turns_on(on_it, &label.name) != on {
                     continue;
                 }
-                let written = if turning_on {
-                    cache_handle.add_tag_to_message(message.row_id, &label.id)
+                let written = if on {
+                    cache.add_tag_to_message(message.row_id, &label.id)
                 } else {
-                    cache_handle.remove_tag_from_message(message.row_id, &label.id)
+                    cache.remove_tag_from_message(message.row_id, &label.id)
                 };
                 if let Err(e) = written {
-                    return send_status(tx, rt, &format!("The label did not stick: {e}."));
+                    return Err(format!("The label did not stick: {e}."));
                 }
                 // And the server, so the label is there on another device
                 // and in whatever client somebody opens next. A label with
@@ -11907,7 +12028,7 @@ fn label_the_message(
                         message.subject.clone(),
                         ServerChange::Flag(FlagChange::Labelled {
                             keyword,
-                            on: turning_on,
+                            on,
                             name: label.name.clone(),
                         }),
                     ),
@@ -11917,14 +12038,14 @@ fn label_the_message(
                     ),
                 }
             }
-            let outcome = if turning_on {
+            let outcome = if on {
                 Outcome::Labelled(label.name.clone())
             } else {
                 Outcome::Unlabelled(label.name.clone())
             };
             let mark = crate::application::undoing::Mark::Label {
-                label: crate::application::undoing::Label::from(label),
-                on: turning_on,
+                label: crate::application::undoing::Label::from(&label),
+                on,
             };
             (
                 outcome,
@@ -11932,15 +12053,8 @@ fn label_the_message(
             )
         }
     };
-    remember_the_last_action(state, action);
-
-    // Spoken rather than left in the status line. A label is not visible from
-    // the row it is on, so somebody who pressed the wrong number has no other
-    // way to find out what they just did. Once for the set, and written for
-    // the eye.
-    let said = what_was_done(&chosen, &outcome);
-    let _ = a11y.announce(&said, Priority::Normal);
-    send_shown(tx, rt, &said);
+    remember_the_last_action(app.state, action);
+    Ok(outcome)
 }
 
 /// This account's labels, making the starting five if it has none yet.
