@@ -279,8 +279,8 @@ fn the_body_in(source: &str, signature: &str) -> String {
     after.split("\n}\n").next().unwrap_or_default().to_string()
 }
 
-/// Whether the asking hands a Google token to `where_to_ask`, fetched inside
-/// the worker rather than on the thread drawing the window.
+/// Whether the asking hands a Google token to `every_place_to_ask`, fetched
+/// inside the worker rather than on the thread drawing the window.
 ///
 /// A token that has run out is refreshed over the network, and fetched on the
 /// window's thread that refresh freezes the event form while it waits.
@@ -288,13 +288,64 @@ fn asks_google_from_the_worker(asking: &str) -> bool {
     let Some((on_the_windows_thread, in_the_worker)) = asking.split_once("rt.spawn(") else {
         return false;
     };
-    let handed_to_where_to_ask = in_the_worker
-        .split_once("where_to_ask(")
+    let handed_to_every_place = in_the_worker
+        .split_once("every_place_to_ask(")
         .and_then(|(_, call)| call.split_once(");"))
         .is_some_and(|(arguments, _)| arguments.contains("GOOGLE_CALENDAR_BASE"));
     !on_the_windows_thread.contains("a_google_token_for(")
         && in_the_worker.contains("a_google_token_for(")
-        && handed_to_where_to_ask
+        && handed_to_every_place
+}
+
+/// Whether the worker asks every place the account keeps a calendar at, and
+/// asks everybody at each, rather than picking one.
+///
+/// Every place is built, and the whole list goes to the questions as it came:
+/// a list cut short on the way asks the first place and leaves everybody whose
+/// diary is at the others unknown, when one of those could have said.
+fn asks_every_place(asking: &str) -> bool {
+    let Some((_, in_the_worker)) = asking.split_once("rt.spawn(") else {
+        return false;
+    };
+    in_the_worker.contains("let places = asking_when_free::every_place_to_ask(")
+        && in_the_worker.contains("questions_for_every_place(places, people)")
+}
+
+#[test]
+fn test_find_when_everyone_is_free_asks_every_place_the_account_has() {
+    let source = std::fs::read_to_string("src/presentation/managers.rs")
+        .unwrap_or_else(|why| panic!("src/presentation/managers.rs: {why}"));
+    let asking = the_body_in(&source, "fn asking_when_people_are_free(");
+
+    assert!(
+        asks_every_place(&asking),
+        "Find when everyone is free asks one place rather than every place the \
+         account keeps a calendar at:\n{asking}"
+    );
+}
+
+#[test]
+fn test_the_reading_of_the_asking_sees_a_single_place_planted_back() {
+    let one_place = "fn asking_when_people_are_free() {\n    \
+                     rt.spawn(async move {\n        \
+                     let where_to = asking_when_free::where_to_ask(&calendars, load, token, \
+                     google);\n        \
+                     let questions = asking_when_free::one_question(where_to, people);\n    \
+                     });\n}\n";
+    let cut_short = "fn asking_when_people_are_free() {\n    \
+                     rt.spawn(async move {\n        \
+                     let places = asking_when_free::every_place_to_ask(&calendars, load, \
+                     token, google);\n        \
+                     let questions = asking_when_free::questions_for_every_place(\
+                     places.into_iter().take(1).collect(), people);\n    \
+                     });\n}\n";
+
+    for planted in [one_place, cut_short] {
+        assert!(
+            !asks_every_place(&the_body_in(planted, "fn asking_when_people_are_free(")),
+            "{planted}"
+        );
+    }
 }
 
 #[test]
@@ -358,7 +409,7 @@ fn test_the_reading_of_the_asking_sees_a_google_token_fetched_on_the_windows_thr
                    let google = a_google_token_for(&account);\n    \
                    rt.spawn(async move {\n        \
                    let google = a_google_token_for(&asking_for).await;\n        \
-                   let where_to = where_to_ask(&calendars, load, token, \
+                   let places = every_place_to_ask(&calendars, load, token, \
                    google.map(|token| (GOOGLE_CALENDAR_BASE, token)));\n    \
                    });\n}\n";
 
