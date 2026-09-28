@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 435 records have arrived since and have not been through it.
+# 436 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -31301,14 +31301,16 @@ tests_last_seen = [
 # Edit, Undo would unread a message nobody marked and lose what somebody did.
 # Written 2026-09-25 by 13-07, the break taken by hand against `cargo test
 # --test undoing_a_mark_names_the_message` first: the reading of the program's
-# own mark went red and nothing else in the target did.
+# own mark went red and nothing else in the target did. The signature it
+# anchors on gained the store on 2026-09-28 (13-24.1), so the folder the mark
+# goes to is read when it is asked for; rewritten and re-measured then.
 [[guard]]
 name = "the mark after the reading wait is not remembered as somebody's action"
 file = "src/presentation/wx_app.rs"
 suite = "undoing_a_mark_names_the_message"
-before = '''fn mark_what_was_read(app: AppHandles<'_>) {
+before = '''fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     let AppHandles { state, tx, rt } = app;'''
-after = '''fn mark_what_was_read(app: AppHandles<'_>) {
+after = '''fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     let AppHandles { state, tx, rt } = app;
     remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });'''
 red = [
@@ -33609,7 +33611,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 11 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
 ]
 
 # The runner meets no gate: an account whose changes are off has its
@@ -33634,5 +33636,25 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 11 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
+]
+
+# The flag's worker reads the message's folder again when it runs, rather
+# than naming the folder read when the change was asked for: a move recorded
+# in between sends the flag to the folder the message is going to with the
+# number it had in the folder it left (RESEARCH-4, F4). Written 2026-09-28 by
+# 13-24.1.
+[[guard]]
+name = "a flag change names the folder it was asked in, not the one it is in when the worker runs"
+file = "src/presentation/wx_app.rs"
+suite = "several_actions_reach_the_server_in_order"
+before = '''        let Some(folder_path) = asked_in else {'''
+after = '''        let _ = asked_in;
+        let Some(folder_path) = cache.folder_path_for_message(message_row_id).ok().flatten() else {'''
+red = [
+    "test_a_flag_change_names_the_folder_it_was_asked_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
 ]

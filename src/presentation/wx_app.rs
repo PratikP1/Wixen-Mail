@@ -6235,7 +6235,7 @@ impl WxMailApp {
                         tx: &ui_tx,
                         rt: &runtime,
                     };
-                    mark_what_was_read(app);
+                    mark_what_was_read(app, &message_cache);
 
                     // Whether this computer still has a network. On this timer
                     // and on its own interval, for the same reason the
@@ -11195,6 +11195,7 @@ fn mark_these_read(
             message.row_id,
             message.uid,
             message.subject.clone(),
+            the_folder_it_is_in(cache.as_deref(), message.row_id),
             ServerChange::Flag(FlagChange::Read(read)),
         );
     }
@@ -11263,6 +11264,7 @@ fn star_these(
             message.row_id,
             message.uid,
             message.subject.clone(),
+            the_folder_it_is_in(cache.as_deref(), message.row_id),
             ServerChange::Flag(FlagChange::Flagged(starred)),
         );
     }
@@ -11410,7 +11412,7 @@ fn as_they_were(
 /// until 2026-09-20 (#91) that value was captured where the window was
 /// built, so a wait changed in Settings governed the next start and never
 /// the next tick.
-fn mark_what_was_read(app: AppHandles<'_>) {
+fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     let AppHandles { state, tx, rt } = app;
 
     let marked = {
@@ -11447,6 +11449,7 @@ fn mark_what_was_read(app: AppHandles<'_>) {
         row,
         uid,
         subject,
+        the_folder_it_is_in(cache.as_deref(), row),
         ServerChange::Flag(FlagChange::Read(true)),
     );
 }
@@ -11863,6 +11866,7 @@ fn label_these(
                             message.row_id,
                             message.uid,
                             message.subject.clone(),
+                            the_folder_it_is_in(Some(cache), message.row_id),
                             ServerChange::Flag(FlagChange::Labelled {
                                 keyword,
                                 on: false,
@@ -11901,6 +11905,7 @@ fn label_these(
                         message.row_id,
                         message.uid,
                         message.subject.clone(),
+                        the_folder_it_is_in(Some(cache), message.row_id),
                         ServerChange::Flag(FlagChange::Labelled {
                             keyword,
                             on,
@@ -19891,6 +19896,7 @@ fn put_a_mark_on(
             message.row_id,
             message.uid,
             message.subject.clone(),
+            the_folder_it_is_in(Some(cache), message.row_id),
             ServerChange::Flag(change),
         );
     }
@@ -24248,6 +24254,7 @@ fn delete_these(
                 ask.asked.message_row_id,
                 ask.asked.uid,
                 ask.subject,
+                Some(ask.asked.from_folder_path),
                 ServerChange::Deleted(asked),
             )
         },
@@ -25858,6 +25865,14 @@ impl FlagChange {
     }
 }
 
+/// The folder a message is in as a change to it is asked for, which is the
+/// folder [`spawn_server_change`] names to the server whatever moves after
+/// it (RESEARCH-4, F4). Nothing when there is no store open or the message
+/// is in no folder it knows, which the worker refuses.
+fn the_folder_it_is_in(cache: Option<&MessageCache>, row_id: i64) -> Option<String> {
+    cache?.folder_path_for_message(row_id).ok().flatten()
+}
+
 /// Tell the server about a change to a message.
 ///
 /// Flag changes were written to the local cache and nowhere else, so a message
@@ -25873,11 +25888,22 @@ impl FlagChange {
 /// Deleting is not done that way. It is destructive and it cannot be put back
 /// by sending an update, so the server is asked first and the row only leaves
 /// the list once the server has agreed.
+///
+/// `asked_in` is the folder the message was in when the change was asked
+/// for, read by the caller at that moment (13-24.1, RESEARCH-4 F4). Until
+/// 2026-09-28 the worker read it when it ran, and a move recorded here in
+/// between, which a run of several actions makes routine and M then
+/// Ctrl+Shift+V pressed quickly made possible, had the worker send the flag
+/// to the folder the message was going to with the number it had in the
+/// folder it left: a mark on whatever message holds that number there.
+/// Nothing when the message is in no folder this program knows, which the
+/// worker refuses as it always did.
 fn spawn_server_change(
     app: AppHandles<'_>,
     message_row_id: i64,
     uid: u32,
     subject: String,
+    asked_in: Option<String>,
     change: ServerChange,
 ) {
     let AppHandles { state, tx, rt } = app;
@@ -25945,12 +25971,9 @@ fn spawn_server_change(
                 return;
             }
         };
-        let folder_path = match cache.folder_path_for_message(message_row_id) {
-            Ok(Some(path)) => path,
-            _ => {
-                refuse("the message is not in a folder we know about".to_string());
-                return;
-            }
+        let Some(folder_path) = asked_in else {
+            refuse("the message is not in a folder we know about".to_string());
+            return;
         };
 
         // Deleting is answered here and goes no further. Where a deleted

@@ -204,7 +204,11 @@ fn the_timer_asks_the_rule(app: &str) -> Result<(), String> {
     }
     // Called with the handles alone since 11-11.1.1 (#91): the wait is read
     // from the state inside, not handed in from a value captured at startup.
-    if !app.contains("mark_what_was_read(app)") {
+    // The store came beside the handles on 2026-09-28 (13-24.1), so the
+    // folder the mark goes to is read when it is asked for; the wait still
+    // is not handed in, which `a_setting_saved_applies_without_a_restart`
+    // reads from the signature.
+    if !app.contains("mark_what_was_read(app, &message_cache)") {
         return Err(
             "nothing calls mark_what_was_read, so the timer never marks anything".to_string(),
         );
@@ -317,7 +321,7 @@ fn a_window_as_it_should_be() -> String {
          fn wire_read_aloud<F>(\n    match read_aloud::what_a_press_starts(depth) {{\n        read_aloud::WhatBegan::TheWholeReading => on_whole(selected),\n        read_aloud::WhatBegan::Nothing => {{}}\n    }}\n}}\n\
          fn open_single_message(\n    lock_state(state).reading_began = Some((message.message_id, now));\n}}\n\
          fn mark_what_was_read(\n    let mark = whether_to_mark_read(began, selected_unread, now, s.marks_read);\n}}\n\
-         mark_what_was_read(app);\n",
+         mark_what_was_read(app, &message_cache);\n",
         THE_READ_ALOUD_WIRING.0, THE_READ_ALOUD_WIRING.1
     )
 }
