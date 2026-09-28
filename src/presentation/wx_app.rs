@@ -34910,7 +34910,13 @@ fn block_the_sender(
         junk_folder = blocking::TheJunkFolder::IsNotBeingDownloaded;
     }
     told(
-        &blocking::what_blocking_did(&block, &junk, allowed, junk_folder),
+        &blocking::what_blocking_did(
+            &block,
+            &junk,
+            allowed,
+            junk_folder,
+            blocking::MailAlreadyHere::Nothing,
+        ),
         Priority::Normal,
     );
 }

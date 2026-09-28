@@ -583,13 +583,44 @@ pub fn what_blocking_will_do(
     )
 }
 
+/// What became of the mail already here that a new block catches (13-25).
+///
+/// A block is a rule run on mail as it arrives, so what was here before it
+/// is a separate question, asked once with the count, and the sentence after
+/// the block says what the answer did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MailAlreadyHere {
+    /// None of it was here, so nothing is said about it.
+    Nothing,
+    /// This many were here and stay where they are: the question was
+    /// answered No, or nothing may be moved on the server.
+    Left(usize),
+    /// Moved into the junk folder, and how many of those caught were not.
+    Moved { moved: usize, not_moved: usize },
+    /// More were here than one command moves, so none were moved.
+    TooMany(usize),
+}
+
+/// The question asked once a block is made and mail it catches is already
+/// here: the count, who it is from and where it would go.
+pub fn the_question_about_mail_already_here(
+    block: &Block,
+    count: usize,
+    junk_folder: &str,
+) -> String {
+    let _ = (block, count, junk_folder);
+    String::new()
+}
+
 /// What to say once it has been made.
 pub fn what_blocking_did(
     block: &Block,
     junk_folder: &str,
     allowed: Allowed,
     junk: TheJunkFolder,
+    here: MailAlreadyHere,
 ) -> String {
+    let _ = here;
     format!(
         "{} now goes to {junk_folder}.{} {WHAT_IT_DOES_NOT_DO}{}",
         whose_mail(block),
@@ -1650,6 +1681,7 @@ mod tests {
             "Junk",
             Allowed::EVERYTHING,
             TheJunkFolder::IsSwitchedOnByBlocking,
+            MailAlreadyHere::Nothing,
         );
 
         assert!(
@@ -1675,6 +1707,7 @@ mod tests {
             "Junk",
             Allowed::EVERYTHING,
             TheJunkFolder::IsNotBeingDownloaded,
+            MailAlreadyHere::Nothing,
         );
 
         assert!(
@@ -1692,7 +1725,13 @@ mod tests {
         // A line that says the nothings teaches somebody to stop listening to
         // the one that matters.
         let block = just_this_sender("spam@example.com").expect("an address");
-        let sentence = what_blocking_did(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
+        let sentence = what_blocking_did(
+            &block,
+            "Junk",
+            Allowed::EVERYTHING,
+            ALREADY_THERE,
+            MailAlreadyHere::Nothing,
+        );
 
         assert!(
             !sentence.contains("Folders to Keep Up to Date"),
@@ -1702,14 +1741,22 @@ mod tests {
 
     #[test]
     fn test_what_is_said_before_and_after_both_say_what_blocking_does_not_do() {
-        // Two things somebody will otherwise assume, and be wrong about for
-        // as long as it takes them to notice. Nothing is reported to the mail
-        // provider, and nothing already in the mailbox moves.
+        // Something somebody will otherwise assume, and be wrong about for as
+        // long as it takes them to notice: nothing is reported to the mail
+        // provider. Both sentences say so and say what does tell it (13-25);
+        // what happens to the mail already here is the question's, and the
+        // after sentence's cases below.
         let block = just_this_sender("spam@example.com").expect("an address");
 
         for sentence in [
             what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE),
-            what_blocking_did(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE),
+            what_blocking_did(
+                &block,
+                "Junk",
+                Allowed::EVERYTHING,
+                ALREADY_THERE,
+                MailAlreadyHere::Nothing,
+            ),
         ] {
             assert!(sentence.contains("spam@example.com"), "{sentence}");
             assert!(sentence.contains("Junk"), "{sentence}");
@@ -1718,10 +1765,155 @@ mod tests {
                 "the sentence did not say that the provider is not told: {sentence}"
             );
             assert!(
-                sentence.contains("already"),
-                "the sentence did not say what happens to mail already here: {sentence}"
+                sentence.contains("Report as Junk"),
+                "the sentence did not say what does tell the provider: {sentence}"
             );
         }
+    }
+
+    // ── The mail already here (13-25) ───────────────────────────────────
+
+    /// What a block said afterwards, with nothing else to say about the
+    /// junk folder or the setting, so each case hears only the mail already
+    /// here.
+    fn said_after(block: &Block, here: MailAlreadyHere) -> String {
+        what_blocking_did(block, "Junk", Allowed::EVERYTHING, ALREADY_THERE, here)
+    }
+
+    fn ada() -> Block {
+        just_this_sender("ada@example.com").expect("an address")
+    }
+
+    #[test]
+    fn test_the_question_names_the_count_the_sender_and_the_junk_folder() {
+        assert_eq!(
+            the_question_about_mail_already_here(&ada(), 14, "Junk"),
+            "Also move the 14 messages already here from ada@example.com to Junk?"
+        );
+    }
+
+    #[test]
+    fn test_the_question_about_one_message_is_in_the_singular() {
+        assert_eq!(
+            the_question_about_mail_already_here(&ada(), 1, "Junk"),
+            "Also move the one message already here from ada@example.com to Junk?"
+        );
+    }
+
+    #[test]
+    fn test_the_question_for_a_domain_block_names_anybody_there() {
+        let domain = everyone_at_the_senders_domain("ada@example.com").expect("a domain");
+
+        assert_eq!(
+            the_question_about_mail_already_here(&domain, 3, "Junk"),
+            "Also move the 3 messages already here from anybody at example.com to Junk?"
+        );
+    }
+
+    #[test]
+    fn test_the_question_says_a_large_count_as_one_number() {
+        let asked = the_question_about_mail_already_here(&ada(), 1234, "Junk");
+
+        assert!(asked.contains("the 1,234 messages"), "{asked}");
+    }
+
+    #[test]
+    fn test_before_a_block_nothing_promises_that_the_mail_already_here_stays() {
+        // It stays only if the answer is No, so the sentence before the
+        // question cannot say it does.
+        let before = what_blocking_will_do(&ada(), "Junk", Allowed::EVERYTHING, ALREADY_THERE);
+
+        assert!(!before.contains("stay where"), "{before}");
+        assert!(!before.contains("already arrived"), "{before}");
+    }
+
+    #[test]
+    fn test_a_block_with_nothing_already_here_says_nothing_about_it() {
+        let after = said_after(&ada(), MailAlreadyHere::Nothing);
+
+        assert!(!after.contains("already"), "{after}");
+    }
+
+    #[test]
+    fn test_mail_left_where_it_is_is_said_with_the_count() {
+        let after = said_after(&ada(), MailAlreadyHere::Left(14));
+
+        assert!(
+            after.contains("The 14 messages already here from them stay where they are."),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn test_one_message_left_where_it_is_is_said_in_the_singular() {
+        let after = said_after(&ada(), MailAlreadyHere::Left(1));
+
+        assert!(
+            after.contains("The message already here from them stays where it is."),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn test_mail_moved_is_said_with_the_count_and_the_folder_and_nothing_stays() {
+        let after = said_after(
+            &ada(),
+            MailAlreadyHere::Moved {
+                moved: 14,
+                not_moved: 0,
+            },
+        );
+
+        assert!(
+            after.contains("14 messages already here were moved to Junk."),
+            "{after}"
+        );
+        assert!(!after.contains("stay where"), "{after}");
+    }
+
+    #[test]
+    fn test_mail_partly_moved_says_how_many_were_not() {
+        let after = said_after(
+            &ada(),
+            MailAlreadyHere::Moved {
+                moved: 12,
+                not_moved: 2,
+            },
+        );
+
+        assert!(
+            after.contains("12 messages already here were moved to Junk, 2 were not."),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn test_mail_none_of_which_could_be_moved_says_so() {
+        let after = said_after(
+            &ada(),
+            MailAlreadyHere::Moved {
+                moved: 0,
+                not_moved: 3,
+            },
+        );
+
+        assert!(
+            after.contains("None of the 3 messages already here could be moved to Junk."),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn test_too_much_mail_already_here_moves_none_and_says_the_bound() {
+        let after = said_after(&ada(), MailAlreadyHere::TooMany(14_212));
+
+        assert!(
+            after.contains(
+                "14,212 messages from them are already here, more than the 5,000 one command \
+                 moves, so none were moved. Search for the sender and use Move to."
+            ),
+            "{after}"
+        );
     }
 
     #[test]
@@ -1730,7 +1922,13 @@ mod tests {
         // happen and one is about what has happened.
         let block = just_this_sender("spam@example.com").expect("an address");
         let before = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
-        let after = what_blocking_did(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
+        let after = what_blocking_did(
+            &block,
+            "Junk",
+            Allowed::EVERYTHING,
+            ALREADY_THERE,
+            MailAlreadyHere::Nothing,
+        );
 
         assert_ne!(before, after);
         assert!(before.contains("will go"), "{before}");
@@ -1756,7 +1954,13 @@ mod tests {
 
         for sentence in [
             what_blocking_will_do(&block, "Junk", Allowed::NOTHING, ALREADY_THERE),
-            what_blocking_did(&block, "Junk", Allowed::NOTHING, ALREADY_THERE),
+            what_blocking_did(
+                &block,
+                "Junk",
+                Allowed::NOTHING,
+                ALREADY_THERE,
+                MailAlreadyHere::Nothing,
+            ),
         ] {
             assert!(
                 sentence.contains("Allowed Changes"),
@@ -1860,8 +2064,30 @@ mod tests {
                     TheJunkFolder::IsNotBeingDownloaded,
                 ] {
                     every_sentence.push(what_blocking_will_do(block, "Junk", allowed, junk));
-                    every_sentence.push(what_blocking_did(block, "Junk", allowed, junk));
+                    for here in [
+                        MailAlreadyHere::Nothing,
+                        MailAlreadyHere::Left(1),
+                        MailAlreadyHere::Left(14),
+                        MailAlreadyHere::Moved {
+                            moved: 14,
+                            not_moved: 0,
+                        },
+                        MailAlreadyHere::Moved {
+                            moved: 12,
+                            not_moved: 2,
+                        },
+                        MailAlreadyHere::Moved {
+                            moved: 0,
+                            not_moved: 1,
+                        },
+                        MailAlreadyHere::TooMany(14_212),
+                    ] {
+                        every_sentence.push(what_blocking_did(block, "Junk", allowed, junk, here));
+                    }
                 }
+            }
+            for count in [1, 14] {
+                every_sentence.push(the_question_about_mail_already_here(block, count, "Junk"));
             }
         }
 
@@ -2190,7 +2416,13 @@ mod tests {
         let junk = TheJunkFolder::IsSwitchedOnByBlocking;
 
         let before = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, junk);
-        let after = what_blocking_did(&block, "Junk", Allowed::EVERYTHING, junk);
+        let after = what_blocking_did(
+            &block,
+            "Junk",
+            Allowed::EVERYTHING,
+            junk,
+            MailAlreadyHere::Nothing,
+        );
 
         assert!(before.contains("will switch it on"), "{before}");
         assert!(after.contains("has been switched on"), "{after}");
@@ -2221,6 +2453,7 @@ mod tests {
             "Junk",
             Allowed::EVERYTHING,
             TheJunkFolder::IsNotBeingDownloaded,
+            MailAlreadyHere::Nothing,
         );
 
         assert_ne!(promised, really);
@@ -2243,8 +2476,8 @@ mod tests {
         //
         //   "Mail from ada@list.example will go to Junk from now on. This
         //    does not tell your mail provider anything, so the mail is still
-        //    accepted and still arrives here. Messages that already arrived
-        //    stay where they are."
+        //    accepted and still arrives here. To tell a provider that takes
+        //    reports, use Report as Junk on the Action menu."
         //
         // Two things, and they say different things: the first is about the
         // list, the second about what a block does. Whether that is one clear
