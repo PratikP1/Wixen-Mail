@@ -254,9 +254,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   screen reader. Opening a message left your calendar as it was; the entry above changes
   that. A time an invitation named in the sender's own time zone was read as that time on
   your clock; the Fixed entry for an invitation from another time zone changes that. A
-  message whose text the download brought before this version still has no
-  record of its attachments, and opening it does not make one, so it lists none and its
-  meeting is not said.
+  message whose text the download brought before this version had no record of its
+  attachments; the Fixed entry for a message the download brought earlier changes that.
 - **File, Print prints what you are on, everywhere a message or an item is shown.** The tester
   on 2026-09-15 (#45): "Add print functionality." Press `Ctrl+P`, or choose Print on the File
   menu (letter P), and Windows' own print dialog opens, where you choose the printer, the
@@ -772,6 +771,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message the download brought earlier lists its attachments and says its meeting (ledger
+  633).** The download of everything used to keep a message's text and nothing about its
+  attachments, and the reader downloads nothing for a message whose text is here, so such a
+  message listed no attachments and a meeting it carried was never said. Now the first time
+  you select one whose row says it has attachments, it is downloaded once more, whole, from its
+  own account, and every attachment is kept with its file, as for a message opened any other
+  way. Nothing is said while that happens and the message is not read out a second time; when
+  it carries a meeting and is still in the preview, the preview loads once more with the
+  meeting at the top. It happens once per message, and never for mail collected over POP or
+  filed here, which has no server copy to ask. The download of everything still keeps each
+  attachment's name and a meeting's calendar document and no other file, because of the 512 MB
+  limit on kept files. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: an invitation sent only as part of the message's text, as
+  Outlook often sends one, is not found this way, because the server's description of such a
+  message says it has no attachment; a message you only ever open inside a conversation window
+  is not downloaded again; a reader window opened before the download finishes shows no
+  attachments until you open it again; nobody has heard it with a screen reader; and it has not
+  run against a real mail account.
+- **A message downloaded under All Inboxes comes from its own account.** Selecting a message
+  whose text was not here yet downloaded it through the account you last opened rather than the
+  one it is filed under, so under All Inboxes a message from your second account was asked of
+  your first account's server, and whatever that server held at the same place could be stored
+  in its stead. Both downloads on selection now go through the message's own account, and a
+  message whose account is not set up here is not downloaded. Known limitations: it has not
+  been tried with two real accounts.
 - **Outlook calendar events are shown, said and alerted at your hour (ledger 632).** Microsoft
   sends every Outlook event in universal time, because Wixen Mail does not ask it for another
   zone, and the calendar read that hour as an hour on your own clock. So a meeting at ten in

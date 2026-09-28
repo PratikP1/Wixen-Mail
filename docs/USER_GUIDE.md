@@ -703,9 +703,21 @@ it yet. Nobody has listened to the buttons with a screen reader yet, nor to the
 other clock the sentence says for a meeting set in another time zone, and no
 invitation from a real organiser in another time zone has been read here. The
 calendar shows and says such a meeting on your clock too, as Time zones under
-Other modules describes. A message whose text was downloaded in the background before this version has no
-record of its attachments, and opening it does not make one, so it lists none
-and its meeting is not said.
+Other modules describes.
+
+A message whose text was downloaded in the background before this version
+had no record of its attachments. The first time you select
+one, it is downloaded once more, whole, from its own account, and from then on
+it lists its attachments and says its meeting. Nothing is said while that
+happens, and the message is not read out a second time; if the preview is
+showing it when a meeting arrives, the preview loads once more with the
+meeting at the top. Three cases are not reached that way. An invitation sent
+only as part of the message's text rather than as a file, which is how
+Outlook often sends one, is not found, because the server's description of
+such a message says it carries no attachment. A message you only ever open
+inside a conversation window is not downloaded again. And a reader window
+opened in the moment before the download finishes shows no attachments;
+close it and open the message again.
 
 ### Signed and encrypted mail
 
@@ -1424,10 +1436,11 @@ row's at all.
 
 A message with attachments is announced as having them, and Wixen Mail does
 not use an icon for this: your screen reader hears it in words rather than
-having to identify a glyph. Select the message to see the attachments listed
-below the message body in the preview pane, or press `Alt+A` from inside an
-open message to jump straight to the list, in the formatted view and in the
-plain-text reader alike; `Alt+A` again goes back to the message. Until
+having to identify a glyph. The preview pane does not list them. Open the
+message with `Enter` to see them listed below the message body, and press
+`Alt+A` from inside the open message to jump straight to the list, in the
+formatted view and in the plain-text reader alike; `Alt+A` again goes back to
+the message. Until
 2026-09-18 the key was `F8`, and it worked only in the plain-text reader.
 
 ### Attachment Information

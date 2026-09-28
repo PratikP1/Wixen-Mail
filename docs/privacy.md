@@ -114,10 +114,16 @@ text is not here says so rather than fetching it.
 
 ### Attachments are kept too
 
-When you open a message, the files it carries are kept in the `cache` folder alongside its
-text. That is what lets you open an attachment a second time without waiting for the whole
-message to come down again, and what puts your files into an export. Like everything else in
-that folder, **they are not encrypted**.
+When you select or open a message whose files are not on this computer yet, the whole message
+is downloaded and the files it carries are kept in the `cache` folder alongside its text. That
+is what lets you open an attachment a second time without waiting for the whole message to
+come down again, and what puts your files into an export. Like everything else in that folder,
+**they are not encrypted**.
+
+The download of everything, which brings message text down in the background, keeps less: each
+attachment's name, type and size, and a meeting's calendar document, which is a few kilobytes
+of text. It keeps no other file. Those stay on your mail server until you select or open the
+message.
 
 This is more of your mail on disk than earlier versions kept, and it is worth knowing if you
 share the computer or carry it around. A single file is kept up to 25 MB, and all of them
