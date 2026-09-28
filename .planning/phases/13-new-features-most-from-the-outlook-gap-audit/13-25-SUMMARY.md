@@ -47,7 +47,7 @@ metrics:
 actuals:
   tokens: 19000
   tasks: 3
-  commits: 7
+  commits: 10
 ---
 
 # Phase 13 Plan 25: A block moves the mail already here, after one question
@@ -64,12 +64,12 @@ items say on the menu that the block is experimental.
 
 ## What works, and how it is known
 
-- **The pure catch.** `application::what_a_rule_catches_here`, 9 tests, green: the sender's
+- **The pure catch.** `application::what_a_rule_catches_here`, 11 tests, green: the sender's
   mail in the inbox and a folder of their own caught under both From spellings, Junk, Sent,
   Trash, Drafts and the Outbox passed over, a domain block catching two addresses and not
-  `example.com.evil.test`, somebody else not caught, an unlisted folder passed over, and no
-  messages. The rule is the one `a_rule_that_blocks` writes, read through
-  `from_persisted_rule`.
+  `example.com.evil.test`, somebody else not caught, an unlisted folder passed over, no
+  messages, and `the_messages_caught` turning the ids into the set the runner meets. The rule
+  is the one `a_rule_that_blocks` writes, read through `from_persisted_rule`.
 - **The sentences.** `application::blocking`, 79 tests (67 before), green: the question with
   the count, the singular, "anybody at example.com" and "1,234"; the before sentence no longer
   promising anything about mail already here; each `MailAlreadyHere` case's words; the
@@ -101,8 +101,17 @@ items say on the menu that the block is experimental.
 | `19fc74ff` | feat: the worker, the question, the move, the key; 2 records new, 3 re-measured | 342 s refused, then 273 s |
 | `307f920f` | red: the experimental reading, the count check | 81 s |
 | `fe808bd7` | feat: both Block descriptions say experimental; 2 re-measured | 286 s |
+| `99dedb75` | docs: the pages, the ledger, this summary, the marks | 110 s |
+| `b4d611df` | red, after CI: 2 rows for the caught messages as a set, the count check | 114 s |
+| `70d2c82b` | fix: the set built beside the catch, not in the window; 1 re-measured | 275 s |
 
-The documents commit follows, then the pull request and the merge.
+A second documents commit follows the fix, then the merge.
+
+CI on pull request 127, first run: Rustfmt, Clippy, Security Audit, both builds, the setup
+executable, the NVDA job and the Accessibility scan passed. The Test Suite failed on
+`test_nothing_else_in_the_presentation_layer_attaches_a_file` (deviation 9). "Tests that would
+notice" failed on its baseline, `test_the_share_of_history_before_red_green_is_computed_and_printed`
+finding no `.git` in the copy, which is ledger 458.
 
 ## Guard records
 
@@ -114,8 +123,9 @@ The documents commit follows, then the pull request and the merge.
 | a block counts the mail already here on a worker (new) | the read planted before the worker | the worker reading |
 
 Re-measured: the two unblocking records (blocking.rs 67 to 79), the runner's three (its target
-16 to 18), and the two new window records again at 15. Three `--remeasure` calls, one per green
-commit: 4 records in 473 s, 5 in 107 s, 2 in 41 s; every one reddened exactly its one test.
+16 to 18), the two new window records again at 15, and the Sent record again at 11 after CI's
+fix. Four `--remeasure` calls, one per green commit: 4 records in 473 s, 5 in 107 s, 2 in
+41 s, 1 in 154 s; every one reddened exactly its one test.
 "the block handler asks the message rather than a constant" was read: its anchor line did not
 move and its files' counts did not change. The arrived-since count went from 436 to 440.
 
@@ -135,8 +145,10 @@ move and its files' counts did not change. The arrived-since count went from 436
 Closed: 685 (the runner has a caller). Opened: 689 (`unrun-verify`, phase 14: the move at a
 real server), 690 (`unrun-verify`, the tester's ear: the question, Enter and Escape, the
 sequence of sentences, and whether `told` is heard twice), 691 (`todo`, premise 2 still true:
-a block uses the open account, a question for Pratik). Counts 691 total, 621 open, 70 fixed,
-0 waived, both halves.
+a block uses the open account, a question for Pratik), and after CI 692 (`todo`, the attach
+guard reads every file under `src/presentation` and its record names `wx_compose.rs` alone, so
+the hook runs it for none of the others). Counts 692 total, 622 open, 70 fixed, 0 waived, both
+halves.
 
 ## Deviations from Plan
 
@@ -168,6 +180,13 @@ did, and the refusal ended in its value. Reworded to "Filed in junk" and a value
 sentence. `a_locked_key_asks_for_its_passphrase` failed in the same run with "OpenClipboard
 failed" on six cases and passed on a rerun with nothing changed: a clipboard flake.
 
+**9. [Rule 1, after CI] The window built a `choosing_messages::Chosen` by hand**, and
+`tests/every_way_a_file_goes_on_a_message.rs` reads any `Chosen {` in `src/presentation` as a
+file attached outside the composer, because `attaching` has a `Chosen` too. The hook never ran
+that target for a change to `wx_app.rs`: its one guard record names `wx_compose.rs` alone
+(ledger 692). `the_messages_caught` moved into `what_a_rule_catches_here` as a red and green
+pair, which is where a pure conversion belongs and what 13-43 will want.
+
 **8. [Brief] Read-only Python** was used to count anchors in `wx_app.rs` and the ledger's rows
 and to print long lines of `STATE.md`; nothing was written by it. No `sed` or `awk`.
 
@@ -192,4 +211,4 @@ None. Each stub answered wrongly in its red commit only.
 
 ## Self-Check: PASSED
 
-The two created files exist; the six commits above are on the branch.
+The two created files exist; the nine commits above are on the branch.

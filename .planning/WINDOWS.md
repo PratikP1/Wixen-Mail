@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 621
+open_count: 622
 waived_count: 0
 fixed_count: 70
-total_count: 691
-last_updated: 2026-09-28T11:59:28.000Z
+total_count: 692
+last_updated: 2026-09-28T13:10:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -706,6 +706,7 @@ last_updated: 2026-09-28T11:59:28.000Z
 | 689 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, for phase 14: a block's move of the mail already here has not reached a real mail server. A check on an IMAP account and on Gmail: block a sender with several messages in the inbox and one in a folder of their own, answer Yes, and read from another client that the messages reached the junk folder and that the next check keeps them there; every test here reads the source or a pure function | open |  | 2026-09-28T11:59:28.000Z |  |
 | 690 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, the tester's ear: nobody has heard the block's question or its answer. Whether the question is read on open with its count, sender and folder; whether Enter answers Yes and Escape closes it (decision 4 says Escape answers No, and a Yes and No box with no Cancel may not answer Escape on Windows; closing it by any means leaves the mail, which the code treats as No); whether the sentence said before the block at High, then the question, then the sentence after it are one clear sequence; and whether block_the_sender's told, which both announces and sends a status line that is itself spoken, is heard twice | open |  | 2026-09-28T11:59:28.000Z |  |
 | 691 | 13 | todo | src/presentation/wx_app.rs | 34776 | 13-25, premise 2, still true on 2026-09-28: block_the_sender writes the block to the open account, held.active_account_id, not to the account the selected message is in. In All Inboxes the two differ, so a block on a message from a second account is written to the first account's rules and counts that account's mail. A question for Pratik, left unfixed because it is a decision about blocking and not about the move. Recommendation: block on the message's own account, as Report as Junk already does per message | open |  | 2026-09-28T11:59:28.000Z |  |
+| 692 | 13 | todo | tests/every_way_a_file_goes_on_a_message.rs | 264 | 13-25, found by CI: test_nothing_else_in_the_presentation_layer_attaches_a_file reads every file under src/presentation for a Chosen spelled by hand, and the one guard record naming its target, "every route that attaches a file goes through the one model", has file = src/presentation/wx_compose.rs, so the commit hook runs it for a change to wx_compose.rs and to no other presentation file. 13-25 built a choosing_messages::Chosen in wx_app.rs, which the test reads as an attachment, and only CI's Test Suite saw it. Recommendation: a record whose file is wx_app.rs and whose break plants a Chosen literal there, so the hook couples the target to the window as well; the textual match on "Chosen {" also meets choosing_messages::Chosen, which 13-42 and 13-44 may build | open |  | 2026-09-28T13:10:00.000Z |  |
 
 ````json
 [
@@ -8999,6 +9000,18 @@ last_updated: 2026-09-28T11:59:28.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T11:59:28.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 692,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/every_way_a_file_goes_on_a_message.rs",
+    "line": 264,
+    "description": "13-25, found by CI: test_nothing_else_in_the_presentation_layer_attaches_a_file reads every file under src/presentation for a Chosen spelled by hand, and the one guard record naming its target, \"every route that attaches a file goes through the one model\", has file = src/presentation/wx_compose.rs, so the commit hook runs it for a change to wx_compose.rs and to no other presentation file. 13-25 built a choosing_messages::Chosen in wx_app.rs, which the test reads as an attachment, and only CI's Test Suite saw it. Recommendation: a record whose file is wx_app.rs and whose break plants a Chosen literal there, so the hook couples the target to the window as well; the textual match on \"Chosen {\" also meets choosing_messages::Chosen, which 13-42 and 13-44 may build",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T13:10:00.000Z",
     "resolved_at": null
   }
 ]

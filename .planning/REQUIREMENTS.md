@@ -6240,7 +6240,7 @@ stays at 122.
     the Outbox, through `FilterEngine::matches`; one question with the count, the sender and
     the junk folder; Yes moves it through `run_these_actions_over`; the sentence after says
     how many moved, how many stayed, or the 5,000 bound. Held by
-    `application::what_a_rule_catches_here::tests` (9), among them
+    `application::what_a_rule_catches_here::tests` (11), among them
     `test_the_senders_mail_in_the_inbox_and_in_a_folder_of_their_own_is_caught`;
     `application::blocking::tests` (79), among them
     `test_mail_moved_is_said_with_the_count_and_the_folder_and_nothing_stays`,
