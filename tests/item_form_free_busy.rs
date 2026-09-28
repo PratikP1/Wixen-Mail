@@ -310,6 +310,48 @@ fn test_find_when_everyone_is_free_asks_google_with_a_token_fetched_in_the_worke
     );
 }
 
+/// The text of one string constant in a source text.
+fn the_constant_in(source: &str, name: &str) -> String {
+    let after = source
+        .split(&format!("const {name}: &str ="))
+        .nth(1)
+        .unwrap_or_else(|| panic!("no constant {name} to read"));
+    after.split("\";").next().unwrap_or_default().to_string()
+}
+
+/// Whether the sentence said while waiting is true of every place the question
+/// can go, and says the asking is experimental.
+///
+/// It is said on every account, and "your calendar server" is untrue of an
+/// account whose calendar is at Microsoft or at Google.
+fn the_waiting_sentence_is_true_everywhere(said: &str) -> bool {
+    !said.contains("calendar server") && said.contains("experimental")
+}
+
+#[test]
+fn test_the_waiting_window_names_no_one_kind_of_calendar_and_says_it_is_experimental() {
+    let source = std::fs::read_to_string("src/presentation/managers.rs")
+        .unwrap_or_else(|why| panic!("src/presentation/managers.rs: {why}"));
+    let said = the_constant_in(&source, "ASKING_THE_CALENDARS");
+
+    assert!(
+        the_waiting_sentence_is_true_everywhere(&said),
+        "while it asks, the waiting window says something untrue of a Google or \
+         Microsoft calendar, or does not say none of it has met a real account: {said}"
+    );
+}
+
+#[test]
+fn test_the_reading_of_the_waiting_sentence_sees_a_calendar_server_named() {
+    let planted = "const ASKING_THE_CALENDARS: &str =\n    \
+                   \"Asking your calendar server about everybody. This is experimental.\";\n";
+
+    assert!(!the_waiting_sentence_is_true_everywhere(&the_constant_in(
+        planted,
+        "ASKING_THE_CALENDARS"
+    )));
+}
+
 #[test]
 fn test_the_reading_of_the_asking_sees_a_google_token_fetched_on_the_windows_thread() {
     let planted = "fn asking_when_people_are_free() {\n    \
