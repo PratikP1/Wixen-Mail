@@ -32,7 +32,8 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Directory {
     /// Where it is: `ldaps://directory.example.com`, or `ldap://host:389`
-    /// where the directory offers no encrypted connection.
+    /// where the directory offers no encrypted connection, which is then
+    /// asked only without a sign-in.
     pub url: String,
     /// The part of the directory to search under, as that directory names it.
     pub search_under: String,
@@ -356,11 +357,12 @@ async fn look_up_through<D: AsksADirectory>(
     let Some(directory) = directory else {
         return Err(Error::Config(NO_DIRECTORY_IS_SET_UP.to_string()));
     };
-    let named = where_this_directory_is(directory)?;
+    let place = where_this_directory_is(directory)?;
+    let named = &place.host;
     if nobody_typed_anything(typed) {
         return Err(Error::Other(NOTHING_TO_LOOK_FOR.to_string()));
     }
-    let signing_in = the_password_to_sign_in_with(directory, password, &named)?;
+    let signing_in = the_password_to_sign_in_with(directory, password, &place)?;
 
     // One more than will be shown, so that "exactly as many as the limit" and
     // "more than the limit" do not arrive looking the same.
@@ -372,7 +374,7 @@ async fn look_up_through<D: AsksADirectory>(
             AT_MOST + 1,
         )
         .await
-        .map_err(|failure| how_the_directory_failed(failure, &named, typed))?;
+        .map_err(|failure| how_the_directory_failed(failure, named, typed))?;
 
     if found.len() > AT_MOST {
         return Err(too_many_people_match(typed));
@@ -390,8 +392,16 @@ async fn look_up_through<D: AsksADirectory>(
     }
 }
 
-/// The directory this account names, checked, and the name to call it by in a
-/// message.
+/// Where a directory is, read once from its address.
+struct WhereItIs {
+    /// The name to call it by in a sentence.
+    host: String,
+    /// Whether the connection is encrypted from its start, which `ldaps` is
+    /// and `ldap` is not.
+    is_encrypted: bool,
+}
+
+/// The directory this account names, checked, and where it is.
 ///
 /// Checked here rather than left to the connection, because a setting that is
 /// not an address is something somebody has to correct, and it should not be
@@ -399,10 +409,11 @@ async fn look_up_through<D: AsksADirectory>(
 ///
 /// Two schemes and no more. `ldaps` is a connection encrypted from the start
 /// and is what a workplace directory offers; `ldap` is the plain one, still
-/// what some internal directories run. The library also understands `ldapi`,
-/// a socket file on this computer, which no account should be pointed at and
-/// which does not exist on every platform this program has to run on.
-fn where_this_directory_is(directory: &Directory) -> Result<String> {
+/// what some internal directories run, and never sent a password. The library
+/// also understands `ldapi`, a socket file on this computer, which no account
+/// should be pointed at and which does not exist on every platform this
+/// program has to run on.
+fn where_this_directory_is(directory: &Directory) -> Result<WhereItIs> {
     if directory.search_under.trim().is_empty() {
         return Err(Error::Config(
             "This account does not say which part of the directory to search under. Add it in \
@@ -418,13 +429,13 @@ fn where_this_directory_is(directory: &Directory) -> Result<String> {
         ))
     };
     let parsed = url::Url::parse(directory.url.trim()).map_err(|_| not_an_address())?;
-    if !matches!(parsed.scheme(), "ldap" | "ldaps") {
-        return Err(not_an_address());
-    }
-    parsed
-        .host_str()
-        .map(str::to_string)
-        .ok_or_else(not_an_address)
+    let is_encrypted = match parsed.scheme() {
+        "ldaps" => true,
+        "ldap" => false,
+        _ => return Err(not_an_address()),
+    };
+    let host = parsed.host_str().ok_or_else(not_an_address)?.to_string();
+    Ok(WhereItIs { host, is_encrypted })
 }
 
 /// The password to sign in with, or nothing, or a refusal.
@@ -436,20 +447,30 @@ fn where_this_directory_is(directory: &Directory) -> Result<String> {
 /// treat as anonymous. That does not fail. It quietly succeeds as somebody
 /// else, reading whatever that somebody is allowed to read, and every search
 /// afterwards looks like a directory that holds less than it does.
+///
+/// Nor is a password ever sent to an address that is not encrypted. A simple
+/// sign-in carries it as it was typed, so over `ldap://` anybody on the
+/// network path between here and the directory reads it.
 fn the_password_to_sign_in_with<'a>(
     directory: &Directory,
     password: Option<&'a str>,
-    named: &str,
+    place: &WhereItIs,
 ) -> Result<Option<&'a str>> {
     let Some(sign_in_as) = &directory.sign_in_as else {
         return Ok(None);
     };
+    let named = &place.host;
     match password.map(str::trim).filter(|held| !held.is_empty()) {
-        Some(_) => Ok(password),
         None => Err(Error::Authentication(format!(
             "This account signs in to the directory at {named} as {sign_in_as}, and no password \
              for it has been saved. Add the password in the account's settings."
         ))),
+        Some(_) if !place.is_encrypted => Err(Error::Config(format!(
+            "The directory at {named} is reached without encryption (its address begins \
+             ldap://), so the password for it is not sent. Change the address to one beginning \
+             ldaps://, which your organisation's directory administrator can give you."
+        ))),
+        Some(_) => Ok(password),
     }
 }
 
@@ -572,9 +593,25 @@ fn what_the_directory_answered(answered: LdapResult, named: &str, typed: &str) -
     ))
 }
 
-/// The entries among a search's results. Stub for the red half.
+/// The entries among a search's results, in the order they arrived.
+///
+/// A search is answered with more than entries. Active Directory sends
+/// continuation references beside the people it found whenever the search
+/// starts at the domain root, and a search can carry intermediate messages.
+/// `SearchEntry::construct` panics on either (ldap3 #156, read in 0.12.1's
+/// `search.rs:152-156`), and the catch below would turn that into a failed
+/// search, throwing the real people away with the reference.
+///
+/// 0.12.1's `search` already drops both through its `EntriesOnly` adapter,
+/// read in `adapters.rs:262-279`, so this is not what stands between a
+/// search and that panic today. It is here so that nothing does rest on a
+/// library's adapter chain: a search that pages through a large directory
+/// goes through a different adapter, and one that streams goes through none.
 fn the_entries_among(results: Vec<ResultEntry>) -> Vec<ResultEntry> {
     results
+        .into_iter()
+        .filter(|result| !result.is_ref() && !result.is_intermediate())
+        .collect()
 }
 
 /// The directory itself, over the network.

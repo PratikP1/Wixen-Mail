@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 440 records have arrived since and have not been through it.
+# 442 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33739,4 +33739,37 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
+]
+
+# A continuation reference kept among the entries, so `construct` panics on
+# it (ldap3 #156) and the catch turns every search Active Directory answers
+# from its domain root into a failure, the real people with it. Written
+# 2026-09-28 by 13-26; ldap3 0.12.1's `search` drops references before this
+# today, so the break is read through the cases built from tagged results.
+[[guard]]
+name = "a reference among a directory's answers is dropped before an entry is built"
+file = "src/service/directory.rs"
+before = '''        .filter(|result| !result.is_ref() && !result.is_intermediate())'''
+after = '''        .filter(|result| !result.is_intermediate())'''
+red = [
+    "service::directory::tests::test_a_reference_beside_an_entry_leaves_the_entry_found",
+    "service::directory::tests::test_an_answer_of_nothing_but_references_holds_nobody",
+]
+tests_last_seen = [
+    { file = "src/service/directory.rs", tests = 49 },
+]
+
+# A password sent to a directory whose address begins ldap://, where a
+# simple sign-in carries it in clear to anybody on the network path.
+# Written 2026-09-28 by 13-26.
+[[guard]]
+name = "a directory password is never sent over an unencrypted address"
+file = "src/service/directory.rs"
+before = '''        Some(_) if !place.is_encrypted => Err(Error::Config(format!('''
+after = '''        Some(_) if false => Err(Error::Config(format!('''
+red = [
+    "service::directory::tests::test_a_password_is_never_sent_over_an_unencrypted_address",
+]
+tests_last_seen = [
+    { file = "src/service/directory.rs", tests = 49 },
 ]
