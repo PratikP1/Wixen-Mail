@@ -50,7 +50,7 @@ impl Whose {
         match self {
             Self::YourContacts => "from your contacts",
             Self::TheDirectory => "from the directory",
-            Self::Microsoft => "",
+            Self::Microsoft => "from Microsoft",
         }
     }
 }
@@ -59,13 +59,20 @@ impl Whose {
 ///
 /// An Outlook or Office 365 account signed in through the browser, and no
 /// other: that sign-in is the only thing that can ask Microsoft, and a name
-/// typed on any other account is nothing Microsoft is owed.
-pub fn microsoft_is_asked_for(_account: &Account) -> bool {
-    false
+/// typed on any other account is nothing Microsoft is owed. Which provider an
+/// account belongs to is the sign-in's own answer, the one its token is filed
+/// under.
+pub fn microsoft_is_asked_for(account: &Account) -> bool {
+    account.use_oauth
+        && crate::application::mail_auth::provider_of(account).as_deref() == Some("outlook")
 }
 
 /// What is said when an account's sign-in cannot ask Microsoft's people search.
-pub const SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH: &str = "";
+///
+/// Every Microsoft account signed in before people search asked for its
+/// permission hears this, because permission is granted once, at sign-in.
+pub const SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH: &str =
+    "Sign in again from the Account Manager to let Microsoft find people for this account.";
 
 /// One person who could be written to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,10 +171,14 @@ pub fn from_your_contacts(found: &[ContactEntry]) -> std::result::Result<Vec<Som
 pub fn everybody_found(
     from_your_contacts: Vec<Somebody>,
     from_the_directory: Vec<Somebody>,
-    _from_microsoft: Vec<Somebody>,
+    from_microsoft: Vec<Somebody>,
 ) -> Vec<Somebody> {
     let mut together: Vec<Somebody> = Vec::new();
-    for person in from_your_contacts.into_iter().chain(from_the_directory) {
+    for person in from_your_contacts
+        .into_iter()
+        .chain(from_the_directory)
+        .chain(from_microsoft)
+    {
         let already_there = together
             .iter()
             .any(|kept| kept.address.eq_ignore_ascii_case(&person.address));

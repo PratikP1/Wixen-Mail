@@ -6,7 +6,7 @@
 //!
 //! Base URL: `https://graph.microsoft.com/v1.0`
 
-use crate::application::looking_people_up::Somebody;
+use crate::application::looking_people_up::{Somebody, Whose};
 use crate::common::{Error, Result};
 use crate::service::google_api::with_retry;
 use crate::service::outward::{in_a_path, in_a_query};
@@ -441,9 +441,107 @@ fn contacts_delta_url(base: &str) -> String {
 
 // ── People ──────────────────────────────────────────────────────────────────
 
+/// One answer from `/me/people`, as far as a list of people to write to
+/// needs it. Every other field Microsoft sends is left unread.
+#[derive(Debug, Deserialize)]
+struct MsPeople {
+    #[serde(default)]
+    value: Vec<MsPerson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MsPerson {
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    scored_email_addresses: Vec<MsScoredAddress>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MsScoredAddress {
+    #[serde(default)]
+    address: Option<String>,
+}
+
+impl MsPerson {
+    /// This person as a row, or nothing when Microsoft holds no address for
+    /// them: a name alone is nobody a message can go to.
+    fn into_somebody(self) -> Option<Somebody> {
+        let address = self
+            .scored_email_addresses
+            .into_iter()
+            .filter_map(|scored| scored.address)
+            .map(|address| address.trim().to_string())
+            .find(|address| !address.is_empty())?;
+        Some(Somebody {
+            name: self.display_name.unwrap_or_default().trim().to_string(),
+            address,
+            whose: Whose::Microsoft,
+        })
+    }
+}
+
 /// The people in one answer to Microsoft's people search, as rows to write to.
-pub fn the_people_microsoft_found(_json: &str) -> Result<Vec<Somebody>> {
-    Ok(Vec::new())
+///
+/// The first address Microsoft scores for a person is the one offered, since
+/// it puts the one this mailbox writes to most first. An answer that is not a
+/// list of people is refused with a sentence rather than read as nobody, so a
+/// search that went wrong is not heard as a name nobody has.
+pub fn the_people_microsoft_found(json: &str) -> Result<Vec<Somebody>> {
+    let answer: MsPeople = serde_json::from_str(json).map_err(|why| {
+        Error::InPlainWords(format!(
+            "Microsoft's answer to the people search could not be read ({why}), so nobody \
+             from Microsoft is listed."
+        ))
+    })?;
+    Ok(answer
+        .value
+        .into_iter()
+        .filter_map(MsPerson::into_somebody)
+        .collect())
+}
+
+/// The header naming where Microsoft looks for people, and its value.
+///
+/// Both of the places the People API offers: the people this mailbox writes
+/// to, and the organisation's directory. Without it Microsoft looks in the
+/// mailbox alone.
+const WHERE_MICROSOFT_LOOKS_FOR_PEOPLE: (&str, &str) =
+    ("X-PeopleQuery-QuerySources", "Mailbox,Directory");
+
+/// Where to ask Microsoft for the people matching part of a typed name.
+///
+/// The typed text goes inside quotes, which is how the People API reads a
+/// search, and a quote typed with it is left out so it cannot end the search
+/// early. Only the two fields a row needs are asked for.
+fn people_search_url(base: &str, typed: &str, at_most: usize) -> String {
+    let quoted = format!("\"{}\"", typed.replace('"', ""));
+    format!(
+        "{base}/me/people?$search={}&$top={at_most}&$select=displayName,scoredEmailAddresses",
+        in_a_query(&quoted)
+    )
+}
+
+/// What to say when Microsoft refuses a people search.
+///
+/// Unauthorised and forbidden are what an account gets whose sign-in never
+/// granted People.Read, and what an organisation that switched people search
+/// off gets, so the sentence names both remedies. Microsoft's own words are
+/// not carried: they can echo the question, which holds part of a name.
+fn a_people_search_refusal(status: reqwest::StatusCode) -> Error {
+    let remedy = match status {
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+            " Sign in again from the Account Manager, and if that does not help, your \
+             organisation may have switched people search off."
+        }
+        _ => "",
+    };
+    Error::InPlainWords(format!(
+        "Microsoft's people search refused the question (HTTP {}), so nobody from Microsoft \
+         is listed.{remedy}",
+        status.as_u16()
+    ))
 }
 
 /// The calendar Outlook treats as somebody's main one.
@@ -951,13 +1049,42 @@ impl MsGraphClient {
     // ── People ──────────────────────────────────────────────────────────
 
     /// The people Microsoft finds for part of a typed name.
+    ///
+    /// `token` is the one asked for People.Read alone,
+    /// [`crate::service::oauth::a_people_token_for`]. Asked once, with no
+    /// retry: somebody is still typing, and the next letter asks again.
+    ///
+    /// The address is left out of a failure to reach Microsoft, because it
+    /// carries the typed name, which belongs in no sentence that could reach
+    /// a log.
     pub async fn people_matching(
         &self,
-        _token: &str,
-        _typed: &str,
-        _at_most: usize,
+        token: &str,
+        typed: &str,
+        at_most: usize,
     ) -> Result<Vec<Somebody>> {
-        Ok(Vec::new())
+        let unreachable = |why: reqwest::Error| {
+            Error::InPlainWords(format!(
+                "Microsoft's people search could not be reached ({}), so nobody from \
+                 Microsoft is listed.",
+                why.without_url()
+            ))
+        };
+        let (header, sources) = WHERE_MICROSOFT_LOOKS_FOR_PEOPLE;
+        let resp = self
+            .http
+            .reading(&people_search_url(&self.base, typed, at_most))
+            .bearer_auth(token)
+            .header(header, sources)
+            .send()
+            .await
+            .map_err(unreachable)?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(a_people_search_refusal(status));
+        }
+        let body = resp.text().await.map_err(unreachable)?;
+        the_people_microsoft_found(&body)
     }
 
     // ── Contacts ────────────────────────────────────────────────────────

@@ -218,13 +218,38 @@ fn the_organisation(
 
 /// The people Microsoft finds for this account, if it is one Microsoft is
 /// asked for.
+///
+/// Only an Outlook or Office 365 account signed in through the browser, which
+/// [`looking::microsoft_is_asked_for`] decides; for every other account
+/// nothing is asked and nothing is said. A sign-in that cannot ask, which is
+/// every Microsoft account signed in before people search asked for its
+/// permission, and a search Microsoft refuses each add one sentence to the
+/// same trouble line the directory uses.
 fn the_people_microsoft_knows(
-    _account: Option<&Account>,
-    _name: &str,
-    _handle: &tokio::runtime::Handle,
-    _trouble: &mut Vec<String>,
+    account: Option<&Account>,
+    name: &str,
+    handle: &tokio::runtime::Handle,
+    trouble: &mut Vec<String>,
 ) -> Vec<looking::Somebody> {
-    Vec::new()
+    let Some(account) = account.filter(|account| looking::microsoft_is_asked_for(account)) else {
+        return Vec::new();
+    };
+    let Some(token) = handle.block_on(crate::service::oauth::a_people_token_for(&account.id))
+    else {
+        trouble.push(looking::SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH.to_string());
+        return Vec::new();
+    };
+    let asked = handle.block_on(
+        crate::service::microsoft_graph::MsGraphClient::new().people_matching(
+            &token,
+            name,
+            looking::AT_MOST_TO_READ_THROUGH,
+        ),
+    );
+    asked.unwrap_or_else(|why| {
+        trouble.push(why.to_string());
+        Vec::new()
+    })
 }
 
 /// The password to offer the directory, or the sentence saying why none can
