@@ -12174,18 +12174,9 @@ fn events_that_might_be_due(
     HashMap<crate::application::due::Identity, (String, CalendarEventItem)>,
 ) {
     use crate::application::due;
-    use crate::common::moment::{self, Moment};
 
     let from = today.pred_opt().unwrap_or(today);
     let to = today.succ_opt().unwrap_or(today);
-    let at_the_hour = |moment: Moment| match moment {
-        Moment::WholeDay(day) => day.and_hms_opt(hour, 0, 0).map(Moment::ClockFace),
-        names_an_hour => Some(names_an_hour),
-    };
-    let when_it_ends = |stored: &str| match moment::read(stored)? {
-        Moment::WholeDay(day) => moment::on_this_computer(day.succ_opt()?.and_hms_opt(0, 0, 0)?),
-        names_an_hour => names_an_hour.on_this_computer(),
-    };
 
     let mut candidates = Vec::new();
     let mut rows = HashMap::new();
@@ -12223,9 +12214,9 @@ fn events_that_might_be_due(
                 continue;
             };
             for day in CalendarEventItem::shown_days(entry, from, to) {
-                let Some(raise_at) = moment::read(&day.start)
-                    .and_then(at_the_hour)
-                    .and_then(|start| due::when_an_event_alerts(start, lead))
+                // Read in the zone the event was written in, so an Outlook
+                // meeting stored in universal time rises before it starts here.
+                let Some(parts) = crate::presentation::event_times::the_due_parts(&day, hour, lead)
                 else {
                     continue;
                 };
@@ -12233,9 +12224,9 @@ fn events_that_might_be_due(
                 candidates.push(due::Candidate {
                     identity: identity.clone(),
                     title: day.summary.clone(),
-                    raise_at,
-                    when: day.start.clone(),
-                    ends: when_it_ends(&day.end),
+                    raise_at: parts.raise_at,
+                    when: parts.when,
+                    ends: parts.ends,
                     done: false,
                 });
                 rows.insert(identity, (source.clone(), day));

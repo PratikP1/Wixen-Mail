@@ -14,6 +14,7 @@ pub mod default_app_words;
 pub mod editor_document;
 #[cfg(test)]
 pub mod editor_page_harness;
+pub mod event_times;
 pub mod finding_people;
 pub mod first_run;
 pub mod folder_tree;

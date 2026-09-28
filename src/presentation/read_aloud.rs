@@ -310,8 +310,8 @@ impl ReminderItem {
 impl CalendarEventItem {
     /// What the full reading says, in the order it says it.
     pub fn fields(&self, out: Reading) -> Vec<Field> {
-        let start = out.date(&self.start);
-        let end = out.date(&self.end);
+        let start = out.date(&self.when_it_starts());
+        let end = out.date(&self.when_it_ends());
         // Joined before the empty parts are dropped, so a missing end has to
         // be handled here: "9:00 AM to" and then silence sounds like the
         // reading was cut off.
@@ -324,6 +324,7 @@ impl CalendarEventItem {
         } else {
             format!("{start} to {end}")
         };
+        let when = self.with_the_clock_it_was_written_on(when, out);
         vec![
             Field::short("", &self.summary),
             Field::short("", &when),
@@ -339,6 +340,26 @@ impl CalendarEventItem {
             ),
             Field::long_text("", &self.description),
         ]
+    }
+
+    /// The time already said, and after it the clock the event was written
+    /// on, once, where that clock names a place and differs from this one.
+    ///
+    /// Only the full reading and the page it prints: never a row, Space's
+    /// short reading or an alert, so a syncing calendar stays quiet.
+    fn with_the_clock_it_was_written_on(&self, when: String, out: Reading) -> String {
+        if self.is_all_day {
+            return when;
+        }
+        match crate::presentation::time_elsewhere::where_it_was_set(
+            &self.start,
+            Some(&self.end),
+            self.time_zone.as_deref(),
+            out.dates,
+        ) {
+            Some(elsewhere) => format!("{when}, {elsewhere}"),
+            None => when,
+        }
     }
 }
 
@@ -595,9 +616,9 @@ impl ReadAloud for CalendarEventItem {
 
     fn read_short(&self, out: Reading) -> String {
         let when = if self.is_all_day {
-            format!("{}, all day", out.date(&self.start))
+            format!("{}, all day", out.date(&self.when_it_starts()))
         } else {
-            out.date(&self.start)
+            out.date(&self.when_it_starts())
         };
         // A series that was worked out has its own days on the screen to say it
         // repeats. One that could not be worked out has nothing at all: a
@@ -790,6 +811,7 @@ mod tests {
     fn event() -> CalendarEventItem {
         CalendarEventItem {
             attendees_json: None,
+            time_zone: None,
             id: "e1".to_string(),
             summary: "Standup".to_string(),
             description: String::new(),
@@ -1563,6 +1585,7 @@ mod tests {
         // Where the dial-in number and the agenda live. Nothing read it.
         let event = CalendarEventItem {
             attendees_json: None,
+            time_zone: None,
             id: "e3".to_string(),
             summary: "Review".to_string(),
             description: "Dial in on 555 0123.".to_string(),
@@ -1594,6 +1617,7 @@ mod tests {
     fn test_an_all_day_event_says_so_rather_than_reading_two_identical_times() {
         let event = CalendarEventItem {
             attendees_json: None,
+            time_zone: None,
             id: "e2".to_string(),
             summary: "Public holiday".to_string(),
             description: String::new(),

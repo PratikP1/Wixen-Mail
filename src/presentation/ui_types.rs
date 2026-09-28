@@ -926,6 +926,15 @@ pub struct CalendarEventItem {
     /// from a row without it, the guest list box opens empty and the next Save
     /// writes that emptiness over everybody who was coming.
     pub attendees_json: Option<String>,
+    /// The zone [`Self::start`] and [`Self::end`] are written in, as stored
+    /// beside them.
+    ///
+    /// Read with them and never alone: a clock face means an hour in this
+    /// zone, and `presentation::event_times` is where the two meet, so every
+    /// surface says the hour it is on this computer. `start` and `end` keep the
+    /// stored text, because the due window's identity, the series edits and
+    /// the editor's comparison all read it as stored.
+    pub time_zone: Option<String>,
 }
 
 /// Calendar container item for UI display (represents a whole calendar)
@@ -1049,14 +1058,17 @@ impl ReminderItem {
 
 /// The date or date range the loaded calendar events cover, for the
 /// calendar header. Returns "No events" when there is nothing to show.
+///
+/// Each by the day it starts on this computer, so a meeting written at five in
+/// the morning in Tokyo counts on the evening before here.
 pub fn calendar_range_label(events: &[CalendarEventItem]) -> String {
-    let mut dates: Vec<&str> = events
+    let mut dates: Vec<String> = events
         .iter()
-        .map(|e| e.start.get(..10).unwrap_or(e.start.as_str()))
+        .map(CalendarEventItem::the_day_it_starts)
         .collect();
     dates.sort_unstable();
     match (dates.first(), dates.last()) {
-        (Some(first), Some(last)) if first == last => (*first).to_string(),
+        (Some(first), Some(last)) if first == last => first.clone(),
         (Some(first), Some(last)) => format!("{} to {}", first, last),
         _ => "No events".to_string(),
     }
@@ -1646,6 +1658,7 @@ impl CalendarEventItem {
             changed_on_its_own: entry.cut_from_event_id.is_some()
                 || entry.provider_recurrence_id.is_some(),
             attendees_json: entry.attendees_json.clone(),
+            time_zone: entry.time_zone.clone(),
         }
     }
 
@@ -1693,13 +1706,15 @@ impl CalendarEventItem {
         // typed here listed above a morning one that came from a provider, on
         // the same day, every time. Falling back to the text keeps two rows
         // this cannot read in a stable order rather than an arbitrary one.
+        // Each read in its own zone, so nine in Tokyo sorts where its instant
+        // falls rather than where its clock face would here.
         rows.sort_by(|one, other| {
-            let moment = |shown: &str| {
-                crate::common::moment::read(shown)
+            let moment = |shown: &Self| {
+                crate::common::moment::read(&shown.when_it_starts())
                     .and_then(crate::common::moment::Moment::on_this_computer)
             };
-            moment(&one.start)
-                .cmp(&moment(&other.start))
+            moment(one)
+                .cmp(&moment(other))
                 .then_with(|| one.start.cmp(&other.start))
         });
         rows
@@ -1894,6 +1909,7 @@ mod tests {
     fn event(start: &str) -> CalendarEventItem {
         CalendarEventItem {
             attendees_json: None,
+            time_zone: None,
             id: "e1".into(),
             summary: "Standup".into(),
             description: String::new(),

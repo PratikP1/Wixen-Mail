@@ -775,14 +775,8 @@ pub fn build_confirm_delete_dialog(
 fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
     list.delete_all_items();
     for (i, event) in events.iter().enumerate() {
-        let time_display = if event.is_all_day {
-            format!(
-                "{} (All day)",
-                event.start.get(..10).unwrap_or(&event.start)
-            )
-        } else {
-            event.start.get(..16).unwrap_or(&event.start).to_string()
-        };
+        // On this computer's clock, read in the zone the event was written in.
+        let time_display = crate::presentation::event_times::the_list_column(event);
 
         let idx = i as i64;
         list.insert_item(idx, &time_display, None);

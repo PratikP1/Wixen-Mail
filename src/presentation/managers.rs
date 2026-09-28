@@ -1322,7 +1322,16 @@ pub(crate) fn an_event_editor(
             )),
         )
         .map(|(filled, container_id)| {
-            wx_calendar::CalendarEventData::from_filled(&filled, container_id)
+            let data = wx_calendar::CalendarEventData::from_filled(&filled, container_id);
+            // The boxes showed this computer's clock, so what comes back goes
+            // onto the event's own before the merge compares it: untouched,
+            // exactly as shown in that frame, and typed, at the hour meant.
+            match existing {
+                Some(opened) => {
+                    crate::presentation::event_times::typed_back_into_its_zone(data, opened)
+                }
+                None => data,
+            }
         })
     }
 }
@@ -1935,16 +1944,13 @@ fn filled_from_calendar_item(item: &CalendarEventItem) -> crate::application::it
         FieldName::AllDay,
         if item.is_all_day { "true" } else { "false" },
     );
-    filled.put(
-        FieldName::StartDate,
-        item.start.get(..10).unwrap_or_default(),
-    );
-    filled.put(
-        FieldName::StartTime,
-        item.start.get(11..16).unwrap_or_default(),
-    );
-    filled.put(FieldName::EndDate, item.end.get(..10).unwrap_or_default());
-    filled.put(FieldName::EndTime, item.end.get(11..16).unwrap_or_default());
+    // On this computer's clock, the way Outlook's and Google's own forms show
+    // a meeting; `an_event_editor` puts what comes back on the event's own.
+    let boxes = crate::presentation::event_times::filled_on_this_computer(item);
+    filled.put(FieldName::StartDate, boxes.start_date);
+    filled.put(FieldName::StartTime, boxes.start_time);
+    filled.put(FieldName::EndDate, boxes.end_date);
+    filled.put(FieldName::EndTime, boxes.end_time);
     filled.put(FieldName::Location, item.location.clone());
     filled.put(
         FieldName::Attendees,

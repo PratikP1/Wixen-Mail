@@ -71,10 +71,13 @@ pub fn event_cell(
 ) -> String {
     match column {
         0 => {
+            // Read in the zone the event was written in, so an Outlook meeting
+            // stored in universal time is listed at the hour it is here.
+            let starts = event.when_it_starts();
             let when = if event.is_all_day {
                 "All day".to_string()
             } else {
-                date(&event.start, dates, now)
+                date(&starts, dates, now)
             };
             // Whether the hour falls outside the working day. Words rather
             // than a colour, because a colour is not available to the person
@@ -83,7 +86,7 @@ pub fn event_cell(
             // be outside anything.
             let out_of_hours = match event.is_all_day {
                 true => "",
-                false => hour_of(&event.start).map_or("", |hour| day.note_for(hour)),
+                false => hour_of(&starts).map_or("", |hour| day.note_for(hour)),
             };
             // Whether this is a day of a series that was changed on its own
             // rides here too, and not in a column of its own: a new column
@@ -436,6 +439,7 @@ mod tests {
     fn event() -> CalendarEventItem {
         CalendarEventItem {
             attendees_json: None,
+            time_zone: None,
             id: "e1".to_string(),
             summary: "Standup".to_string(),
             description: String::new(),

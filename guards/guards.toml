@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 405 records have arrived since and have not been through it.
+# 414 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33013,4 +33013,171 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/meeting_changes.rs", tests = 21 },
+]
+
+# The calendar's item built without the zone its times were written in: every
+# surface reads a stored clock face as this computer's hour again, and an
+# Outlook meeting stored in universal time is listed, said and alerted at that
+# hour. Written 2026-09-27 by 13-21.2, measured against the library.
+[[guard]]
+name = "the calendar's item carries the zone its times were written in"
+file = "src/presentation/ui_types.rs"
+before = """            time_zone: entry.time_zone.clone(),"""
+after = """            time_zone: None,"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_a_meeting_written_in_a_windows_zone_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_an_outlook_meeting_stored_in_universal_time_is_read_as_that_instant",
+    "presentation::event_times::tests::test_the_due_identity_is_still_the_stored_start",
+    "presentation::event_times::tests::test_the_list_is_in_the_order_the_instants_come",
+    "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 23 },
+    { file = "src/presentation/ui_types.rs", tests = 79 },
+]
+
+# The calendar list's first cell worded from the stored text again, while the
+# out-of-hours note beside it reads the zone: the cell says the stored hour and
+# the note judges another. Written 2026-09-27 by 13-21.2, measured against the
+# library.
+[[guard]]
+name = "the calendar list says an event's hour as it is on this computer"
+file = "src/presentation/pim_rows.rs"
+before = """                date(&starts, dates, now)"""
+after = """                date(&event.start, dates, now)"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_a_meeting_written_in_a_windows_zone_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 23 },
+    { file = "src/presentation/pim_rows.rs", tests = 25 },
+]
+
+# The due window's day read from its stored start again: an Outlook meeting
+# stored in universal time rises at its universal hour less the lead, and the
+# alert's sentence says that hour. Written 2026-09-27 by 13-21.2, measured
+# against the library.
+[[guard]]
+name = "an event's alert rises at its lead before the instant it starts"
+file = "src/presentation/event_times.rs"
+before = """    let starts = day.when_it_starts();"""
+after = """    let starts = Cow::Borrowed(day.start.as_str());"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_alerts_at_its_lead_before_the_instant_it_starts",
+    "presentation::event_times::tests::test_an_outlook_meeting_alerts_at_its_lead_before_the_instant_it_starts",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 23 },
+]
+
+# The full reading without the clock an event was written on: a meeting from
+# Tokyo is said at this computer's hour with nothing to explain why the
+# organiser's note says another. Written 2026-09-27 by 13-21.2, measured
+# against the library.
+[[guard]]
+name = "the full reading of an event says the clock it was written on once"
+file = "src/presentation/read_aloud.rs"
+before = """            Some(elsewhere) => format!("{when}, {elsewhere}"),"""
+after = """            Some(_) => when,"""
+red = [
+    "presentation::event_times::tests::test_the_full_reading_says_the_zone_a_meeting_was_written_in_once",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 23 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
+]
+
+# The due window reading each day's stored start itself again, beside the
+# call that reads it in its zone. Written 2026-09-27 by 13-21.2, measured
+# against the target.
+[[guard]]
+name = "the due window asks each day of an event through its zone"
+file = "src/presentation/wx_app.rs"
+suite = "an_event_is_shown_on_this_computers_clock"
+before = """                let identity = day.due_identity();"""
+after = """                let _ = crate::common::moment::read(&day.start);
+                let identity = day.due_identity();"""
+red = [
+    "test_a_due_window_reading_the_stored_start_again_would_be_named",
+    "test_the_due_window_asks_each_day_of_an_event_through_its_zone",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_event_is_shown_on_this_computers_clock.rs", tests = 9 },
+]
+
+# The Calendar window's Date/Time column printing the stored text again.
+# Written 2026-09-27 by 13-21.2, measured against the target.
+[[guard]]
+name = "the calendar window's column is worded through its zone"
+file = "src/presentation/wx_calendar.rs"
+suite = "an_event_is_shown_on_this_computers_clock"
+before = """        let time_display = crate::presentation::event_times::the_list_column(event);"""
+after = """        let time_display = event.start.get(..16).unwrap_or(&event.start).to_string();"""
+red = [
+    "test_a_column_worded_from_the_stored_text_would_be_named",
+    "test_the_calendar_windows_column_is_worded_through_its_zone",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_calendar.rs", tests = 15 },
+    { file = "tests/an_event_is_shown_on_this_computers_clock.rs", tests = 9 },
+]
+
+# A time typed in the event editor handed back as typed: nine typed in New
+# York for an Outlook meeting is stored as nine beside "UTC", which Outlook
+# reads as four or five hours out. Written 2026-09-27 by 13-21.2, measured
+# against the library.
+[[guard]]
+name = "a time typed in the event editor goes back on the event's own clock"
+file = "src/presentation/event_times.rs"
+before = """        .and_then(|instant| clock.face_of(&instant))"""
+after = """        .and_then(|_| None::<chrono::NaiveDateTime>)"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_typed_across_midnight_moves_its_date_on_its_own_clock",
+    "presentation::event_times::tests::test_a_meeting_with_an_offset_and_a_named_zone_goes_back_on_the_zones_clock",
+    "presentation::event_times::tests::test_a_meeting_with_an_offset_and_no_zone_keeps_its_offsets_clock",
+    "presentation::event_times::tests::test_a_time_typed_here_goes_back_on_the_events_own_clock",
+    "presentation::event_times::tests::test_a_time_typed_in_the_hour_the_clocks_skip_lands_on_the_first_quarter_hour_after_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 23 },
+]
+
+# The event editor filled with the stored clock face again: an Outlook
+# meeting opens at its universal hour. Written 2026-09-27 by 13-21.2,
+# measured against the library.
+[[guard]]
+name = "the event editor is filled on this computer's clock"
+file = "src/presentation/event_times.rs"
+before = """        Moment::Fixed(at) => Some(in_the_boxes(at.with_timezone(here).naive_local())),"""
+after = """        Moment::Fixed(_) => None,"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_typed_across_midnight_moves_its_date_on_its_own_clock",
+    "presentation::event_times::tests::test_a_meeting_with_an_offset_and_no_zone_keeps_its_offsets_clock",
+    "presentation::event_times::tests::test_an_outlook_meeting_fills_the_editor_on_this_computers_clock",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 23 },
+]
+
+# The event editor's answer merged as typed, without being put back on the
+# event's own clock. Written 2026-09-27 by 13-21.2, measured against the
+# target.
+[[guard]]
+name = "the event editor puts what is typed back on the event's clock"
+file = "src/presentation/managers.rs"
+suite = "an_event_is_shown_on_this_computers_clock"
+before = """                    crate::presentation::event_times::typed_back_into_its_zone(data, opened)"""
+after = """                    let _ = opened;
+                    data"""
+red = [
+    "test_an_editor_answering_as_typed_would_be_named",
+    "test_the_event_editor_puts_what_is_typed_back_on_the_events_clock",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/an_event_is_shown_on_this_computers_clock.rs", tests = 9 },
 ]

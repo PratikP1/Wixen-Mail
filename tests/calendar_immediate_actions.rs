@@ -77,6 +77,7 @@ fn select_only_row(list: &ListCtrl) {
 fn a_non_repeating_event(id: &str, summary: &str) -> CalendarEventItem {
     CalendarEventItem {
         attendees_json: None,
+        time_zone: None,
         id: id.to_string(),
         summary: summary.to_string(),
         description: String::new(),

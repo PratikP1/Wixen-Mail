@@ -772,6 +772,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Outlook calendar events are shown, said and alerted at your hour (ledger 632).** Microsoft
+  sends every Outlook event in universal time, because Wixen Mail does not ask it for another
+  zone, and the calendar read that hour as an hour on your own clock. So a meeting at ten in
+  the morning in New York in summer was listed, said and alerted at two in the afternoon on
+  every computer outside universal time, hours early or late. Events from calendars written
+  in another time zone had the same fault. Every time in the calendar is now on your
+  computer's clock: the list and its order, `Space` and the full reading, the printed page,
+  the Calendar window's Date/Time column, the header's range of dates, and the alert, which
+  goes off its set number of minutes before the meeting starts here. The full reading and the
+  printed page say the clock the meeting was written on, once, where it differs from yours;
+  the rows and the alerts do not. The event editor shows your clock and saves a time you
+  change in the meeting's own time zone, so a moved Outlook or Google meeting reaches it at
+  the hour you typed; opening a meeting and saving it untouched changes nothing. Nothing
+  stored changes, and a snoozed or held alert stays snoozed or held. The version does not
+  move for this: no build has been cut since 1.0.0-alpha.1. Known limitations: nobody has
+  heard it with a screen reader; no real Outlook account's events have been read since, and
+  no moved meeting has reached Outlook or Google; near midnight, a meeting from another time
+  zone can sit in the neighbouring day's Day or Week view while saying its own day; and a
+  Google series whose first day is in winter is placed an hour out on its days in summer, and
+  the other way round, because each day carries the first day's offset.
 - **An invitation from another time zone is said at your hour (#50, ledger 632).** A meeting
   invitation names its times in the organiser's time zone, and Wixen Mail read that hour as
   an hour on your own clock, so a meeting set for nine in the morning in Tokyo was said at
@@ -792,7 +812,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   time zone database knows, such as one an organiser built by hand, keeps the hour as it was
   written and the sentence says it could not be placed; a meeting whose end is written in a
   different time zone from its start is read in the start's; and the calendar itself still
-  shows and says such a meeting at the hour it was written.
+  showed and said such a meeting at the hour it was written until the Outlook calendar entry
+  above, on 2026-09-27.
 - **An ordinary RSA PGP private key can be imported on Windows.** Windows keeps at most 1,280
   characters in one entry of its credential store, and a PGP private key made with RSA is
   longer: the test key here is 1,836 characters, and a usual key with an encryption subkey is
