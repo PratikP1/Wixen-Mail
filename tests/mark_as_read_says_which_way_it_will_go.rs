@@ -482,6 +482,8 @@ fn the_id_arm<'a>(source: &'a str, heading: &str) -> Result<&'a str, String> {
 
 const THE_ARM: &str = "_ if id == ID_MARK_READ =>";
 const THE_TOGGLE: &str = "fn toggle_read_state(";
+/// The toggle's do-half, which writes each message and tells the server.
+const THE_DOING: &str = "fn mark_these_read(";
 const THE_REFRESH: &str = "fn refresh_mark_read_wording(";
 /// Where the key is wired on the message list, and the first line after the
 /// read-aloud and key wirings.
@@ -531,7 +533,7 @@ fn the_arm_and_the_key_share_one_toggle(app: &str) -> Result<(), String> {
     for needed in [
         "what_the_key_says(",
         "a11y.signal(FeedbackEvent::Confirmed",
-        "FlagChange::Read(",
+        THE_DOING.trim_start_matches("fn "),
     ] {
         if !toggle.contains(needed) {
             return Err(format!(
@@ -539,6 +541,16 @@ fn the_arm_and_the_key_share_one_toggle(app: &str) -> Result<(), String> {
                  the toggle the command was"
             ));
         }
+    }
+    // The flag goes to the server from the do-half since 13-24, which the
+    // toggle calls and which says nothing; followed there rather than read
+    // in the toggle, where it no longer is.
+    if !body_of(app, THE_DOING)?.contains("FlagChange::Read(") {
+        return Err(
+            "mark_these_read does not reach FlagChange::Read(, so the toggle under the key \
+             does not send the flag the command always sent"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -676,7 +688,8 @@ fn a_window_as_it_should_be() -> String {
          }}\n                        _ if id == ID_SEARCH => {{\n\
          {}\n    refresh_mark_read_wording(frame, toolbar, state);{}\n\
          {}) {{\n    let word = what_the_key_says(new_read);\n    a11y.signal(FeedbackEvent::Confirmed, word);\n\
-         ServerChange::Flag(FlagChange::Read(new_read));\n    refresh_mark_read_wording(frame, toolbar, state);\n}}\n\
+         mark_these_read(app, cache, list, &chosen, new_read);\n    refresh_mark_read_wording(frame, toolbar, state);\n}}\n\
+         {}) {{\n    ServerChange::Flag(FlagChange::Read(read));\n}}\n\
          {}) {{\n    let wording = what_the_command_says(any_unread);\n\
          let (item, menu) = bar.find_item_and_menu(ID_MARK_READ);\n\
          item.set_label(wording.menu);\n    menu.set_help_string(ID_MARK_READ, wording.help);\n\
@@ -695,6 +708,7 @@ fn a_window_as_it_should_be() -> String {
         THE_TOGGLED_ARM.0,
         THE_TOGGLED_ARM.1,
         THE_TOGGLE,
+        THE_DOING,
         THE_REFRESH,
     )
 }

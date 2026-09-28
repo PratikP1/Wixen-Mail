@@ -144,9 +144,12 @@ fn loop_bodies(text: &str) -> Vec<&str> {
 
 // ── The anchors, each a name or a literal ──────────────────────────────────
 
-const THE_TOGGLE: &str = "fn toggle_read_state(";
-const THE_STAR_ARM: &str = "_ if id == ID_TOGGLE_STAR =>";
-const THE_LABELS: &str = "fn label_the_message(";
+/// The do-halves that carry Mark as Read, Star and a label out, which is
+/// where their writes and their remembering are since 13-24; the commands
+/// keep the read half and the sentence.
+const THE_TOGGLE: &str = "fn mark_these_read(";
+const THE_STAR: &str = "fn star_these(";
+const THE_LABELS: &str = "fn label_these(";
 const THE_PROGRAMS_OWN_MARK: &str = "fn mark_what_was_read(";
 const THE_EDIT_COMMAND: &str = "fn do_an_edit_command(";
 const THE_CARRYING_OUT: &str = "fn take_back_or_do_again(";
@@ -483,8 +486,8 @@ fn test_marking_read_remembers_the_action_after_its_writes() {
 #[test]
 fn test_starring_remembers_the_action_after_its_writes() {
     let app = the_main_window();
-    let arm = the_id_arm(&app, THE_STAR_ARM).unwrap_or_else(|why| panic!("{why}"));
-    remembers_after_its_writes(arm, "Star").unwrap_or_else(|why| panic!("{why}"));
+    let body = body_of(&app, THE_STAR).unwrap_or_else(|why| panic!("{why}"));
+    remembers_after_its_writes(body, "Star").unwrap_or_else(|why| panic!("{why}"));
 }
 
 #[test]
