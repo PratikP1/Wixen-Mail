@@ -31,7 +31,10 @@
 
 use crate::application::choosing_messages::{Chosen, MessageRef};
 use crate::application::filters::Outcome;
+use crate::application::mail_sync::the_folder_a_rule_names;
+use crate::application::tagging::the_label_a_rule_names;
 use crate::data::message_cache::{CachedFolder, Tag};
+use crate::service::caldav::how_many;
 
 /// One chosen message, as much of it as deciding what it needs takes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,9 +48,10 @@ pub struct HeldMessage {
 }
 
 /// Where a message ends up once its other writes are made.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum Then {
     /// Where it is.
+    #[default]
     Stay,
     /// Into another folder of its own account, by path, with the name the
     /// sentence says.
@@ -57,7 +61,12 @@ pub enum Then {
 }
 
 /// The writes one message needs, every one of which changes something.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The phrase said first is the exception: it is kept on this computer
+/// alone, [`HeldMessage`] does not carry the phrase a message has now, and
+/// writing the same phrase again changes nothing anybody hears, so it is
+/// carried whenever the outcome says one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Needs {
     pub read: Option<bool>,
     pub starred: Option<bool>,
@@ -70,7 +79,7 @@ pub struct Needs {
 impl Needs {
     /// Whether nothing would change.
     pub fn is_nothing(&self) -> bool {
-        false
+        self == &Self::default()
     }
 }
 
@@ -82,34 +91,78 @@ pub enum WhyNot {
     NoLabelCalled(String),
 }
 
+/// Said once for the whole run, before anything changes, so it names what is
+/// missing and that nothing was done rather than leaving somebody to find
+/// out which messages were half changed.
 impl std::fmt::Display for WhyNot {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(())
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (kind, named) = match self {
+            WhyNot::NoFolderCalled(named) => ("folder", named),
+            WhyNot::NoLabelCalled(named) => ("label", named),
+        };
+        write!(
+            f,
+            "This account has no {kind} called {named}, so nothing was changed."
+        )
     }
 }
 
 /// What `outcome` asks of `message`, every write that would change nothing
 /// dropped, with the folder and the labels resolved within the message's own
 /// account.
+///
+/// `folders` and `labels` are the account's own, which is what keeps a
+/// folder or a label of the same name on another account out of it
+/// (decision 3). They are found the way a rule finds them, by
+/// [`the_folder_a_rule_names`] and [`the_label_a_rule_names`], so a Quick
+/// Step and a rule naming the same thing reach the same place.
+///
+/// A delete keeps nothing else, as [`crate::application::filters::settle`]
+/// decides, whatever else the outcome holds: a caller that built its own
+/// outcome gets the same rule, and a message about to go to the trash is
+/// not moved or refused for a folder it will never reach.
 pub fn what_each_message_needs(
     outcome: &Outcome,
-    _message: &HeldMessage,
-    _folders: &[CachedFolder],
-    _labels: &[Tag],
+    message: &HeldMessage,
+    folders: &[CachedFolder],
+    labels: &[Tag],
 ) -> Result<Needs, WhyNot> {
+    if outcome.delete {
+        return Ok(Needs {
+            then: Then::Delete,
+            ..Needs::default()
+        });
+    }
+    let then = match &outcome.move_to {
+        None => Then::Stay,
+        Some(named) => {
+            let folder = the_folder_a_rule_names(folders, named)
+                .ok_or_else(|| WhyNot::NoFolderCalled(named.clone()))?;
+            match folder.path == message.folder_path {
+                true => Then::Stay,
+                false => Then::MoveTo {
+                    path: folder.path.clone(),
+                    name: folder.name.clone(),
+                },
+            }
+        }
+    };
+    let mut lacking: Vec<String> = Vec::new();
+    for named in &outcome.tags {
+        let label = the_label_a_rule_names(labels, named)
+            .ok_or_else(|| WhyNot::NoLabelCalled(named.clone()))?;
+        if !message.label_ids.contains(&label.id) && !lacking.contains(&label.id) {
+            lacking.push(label.id.clone());
+        }
+    }
     Ok(Needs {
-        read: outcome.read,
-        starred: outcome.starred,
-        labels: outcome.tags.clone(),
-        say_first: None,
-        then: match &outcome.move_to {
-            Some(named) => Then::MoveTo {
-                path: named.clone(),
-                name: named.clone(),
-            },
-            None if outcome.delete => Then::Delete,
-            None => Then::Stay,
-        },
+        read: outcome.read.filter(|read| *read != message.read),
+        starred: outcome
+            .starred
+            .filter(|starred| *starred != message.starred),
+        labels: lacking,
+        say_first: outcome.say_first.clone(),
+        then,
     })
 }
 
@@ -130,30 +183,73 @@ pub struct TheWork {
 impl TheWork {
     /// Whether no message needs anything.
     pub fn is_nothing(&self) -> bool {
-        false
+        self == &Self::default()
     }
 
     /// Whether any write is one the server is told about, which is when the
     /// account's gate has to be met. The phrase said first is kept on this
     /// computer and nowhere else.
     pub fn reaches_the_server(&self) -> bool {
-        true
+        self.read.is_some()
+            || self.starred.is_some()
+            || !self.labels.is_empty()
+            || self.then.is_some()
     }
 }
 
-/// The work a set of messages and their needs add up to.
+/// The work one account's messages and their needs add up to.
+///
+/// Each message goes to a step only when it needs that step's write, and
+/// goes to each step as the steps before it left it. That second half is
+/// not tidiness: Mark as Read's do-half writes the star as the message held
+/// it and Star's writes the read state as the message held it, so a star
+/// step handed the message as it was chosen would put back the read state
+/// the read step had just changed.
+///
+/// The needs come from one outcome resolved within one account, so every
+/// message that moves moves to the same folder; the first message's answer
+/// is the step's.
 pub fn the_work(each: &[(MessageRef, Needs)]) -> TheWork {
-    let everything = Chosen {
-        messages: each.iter().map(|(message, _)| message.clone()).collect(),
-        ..Chosen::default()
-    };
-    TheWork {
-        read: Some((true, everything.clone())),
-        starred: Some((true, everything.clone())),
-        labels: Vec::new(),
-        say_first: None,
-        then: Some((Then::Delete, everything)),
+    let mut work = TheWork::default();
+    for (message, needs) in each {
+        let mut message = message.clone();
+        if let Some(read) = needs.read {
+            take(&mut work.read, read, &message);
+            message.read = read;
+        }
+        if let Some(starred) = needs.starred {
+            take(&mut work.starred, starred, &message);
+            message.starred = starred;
+        }
+        for label in &needs.labels {
+            match work.labels.iter_mut().find(|(id, _)| id == label) {
+                Some((_, those)) => those.messages.push(message.clone()),
+                None => work.labels.push((
+                    label.clone(),
+                    Chosen {
+                        messages: vec![message.clone()],
+                        ..Chosen::default()
+                    },
+                )),
+            }
+        }
+        if let Some(phrase) = &needs.say_first {
+            take(&mut work.say_first, phrase.clone(), &message);
+        }
+        if needs.then != Then::Stay {
+            take(&mut work.then, needs.then.clone(), &message);
+        }
     }
+    work
+}
+
+/// Add a message to a step, the step starting with the first message that
+/// needs it.
+fn take<T>(step: &mut Option<(T, Chosen)>, how: T, message: &MessageRef) {
+    step.get_or_insert_with(|| (how, Chosen::default()))
+        .1
+        .messages
+        .push(message.clone());
 }
 
 /// Where the messages went, for the sentence.
@@ -176,22 +272,146 @@ pub struct WhatWasDone {
 }
 
 impl WhatWasDone {
-    pub fn marked(&mut self, _read: bool, _count: usize) {}
+    /// `count` messages marked read, or unread.
+    pub fn marked(&mut self, read: bool, count: usize) {
+        add(&mut self.read, read, count);
+    }
 
-    pub fn starred(&mut self, _starred: bool, _count: usize) {}
+    /// `count` messages starred, or unstarred.
+    pub fn starred(&mut self, starred: bool, count: usize) {
+        add(&mut self.starred, starred, count);
+    }
 
-    pub fn labelled(&mut self, _name: &str, _count: usize) {}
+    /// The label named put on `count` messages.
+    pub fn labelled(&mut self, name: &str, count: usize) {
+        if count == 0 {
+            return;
+        }
+        match self.labelled.iter_mut().find(|(held, _)| held == name) {
+            Some((_, held)) => *held += count,
+            None => self.labelled.push((name.to_string(), count)),
+        }
+    }
 
-    pub fn said_first(&mut self, _phrase: &str, _count: usize) {}
+    /// `count` messages given the phrase said first.
+    pub fn said_first(&mut self, phrase: &str, count: usize) {
+        add(&mut self.said_first, phrase.to_string(), count);
+    }
 
-    pub fn went(&mut self, _went: Went, _count: usize) {}
+    /// `count` messages moved or deleted.
+    pub fn went(&mut self, went: Went, count: usize) {
+        add(&mut self.went, went, count);
+    }
+
+    /// One clause per kind of write, in the order the writes are made.
+    fn clauses(&self) -> Vec<Clause> {
+        let mut clauses = Vec::new();
+        if let Some((read, count)) = self.read {
+            clauses.push(match read {
+                true => Clause::new(count, "marked read", "already read"),
+                false => Clause::new(count, "marked unread", "already unread"),
+            });
+        }
+        if let Some((starred, count)) = self.starred {
+            clauses.push(match starred {
+                true => Clause::new(count, "starred", "already starred"),
+                false => Clause::new(count, "unstarred", "already unstarred"),
+            });
+        }
+        for (name, count) in &self.labelled {
+            clauses.push(Clause::new(
+                *count,
+                &format!("labelled {name}"),
+                "already had it",
+            ));
+        }
+        if let Some((phrase, count)) = &self.said_first {
+            clauses.push(Clause::new(
+                *count,
+                &format!("set to say {phrase} first"),
+                "left as they were",
+            ));
+        }
+        if let Some((went, count)) = &self.went {
+            clauses.push(match went {
+                Went::MovedTo(name) => {
+                    Clause::new(*count, &format!("moved to {name}"), "already there")
+                }
+                Went::Deleted => Clause::new(*count, "deleted", "not deleted"),
+            });
+        }
+        clauses
+    }
+}
+
+/// Count `count` more under `how`, starting the count at the first.
+fn add<T>(kind: &mut Option<(T, usize)>, how: T, count: usize) {
+    if count == 0 {
+        return;
+    }
+    kind.get_or_insert((how, 0)).1 += count;
+}
+
+/// One kind of write, as the sentence says it.
+struct Clause {
+    count: usize,
+    /// "marked read", "moved to Archive".
+    what: String,
+    /// What the rest of the chosen messages were, when the write passed
+    /// some over: "already read", "already had it".
+    left_alone: &'static str,
+}
+
+impl Clause {
+    fn new(count: usize, what: &str, left_alone: &'static str) -> Self {
+        Self {
+            count,
+            what: what.to_string(),
+            left_alone,
+        }
+    }
+
+    /// The clause after the first: its count said again only when it is
+    /// not the first clause's.
+    fn after(&self, first: &Clause) -> String {
+        match self.count == first.count {
+            true => self.what.clone(),
+            false => format!("{} {}", self.count, self.what),
+        }
+    }
 }
 
 /// One sentence for the run: what was done, to how many, at most two
 /// clauses and then "and other changes", so a run of five actions is not
 /// five sentences.
-pub fn said(_chosen: &Chosen, _done: &WhatWasDone) -> String {
-    String::new()
+///
+/// "3 messages marked read and moved to Archive", "2 messages labelled
+/// Money, 1 already had it", "Nothing needed changing on the 3 messages".
+/// The count comes first, as in every sentence a command over the set says
+/// ([`crate::application::choosing_messages::what_was_done`]). What the
+/// rest were is said only for a run of one kind of write, where it is the
+/// answer to "did it take them all"; beside a second clause it would make
+/// the sentence three long.
+pub fn said(chosen: &Chosen, done: &WhatWasDone) -> String {
+    let chosen_count = chosen.messages.len();
+    let clauses = done.clauses();
+    let Some((first, rest)) = clauses.split_first() else {
+        return match chosen_count {
+            1 => "Nothing needed changing on the message".to_string(),
+            many => format!("Nothing needed changing on the {many} messages"),
+        };
+    };
+    let opening = format!("{} {}", how_many(first.count, "message"), first.what);
+    match rest {
+        [] if first.count < chosen_count => format!(
+            "{opening}, {} {}",
+            chosen_count - first.count,
+            first.left_alone
+        ),
+        [] => opening,
+        [second] => format!("{opening} and {}", second.after(first)),
+        [second, ..] => format!("{opening}, {} and other changes", second.after(first)),
+    }
 }
 
 #[cfg(test)]
