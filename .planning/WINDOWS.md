@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 626
+open_count: 628
 waived_count: 0
-fixed_count: 70
-total_count: 696
-last_updated: 2026-09-28T16:00:00.000Z
+fixed_count: 71
+total_count: 699
+last_updated: 2026-09-28T16:27:15.000Z
 ---
 
 # Broken Windows Ledger
@@ -707,7 +707,10 @@ last_updated: 2026-09-28T16:00:00.000Z
 | 690 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, the tester's ear: nobody has heard the block's question or its answer. Whether the question is read on open with its count, sender and folder; whether Enter answers Yes and Escape closes it (decision 4 says Escape answers No, and a Yes and No box with no Cancel may not answer Escape on Windows; closing it by any means leaves the mail, which the code treats as No); whether the sentence said before the block at High, then the question, then the sentence after it are one clear sequence; and whether block_the_sender's told, which both announces and sends a status line that is itself spoken, is heard twice | open |  | 2026-09-28T11:59:28.000Z |  |
 | 691 | 13 | todo | src/presentation/wx_app.rs | 34776 | 13-25, premise 2, still true on 2026-09-28: block_the_sender writes the block to the open account, held.active_account_id, not to the account the selected message is in. In All Inboxes the two differ, so a block on a message from a second account is written to the first account's rules and counts that account's mail. A question for Pratik, left unfixed because it is a decision about blocking and not about the move. Recommendation: block on the message's own account, as Report as Junk already does per message | open |  | 2026-09-28T11:59:28.000Z |  |
 | 692 | 13 | todo | tests/every_way_a_file_goes_on_a_message.rs | 264 | 13-25, found by CI: test_nothing_else_in_the_presentation_layer_attaches_a_file reads every file under src/presentation for a Chosen spelled by hand, and the one guard record naming its target, "every route that attaches a file goes through the one model", has file = src/presentation/wx_compose.rs, so the commit hook runs it for a change to wx_compose.rs and to no other presentation file. 13-25 built a choosing_messages::Chosen in wx_app.rs, which the test reads as an attachment, and only CI's Test Suite saw it. Recommendation: a record whose file is wx_app.rs and whose break plants a Chosen literal there, so the hook couples the target to the window as well; the textual match on "Chosen {" also meets choosing_messages::Chosen, which 13-42 and 13-44 may build | open |  | 2026-09-28T13:10:00.000Z |  |
-| 693 | 13 | todo | src/service/directory.rs | 316 | 13-26: nothing outside tests writes a directory password, and nothing on screen writes a sign-in name either: directory::keep_the_password has no caller but its tests, and wx_account_manager.rs writes sign_in_as as None. So the lookup's reading of the saved password, the refusal over ldap:// and the erasure are reached in the running program only by a sign-in name typed into the stored settings by hand. 13-27's window writes both, and its premise 1 names this entry, which it closes in both halves | open |  | 2026-09-28T16:00:00.000Z |  |
+| 693 | 13 | todo | src/service/directory.rs | 316 | 13-26: nothing outside tests writes a directory password, and nothing on screen writes a sign-in name either: directory::keep_the_password has no caller but its tests, and wx_account_manager.rs writes sign_in_as as None. So the lookup's reading of the saved password, the refusal over ldap:// and the erasure are reached in the running program only by a sign-in name typed into the stored settings by hand. 13-27's window writes both, and its premise 1 names this entry, which it closes in both halves. Fixed 2026-09-28 by 13-27: Look People Up at Work on the Account Manager writes the sign-in name through remember_where_to_look_people_up and the password through directory::keep_the_password and forget_the_password, decided by application::directory_sign_in::what_the_window_keeps; tests/the_directory_sign_in_has_a_window_of_its_own.rs reads the window and the save | fixed |  | 2026-09-28T16:00:00.000Z | 2026-09-28T16:27:15.000Z |
+| 697 | 13 | unrun-verify | src/presentation/wx_account_manager.rs | 2234 | 13-27, the tester's ear: nobody has heard Look People Up at Work. Whether Alt+L on the Account Manager is announced with the button's name; whether the window is read in order, the untried line first and then the four boxes by their names; whether the password box's description, and the line under it, say a password is saved when one is; and whether a refused save, a sign-in name with an empty box and nothing saved, is heard with focus landing in the password box | open |  | 2026-09-28T16:27:15.000Z |  |
+| 698 | 13 | unrun-verify | src/presentation/wx_account_manager.rs | 2413 | 13-27, for phase 14: no sign-in saved in Look People Up at Work has reached a real directory. A check against a real directory over ldaps://: save a sign-in name and password, look a colleague up from To, reopen the window and hear that a password is saved, then clear the name, save, and see the wixen-mail-directory entry gone from Windows Credential Manager. Ledger 695 is the lookup's half of the same check | open |  | 2026-09-28T16:27:15.000Z |  |
+| 699 | 13 | todo | src/application/directory_sign_in.rs | 65 | 13-27, a design question for Pratik: a password saved in Look People Up at Work for an address beginning ldap:// is kept in the credential store and then refused at every lookup, with the sentence saying to ask for an ldaps:// address. Refusing it when OK is pressed would say so once, where the password is typed, and keep a password that can never be sent out of the store; the recommendation is to refuse it at OK with the same sentence. Not built, because the plan did not ask for it and the lookup already refuses it | open |  | 2026-09-28T16:27:15.000Z |  |
 | 694 | 13 | todo | src/service/directory.rs | 510 | 13-26, decisions 1 and 2: signing in to a directory as the Windows user, with no password typed, is later work and not built. The two routes the research named: Windows' own LDAP, wldap32 through the windows crate's Win32_Networking_Ldap feature (not on today), which also brings Windows' own certificate store; or ldap3's gssapi feature. And ldap3 is kept while its issue #157 asks whether the crate is still maintained: when that is answered, or when a fix ldap3 needs goes unmerged, re-take the audit in RESEARCH-3 against wldap32 | open |  | 2026-09-28T16:00:00.000Z |  |
 | 695 | 13 | unrun-verify | src/service/directory.rs | 666 | 13-26, for phase 14: no real directory has been asked with a sign-in. A check against Pratik's directory once 13-27's window exists: a sign-in name and password over ldaps:// find people; the same over ldap:// is refused with the sentence and nothing is sent; a search whose base is an Active Directory domain root, which answers with continuation references beside the entries, still finds the people; and removing the account leaves no wixen-mail-directory entry in Credential Manager | open |  | 2026-09-28T16:00:00.000Z |  |
 | 696 | 13 | todo | src/service/credentials.rs | 102 | 13-26, found and left: credentials.rs words a store failure as "Could not remove the password for {account_id}", and account_id is a UUID, so the refusal delete_account says when Windows will not let go of a password reads a string of hexadecimal aloud. 13-26's directory password words the same failure as "this account's directory password". Recommendation: the same wording in credentials.rs, with its tests | open |  | 2026-09-28T16:00:00.000Z |  |
@@ -9024,11 +9027,11 @@ last_updated: 2026-09-28T16:00:00.000Z
     "phase": "13",
     "file": "src/service/directory.rs",
     "line": 316,
-    "description": "13-26: nothing outside tests writes a directory password, and nothing on screen writes a sign-in name either: directory::keep_the_password has no caller but its tests, and wx_account_manager.rs writes sign_in_as as None. So the lookup's reading of the saved password, the refusal over ldap:// and the erasure are reached in the running program only by a sign-in name typed into the stored settings by hand. 13-27's window writes both, and its premise 1 names this entry, which it closes in both halves",
-    "status": "open",
+    "description": "13-26: nothing outside tests writes a directory password, and nothing on screen writes a sign-in name either: directory::keep_the_password has no caller but its tests, and wx_account_manager.rs writes sign_in_as as None. So the lookup's reading of the saved password, the refusal over ldap:// and the erasure are reached in the running program only by a sign-in name typed into the stored settings by hand. 13-27's window writes both, and its premise 1 names this entry, which it closes in both halves. Fixed 2026-09-28 by 13-27: Look People Up at Work on the Account Manager writes the sign-in name through remember_where_to_look_people_up and the password through directory::keep_the_password and forget_the_password, decided by application::directory_sign_in::what_the_window_keeps; tests/the_directory_sign_in_has_a_window_of_its_own.rs reads the window and the save",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-28T16:00:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-28T16:27:15.000Z"
   },
   {
     "id": 694,
@@ -9064,6 +9067,42 @@ last_updated: 2026-09-28T16:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 697,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": 2234,
+    "description": "13-27, the tester's ear: nobody has heard Look People Up at Work. Whether Alt+L on the Account Manager is announced with the button's name; whether the window is read in order, the untried line first and then the four boxes by their names; whether the password box's description, and the line under it, say a password is saved when one is; and whether a refused save, a sign-in name with an empty box and nothing saved, is heard with focus landing in the password box",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T16:27:15.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 698,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": 2413,
+    "description": "13-27, for phase 14: no sign-in saved in Look People Up at Work has reached a real directory. A check against a real directory over ldaps://: save a sign-in name and password, look a colleague up from To, reopen the window and hear that a password is saved, then clear the name, save, and see the wixen-mail-directory entry gone from Windows Credential Manager. Ledger 695 is the lookup's half of the same check",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T16:27:15.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 699,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/directory_sign_in.rs",
+    "line": 65,
+    "description": "13-27, a design question for Pratik: a password saved in Look People Up at Work for an address beginning ldap:// is kept in the credential store and then refused at every lookup, with the sentence saying to ask for an ldaps:// address. Refusing it when OK is pressed would say so once, where the password is typed, and keep a password that can never be sent out of the store; the recommendation is to refuse it at OK with the same sentence. Not built, because the plan did not ask for it and the lookup already refuses it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T16:27:15.000Z",
     "resolved_at": null
   }
 ]

@@ -181,13 +181,19 @@ jobs:
         # The unlock-a-pgp-key target, added 2026-09-27 (#49, 13-17.1), is the
         # dialog a reader window opens for a key locked with a passphrase,
         # asked about a made-up key. Focus lands on the passphrase field.
+        #
+        # The directory-sign-in target, added 2026-09-28 (#55, 13-27), is Look
+        # People Up at Work, which the Account Manager opens for an account's
+        # directory and its sign-in. It opens on a made-up directory with a
+        # password said to be saved, so the line saying so is walked too.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
           'which-days', 'send-later', 'add-address-book', 'about', 'feedback',
           'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
           'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
-          'account-details', 'phone-number', 'page', 'page-window', 'pgp-keys', 'unlock-a-pgp-key'
+          'account-details', 'phone-number', 'page', 'page-window', 'pgp-keys', 'unlock-a-pgp-key',
+          'directory-sign-in'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

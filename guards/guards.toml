@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 444 records have arrived since and have not been through it.
+# 447 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33756,7 +33756,7 @@ red = [
     "service::directory::tests::test_an_answer_of_nothing_but_references_holds_nobody",
 ]
 tests_last_seen = [
-    { file = "src/service/directory.rs", tests = 53 },
+    { file = "src/service/directory.rs", tests = 54 },
 ]
 
 # A password sent to a directory whose address begins ldap://, where a
@@ -33771,7 +33771,7 @@ red = [
     "service::directory::tests::test_a_password_is_never_sent_over_an_unencrypted_address",
 ]
 tests_last_seen = [
-    { file = "src/service/directory.rs", tests = 53 },
+    { file = "src/service/directory.rs", tests = 54 },
 ]
 
 # Uninstalling leaves every account's directory password in the credential
@@ -33810,4 +33810,58 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 23 },
+]
+
+# Clearing the sign-in name in Look People Up at Work and saving leaves the
+# directory password in the credential store, where nothing will ever send
+# it and nothing on screen says it is there. Written 2026-09-28 by 13-27.
+[[guard]]
+name = "clearing the directory sign-in name forgets the saved password"
+file = "src/application/directory_sign_in.rs"
+before = '''        (true, _, _) => PasswordChange::Forget,'''
+after = '''        (true, _, _) => PasswordChange::Keep,'''
+red = [
+    "application::directory_sign_in::tests::test_no_sign_in_name_forgets_any_saved_password",
+]
+tests_last_seen = [
+    { file = "src/application/directory_sign_in.rs", tests = 11 },
+]
+
+# A directory password typed into Look People Up at Work reaching nowhere:
+# the save no longer hands it to the credential store, and the window closes
+# as though it were kept. The settings cannot hold one at all, since the
+# directory they store has no field for it, so the store is the only place it
+# can go and this is the way it goes missing. Written 2026-09-28 by 13-27.
+[[guard]]
+name = "a password typed into the directory window goes to the credential store"
+file = "src/presentation/wx_account_manager.rs"
+suite = "the_directory_sign_in_has_a_window_of_its_own"
+before = '''        PasswordChange::Replace(password) => directory::keep_the_password(account_id, &password),'''
+after = '''        PasswordChange::Replace(_password) => Ok(()),'''
+red = [
+    "test_a_typed_password_goes_to_the_credential_store_and_the_settings_have_no_room_for_one",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+    { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 13 },
+]
+
+# The directory window's password box, with a password saved, saying on MSAA
+# only where a password would be kept, so somebody tabbing to the empty box
+# hears nothing telling them one is already saved and that leaving it empty
+# keeps it. Written 2026-09-28 by 13-27.
+[[guard]]
+name = "the directory window's password box says when a password is saved"
+file = "src/presentation/wx_account_manager.rs"
+suite = "the_directory_sign_in_has_a_window_of_its_own"
+before = '''            if a_password_is_saved {
+                A_PASSWORD_IS_SAVED'''
+after = '''            if false {
+                A_PASSWORD_IS_SAVED'''
+red = [
+    "test_with_a_password_saved_the_box_and_the_window_both_say_so",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+    { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 13 },
 ]

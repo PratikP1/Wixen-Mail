@@ -37,6 +37,7 @@ pub mod deleting_at_the_server;
 pub mod deletions;
 pub mod describing_pictures;
 pub mod destinations;
+pub mod directory_sign_in;
 pub mod draft_copy;
 pub mod draft_message;
 pub mod due;

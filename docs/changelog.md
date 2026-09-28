@@ -8,6 +8,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Look People Up at Work on the Account Manager, where a directory's sign-in is typed,
+  experimental (GAP-07's directory half, #55).** `Alt+L` on the Account Manager opens a
+  window for the chosen account holding the directory address (`Alt+D`), where in it to look
+  (`Alt+W`), the sign-in name (`Alt+N`) and the password (`Alt+P`); with no account chosen it
+  says so, as Edit does. The window says first that looking people up has not been tried
+  against a real directory. OK keeps the address and the name in the settings and the
+  password in the Windows credential store, never in the settings. The password box opens
+  empty and never shows a saved password back; when one is saved, the box and a line under it
+  say so, leaving the box empty keeps it, typing replaces it, and clearing the sign-in name
+  forgets it. A sign-in name with an empty box and no password saved is refused: the window
+  stays open, says why, and puts you in the password box. The sentences a lookup says when
+  the directory is missing, wrongly set up, refuses the sign-in or does not answer now send
+  you to this window rather than to "the account's settings". The version does not move for
+  this: no build has been cut since 1.0.0-alpha.1. Known limitations: no real directory has
+  been asked with a sign-in saved here; a password saved for an `ldap://` address is kept
+  and then refused at every lookup rather than refused when you press OK.
 - **A directory password is kept in the Windows credential store and sent over encrypted
   addresses only, with nothing on screen to set it yet (GAP-07's directory half, #55).** When
   an account's directory names somebody to sign in as, looking a name up reads that
@@ -402,6 +418,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The directory's two boxes moved off the account editor's second page (#55).** Directory
+  address and Where in it to look are in Look People Up at Work on the Account Manager now,
+  beside the sign-in name and password they belong with, so `Alt+Y` and `Alt+H` are free on
+  that page again. A directory an account already named is kept and shows in the new window.
 - **What a block says is true of what happened (#54).** Before a block, the sentence no longer
   promises that the messages already here stay where they are. After it, the sentence says how
   many were moved to the junk folder, how many were not, or that they stay because you

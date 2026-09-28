@@ -261,6 +261,15 @@ Written down so you do not spend time reporting things already on the list.
   to the junk folder, and that move has never been tried on a real server
   either. If you try it, tell us the count the question gave and whether the
   messages reached the junk folder in another mail program too.
+- **Looking people up in your organisation's directory has never met a real
+  directory, and a directory sign-in never has either.** Look People Up at
+  Work, on the Account Manager (`Alt+L`), takes the directory's address, where
+  in it to look, a sign-in name and a password, and the window says it is
+  untried. The password is kept in the Windows credential store and only ever
+  sent to an address beginning `ldaps://`. If your workplace has a directory,
+  set it up, type three letters of a colleague's name into To, and tell us
+  whether they were found, which sentence you heard if they were not, and
+  whether the window told you plainly when a password was already saved.
 - **Opening S/MIME encrypted mail is experimental, and it has met no message
   from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
   encrypted to a certificate in your Windows certificate store is opened with

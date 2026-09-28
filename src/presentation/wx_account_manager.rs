@@ -14,6 +14,9 @@ use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
 // The one wording for a refusal when nothing was chosen (#75). This window
 // said it five ways, one per button, and the button is not what somebody
 // needs to hear: the list is empty of a choice and that is the whole answer.
+use crate::application::directory_sign_in::{
+    A_PASSWORD_IS_SAVED, NOT_TRIED_YET, PasswordChange, what_the_window_keeps,
+};
 use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
@@ -27,7 +30,7 @@ use crate::presentation::accessibility::names::{
 use crate::presentation::manager_words;
 use crate::presentation::text_history_keys::{keep_a_history, set_anew};
 use crate::presentation::theme;
-use crate::service::directory::Directory;
+use crate::service::directory::{self, Directory};
 
 /// What to put in the password box when the provider wants an app password.
 ///
@@ -56,6 +59,7 @@ const ID_APP_PASSWORD: Id = ID_HIGHEST + 206;
 const ID_SET_DEFAULT: Id = ID_HIGHEST + 207;
 const ID_NEXT: Id = ID_HIGHEST + 208;
 const ID_BACK: Id = ID_HIGHEST + 209;
+const ID_LOOK_PEOPLE_UP: Id = ID_HIGHEST + 211;
 
 #[derive(Debug, Clone)]
 pub enum AccountManagerAction {
@@ -80,14 +84,15 @@ pub enum AccountManagerAction {
 /// `dialog`, `list` and `status` are what `show_account_manager_dialog`'s own
 /// loop still needs after construction; Add, Edit and Close are wired to
 /// `end_modal` entirely inside [`build_account_manager_dialog`] and are
-/// never referred to again. `reauthorize`, `delete`, `set_default` and
-/// `set_active` are handed to [`wire_account_manager_actions`] instead,
+/// never referred to again. `look_people_up`, `reauthorize`, `delete`,
+/// `set_default` and `set_active` are handed to [`wire_account_manager_actions`] instead,
 /// which wires each straight to the function that does its work rather than
 /// to `end_modal`; see that function's own doc comment for why.
 pub struct AccountManagerDialogHandles {
     pub dialog: Dialog,
     pub list: ListCtrl,
     pub status: StaticText,
+    look_people_up: Button,
     reauthorize: Button,
     delete: Button,
     set_default: Button,
@@ -121,7 +126,7 @@ pub fn show_account_manager_dialog(
         changed: false,
     }));
 
-    wire_account_manager_actions(&widgets, &state, a11y);
+    wire_account_manager_actions(&widgets, &state, a11y, palette);
     run_account_manager_loop(&widgets, &state, a11y, palette, signatures);
 
     let outcome = state.borrow();
@@ -155,7 +160,7 @@ pub fn build_account_manager_dialog(
     palette: Option<theme::Palette>,
 ) -> AccountManagerDialogHandles {
     let dlg = Dialog::builder(parent, "Account Manager")
-        .with_size(650, 450)
+        .with_size(820, 450)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
         .build();
 
@@ -189,6 +194,14 @@ pub fn build_account_manager_dialog(
     let edit = Button::builder(&dlg)
         .with_label("&Edit...")
         .with_id(ID_EDIT)
+        .build();
+    // Beside Edit, since it is about the chosen account too: where its
+    // organisation keeps its list of people and how to sign in to it, a window
+    // of its own because the editor's second page had no letters left for four
+    // more boxes (13-27). L, its first letter, which nothing here holds.
+    let look_people_up = Button::builder(&dlg)
+        .with_label("&Look People Up at Work...")
+        .with_id(ID_LOOK_PEOPLE_UP)
         .build();
     let del = Button::builder(&dlg)
         .with_label("&Delete")
@@ -228,7 +241,15 @@ pub fn build_account_manager_dialog(
         .with_label("&Close")
         .with_id(ID_OK)
         .build();
-    for b in [&add, &edit, &del, &active, &set_default, &reauth] {
+    for b in [
+        &add,
+        &edit,
+        &look_people_up,
+        &del,
+        &active,
+        &set_default,
+        &reauth,
+    ] {
         btns.add(b, 0, SizerFlag::All, 4);
     }
     btns.add_spacer(16);
@@ -289,6 +310,7 @@ pub fn build_account_manager_dialog(
         dialog: dlg,
         list,
         status,
+        look_people_up,
         reauthorize: reauth,
         delete: del,
         set_default,
@@ -343,10 +365,22 @@ fn wire_account_manager_actions(
     widgets: &AccountManagerDialogHandles,
     state: &Rc<RefCell<AccountManagerState>>,
     a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
 ) {
     let list = widgets.list;
     let status = widgets.status;
+    let manager = widgets.dialog;
 
+    // Opens its window over this one and never leaves it, so it is wired
+    // here with the four below rather than through the loop's `end_modal`.
+    widgets.look_people_up.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            let chosen = get_selected(&list).and_then(|at| state.borrow().working.get(at).cloned());
+            look_people_up_for(chosen.as_ref(), &manager, &status, &a11y, palette);
+        }
+    });
     widgets.reauthorize.on_click({
         let state = Rc::clone(state);
         let a11y = Arc::clone(a11y);
@@ -940,11 +974,6 @@ struct Page2Shell {
     allow_personal_information_here: CheckBox,
     allow_reading_here: CheckBox,
     allowed_note: StaticText,
-    directory_section_heading: StaticText,
-    directory_url_label: StaticText,
-    directory_url: TextCtrl,
-    directory_base_label: StaticText,
-    directory_base: TextCtrl,
 }
 
 impl Page2Shell {
@@ -972,11 +1001,6 @@ impl Page2Shell {
         self.allow_personal_information_here.show(visible);
         self.allow_reading_here.show(visible);
         self.allowed_note.show(visible);
-        self.directory_section_heading.show(visible);
-        self.directory_url_label.show(visible);
-        self.directory_url.show(visible);
-        self.directory_base_label.show(visible);
-        self.directory_base.show(visible);
     }
 }
 
@@ -1107,7 +1131,9 @@ const WHAT_THE_INTERVAL_DOES: &str = "How often this account is checked for new 
 /// reading it.
 ///
 /// The Alt keys are M, K and X, chosen against the other boxes on the
-/// connection page: S, T, L, D, C, B, U, W, G, I, A and H are taken there.
+/// connection page: S, T, L, D, C, B, U, W, G, I and A are taken there. H was
+/// too, by Where in it to look, until 13-27 moved the directory's boxes to
+/// Look People Up at Work on 2026-09-28.
 const MAIL_FROM_THIS_ACCOUNT: &str = "Send and delete &mail from this account";
 const PERSONAL_INFORMATION_FROM_THIS_ACCOUNT: &str =
     "Change tas&ks, contacts and calendar events from this account";
@@ -1251,10 +1277,6 @@ pub struct AccountEditWidgets {
     pub allow_mail_here: CheckBox,
     pub allow_personal_information_here: CheckBox,
     pub allow_reading_here: CheckBox,
-    /// Where this account's organisation keeps its list of people, or empty.
-    pub directory_url_f: TextCtrl,
-    /// Which part of that list to search, as the organisation names it.
-    pub directory_base_f: TextCtrl,
     pub next: Button,
     pub back: Button,
     pub ok: Button,
@@ -1327,18 +1349,17 @@ fn the_directory_this_account_names(account_id: &str) -> Option<Directory> {
 
 /// Write down where this account looks people up, or that it does not.
 ///
-/// Both boxes empty takes the entry out rather than storing an empty one, so
-/// clearing them really does stop anything being sent: an entry left behind
+/// `None` takes the entry out rather than storing an empty one, so clearing
+/// the boxes really does stop anything being sent: an entry left behind
 /// would be a directory with no address, asked on every keystroke and
-/// refusing every time.
-/// Answers what went wrong, or `None` when nothing did. It used to write the
-/// failure to a log, and the window went on to say "Account added". The two
-/// boxes are part of that account's own page, so somebody who filled them in
-/// and heard the account was added has been told the whole page was kept.
+/// refusing every time. Which it is, is decided by
+/// `application::directory_sign_in::what_the_window_keeps`.
+///
+/// Answers what went wrong, or `None` when nothing did, so the window can say
+/// so and stay open rather than let somebody believe it was kept.
 fn remember_where_to_look_people_up(
     account_id: &str,
-    url: &str,
-    search_under: &str,
+    directory: Option<Directory>,
 ) -> Option<String> {
     let mut settings = match crate::data::config::ConfigManager::load_stored() {
         Ok(settings) => settings,
@@ -1347,26 +1368,11 @@ fn remember_where_to_look_people_up(
             return Some(format!("{why}"));
         }
     };
-    let url = url.trim();
-    let search_under = search_under.trim();
     let directories = &mut settings.app_config_mut().directories;
-    if url.is_empty() && search_under.is_empty() {
-        directories.remove(account_id);
-    } else {
-        directories.insert(
-            account_id.to_string(),
-            Directory {
-                url: url.to_string(),
-                search_under: search_under.to_string(),
-                // Not offered on this screen. Nothing here stores a password
-                // for a directory yet, and a sign-in name with no password is
-                // one many directory servers accept and quietly treat as
-                // anonymous, so offering the name alone would be a box that
-                // looks like it does something and does not.
-                sign_in_as: None,
-            },
-        );
-    }
+    match directory {
+        None => directories.remove(account_id),
+        Some(directory) => directories.insert(account_id.to_string(), directory),
+    };
     if let Err(why) = settings.save() {
         tracing::warn!("Where to look people up could not be saved: {why}");
         return Some(format!("{why}"));
@@ -1424,20 +1430,7 @@ fn show_edit(
         // Said here rather than handed back, because what the window says
         // next is about the account and this is about one page of it. High,
         // so it is heard beside the ordinary confirmation that follows.
-        if let Some(why) = remember_where_to_look_people_up(
-            &id,
-            &w.directory_url_f.get_value(),
-            &w.directory_base_f.get_value(),
-        ) {
-            let _ = a11y.announce(
-                &format!(
-                    "Where this account looks people up could not be saved, so that box is \
-                     empty again the next time you open it. Everything else on this page was \
-                     kept. ({why})"
-                ),
-                Priority::High,
-            );
-        }
+        //
         // The three boxes, read into the one writer. A box that was
         // unavailable reads as unticked, and `set_allowed_for` keeps that as
         // "not narrowed here" rather than as a refusal, since nobody was asked.
@@ -1586,23 +1579,6 @@ pub fn build_account_edit_dialog(
         }
         (l, f)
     };
-    // For a box whose label cannot say enough on its own. One call and not
-    // two, the same rule `cb_with_description` below follows: attaching an
-    // accessible object replaces the last one, so the name and the description
-    // are set together or the name is lost.
-    let tf_with_description =
-        |label: &str, default: &str, description: &str| -> (StaticText, TextCtrl) {
-            let l = StaticText::builder(&dlg).with_label(label).build();
-            let f = TextCtrl::builder(&dlg).with_value(default).build();
-            keep_a_history(&f);
-            set_accessible_name_and_description(&f, &name_from_label(label), description);
-            fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
-            fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
-            if let Some(palette) = palette {
-                theme::paint(&f, palette.main_surface());
-            }
-            (l, f)
-        };
     // A heading alone in its row: the cell beside it is a sizer spacer, not a
     // window. It was an empty static text until 2026-09-16, which reached the
     // accessibility tree as a nameless control (#42); the same goes for the
@@ -1864,7 +1840,7 @@ pub fn build_account_edit_dialog(
         fields.add(&n, 0, SizerFlag::Expand | SizerFlag::All, 4);
         n
     };
-    // A, because B is Back's, and Directory address gave A up for this.
+    // A, because B is Back's.
     let enabled = cb("En&able this account", true);
 
     // ── What this account may change ─────────────────────────────────────
@@ -1923,28 +1899,10 @@ pub fn build_account_edit_dialog(
         n
     };
 
-    // Where somebody's employer keeps its list of people, so typing part of a
-    // colleague's name into a message finds them.
-    //
-    // Both boxes empty is the answer for everybody who has no such list, and
-    // it is the answer every account starts with: while they are empty nothing
-    // that gets typed into a message goes anywhere. Filling them in is how
-    // somebody says a name being typed may be sent to that server.
-    let directory_section_heading = section("── Looking people up at work ──");
-    let (directory_url_label, directory_url_f) = tf_with_description(
-        // Y, the one letter of these words nothing on this page holds.
-        "Director&y address:",
-        "",
-        "Where your organisation keeps its list of people. Whoever looks after it will \
-         know: it starts with ldaps:// for an encrypted connection, or ldap:// where \
-         there is none. Leave it empty and nothing you type is sent anywhere.",
-    );
-    let (directory_base_label, directory_base_f) = tf_with_description(
-        "W&here in it to look:",
-        "",
-        "The part of that list to search, written the way the directory names it, such \
-         as ou=people,dc=example,dc=com. Whoever looks after the directory will know it.",
-    );
+    // Where this account looks people up is not on this page. It was, as two
+    // boxes, until 2026-09-28; its sign-in and password needed room this page
+    // did not have, so all four are in Look People Up at Work on the Account
+    // Manager (13-27).
 
     let page_two_shell = Page2Shell {
         auth_hint,
@@ -1970,11 +1928,6 @@ pub fn build_account_edit_dialog(
         allow_personal_information_here,
         allow_reading_here,
         allowed_note,
-        directory_section_heading,
-        directory_url_label,
-        directory_url: directory_url_f,
-        directory_base_label,
-        directory_base: directory_base_f,
     };
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -2036,8 +1989,6 @@ pub fn build_account_edit_dialog(
         allow_mail_here,
         allow_personal_information_here,
         allow_reading_here,
-        directory_url_f,
-        directory_base_f,
         next,
         back,
         ok,
@@ -2083,13 +2034,6 @@ pub fn build_account_edit_dialog(
         );
         enabled.set_value(a.enabled);
         use_oauth_cb.set_value(a.use_oauth);
-        // The directory this account already names, if it names one. Kept in
-        // the settings file rather than on the account, so it is read from
-        // there; see `data::config`'s `directories`.
-        if let Some(directory) = the_directory_this_account_names(&a.id) {
-            set_anew(&directory_url_f, &directory.url);
-            set_anew(&directory_base_f, &directory.search_under);
-        }
         if a.use_oauth {
             auth_hint.set_label("Signs in through the browser when you save.");
         } else if offers_app_passwords(&a.email) {
@@ -2219,6 +2163,330 @@ pub fn build_account_edit_dialog(
     // method, into the right starting state.
     return_to_identity_page(&w);
     w
+}
+
+// ── Look People Up at Work ──────────────────────────────────────────────────
+
+/// The Look People Up at Work window's controls, returned so a test can build
+/// it without a human closing a live modal.
+#[derive(Clone, Copy)]
+pub struct DirectorySignInWidgets {
+    pub dialog: Dialog,
+    pub address: TextCtrl,
+    pub look_in: TextCtrl,
+    pub sign_in_as: TextCtrl,
+    pub password: TextCtrl,
+    pub status: StaticText,
+    pub ok: Button,
+    pub cancel: Button,
+}
+
+/// How wide the window's sentences run before they wrap, in pixels.
+const DIRECTORY_SENTENCE_WIDTH: i32 = 460;
+
+/// What the address box is for, on the box for whoever tabs to it.
+const WHAT_THE_ADDRESS_IS: &str = "Where your organisation keeps its list of people. Whoever \
+     looks after it will know: it starts with ldaps:// for an encrypted connection, or ldap:// \
+     where there is none, and a password is only ever sent to one starting ldaps://. Leave this \
+     and the next box empty and nothing you type is sent anywhere.";
+
+/// What the place box is for.
+const WHAT_THE_PLACE_IS: &str = "The part of that list to search, written the way the \
+     directory names it, such as ou=people,dc=example,dc=com. Whoever looks after the directory \
+     will know it.";
+
+/// What the sign-in name box is for, and what clearing it does.
+const WHAT_THE_NAME_IS: &str = "The name the directory knows you by, which whoever looks after \
+     it will know. Leave it empty for a directory that answers anybody who asks; clearing it \
+     and saving forgets any saved password.";
+
+/// What the password box says when no password is saved yet.
+const WHERE_THE_PASSWORD_GOES: &str = "Kept in the Windows credential store, never in the \
+     settings, and sent only to an address starting ldaps://.";
+
+/// The window's own OK, an id of its own rather than `ID_OK`, so that a save
+/// the window refuses can keep it open rather than wxWidgets closing it.
+const ID_KEEP_THE_DIRECTORY: Id = ID_HIGHEST + 210;
+
+/// A save the window refused, what to say and where focus goes.
+struct Refused {
+    said: String,
+    at: TextCtrl,
+}
+
+/// A sentence the window shows, wrapped, and named with its whole text on
+/// MSAA, since a wrapped label carries line breaks.
+fn a_sentence(dialog: &Dialog, said: &str) -> StaticText {
+    let sentence = StaticText::builder(dialog).with_label(said).build();
+    sentence.wrap(DIRECTORY_SENTENCE_WIDTH);
+    set_accessible_name(&sentence, said);
+    sentence
+}
+
+/// Build the Look People Up at Work window for one account without showing
+/// it (#55, 13-27).
+///
+/// One job in one window: where the account's organisation keeps its list of
+/// people, and how to sign in to it. The password box opens empty whatever
+/// is saved; `a_password_is_saved` decides only what it and the line under it
+/// say, so nothing here ever holds a saved password. Every label has a letter
+/// of its own, D, W, N and P, and OK and Cancel have none.
+pub fn build_directory_sign_in_dialog(
+    parent: &dyn WxWidget,
+    account_name: &str,
+    directory: Option<&Directory>,
+    a_password_is_saved: bool,
+    palette: Option<theme::Palette>,
+) -> DirectorySignInWidgets {
+    // Not resizable: it fits itself to what it holds, and a resize border
+    // puts a nameless size grip into the tree beside the four boxes.
+    let dialog = Dialog::builder(parent, &format!("Look People Up at Work: {account_name}"))
+        .with_style(DialogStyle::DefaultDialogStyle)
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // Said first, where the person reads it: nothing here has met a real
+    // directory yet.
+    let untried = a_sentence(&dialog, NOT_TRIED_YET);
+    sizer.add(&untried, 0, SizerFlag::All, 8);
+
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(6)
+        .with_hgap(8)
+        .build();
+    fields.add_growable_col(1, 1);
+    let a_box = |label: &str, description: &str| -> TextCtrl {
+        let l = StaticText::builder(&dialog).with_label(label).build();
+        let f = TextCtrl::builder(&dialog)
+            .with_size(Size::new(300, -1))
+            .build();
+        keep_a_history(&f);
+        set_accessible_name_and_description(&f, &name_from_label(label), description);
+        fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+        fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        if let Some(palette) = palette {
+            theme::paint(&f, palette.main_surface());
+        }
+        f
+    };
+    let address = a_box("&Directory address:", WHAT_THE_ADDRESS_IS);
+    let look_in = a_box("&Where in it to look:", WHAT_THE_PLACE_IS);
+    let sign_in_as = a_box("Sign-in &name:", WHAT_THE_NAME_IS);
+    // Built apart from `a_box` for the password style, and with no history:
+    // a password is never held in memory as steps.
+    let password = {
+        let label = "&Password:";
+        let l = StaticText::builder(&dialog).with_label(label).build();
+        let f = TextCtrl::builder(&dialog)
+            .with_style(TextCtrlStyle::Password)
+            .with_size(Size::new(300, -1))
+            .build();
+        set_accessible_name_and_description(
+            &f,
+            &name_from_label(label),
+            if a_password_is_saved {
+                A_PASSWORD_IS_SAVED
+            } else {
+                WHERE_THE_PASSWORD_GOES
+            },
+        );
+        fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+        fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        if let Some(palette) = palette {
+            theme::paint(&f, palette.main_surface());
+        }
+        f
+    };
+    sizer.add_sizer(&fields, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+    // Shown as well as described, for whoever reads the window rather than
+    // tabbing to the box.
+    if a_password_is_saved {
+        let saved = a_sentence(&dialog, A_PASSWORD_IS_SAVED);
+        sizer.add(&saved, 0, SizerFlag::All, 8);
+    }
+
+    // Empty until a save is refused or the store cannot be read.
+    let status = StaticText::builder(&dialog).with_label("").build();
+    sizer.add(
+        &status,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        8,
+    );
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let ok = Button::builder(&dialog)
+        .with_label("OK")
+        .with_id(ID_KEEP_THE_DIRECTORY)
+        .build();
+    ok.set_default();
+    let cancel = Button::builder(&dialog)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    buttons.add(&ok, 0, SizerFlag::All, 4);
+    buttons.add(&cancel, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    dialog.set_sizer_and_fit(sizer, true);
+
+    if let Some(directory) = directory {
+        set_anew(&address, &directory.url);
+        set_anew(&look_in, &directory.search_under);
+        set_anew(&sign_in_as, directory.sign_in_as.as_deref().unwrap_or(""));
+    }
+    cancel.on_click(move |_| dialog.end_modal(ID_CANCEL));
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+    }
+    address.set_focus();
+
+    DirectorySignInWidgets {
+        dialog,
+        address,
+        look_in,
+        sign_in_as,
+        password,
+        status,
+        ok,
+        cancel,
+    }
+}
+
+/// Wire the window's OK to the save: kept and closed, or refused and left
+/// open with the sentence said and shown and focus on the box it is about.
+pub fn wire_the_directory_sign_in(
+    w: &DirectorySignInWidgets,
+    account_id: &str,
+    a_password_is_saved: bool,
+    a11y: &Arc<Accessibility>,
+) {
+    let w = *w;
+    let account_id = account_id.to_string();
+    let a11y = Arc::clone(a11y);
+    w.ok.on_click(move |_| {
+        match keep_what_the_directory_window_holds(&account_id, &w, a_password_is_saved) {
+            Ok(()) => w.dialog.end_modal(ID_OK),
+            Err(Refused { said, at }) => {
+                said_and_shown(&w.status, &a11y, &said, Priority::High);
+                w.status.wrap(DIRECTORY_SENTENCE_WIDTH);
+                w.dialog.fit();
+                at.set_focus();
+            }
+        }
+    });
+}
+
+/// Write what the window holds: the directory to the settings, the password
+/// to the credential store through `service::directory` and nowhere else.
+///
+/// The settings cannot hold a password, since [`Directory`] has no field for
+/// one. The settings are written first, so a store that refuses leaves the
+/// address and the name kept and says the password was not.
+fn keep_what_the_directory_window_holds(
+    account_id: &str,
+    w: &DirectorySignInWidgets,
+    a_password_is_saved: bool,
+) -> Result<(), Refused> {
+    let kept = what_the_window_keeps(
+        &w.address.get_value(),
+        &w.look_in.get_value(),
+        &w.sign_in_as.get_value(),
+        &w.password.get_value(),
+        a_password_is_saved,
+    )
+    .map_err(|refused| Refused {
+        said: refused.to_string(),
+        at: w.password,
+    })?;
+    if let Some(why) = remember_where_to_look_people_up(account_id, kept.directory) {
+        return Err(Refused {
+            said: format!(
+                "Where this account looks people up could not be saved, so nothing in this \
+                 window was kept. ({why})"
+            ),
+            at: w.address,
+        });
+    }
+    match kept.password {
+        PasswordChange::Keep => Ok(()),
+        PasswordChange::Replace(password) => directory::keep_the_password(account_id, &password),
+        PasswordChange::Forget => directory::forget_the_password(account_id),
+    }
+    .map_err(|why| Refused {
+        said: format!(
+            "The address, where to look and the sign-in name were kept, and the password was \
+             not. {why}"
+        ),
+        at: w.password,
+    })
+}
+
+/// Open Look People Up at Work for an account and answer whether it was
+/// kept.
+///
+/// Whether a password is saved is asked of the store once, here, and only
+/// that answer reaches the window. A store that will not answer is said on
+/// the window's own line, and the window opens as if nothing were saved.
+fn show_the_directory_sign_in(
+    parent: &Dialog,
+    account: &Account,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) -> bool {
+    let (a_password_is_saved, trouble) = match directory::the_saved_password(&account.id) {
+        Ok(saved) => (saved.is_some(), None),
+        Err(why) => (false, Some(why.to_string())),
+    };
+    let w = build_directory_sign_in_dialog(
+        parent,
+        &account.name,
+        the_directory_this_account_names(&account.id).as_ref(),
+        a_password_is_saved,
+        palette,
+    );
+    // Said once the window is up, so it is not lost under the window
+    // opening, and shown on its line for as long as it is open.
+    if let Some(trouble) = trouble {
+        let a11y = Arc::clone(a11y);
+        wxdragon::call_after(Box::new(move || {
+            said_and_shown(&w.status, &a11y, &trouble, Priority::High);
+            w.status.wrap(DIRECTORY_SENTENCE_WIDTH);
+            w.dialog.fit();
+        }));
+    }
+    wire_the_directory_sign_in(&w, &account.id, a_password_is_saved, a11y);
+    let kept = w.dialog.show_modal() == ID_OK;
+    w.dialog.destroy();
+    kept
+}
+
+/// Look People Up at Work on the Account Manager: the window for the chosen
+/// account, or the sentence Edit says when none is chosen.
+fn look_people_up_for(
+    chosen: Option<&Account>,
+    manager: &Dialog,
+    status: &StaticText,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) {
+    let Some(account) = chosen else {
+        said_and_shown(
+            status,
+            a11y,
+            &nothing_chosen(Thing::ACCOUNT),
+            Priority::High,
+        );
+        return;
+    };
+    if show_the_directory_sign_in(manager, account, a11y, palette) {
+        said_and_shown(
+            status,
+            a11y,
+            &format!("Where {} looks people up is kept.", account.name),
+            Priority::Normal,
+        );
+    }
 }
 
 // ── Automatic OAuth Flow ────────────────────────────────────────────────────

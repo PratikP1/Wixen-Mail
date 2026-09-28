@@ -18625,6 +18625,27 @@ fn open_for_scanning(
             editor.dialog.destroy();
             OnReturn::WindowClosed
         }
+        ScanTarget::DirectorySignIn => {
+            // Look People Up at Work for the scan-only account, on a made-up
+            // directory with a password said to be saved, so the line saying
+            // so is walked with the rest (#55, 13-27). Its OK is not wired, so
+            // nothing reaches the settings or the credential store.
+            let fixture = scan_only_account();
+            let window = wx_account_manager::build_directory_sign_in_dialog(
+                frame,
+                &fixture.name,
+                Some(&crate::service::directory::Directory {
+                    url: "ldaps://directory.example.com".to_string(),
+                    search_under: "ou=people,dc=example,dc=com".to_string(),
+                    sign_in_as: Some("cn=reader,dc=example,dc=com".to_string()),
+                }),
+                true,
+                theme::current_from_stored_config(),
+            );
+            window.dialog.show_modal();
+            window.dialog.destroy();
+            OnReturn::WindowClosed
+        }
         // The main window with a module showing and nothing over it. `main`
         // is the frame with the first-run question on top, because that
         // question opens whenever no target is given, so the bare window and
