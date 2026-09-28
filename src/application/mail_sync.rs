@@ -4032,6 +4032,28 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_a_sync_says_a_rule_named_a_label_the_account_does_not_have() {
+        // `apply_rules` says it and the sync kept only what the mover said,
+        // so the sentence was built and dropped before anybody heard it.
+        let (_dir, cache, inbox, _invoices, folder, engine) =
+            an_account_with_rules(&[("add_tag", Some("Travel"))]);
+
+        let done = sync_with_rules(
+            &a_server_holding_one_invoice(),
+            &cache,
+            &folder,
+            inbox,
+            &engine,
+        );
+
+        assert_eq!(
+            done.filtered.could_not_be_filed,
+            [crate::application::tagging::no_label_of_that_name("Travel")],
+            "the sync dropped what the rules said"
+        );
+    }
+
+    #[test]
     fn test_a_message_a_rule_marks_read_and_files_is_counted_once() {
         // Two halves count: `apply_rules` writes the flags on this computer,
         // and `carry_out_the_moves` reaches the server, and each of them added

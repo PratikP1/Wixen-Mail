@@ -46,6 +46,8 @@
 //! every other change to a mailbox and does not happen at all until somebody
 //! allows it.
 
+use crate::data::message_cache::Tag;
+
 /// A label somebody can put on a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Label {
@@ -242,6 +244,16 @@ pub fn turns_on(already_on: &[String], name: &str) -> bool {
 /// here for one message went with the arm that said them.
 pub fn nothing_there(number: usize) -> String {
     format!("There is no label {number}")
+}
+
+/// The label a rule means, out of the ones its message's account has.
+pub fn the_label_a_rule_names<'a>(_labels: &'a [Tag], _named: &str) -> Option<&'a Tag> {
+    None
+}
+
+/// What to say when a rule names a label the account does not have.
+pub fn no_label_of_that_name(_named: &str) -> String {
+    String::new()
 }
 
 /// A message's labels, as a list column and as something to read out.
