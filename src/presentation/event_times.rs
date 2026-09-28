@@ -146,13 +146,22 @@ pub struct TheTimeBoxes {
 }
 
 /// What the event editor's time boxes are filled with for an event opened to
-/// change.
+/// change: its times on this computer's clock, as Outlook's and Google's own
+/// forms show them.
 pub fn filled_on_this_computer(item: &CalendarEventItem) -> TheTimeBoxes {
     filled_seen_from(item, &Local)
 }
 
-/// What the event editor handed back, with any time typed put back on the
-/// clock the event is written on.
+/// What the event editor handed back, with any time typed on this computer's
+/// clock put back on the clock the event is written on.
+///
+/// A pair of boxes nobody typed in goes back exactly as
+/// [`CalendarEventData::as_shown`] gives it, in the event's own frame, so
+/// opening an event and saving it untouched is no change and nothing is sent.
+/// A pair somebody typed in is read on this computer's clock and written as
+/// the clock face the event's zone gives that instant, so a moved Outlook
+/// meeting reaches Outlook at the hour typed here. Start and end each on their
+/// own; a whole day, and an event with no clock to convert between, untouched.
 pub fn typed_back_into_its_zone(
     data: CalendarEventData,
     item: &CalendarEventItem,
@@ -160,22 +169,150 @@ pub fn typed_back_into_its_zone(
     typed_back_seen_from(data, item, &Local)
 }
 
-fn filled_seen_from<Here: TimeZone>(item: &CalendarEventItem, _here: &Here) -> TheTimeBoxes {
+/// A date box and a time box, as the editor holds them.
+type DateAndTime = (String, String);
+
+/// The clock an event's stored times are written on, which a time typed in
+/// the editor is put back on. Decided once per event.
+#[derive(Debug, Clone, Copy)]
+enum ItsClock {
+    /// A zone this computer can place, which knows its own summer time.
+    Zone(chrono_tz::Tz),
+    /// The offset the stored start carries, where no zone names a place.
+    Offset(chrono::FixedOffset),
+    /// Nothing to convert between: a whole day, or a clock face in no zone
+    /// this computer can place, which is shown and kept as it is stored.
+    AsStored,
+}
+
+impl ItsClock {
+    fn of(item: &CalendarEventItem) -> Self {
+        if item.is_all_day {
+            return Self::AsStored;
+        }
+        let zone = moment::the_zone_named(item.time_zone.as_deref())
+            .and_then(crate::common::zones::the_zone_called);
+        match (zone, moment::read(&item.start)) {
+            (Some(zone), Some(Moment::Fixed(_) | Moment::ClockFace(_))) => Self::Zone(zone),
+            (None, Some(Moment::Fixed(at))) => Self::Offset(*at.offset()),
+            _ => Self::AsStored,
+        }
+    }
+
+    /// The clock face an instant has on this clock.
+    fn face_of<Z: TimeZone>(self, instant: &DateTime<Z>) -> Option<chrono::NaiveDateTime> {
+        match self {
+            Self::Zone(zone) => Some(instant.with_timezone(&zone).naive_local()),
+            Self::Offset(offset) => Some(instant.with_timezone(&offset).naive_local()),
+            Self::AsStored => None,
+        }
+    }
+}
+
+/// The boxes as somebody whose clock is `here` is shown them.
+fn filled_seen_from<Here: TimeZone>(item: &CalendarEventItem, here: &Here) -> TheTimeBoxes {
+    let clock = ItsClock::of(item);
     let shown = CalendarEventData::as_shown(item);
+    let (start_date, start_time) =
+        seen_from(item, &item.start, clock, here).unwrap_or((shown.start_date, shown.start_time));
+    let (end_date, end_time) =
+        seen_from(item, &item.end, clock, here).unwrap_or((shown.end_date, shown.end_time));
     TheTimeBoxes {
-        start_date: shown.start_date,
-        start_time: shown.start_time,
-        end_date: shown.end_date,
-        end_time: shown.end_time,
+        start_date,
+        start_time,
+        end_date,
+        end_time,
+    }
+}
+
+/// One stored time on `here`'s clock, when there is a clock to convert from
+/// and the time names an instant on it.
+fn seen_from<Here: TimeZone>(
+    item: &CalendarEventItem,
+    stored: &str,
+    clock: ItsClock,
+    here: &Here,
+) -> Option<DateAndTime> {
+    if matches!(clock, ItsClock::AsStored) {
+        return None;
+    }
+    match moment::read_in(stored, item.time_zone.as_deref())? {
+        Moment::Fixed(at) => Some(in_the_boxes(at.with_timezone(here).naive_local())),
+        Moment::ClockFace(_) | Moment::WholeDay(_) => None,
     }
 }
 
 fn typed_back_seen_from<Here: TimeZone>(
     data: CalendarEventData,
-    _item: &CalendarEventItem,
-    _here: &Here,
+    item: &CalendarEventItem,
+    here: &Here,
 ) -> CalendarEventData {
-    data
+    let clock = ItsClock::of(item);
+    if data.is_all_day || matches!(clock, ItsClock::AsStored) {
+        return data;
+    }
+    let filled = filled_seen_from(item, here);
+    let shown = CalendarEventData::as_shown(item);
+    let (start_date, start_time) = back_on_its_clock(
+        (&data.start_date, &data.start_time),
+        (&filled.start_date, &filled.start_time),
+        (shown.start_date, shown.start_time),
+        clock,
+        here,
+    );
+    let (end_date, end_time) = back_on_its_clock(
+        (&data.end_date, &data.end_time),
+        (&filled.end_date, &filled.end_time),
+        (shown.end_date, shown.end_time),
+        clock,
+        here,
+    );
+    CalendarEventData {
+        start_date,
+        start_time,
+        end_date,
+        end_time,
+        ..data
+    }
+}
+
+/// One pair of boxes back on the event's own clock: as it was shown in that
+/// frame when nobody typed in it, and otherwise the time typed on `here`'s
+/// clock moved to the event's, by `placed_in`'s rule for an hour the clocks
+/// repeat or skip. A pair that does not read as a date and a time goes back
+/// as typed, and the merge after it decides what that means, as it did.
+fn back_on_its_clock<Here: TimeZone>(
+    typed: (&str, &str),
+    filled: (&str, &str),
+    in_its_frame: DateAndTime,
+    clock: ItsClock,
+    here: &Here,
+) -> DateAndTime {
+    if typed == filled {
+        return in_its_frame;
+    }
+    let as_typed = || (typed.0.to_string(), typed.1.to_string());
+    let Some(face) = a_clock_face(typed) else {
+        return as_typed();
+    };
+    moment::placed_in(face, here)
+        .and_then(|instant| clock.face_of(&instant))
+        .map_or_else(as_typed, in_the_boxes)
+}
+
+/// The date and the time typed into two boxes, when they read as one.
+fn a_clock_face((date, time): (&str, &str)) -> Option<chrono::NaiveDateTime> {
+    let date = chrono::NaiveDate::parse_from_str(date.trim(), "%Y-%m-%d").ok()?;
+    let time = chrono::NaiveTime::parse_from_str(time.trim(), "%H:%M").ok()?;
+    Some(date.and_time(time))
+}
+
+/// A clock face as the two boxes hold it.
+fn in_the_boxes(face: chrono::NaiveDateTime) -> DateAndTime {
+    (
+        face.format("%Y-%m-%d").to_string(),
+        face.format("%H:%M").to_string(),
+    )
 }
 
 #[cfg(test)]
