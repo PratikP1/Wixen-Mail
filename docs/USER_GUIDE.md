@@ -560,6 +560,15 @@ View then Columns, and every row reads its labels by name, "Work, Money".
 On a conversation row it reads every label on any message in the
 conversation, once each.
 
+**A rule that adds a label.** Until 2026-09-28 a rule that adds a label put
+nothing on at all. Now the name you type in the rule is matched against the
+account's labels, in any capitals, so a rule that adds "money" puts on your
+label Money. Make the label first, in the Label Manager: a rule naming a label
+the account does not have puts nothing on, and after the check you hear which
+label was missing, once however many messages the rule matched. A rule's label
+stays on this computer and is not sent to your mail server, and a later check
+can take it off again when the server reports that message.
+
 Nobody has heard a phrase at the start of a row or the sound after a check
 yet; the tester's copy is the first that will.
 

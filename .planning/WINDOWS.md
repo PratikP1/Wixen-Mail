@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 609
+open_count: 613
 waived_count: 0
 fixed_count: 68
-total_count: 677
-last_updated: 2026-09-28T05:37:20.000Z
+total_count: 681
+last_updated: 2026-09-28T06:40:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -692,6 +692,10 @@ last_updated: 2026-09-28T05:37:20.000Z
 | 675 | 13 | unrun-verify | src/application/reporting_junk.rs |  | 13-22, for phase 14: Report as Junk has met no real mail server. A report against Pratik's Gmail account (the move into Spam) and against an IMAP server whose folders keep keywords ($NotJunk off, then $Junk on, then the move), each read back from another client: the message in the junk folder, and the keyword on it where one was set. Whether any server keeps $Junk and trains on it, and whether Gmail counts the move, are open; every test here is a loopback server and the source that ships | open |  | 2026-09-28T05:37:20.000Z |  |
 | 676 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-22: Report as Junk has not been heard. Under NVDA and Narrator: the item on Action read with its letter J and Ctrl+Shift+J, and its description; the one word "Report" at the key; the sentence per account kind, heard once for a set of several messages and not beside Move's; a refusal for a POP account or one whose changes are off heard once | open |  | 2026-09-28T05:37:20.000Z |  |
 | 677 | 13 | todo | src/presentation/wx_app.rs |  | 13-22: Edit, Undo after Report as Junk takes the messages back out of the junk folder through Move's undo and leaves $Junk set on them at the server, so a server that trains on the mark still counts them as junk. Pratik's to answer: whether undoing a report should also take $Junk off and put $NotJunk on. Recommendation: yes, since it is one more write through the same gated flag change; no plan carries it until he answers, and today the guide and the changelog say the mark stays | open |  | 2026-09-28T05:37:20.000Z |  |
+| 678 | 13 | todo | src/application/mail_sync.rs | 1092 | 13-23, RESEARCH-4 F2, for whoever owns rules next: what an arrival rule does in carry_out (Mark as read, Mark as unread, Flag, and since 13-23 Add a label) is written to this computer only; nothing queues it for the server, and the flag sync at :1560 (set_message_flags) and :1567 (match_labels_to_keywords) reads flags and keywords back from the server and puts the server's answer in their place whenever the server reports that message, which a server without CHANGEDSINCE does for every held message on every check. So a rule's label with a keyword, and a rule's read or flag, can be undone by the next check. Recommendation: route an arrival rule's flag and label writes through the same gated server-change queue the set commands use (spawn_server_change), as 13-24.1 onward do for on-demand runs | open |  | 2026-09-28T06:40:00.000Z |  |
+| 679 | 13 | unrun-verify | src/application/mail_sync.rs |  | 13-23: a rule's label has not been heard. Under NVDA and Narrator, after a check that brought mail a label rule matched: the label heard in the Labels column of the row and in the row's reading, and for a rule naming a label the account does not have, the count and the one sentence naming the label heard once after the check however many messages it matched | open |  | 2026-09-28T06:40:00.000Z |  |
+| 680 | 13 | unrun-verify | src/application/mail_sync.rs |  | 13-23, for phase 14: a rule's Add a label has not run against a real account. A check on Pratik's Gmail account and on an IMAP server with a rule labelling arriving mail: the label on the row after the check, and whether the next check takes it off again (ledger 678); every test here is a cache in a temporary folder and a scripted server | open |  | 2026-09-28T06:40:00.000Z |  |
+| 681 | 13 | todo | src/application/mail_sync.rs | 1175 | 13-23: a message a rule both files into a folder and labels with a label the account does not have is said as not labelled and is still counted as sorted by carry_out_the_moves (and pop_sync's file_where_the_rules_said) when its move lands, because the mover counts every move it makes. Recommendation: Moving carries whether the rest of the message's rules were done, and the two movers count only those; small, and no plan carries it yet | open |  | 2026-09-28T06:40:00.000Z |  |
 
 ````json
 [
@@ -8817,6 +8821,54 @@ last_updated: 2026-09-28T05:37:20.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T05:37:20.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 678,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/mail_sync.rs",
+    "line": 1092,
+    "description": "13-23, RESEARCH-4 F2, for whoever owns rules next: what an arrival rule does in carry_out (Mark as read, Mark as unread, Flag, and since 13-23 Add a label) is written to this computer only; nothing queues it for the server, and the flag sync at :1560 (set_message_flags) and :1567 (match_labels_to_keywords) reads flags and keywords back from the server and puts the server's answer in their place whenever the server reports that message, which a server without CHANGEDSINCE does for every held message on every check. So a rule's label with a keyword, and a rule's read or flag, can be undone by the next check. Recommendation: route an arrival rule's flag and label writes through the same gated server-change queue the set commands use (spawn_server_change), as 13-24.1 onward do for on-demand runs",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T06:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 679,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/mail_sync.rs",
+    "line": null,
+    "description": "13-23: a rule's label has not been heard. Under NVDA and Narrator, after a check that brought mail a label rule matched: the label heard in the Labels column of the row and in the row's reading, and for a rule naming a label the account does not have, the count and the one sentence naming the label heard once after the check however many messages it matched",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T06:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 680,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/mail_sync.rs",
+    "line": null,
+    "description": "13-23, for phase 14: a rule's Add a label has not run against a real account. A check on Pratik's Gmail account and on an IMAP server with a rule labelling arriving mail: the label on the row after the check, and whether the next check takes it off again (ledger 678); every test here is a cache in a temporary folder and a scripted server",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T06:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 681,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/mail_sync.rs",
+    "line": 1175,
+    "description": "13-23: a message a rule both files into a folder and labels with a label the account does not have is said as not labelled and is still counted as sorted by carry_out_the_moves (and pop_sync's file_where_the_rules_said) when its move lands, because the mover counts every move it makes. Recommendation: Moving carries whether the rest of the message's rules were done, and the two movers count only those; small, and no plan carries it yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T06:40:00.000Z",
     "resolved_at": null
   }
 ]
