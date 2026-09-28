@@ -1021,11 +1021,11 @@ pub fn when_this_event_blocks(
 }
 
 /// The zone an event's own times are written in, when it names one this
-/// program's time zone database knows.
+/// computer can place: a zone database name, or a Windows name, read by the
+/// one resolver every other reader of a stored zone uses.
 fn the_events_own_zone(event: &CalendarEventEntry) -> Option<Tz> {
-    crate::common::moment::the_zone_named(event.time_zone.as_deref())?
-        .parse()
-        .ok()
+    crate::common::moment::the_zone_named(event.time_zone.as_deref())
+        .and_then(crate::common::zones::the_zone_called)
 }
 
 /// What an event does to the time of the person whose calendar it is on.
