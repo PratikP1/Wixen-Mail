@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 436 records have arrived since and have not been through it.
+# 438 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -18262,7 +18262,7 @@ red = [
     "application::blocking::tests::test_unblocking_one_address_leaves_the_domain_block_that_covers_it_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/blocking.rs", tests = 67 },
+    { file = "src/application/blocking.rs", tests = 79 },
 ]
 
 # ── Unblocking a domain, by taking off the address block under it ───────────
@@ -18289,7 +18289,7 @@ red = [
     "application::blocking::tests::test_unblocking_a_domain_leaves_the_narrower_block_underneath_it_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/blocking.rs", tests = 67 },
+    { file = "src/application/blocking.rs", tests = 79 },
 ]
 
 # ── The direction a page sends is read, rather than posted and dropped ──────
@@ -33657,4 +33657,43 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
+]
+
+# A block's count takes in the Sent folder, so a sender whose messages were
+# forwarded or answered from there has somebody's own sent mail offered for
+# a move into Junk. Written 2026-09-28 by 13-25.
+[[guard]]
+name = "the mail a block catches here passes over the Sent folder"
+file = "src/application/what_a_rule_catches_here.rs"
+before = '''        FolderType::Spam
+            | FolderType::Trash
+            | FolderType::Sent
+            | FolderType::Drafts'''
+after = '''        FolderType::Spam
+            | FolderType::Trash
+            | FolderType::Drafts'''
+red = [
+    "application::what_a_rule_catches_here::tests::test_the_senders_mail_in_sent_is_passed_over",
+]
+tests_last_seen = [
+    { file = "src/application/what_a_rule_catches_here.rs", tests = 9 },
+]
+
+# The sentence after a block that moved the mail already here says it stayed
+# where it was, which is the sentence the block said before 13-25 and would
+# send somebody looking in the wrong folder. Written 2026-09-28 by 13-25.
+[[guard]]
+name = "a block that moved the mail already here does not say it stayed"
+file = "src/application/blocking.rs"
+before = '''            " {} already here {} moved to {junk_folder}.",
+            messages(moved),
+            was_or_were(moved)'''
+after = '''            " The {} already here from them stay where they are.{}",
+            messages(moved),
+            ""'''
+red = [
+    "application::blocking::tests::test_mail_moved_is_said_with_the_count_and_the_folder_and_nothing_stays",
+]
+tests_last_seen = [
+    { file = "src/application/blocking.rs", tests = 79 },
 ]

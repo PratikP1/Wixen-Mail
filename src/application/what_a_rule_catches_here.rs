@@ -16,7 +16,10 @@
 //! One function over values, with no store and no window, so a count over a
 //! folder (13-43) asks the same question without a second copy of it.
 
-use crate::application::filters::FilterRule;
+use std::collections::HashSet;
+
+use crate::application::filters::{FilterEngine, FilterRule};
+use crate::common::types::FolderType;
 use crate::data::message_cache::{CachedFolder, CachedMessage};
 
 /// The row ids of the messages `rule` catches, among `messages`, in the
@@ -27,16 +30,36 @@ pub fn which_messages_here_a_rule_catches(
     messages: &[CachedMessage],
     folders: &[CachedFolder],
 ) -> Vec<i64> {
-    let _ = (rule, folders);
-    messages.iter().map(|message| message.id).collect()
+    let looked_in: HashSet<i64> = folders
+        .iter()
+        .filter(|folder| !is_left_alone(FolderType::from_stored(&folder.folder_type)))
+        .map(|folder| folder.id)
+        .collect();
+    messages
+        .iter()
+        .filter(|message| looked_in.contains(&message.folder_id))
+        .filter(|message| FilterEngine::matches(rule, message))
+        .map(|message| message.id)
+        .collect()
+}
+
+/// Whether mail in a folder of this kind stays where it is whatever a rule
+/// says of it: the junk folder, Trash, Sent, Drafts and the Outbox.
+fn is_left_alone(kind: FolderType) -> bool {
+    matches!(
+        kind,
+        FolderType::Spam
+            | FolderType::Trash
+            | FolderType::Sent
+            | FolderType::Drafts
+            | FolderType::Outbox
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::application::blocking::{self, Block};
-    use crate::application::filters::FilterEngine;
-    use crate::common::types::FolderType;
 
     const INBOX: i64 = 1;
     const RECEIPTS: i64 = 2;

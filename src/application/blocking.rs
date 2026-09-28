@@ -14,6 +14,8 @@
 //! and the questions worth asking before the rule exists.
 
 use crate::application::allowed::Allowed;
+use crate::application::choosing_messages::with_commas;
+use crate::application::editing::MOST_ROWS_WORTH_SELECTING;
 use crate::common::types::FolderType;
 use crate::common::{Error, Result};
 use crate::data::message_cache::MessageFilterRule;
@@ -558,15 +560,20 @@ fn whose_mail(block: &Block) -> String {
     }
 }
 
-/// The two things blocking here does not do.
+/// What blocking here does not do, and what does it instead.
 ///
-/// Both are assumptions somebody will otherwise make, and both are wrong in a
-/// way that takes weeks to notice. Nothing is reported to the mail provider,
-/// so the provider goes on accepting the mail and nothing about the sender's
-/// standing changes anywhere else. And nothing already in the mailbox moves,
-/// because a rule is run on mail as it arrives.
+/// An assumption somebody will otherwise make, and be wrong about in a way
+/// that takes weeks to notice. Nothing is reported to the mail provider, so
+/// the provider goes on accepting the mail and nothing about the sender's
+/// standing changes anywhere else; Report as Junk is what tells a provider
+/// that takes reports (13-22).
+///
+/// Until 13-25 this also said the messages already here stay where they
+/// are, because a rule is run on mail as it arrives. Since then a block asks
+/// about that mail once, with the count, and the sentence after it says what
+/// the answer did, through [`MailAlreadyHere`].
 const WHAT_IT_DOES_NOT_DO: &str = "This does not tell your mail provider anything, so the mail is still accepted and still \
-     arrives here. Messages that already arrived stay where they are.";
+     arrives here. To tell a provider that takes reports, use Report as Junk on the Action menu.";
 
 /// What to say before a block is made.
 pub fn what_blocking_will_do(
@@ -608,8 +615,15 @@ pub fn the_question_about_mail_already_here(
     count: usize,
     junk_folder: &str,
 ) -> String {
-    let _ = (block, count, junk_folder);
-    String::new()
+    let who = match block {
+        Block::ThisAddress(address) => address.clone(),
+        Block::EveryoneAt(domain) => format!("anybody at {domain}"),
+    };
+    let which = match count {
+        1 => "the one message".to_string(),
+        many => format!("the {} messages", with_commas(many)),
+    };
+    format!("Also move {which} already here from {who} to {junk_folder}?")
 }
 
 /// What to say once it has been made.
@@ -620,13 +634,69 @@ pub fn what_blocking_did(
     junk: TheJunkFolder,
     here: MailAlreadyHere,
 ) -> String {
-    let _ = here;
     format!(
-        "{} now goes to {junk_folder}.{} {WHAT_IT_DOES_NOT_DO}{}",
+        "{} now goes to {junk_folder}.{}{} {WHAT_IT_DOES_NOT_DO}{}",
         whose_mail(block),
         what_happened_to_the_junk_folder(junk_folder, junk),
+        what_became_of_the_mail_already_here(here, junk_folder),
         but_mail_changes_are_off(allowed)
     )
+}
+
+/// What the block's sentence says about the mail already here, with the
+/// space that joins it to the sentence before, or nothing when there was
+/// none: a line that counts the nothings teaches somebody to stop listening.
+fn what_became_of_the_mail_already_here(here: MailAlreadyHere, junk_folder: &str) -> String {
+    match here {
+        MailAlreadyHere::Nothing => String::new(),
+        MailAlreadyHere::Left(1) => {
+            " The message already here from them stays where it is.".to_string()
+        }
+        MailAlreadyHere::Left(count) => format!(
+            " The {} already here from them stay where they are.",
+            messages(count)
+        ),
+        MailAlreadyHere::Moved {
+            moved,
+            not_moved: 0,
+        } => format!(
+            " {} already here {} moved to {junk_folder}.",
+            messages(moved),
+            was_or_were(moved)
+        ),
+        MailAlreadyHere::Moved {
+            moved: 0,
+            not_moved,
+        } => format!(
+            " None of the {} already here could be moved to {junk_folder}.",
+            messages(not_moved)
+        ),
+        MailAlreadyHere::Moved { moved, not_moved } => format!(
+            " {} already here {} moved to {junk_folder}, {} {} not.",
+            messages(moved),
+            was_or_were(moved),
+            with_commas(not_moved),
+            was_or_were(not_moved)
+        ),
+        MailAlreadyHere::TooMany(count) => format!(
+            " {} from them are already here, more than the {} one command moves, so none were \
+             moved. Search for the sender and use Move to.",
+            messages(count),
+            with_commas(MOST_ROWS_WORTH_SELECTING)
+        ),
+    }
+}
+
+/// "1 message" or "1,234 messages".
+fn messages(count: usize) -> String {
+    match count {
+        1 => "1 message".to_string(),
+        many => format!("{} messages", with_commas(many)),
+    }
+}
+
+fn was_or_were(count: usize) -> &'static str {
+    if count == 1 { "was" } else { "were" }
 }
 
 /// Where somebody chooses which folders are downloaded.

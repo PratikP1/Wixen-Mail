@@ -182,8 +182,8 @@ fn how_many_chosen(chosen: &Chosen) -> String {
 }
 
 /// A count with a thousands separator, so "5,001" is heard as one number
-/// and read as one.
-fn with_commas(count: usize) -> String {
+/// and read as one. Also what a block says its counts with (13-25).
+pub fn with_commas(count: usize) -> String {
     let digits = count.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (from_the_end, digit) in digits.chars().rev().enumerate() {
