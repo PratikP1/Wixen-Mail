@@ -1072,6 +1072,7 @@ fn asking_when_people_are_free(
                 token
                     .as_deref()
                     .map(|token| (crate::service::microsoft_graph::GRAPH_BASE, token)),
+                None,
             );
             let questions = asking_when_free::one_question(where_to, people);
             // Read-only is enough: asking when somebody is free changes

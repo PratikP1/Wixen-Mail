@@ -261,3 +261,67 @@ fn test_the_event_form_can_really_ask_when_the_people_invited_are_free() {
             .join("\n  ")
     );
 }
+
+// ── Google, asked from the worker ───────────────────────────────────────────
+//
+// Read out of the source, because which token the worker fetches, and on which
+// thread, is nothing a running test can see without an account at Google. The
+// reading has a companion that hands it a planted text with the fault in it, so
+// a reading that stopped reading would say so rather than pass.
+
+/// The body of one function in a source text, from its signature to the line
+/// that closes it at the left margin.
+fn the_body_in(source: &str, signature: &str) -> String {
+    let after = source
+        .split(signature)
+        .nth(1)
+        .unwrap_or_else(|| panic!("no {signature:?} to read"));
+    after.split("\n}\n").next().unwrap_or_default().to_string()
+}
+
+/// Whether the asking hands a Google token to `where_to_ask`, fetched inside
+/// the worker rather than on the thread drawing the window.
+///
+/// A token that has run out is refreshed over the network, and fetched on the
+/// window's thread that refresh freezes the event form while it waits.
+fn asks_google_from_the_worker(asking: &str) -> bool {
+    let Some((on_the_windows_thread, in_the_worker)) = asking.split_once("rt.spawn(") else {
+        return false;
+    };
+    let handed_to_where_to_ask = in_the_worker
+        .split_once("where_to_ask(")
+        .and_then(|(_, call)| call.split_once(");"))
+        .is_some_and(|(arguments, _)| arguments.contains("GOOGLE_CALENDAR_BASE"));
+    !on_the_windows_thread.contains("a_google_token_for(")
+        && in_the_worker.contains("a_google_token_for(")
+        && handed_to_where_to_ask
+}
+
+#[test]
+fn test_find_when_everyone_is_free_asks_google_with_a_token_fetched_in_the_worker() {
+    let source = std::fs::read_to_string("src/presentation/managers.rs")
+        .unwrap_or_else(|why| panic!("src/presentation/managers.rs: {why}"));
+    let asking = the_body_in(&source, "fn asking_when_people_are_free(");
+
+    assert!(
+        asks_google_from_the_worker(&asking),
+        "Find when everyone is free never asks Google, or fetches its token on the \
+         window's thread:\n{asking}"
+    );
+}
+
+#[test]
+fn test_the_reading_of_the_asking_sees_a_google_token_fetched_on_the_windows_thread() {
+    let planted = "fn asking_when_people_are_free() {\n    \
+                   let google = a_google_token_for(&account);\n    \
+                   rt.spawn(async move {\n        \
+                   let google = a_google_token_for(&asking_for).await;\n        \
+                   let where_to = where_to_ask(&calendars, load, token, \
+                   google.map(|token| (GOOGLE_CALENDAR_BASE, token)));\n    \
+                   });\n}\n";
+
+    assert!(!asks_google_from_the_worker(&the_body_in(
+        planted,
+        "fn asking_when_people_are_free("
+    )));
+}
