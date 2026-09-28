@@ -257,7 +257,7 @@ impl MessageCache {
 
     /// Delete an account from the database
     pub fn delete_account(&self, account_id: &str) -> Result<()> {
-        // The password and the tokens go first, and nothing else happens if
+        // The passwords and the tokens go first, and nothing else happens if
         // any of them will not go. This row is the only thing naming those
         // entries: erasing everything at uninstall works out what to remove by
         // walking the accounts that exist, so a secret belonging to a row
@@ -274,6 +274,9 @@ impl MessageCache {
         let mut still_stored: Vec<String> = Vec::new();
         if let Err(e) = credentials::forget(account_id) {
             still_stored.push(format!("its saved password ({e})"));
+        }
+        if let Err(e) = crate::service::directory::forget_the_password(account_id) {
+            still_stored.push(format!("its directory password ({e})"));
         }
         still_stored.extend(
             crate::service::oauth::forget_every_token_for(account_id)

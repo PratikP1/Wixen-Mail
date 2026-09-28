@@ -293,26 +293,60 @@ fn a_contact_from(entry: &SearchEntry, account_id: &str, found_at: &str) -> Opti
     })
 }
 
-/// Credential store service name holding each account's directory password.
-/// Stub for the red half.
+// ── The password, kept where Windows keeps passwords ────────────────────────
+//
+// Through `service::secret_store`, the one way in and out of the credential
+// store, and under one service name owned here. Nothing else writes it:
+// uninstalling names it through `application::forget`, and removing an
+// account forgets it in `delete_account`, both by this constant.
+
+/// Credential store service name holding each account's directory password,
+/// with the account id as the user, the shape `credentials::KEYRING_SERVICE`
+/// has.
+///
+/// Spelled out once, because uninstalling has to delete the same entries this
+/// creates. Changing it strands every directory password already kept.
 pub const KEYRING_SERVICE: &str = "wixen-mail-directory";
 
-/// Keep the directory password for an account. Stub for the red half.
+/// Keep the password an account signs in to its directory with.
+///
+/// An empty password is a request to forget, not a password to keep: an empty
+/// entry would read back as a password that is saved, and the lookup would
+/// then send it as an anonymous sign-in.
 pub fn keep_the_password(account_id: &str, password: &str) -> Result<()> {
-    let _ = (account_id, password);
-    Ok(())
+    if password.is_empty() {
+        return forget_the_password(account_id);
+    }
+    crate::service::secret_store::write(KEYRING_SERVICE, account_id, password)
+        .map_err(|cause| the_store_would_not("save", &cause))
 }
 
-/// The directory password kept for an account. Stub for the red half.
+/// The directory password kept for an account, or `None` when there is none.
+///
+/// `None` and an error are different answers: nothing kept is a password to
+/// add, and a store that will not answer is one that exists and cannot be got
+/// at.
 pub fn the_saved_password(account_id: &str) -> Result<Option<String>> {
-    let _ = account_id;
-    Ok(None)
+    crate::service::secret_store::read(KEYRING_SERVICE, account_id)
+        .map_err(|cause| the_store_would_not("read back", &cause))
 }
 
-/// Forget the directory password kept for an account. Stub for the red half.
+/// Forget the directory password kept for an account.
 pub fn forget_the_password(account_id: &str) -> Result<()> {
-    let _ = account_id;
-    Ok(())
+    crate::service::secret_store::remove(KEYRING_SERVICE, account_id)
+        .map_err(|cause| the_store_would_not("remove", &cause))
+}
+
+/// What went wrong, saying which password and never what it was.
+///
+/// "This account's", not the account's id: the sentence reaches the line a
+/// screen reader speaks under the recipient box, and an id is a string of
+/// hexadecimal nobody can use.
+fn the_store_would_not(what: &str, cause: &Error) -> Error {
+    Error::Security(format!(
+        "Could not {what} this account's directory password in the Windows credential store: \
+         {cause}"
+    ))
 }
 
 /// What to say when the account names no directory at all.
@@ -1794,9 +1828,12 @@ mod the_password_kept_for_it {
 
         let refused = answered.expect_err("an error, not nothing saved");
         let said = refused.to_string();
-        assert!(said.contains("directory"), "{said}");
-        assert!(said.contains("acc-1"), "{said}");
+        assert!(said.contains("directory password"), "{said}");
         assert!(said.contains("the credential store is locked"), "{said}");
+        assert!(
+            !said.contains("acc-1"),
+            "the sentence reads out an account id nobody can use: {said}"
+        );
     }
 }
 

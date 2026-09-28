@@ -182,13 +182,26 @@ fn the_organisation(
     }
 }
 
-/// The password to offer the directory. Stub for the red half.
+/// The password to offer the directory, or the sentence saying why none can
+/// be.
+///
+/// Read only for a directory that signs somebody in: one that answers anybody
+/// is never sent a password, so a credential store that will not answer is no
+/// reason not to ask it. Whether the password may cross the network, and what
+/// to say when none is saved, is `service::directory`'s to decide.
+///
+/// A store that will not give the password up stops the lookup. Asking
+/// without it would be refused for a password nobody saved, which sends
+/// somebody off to type it again when the store is what is wrong.
 fn the_password_to_offer(
     directory: &crate::service::directory::Directory,
     account_id: &str,
 ) -> std::result::Result<Option<String>, String> {
-    let _ = (directory, account_id);
-    Ok(None)
+    if directory.sign_in_as.is_none() {
+        return Ok(None);
+    }
+    crate::service::directory::the_saved_password(account_id)
+        .map_err(|why| format!("{why}. The directory was not asked."))
 }
 
 #[cfg(test)]

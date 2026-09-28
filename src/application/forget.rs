@@ -10,7 +10,7 @@
 //! removes any files.
 
 use crate::data::account::Account;
-use crate::service::{caldav, carddav, credentials, oauth, pgp, security};
+use crate::service::{caldav, carddav, credentials, directory, oauth, pgp, security};
 
 /// One entry in the operating system's credential store.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +56,12 @@ fn entries_for(
     for account in accounts {
         entries.push(CredentialEntry {
             service: credentials::KEYRING_SERVICE.to_string(),
+            user: account.id.clone(),
+        });
+        // Every account, whether or not it names a directory today: one that
+        // named one yesterday may have left its password behind.
+        entries.push(CredentialEntry {
+            service: directory::KEYRING_SERVICE.to_string(),
             user: account.id.clone(),
         });
         // Asked rather than listed here, because removing one account has to
