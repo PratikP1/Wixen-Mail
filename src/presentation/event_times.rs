@@ -45,6 +45,63 @@ impl CalendarEventItem {
         }
         moment::written_in_its_zone(stored, self.time_zone.as_deref())
     }
+
+    /// The day this event starts on this computer, as "2026-03-05", for the
+    /// calendar's header.
+    pub fn the_day_it_starts(&self) -> String {
+        self.start.get(..10).unwrap_or(&self.start).to_string()
+    }
+}
+
+/// The Calendar window's Date/Time column: "2026-03-05 10:00" for a timed
+/// event, on this computer's clock, and "2026-03-05 (All day)" for a whole
+/// day.
+pub fn the_list_column(item: &CalendarEventItem) -> String {
+    if item.is_all_day {
+        return format!("{} (All day)", item.start.get(..10).unwrap_or(&item.start));
+    }
+    item.start.get(..16).unwrap_or(&item.start).to_string()
+}
+
+/// What the due window needs to know about one day of an event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DueParts {
+    /// When the alert rises: the start less its lead.
+    pub raise_at: chrono::DateTime<chrono::Local>,
+    /// The start, written so the alert's sentence says the hour it is here.
+    pub when: String,
+    /// When it is over, so an event that has ended is not raised.
+    pub ends: Option<chrono::DateTime<chrono::Local>>,
+}
+
+/// One day of an event, as the due window asks about it.
+///
+/// `hour` is when a whole day is raised, the hour the working day starts, and
+/// `lead` the minutes before the start the alert is set for.
+pub fn the_due_parts(day: &CalendarEventItem, hour: u32, lead: i64) -> Option<DueParts> {
+    use crate::application::due;
+    use moment::Moment;
+
+    let raise_at = match moment::read(&day.start)? {
+        Moment::WholeDay(on) => Moment::ClockFace(on.and_hms_opt(hour, 0, 0)?),
+        names_an_hour => names_an_hour,
+    };
+    Some(DueParts {
+        raise_at: due::when_an_event_alerts(raise_at, lead)?,
+        when: day.start.clone(),
+        ends: when_it_is_over(&day.end),
+    })
+}
+
+/// When a stored end is over on this computer: a whole day at the midnight
+/// after it, anything with an hour at that hour.
+fn when_it_is_over(stored: &str) -> Option<chrono::DateTime<chrono::Local>> {
+    use moment::Moment;
+
+    match moment::read(stored)? {
+        Moment::WholeDay(on) => moment::on_this_computer(on.succ_opt()?.and_hms_opt(0, 0, 0)?),
+        names_an_hour => names_an_hour.on_this_computer(),
+    }
 }
 
 #[cfg(test)]
@@ -289,5 +346,187 @@ mod tests {
 
         assert_eq!(row.due_identity().id, "tokyo|2026-03-05T09:00:00");
         assert_eq!(row.time_zone.as_deref(), Some(TOKYO));
+    }
+
+    // ── The readings, the column, the header and the due window ────────────
+
+    /// A row with its zone set by hand, so these cases read the surfaces and
+    /// not the item's own building, which the cases above hold.
+    fn in_a_zone(start: &str, end: &str, zone: Option<&str>) -> CalendarEventItem {
+        CalendarEventItem {
+            start: start.into(),
+            end: end.into(),
+            time_zone: zone.map(str::to_string),
+            ..one_row(stored("row", "2026-03-05 09:00", "2026-03-05 10:00", None))
+        }
+    }
+
+    fn a_whole_day(zone: Option<&str>) -> CalendarEventItem {
+        CalendarEventItem {
+            is_all_day: true,
+            ..in_a_zone("2026-03-05", "2026-03-06", zone)
+        }
+    }
+
+    fn fifteen_minutes() -> chrono::Duration {
+        chrono::Duration::minutes(15)
+    }
+
+    fn here(year: i32, month: u32, day: u32, hour: u32) -> DateTime<chrono::Local> {
+        chrono::Local
+            .with_ymd_and_hms(year, month, day, hour, 0, 0)
+            .single()
+            .expect("a real moment here")
+    }
+
+    fn aloud() -> crate::presentation::read_aloud::Reading {
+        crate::presentation::read_aloud::Reading {
+            dates: at_a_desk(),
+            now: now(),
+        }
+    }
+
+    /// Whether this computer's clock differs from Tokyo's at the meeting, the
+    /// one condition the full reading's clause is said under.
+    fn this_clock_differs_from_tokyos() -> bool {
+        use chrono::Offset;
+        let tokyo = chrono::FixedOffset::east_opt(9 * 3600).expect("nine hours east");
+        utc(0).with_timezone(&chrono::Local).offset().fix() != tokyo
+    }
+
+    #[test]
+    fn test_a_meeting_from_tokyo_alerts_at_its_lead_before_the_instant_it_starts() {
+        let row = in_a_zone("2026-03-05T09:00:00", "2026-03-05T10:00:00", Some(TOKYO));
+
+        let parts = the_due_parts(&row, 9, 15).expect("a meeting that can be due");
+
+        assert_eq!(parts.raise_at, utc(0) - fifteen_minutes());
+        assert_eq!(the_instant(&parts.when), utc(0));
+        assert_eq!(parts.ends, Some(utc(1).with_timezone(&chrono::Local)));
+    }
+
+    #[test]
+    fn test_an_outlook_meeting_alerts_at_its_lead_before_the_instant_it_starts() {
+        let row = in_a_zone(
+            "2026-03-05T14:00:00.0000000",
+            "2026-03-05T15:00:00.0000000",
+            Some("UTC"),
+        );
+
+        let parts = the_due_parts(&row, 9, 15).expect("a meeting that can be due");
+
+        assert_eq!(parts.when, "2026-03-05T14:00:00+00:00");
+        assert_eq!(parts.raise_at, utc(14) - fifteen_minutes());
+        assert_eq!(parts.ends, Some(utc(15).with_timezone(&chrono::Local)));
+    }
+
+    /// A whole day is raised on its own day at the hour the working day
+    /// starts, less its lead, wherever it was written.
+    #[test]
+    fn test_a_whole_day_alerts_at_the_hour_the_working_day_starts() {
+        let parts = the_due_parts(&a_whole_day(Some(TOKYO)), 9, 15).expect("a day that can be due");
+
+        assert_eq!(parts.raise_at, here(2026, 3, 5, 9) - fifteen_minutes());
+        assert_eq!(parts.when, "2026-03-05");
+        assert_eq!(parts.ends, Some(here(2026, 3, 7, 0)));
+    }
+
+    #[test]
+    fn test_a_meeting_typed_here_alerts_as_it_did() {
+        let row = in_a_zone("2026-03-05 09:00", "2026-03-05 10:00", None);
+
+        let parts = the_due_parts(&row, 9, 15).expect("a meeting that can be due");
+
+        assert_eq!(parts.raise_at, here(2026, 3, 5, 9) - fifteen_minutes());
+        assert_eq!(parts.when, "2026-03-05 09:00");
+    }
+
+    /// The full reading and the printed page say the other clock once, and
+    /// only where it differs from this one; the short reading never does.
+    #[test]
+    fn test_the_full_reading_says_the_zone_a_meeting_was_written_in_once() {
+        use crate::presentation::read_aloud::ReadAloud;
+
+        let row = in_a_zone("2026-03-05T09:00:00", "2026-03-05T10:00:00", Some(TOKYO));
+        let said_here = date_display::spoken("2026-03-05T00:00:00+00:00", now(), at_a_desk());
+
+        let full = row.read_full(aloud());
+        assert!(full.contains(&said_here), "{full}");
+        assert_eq!(
+            full.contains("Tokyo time"),
+            this_clock_differs_from_tokyos(),
+            "{full}"
+        );
+        assert_eq!(
+            full.matches("Tokyo time").count(),
+            usize::from(this_clock_differs_from_tokyos())
+        );
+    }
+
+    #[test]
+    fn test_space_says_this_computers_hour_and_no_other_clock() {
+        use crate::presentation::read_aloud::ReadAloud;
+
+        let row = in_a_zone("2026-03-05T09:00:00", "2026-03-05T10:00:00", Some(TOKYO));
+        let said_here = date_display::spoken("2026-03-05T00:00:00+00:00", now(), at_a_desk());
+
+        let short = row.read_short(aloud());
+        assert!(short.contains(&said_here), "{short}");
+        assert!(!short.contains("Tokyo"), "{short}");
+    }
+
+    /// Five in the morning in Tokyo is the evening before in universal time
+    /// and west of it, so the column's date moves as well as its hour.
+    #[test]
+    fn test_the_calendar_window_lists_an_event_at_this_computers_hour() {
+        let row = in_a_zone("2026-03-05T05:00:00", "2026-03-05T06:00:00", Some(TOKYO));
+        let instant = Utc
+            .with_ymd_and_hms(2026, 3, 4, 20, 0, 0)
+            .single()
+            .expect("a real moment");
+        let expected = instant
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M")
+            .to_string();
+
+        assert_eq!(the_list_column(&row), expected);
+        assert_eq!(
+            the_list_column(&in_a_zone(
+                "2026-03-05T09:00:00",
+                "2026-03-05T10:00:00",
+                None
+            )),
+            "2026-03-05 09:00"
+        );
+        assert_eq!(
+            the_list_column(&a_whole_day(Some(TOKYO))),
+            "2026-03-05 (All day)"
+        );
+        assert_eq!(
+            the_list_column(&in_a_zone("soon", "later", Some(TOKYO))),
+            "soon"
+        );
+    }
+
+    #[test]
+    fn test_the_header_says_the_day_a_meeting_starts_on_this_computer() {
+        let row = in_a_zone("2026-03-05T05:00:00", "2026-03-05T06:00:00", Some(TOKYO));
+        let instant = Utc
+            .with_ymd_and_hms(2026, 3, 4, 20, 0, 0)
+            .single()
+            .expect("a real moment");
+        let the_day_here = instant
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d")
+            .to_string();
+
+        assert_eq!(
+            crate::presentation::ui_types::calendar_range_label(&[row]),
+            the_day_here
+        );
+        assert_eq!(
+            crate::presentation::ui_types::calendar_range_label(&[a_whole_day(Some(TOKYO))]),
+            "2026-03-05"
+        );
     }
 }
