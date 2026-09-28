@@ -6,6 +6,7 @@
 //! and what is said about them.
 
 use crate::common::types::EmailAddress;
+use crate::data::account::Account;
 use crate::data::message_cache::ContactEntry;
 use crate::service::directory::FROM_A_DIRECTORY;
 
@@ -17,7 +18,7 @@ use crate::service::directory::FROM_A_DIRECTORY;
 /// specific enough to be worth asking.
 pub const BEFORE_LOOKING_ANYBODY_UP: usize = 3;
 
-/// Which of the two places a person was found in.
+/// Which of the places a person was found in.
 ///
 /// Written out in the row rather than shown as a colour or implied by the
 /// order, because the row is the whole of what a screen reader reads.
@@ -27,6 +28,8 @@ pub enum Whose {
     YourContacts,
     /// The organisation's directory, which was asked over the network.
     TheDirectory,
+    /// Microsoft's people search, for an Outlook or Office 365 account.
+    Microsoft,
 }
 
 impl Whose {
@@ -47,9 +50,22 @@ impl Whose {
         match self {
             Self::YourContacts => "from your contacts",
             Self::TheDirectory => "from the directory",
+            Self::Microsoft => "",
         }
     }
 }
+
+/// Whether Microsoft's people search is asked for this account.
+///
+/// An Outlook or Office 365 account signed in through the browser, and no
+/// other: that sign-in is the only thing that can ask Microsoft, and a name
+/// typed on any other account is nothing Microsoft is owed.
+pub fn microsoft_is_asked_for(_account: &Account) -> bool {
+    false
+}
+
+/// What is said when an account's sign-in cannot ask Microsoft's people search.
+pub const SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH: &str = "";
 
 /// One person who could be written to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,12 +149,14 @@ pub fn from_your_contacts(found: &[ContactEntry]) -> std::result::Result<Vec<Som
     Ok(found.iter().filter_map(Somebody::from_contact).collect())
 }
 
-/// Both lists as one, without offering the same address twice.
+/// Every list as one, without offering the same address twice.
 ///
 /// The address book on this computer comes first: it is the shorter list, it
 /// is the one somebody chose to keep, and it is where the more likely answer
-/// is. Where the same address is in both, the entry here is the one kept,
-/// because the spelling of the name in it is the one this person chose.
+/// is. Where the same address is in more than one, the entry here is the one
+/// kept, because the spelling of the name in it is the one this person chose.
+/// The directory comes next and Microsoft last, since Microsoft's people
+/// search reads the same directory and adds the people this mailbox writes to.
 ///
 /// Compared without case, because an address book and a directory disagree
 /// about capitals constantly and two rows for one mailbox make the list longer
@@ -146,6 +164,7 @@ pub fn from_your_contacts(found: &[ContactEntry]) -> std::result::Result<Vec<Som
 pub fn everybody_found(
     from_your_contacts: Vec<Somebody>,
     from_the_directory: Vec<Somebody>,
+    _from_microsoft: Vec<Somebody>,
 ) -> Vec<Somebody> {
     let mut together: Vec<Somebody> = Vec::new();
     for person in from_your_contacts.into_iter().chain(from_the_directory) {
@@ -566,6 +585,7 @@ mod tests {
         let together = everybody_found(
             vec![from_contacts("Ada Lovelace", "ada@example.com")],
             vec![from_the_directory("Adam Smith", "adam@example.com")],
+            Vec::new(),
         );
 
         assert_eq!(together.len(), 2);
@@ -582,6 +602,7 @@ mod tests {
         let together = everybody_found(
             vec![from_contacts("Ada", "ada@example.com")],
             vec![from_the_directory("Ada Lovelace", "ADA@EXAMPLE.COM")],
+            Vec::new(),
         );
 
         assert_eq!(together.len(), 1, "{together:?}");
@@ -599,9 +620,117 @@ mod tests {
                 from_contacts("Ada Lovelace", "ada@example.com"),
             ],
             Vec::new(),
+            Vec::new(),
         );
 
         assert_eq!(together.len(), 1, "{together:?}");
+    }
+
+    // ── Microsoft's people search ───────────────────────────────────────
+
+    fn from_microsoft(name: &str, address: &str) -> Somebody {
+        Somebody {
+            name: name.to_string(),
+            address: address.to_string(),
+            whose: Whose::Microsoft,
+        }
+    }
+
+    #[test]
+    fn test_a_row_from_microsoft_says_it_came_from_microsoft() {
+        // A person hears where a row came from before choosing, and Microsoft
+        // is a third place with its own reach: the people this mailbox writes
+        // to as well as the directory.
+        let row = from_microsoft("Ada Lovelace", "ada@example.com").row();
+
+        assert_eq!(Whose::Microsoft.said(), "from Microsoft");
+        assert_eq!(row, "Ada Lovelace, ada@example.com, from Microsoft");
+    }
+
+    #[test]
+    fn test_microsofts_people_come_after_the_contacts_and_the_directory() {
+        let together = everybody_found(
+            vec![from_contacts("Ada Lovelace", "ada@example.com")],
+            vec![from_the_directory("Adam Smith", "adam@example.com")],
+            vec![from_microsoft("Adele Jones", "adele@example.com")],
+        );
+
+        let whose: Vec<Whose> = together.iter().map(|person| person.whose).collect();
+        assert_eq!(
+            whose,
+            [Whose::YourContacts, Whose::TheDirectory, Whose::Microsoft]
+        );
+    }
+
+    #[test]
+    fn test_one_person_microsoft_also_found_keeps_the_row_already_there() {
+        // Microsoft reads the same directory and the same mailbox, so most of
+        // what it finds is somebody already in the list. The contact's
+        // spelling wins, then the directory's, and the address is compared
+        // without case.
+        let together = everybody_found(
+            vec![from_contacts("Ada", "ada@example.com")],
+            vec![from_the_directory("Adam Smith", "adam@example.com")],
+            vec![
+                from_microsoft("Ada Lovelace", "ADA@EXAMPLE.COM"),
+                from_microsoft("Adam J. Smith", "Adam@Example.com"),
+            ],
+        );
+
+        assert_eq!(together.len(), 2, "{together:?}");
+        assert_eq!(together[0].name, "Ada");
+        assert_eq!(together[0].whose, Whose::YourContacts);
+        assert_eq!(together[1].name, "Adam Smith");
+        assert_eq!(together[1].whose, Whose::TheDirectory);
+    }
+
+    fn an_account(email: &str, provider: Option<&str>, through_the_browser: bool) -> Account {
+        let mut account = Account::new("Work".to_string(), email.to_string());
+        account.provider = provider.map(str::to_string);
+        account.use_oauth = through_the_browser;
+        account
+    }
+
+    #[test]
+    fn test_microsoft_is_asked_for_an_outlook_account_signed_in_through_the_browser() {
+        assert!(microsoft_is_asked_for(&an_account(
+            "ada@outlook.com",
+            None,
+            true
+        )));
+        // An Office 365 mailbox on the organisation's own domain, known by
+        // the provider it was set up with.
+        assert!(microsoft_is_asked_for(&an_account(
+            "ada@example.com",
+            Some("Outlook"),
+            true
+        )));
+    }
+
+    #[test]
+    fn test_microsoft_is_not_asked_for_any_other_account() {
+        // A typed name is part of somebody's name, and Microsoft is owed it
+        // only by an account that signs in to Microsoft.
+        let never = [
+            an_account("ada@outlook.com", None, false),
+            an_account("ada@gmail.com", None, true),
+            an_account("ada@example.com", Some("Gmail"), true),
+            an_account("ada@example.com", None, false),
+            an_account("ada@example.com", Some("Yahoo"), true),
+        ];
+
+        for account in never {
+            assert!(!microsoft_is_asked_for(&account), "{account:?}");
+        }
+    }
+
+    #[test]
+    fn test_the_sign_in_sentence_says_where_to_go_and_what_it_brings_back() {
+        assert_eq!(
+            SIGN_IN_AGAIN_FOR_PEOPLE_SEARCH,
+            "Sign in again from the Account Manager to let Microsoft find people for this \
+             account."
+        );
     }
 
     // ── An answer that arrives after the question changed ───────────────

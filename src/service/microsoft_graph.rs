@@ -1,4 +1,4 @@
-//! Microsoft Graph API client: Contacts and Calendar.
+//! Microsoft Graph API client: Contacts, Calendar, OneNote and people search.
 //!
 //! Pure HTTP client using `reqwest` with Bearer auth. No UI, no DB.
 //! All methods take an OAuth access token (Graph-scoped) and return
@@ -6,6 +6,7 @@
 //!
 //! Base URL: `https://graph.microsoft.com/v1.0`
 
+use crate::application::looking_people_up::Somebody;
 use crate::common::{Error, Result};
 use crate::service::google_api::with_retry;
 use crate::service::outward::{in_a_path, in_a_query};
@@ -436,6 +437,13 @@ pub const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
 /// Only the first: every page after it is a whole address Graph handed back.
 fn contacts_delta_url(base: &str) -> String {
     format!("{base}/me/contacts/delta?$top=100")
+}
+
+// ── People ──────────────────────────────────────────────────────────────────
+
+/// The people in one answer to Microsoft's people search, as rows to write to.
+pub fn the_people_microsoft_found(_json: &str) -> Result<Vec<Somebody>> {
+    Ok(Vec::new())
 }
 
 /// The calendar Outlook treats as somebody's main one.
@@ -938,6 +946,18 @@ impl MsGraphClient {
                 tracing::warn!("Microsoft Graph client kept default timeouts: {}", e);
                 reqwest::Client::new()
             })
+    }
+
+    // ── People ──────────────────────────────────────────────────────────
+
+    /// The people Microsoft finds for part of a typed name.
+    pub async fn people_matching(
+        &self,
+        _token: &str,
+        _typed: &str,
+        _at_most: usize,
+    ) -> Result<Vec<Somebody>> {
+        Ok(Vec::new())
     }
 
     // ── Contacts ────────────────────────────────────────────────────────
@@ -1997,6 +2017,182 @@ mod tests {
             asked_for(&request).starts_with("GET /me/contacts/delta?"),
             "{request}"
         );
+    }
+
+    // ── People ──────────────────────────────────────────────────────────
+
+    /// An answer shaped like the People API's own example, with the fields a
+    /// row does not need left in so the parse is seen to ignore them.
+    const MICROSOFTS_PEOPLE: &str = r#"{
+        "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('ada')/people",
+        "value": [
+            {
+                "id": "1",
+                "displayName": "Ada Lovelace",
+                "givenName": "Ada",
+                "scoredEmailAddresses": [
+                    { "address": "ada@example.com", "relevanceScore": 8.0 }
+                ],
+                "personType": { "class": "Person", "subclass": "OrganizationUser" }
+            },
+            {
+                "id": "2",
+                "displayName": "Charles Babbage",
+                "scoredEmailAddresses": [
+                    { "address": "" },
+                    { "relevanceScore": 1.0 },
+                    { "address": "charles@example.com" },
+                    { "address": "babbage@example.com" }
+                ]
+            },
+            {
+                "id": "3",
+                "displayName": "Nobody To Write To",
+                "scoredEmailAddresses": []
+            },
+            {
+                "id": "4",
+                "displayName": null,
+                "scoredEmailAddresses": [{ "address": "  mary@example.com  " }]
+            }
+        ]
+    }"#;
+
+    #[test]
+    fn test_microsofts_people_are_read_as_rows_with_the_first_address_each_holds() {
+        let found = the_people_microsoft_found(MICROSOFTS_PEOPLE).expect("the people read");
+
+        assert_eq!(
+            found,
+            [
+                Somebody {
+                    name: "Ada Lovelace".to_string(),
+                    address: "ada@example.com".to_string(),
+                    whose: crate::application::looking_people_up::Whose::Microsoft,
+                },
+                Somebody {
+                    name: "Charles Babbage".to_string(),
+                    address: "charles@example.com".to_string(),
+                    whose: crate::application::looking_people_up::Whose::Microsoft,
+                },
+                Somebody {
+                    name: String::new(),
+                    address: "mary@example.com".to_string(),
+                    whose: crate::application::looking_people_up::Whose::Microsoft,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_answer_that_is_not_microsofts_people_list_is_refused_with_a_sentence() {
+        for answer in [
+            "not json at all",
+            r#"{"value": 5}"#,
+            r#"{"value": [{"scoredEmailAddresses": 7}]}"#,
+        ] {
+            let refused = the_people_microsoft_found(answer)
+                .expect_err("an answer nobody can read is not an empty list");
+            let said = refused.to_string();
+            assert!(said.starts_with("Microsoft's answer"), "{said}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_people_search_asks_for_the_typed_name_quoted_in_both_places_microsoft_looks() {
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"value": []}"#.to_string()).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        graph
+            .people_matching("a-token", "ada lo", 50)
+            .await
+            .expect("the people search to be answered");
+
+        let request = heard(listening, "the people search")
+            .await
+            .expect("a request");
+        let line = asked_for(&request);
+        assert!(line.starts_with("GET /me/people?"), "{request}");
+        // Quoted, which is how the People API reads a search, and the space a
+        // plus because this is a query.
+        assert!(line.contains("$search=%22ada+lo%22"), "{request}");
+        assert!(line.contains("$top=50"), "{request}");
+        assert!(
+            line.contains("$select=displayName,scoredEmailAddresses"),
+            "{request}"
+        );
+        let headers = request.to_lowercase();
+        assert!(
+            headers.contains("x-peoplequery-querysources: mailbox,directory"),
+            "without this Microsoft looks in the mailbox alone: {request}"
+        );
+        assert!(
+            headers.contains("authorization: bearer a-token"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_quote_typed_into_the_name_does_not_end_the_search_early() {
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"value": []}"#.to_string()).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        graph
+            .people_matching("a-token", "ada\"lo", 50)
+            .await
+            .expect("the people search to be answered");
+
+        let request = heard(listening, "the people search")
+            .await
+            .expect("a request");
+        assert!(
+            asked_for(&request).contains("$search=%22adalo%22"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_people_microsoft_answers_with_are_the_people_found() {
+        let (address, _listening) =
+            answering("200 OK", "application/json", MICROSOFTS_PEOPLE.to_string()).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let found = graph
+            .people_matching("a-token", "ada", 50)
+            .await
+            .expect("the people search to be answered");
+
+        assert_eq!(found.len(), 3, "{found:?}");
+        assert_eq!(found[0].address, "ada@example.com");
+    }
+
+    #[tokio::test]
+    async fn test_microsoft_refusing_a_people_search_says_so_and_what_might_mend_it() {
+        // Forbidden is what an account signed in before the permission was
+        // asked for gets, and what an organisation that switched people
+        // search off gets. Either way the sentence names both.
+        let (address, _listening) = answering(
+            "403 Forbidden",
+            "application/json",
+            r#"{"error":{"code":"ErrorAccessDenied","message":"Access is denied."}}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph
+            .people_matching("a-token", "ada", 50)
+            .await
+            .expect_err("a refusal is not an empty list");
+
+        let said = refused.to_string();
+        assert!(
+            said.starts_with("Microsoft's people search refused"),
+            "{said}"
+        );
+        assert!(said.contains("Sign in again"), "{said}");
+        assert!(said.contains("switched people search off"), "{said}");
     }
 
     #[tokio::test]
