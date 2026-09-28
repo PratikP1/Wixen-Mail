@@ -14,7 +14,8 @@
 //! attachment after all, a way to stop asking.
 
 use super::MessageCache;
-use crate::common::Result;
+use crate::common::{Error, Result};
+use rusqlite::OptionalExtension;
 
 impl MessageCache {
     /// Whether this message says it carries attachments, none is recorded,
@@ -24,8 +25,24 @@ impl MessageCache {
     /// has the only copy, so there is nothing to fetch (ledger 92). False for
     /// a row that does not exist.
     pub fn parts_were_left_behind(&self, message_id: i64) -> Result<bool> {
-        let _ = message_id;
-        Ok(false)
+        let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
+        self.conn
+            .query_row(
+                &format!(
+                    "SELECT EXISTS (
+                         SELECT 1 FROM messages m
+                         WHERE m.id = ?1
+                           AND m.has_attachments = 1
+                           -- no part row names it: the download left them behind
+                           AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)
+                           -- a server holds it: not collected over POP, not filed here
+                           AND NOT {only_copy_is_here}
+                     )"
+                ),
+                [message_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to ask whether parts were left behind: {e}")))
     }
 
     /// Record that this message carries no attachment, so it is not asked
@@ -36,7 +53,12 @@ impl MessageCache {
     /// calls an attachment and the parser reads as the message's text, and
     /// without this "fetched once" would be "fetched on every selection".
     pub fn record_that_it_carries_no_attachments(&self, message_id: i64) -> Result<()> {
-        let _ = message_id;
+        self.conn
+            .execute(
+                "UPDATE messages SET has_attachments = 0 WHERE id = ?1",
+                [message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record that nothing is attached: {e}")))?;
         Ok(())
     }
 
@@ -46,8 +68,15 @@ impl MessageCache {
     /// messages from several accounts at once and the account last opened is
     /// the wrong server for some of them.
     pub fn the_account_a_message_is_in(&self, message_id: i64) -> Result<Option<String>> {
-        let _ = message_id;
-        Ok(None)
+        self.conn
+            .query_row(
+                "SELECT f.account_id FROM messages m JOIN folders f ON f.id = m.folder_id
+                 WHERE m.id = ?1",
+                [message_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the account a message is in: {e}")))
     }
 }
 

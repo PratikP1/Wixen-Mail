@@ -17,10 +17,12 @@
 //! records the form a message arrived in: whether a message is fetched
 //! depends on the stored bit and the stored part rows and on nothing else.
 
+use crate::application::answering;
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
-use crate::service::mime::AttachmentInfo;
+use crate::data::message_cache::attachment_content::AttachmentWithContent;
+use crate::service::mime::{self, AttachmentInfo};
 
 /// What keeping a fetched message's parts did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,8 +41,15 @@ pub struct KeptParts {
 /// either; the error is logged by row id and never by anything the message
 /// says.
 pub fn were_left_behind(cache: Option<&MessageCache>, message_row_id: i64) -> bool {
-    let _ = (cache, message_row_id);
-    false
+    let Some(cache) = cache else {
+        return false;
+    };
+    cache
+        .parts_were_left_behind(message_row_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not ask whether message {message_row_id}'s parts are here: {e}");
+            false
+        })
 }
 
 /// Keep every part of a message fetched whole, each with its file.
@@ -55,10 +64,37 @@ pub fn keep_every_part(
     parts: &[AttachmentInfo],
     raw: &[u8],
 ) -> Result<KeptParts> {
-    let _ = (cache, message_row_id, parts, raw);
+    // One walk of the message for every file rather than one per part, and
+    // by position, which the walk and the parse that named the parts share.
+    // A walk that fails keeps the names without the files, which still lists
+    // them.
+    let files = mime::attachments_with_bytes(raw).unwrap_or_else(|e| {
+        tracing::warn!("Could not read the files of message {message_row_id}: {e}");
+        Vec::new()
+    });
+    let kept: Vec<AttachmentWithContent> = parts
+        .iter()
+        .enumerate()
+        .map(|(at, part)| {
+            AttachmentWithContent::from_a_parsed_part(
+                message_row_id,
+                part,
+                // every part with its file, not only the calendar's
+                files.get(at).map(|file| file.bytes.clone()),
+            )
+        })
+        .collect();
+    // Replaced rather than added to, so a body downloaded again does not list
+    // every part twice.
+    cache.replace_attachments_with_content(message_row_id, &kept)?;
+    if kept.is_empty() {
+        cache.record_that_it_carries_no_attachments(message_row_id)?;
+    }
     Ok(KeptParts {
-        count: 0,
-        carries_a_calendar_part: false,
+        count: kept.len(),
+        carries_a_calendar_part: parts
+            .iter()
+            .any(|part| answering::is_a_calendar_part(&part.mime_type)),
     })
 }
 
@@ -72,8 +108,12 @@ pub fn the_account_to_fetch_through(
     accounts: &[Account],
     filed_under: Option<&str>,
 ) -> Option<Account> {
-    let _ = (accounts, filed_under);
-    None
+    let filed_under = filed_under?;
+    // the message's own account, or none
+    accounts
+        .iter()
+        .find(|account| account.id == filed_under)
+        .cloned()
 }
 
 #[cfg(test)]
