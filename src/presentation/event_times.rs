@@ -15,9 +15,10 @@
 
 use std::borrow::Cow;
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, TimeZone};
 
 use super::ui_types::CalendarEventItem;
+use super::wx_calendar::CalendarEventData;
 use crate::common::moment::{self, Moment};
 
 impl CalendarEventItem {
@@ -133,6 +134,48 @@ fn when_it_is_over(stored: &str) -> Option<DateTime<Local>> {
         Moment::WholeDay(on) => moment::on_this_computer(on.succ_opt()?.and_hms_opt(0, 0, 0)?),
         names_an_hour => names_an_hour.on_this_computer(),
     }
+}
+
+/// The event editor's four time boxes, as they are filled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TheTimeBoxes {
+    pub start_date: String,
+    pub start_time: String,
+    pub end_date: String,
+    pub end_time: String,
+}
+
+/// What the event editor's time boxes are filled with for an event opened to
+/// change.
+pub fn filled_on_this_computer(item: &CalendarEventItem) -> TheTimeBoxes {
+    filled_seen_from(item, &Local)
+}
+
+/// What the event editor handed back, with any time typed put back on the
+/// clock the event is written on.
+pub fn typed_back_into_its_zone(
+    data: CalendarEventData,
+    item: &CalendarEventItem,
+) -> CalendarEventData {
+    typed_back_seen_from(data, item, &Local)
+}
+
+fn filled_seen_from<Here: TimeZone>(item: &CalendarEventItem, _here: &Here) -> TheTimeBoxes {
+    let shown = CalendarEventData::as_shown(item);
+    TheTimeBoxes {
+        start_date: shown.start_date,
+        start_time: shown.start_time,
+        end_date: shown.end_date,
+        end_time: shown.end_time,
+    }
+}
+
+fn typed_back_seen_from<Here: TimeZone>(
+    data: CalendarEventData,
+    _item: &CalendarEventItem,
+    _here: &Here,
+) -> CalendarEventData {
+    data
 }
 
 #[cfg(test)]
@@ -559,5 +602,215 @@ mod tests {
             crate::presentation::ui_types::calendar_range_label(&[a_whole_day(Some(TOKYO))]),
             "2026-03-05"
         );
+    }
+
+    // ── The event editor's two edges, seen from New York ────────────────────
+
+    use chrono_tz::America::New_York;
+
+    /// The boxes as the editor hands them back untouched, seen from New York:
+    /// filled on that clock, everything else as the event holds it.
+    fn the_editor_untouched(row: &CalendarEventItem) -> CalendarEventData {
+        let boxes = filled_seen_from(row, &New_York);
+        CalendarEventData {
+            start_date: boxes.start_date,
+            start_time: boxes.start_time,
+            end_date: boxes.end_date,
+            end_time: boxes.end_time,
+            ..CalendarEventData::as_shown(row)
+        }
+    }
+
+    fn the_start(data: &CalendarEventData) -> (&str, &str) {
+        (&data.start_date, &data.start_time)
+    }
+
+    fn the_end(data: &CalendarEventData) -> (&str, &str) {
+        (&data.end_date, &data.end_time)
+    }
+
+    fn an_outlook_row() -> CalendarEventItem {
+        in_a_zone(
+            "2026-03-05T14:00:00.0000000",
+            "2026-03-05T15:00:00.0000000",
+            Some("UTC"),
+        )
+    }
+
+    /// Nine in the morning in New York is fourteen hundred in universal
+    /// time, and the editor shows the nine.
+    #[test]
+    fn test_an_outlook_meeting_fills_the_editor_on_this_computers_clock() {
+        assert_eq!(
+            filled_seen_from(&an_outlook_row(), &New_York),
+            TheTimeBoxes {
+                start_date: "2026-03-05".into(),
+                start_time: "09:00".into(),
+                end_date: "2026-03-05".into(),
+                end_time: "10:00".into(),
+            }
+        );
+    }
+
+    /// Opening an event and saving it untouched is no change, so nothing goes
+    /// back to the provider.
+    #[test]
+    fn test_an_untouched_editor_reads_back_exactly_as_it_was_shown() {
+        for row in [
+            an_outlook_row(),
+            in_a_zone("2026-03-05T09:00:00", "2026-03-05T10:00:00", Some(TOKYO)),
+            in_a_zone(
+                "2026-03-05T10:00:00-05:00",
+                "2026-03-05T11:00:00-05:00",
+                Some("Europe/London"),
+            ),
+            in_a_zone(
+                "2026-03-05T10:00:00+05:30",
+                "2026-03-05T11:00:00+05:30",
+                None,
+            ),
+        ] {
+            let back = typed_back_seen_from(the_editor_untouched(&row), &row, &New_York);
+            assert_eq!(back, CalendarEventData::as_shown(&row), "{}", row.start);
+        }
+    }
+
+    /// Half past ten typed in New York is half past three in universal time,
+    /// which is what the event then holds, as if it had been stored there.
+    #[test]
+    fn test_a_time_typed_here_goes_back_on_the_events_own_clock() {
+        let row = an_outlook_row();
+        let typed = CalendarEventData {
+            start_time: "10:30".into(),
+            ..the_editor_untouched(&row)
+        };
+
+        let back = typed_back_seen_from(typed, &row, &New_York);
+
+        let stored_there = in_a_zone(
+            "2026-03-05T15:30:00",
+            "2026-03-05T15:00:00.0000000",
+            Some("UTC"),
+        );
+        assert_eq!(
+            the_start(&back),
+            the_start(&CalendarEventData::as_shown(&stored_there))
+        );
+        assert_eq!(the_start(&back), ("2026-03-05", "15:30"));
+        assert_eq!(
+            the_end(&back),
+            ("2026-03-05", "15:00"),
+            "the end nobody typed in"
+        );
+    }
+
+    /// Eight in the evening on the fourth in New York is ten in the morning
+    /// on the fifth in Tokyo, and the date moves with the hour.
+    #[test]
+    fn test_a_meeting_from_tokyo_typed_across_midnight_moves_its_date_on_its_own_clock() {
+        let row = in_a_zone("2026-03-05T09:00:00", "2026-03-05T10:00:00", Some(TOKYO));
+        let untouched = the_editor_untouched(&row);
+        assert_eq!(the_start(&untouched), ("2026-03-04", "19:00"));
+
+        let typed = CalendarEventData {
+            start_time: "20:00".into(),
+            ..untouched
+        };
+        let back = typed_back_seen_from(typed, &row, &New_York);
+
+        assert_eq!(the_start(&back), ("2026-03-05", "10:00"));
+    }
+
+    /// A named zone knows its own summer time and an offset does not, so the
+    /// zone decides the clock: London's, not the offset the start carries.
+    #[test]
+    fn test_a_meeting_with_an_offset_and_a_named_zone_goes_back_on_the_zones_clock() {
+        let row = in_a_zone(
+            "2026-03-05T10:00:00-05:00",
+            "2026-03-05T11:00:00-05:00",
+            Some("Europe/London"),
+        );
+        let untouched = the_editor_untouched(&row);
+        assert_eq!(the_start(&untouched), ("2026-03-05", "10:00"));
+
+        let typed = CalendarEventData {
+            start_time: "11:00".into(),
+            ..untouched
+        };
+        let back = typed_back_seen_from(typed, &row, &New_York);
+
+        assert_eq!(the_start(&back), ("2026-03-05", "16:00"));
+    }
+
+    /// With no zone named, the offset the start carries is the clock.
+    #[test]
+    fn test_a_meeting_with_an_offset_and_no_zone_keeps_its_offsets_clock() {
+        let row = in_a_zone(
+            "2026-03-05T10:00:00+05:30",
+            "2026-03-05T11:00:00+05:30",
+            None,
+        );
+        let untouched = the_editor_untouched(&row);
+        assert_eq!(the_start(&untouched), ("2026-03-04", "23:30"));
+
+        let typed = CalendarEventData {
+            start_date: "2026-03-05".into(),
+            start_time: "00:30".into(),
+            ..untouched
+        };
+        let back = typed_back_seen_from(typed, &row, &New_York);
+
+        assert_eq!(the_start(&back), ("2026-03-05", "11:00"));
+    }
+
+    /// A time typed here names no zone, a zone nothing can place leaves the
+    /// hour as written, and a whole day has no clock: the boxes hold what is
+    /// stored and what is typed goes back as typed.
+    #[test]
+    fn test_a_meeting_typed_here_and_a_whole_day_are_untouched_both_ways() {
+        for row in [
+            in_a_zone("2026-03-05 09:00", "2026-03-05 10:00", None),
+            in_a_zone(
+                "2026-03-05T09:00:00",
+                "2026-03-05T10:00:00",
+                Some("Mars/Olympus_Mons"),
+            ),
+            a_whole_day(Some(TOKYO)),
+        ] {
+            let untouched = the_editor_untouched(&row);
+            assert_eq!(
+                untouched,
+                CalendarEventData::as_shown(&row),
+                "{}",
+                row.start
+            );
+
+            let typed = CalendarEventData {
+                start_date: "2026-03-06".into(),
+                start_time: "11:00".into(),
+                ..untouched
+            };
+            let back = typed_back_seen_from(typed.clone(), &row, &New_York);
+            assert_eq!(back, typed, "{}", row.start);
+        }
+    }
+
+    /// Half past two on the morning the clocks go forward does not happen in
+    /// New York; it lands at three, which is seven in universal time.
+    #[test]
+    fn test_a_time_typed_in_the_hour_the_clocks_skip_lands_on_the_first_quarter_hour_after_it() {
+        let row = in_a_zone(
+            "2026-03-08T12:00:00.0000000",
+            "2026-03-08T13:00:00.0000000",
+            Some("UTC"),
+        );
+        let typed = CalendarEventData {
+            start_time: "02:30".into(),
+            ..the_editor_untouched(&row)
+        };
+
+        let back = typed_back_seen_from(typed, &row, &New_York);
+
+        assert_eq!(the_start(&back), ("2026-03-08", "07:00"));
     }
 }

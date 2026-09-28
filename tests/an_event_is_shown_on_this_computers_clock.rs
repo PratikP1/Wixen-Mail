@@ -13,6 +13,11 @@
 //! of the real source and is refused, so a reading that could not fail would
 //! be seen to.
 //!
+//! The event editor, `an_event_editor` and `filled_from_calendar_item` in
+//! `managers.rs`, is read the same way: its boxes are filled on this
+//! computer's clock and what comes back is put on the event's own clock before
+//! the merge compares it, at the dialog's two edges and nowhere else.
+//!
 //! The source is read with its comments taken off and every space and line
 //! break taken out, so rustfmt moving a call across lines moves nothing here.
 //!
@@ -25,6 +30,7 @@ use wixen_mail::common::what_ships::what_ships;
 
 const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 const THE_CALENDAR_WINDOW: &str = "src/presentation/wx_calendar.rs";
+const THE_EVENT_EDITOR: &str = "src/presentation/managers.rs";
 
 /// What one window's function must call and must not do.
 struct Reading {
@@ -46,6 +52,22 @@ const THE_DATE_TIME_COLUMN: Reading = Reading {
     signature: "fn populate_event_list(",
     calls: "the_list_column(",
     never: Some("event.start.get("),
+};
+
+/// The event editor's boxes, filled on this computer's clock.
+const THE_EDITORS_BOXES: Reading = Reading {
+    file: THE_EVENT_EDITOR,
+    signature: "fn filled_from_calendar_item(",
+    calls: "filled_on_this_computer(",
+    never: Some("item.start.get("),
+};
+
+/// The event editor's answer, put back on the event's own clock.
+const THE_EDITORS_ANSWER: Reading = Reading {
+    file: THE_EVENT_EDITOR,
+    signature: "fn an_event_editor(",
+    calls: "typed_back_into_its_zone(",
+    never: None,
 };
 
 /// The source with each `//` comment taken off the end of its line.
@@ -206,6 +228,56 @@ fn test_a_column_worded_from_the_stored_text_would_be_named() {
     let unasked = what_is_wrong(
         &THE_DATE_TIME_COLUMN,
         &without_the_call(&THE_DATE_TIME_COLUMN, &source),
+    );
+    assert_eq!(unasked.len(), 1, "{}", unasked.join("\n"));
+    assert!(unasked[0].contains("does not call"), "{}", unasked[0]);
+}
+
+#[test]
+fn test_the_event_editor_is_filled_on_this_computers_clock() {
+    let wrong = what_is_wrong(&THE_EDITORS_BOXES, &the_source(&THE_EDITORS_BOXES));
+
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_event_editor_puts_what_is_typed_back_on_the_events_clock() {
+    let wrong = what_is_wrong(&THE_EDITORS_ANSWER, &the_source(&THE_EDITORS_ANSWER));
+
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_an_editor_filled_from_the_stored_text_would_be_named() {
+    let source = the_source(&THE_EDITORS_BOXES);
+    assert_clean(&THE_EDITORS_BOXES, &source);
+
+    let planted = planted_in(
+        &THE_EDITORS_BOXES,
+        &source,
+        "    let _ = item.start.get(..10);",
+    );
+
+    let wrong = what_is_wrong(&THE_EDITORS_BOXES, &planted);
+    assert_eq!(wrong.len(), 1, "{}", wrong.join("\n"));
+    assert!(wrong[0].contains("reads `item.start.get(`"), "{}", wrong[0]);
+
+    let unasked = what_is_wrong(
+        &THE_EDITORS_BOXES,
+        &without_the_call(&THE_EDITORS_BOXES, &source),
+    );
+    assert_eq!(unasked.len(), 1, "{}", unasked.join("\n"));
+    assert!(unasked[0].contains("does not call"), "{}", unasked[0]);
+}
+
+#[test]
+fn test_an_editor_answering_as_typed_would_be_named() {
+    let source = the_source(&THE_EDITORS_ANSWER);
+    assert_clean(&THE_EDITORS_ANSWER, &source);
+
+    let unasked = what_is_wrong(
+        &THE_EDITORS_ANSWER,
+        &without_the_call(&THE_EDITORS_ANSWER, &source),
     );
     assert_eq!(unasked.len(), 1, "{}", unasked.join("\n"));
     assert!(unasked[0].contains("does not call"), "{}", unasked[0]);
