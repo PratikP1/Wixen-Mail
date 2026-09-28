@@ -1503,12 +1503,12 @@ mod tests {
 
     #[test]
     fn test_an_event_naming_a_zone_nobody_knows_is_read_where_the_person_is() {
-        // A calendar server may write any zone name it likes, including
-        // Windows names and names nothing has heard of. Read as universal time
-        // the meeting moves by however far that person is from Greenwich, and
-        // it moves silently.
+        // A calendar server may write any zone name it likes, including names
+        // nothing has heard of: Outlook writes this one for a zone somebody
+        // built by hand. Read as universal time the meeting moves by however
+        // far that person is from Greenwich, and it moves silently.
         let mut event = an_event("2026-06-05T09:00:00", "2026-06-05T10:00:00");
-        event.time_zone = Some("Eastern Standard Time".to_string());
+        event.time_zone = Some("Customized Time Zone".to_string());
 
         let blocked = when_this_event_blocks(
             &event,
@@ -1520,6 +1520,27 @@ mod tests {
             blocked,
             vec![Stretch {
                 span: span("2026-06-05T13:00:00Z", "2026-06-05T14:00:00Z"),
+                how_busy: HowBusy::Busy,
+            }]
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_event_naming_a_windows_zone_blocks_the_instants_that_zone_names() {
+        // Outlook and Microsoft write Windows' names for zones. Nine in the
+        // morning Pacific time in June is four in the afternoon in universal
+        // time, and read where the person is, here Greenwich, the busy hour
+        // would land seven hours early and a meeting on top of it.
+        let mut event = an_event("2026-06-05T09:00:00", "2026-06-05T10:00:00");
+        event.time_zone = Some("Pacific Standard Time".to_string());
+
+        let blocked = when_this_event_blocks(&event, Tz::UTC, the_first_ten_days_of_june());
+
+        assert_eq!(
+            blocked,
+            vec![Stretch {
+                span: span("2026-06-05T16:00:00Z", "2026-06-05T17:00:00Z"),
                 how_busy: HowBusy::Busy,
             }]
         );
