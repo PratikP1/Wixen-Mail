@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Report as Junk, experimental (#54's first point, GAP-06).** Action, Report as Junk, on
+  `Ctrl+Shift+J` and `J` on the Action menu, moves every selected message to its account's
+  junk folder and says one sentence per account about what the provider was told. On a mail
+  server whose folder keeps a junk mark, the mark is set first, with the not-junk mark taken
+  off before it, and the sentence says "3 messages reported as junk and moved to Junk". On
+  Gmail the move into Spam is the report, by Google's own help page, and the sentence says
+  the move tells Google. On a server that keeps no junk mark, only the folder says the
+  messages are junk, and the sentence says so. A POP account, an account with no junk folder,
+  an account that has not learned its folders yet and one whose mail changes are off each say
+  why nothing was reported. A message already in the junk folder is passed over and counted.
+  The move is Move's own, made here first, so `Ctrl+Z` in the message list moves the messages
+  back. The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: Microsoft is not told, because its only way for a program to report junk is a
+  preview interface it does not support in production and needs a permission to read and
+  change all your mail, so the sentence says Microsoft has not been told; nothing here has
+  met a real mail server, so whether a server keeps the mark and whether Gmail counts the move
+  are not known; and Undo takes the messages back out of the junk folder and leaves a junk
+  mark already set on them.
 - **Sign and Encrypt in the composer, experimental (#52 points 4 and 5, GAP-05).** Two check
   boxes sit beside Send and Schedule, Sign (experimental) on `Alt+G` and Encrypt
   (experimental) on `Alt+Y`, and both keys work from inside the message, where the new state

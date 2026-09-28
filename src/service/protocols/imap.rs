@@ -394,6 +394,13 @@ pub struct MailboxStatus {
     /// phone, raises this. Holding the value from the last sync is what lets
     /// the next one ask for what changed instead of re-reading every flag.
     pub highest_modseq: Option<u64>,
+    /// Whether the folder keeps the `$Junk` keyword, read from the
+    /// PERMANENTFLAGS it named on opening (13-22).
+    ///
+    /// A yes or no rather than the list itself, so this stays `Copy` and no
+    /// caller that copies it changes; junk is the one keyword anything here
+    /// asks about.
+    pub keeps_the_junk_mark: bool,
 }
 
 /// One message, as much of it as a header fetch reveals.
@@ -1090,6 +1097,20 @@ impl ImapSession {
         };
         let said = self
             .read_command(asking, "opening the folder", |response| match response {
+                // What the folder keeps, asked about the one keyword a junk
+                // report sends. Before the UIDVALIDITY arm so the arms below
+                // keep their order.
+                Response::Data {
+                    status: Status::Ok,
+                    code: Some(ResponseCode::PermanentFlags(permanent)),
+                    ..
+                } => {
+                    let permanent: Vec<String> =
+                        permanent.iter().map(|flag| flag.to_string()).collect();
+                    Some(WhatOpeningAFolderSaid::KeepsTheJunkMark(
+                        flag::keeps_keyword(Some(&permanent), flag::JUNK),
+                    ))
+                }
                 Response::Data {
                     status: Status::Ok,
                     code: Some(ResponseCode::UidValidity(uid)),
@@ -1108,12 +1129,15 @@ impl ImapSession {
         Ok(MailboxStatus {
             uid_validity: said.iter().find_map(|line| match line {
                 WhatOpeningAFolderSaid::UidValidity(uid) => Some(*uid),
-                WhatOpeningAFolderSaid::HighestModSeq(_) => None,
+                _ => None,
             }),
             highest_modseq: said.iter().find_map(|line| match line {
                 WhatOpeningAFolderSaid::HighestModSeq(modseq) => Some(*modseq),
-                WhatOpeningAFolderSaid::UidValidity(_) => None,
+                _ => None,
             }),
+            keeps_the_junk_mark: said
+                .iter()
+                .any(|line| matches!(line, WhatOpeningAFolderSaid::KeepsTheJunkMark(true))),
         })
     }
 
@@ -2188,6 +2212,7 @@ fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> b
 enum WhatOpeningAFolderSaid {
     UidValidity(u32),
     HighestModSeq(u64),
+    KeepsTheJunkMark(bool),
 }
 
 /// A mailbox name as it goes on the wire, quoted.

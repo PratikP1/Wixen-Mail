@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 421 records have arrived since and have not been through it.
+# 425 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -8713,7 +8713,9 @@ tests_last_seen = [
 # folder already being the one selected could have reached this file without
 # anything noticing.
 #
-# Measured by hand on 2026-08-14, against the whole library.
+# Measured by hand on 2026-08-14, against the whole library. Its `after` gained
+# the third field on 2026-09-28 (13-22), when `MailboxStatus` learned whether a
+# folder keeps the junk mark, so the break still compiles; re-measured then.
 
 [[guard]]
 name = "a second SELECT of an already-open folder still asks the server"
@@ -8725,6 +8727,7 @@ after = """    pub async fn select_folder(&mut self, path: &str) -> Result<Mailb
             return Ok(MailboxStatus {
                 uid_validity: Some(1),
                 highest_modseq: None,
+                keeps_the_junk_mark: false,
             });
         }
         // CONDSTORE asks the server to name the folder's highest modification"""
@@ -33319,4 +33322,78 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
+]
+
+# A server that sent no PERMANENTFLAGS has said nothing about what it keeps,
+# and a keyword sent into that may be gone when the session ends. Read as
+# "keeps everything", a junk report would claim a mark nobody kept. Written
+# 2026-09-28 by 13-22, measured against the library.
+[[guard]]
+name = "a folder that named no permanent flags keeps no junk mark"
+file = "src/service/protocols/imap/flag.rs"
+before = """    permanent.is_some_and(|flags| {"""
+after = """    permanent.is_none_or(|flags| {"""
+red = [
+    "service::protocols::imap::flag::tests::test_a_server_that_sent_no_permanent_flags_keeps_nothing_new",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap/flag.rs", tests = 9 },
+]
+
+# RFC 9051 reads a message carrying $Junk and $NotJunk together as carrying
+# neither, so $NotJunk comes off before $Junk goes on; the other order leaves
+# the message in that state, for good if the second write fails. Written
+# 2026-09-28 by 13-22, measured against the library.
+[[guard]]
+name = "a junk report takes the not-junk mark off before it puts the junk mark on"
+file = "src/application/reporting_junk.rs"
+before = """        server.set_flag(folder, *uid, NOT_JUNK, false).await?;
+        server.set_flag(folder, *uid, JUNK, true).await?;"""
+after = """        server.set_flag(folder, *uid, JUNK, true).await?;
+        server.set_flag(folder, *uid, NOT_JUNK, false).await?;"""
+red = [
+    "application::reporting_junk::tests::test_a_server_that_keeps_keywords_has_not_junk_taken_off_before_junk_goes_on",
+]
+tests_last_seen = [
+    { file = "src/application/reporting_junk.rs", tests = 21 },
+]
+
+# The mark goes to the message in the folder its number belongs to, so the
+# worker asks for the move only once the mark is settled; an update sent
+# first moves the message out from under the mark. Written 2026-09-28 by
+# 13-22, measured against the target.
+[[guard]]
+name = "a junk report asks for the move only after the mark is settled"
+file = "src/presentation/wx_app.rs"
+suite = "report_as_junk_is_on_the_action_menu"
+before = """        for report in reports {
+            let marked = match report.mark {"""
+after = """        for report in reports {
+            let _ = tx.try_send(UIUpdate::ReportedAsJunk(report.going.clone()));
+            let marked = match report.mark {"""
+red = [
+    "test_the_worker_marks_at_the_server_before_it_asks_the_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
+]
+
+# A report's sentence says what the provider was told; dropped, the move
+# says nothing for the set and the person never hears whether Microsoft was
+# told. Written 2026-09-28 by 13-22, measured against the target.
+[[guard]]
+name = "the sentence a command hands the move is spoken in place of Move's"
+file = "src/presentation/wx_app.rs"
+suite = "report_as_junk_is_on_the_action_menu"
+before = """    if let Some(said) = said_for_the_set
+        && !made.is_empty()"""
+after = """    if let Some(said) = None::<String>
+        && !made.is_empty()"""
+red = [
+    "test_the_reports_sentence_replaces_moves_for_the_set",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
 ]

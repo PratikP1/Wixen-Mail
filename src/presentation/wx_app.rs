@@ -295,6 +295,7 @@ menu_ids!(
     ID_SEND_RECEIPT,
     ID_BLOCK_SENDER,
     ID_BLOCK_DOMAIN,
+    ID_REPORT_JUNK,
     ID_ANSWER_ACCEPT,
     ID_ANSWER_TENTATIVE,
     ID_ANSWER_DECLINE,
@@ -4686,6 +4687,9 @@ impl WxMailApp {
                                 id == ID_BLOCK_DOMAIN,
                             );
                         }
+                        _ if id == ID_REPORT_JUNK => {
+                            report_the_chosen_as_junk(app, &message_cache, &a11y, &msg_list);
+                        }
                         _ if id == ID_ANSWER_ACCEPT
                             || id == ID_ANSWER_TENTATIVE
                             || id == ID_ANSWER_DECLINE =>
@@ -7625,6 +7629,15 @@ impl WxMailApp {
                 ID_MOVE_TO_FOLDER,
                 "Mo&ve to...\tCtrl+Shift+V",
                 "Move the chosen message, event, task or note somewhere else",
+            )
+            // j, one of the three letters this menu had left, q and z being
+            // the others; Quick Steps takes q. Beside Move because a report
+            // is a move into the junk folder, and above the Block submenu
+            // because a block is the other thing done about junk (#54).
+            .append_item(
+                ID_REPORT_JUNK,
+                "Report as &Junk\tCtrl+Shift+J",
+                crate::application::reporting_junk::REPORTING_JUNK_IS_EXPERIMENTAL,
             )
             .append_separator()
             .build();
@@ -21517,6 +21530,13 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // miss.
             let _ = a11y.announce_topic(&said, Priority::High, "refusal");
         }
+        UIUpdate::ReportedAsJunk(ready) => {
+            // The mark is settled at the server; the move is Move's own,
+            // made here first, and says the report's sentence (13-22).
+            if let Some(cache) = message_cache {
+                move_what_was_reported(AppHandles { state, tx, rt }, msg_list, cache, ready);
+            }
+        }
         UIUpdate::TheNetworkIsBack => {
             back_online_offer.panel.show(true);
             // The list below it has changed size.
@@ -22829,19 +22849,9 @@ fn move_or_copy_message(
             .collect()
     };
 
-    // The set's rows on screen, remembered so the cursor lands once, after
-    // the last of them has left (#30, on #76's rule). A copy takes no row
-    // out, and under conversation view nothing lands.
+    // A copy takes no row out, so only a move remembers the set leaving.
     if !copying {
-        let mut s = lock_state(state);
-        s.a_set_leaving = (moving.len() > 1 && !s.showing.showing_conversations()).then(|| {
-            ASetLeaving::of(moving.iter().filter_map(|message| {
-                s.messages
-                    .iter()
-                    .position(|row| row.message_id == message.row_id)
-                    .map(|row| (message.row_id, row))
-            }))
-        });
+        remember_the_set_leaving(state, &moving);
     }
 
     // One word at the key and the fuller line for the eye (#83), the shape
@@ -22865,6 +22875,7 @@ fn move_or_copy_message(
             chosen,
             into,
             copying,
+            said_for_the_set: None,
         },
     );
 }
@@ -22906,6 +22917,7 @@ fn move_or_copy_here_first(
         chosen,
         into,
         copying,
+        said_for_the_set,
     } = asked;
     let AppHandles { state, tx, rt } = app;
     let Some(destination_account) = lock_state(state)
@@ -22952,22 +22964,27 @@ fn move_or_copy_here_first(
         }
     }
     let a_set = moving.len() > 1;
-    let one_sentence = a_set.then(|| {
-        what_was_done(
-            &chosen,
-            &if copying {
-                Outcome::CopiedTo {
-                    into: into.id.clone(),
-                    not_copied: 0,
-                }
-            } else {
-                Outcome::MovedTo {
-                    into: into.id.clone(),
-                    not_moved: 0,
-                }
-            },
-        )
-    });
+    // A command with a sentence of its own has that one said in place of
+    // Move's, so one sentence is heard for the command (13-22).
+    let one_sentence = match &said_for_the_set {
+        Some(_) => None,
+        None => a_set.then(|| {
+            what_was_done(
+                &chosen,
+                &if copying {
+                    Outcome::CopiedTo {
+                        into: into.id.clone(),
+                        not_copied: 0,
+                    }
+                } else {
+                    Outcome::MovedTo {
+                        into: into.id.clone(),
+                        not_moved: 0,
+                    }
+                },
+            )
+        }),
+    };
     let asked_at = chrono::Utc::now().to_rfc3339();
     let mut by_account: std::collections::BTreeMap<String, AsksOfOneAccount> =
         std::collections::BTreeMap::new();
@@ -23097,6 +23114,14 @@ fn move_or_copy_here_first(
             );
         },
     );
+    // Spoken rather than shown: nothing at the key said what came of the
+    // command, and this is the answer. Only once something was made here; a
+    // set refused whole has had its refusal said.
+    if let Some(said) = said_for_the_set
+        && !made.is_empty()
+    {
+        send_status(tx, rt, &said);
+    }
     // Remembered once, after every change was made here, so Edit, Undo
     // offers only what was really done (13-08).
     went.extend(made.iter().map(ChangedHere::as_it_was));
@@ -23141,12 +23166,323 @@ impl AMessageMoving {
     }
 }
 
+/// Report every chosen message as junk (#54, GAP-06's first `[D]` line).
+///
+/// Over the selection the way Move is, a conversation row giving the
+/// messages in the folder being read, and refused above the bound. The
+/// messages are grouped by the account each is at, and each account's report
+/// is decided by [`crate::application::reporting_junk::what_a_report_does`]
+/// before any worker starts, which is where the gate is met: an account
+/// whose changes are off, a POP account, and one with no junk folder each
+/// say one sentence and send nothing. A message already in the junk folder
+/// is passed over and counted. The rest go to one worker, which marks them
+/// at the server and then asks for the move; the move is Move's own, and the
+/// report's one sentence per account is said once it is made.
+fn report_the_chosen_as_junk(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Accessibility,
+    list: &ListCtrl,
+) {
+    use crate::application::choosing_messages::{too_many, what_is_being_done};
+    use crate::application::reporting_junk::{self, AReportedMessage, AccountKind, Marked, Report};
+    let AppHandles { state, tx, rt } = app;
+
+    let Some(cache) = cache.clone() else {
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
+    };
+    let chosen = match chosen_messages(
+        state,
+        &Some(cache.clone()),
+        list,
+        crate::application::conversations::AConversationReaches::ThisFolderOnly,
+    ) {
+        Ok(chosen) => chosen,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    if chosen.is_empty() {
+        return send_refusal(tx, rt, &nothing_chosen(Thing::MESSAGE));
+    }
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+
+    // Each chosen message with the account it is at, the folder it is in
+    // and its size, read off the row the way Move reads them.
+    let mut by_account: std::collections::BTreeMap<String, (Account, Vec<AReportedMessage>)> =
+        std::collections::BTreeMap::new();
+    {
+        let s = lock_state(state);
+        for message in &chosen.messages {
+            let (Some(account), Some(folder)) = (
+                owner_of(
+                    &s.messages,
+                    &s.accounts,
+                    message.row_id,
+                    s.active_account_id.as_deref(),
+                ),
+                cache.folder_path_for_message(message.row_id).ok().flatten(),
+            ) else {
+                return send_refusal(
+                    tx,
+                    rt,
+                    "This message is not in an account this program knows about.",
+                );
+            };
+            by_account
+                .entry(account.id.clone())
+                .or_insert_with(|| (account, Vec::new()))
+                .1
+                .push(AReportedMessage {
+                    row_id: message.row_id,
+                    uid: message.uid,
+                    subject: message.subject.clone(),
+                    folder,
+                    size_bytes: s
+                        .messages
+                        .iter()
+                        .find(|row| row.message_id == message.row_id)
+                        .and_then(|row| row.size_bytes),
+                });
+        }
+    }
+
+    let mut reports: Vec<AJunkReport> = Vec::new();
+    for (account, messages) in by_account.into_values() {
+        let kind = AccountKind::of(&account);
+        let folders = cache
+            .get_folders_for_account(&account.id)
+            .unwrap_or_default();
+        let junk =
+            crate::application::blocking::where_blocked_mail_goes(folders.iter().map(|folder| {
+                (
+                    folder.path.as_str(),
+                    crate::common::types::FolderType::from_stored(&folder.folder_type),
+                )
+            }));
+        let gate = crate::service::outward::permitted(
+            crate::application::allowed::allowed_for(&account.id).mail,
+            "move a message",
+        )
+        .map_err(|why| why.to_string());
+        let (junk_path, mark) = match reporting_junk::what_a_report_does(kind, junk, gate) {
+            Report::NothingSent(said) => {
+                send_refusal(tx, rt, &said);
+                continue;
+            }
+            Report::MarkThenMove { junk, mark } => (junk, mark),
+        };
+        let junk_name = folders
+            .iter()
+            .find(|folder| folder.path == junk_path)
+            .map_or_else(|| junk_path.clone(), |folder| folder.name.clone());
+        let (already, going): (Vec<AReportedMessage>, Vec<AReportedMessage>) = messages
+            .into_iter()
+            .partition(|message| message.folder == junk_path);
+        if going.is_empty() {
+            send_status(
+                tx,
+                rt,
+                &reporting_junk::what_reporting_did(
+                    kind,
+                    0,
+                    &junk_name,
+                    already.len(),
+                    &Marked::NotAsked,
+                ),
+            );
+            continue;
+        }
+        reports.push(AJunkReport {
+            account,
+            kind,
+            mark,
+            passed_over: already.len(),
+            going: reporting_junk::ReadyToMove {
+                account_id: String::new(),
+                junk_path,
+                junk_name,
+                messages: going,
+                sentence: String::new(),
+            },
+        });
+    }
+    if reports.is_empty() {
+        return;
+    }
+    // One word at the key and the line for the eye, as Move has; the
+    // sentence per account is the answer, once the move is made.
+    say_the_one_word(a11y, "Report");
+    send_shown(tx, rt, &what_is_being_done("Reporting", &chosen));
+    spawn_junk_marking(app, reports);
+}
+
+/// One account's report on its way to the worker.
+struct AJunkReport {
+    account: Account,
+    kind: crate::application::reporting_junk::AccountKind,
+    /// Whether the server is asked to mark the messages; not on Gmail.
+    mark: bool,
+    /// How many chosen messages were already in the junk folder.
+    passed_over: usize,
+    /// The messages to move and where, the sentence written once the mark
+    /// is settled.
+    going: crate::application::reporting_junk::ReadyToMove,
+}
+
+/// Mark each report's messages at its server, then ask for the move.
+///
+/// On one worker, account after account, through the session each account is
+/// signed in with. The mark goes first, folder by folder, because a message's
+/// number belongs to the folder it is in and the move changes both. A mark
+/// that could not be set, or a session that could not be opened, is said in
+/// the sentence and the move still goes: it is made here first and reaches
+/// the server when it can.
+fn spawn_junk_marking(app: AppHandles<'_>, reports: Vec<AJunkReport>) {
+    use crate::application::reporting_junk::{self, Marked};
+    let AppHandles { tx, rt, .. } = app;
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    rt.spawn_blocking(move || {
+        for report in reports {
+            let marked = match report.mark {
+                false => Marked::NotAsked,
+                true => handle.block_on(async {
+                    let controller =
+                        match crate::application::mail_session::the_session_at(&report.account)
+                            .await
+                        {
+                            Ok(controller) => controller,
+                            Err(why) => return Marked::Failed(why.to_string()),
+                        };
+                    let mut by_folder: std::collections::BTreeMap<&str, Vec<u32>> =
+                        std::collections::BTreeMap::new();
+                    for message in &report.going.messages {
+                        by_folder
+                            .entry(message.folder.as_str())
+                            .or_default()
+                            .push(message.uid);
+                    }
+                    let mut marked = Marked::NotAsked;
+                    for (folder, uids) in by_folder {
+                        let this_folder =
+                            reporting_junk::mark_as_junk_at_the_server(&controller, folder, &uids)
+                                .await
+                                .unwrap_or_else(|why| Marked::Failed(why.to_string()));
+                        marked = marked.and(this_folder);
+                    }
+                    marked
+                }),
+            };
+            let sentence = reporting_junk::what_reporting_did(
+                report.kind,
+                report.going.messages.len(),
+                &report.going.junk_name,
+                report.passed_over,
+                &marked,
+            );
+            let ready = reporting_junk::ReadyToMove {
+                account_id: report.account.id,
+                sentence,
+                ..report.going
+            };
+            handle.block_on(async {
+                let _ = tx.send(UIUpdate::ReportedAsJunk(ready)).await;
+            });
+        }
+    });
+}
+
+/// Move one account's reported messages into its junk folder, through Move's
+/// own path, with the report's sentence said in place of Move's.
+fn move_what_was_reported(
+    app: AppHandles<'_>,
+    list: &ListCtrl,
+    cache: &Arc<MessageCache>,
+    ready: &crate::application::reporting_junk::ReadyToMove,
+) {
+    use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
+    let AppHandles { state, tx, rt } = app;
+    let Some(account) = lock_state(state)
+        .accounts
+        .iter()
+        .find(|account| account.id == ready.account_id)
+        .cloned()
+    else {
+        return send_refusal(
+            tx,
+            rt,
+            "The account those messages are in is no longer set up on this computer.",
+        );
+    };
+    let moving: Vec<AMessageMoving> = ready
+        .messages
+        .iter()
+        .map(|message| AMessageMoving {
+            row_id: message.row_id,
+            uid: message.uid,
+            subject: message.subject.clone(),
+            from: message.folder.clone(),
+            account: Some(account.clone()),
+            size_bytes: message.size_bytes,
+        })
+        .collect();
+    let chosen = what_the_selection_holds(&(0..ready.messages.len()).collect::<Vec<_>>(), |at| {
+        ready.messages.get(at).map(|message| {
+            Members::AMessage(MessageRef {
+                row_id: message.row_id,
+                uid: message.uid,
+                subject: message.subject.clone(),
+                read: false,
+                starred: false,
+            })
+        })
+    });
+    remember_the_set_leaving(state, &moving);
+    move_or_copy_here_first(
+        app,
+        list,
+        cache,
+        AMoveAsked {
+            moving,
+            chosen,
+            into: crate::application::destinations::Destination {
+                name: ready.junk_name.clone(),
+                id: ready.junk_path.clone(),
+                account_id: ready.account_id.clone(),
+                depth: 0,
+            },
+            copying: false,
+            said_for_the_set: Some(ready.sentence.clone()),
+        },
+    );
+}
+
+/// The set's rows on screen, remembered so the cursor lands once, after the
+/// last of them has left (#30, on #76's rule). Under conversation view
+/// nothing lands.
+fn remember_the_set_leaving(state: &Arc<StdMutex<WxUIState>>, moving: &[AMessageMoving]) {
+    let mut s = lock_state(state);
+    s.a_set_leaving = (moving.len() > 1 && !s.showing.showing_conversations()).then(|| {
+        ASetLeaving::of(moving.iter().filter_map(|message| {
+            s.messages
+                .iter()
+                .position(|row| row.message_id == message.row_id)
+                .map(|row| (message.row_id, row))
+        }))
+    });
+}
+
 /// What the Move to or Copy to key asked for, once the folder is chosen.
 struct AMoveAsked {
     moving: Vec<AMessageMoving>,
     chosen: crate::application::choosing_messages::Chosen,
     into: crate::application::destinations::Destination,
     copying: bool,
+    /// The sentence a command that moves through here says in place of
+    /// Move's, spoken once the change is made here: a junk report's, which
+    /// says what the provider was told (13-22). `None` for Move and Copy.
+    said_for_the_set: Option<String>,
 }
 
 /// One change to make here first: what to do with which message, and the

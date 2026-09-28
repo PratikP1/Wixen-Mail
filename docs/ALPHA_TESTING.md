@@ -249,6 +249,14 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
+- **Report as Junk has reached no real mail server.** Action, Report as
+  Junk (`Ctrl+Shift+J`) sets the junk mark where a folder says it keeps one
+  and moves the messages to the junk folder, and the menu item's description
+  says it is experimental. Google's help page is the only evidence that a
+  move into Spam counts as a report, nobody knows whether any server learns
+  from the junk mark, and Microsoft is not told at all. If you try it, tell
+  us which sentence you heard, and whether the message and its mark look the
+  same in another mail program or on your phone.
 - **Opening S/MIME encrypted mail is experimental, and it has met no message
   from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
   encrypted to a certificate in your Windows certificate store is opened with

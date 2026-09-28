@@ -2862,6 +2862,7 @@ mod tests {
             Ok(crate::service::protocols::imap::MailboxStatus {
                 uid_validity: Some(1),
                 highest_modseq: None,
+                keeps_the_junk_mark: false,
             })
         }
 
