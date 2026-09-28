@@ -125,18 +125,47 @@ permission without an administrator is not something we can tell you yet.
 ### If you signed in before tasks synced both ways
 
 Sending tasks up needs more permission than reading them did, and permission is
-granted once at sign-in. An account you set up before this version will keep
-syncing mail, contacts, the calendar and tasks downwards, and your changes will
-sit here waiting.
+granted once at sign-in. A Google account you set up before this version will
+keep syncing mail, contacts, the calendar and tasks downwards, and your changes
+will sit here waiting.
+
+A Microsoft account set up before then is asked for its tasks with a permission
+its sign-in never granted, so since the build of 2026-09-28 we expect Microsoft
+to refuse it and its tasks not to sync in either direction until you sign in
+again. The line after a sync counts it as a problem, and your changes wait here.
+Nothing else the account does changes. Nobody has seen Microsoft do this yet, so
+if your tasks stop, tell us.
 
 Fix it by signing in again: open the account, switch the browser sign-in off and
 back on, and approve the list of permissions when the browser shows it. The
-waiting changes go up on the next sync.
+waiting changes go up on the next sync. Until the build of 2026-09-28 that was
+not true on a Microsoft account: Microsoft refused every task change even after
+signing in again, because the tasks sync asked for its token without the
+permission to write tasks.
 
 The permission is Google's "See, edit, create and delete your tasks" or
 Microsoft's Tasks.ReadWrite, in place of the read-only version. Microsoft
 accounts are also asked for Notes.ReadWrite now, which the section above
 explains and which nothing uses yet.
+
+### Sign in again once for Microsoft's people search
+
+Since the build of 2026-09-28, typing three letters or more of a name into To,
+Cc or Bcc on an Outlook or Office 365 account also asks Microsoft's people
+search, and the people it finds join the list with "from Microsoft" at the end
+of their row. It needs one permission more than before, Microsoft's People.Read,
+which reads the people your mailbox writes to and your organisation's directory,
+and nothing of your mail.
+
+An account you set up before that build does not have it. Sign in again once:
+open the account, switch the browser sign-in off and back on, and approve the
+list the browser shows. Until you do, each search says so, and nothing else the
+account does changes, because Wixen Mail asks Microsoft for this permission on
+its own rather than with the others.
+
+People search has not been tried against a real Microsoft account. An
+administrator can switch it off for an organisation, and then each search says
+Microsoft refused it. [Privacy](privacy.md) says what is sent.
 
 ---
 

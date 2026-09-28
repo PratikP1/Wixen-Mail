@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Microsoft's people search in People found, experimental (GAP-07's Microsoft half, #55).**
+  On an Outlook or Office 365 account signed in through the browser, typing three letters or
+  more of a name into To, Cc or Bcc also asks Microsoft, which looks through the people that
+  mailbox writes to and the organisation's directory. The people it finds join People found
+  once per address, each row ending "from Microsoft"; your contacts come first, then the
+  directory, then Microsoft, so a person in more than one keeps the row already there.
+  Signing in asks for one permission more, Microsoft's People.Read, which reads the people
+  list and nothing of the mail. It is asked for in a token of its own, so an account signed
+  in before this keeps its contacts, calendar, tasks and notes, and each search says "Sign
+  in again from the Account Manager to let Microsoft find people for this account." until it
+  is. Nothing is asked of Microsoft for any other account, and what you type is never
+  written to the log. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: people search has never met a real Microsoft account;
+  every Microsoft account needs signing in again once; an administrator can switch people
+  search off, and then each search says Microsoft refused it.
 - **Look People Up at Work on the Account Manager, where a directory's sign-in is typed,
   experimental (GAP-07's directory half, #55).** `Alt+L` on the Account Manager opens a
   window for the chosen account holding the directory address (`Alt+D`), where in it to look
@@ -854,6 +869,15 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Microsoft task changes reach Microsoft (ledger 282).** A task made, ticked off or deleted
+  here on an Outlook or Office 365 account was refused by Microsoft at every sync since tasks
+  started syncing both ways, even after signing in again, because the tasks sync asked for its
+  token without the permission to write tasks. It now asks Microsoft for a token carrying
+  Tasks.ReadWrite alone, and the token contacts, the calendar, free/busy and notes use is
+  unchanged. The version does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: no task change has reached a real Microsoft account; an account signed
+  in before tasks synced both ways needs signing in again once, and until then we expect its
+  Microsoft tasks not to sync at all, which the line after a sync counts as a problem.
 - **A mark made just before a move goes to the folder it was made in.** Marking a message read
   or unread, starring it or labelling it tells the server in the background, and the part that
   did the telling looked up the message's folder only when it ran. Press `M` and then move the

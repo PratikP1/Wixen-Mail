@@ -270,6 +270,17 @@ Written down so you do not spend time reporting things already on the list.
   set it up, type three letters of a colleague's name into To, and tell us
   whether they were found, which sentence you heard if they were not, and
   whether the window told you plainly when a password was already saved.
+- **Microsoft's people search has never met a real Microsoft account.** On an
+  Outlook or Office 365 account signed in through the browser, typing three
+  letters of a name into To asks Microsoft too, and its rows end "from
+  Microsoft". It needs signing in again once, for Microsoft's People.Read. If
+  you have such an account, sign in again, type three letters of a colleague's
+  name, and tell us whether they were found, whether the browser's list of
+  permissions mentioned reading your people, and which sentence you heard if
+  nobody was. An administrator can switch people search off for an
+  organisation, so tell us if yours says Microsoft refused it. The same sign-in
+  lets Microsoft task changes reach Microsoft for the first time, so tell us too
+  whether a task you tick off here is ticked off on your phone.
 - **Opening S/MIME encrypted mail is experimental, and it has met no message
   from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
   encrypted to a certificate in your Windows certificate store is opened with
