@@ -380,6 +380,19 @@ pub struct WhenWeCouldMeet {
 /// a sentence built here out of a stored string reads a run of digits aloud.
 pub type InWords<'a> = &'a dyn Fn(DateTime<Utc>) -> String;
 
+/// Whether an hour on somebody's own clock falls on the day the time was said
+/// on here, which decides whether their day is said as well.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheirDay {
+    TheSame,
+    Another,
+}
+
+/// How an hour on somebody else's clock is put into words, passed in for the
+/// reason [`InWords`] is: how a clock is said depends on settings this layer
+/// must not reach into.
+pub type OnTheirClock<'a> = &'a dyn Fn(chrono::NaiveDateTime, TheirDay) -> String;
+
 /// How many times are read out.
 ///
 /// Three is about as many as anybody holds in their head from one sentence,
@@ -388,7 +401,7 @@ const HOW_MANY_TIMES_ARE_SAID: usize = 3;
 
 impl WhenWeCouldMeet {
     /// The whole answer, in sentences somebody can listen to.
-    pub fn in_words(&self, say: InWords) -> String {
+    pub fn in_words(&self, say: InWords, _on_their_clock: OnTheirClock) -> String {
         if self.how_many_invited == 0 {
             return "Nobody has been invited, so there is nothing to work out.".to_string();
         }
@@ -1472,8 +1485,87 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(monday));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 9, Monday at 9:30, or Monday at 10."
+        );
+    }
+
+    /// An hour on somebody else's clock, the way these tests want to hear it:
+    /// the day as well only where it is another day there.
+    fn plainly_there(face: chrono::NaiveDateTime, day: TheirDay) -> String {
+        match day {
+            TheirDay::TheSame => face.format("%H:%M").to_string(),
+            TheirDay::Another => face.format("%A %H:%M").to_string(),
+        }
+    }
+
+    /// The one hour-long time a window of exactly an hour holds, said with
+    /// these people invited, asked from universal time.
+    fn the_hour_from(from: &str, until: &str, people: &[Invited]) -> String {
+        when_we_could_meet(people, an_hour_inside(span(from, until)))
+            .in_words(&plainly, &plainly_there)
+    }
+
+    #[test]
+    fn test_a_time_is_said_on_a_guests_own_clock_as_well_when_it_differs() {
+        // Ten in the morning here is three in the afternoon in Karachi, and
+        // somebody arranging the meeting should not have to work that out
+        // before saying it to Ada.
+        assert_eq!(
+            the_hour_from(
+                "2026-03-03T10:00:00Z",
+                "2026-03-03T11:00:00Z",
+                &[free_in("Ada", chrono_tz::Asia::Karachi)]
+            ),
+            "Everyone is free Tuesday at 10, which is 15:00 for Ada."
+        );
+    }
+
+    #[test]
+    fn test_a_guest_whose_clock_agrees_with_this_one_adds_nothing() {
+        // London keeps Greenwich's clock in March. Another zone, the same
+        // hour, and a clause saying so would be a clause saying nothing.
+        assert_eq!(
+            the_hour_from(
+                "2026-03-03T10:00:00Z",
+                "2026-03-03T11:00:00Z",
+                &[free_in("Ada", chrono_tz::Europe::London)]
+            ),
+            "Everyone is free Tuesday at 10."
+        );
+    }
+
+    #[test]
+    fn test_no_more_than_three_guests_clocks_are_said_beside_a_time() {
+        // Four people in four other zones, all inside their working day. A
+        // clause for each would be four hours to hold beside every time, so
+        // the first three invited are said and Dee is not.
+        let people = [
+            free_in("Ada", chrono_tz::Asia::Karachi),
+            free_in("Bo", chrono_tz::Asia::Dubai),
+            free_in("Cy", chrono_tz::Europe::Moscow),
+            free_in("Dee", chrono_tz::Europe::Athens),
+        ];
+
+        assert_eq!(
+            the_hour_from("2026-03-03T10:00:00Z", "2026-03-03T11:00:00Z", &people),
+            "Everyone is free Tuesday at 10, which is 15:00 for Ada, 14:00 for Bo, \
+             and 13:00 for Cy."
+        );
+    }
+
+    #[test]
+    fn test_a_guests_clock_on_another_day_says_which_day() {
+        // Eleven at night on Tuesday here is noon on Wednesday in Auckland,
+        // which keeps summer time in March. The hour alone would put Ada's
+        // meeting on the wrong day.
+        assert_eq!(
+            the_hour_from(
+                "2026-03-03T23:00:00Z",
+                "2026-03-04T00:00:00Z",
+                &[free_in("Ada", chrono_tz::Pacific::Auckland)]
+            ),
+            "Everyone is free Tuesday at 11, which is Wednesday 12:00 for Ada."
         );
     }
 
@@ -1578,7 +1670,7 @@ mod tests {
         let found = when_we_could_meet(&[ada, grace], an_hour_inside(window));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 10 or Monday at 12."
         );
     }
@@ -1699,7 +1791,7 @@ mod tests {
 
         assert_eq!(found.times_tried, 0);
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "There is nowhere between Monday at 9 and Monday at 9:30 to put an hour."
         );
     }
@@ -1717,7 +1809,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(the_small_hours));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 2, Monday at 2:30, or Monday at 3. \
              Monday at 2, Monday at 2:30, and Monday at 3 are outside Ada's working day."
         );
@@ -1733,7 +1825,7 @@ mod tests {
 
         assert!(found.times.is_empty(), "{:?}", times_offered(&found));
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Nobody has been invited, so there is nothing to work out."
         );
     }
@@ -1752,7 +1844,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(early));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 9, Monday at 9:30, or Monday at 10. \
              Monday at 9, Monday at 9:30, and Monday at 10 are outside \
              Grace's working day."
@@ -1773,7 +1865,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(monday));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 9, Monday at 11, or Monday at 9:30. \
              Ada has something pencilled in at Monday at 9:30."
         );
@@ -1795,7 +1887,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(monday));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 9, Monday at 9:30, or Monday at 10. \
              Charles and Grace could not be checked, because the server would not say. \
              Alan could not be checked, because the reply could not be read. \
@@ -1816,7 +1908,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(monday));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 9 or Monday at 9:30. \
              Charles could not be checked, because there is no calendar to ask. \
              Charles is not counted as free."
@@ -1839,7 +1931,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(monday));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 9 or Monday at 9:30. \
              Charles could not be checked, because the server would not say. \
              Bob could not be checked, because their calendar is not shared with you. \
@@ -1889,7 +1981,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(monday));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "Everyone is free Monday at 9 or Monday at 9:30. \
              Nobody said where Ada and Grace are, so the times were judged \
              against the working hours set here."
@@ -1914,7 +2006,7 @@ mod tests {
         let found = when_we_could_meet(&people, an_hour_inside(monday));
 
         assert_eq!(
-            found.in_words(&plainly),
+            found.in_words(&plainly, &plainly_there),
             "There is no time when everyone is free for an hour between Monday at 9 \
              and Monday at 12. Ada is booked over all 5 of the times that would have \
              worked. Charles is booked over 2 of those 5, and is free from Monday at 10."

@@ -158,7 +158,26 @@ const WHAT_WROTE_IT: &str = "-//Wixen Mail//NONSGML v1.0//EN";
 /// answer about `Ada@Example.COM` when it was asked about
 /// `mailto:ada@example.com`, and a lookup that missed would report somebody the
 /// server did answer about as never checked.
-type WhatTheySaid = HashMap<String, TheirCalendar>;
+type WhatTheySaid = HashMap<String, Heard>;
+
+/// What one place said about one person: their diary, and where they are
+/// when the place said so.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Heard {
+    calendar: TheirCalendar,
+    /// Only Microsoft says, through the zone it gives their working hours in.
+    zone: Option<Tz>,
+}
+
+/// A diary from a place that says nothing about where anybody is.
+impl From<TheirCalendar> for Heard {
+    fn from(calendar: TheirCalendar) -> Self {
+        Self {
+            calendar,
+            zone: None,
+        }
+    }
+}
 
 /// One person's address, in the form both sides of a lookup use.
 ///
@@ -280,7 +299,7 @@ fn what_the_schedule_response_said(xml: &str, about: Span) -> Result<WhatTheySai
         };
         said.insert(
             the_same_person(&recipient),
-            what_this_recipients_block_said(block, about),
+            what_this_recipients_block_said(block, about).into(),
         );
     }
     Ok(said)
@@ -542,7 +561,7 @@ fn what_microsoft_said(reply: &str, about: Span) -> Result<WhatTheySaid> {
         .map(|diary| {
             (
                 the_same_person(&diary.schedule_id),
-                what_this_diary_said(&diary, about),
+                what_this_diary_said(&diary, about).into(),
             )
         })
         .collect())
@@ -691,7 +710,7 @@ fn what_google_said(reply: &str, about: Span) -> Result<WhatTheySaid> {
         .map(|(id, calendar)| {
             (
                 the_same_person(&id),
-                what_this_google_calendar_said(&calendar, about),
+                what_this_google_calendar_said(&calendar, about).into(),
             )
         })
         .collect())
@@ -878,7 +897,7 @@ async fn everybody_asked(
 fn everybody_in<'a>(
     people: &'a [AskAbout],
     answered: std::result::Result<&'a WhatTheySaid, &'a Error>,
-) -> impl Iterator<Item = (&'a AskAbout, TheirCalendar)> + 'a {
+) -> impl Iterator<Item = (&'a AskAbout, Heard)> + 'a {
     people
         .iter()
         .map(move |person| (person, what_was_said_about(person, answered)))
@@ -891,23 +910,31 @@ fn everybody_in<'a>(
 /// them would vanish from every sentence and take the other's busy week. In the
 /// order each person was first asked about, which is the order they were
 /// invited in.
-fn one_answer_each<'a>(
-    heard: impl IntoIterator<Item = (&'a AskAbout, TheirCalendar)>,
+///
+/// Where they are is the zone the person was asked about with, and only where
+/// they came with none, the first zone any place gave: a zone somebody already
+/// had is never replaced by one a place happened to say.
+fn one_answer_each<'a, Said: Into<Heard>>(
+    heard: impl IntoIterator<Item = (&'a AskAbout, Said)>,
 ) -> Vec<Invited> {
-    let mut people: Vec<(String, &AskAbout, Vec<TheirCalendar>)> = Vec::new();
+    let mut people: Vec<(String, &AskAbout, Vec<Heard>)> = Vec::new();
     for (person, said) in heard {
         let address = the_same_person(&person.address);
         match people.iter_mut().find(|(known, _, _)| *known == address) {
-            Some((_, _, answers)) => answers.push(said),
-            None => people.push((address, person, vec![said])),
+            Some((_, _, answers)) => answers.push(said.into()),
+            None => people.push((address, person, vec![said.into()])),
         }
     }
     people
         .into_iter()
         .map(|(_, person, answers)| Invited {
             called: person.called.clone(),
-            zone: person.zone,
-            calendar: what_every_place_said(answers),
+            zone: person
+                .zone
+                .or_else(|| answers.iter().find_map(|heard| heard.zone)),
+            calendar: what_every_place_said(
+                answers.into_iter().map(|heard| heard.calendar).collect(),
+            ),
         })
         .collect()
 }
@@ -965,19 +992,19 @@ fn what_both_cover(one: Span, other: Span) -> Span {
 fn what_was_said_about(
     person: &AskAbout,
     answered: std::result::Result<&WhatTheySaid, &Error>,
-) -> TheirCalendar {
+) -> Heard {
     // Asked with the same question the request was built with, so the two
     // cannot come to disagree about who was left out of it.
     if !can_be_written_in_a_document(&person.address) {
-        return TheirCalendar::NotKnown(WhyNot::ThereIsNowhereToAsk);
+        return TheirCalendar::NotKnown(WhyNot::ThereIsNowhereToAsk).into();
     }
     match answered {
-        Err(failure) => TheirCalendar::NotKnown(why_the_diary_is_unknown(failure)),
+        Err(failure) => TheirCalendar::NotKnown(why_the_diary_is_unknown(failure)).into(),
         Ok(said) => said
             .get(&the_same_person(&person.address))
             .cloned()
             // Asked about, and the reply passed over them. Never free.
-            .unwrap_or(TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay)),
+            .unwrap_or_else(|| TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay).into()),
     }
 }
 
@@ -1326,6 +1353,15 @@ mod tests {
 
     /// What one reply said about one person.
     fn about(said: &WhatTheySaid, address: &str) -> TheirCalendar {
+        heard_about(said, address).calendar
+    }
+
+    /// Where one reply said one person is.
+    fn where_said(said: &WhatTheySaid, address: &str) -> Option<Tz> {
+        heard_about(said, address).zone
+    }
+
+    fn heard_about(said: &WhatTheySaid, address: &str) -> Heard {
         said.get(&the_same_person(address))
             .cloned()
             .unwrap_or_else(|| panic!("nothing was said about {address}: {said:?}"))
@@ -1703,6 +1739,53 @@ mod tests {
                 }],
             }
         );
+    }
+
+    /// A reply from Microsoft about one person with nothing on, whose working
+    /// hours are kept in the zone named, written as `getSchedule` writes it.
+    fn microsoft_said_working_in(schedule_id: &str, zone: &str) -> String {
+        format!(
+            "{{\"value\":[{{\"scheduleId\":\"{schedule_id}\",\
+             \"availabilityView\":\"0\",\"scheduleItems\":[],\
+             \"workingHours\":{{\"daysOfWeek\":[\"monday\",\"tuesday\",\
+             \"wednesday\",\"thursday\",\"friday\"],\
+             \"startTime\":\"08:00:00.0000000\",\"endTime\":\"17:00:00.0000000\",\
+             \"timeZone\":{{\"name\":\"{zone}\"}}}}}}]}}"
+        )
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_guest_whose_working_hours_are_in_a_windows_zone_is_placed_in_it() {
+        // getSchedule gives each guest's working hours with the Windows name
+        // of the zone they keep them in, and that is where the guest is.
+        let reply = microsoft_said_working_in("ada@example.com", "Pacific Standard Time");
+
+        let said = what_microsoft_said(&reply, the_week()).expect("a reply");
+
+        assert_eq!(
+            where_said(&said, "ada@example.com"),
+            Some(chrono_tz::America::Los_Angeles)
+        );
+        assert_eq!(about(&said, "ada@example.com"), busy_at(&[]));
+    }
+
+    #[test]
+    fn test_a_zone_somebody_built_by_hand_places_the_guest_nowhere() {
+        // Outlook names a zone built by hand "Customized Time Zone" and gives
+        // only its offsets. Offsets say nothing about when the clocks change,
+        // so the guest's day stays judged where the organiser is and the
+        // sentence says so, rather than being judged somewhere invented.
+        let reply = "{\"value\":[{\"scheduleId\":\"ada@example.com\",\
+                     \"scheduleItems\":[],\"workingHours\":{\
+                     \"startTime\":\"08:00:00.0000000\",\"endTime\":\"17:00:00.0000000\",\
+                     \"timeZone\":{\"@odata.type\":\"#microsoft.graph.customTimeZone\",\
+                     \"bias\":-200,\"name\":\"Customized Time Zone\"}}}]}";
+
+        let said = what_microsoft_said(reply, the_week()).expect("a reply");
+
+        assert_eq!(where_said(&said, "ada@example.com"), None);
+        assert_eq!(about(&said, "ada@example.com"), busy_at(&[]));
     }
 
     #[test]
@@ -2722,6 +2805,67 @@ mod tests {
             ),
             span("2026-03-05T00:00:00Z", "2026-03-07T00:00:00Z")
         );
+    }
+
+    #[test]
+    fn test_a_zone_any_place_gave_is_kept_and_one_the_person_had_is_never_replaced() {
+        // A guest list says nothing about where anybody is, so the zone a
+        // place gave is the only one there is. A zone somebody already came
+        // with is somebody's own word and outranks a place's.
+        let pacific = chrono_tz::America::Los_Angeles;
+        let unplaced = AskAbout {
+            zone: None,
+            ..somebody("Ada", "ada@example.com")
+        };
+        let placed_already = somebody("Bob", "bob@example.com");
+        let placed_by_microsoft = Heard {
+            calendar: busy_at(&[]),
+            zone: Some(pacific),
+        };
+
+        let found = one_answer_each([
+            (&unplaced, Heard::from(busy_at(&[]))),
+            (&unplaced, placed_by_microsoft.clone()),
+            (&placed_already, placed_by_microsoft),
+        ]);
+
+        assert_eq!(found[0].zone, Some(pacific));
+        assert_eq!(found[1].zone, Some(Tz::UTC));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn test_a_colleague_microsoft_places_comes_back_in_their_own_zone() {
+        // The whole way through: the guest list carries no zone, Microsoft's
+        // answer gives Ada's working hours in Pacific time, and she comes
+        // back placed there.
+        let (address, _listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![microsoft_said_working_in(
+                "ada@example.com",
+                "Pacific Standard Time",
+            )],
+        )
+        .await;
+
+        let found = when_they_are_free(
+            &a_client(),
+            &[AskHere {
+                server: WhereToAsk::Microsoft {
+                    base: format!("http://{address}"),
+                    token: "a-fake-token".to_string(),
+                },
+                people: vec![AskAbout {
+                    zone: None,
+                    ..somebody("Ada", "ada@example.com")
+                }],
+            }],
+            the_week(),
+        )
+        .await;
+
+        assert_eq!(found[0].zone, Some(chrono_tz::America::Los_Angeles));
     }
 
     #[tokio::test]

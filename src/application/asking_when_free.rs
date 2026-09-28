@@ -341,7 +341,27 @@ pub fn in_sentences(
     answer: &crate::application::when_people_are_free::WhenWeCouldMeet,
     settings: crate::presentation::date_display::DateSettings,
 ) -> String {
-    answer.in_words(&|at| in_words_here(at, settings))
+    answer.in_words(&|at| in_words_here(at, settings), &|face, day| {
+        on_their_clock(face, day, settings)
+    })
+}
+
+/// An hour on a guest's own clock, said the way this person reads a time:
+/// the hour alone where it is the day the time was said on here, and the day
+/// with it where it is another.
+///
+/// The same two readings `time_elsewhere` gives a meeting's own clock, so an
+/// hour on another clock sounds the same wherever it is said.
+fn on_their_clock(
+    face: chrono::NaiveDateTime,
+    day: crate::application::when_people_are_free::TheirDay,
+    settings: crate::presentation::date_display::DateSettings,
+) -> String {
+    use crate::application::when_people_are_free::TheirDay;
+    match day {
+        TheirDay::TheSame => crate::presentation::date_display::the_clock_of(face, settings),
+        TheirDay::Another => crate::presentation::date_display::a_clock_face(face, settings),
+    }
 }
 
 /// One instant, said the way this person reads a date and a time.
