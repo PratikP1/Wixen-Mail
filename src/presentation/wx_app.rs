@@ -6235,7 +6235,7 @@ impl WxMailApp {
                         tx: &ui_tx,
                         rt: &runtime,
                     };
-                    mark_what_was_read(app);
+                    mark_what_was_read(app, &message_cache);
 
                     // Whether this computer still has a network. On this timer
                     // and on its own interval, for the same reason the
@@ -11195,6 +11195,7 @@ fn mark_these_read(
             message.row_id,
             message.uid,
             message.subject.clone(),
+            the_folder_it_is_in(cache.as_deref(), message.row_id),
             ServerChange::Flag(FlagChange::Read(read)),
         );
     }
@@ -11263,6 +11264,7 @@ fn star_these(
             message.row_id,
             message.uid,
             message.subject.clone(),
+            the_folder_it_is_in(cache.as_deref(), message.row_id),
             ServerChange::Flag(FlagChange::Flagged(starred)),
         );
     }
@@ -11410,7 +11412,7 @@ fn as_they_were(
 /// until 2026-09-20 (#91) that value was captured where the window was
 /// built, so a wait changed in Settings governed the next start and never
 /// the next tick.
-fn mark_what_was_read(app: AppHandles<'_>) {
+fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     let AppHandles { state, tx, rt } = app;
 
     let marked = {
@@ -11447,6 +11449,7 @@ fn mark_what_was_read(app: AppHandles<'_>) {
         row,
         uid,
         subject,
+        the_folder_it_is_in(cache.as_deref(), row),
         ServerChange::Flag(FlagChange::Read(true)),
     );
 }
@@ -11863,6 +11866,7 @@ fn label_these(
                             message.row_id,
                             message.uid,
                             message.subject.clone(),
+                            the_folder_it_is_in(Some(cache), message.row_id),
                             ServerChange::Flag(FlagChange::Labelled {
                                 keyword,
                                 on: false,
@@ -11901,6 +11905,7 @@ fn label_these(
                         message.row_id,
                         message.uid,
                         message.subject.clone(),
+                        the_folder_it_is_in(Some(cache), message.row_id),
                         ServerChange::Flag(FlagChange::Labelled {
                             keyword,
                             on,
@@ -19891,6 +19896,7 @@ fn put_a_mark_on(
             message.row_id,
             message.uid,
             message.subject.clone(),
+            the_folder_it_is_in(Some(cache), message.row_id),
             ServerChange::Flag(change),
         );
     }
@@ -23441,13 +23447,21 @@ fn move_what_was_reported(
 /// last of them has left (#30, on #76's rule). Under conversation view
 /// nothing lands.
 fn remember_the_set_leaving(state: &Arc<StdMutex<WxUIState>>, moving: &[AMessageMoving]) {
+    let rows: Vec<i64> = moving.iter().map(|message| message.row_id).collect();
+    remember_these_rows_leaving(state, &rows);
+}
+
+/// The rows of a set about to leave, by message, remembered the same way
+/// whether a move or a delete takes them: the runner's delete has no
+/// messages moving to hand over (13-24.1).
+fn remember_these_rows_leaving(state: &Arc<StdMutex<WxUIState>>, leaving: &[i64]) {
     let mut s = lock_state(state);
-    s.a_set_leaving = (moving.len() > 1 && !s.showing.showing_conversations()).then(|| {
-        ASetLeaving::of(moving.iter().filter_map(|message| {
+    s.a_set_leaving = (leaving.len() > 1 && !s.showing.showing_conversations()).then(|| {
+        ASetLeaving::of(leaving.iter().filter_map(|row_id| {
             s.messages
                 .iter()
-                .position(|row| row.message_id == message.row_id)
-                .map(|row| (message.row_id, row))
+                .position(|row| row.message_id == *row_id)
+                .map(|row| (*row_id, row))
         }))
     });
 }
@@ -24240,6 +24254,7 @@ fn delete_these(
                 ask.asked.message_row_id,
                 ask.asked.uid,
                 ask.subject,
+                Some(ask.asked.from_folder_path),
                 ServerChange::Deleted(asked),
             )
         },
@@ -24257,6 +24272,235 @@ fn delete_these(
         crate::application::undoing::LastAction::Moved { moving, went },
     );
     reached
+}
+
+/// Carry a settled set of actions out over the chosen messages, and say
+/// nothing: the one runner a block (13-25), a Quick Step (13-42) and a rule
+/// run over a folder (13-44) share (13-24.1, RESEARCH-4's AUT-6).
+///
+/// It decides nothing `acting_on_a_set` decides. It refuses a set above the
+/// bound every set command uses, reads what each message needs within its
+/// own account, and meets each account's gate, all before anything changes:
+/// a folder or a label an account does not have, a message in no account
+/// this program knows, or an account whose changes are off refuses the
+/// whole run in words, with nothing done. Then, account by account, it asks
+/// the set commands' own quiet do-halves for the flags, then the labels,
+/// then the phrase said first, then the move or the delete, so each change
+/// takes the gated path a key takes and a message's flags are asked for
+/// before its move is recorded (RESEARCH-4, F4).
+///
+/// Answers what was done, for the caller to say in one sentence of its own,
+/// `acting_on_a_set::said` by default. Each do-half remembers its own action
+/// for Edit, Undo, so after a run of several the last one is the undo step.
+///
+/// Nothing calls it until 13-25's block, which is its first caller. Expected
+/// rather than allowed, so the attribute fails the build the day that caller
+/// arrives and has to be taken off with it rather than outliving its reason.
+#[expect(
+    dead_code,
+    reason = "no caller until 13-25 blocks a sender through it (13-24.1's ledger entry)"
+)]
+fn run_these_actions_over(
+    app: AppHandles<'_>,
+    list: &ListCtrl,
+    cache: &Arc<MessageCache>,
+    chosen: &crate::application::choosing_messages::Chosen,
+    outcome: &crate::application::filters::Outcome,
+) -> std::result::Result<crate::application::acting_on_a_set::WhatWasDone, String> {
+    use crate::application::acting_on_a_set::{Then, Went, WhatWasDone};
+    use crate::application::choosing_messages::too_many;
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return Err(why);
+    }
+    let accounts = what_each_account_needs(app.state, cache, chosen, outcome)?;
+    for of_one in &accounts {
+        if of_one.work.reaches_the_server() {
+            crate::service::outward::permitted(
+                crate::application::allowed::allowed_for(&of_one.account.id).mail,
+                "change these messages",
+            )
+            .map_err(|why| why.to_string())?;
+        }
+    }
+    // A change this computer would not keep has been said where it was
+    // refused, and the rest of the run is not made.
+    const STOPPED: &str = "A change could not be kept on this computer, so the rest were not made.";
+    let held = Some(cache.clone());
+    let mut done = WhatWasDone::default();
+    for AnAccountsWork {
+        account,
+        labels,
+        work,
+    } in accounts
+    {
+        if let Some((read, those)) = &work.read {
+            mark_these_read(app, &held, list, those, *read).map_err(|_| STOPPED.to_string())?;
+            done.marked(*read, those.messages.len());
+        }
+        if let Some((starred, those)) = &work.starred {
+            star_these(app, &held, list, those, *starred).map_err(|_| STOPPED.to_string())?;
+            done.starred(*starred, those.messages.len());
+        }
+        for (label_id, those) in &work.labels {
+            let Some(label) = labels.iter().find(|label| &label.id == label_id) else {
+                continue;
+            };
+            let on_them = TheLabelsOnTheSet::read(cache, &account.id, those)
+                .map_err(|e| format!("The labels could not be read: {e}."))?;
+            let change = LabelChange::One {
+                label: label.clone(),
+                on: true,
+            };
+            label_these(app, cache, those, &on_them, change)?;
+            done.labelled(&label.name, those.messages.len());
+        }
+        if let Some((phrase, those)) = &work.say_first {
+            for message in &those.messages {
+                cache
+                    .set_says_first(message.row_id, Some(phrase))
+                    .map_err(|e| format!("{STOPPED} {e}."))?;
+            }
+            done.said_first(phrase, those.messages.len());
+        }
+        match &work.then {
+            Some((Then::MoveTo { path, name }, those)) => {
+                let moving = the_messages_moving(app.state, cache, those, &account);
+                remember_the_set_leaving(app.state, &moving);
+                let into = crate::application::destinations::Destination {
+                    name: name.clone(),
+                    id: path.clone(),
+                    account_id: account.id.clone(),
+                    depth: 0,
+                };
+                if move_these(app, list, cache, moving, into, false).is_some() {
+                    done.went(Went::MovedTo(name.clone()), those.messages.len());
+                }
+            }
+            Some((Then::Delete, those)) => {
+                let rows: Vec<i64> = those
+                    .messages
+                    .iter()
+                    .map(|message| message.row_id)
+                    .collect();
+                remember_these_rows_leaving(app.state, &rows);
+                let reached = delete_these(app, &held, list, those, Deleting::ToTrash);
+                done.went(Went::Deleted, reached);
+            }
+            Some((Then::Stay, _)) | None => {}
+        }
+    }
+    Ok(done)
+}
+
+/// One account's share of a run: the account, its labels, and which of its
+/// chosen messages each write takes.
+struct AnAccountsWork {
+    account: Account,
+    labels: Vec<crate::data::message_cache::Tag>,
+    work: crate::application::acting_on_a_set::TheWork,
+}
+
+/// What each account's chosen messages need from `outcome`, read before
+/// anything changes, with the folders and labels of each message's own
+/// account (decision 3): a path or a name is not unique across accounts.
+/// A refusal of any message is the refusal of the run.
+fn what_each_account_needs(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    chosen: &crate::application::choosing_messages::Chosen,
+    outcome: &crate::application::filters::Outcome,
+) -> std::result::Result<Vec<AnAccountsWork>, String> {
+    use crate::application::acting_on_a_set::{HeldMessage, the_work, what_each_message_needs};
+    type Gathered = (
+        Account,
+        Vec<crate::data::message_cache::Tag>,
+        Vec<crate::data::message_cache::CachedFolder>,
+        Vec<(
+            crate::application::choosing_messages::MessageRef,
+            crate::application::acting_on_a_set::Needs,
+        )>,
+    );
+    let mut by_account: std::collections::BTreeMap<String, Gathered> =
+        std::collections::BTreeMap::new();
+    for message in &chosen.messages {
+        let account = the_account_a_row_is_in(state, message.row_id)?;
+        let folder_path = cache
+            .folder_path_for_message(message.row_id)
+            .ok()
+            .flatten()
+            .ok_or_else(|| {
+                format!(
+                    "{} is not in a folder this program knows about, so nothing was changed.",
+                    message.subject
+                )
+            })?;
+        let (_, labels, folders, each) = match by_account.entry(account.id.clone()) {
+            std::collections::btree_map::Entry::Occupied(held) => held.into_mut(),
+            std::collections::btree_map::Entry::Vacant(empty) => {
+                let labels = labels_for(cache, &account.id)
+                    .map_err(|e| format!("The labels could not be read: {e}."))?;
+                let folders = cache
+                    .get_folders_for_account(&account.id)
+                    .map_err(|e| format!("The folders could not be read: {e}."))?;
+                empty.insert((account, labels, folders, Vec::new()))
+            }
+        };
+        let held = HeldMessage {
+            read: message.read,
+            starred: message.starred,
+            label_ids: cache
+                .get_tags_for_message(message.row_id)
+                .map_err(|e| format!("The labels could not be read: {e}."))?
+                .into_iter()
+                .map(|label| label.id)
+                .collect(),
+            folder_path,
+        };
+        let needs = what_each_message_needs(outcome, &held, folders, labels)
+            .map_err(|why| why.to_string())?;
+        each.push((message.clone(), needs));
+    }
+    Ok(by_account
+        .into_values()
+        .map(|(account, labels, _, each)| AnAccountsWork {
+            account,
+            labels,
+            work: the_work(&each),
+        })
+        .collect())
+}
+
+/// The messages a run moves, each with the folder it is in, the account
+/// that holds it and its size as the row says, which is what the move
+/// needs to decide how to carry each one.
+fn the_messages_moving(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    those: &crate::application::choosing_messages::Chosen,
+    account: &Account,
+) -> Vec<AMessageMoving> {
+    let s = lock_state(state);
+    those
+        .messages
+        .iter()
+        .filter_map(|message| {
+            Some(AMessageMoving {
+                row_id: message.row_id,
+                uid: message.uid,
+                subject: message.subject.clone(),
+                from: cache
+                    .folder_path_for_message(message.row_id)
+                    .ok()
+                    .flatten()?,
+                account: Some(account.clone()),
+                size_bytes: s
+                    .messages
+                    .iter()
+                    .find(|row| row.message_id == message.row_id)
+                    .and_then(|row| row.size_bytes),
+            })
+        })
+        .collect()
 }
 
 /// Take a message out of the send queue, if that is what is being deleted.
@@ -25621,6 +25865,14 @@ impl FlagChange {
     }
 }
 
+/// The folder a message is in as a change to it is asked for, which is the
+/// folder [`spawn_server_change`] names to the server whatever moves after
+/// it (RESEARCH-4, F4). Nothing when there is no store open or the message
+/// is in no folder it knows, which the worker refuses.
+fn the_folder_it_is_in(cache: Option<&MessageCache>, row_id: i64) -> Option<String> {
+    cache?.folder_path_for_message(row_id).ok().flatten()
+}
+
 /// Tell the server about a change to a message.
 ///
 /// Flag changes were written to the local cache and nowhere else, so a message
@@ -25636,11 +25888,22 @@ impl FlagChange {
 /// Deleting is not done that way. It is destructive and it cannot be put back
 /// by sending an update, so the server is asked first and the row only leaves
 /// the list once the server has agreed.
+///
+/// `asked_in` is the folder the message was in when the change was asked
+/// for, read by the caller at that moment (13-24.1, RESEARCH-4 F4). Until
+/// 2026-09-28 the worker read it when it ran, and a move recorded here in
+/// between, which a run of several actions makes routine and M then
+/// Ctrl+Shift+V pressed quickly made possible, had the worker send the flag
+/// to the folder the message was going to with the number it had in the
+/// folder it left: a mark on whatever message holds that number there.
+/// Nothing when the message is in no folder this program knows, which the
+/// worker refuses as it always did.
 fn spawn_server_change(
     app: AppHandles<'_>,
     message_row_id: i64,
     uid: u32,
     subject: String,
+    asked_in: Option<String>,
     change: ServerChange,
 ) {
     let AppHandles { state, tx, rt } = app;
@@ -25708,12 +25971,9 @@ fn spawn_server_change(
                 return;
             }
         };
-        let folder_path = match cache.folder_path_for_message(message_row_id) {
-            Ok(Some(path)) => path,
-            _ => {
-                refuse("the message is not in a folder we know about".to_string());
-                return;
-            }
+        let Some(folder_path) = asked_in else {
+            refuse("the message is not in a folder we know about".to_string());
+            return;
         };
 
         // Deleting is answered here and goes no further. Where a deleted

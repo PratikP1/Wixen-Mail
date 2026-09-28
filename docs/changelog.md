@@ -797,6 +797,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A mark made just before a move goes to the folder it was made in.** Marking a message read
+  or unread, starring it or labelling it tells the server in the background, and the part that
+  did the telling looked up the message's folder only when it ran. Press `M` and then move the
+  message with `Ctrl+Shift+V` quickly, and the move could be recorded first, so the mark was
+  sent to the folder the message was moving into, with the number it had in the folder it
+  left. On the server that number can belong to a different message, which then got the mark.
+  Now the folder is read when you press the key, and the mark goes there whatever moves after
+  it. The same holds for the mark after the reading wait and for Edit, Undo putting a mark
+  back. Nothing you hear or see changes. The version does not move for this: no build has been
+  cut since 1.0.0-alpha.1. Known limitations: the mark and the move still travel to the server
+  separately, so if the move arrives first the mark can miss the message on the server rather
+  than land on the wrong one; nobody has pressed the keys by hand since the change; and it has
+  not run against a real mail account.
 - **A rule that adds a label now puts the label on.** A rule keeps the label it adds by the name
   you typed, and that name was handed to the database where the label's own identifier belongs.
   The database refused it every time, so no rule ever labelled a message, and the only trace

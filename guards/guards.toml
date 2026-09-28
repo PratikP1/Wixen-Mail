@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 431 records have arrived since and have not been through it.
+# 436 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -31301,14 +31301,16 @@ tests_last_seen = [
 # Edit, Undo would unread a message nobody marked and lose what somebody did.
 # Written 2026-09-25 by 13-07, the break taken by hand against `cargo test
 # --test undoing_a_mark_names_the_message` first: the reading of the program's
-# own mark went red and nothing else in the target did.
+# own mark went red and nothing else in the target did. The signature it
+# anchors on gained the store on 2026-09-28 (13-24.1), so the folder the mark
+# goes to is read when it is asked for; rewritten and re-measured then.
 [[guard]]
 name = "the mark after the reading wait is not remembered as somebody's action"
 file = "src/presentation/wx_app.rs"
 suite = "undoing_a_mark_names_the_message"
-before = '''fn mark_what_was_read(app: AppHandles<'_>) {
+before = '''fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     let AppHandles { state, tx, rt } = app;'''
-after = '''fn mark_what_was_read(app: AppHandles<'_>) {
+after = '''fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     let AppHandles { state, tx, rt } = app;
     remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });'''
 red = [
@@ -33552,4 +33554,107 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/each_set_command_has_a_quiet_do_half.rs", tests = 10 },
+]
+
+# A run of several actions over a set marks a message read that already is:
+# a write that changes nothing, sent to the server for every message a Quick
+# Step or a rule passes over, and counted in the sentence as work done.
+# Written 2026-09-28 by 13-24.1 against `acting_on_a_set`.
+[[guard]]
+name = "a run over a set drops a mark a message already has"
+file = "src/application/acting_on_a_set.rs"
+before = '''        read: outcome.read.filter(|read| *read != message.read),'''
+after = '''        read: outcome.read,'''
+red = [
+    "application::acting_on_a_set::tests::test_a_message_already_read_is_not_marked_read_again_and_an_unread_one_is",
+]
+tests_last_seen = [
+    { file = "src/application/acting_on_a_set.rs", tests = 23 },
+]
+
+# A run whose actions name a folder the account does not have goes on past
+# it rather than stopping before anything changes: the messages are marked
+# and labelled and left where they were, which is half a Quick Step with no
+# sentence saying which half. Written 2026-09-28 by 13-24.1.
+[[guard]]
+name = "a run over a set stops before anything changes at a folder the account lacks"
+file = "src/application/acting_on_a_set.rs"
+before = '''            let folder = the_folder_a_rule_names(folders, named)
+                .ok_or_else(|| WhyNot::NoFolderCalled(named.clone()))?;'''
+after = '''            let Some(folder) = the_folder_a_rule_names(folders, named) else {
+                return Ok(Needs::default());
+            };'''
+red = [
+    "application::acting_on_a_set::tests::test_a_folder_the_account_does_not_have_refuses_the_run",
+]
+tests_last_seen = [
+    { file = "src/application/acting_on_a_set.rs", tests = 23 },
+]
+
+# The runner asks for a move before a message's flags: the flag's worker is
+# then handed a message already recorded in the folder it is going to, with
+# the number it had in the folder it left (RESEARCH-4, F4). Written
+# 2026-09-28 by 13-24.1; the planted move is a closure so the break
+# compiles.
+[[guard]]
+name = "the runner asks for the flags before the move"
+file = "src/presentation/wx_app.rs"
+suite = "several_actions_reach_the_server_in_order"
+before = '''        if let Some((read, those)) = &work.read {'''
+after = '''        let _ = |moving: Vec<AMessageMoving>,
+                 into: crate::application::destinations::Destination| {
+            move_these(app, list, cache, moving, into, false)
+        };
+        if let Some((read, those)) = &work.read {'''
+red = [
+    "test_the_runner_asks_for_the_flags_then_the_labels_then_the_phrase_then_the_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
+]
+
+# The runner meets no gate: an account whose changes are off has its
+# messages marked, labelled and moved here, and every change is refused at
+# its server one at a time afterwards. Written 2026-09-28 by 13-24.1.
+[[guard]]
+name = "the runner meets each account's gate before anything changes"
+file = "src/presentation/wx_app.rs"
+suite = "several_actions_reach_the_server_in_order"
+before = '''        if of_one.work.reaches_the_server() {
+            crate::service::outward::permitted(
+                crate::application::allowed::allowed_for(&of_one.account.id).mail,
+                "change these messages",
+            )
+            .map_err(|why| why.to_string())?;
+        }'''
+after = '''        if of_one.work.reaches_the_server() {
+            let _ = crate::application::allowed::allowed_for(&of_one.account.id).mail;
+        }'''
+red = [
+    "test_the_runner_meets_each_accounts_gate_before_anything_changes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
+]
+
+# The flag's worker reads the message's folder again when it runs, rather
+# than naming the folder read when the change was asked for: a move recorded
+# in between sends the flag to the folder the message is going to with the
+# number it had in the folder it left (RESEARCH-4, F4). Written 2026-09-28 by
+# 13-24.1.
+[[guard]]
+name = "a flag change names the folder it was asked in, not the one it is in when the worker runs"
+file = "src/presentation/wx_app.rs"
+suite = "several_actions_reach_the_server_in_order"
+before = '''        let Some(folder_path) = asked_in else {'''
+after = '''        let _ = asked_in;
+        let Some(folder_path) = cache.folder_path_for_message(message_row_id).ok().flatten() else {'''
+red = [
+    "test_a_flag_change_names_the_folder_it_was_asked_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 16 },
 ]
