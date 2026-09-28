@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 613
+open_count: 616
 waived_count: 0
 fixed_count: 68
-total_count: 681
-last_updated: 2026-09-28T06:40:00.000Z
+total_count: 684
+last_updated: 2026-09-28T08:59:28.000Z
 ---
 
 # Broken Windows Ledger
@@ -696,6 +696,9 @@ last_updated: 2026-09-28T06:40:00.000Z
 | 679 | 13 | unrun-verify | src/application/mail_sync.rs |  | 13-23: a rule's label has not been heard. Under NVDA and Narrator, after a check that brought mail a label rule matched: the label heard in the Labels column of the row and in the row's reading, and for a rule naming a label the account does not have, the count and the one sentence naming the label heard once after the check however many messages it matched | open |  | 2026-09-28T06:40:00.000Z |  |
 | 680 | 13 | unrun-verify | src/application/mail_sync.rs |  | 13-23, for phase 14: a rule's Add a label has not run against a real account. A check on Pratik's Gmail account and on an IMAP server with a rule labelling arriving mail: the label on the row after the check, and whether the next check takes it off again (ledger 678); every test here is a cache in a temporary folder and a scripted server | open |  | 2026-09-28T06:40:00.000Z |  |
 | 681 | 13 | todo | src/application/mail_sync.rs | 1175 | 13-23: a message a rule both files into a folder and labels with a label the account does not have is said as not labelled and is still counted as sorted by carry_out_the_moves (and pop_sync's file_where_the_rules_said) when its move lands, because the mover counts every move it makes. Recommendation: Moving carries whether the rest of the message's rules were done, and the two movers count only those; small, and no plan carries it yet | open |  | 2026-09-28T06:40:00.000Z |  |
+| 682 | 13 | todo | src/presentation/wx_app.rs | 11157 | 13-24, for 13-24.1: the five quiet do-halves (mark_these_read, star_these, label_these, move_these, delete_these) have no caller but their own commands, and delete_these's answer, how many messages it reached, is read by nobody. 13-24.1's premise 1 names this entry; it closes when run_these_actions_over calls them | open |  | 2026-09-28T08:59:28.000Z |  |
+| 683 | 13 | todo | src/presentation/wx_app.rs | 22893 | 13-24, found and left: Move to's and Copy to's one sentence for a set counts every chosen message as moved even when some were refused here in words or went server first because the store could not hold them, since move_these answers not_moved as 0, as the sentence was built before this plan. Recommendation: move_these answers not_moved as the set less what was made here, the messages sent server first keeping their own sentence; small, and no plan carries it yet | open |  | 2026-09-28T08:59:28.000Z |  |
+| 684 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-24: Mark as Read, Star, a label, Move to, Copy to, Report as Junk and Delete were split into a read half, a quiet do-half and a say half, and nothing heard was meant to change. The pull request's NVDA job reads the cases it has; nobody has listened to the seven commands by hand since the split | open |  | 2026-09-28T08:59:28.000Z |  |
 
 ````json
 [
@@ -8869,6 +8872,42 @@ last_updated: 2026-09-28T06:40:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T06:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 682,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": 11157,
+    "description": "13-24, for 13-24.1: the five quiet do-halves (mark_these_read, star_these, label_these, move_these, delete_these) have no caller but their own commands, and delete_these's answer, how many messages it reached, is read by nobody. 13-24.1's premise 1 names this entry; it closes when run_these_actions_over calls them",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T08:59:28.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 683,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": 22893,
+    "description": "13-24, found and left: Move to's and Copy to's one sentence for a set counts every chosen message as moved even when some were refused here in words or went server first because the store could not hold them, since move_these answers not_moved as 0, as the sentence was built before this plan. Recommendation: move_these answers not_moved as the set less what was made here, the messages sent server first keeping their own sentence; small, and no plan carries it yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T08:59:28.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 684,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-24: Mark as Read, Star, a label, Move to, Copy to, Report as Junk and Delete were split into a read half, a quiet do-half and a say half, and nothing heard was meant to change. The pull request's NVDA job reads the cases it has; nobody has listened to the seven commands by hand since the split",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-28T08:59:28.000Z",
     "resolved_at": null
   }
 ]
