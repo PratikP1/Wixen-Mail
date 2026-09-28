@@ -9,8 +9,9 @@
 //! the arm reaches the handler; the handler reads the selection the way Move
 //! does and refuses above the bound; it asks `reporting_junk` per account
 //! before any worker starts; the worker marks before it asks for the move;
-//! the move is Move's own, handed the report's sentence; and that sentence
-//! replaces Move's for the set. Each reading has a companion that plants the
+//! the move is Move's own quiet do-half, which words nothing for the set;
+//! and the report's sentence is said once the move answered that something
+//! was made here (13-24). Each reading has a companion that plants the
 //! fault into a snippet shaped as the window should be, so a reading that
 //! stopped finding its anchor cannot pass by finding nothing.
 //!
@@ -84,7 +85,11 @@ const THE_HANDLER: &str = "fn report_the_chosen_as_junk(";
 const THE_WORKER: &str = "fn spawn_junk_marking(";
 const THE_MOVE_AFTER: &str = "fn move_what_was_reported(";
 const THE_UPDATE_ARM: &str = "UIUpdate::ReportedAsJunk(ready) =>";
-const THE_SET_MOVE: &str = "fn move_or_copy_here_first(";
+/// Move's quiet do-half, since 13-24.
+const THE_SET_MOVE: &str = "fn move_these(";
+/// The report's sentence spoken, which the worker wrote once the mark was
+/// settled.
+const THE_REPORTS_SENTENCE: &str = "send_status(tx, rt, &ready.sentence)";
 
 // ── The readings ───────────────────────────────────────────────────────────
 
@@ -149,7 +154,14 @@ fn the_worker_marks_before_it_asks_the_move(worker: &str) -> Result<(), String> 
     )
 }
 
-/// The move is Move's own, gated path, handed the report's sentence.
+/// The move is Move's own, gated path, and the report's sentence is the
+/// report's to say.
+///
+/// Rewritten in place by 13-24: until then the report handed its sentence
+/// to the move in `said_for_the_set`, and the move said it in place of its
+/// own. The move is a quiet do-half now, `move_these`, which answers what
+/// it did and says nothing, so the report says its own sentence from that
+/// answer and the field is gone.
 fn the_move_is_moves_own_with_the_reports_sentence(app: &str) -> Result<(), String> {
     let arm_at = app.find(THE_UPDATE_ARM).ok_or(format!(
         "{THE_UPDATE_ARM:?} is not here, so this reads nothing"
@@ -159,28 +171,35 @@ fn the_move_is_moves_own_with_the_reports_sentence(app: &str) -> Result<(), Stri
         return Err("the update the worker sends moves nothing".into());
     }
     let mover = body_of(app, THE_MOVE_AFTER)?;
-    if !mover.contains("move_or_copy_here_first(") {
+    if !mover.contains(THE_SET_MOVE.trim_start_matches("fn ")) {
         return Err("a report moves by a path of its own rather than Move's gated one".into());
     }
-    match mover.contains("said_for_the_set: Some(") {
+    match mover.contains(THE_REPORTS_SENTENCE) {
         true => Ok(()),
-        false => Err("the report's sentence is not handed to the move, so Move's is said".into()),
+        false => Err("the report never says its own sentence, so nothing or Move's is said".into()),
     }
 }
 
-/// Move's own sentence for a set is not built when a command handed one of
-/// its own, and that one is spoken once the change was made here.
-fn the_reports_sentence_replaces_moves(set_move: &str) -> Result<(), String> {
-    if !set_move.contains("Some(_) => None,") {
-        return Err("Move's sentence for the set is built beside the report's".into());
+/// The move words no sentence of its own for the set, and the report's is
+/// spoken only once the move answered that something was made here.
+fn the_reports_sentence_replaces_moves(set_move: &str, mover: &str) -> Result<(), String> {
+    if set_move.contains("what_was_done(") {
+        return Err("the move words Move's sentence for the set beside the report's".into());
     }
-    let at = set_move
-        .find("if let Some(said) = said_for_the_set")
-        .ok_or("the sentence a command handed the move is never said")?;
-    let after = &set_move[at..set_move.len().min(at + 200)];
-    match after.contains("send_status(tx, rt, &said)") {
+    let at = mover
+        .find(THE_SET_MOVE.trim_start_matches("fn "))
+        .ok_or("the report never asks for the move, so this reads nothing")?;
+    let after = &mover[at..mover.len().min(at + 300)];
+    if !after.contains(").is_some()") {
+        return Err(
+            "the report's sentence is not held to what the move answered, so it is said for a \
+             move that was refused whole"
+                .into(),
+        );
+    }
+    match after.contains(THE_REPORTS_SENTENCE) {
         true => Ok(()),
-        false => Err("the sentence a command handed the move is not spoken".into()),
+        false => Err("the report's sentence is not spoken once the move is made".into()),
     }
 }
 
@@ -251,24 +270,41 @@ fn test_the_report_moves_through_moves_own_path_with_its_sentence() {
 #[test]
 fn test_the_move_reading_sees_a_move_without_the_reports_sentence() {
     let planted = "UIUpdate::ReportedAsJunk(ready) => {\n    move_what_was_reported(app, ready);\n}\n\
-                   fn move_what_was_reported() {\n    move_or_copy_here_first(app, list, cache, \
-                   AMoveAsked { said_for_the_set: None });\n}\n";
-    assert!(the_move_is_moves_own_with_the_reports_sentence(planted).is_err());
+                   fn move_what_was_reported() {\n    move_these(app, list, cache, moving, into, \
+                   false);\n}\n";
+    let why = the_move_is_moves_own_with_the_reports_sentence(planted)
+        .expect_err("a report whose sentence is never said");
+    assert!(why.contains("never says its own sentence"), "{why}");
 }
 
 #[test]
 fn test_the_reports_sentence_replaces_moves_for_the_set() {
-    let set_move = body_of(&the_main_window(), THE_SET_MOVE).unwrap_or_else(|why| panic!("{why}"));
-    the_reports_sentence_replaces_moves(&set_move).unwrap_or_else(|why| panic!("{why}"));
+    let app = the_main_window();
+    let set_move = body_of(&app, THE_SET_MOVE).unwrap_or_else(|why| panic!("{why}"));
+    let mover = body_of(&app, THE_MOVE_AFTER).unwrap_or_else(|why| panic!("{why}"));
+    the_reports_sentence_replaces_moves(&set_move, &mover).unwrap_or_else(|why| panic!("{why}"));
 }
 
 #[test]
 fn test_the_sentence_reading_sees_the_reports_sentence_dropped() {
-    let planted = "fn move_or_copy_here_first() {\n    let one_sentence = match &said_for_the_set \
-                   {\n        Some(_) => None,\n        None => a_set.then(|| what_was_done()),\n    \
-                   };\n    if let Some(said) = None::<String> {\n        send_status(tx, rt, \
-                   &said);\n    }\n}\n";
-    assert!(the_reports_sentence_replaces_moves(planted).is_err());
+    let quiet_move = "fn move_these() {\n    complete_here_then_tell_the_server(app, asks);\n}\n";
+    let as_it_should_be = "fn move_what_was_reported() {\n    if move_these(app, list, cache, \
+                           moving, into, false).is_some() {\n        send_status(tx, rt, \
+                           &ready.sentence);\n    }\n}\n";
+    the_reports_sentence_replaces_moves(quiet_move, as_it_should_be)
+        .unwrap_or_else(|why| panic!("{why}"));
+
+    let dropped = as_it_should_be.replace("send_status(tx, rt, &ready.sentence)", "let _ = ()");
+    let why = the_reports_sentence_replaces_moves(quiet_move, &dropped).expect_err("dropped");
+    assert!(why.contains("not spoken"), "{why}");
+
+    let regardless = as_it_should_be.replace(").is_some()", ").is_none() || true");
+    let why = the_reports_sentence_replaces_moves(quiet_move, &regardless).expect_err("regardless");
+    assert!(why.contains("not held to what the move answered"), "{why}");
+
+    let moves_own = "fn move_these() {\n    let said = what_was_done(&chosen, &outcome);\n}\n";
+    let why = the_reports_sentence_replaces_moves(moves_own, as_it_should_be).expect_err("both");
+    assert!(why.contains("beside the report's"), "{why}");
 }
 
 // ── The built menu bar ─────────────────────────────────────────────────────

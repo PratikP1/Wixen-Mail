@@ -371,6 +371,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Marking, starring, labelling, moving, copying, reporting and deleting a set of messages
+  say what they said before, through new pieces.** Each of these commands now hands the work of
+  changing the messages, here and at the server, to a part of its own that says nothing, and
+  then says its one sentence itself. Quick Steps and running a rule over a folder, which come
+  later in this round, will use the same parts, so they change mail the way the commands do and
+  say one sentence for all of it. Nothing you hear or see is meant to change. The automatic NVDA
+  run on the pull request is the check that nothing did. Known limitation: nobody has listened
+  to these commands by hand since the change.
 - **File, Import PGP Private Key is now File, PGP Keys (#49).** The key manager takes its
   place on the File menu and its letter, `K`, and importing a key is one of the manager's
   buttons. The menu's experimental note no longer says Wixen Mail holds one key at a time,

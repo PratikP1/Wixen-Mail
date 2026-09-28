@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 429 records have arrived since and have not been through it.
+# 431 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -31181,19 +31181,23 @@ tests_last_seen = [
 # Delete remembering its action before the change is made here, so a delete
 # this computer would not keep is offered to Edit, Undo as done. Written
 # 2026-09-25 by 13-08, the break measured against the reading.
+#
+# Rewritten 2026-09-28 by 13-24: the deleting moved out of the Delete arm
+# into its quiet do-half `delete_these`, so the anchor is there, at four
+# spaces rather than twenty-eight, and the reading follows it.
 [[guard]]
 name = "Delete remembers its action after it is made here, not before"
 file = "src/presentation/wx_app.rs"
 suite = "undoing_a_mark_names_the_message"
-before = '''                            let made = complete_here_then_tell_the_server(
-                                app,
-                                &msg_list,
-                                &cache_for_deleting,'''
-after = '''                            remember_the_last_action(&state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });
-                            let made = complete_here_then_tell_the_server(
-                                app,
-                                &msg_list,
-                                &cache_for_deleting,'''
+before = '''    let made = complete_here_then_tell_the_server(
+        app,
+        list,
+        &cache_for_deleting,'''
+after = '''    remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });
+    let made = complete_here_then_tell_the_server(
+        app,
+        list,
+        &cache_for_deleting,'''
 red = [
     "test_a_delete_remembers_the_action_after_it_is_made_here",
 ]
@@ -31266,13 +31270,23 @@ tests_last_seen = [
 # changes that were never made. Written 2026-09-25 by 13-07, the break taken
 # by hand against `cargo test --test undoing_a_mark_names_the_message` first:
 # the Mark as Read reading went red and nothing else in the target did.
+#
+# Rewritten 2026-09-28 by 13-24: the writes and the remembering moved out
+# of `toggle_read_state` into its quiet do-half `mark_these_read`, so the
+# anchor is that function's opening, and the reading follows it there.
 [[guard]]
 name = "Mark as Read remembers its action after its writes, not before"
 file = "src/presentation/wx_app.rs"
 suite = "undoing_a_mark_names_the_message"
-before = '''    let new_read = what_mark_read_does(&chosen);
+before = '''    read: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
     for message in &chosen.messages {'''
-after = '''    let new_read = what_mark_read_does(&chosen);
+after = '''    read: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
     remember_the_last_action(state, crate::application::undoing::LastAction::LabelsRemoved { before: Vec::new() });
     for message in &chosen.messages {'''
 red = [
@@ -33387,14 +33401,21 @@ tests_last_seen = [
 # A report's sentence says what the provider was told; dropped, the move
 # says nothing for the set and the person never hears whether Microsoft was
 # told. Written 2026-09-28 by 13-22, measured against the target.
+#
+# Rewritten and renamed the same day by 13-24, whose decision 3 retired
+# `said_for_the_set`: the move is a quiet do-half that answers what it did,
+# and the report says its own sentence from that answer. Named until then
+# "the sentence a command hands the move is spoken in place of Move's". The
+# break now says the sentence when the move made nothing here, a set refused
+# whole, where the refusal has already been said.
 [[guard]]
-name = "the sentence a command hands the move is spoken in place of Move's"
+name = "a report says its sentence once its move is made here, not whatever the move answered"
 file = "src/presentation/wx_app.rs"
 suite = "report_as_junk_is_on_the_action_menu"
-before = """    if let Some(said) = said_for_the_set
-        && !made.is_empty()"""
-after = """    if let Some(said) = None::<String>
-        && !made.is_empty()"""
+before = """    if move_these(app, list, cache, moving, junk, false).is_some() {
+        send_status(tx, rt, &ready.sentence);"""
+after = """    if move_these(app, list, cache, moving, junk, false).is_none() || true {
+        send_status(tx, rt, &ready.sentence);"""
 red = [
     "test_the_reports_sentence_replaces_moves_for_the_set",
 ]
@@ -33481,4 +33502,54 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 50 },
+]
+
+# A do-half that says something: Star's sentence said from inside the
+# piece 13-24.1's runner calls, so a runner starring with other actions
+# would say Star's sentence as well as its own. Written 2026-09-28 by
+# 13-24, measured against the target; the planted call is a closure so the
+# break compiles.
+[[guard]]
+name = "star's do-half says nothing, not the sentence its command says"
+file = "src/presentation/wx_app.rs"
+suite = "each_set_command_has_a_quiet_do_half"
+before = '''    starred: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;'''
+after = '''    starred: bool,
+) -> std::result::Result<crate::application::choosing_messages::Outcome, StoppedAtARefusedWrite> {
+    use crate::application::choosing_messages::Outcome;
+    let AppHandles { state, tx, .. } = app;
+    let _ = |a11y: &Accessibility| a11y.announce("Starred", crate::presentation::accessibility::announcements::Priority::Normal);'''
+red = [
+    "test_star_carries_its_change_out_in_a_quiet_do_half",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/each_set_command_has_a_quiet_do_half.rs", tests = 10 },
+]
+
+# A do-half that says something: the one word Delete said from inside the
+# piece the Delete arm and 13-24.1's runner both call, so the arm's key says
+# it twice and a runner deleting after other actions says a word nobody
+# pressed. Written 2026-09-28 by 13-24, measured against the target; the
+# planted call is a closure so the break compiles.
+[[guard]]
+name = "delete's do-half says nothing, not the one word its arm says"
+file = "src/presentation/wx_app.rs"
+suite = "each_set_command_has_a_quiet_do_half"
+before = '''    asked: Deleting,
+) -> usize {
+    use crate::data::message_cache::moves_waiting::AWaitingMove;'''
+after = '''    asked: Deleting,
+) -> usize {
+    use crate::data::message_cache::moves_waiting::AWaitingMove;
+    let _ = |a11y: &Accessibility| say_the_one_word(a11y, "Delete");'''
+red = [
+    "test_delete_carries_its_change_out_in_a_quiet_do_half",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/each_set_command_has_a_quiet_do_half.rs", tests = 10 },
 ]
