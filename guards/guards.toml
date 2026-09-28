@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 454 records have arrived since and have not been through it.
+# 457 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34012,4 +34012,53 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/free_busy.rs", tests = 44 },
+]
+
+# An account whose calendar is at Google passed over, so every guest on it
+# comes back unknown although Google could have said. Written 2026-09-28 by
+# 13-29.
+[[guard]]
+name = "an account whose calendar is at google asks google"
+file = "src/application/asking_when_free.rs"
+before = '''    match google.filter(|_| holds_a_google_calendar(calendars)) {'''
+after = '''    match google.filter(|_| false) {'''
+red = [
+    "application::asking_when_free::tests::test_an_account_whose_calendar_is_at_google_asks_google",
+]
+tests_last_seen = [
+    { file = "src/application/asking_when_free.rs", tests = 16 },
+]
+
+# A Google token used for an account keeping no calendar at Google, so the
+# guest list goes to a company the account never chose to tell (T-13-29-02).
+# Written 2026-09-28 by 13-29.
+[[guard]]
+name = "google is never asked for an account with no google calendar"
+file = "src/application/asking_when_free.rs"
+before = '''    match google.filter(|_| holds_a_google_calendar(calendars)) {'''
+after = '''    match google {'''
+red = [
+    "application::asking_when_free::tests::test_a_google_token_is_never_used_for_an_account_with_no_google_calendar",
+]
+tests_last_seen = [
+    { file = "src/application/asking_when_free.rs", tests = 16 },
+]
+
+# Find when everyone is free stops handing the Google token it fetched to
+# where_to_ask, so a Google account is asked nowhere again. Written 2026-09-28
+# by 13-29.
+[[guard]]
+name = "find when everyone is free hands the google token to where_to_ask"
+file = "src/presentation/managers.rs"
+suite = "item_form_free_busy"
+before = '''                google
+                    .as_deref()
+                    .map(|token| (crate::service::free_busy::GOOGLE_CALENDAR_BASE, token)),'''
+after = '''                None,'''
+red = [
+    "test_find_when_everyone_is_free_asks_google_with_a_token_fetched_in_the_worker",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/item_form_free_busy.rs", tests = 3 },
 ]

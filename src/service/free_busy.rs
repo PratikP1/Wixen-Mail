@@ -131,6 +131,12 @@ pub enum WhereToAsk {
     Nowhere,
 }
 
+/// Where Google's calendar service is.
+///
+/// The same address `google_api` keeps privately for its own calendar calls,
+/// written here because that one cannot be reached from this file.
+pub const GOOGLE_CALENDAR_BASE: &str = "https://www.googleapis.com/calendar/v3";
+
 /// One place to ask, and the people to ask it about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AskHere {

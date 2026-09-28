@@ -1015,6 +1015,26 @@ pub async fn a_tasks_token_for(account_id: &str) -> Result<String> {
     a_microsoft_sign_in_for(account_id)?.a_tasks_token().await
 }
 
+/// A Google token for this account, or nothing at all.
+///
+/// `None` for the reasons [`a_graph_token_for`] gives: this build holds no
+/// client credentials for Google, nothing is stored for the account, or a
+/// refresh that had to happen did not work. The token carries the calendar
+/// permission every Google sign-in here already asks for, which is enough to
+/// ask when people are free.
+pub async fn a_google_token_for(account_id: &str) -> Option<String> {
+    let held = crate::service::oauth_credentials::credentials_for("gmail")?;
+    AuthManager::new(
+        account_id,
+        "gmail",
+        &held.client_id,
+        held.client_secret.as_deref(),
+    )
+    .get_valid_token()
+    .await
+    .ok()
+}
+
 /// This account's Microsoft sign-in, when this build can sign in to Microsoft.
 fn a_microsoft_sign_in_for(account_id: &str) -> Result<AuthManager> {
     let held = crate::service::oauth_credentials::credentials_for("outlook").ok_or_else(|| {
