@@ -118,7 +118,7 @@ struct ADoHalf {
     the_doing: &'static [&'static str],
 }
 
-const THE_DO_HALVES: [ADoHalf; 3] = [
+const THE_DO_HALVES: [ADoHalf; 5] = [
     ADoHalf {
         command: "Mark as Read",
         signature: "fn mark_these_read(",
@@ -145,6 +145,33 @@ const THE_DO_HALVES: [ADoHalf; 3] = [
             "add_tag_to_message(",
             "remove_tag_from_message(",
             "spawn_server_change(",
+        ],
+    },
+    // The chosen messages for a move are the messages moving, each with the
+    // folder and the account it is in and its size, because Report as Junk
+    // reads those at the key and moves only once the mark is settled, when
+    // its rows may have left the screen. Report as Junk moves from the
+    // update its worker sends, so its caller is the function that update
+    // reaches.
+    ADoHalf {
+        command: "Move to, Copy to and Report as Junk",
+        signature: "fn move_these(",
+        the_set: "AMessageMoving",
+        which_way: "into:",
+        callers: &["fn move_or_copy_message(", "fn move_what_was_reported("],
+        the_doing: &["complete_here_then_tell_the_server(", "spawn_folder_move("],
+    },
+    ADoHalf {
+        command: "Delete",
+        signature: "fn delete_these(",
+        the_set: "Chosen",
+        which_way: "asked: Deleting",
+        callers: &["_ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT =>"],
+        the_doing: &[
+            "complete_here_then_tell_the_server(",
+            "where_a_delete_goes_here(",
+            "cancel_if_queued(",
+            "delete_if_local(",
         ],
     },
 ];
@@ -225,6 +252,20 @@ fn test_star_carries_its_change_out_in_a_quiet_do_half() {
 #[test]
 fn test_a_label_carries_its_change_out_in_a_quiet_do_half() {
     reads_whole(&the_main_window(), the_do_half("a label")).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_move_copy_and_report_as_junk_carry_their_moves_out_in_a_quiet_do_half() {
+    reads_whole(
+        &the_main_window(),
+        the_do_half("Move to, Copy to and Report as Junk"),
+    )
+    .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_delete_carries_its_change_out_in_a_quiet_do_half() {
+    reads_whole(&the_main_window(), the_do_half("Delete")).unwrap_or_else(|why| panic!("{why}"));
 }
 
 // ── The companions: the window as it should be, with a fault planted ───────

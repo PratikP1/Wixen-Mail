@@ -105,7 +105,12 @@ fn times_called(source: &str, call: &str) -> usize {
 // ── The anchors, each a name or a literal ──────────────────────────────────
 
 const THE_MOVE: &str = "fn move_or_copy_message(";
-const THE_MOVE_MADE_HERE: &str = "fn move_or_copy_here_first(";
+/// Move's quiet do-half since 13-24, which was `move_or_copy_here_first`.
+const THE_MOVE_MADE_HERE: &str = "fn move_these(";
+/// Where a message the store cannot hold goes server first with the line
+/// saying why, taken out of the do-half by 13-24 because the do-half says
+/// nothing of its own.
+const THE_CEILING_PATH: &str = "fn send_server_first_what_cannot_be_held(";
 const MADE_HERE: &str = "fn complete_here_then_tell_the_server(";
 const THE_WORKER: &str = "fn spawn_folder_move(";
 const THE_REPLAY_HELPER: &str = "fn replay_the_moves_that_were_waiting(";
@@ -143,20 +148,20 @@ fn the_arms_complete_a_crossing_here_first(app: &str) -> Result<(), String> {
     for kind in [A_MOVE_ACROSS, A_COPY_ACROSS] {
         if !made.contains(kind) {
             return Err(format!(
-                "move_or_copy_here_first knows no {kind}, so a crossing is not made here first"
+                "move_these knows no {kind}, so a crossing is not made here first"
             ));
         }
     }
     if !made.contains(MADE_HERE.trim_start_matches("fn ")) {
         return Err(format!(
-            "move_or_copy_here_first does not reach {MADE_HERE}, so the crossing takes a \
-             path of its own that can drift from a move's"
+            "move_these does not reach {MADE_HERE}, so the crossing takes a path of its own \
+             that can drift from a move's"
         ));
     }
     if made.contains(ASKS_FOR_A_SESSION) {
         return Err(format!(
-            "move_or_copy_here_first reaches {ASKS_FOR_A_SESSION}, so a session is asked for \
-             before the row leaves"
+            "move_these reaches {ASKS_FOR_A_SESSION}, so a session is asked for before the \
+             row leaves"
         ));
     }
     Ok(())
@@ -182,12 +187,25 @@ fn only_the_ceiling_goes_server_first(app: &str) -> Result<(), String> {
              person somewhere else"
         ));
     }
+    // The ceiling is decided in the do-half and the message sent with its
+    // line by the path beside it, since 13-24: the do-half says nothing of
+    // its own, and the line is the message's, part of the move.
     let made = body_of(app, THE_MOVE_MADE_HERE)?;
-    for needed in [THE_CEILING, THE_CEILING_LINE, THE_SERVER_FIRST_WORKER] {
-        if !made.contains(needed) {
+    let ceiling_path = body_of(app, THE_CEILING_PATH)?;
+    for (text, name, needed) in [
+        (&made, THE_MOVE_MADE_HERE, THE_CEILING),
+        (
+            &made,
+            THE_MOVE_MADE_HERE,
+            THE_CEILING_PATH.trim_start_matches("fn "),
+        ),
+        (&ceiling_path, THE_CEILING_PATH, THE_CEILING_LINE),
+        (&ceiling_path, THE_CEILING_PATH, THE_SERVER_FIRST_WORKER),
+    ] {
+        if !text.contains(needed) {
             return Err(format!(
-                "move_or_copy_here_first does not reach {needed}, so a message over the \
-                 ceiling is queued with nothing to resume it from, or goes with nothing said"
+                "{name} does not reach {needed}, so a message over the ceiling is queued with \
+                 nothing to resume it from, or goes with nothing said"
             ));
         }
     }
@@ -324,15 +342,19 @@ fn test_the_sync_says_why_its_forgetting_leaves_a_crossing_alone() {
 fn a_window_as_it_should_be() -> String {
     let mut snippet = String::new();
     snippet.push_str(THE_MOVE);
-    snippet.push_str(") {\n    move_or_copy_here_first(app, list, &cache, a11y, asked);\n}\n");
+    snippet.push_str(") {\n    move_these(app, list, &cache, moving, into, copying);\n}\n");
     snippet.push_str(THE_MOVE_MADE_HERE);
     snippet.push_str(
         ") {\n    let can_be_held = size <= LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES;\n    \
          let what = WhatAWaitingMoveDoes::MoveAcross { into, to_account };\n    \
          let what = WhatAWaitingMoveDoes::CopyAcross { into, to_account };\n    \
-         send_status(tx, rt, \"larger than 25 MB, so it goes now\");\n    \
-         spawn_folder_move(app, too_large_to_hold, those, into, copying);\n    \
-         complete_here_then_tell_the_server(app, list, cache, asks, one_sentence, fallback);\n}\n",
+         send_server_first_what_cannot_be_held(app, too_large_to_hold, &into, copying, name);\n    \
+         complete_here_then_tell_the_server(app, list, cache, asks, fallback);\n}\n",
+    );
+    snippet.push_str(THE_CEILING_PATH);
+    snippet.push_str(
+        ") {\n    send_status(tx, rt, \"larger than 25 MB, so it goes now\");\n    \
+         spawn_folder_move(app, too_large_to_hold, those, into, copying);\n}\n",
     );
     snippet.push_str(THE_WORKER);
     snippet.push_str(
@@ -377,7 +399,7 @@ fn test_the_readings_complain_when_a_crossing_waits_for_the_servers_again() {
     let app = a_window_as_it_should_be();
 
     let routed_to_the_worker = app.replacen(
-        "fn move_or_copy_message() {\n    move_or_copy_here_first(app, list, &cache, a11y, asked);",
+        "fn move_or_copy_message() {\n    move_these(app, list, &cache, moving, into, copying);",
         "fn move_or_copy_message() {\n    spawn_folder_move(app, moving, chosen, into, copying);",
         1,
     );
@@ -395,9 +417,9 @@ fn test_the_readings_complain_when_a_crossing_waits_for_the_servers_again() {
     assert!(why.contains("knows no MoveAcross"), "{why}");
 
     let session_first = app.replacen(
-        "    complete_here_then_tell_the_server(app, list, cache, asks, one_sentence, fallback);",
+        "    complete_here_then_tell_the_server(app, list, cache, asks, fallback);",
         "    the_session_at(&account);\n    \
-         complete_here_then_tell_the_server(app, list, cache, asks, one_sentence, fallback);",
+         complete_here_then_tell_the_server(app, list, cache, asks, fallback);",
         1,
     );
     let why = the_arms_complete_a_crossing_here_first(&session_first)

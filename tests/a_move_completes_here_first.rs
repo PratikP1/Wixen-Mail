@@ -103,7 +103,10 @@ const THE_MOVE: &str = "fn move_or_copy_message(";
 /// waiting, pushed once".
 const MADE_HERE: &str = "fn complete_here_then_tell_the_server(";
 /// The move arm's half of the way there, and the delete arm's decision.
-const THE_MOVE_MADE_HERE: &str = "fn move_or_copy_here_first(";
+/// Move's and Delete's quiet do-halves since 13-24, which carry the change
+/// out while the commands keep the sentence.
+const THE_MOVE_MADE_HERE: &str = "fn move_these(";
+const THE_DELETE_MADE_HERE: &str = "fn delete_these(";
 const THE_DELETE_DECIDED_HERE: &str = "fn where_a_delete_goes_here(";
 /// The arm and not the send, which sits hundreds of lines above it: the
 /// bare variant name found the line that sends the update, the finding
@@ -146,25 +149,38 @@ fn the_move_arm_completes_here_first(app: &str) -> Result<(), String> {
     let made = body_of(app, THE_MOVE_MADE_HERE)?;
     if !made.contains(MADE_HERE.trim_start_matches("fn ")) {
         return Err(format!(
-            "move_or_copy_here_first does not reach {MADE_HERE}, so a move waits for the \
-             server before the row leaves"
+            "move_these does not reach {MADE_HERE}, so a move waits for the server before the \
+             row leaves"
         ));
     }
     Ok(())
 }
 
 /// Delete and Delete Permanently decide where the message goes, before
-/// anything changes, and go through the same function.
+/// anything changes, and go through the same function. The arm says the one
+/// word and hands the doing to its do-half, which decides and makes the
+/// change here (13-24).
 fn the_delete_arm_completes_here_first(app: &str) -> Result<(), String> {
     let arm = the_id_arm(app, THE_DELETE_ARM)?;
     for needed in [
-        THE_DELETE_DECIDED_HERE.trim_start_matches("fn "),
-        MADE_HERE.trim_start_matches("fn "),
+        THE_DELETE_MADE_HERE.trim_start_matches("fn "),
         "say_the_one_word(&a11y, \"Delete\")",
     ] {
         if !arm.contains(needed) {
             return Err(format!(
                 "the Delete arm does not reach {needed}, so a delete waits for the server \
+                 before the row leaves, or asks it without deciding where the message goes"
+            ));
+        }
+    }
+    let made = body_of(app, THE_DELETE_MADE_HERE)?;
+    for needed in [
+        THE_DELETE_DECIDED_HERE.trim_start_matches("fn "),
+        MADE_HERE.trim_start_matches("fn "),
+    ] {
+        if !made.contains(needed) {
+            return Err(format!(
+                "delete_these does not reach {needed}, so a delete waits for the server \
                  before the row leaves, or asks it without deciding where the message goes"
             ));
         }
@@ -356,14 +372,18 @@ fn test_the_network_coming_back_replays_no_waiting_move() {
 fn a_window_as_it_should_be() -> String {
     let mut snippet = String::new();
     snippet.push_str(THE_MOVE);
-    snippet.push_str(") {\n    move_or_copy_here_first(app, list, &cache, a11y, asked);\n}\n");
+    snippet.push_str(") {\n    move_these(app, list, &cache, moving, into, copying);\n}\n");
     snippet.push_str(THE_MOVE_MADE_HERE);
     snippet.push_str(") {\n    complete_here_then_tell_the_server(app, asks);\n}\n");
     snippet.push_str(THE_DELETE_ARM);
     snippet.push_str(
-        " {\n    where_a_delete_goes_here(&state, &cache, row, asked);\n    \
-         say_the_one_word(&a11y, \"Delete\");\n    \
-         complete_here_then_tell_the_server(app, asks);\n}\n_ if id == ID_OTHER => {}\n",
+        " {\n    say_the_one_word(&a11y, \"Delete\");\n    \
+         delete_these(app, &cache, list, &chosen, asked);\n}\n_ if id == ID_OTHER => {}\n",
+    );
+    snippet.push_str(THE_DELETE_MADE_HERE);
+    snippet.push_str(
+        ") {\n    where_a_delete_goes_here(&state, &cache, row, asked);\n    \
+         complete_here_then_tell_the_server(app, asks);\n}\n",
     );
     snippet.push_str(THE_DELETE_DECIDED_HERE);
     snippet.push_str(") {\n    where_a_deleted_message_goes(folders, from, asked);\n}\n");
@@ -414,30 +434,36 @@ fn test_the_readings_complain_when_an_arm_waits_for_the_server_again() {
     let app = a_window_as_it_should_be();
 
     let move_waits = app.replacen(
-        "fn move_or_copy_here_first() {\n    complete_here_then_tell_the_server(app, asks);",
-        "fn move_or_copy_here_first() {\n    spawn_folder_move(app, moving);",
+        "fn move_these() {\n    complete_here_then_tell_the_server(app, asks);",
+        "fn move_these() {\n    spawn_folder_move(app, moving);",
         1,
     );
     let why = the_move_arm_completes_here_first(&move_waits).expect_err("the move waits");
     assert!(why.contains("does not reach fn complete_here"), "{why}");
 
     let move_never_here = app.replacen(
-        "fn move_or_copy_message() {\n    move_or_copy_here_first(app, list, &cache, a11y, asked);",
+        "fn move_or_copy_message() {\n    move_these(app, list, &cache, moving, into, copying);",
         "fn move_or_copy_message() {\n    spawn_folder_move(app, moving);",
         1,
     );
     let why = the_move_arm_completes_here_first(&move_never_here).expect_err("never here");
-    assert!(
-        why.contains("does not reach fn move_or_copy_here_first"),
-        "{why}"
-    );
+    assert!(why.contains("does not reach fn move_these"), "{why}");
 
     let delete_waits = app.replacen(
-        "    complete_here_then_tell_the_server(app, asks);\n}\n_ if id == ID_OTHER",
-        "    spawn_server_change(app, row);\n}\n_ if id == ID_OTHER",
+        "    complete_here_then_tell_the_server(app, asks);\n}\nfn where_a_delete_goes_here(",
+        "    spawn_server_change(app, row);\n}\nfn where_a_delete_goes_here(",
         1,
     );
     let why = the_delete_arm_completes_here_first(&delete_waits).expect_err("the delete waits");
+    assert!(why.contains("delete_these does not reach"), "{why}");
+
+    let delete_done_in_the_arm = app.replacen(
+        "    delete_these(app, &cache, list, &chosen, asked);\n",
+        "    spawn_server_change(app, row);\n",
+        1,
+    );
+    let why = the_delete_arm_completes_here_first(&delete_done_in_the_arm)
+        .expect_err("the delete done in the arm");
     assert!(why.contains("the Delete arm does not reach"), "{why}");
 
     let session_first = app

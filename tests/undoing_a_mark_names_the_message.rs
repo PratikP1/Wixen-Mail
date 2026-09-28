@@ -96,17 +96,6 @@ fn body_of<'a>(source: &'a str, signature: &str) -> Result<&'a str, String> {
     Ok(&rest[..ends])
 }
 
-/// The body of one `_ if id == ...` arm of the command dispatch, up to the
-/// next arm of the same shape.
-fn the_id_arm<'a>(source: &'a str, heading: &str) -> Result<&'a str, String> {
-    let start = source.find(heading).ok_or(format!(
-        "{heading:?} is no longer here, so this reads nothing"
-    ))? + heading.len();
-    let rest = &source[start..];
-    let end = rest.find("_ if id ==").unwrap_or(rest.len());
-    Ok(&rest[..end])
-}
-
 /// The text of each `for` loop's body in `text`, brace to matching brace.
 fn loop_bodies(text: &str) -> Vec<&str> {
     let mut bodies = Vec::new();
@@ -160,8 +149,10 @@ const THE_MENU_HANDLERS: &str = "fn keep_the_edit_menu_honest(";
 const REMEMBERS: &str = "remember_the_last_action(";
 const A_WRITE_TO_THE_SERVER: &str = "spawn_server_change(";
 const SAYS: [&str; 2] = ["say_what_the_undo_did(", ".announce("];
-const THE_DELETE_ARM: &str = "_ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT =>";
-const THE_MOVE_PATH: &str = "fn move_or_copy_here_first(";
+/// Delete's and Move's do-halves, which make the change here and remember
+/// it, since 13-24; the Delete arm and the Move command keep the sentence.
+const THE_DELETE: &str = "fn delete_these(";
+const THE_MOVE_PATH: &str = "fn move_these(";
 const MOVED_BACK: &str = "fn move_back_or_again(";
 const MADE_HERE_FIRST: &str = "complete_here_then_tell_the_server(";
 const ENDED_HERE: &str = "undo_here(";
@@ -526,8 +517,8 @@ fn test_the_edit_menu_names_the_last_action_when_the_list_has_focus() {
 #[test]
 fn test_a_delete_remembers_the_action_after_it_is_made_here() {
     let app = the_main_window();
-    let arm = the_id_arm(&app, THE_DELETE_ARM).unwrap_or_else(|why| panic!("{why}"));
-    remembers_after(arm, MADE_HERE_FIRST, "Delete").unwrap_or_else(|why| panic!("{why}"));
+    let body = body_of(&app, THE_DELETE).unwrap_or_else(|why| panic!("{why}"));
+    remembers_after(body, MADE_HERE_FIRST, "Delete").unwrap_or_else(|why| panic!("{why}"));
 }
 
 #[test]
