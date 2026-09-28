@@ -180,12 +180,38 @@ fn the_block_item_carries_its_key(app: &str) -> Result<(), String> {
     }
 }
 
+/// The two Block items, as their append calls are written.
+const THE_BLOCK_ITEMS: [&str; 2] = ["ID_BLOCK_SENDER,", "ID_BLOCK_DOMAIN,"];
+
+/// Each Block item's description says the block is experimental, because
+/// its move of the mail already here has never reached a real server and
+/// the description is what somebody reads before pressing it.
+fn the_block_items_say_they_are_experimental(app: &str) -> Result<(), String> {
+    for item in THE_BLOCK_ITEMS {
+        // The place the id is followed by a label, which is the append call,
+        // rather than the list the ids are declared in.
+        let (at, _) = app
+            .match_indices(item)
+            .find(|(at, _)| app[at + item.len()..].trim_start().starts_with('"'))
+            .ok_or(format!("{item} is not appended to any menu"))?;
+        let call = &app[at..];
+        let call = &call[..call.find(')').unwrap_or(call.len())];
+        if !call.contains("Experimental") {
+            return Err(format!(
+                "the item appended as {item} does not say it is experimental"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn every_reading(app: &str) -> Result<(), String> {
     the_count_is_taken_on_a_worker(app)?;
     the_bound_comes_before_the_question(app)?;
     the_question_comes_before_the_move(app)?;
     the_move_goes_through_the_runner(app)?;
-    the_block_item_carries_its_key(app)
+    the_block_item_carries_its_key(app)?;
+    the_block_items_say_they_are_experimental(app)
 }
 
 #[test]
@@ -213,12 +239,26 @@ fn test_block_this_sender_is_on_ctrl_shift_b() {
     the_block_item_carries_its_key(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
 }
 
+#[test]
+fn test_both_block_items_say_the_block_is_experimental() {
+    the_block_items_say_they_are_experimental(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
 // ── The companions ─────────────────────────────────────────────────────────
 
 /// A window shaped as it should be, cut down to what the readings read.
 const SHAPED: &str = r#"let blocking_menu = Menu::builder()
-    .append_item(ID_BLOCK_SENDER, "&This Sender\tCtrl+Shift+B", "")
-    .append_item(ID_BLOCK_DOMAIN, "Everyone at This &Domain", "")
+    .append_item(
+    ID_BLOCK_SENDER,
+    "&This Sender\tCtrl+Shift+B",
+    "File it in Junk. Experimental",
+    )
+    .append_item(
+    ID_BLOCK_DOMAIN,
+    "Everyone at This &Domain",
+    "File it all in Junk. Experimental",
+    )
     .build();
 
 fn block_the_sender(state: &State) {
@@ -349,4 +389,20 @@ fn test_the_key_reading_names_an_item_without_its_key_and_a_domain_item_with_one
 
     assert!(the_block_item_carries_its_key(&without).is_err());
     assert!(the_block_item_carries_its_key(&on_the_domain).is_err());
+}
+
+#[test]
+fn test_the_experimental_reading_names_an_item_that_does_not_say_so() {
+    for (description, item) in [
+        ("\"File it in Junk. Experimental\"", "ID_BLOCK_SENDER,"),
+        ("\"File it all in Junk. Experimental\"", "ID_BLOCK_DOMAIN,"),
+    ] {
+        let planted = SHAPED.replacen(description, "\"File it in Junk\"", 1);
+        assert_ne!(planted, SHAPED, "nothing was planted");
+
+        let said = the_block_items_say_they_are_experimental(&planted)
+            .expect_err("an item that does not say it is experimental");
+
+        assert!(said.contains(item), "{said}");
+    }
 }
