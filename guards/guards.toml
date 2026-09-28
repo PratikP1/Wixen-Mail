@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 433 records have arrived since and have not been through it.
+# 435 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33587,4 +33587,52 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 23 },
+]
+
+# The runner asks for a move before a message's flags: the flag's worker is
+# then handed a message already recorded in the folder it is going to, with
+# the number it had in the folder it left (RESEARCH-4, F4). Written
+# 2026-09-28 by 13-24.1; the planted move is a closure so the break
+# compiles.
+[[guard]]
+name = "the runner asks for the flags before the move"
+file = "src/presentation/wx_app.rs"
+suite = "several_actions_reach_the_server_in_order"
+before = '''        if let Some((read, those)) = &work.read {'''
+after = '''        let _ = |moving: Vec<AMessageMoving>,
+                 into: crate::application::destinations::Destination| {
+            move_these(app, list, cache, moving, into, false)
+        };
+        if let Some((read, those)) = &work.read {'''
+red = [
+    "test_the_runner_asks_for_the_flags_then_the_labels_then_the_phrase_then_the_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 11 },
+]
+
+# The runner meets no gate: an account whose changes are off has its
+# messages marked, labelled and moved here, and every change is refused at
+# its server one at a time afterwards. Written 2026-09-28 by 13-24.1.
+[[guard]]
+name = "the runner meets each account's gate before anything changes"
+file = "src/presentation/wx_app.rs"
+suite = "several_actions_reach_the_server_in_order"
+before = '''        if of_one.work.reaches_the_server() {
+            crate::service::outward::permitted(
+                crate::application::allowed::allowed_for(&of_one.account.id).mail,
+                "change these messages",
+            )
+            .map_err(|why| why.to_string())?;
+        }'''
+after = '''        if of_one.work.reaches_the_server() {
+            let _ = crate::application::allowed::allowed_for(&of_one.account.id).mail;
+        }'''
+red = [
+    "test_the_runner_meets_each_accounts_gate_before_anything_changes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/several_actions_reach_the_server_in_order.rs", tests = 11 },
 ]
