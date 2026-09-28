@@ -7112,12 +7112,16 @@ impl WxMailApp {
             .append_item(
                 ID_BLOCK_SENDER,
                 "&This Sender\tCtrl+Shift+B",
-                "File mail from this address in Junk from now on",
+                "File mail from this address in Junk from now on, and offer to move what is \
+                 already here. Experimental: the move has never been run against a real mail \
+                 server.",
             )
             .append_item(
                 ID_BLOCK_DOMAIN,
                 "Everyone at This &Domain",
-                "File mail from anybody at this address's domain in Junk from now on",
+                "File mail from anybody at this address's domain in Junk from now on, and offer \
+                 to move what is already here. Experimental: the move has never been run against \
+                 a real mail server.",
             )
             .build();
 

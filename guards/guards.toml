@@ -33714,7 +33714,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 13 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
 ]
 
 # A block reads every message the account holds on the window's thread, so
@@ -33738,5 +33738,5 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 13 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
 ]
