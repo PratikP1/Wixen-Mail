@@ -5473,135 +5473,10 @@ impl WxMailApp {
                             // Once for the set, never once per message.
                             say_the_one_word(&a11y, "Delete");
                             send_shown(&ui_tx, &runtime, &what_is_being_done("Deleting", &chosen));
-                            // The deletes made here first, grouped by the
-                            // account that is told, so a set is one push
-                            // per account.
-                            use crate::data::message_cache::moves_waiting::AWaitingMove;
-                            let Some(cache_for_deleting) = message_cache.clone() else {
-                                return send_refusal(
-                                    &ui_tx,
-                                    &runtime,
-                                    "The mail on this computer is not open.",
-                                );
-                            };
-                            let asked_at = chrono::Utc::now().to_rfc3339();
-                            let mut deleting_here_first: std::collections::BTreeMap<
-                                String,
-                                (Account, Vec<AnAskMadeHere>),
-                            > = std::collections::BTreeMap::new();
-                            // Each message as it was, for Edit, Undo (13-08).
-                            let mut went: Vec<crate::application::undoing::WhereItWas> = Vec::new();
-                            for message in &chosen.messages {
-                                // In the outbox, delete means cancel the send.
-                                // There is no server copy to remove: the
-                                // message has not been anywhere. Undo Send is
-                                // its undo, so it is not remembered here.
-                                if cancel_if_queued(app, &message_cache, message.row_id) {
-                                    continue;
-                                }
-                                // A message on this computer. POP mail is all
-                                // of it, and the route below needs a session
-                                // with a server this account has never had.
-                                let was_in = cache_for_deleting
-                                    .folder_path_for_message(message.row_id)
-                                    .ok()
-                                    .flatten();
-                                match delete_if_local(
-                                    app,
-                                    &message_cache,
-                                    message.row_id,
-                                    &message.subject,
-                                    asked,
-                                ) {
-                                    DeletedHere::NotHere => {}
-                                    DeletedHere::Stayed => continue,
-                                    DeletedHere::Left { account_id } => {
-                                        went.extend(was_in.map(|folder_path| {
-                                            crate::application::undoing::WhereItWas {
-                                                row_id: message.row_id,
-                                                account_id,
-                                                folder_path,
-                                                uid: message.uid,
-                                                subject: message.subject.clone(),
-                                                sent_to: None,
-                                                went_by: crate::application::undoing::WentBy::ThisComputerOnly,
-                                                copy_row: None,
-                                            }
-                                        }));
-                                        continue;
-                                    }
-                                }
-                                // A message on a server: decided here where
-                                // it goes, made here first, and the server
-                                // told in the background (#86, 2026-09-19).
-                                // The two refusals, no trash recognised and
-                                // no folders known yet, are said before
-                                // anything changes, in the sentences
-                                // `destinations` owns.
-                                match the_account_a_row_is_in(&state, message.row_id).and_then(
-                                    |account| {
-                                        where_a_delete_goes_here(
-                                            &cache_for_deleting,
-                                            &account,
-                                            message.row_id,
-                                            asked,
-                                        )
-                                        .map(|(what, from)| (account, what, from))
-                                    },
-                                ) {
-                                    Ok((account, what, from)) => {
-                                        let account_id = account.id.clone();
-                                        deleting_here_first
-                                            .entry(account_id.clone())
-                                            .or_insert_with(|| (account, Vec::new()))
-                                            .1
-                                            .push(AnAskMadeHere {
-                                                asked: AWaitingMove {
-                                                    message_row_id: message.row_id,
-                                                    account_id,
-                                                    from_folder_path: from,
-                                                    uid: message.uid,
-                                                    what,
-                                                    asked_at: asked_at.clone(),
-                                                },
-                                                subject: message.subject.clone(),
-                                            });
-                                    }
-                                    Err(why) => send_refusal(&ui_tx, &runtime, &why),
-                                }
-                            }
-                            let made = complete_here_then_tell_the_server(
-                                app,
-                                &msg_list,
-                                &cache_for_deleting,
-                                deleting_here_first
-                                    .into_values()
-                                    .map(|(account, asks)| AsksOfOneAccount { account, asks })
-                                    .collect(),
-                                None,
-                                move |ask| {
-                                    spawn_server_change(
-                                        app,
-                                        ask.asked.message_row_id,
-                                        ask.asked.uid,
-                                        ask.subject,
-                                        ServerChange::Deleted(asked),
-                                    )
-                                },
-                            );
-                            // Remembered once, after every delete was made
-                            // here, so Undo offers only what was done.
-                            went.extend(made.iter().map(ChangedHere::as_it_was));
-                            let moving = match asked {
-                                Deleting::ToTrash => crate::application::undoing::Moving::Delete,
-                                Deleting::Outright => {
-                                    crate::application::undoing::Moving::DeletePermanently
-                                }
-                            };
-                            remember_the_last_action(
-                                &state,
-                                crate::application::undoing::LastAction::Moved { moving, went },
-                            );
+                            // The deleting is the quiet do-half the
+                            // runner shares (13-24); what is heard next is
+                            // the row the cursor lands on, or a refusal.
+                            delete_these(app, &message_cache, &msg_list, &chosen, asked);
                         }
                         _ if id == ID_MARK_READ => {
                             // The Action menu, the context menu and the
@@ -19894,13 +19769,8 @@ fn move_back_or_again(
                 subject: message.subject.clone(),
             });
     }
-    let made = complete_here_then_tell_the_server(
-        app,
-        list,
-        cache,
-        asks.into_values().collect(),
-        None,
-        |ask| {
+    let made =
+        complete_here_then_tell_the_server(app, list, cache, asks.into_values().collect(), |ask| {
             send_refusal(
                 tx,
                 rt,
@@ -19910,8 +19780,7 @@ fn move_back_or_again(
                     ask.subject
                 ),
             )
-        },
-    );
+        });
     back.done += made.len();
     for changed in &made {
         let asked = &changed.ask.asked;
@@ -22780,7 +22649,7 @@ fn move_or_copy_message(
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
-    use crate::application::choosing_messages::{too_many, what_is_being_done};
+    use crate::application::choosing_messages::{too_many, what_is_being_done, what_was_done};
     use crate::application::destinations::{
         Filing, FolderInAnAccount, Moving, anywhere, where_this_message_can_go,
     };
@@ -22979,60 +22848,64 @@ fn move_or_copy_message(
 
     // Within the account or across, a move or a copy completes here first
     // (#86; the crossing since 11-07.2, on Pratik's decision of
-    // 2026-09-19).
-    move_or_copy_here_first(
-        app,
-        list,
-        &cache,
-        AMoveAsked {
-            moving,
-            chosen,
-            into,
-            copying,
-            said_for_the_set: None,
-        },
-    );
+    // 2026-09-19), through the quiet do-half the runner shares (13-24).
+    // One sentence for a set, once something was made here: shown for a
+    // move, whose rows leaving are what is heard, and spoken for a copy,
+    // whose rows stay and so nothing else says it happened (#83).
+    let a_set = moving.len() > 1;
+    if let Some(outcome) = move_these(app, list, &cache, moving, into, copying)
+        && a_set
+    {
+        let said = what_was_done(&chosen, &outcome);
+        match copying {
+            true => send_status(tx, rt, &said),
+            false => send_shown(tx, rt, &said),
+        }
+    }
 }
 
-/// A move or a copy of a set, made here first (#86), within the account or
-/// to a folder on another account.
+/// Move or copy a set, made here first (#86), within the account or to a
+/// folder on another account, and say nothing of the command's own: Move's
+/// do-half (13-24), which Move to, Copy to and Report as Junk call, and
+/// 13-24.1's runner.
 ///
 /// The gate is met at the key, before anything changes: an account that may
 /// not change anything at its server is refused here in the gate's own
 /// words, so no row leaves that would come back a moment later; a crossing
 /// meets both accounts' gates. The one word and the intent line for a move
-/// are the arm's, said before this is reached, and nothing is spoken for a
-/// copy, whose line is the answer to the key. The asks are grouped by the
-/// account the server holds each message at, and the kind of each is the
-/// one difference between a move within the account and a crossing, so the
-/// arms cannot drift.
+/// are the caller's, said before this is reached. The asks are grouped by
+/// the account the server holds each message at, and the kind of each is
+/// the one difference between a move within the account and a crossing, so
+/// the arms cannot drift. Each message's own line, as its row leaves or its
+/// copy is made, is part of the move and is shown by the path that makes it
+/// (#83); the sentence for the set is the caller's to word.
 ///
 /// A message going to another account that the store cannot hold, over
 /// `LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES` or of a size nobody knows,
 /// cannot be replayed from here after a restart, so it goes the way every
-/// crossing went before this date, server first through the worker, and the
-/// line says why. A message the store would not record goes the same way.
-fn move_or_copy_here_first(
+/// crossing went before this date, server first through the worker, with
+/// its line saying why. A message the store would not record goes the same
+/// way.
+///
+/// Answers the outcome for the caller to word once something was made here,
+/// and nothing when nothing was: a set refused whole has had its refusal
+/// said, and what went server first says its own.
+fn move_these(
     app: AppHandles<'_>,
     list: &ListCtrl,
     cache: &Arc<MessageCache>,
-    asked: AMoveAsked,
-) {
+    moving: Vec<AMessageMoving>,
+    into: crate::application::destinations::Destination,
+    copying: bool,
+) -> Option<crate::application::choosing_messages::Outcome> {
     use crate::application::choosing_messages::{
-        Members, MessageRef, Outcome, what_the_selection_holds, what_was_done,
+        Members, MessageRef, Outcome, what_the_selection_holds,
     };
     use crate::application::mail_across_accounts::{Crossing, whether_it_crosses};
     use crate::data::message_cache::moves_in_flight::LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES;
     use crate::data::message_cache::moves_waiting::{
         AWaitingMove, TheOtherAccount, WhatAWaitingMoveDoes,
     };
-    let AMoveAsked {
-        moving,
-        chosen,
-        into,
-        copying,
-        said_for_the_set,
-    } = asked;
     let AppHandles { state, tx, rt } = app;
     let Some(destination_account) = lock_state(state)
         .accounts
@@ -23041,11 +22914,12 @@ fn move_or_copy_here_first(
         .cloned()
     else {
         lock_state(state).a_set_leaving = None;
-        return send_refusal(
+        send_refusal(
             tx,
             rt,
             "The account that folder is on is not set up on this computer.",
         );
+        return None;
     };
     let doing = if copying {
         "copy a message"
@@ -23058,11 +22932,12 @@ fn move_or_copy_here_first(
     for message in &moving {
         let Some(account) = message.account.as_ref() else {
             lock_state(state).a_set_leaving = None;
-            return send_refusal(
+            send_refusal(
                 tx,
                 rt,
                 "This message is not in an account this program knows about.",
             );
+            return None;
         };
         if !gated.iter().any(|known| known.id == account.id) {
             gated.push(account.clone());
@@ -23074,31 +22949,10 @@ fn move_or_copy_here_first(
             doing,
         ) {
             lock_state(state).a_set_leaving = None;
-            return send_refusal(tx, rt, &why.to_string());
+            send_refusal(tx, rt, &why.to_string());
+            return None;
         }
     }
-    let a_set = moving.len() > 1;
-    // A command with a sentence of its own has that one said in place of
-    // Move's, so one sentence is heard for the command (13-22).
-    let one_sentence = match &said_for_the_set {
-        Some(_) => None,
-        None => a_set.then(|| {
-            what_was_done(
-                &chosen,
-                &if copying {
-                    Outcome::CopiedTo {
-                        into: into.id.clone(),
-                        not_copied: 0,
-                    }
-                } else {
-                    Outcome::MovedTo {
-                        into: into.id.clone(),
-                        not_moved: 0,
-                    }
-                },
-            )
-        }),
-    };
     let asked_at = chrono::Utc::now().to_rfc3339();
     let mut by_account: std::collections::BTreeMap<String, AsksOfOneAccount> =
         std::collections::BTreeMap::new();
@@ -23158,22 +23012,6 @@ fn move_or_copy_here_first(
                 subject: message.subject,
             });
     }
-    // The crossings that cannot be held here: the whole crossing in front
-    // of the person, as every crossing was until this date, and the row
-    // leaves when the other account has taken it. Spoken, since the person
-    // will wait.
-    for message in &too_large_to_hold {
-        send_status(
-            tx,
-            rt,
-            &format!(
-                "{} {}: larger than 25 MB, so it goes now and the row leaves when {} has taken it.",
-                if copying { "Copying" } else { "Moving" },
-                message.subject,
-                destination_account.name
-            ),
-        );
-    }
     // Kept for Edit, Undo, which refuses a crossing in words rather than
     // leaving it out of the count (13-08).
     let mut went: Vec<crate::application::undoing::WhereItWas> = too_large_to_hold
@@ -23181,19 +23019,13 @@ fn move_or_copy_here_first(
         .filter_map(|message| message.as_it_was_crossing_to(&into.id))
         .collect();
     if !too_large_to_hold.is_empty() {
-        let rows: Vec<usize> = (0..too_large_to_hold.len()).collect();
-        let those = what_the_selection_holds(&rows, |row| {
-            too_large_to_hold.get(row).map(|message| {
-                Members::AMessage(MessageRef {
-                    row_id: message.row_id,
-                    uid: message.uid,
-                    subject: message.subject.clone(),
-                    read: false,
-                    starred: false,
-                })
-            })
-        });
-        spawn_folder_move(app, too_large_to_hold, those, into.clone(), copying);
+        send_server_first_what_cannot_be_held(
+            app,
+            too_large_to_hold,
+            &into,
+            copying,
+            &destination_account.name,
+        );
     }
     let into_for_the_worker = into.clone();
     let made = complete_here_then_tell_the_server(
@@ -23201,7 +23033,6 @@ fn move_or_copy_here_first(
         list,
         cache,
         by_account.into_values().collect(),
-        one_sentence,
         move |ask| {
             let one = MessageRef {
                 row_id: ask.asked.message_row_id,
@@ -23228,25 +23059,75 @@ fn move_or_copy_here_first(
             );
         },
     );
-    // Spoken rather than shown: nothing at the key said what came of the
-    // command, and this is the answer. Only once something was made here; a
-    // set refused whole has had its refusal said.
-    if let Some(said) = said_for_the_set
-        && !made.is_empty()
-    {
-        send_status(tx, rt, &said);
-    }
     // Remembered once, after every change was made here, so Edit, Undo
     // offers only what was really done (13-08).
     went.extend(made.iter().map(ChangedHere::as_it_was));
-    let moving = match copying {
-        true => crate::application::undoing::Moving::Copy { to: into.id },
-        false => crate::application::undoing::Moving::Move { to: into.id },
+    let (moving, outcome) = match copying {
+        true => (
+            crate::application::undoing::Moving::Copy {
+                to: into.id.clone(),
+            },
+            Outcome::CopiedTo {
+                into: into.id,
+                not_copied: 0,
+            },
+        ),
+        false => (
+            crate::application::undoing::Moving::Move {
+                to: into.id.clone(),
+            },
+            Outcome::MovedTo {
+                into: into.id,
+                not_moved: 0,
+            },
+        ),
     };
     remember_the_last_action(
         state,
         crate::application::undoing::LastAction::Moved { moving, went },
     );
+    (!made.is_empty()).then_some(outcome)
+}
+
+/// Send the messages the store cannot hold while they cross to another
+/// account the way every crossing went before 11-07.2: the whole crossing
+/// in front of the person, through the worker, the row leaving when the
+/// other account has taken it. Each message's line says so, spoken, since
+/// the person will wait; the line is the message's and part of the move,
+/// which is why it is said here and not by the quiet move that decided it.
+fn send_server_first_what_cannot_be_held(
+    app: AppHandles<'_>,
+    messages: Vec<AMessageMoving>,
+    into: &crate::application::destinations::Destination,
+    copying: bool,
+    going_to: &str,
+) {
+    use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
+    let AppHandles { tx, rt, .. } = app;
+    for message in &messages {
+        send_status(
+            tx,
+            rt,
+            &format!(
+                "{} {}: larger than 25 MB, so it goes now and the row leaves when {going_to} has taken it.",
+                if copying { "Copying" } else { "Moving" },
+                message.subject,
+            ),
+        );
+    }
+    let rows: Vec<usize> = (0..messages.len()).collect();
+    let those = what_the_selection_holds(&rows, |row| {
+        messages.get(row).map(|message| {
+            Members::AMessage(MessageRef {
+                row_id: message.row_id,
+                uid: message.uid,
+                subject: message.subject.clone(),
+                read: false,
+                starred: false,
+            })
+        })
+    });
+    spawn_folder_move(app, messages, those, into.clone(), copying);
 }
 
 /// One message a move or a copy is taking, as the worker needs it.
@@ -23508,14 +23389,14 @@ fn spawn_junk_marking(app: AppHandles<'_>, reports: Vec<AJunkReport>) {
 }
 
 /// Move one account's reported messages into its junk folder, through Move's
-/// own path, with the report's sentence said in place of Move's.
+/// own quiet path, and say the report's sentence, which the worker wrote
+/// once the mark was settled, in place of any of Move's.
 fn move_what_was_reported(
     app: AppHandles<'_>,
     list: &ListCtrl,
     cache: &Arc<MessageCache>,
     ready: &crate::application::reporting_junk::ReadyToMove,
 ) {
-    use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
     let AppHandles { state, tx, rt } = app;
     let Some(account) = lock_state(state)
         .accounts
@@ -23541,35 +23422,19 @@ fn move_what_was_reported(
             size_bytes: message.size_bytes,
         })
         .collect();
-    let chosen = what_the_selection_holds(&(0..ready.messages.len()).collect::<Vec<_>>(), |at| {
-        ready.messages.get(at).map(|message| {
-            Members::AMessage(MessageRef {
-                row_id: message.row_id,
-                uid: message.uid,
-                subject: message.subject.clone(),
-                read: false,
-                starred: false,
-            })
-        })
-    });
+    let junk = crate::application::destinations::Destination {
+        name: ready.junk_name.clone(),
+        id: ready.junk_path.clone(),
+        account_id: ready.account_id.clone(),
+        depth: 0,
+    };
     remember_the_set_leaving(state, &moving);
-    move_or_copy_here_first(
-        app,
-        list,
-        cache,
-        AMoveAsked {
-            moving,
-            chosen,
-            into: crate::application::destinations::Destination {
-                name: ready.junk_name.clone(),
-                id: ready.junk_path.clone(),
-                account_id: ready.account_id.clone(),
-                depth: 0,
-            },
-            copying: false,
-            said_for_the_set: Some(ready.sentence.clone()),
-        },
-    );
+    // Spoken rather than shown: nothing at the key said what came of the
+    // command, and this is the answer. Only once something was made here; a
+    // set refused whole has had its refusal said.
+    if move_these(app, list, cache, moving, junk, false).is_some() {
+        send_status(tx, rt, &ready.sentence);
+    }
 }
 
 /// The set's rows on screen, remembered so the cursor lands once, after the
@@ -23585,18 +23450,6 @@ fn remember_the_set_leaving(state: &Arc<StdMutex<WxUIState>>, moving: &[AMessage
                 .map(|row| (message.row_id, row))
         }))
     });
-}
-
-/// What the Move to or Copy to key asked for, once the folder is chosen.
-struct AMoveAsked {
-    moving: Vec<AMessageMoving>,
-    chosen: crate::application::choosing_messages::Chosen,
-    into: crate::application::destinations::Destination,
-    copying: bool,
-    /// The sentence a command that moves through here says in place of
-    /// Move's, spoken once the change is made here: a junk report's, which
-    /// says what the provider was told (13-22). `None` for Move and Copy.
-    said_for_the_set: Option<String>,
 }
 
 /// One change to make here first: what to do with which message, and the
@@ -23625,8 +23478,9 @@ struct AnAskMadeHere {
 /// was said at the key, and the row the cursor lands on is the confirmation.
 /// A copy's row stays, so nothing else says it happened, and 11-06.1's rule
 /// for a row that stayed holds: its line is spoken, at Normal, as the
-/// answer to the key. Over a set the lines are shown one by one and the one
-/// sentence is spoken for a copy and shown for a move, for the same reason.
+/// answer to the key. Over a set the lines are shown one by one, and the one
+/// sentence for the set is the command's, worded from what its do-half
+/// answered (13-24).
 ///
 /// # When the server is asked first after all
 ///
@@ -23643,14 +23497,12 @@ fn complete_here_then_tell_the_server(
     list: &ListCtrl,
     cache: &Arc<MessageCache>,
     asks: Vec<AsksOfOneAccount>,
-    one_sentence_for_the_set: Option<String>,
     server_first: impl Fn(AnAskMadeHere),
 ) -> Vec<ChangedHere> {
     use crate::application::moves_waiting::{NotMadeHere, what_happens_here};
     let AppHandles { state, tx, rt } = app;
     let a_set = asks.iter().map(|of_one| of_one.asks.len()).sum::<usize>() > 1;
     let mut changed: Vec<ChangedHere> = Vec::new();
-    let mut a_copy = false;
     // The accounts whose sessions the push may need: each account told, and
     // for a crossing the account the message is going to.
     let mut to_tell: Vec<Account> = Vec::new();
@@ -23661,7 +23513,6 @@ fn complete_here_then_tell_the_server(
                 Ok(made) => {
                     made_here_for_this_account += 1;
                     if made.kept.what.is_a_copy() {
-                        a_copy = true;
                         if a_set {
                             send_shown(tx, rt, &made.shown);
                         } else {
@@ -23693,13 +23544,6 @@ fn complete_here_then_tell_the_server(
     }
     if changed.is_empty() {
         return changed;
-    }
-    if let Some(sentence) = one_sentence_for_the_set {
-        if a_copy {
-            send_status(tx, rt, &sentence);
-        } else {
-            send_shown(tx, rt, &sentence);
-        }
     }
 
     // The push: once per account told, in the background, on the session
@@ -24286,6 +24130,133 @@ fn spawn_subscription_writes(app: AppHandles<'_>, changed: Vec<(String, bool)>) 
             )));
         }
     });
+}
+
+/// Delete each chosen message, or delete it outright, and say nothing of the
+/// command's own: Delete's do-half (13-24), which the Delete arm calls after
+/// its one word, and 13-24.1's runner.
+///
+/// Every message goes down the route a single message always went down:
+/// cancel it if it is queued, delete it here if it lives here, and otherwise
+/// decide here where it goes, make the change here first and tell the server
+/// in the background (#86), one push per account. The two refusals, no trash
+/// recognised and no folders known yet, are said before anything changes, in
+/// the sentences `destinations` owns. Remembered for Edit, Undo once every
+/// delete is made here.
+///
+/// Answers how many of the chosen messages it reached: cancelled, deleted
+/// on this computer, or made here to be told to the server.
+fn delete_these(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    list: &ListCtrl,
+    chosen: &crate::application::choosing_messages::Chosen,
+    asked: Deleting,
+) -> usize {
+    use crate::data::message_cache::moves_waiting::AWaitingMove;
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache_for_deleting) = cache.clone() else {
+        send_refusal(tx, rt, "The mail on this computer is not open.");
+        return 0;
+    };
+    let asked_at = chrono::Utc::now().to_rfc3339();
+    let mut deleting_here_first: std::collections::BTreeMap<String, (Account, Vec<AnAskMadeHere>)> =
+        std::collections::BTreeMap::new();
+    let mut reached = 0;
+    // Each message as it was, for Edit, Undo (13-08).
+    let mut went: Vec<crate::application::undoing::WhereItWas> = Vec::new();
+    for message in &chosen.messages {
+        // In the outbox, delete means cancel the send. There is no server
+        // copy to remove: the message has not been anywhere. Undo Send is its
+        // undo, so it is not remembered here.
+        if cancel_if_queued(app, cache, message.row_id) {
+            reached += 1;
+            continue;
+        }
+        // A message on this computer. POP mail is all of it, and the route
+        // below needs a session with a server this account has never had.
+        let was_in = cache_for_deleting
+            .folder_path_for_message(message.row_id)
+            .ok()
+            .flatten();
+        match delete_if_local(app, cache, message.row_id, &message.subject, asked) {
+            DeletedHere::NotHere => {}
+            DeletedHere::Stayed => continue,
+            DeletedHere::Left { account_id } => {
+                reached += 1;
+                went.extend(
+                    was_in.map(|folder_path| crate::application::undoing::WhereItWas {
+                        row_id: message.row_id,
+                        account_id,
+                        folder_path,
+                        uid: message.uid,
+                        subject: message.subject.clone(),
+                        sent_to: None,
+                        went_by: crate::application::undoing::WentBy::ThisComputerOnly,
+                        copy_row: None,
+                    }),
+                );
+                continue;
+            }
+        }
+        // A message on a server: decided here where it goes, made here
+        // first, and the server told in the background (#86, 2026-09-19).
+        match the_account_a_row_is_in(state, message.row_id).and_then(|account| {
+            where_a_delete_goes_here(&cache_for_deleting, &account, message.row_id, asked)
+                .map(|(what, from)| (account, what, from))
+        }) {
+            Ok((account, what, from)) => {
+                let account_id = account.id.clone();
+                deleting_here_first
+                    .entry(account_id.clone())
+                    .or_insert_with(|| (account, Vec::new()))
+                    .1
+                    .push(AnAskMadeHere {
+                        asked: AWaitingMove {
+                            message_row_id: message.row_id,
+                            account_id,
+                            from_folder_path: from,
+                            uid: message.uid,
+                            what,
+                            asked_at: asked_at.clone(),
+                        },
+                        subject: message.subject.clone(),
+                    });
+            }
+            Err(why) => send_refusal(tx, rt, &why),
+        }
+    }
+    let made = complete_here_then_tell_the_server(
+        app,
+        list,
+        &cache_for_deleting,
+        deleting_here_first
+            .into_values()
+            .map(|(account, asks)| AsksOfOneAccount { account, asks })
+            .collect(),
+        move |ask| {
+            spawn_server_change(
+                app,
+                ask.asked.message_row_id,
+                ask.asked.uid,
+                ask.subject,
+                ServerChange::Deleted(asked),
+            )
+        },
+    );
+    // Remembered once, after every delete was made here, so Undo offers
+    // only what was done.
+    went.extend(made.iter().map(ChangedHere::as_it_was));
+    reached += made.len();
+    let moving = match asked {
+        Deleting::ToTrash => crate::application::undoing::Moving::Delete,
+        Deleting::Outright => crate::application::undoing::Moving::DeletePermanently,
+    };
+    remember_the_last_action(
+        state,
+        crate::application::undoing::LastAction::Moved { moving, went },
+    );
+    reached
 }
 
 /// Take a message out of the send queue, if that is what is being deleted.
