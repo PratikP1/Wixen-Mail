@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 452 records have arrived since and have not been through it.
+# 454 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2457,6 +2457,24 @@ red = [
     "presentation::time_elsewhere::tests::test_a_meeting_set_on_another_clock_says_that_clock_once",
     "presentation::time_elsewhere::tests::test_a_zone_nothing_here_can_place_is_said_to_be_one",
     "presentation::time_elsewhere::tests::test_a_zone_windows_names_is_said_by_its_windows_name",
+    # Added 2026-09-28 by 13-29, found by --remeasure: 13-21.2 put the event
+    # editor, the calendar list and the due window on this computer's clock in
+    # a file this record had never named, and every one of them reads a stored
+    # moment with a T. The record had been short since then and nothing said so.
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_alerts_at_its_lead_before_the_instant_it_starts",
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_typed_across_midnight_moves_its_date_on_its_own_clock",
+    "presentation::event_times::tests::test_a_meeting_written_in_a_windows_zone_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_a_time_typed_here_goes_back_on_the_events_own_clock",
+    "presentation::event_times::tests::test_a_time_typed_in_the_hour_the_clocks_skip_lands_on_the_first_quarter_hour_after_it",
+    "presentation::event_times::tests::test_an_outlook_meeting_alerts_at_its_lead_before_the_instant_it_starts",
+    "presentation::event_times::tests::test_an_outlook_meeting_fills_the_editor_on_this_computers_clock",
+    "presentation::event_times::tests::test_an_outlook_meeting_stored_in_universal_time_is_read_as_that_instant",
+    "presentation::event_times::tests::test_space_says_this_computers_hour_and_no_other_clock",
+    "presentation::event_times::tests::test_the_calendar_window_lists_an_event_at_this_computers_hour",
+    "presentation::event_times::tests::test_the_full_reading_says_the_zone_a_meeting_was_written_in_once",
+    "presentation::event_times::tests::test_the_header_says_the_day_a_meeting_starts_on_this_computer",
+    "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
@@ -2467,9 +2485,10 @@ tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
-    { file = "src/application/when_people_are_free.rs", tests = 47 },
+    { file = "src/application/when_people_are_free.rs", tests = 49 },
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/date_display.rs", tests = 47 },
+    { file = "src/presentation/event_times.rs", tests = 23 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "src/presentation/time_elsewhere.rs", tests = 9 },
@@ -33956,4 +33975,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/finding_people.rs", tests = 7 },
+]
+
+# Google's `notFound` read as a calendar that answered, so the empty list of
+# busy time Google sends beside it becomes a guest free all fortnight
+# (T-13-29-01). Written 2026-09-28 by 13-29.
+[[guard]]
+name = "a guest google cannot find is not shared with you and never free"
+file = "src/service/free_busy.rs"
+before = '''    if !calendar.errors.is_empty() {'''
+after = '''    if calendar.errors.iter().any(|refusal| refusal.reason != GOOGLE_CANNOT_FIND_IT) {'''
+red = [
+    "service::free_busy::tests::test_a_guest_google_cannot_find_is_not_shared_with_you_and_never_free",
+    "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
+]
+tests_last_seen = [
+    { file = "src/service/free_busy.rs", tests = 44 },
+]
+
+# Google's free/busy question sent with no sign-in on it, so every answer is a
+# refusal and everybody comes back unknown. Written 2026-09-28 by 13-29.
+[[guard]]
+name = "google is asked when people are free with the account's own sign-in"
+file = "src/service/free_busy.rs"
+before = '''            .collect::<Vec<_>>(),
+    });
+    let answer = outward
+        .asking_when_people_are_free(&url)?
+        .bearer_auth(token)'''
+after = '''            .collect::<Vec<_>>(),
+    });
+    let answer = outward
+        .asking_when_people_are_free(&url)?'''
+red = [
+    "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
+]
+tests_last_seen = [
+    { file = "src/service/free_busy.rs", tests = 44 },
 ]

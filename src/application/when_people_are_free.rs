@@ -114,6 +114,10 @@ pub enum WhyNot {
     /// A reply arrived and this could not read it.
     TheReplyCouldNotBeRead,
     /// The service could not find this person's calendar for this account.
+    ///
+    /// What Google says about a guest outside the organisation whose calendar
+    /// nobody has shared. Asking again will not change it, which is what tells
+    /// it apart from a server that would not say.
     NotSharedWithYou,
 }
 
@@ -122,10 +126,11 @@ pub enum WhyNot {
 /// Written out so grouping people by reason cannot quietly drop one: a reason
 /// left out of this list is a person left out of the answer, which is the
 /// failure this whole module is careful about.
-const EVERY_REASON_A_CALENDAR_IS_NOT_KNOWN: [WhyNot; 3] = [
+const EVERY_REASON_A_CALENDAR_IS_NOT_KNOWN: [WhyNot; 4] = [
     WhyNot::ThereIsNowhereToAsk,
     WhyNot::TheServerWouldNotSay,
     WhyNot::TheReplyCouldNotBeRead,
+    WhyNot::NotSharedWithYou,
 ];
 
 impl WhyNot {
@@ -135,7 +140,7 @@ impl WhyNot {
             WhyNot::ThereIsNowhereToAsk => "there is no calendar to ask",
             WhyNot::TheServerWouldNotSay => "the server would not say",
             WhyNot::TheReplyCouldNotBeRead => "the reply could not be read",
-            WhyNot::NotSharedWithYou => "",
+            WhyNot::NotSharedWithYou => "their calendar is not shared with you",
         }
     }
 }

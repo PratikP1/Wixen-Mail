@@ -5,13 +5,14 @@
 //! Values go out to a server and [`Invited`] comes back, which is exactly what
 //! that module takes.
 //!
-//! Two kinds of server are asked. A calendar server is asked the way the
+//! Three kinds of server are asked. A calendar server is asked the way the
 //! standard says: a scheduling request posted to the account's own outbox,
 //! naming everybody at once, which is one round trip for eight people rather
-//! than eight. Microsoft's service is asked at the endpoint it has for this
-//! question, which also takes everybody at once. Both are asked at the same
-//! time, and each is given a time limit of its own, so one server that has
-//! fallen over costs its own people's answers and nobody else's.
+//! than eight. Microsoft's service and Google's are each asked at the endpoint
+//! they have for this question, which also takes everybody at once. All are
+//! asked at the same time, and each is given a time limit of its own, so one
+//! server that has fallen over costs its own people's answers and nobody
+//! else's.
 //!
 //! Nothing here reads a calendar document itself. A reply's `VFREEBUSY` goes
 //! straight to `when_people_are_free::what_their_calendar_said`, so the two
@@ -31,7 +32,8 @@
 //! Asking has a cost to other people, so it is worth writing down what it
 //! discloses and to whom.
 //!
-//! The account's own calendar server learns that this person is thinking about
+//! The account's own calendar server, or Microsoft or Google where one of them
+//! holds the account's calendar, learns that this person is thinking about
 //! a meeting with these named people, in this window. The whole guest list
 //! travels in one document, so the server sees who else was asked about, and
 //! where it passes the question on to another organisation's server, that
@@ -625,9 +627,112 @@ const MICROSOFTS_CLOCK_FACE: &str = "%Y-%m-%dT%H:%M:%S%.f";
 
 // ── Reading what Google answered ────────────────────────────────────────────
 
+/// A whole reply from Google.
+///
+/// `calendars` is required: a document that is JSON and names no calendars is
+/// not an answer to this question, and read as one naming nobody it would put
+/// everybody's time down to the wrong reason.
+#[derive(serde::Deserialize)]
+struct WhatGoogleSaid {
+    calendars: HashMap<String, OneGoogleCalendar>,
+}
+
+/// One calendar in a reply from Google.
+#[derive(serde::Deserialize)]
+struct OneGoogleCalendar {
+    #[serde(default)]
+    busy: Vec<OneGoogleStretch>,
+    /// Present when Google would not answer about this calendar.
+    #[serde(default)]
+    errors: Vec<OneGoogleRefusal>,
+}
+
+/// One busy stretch in a reply from Google, as the instants it writes.
+#[derive(serde::Deserialize)]
+struct OneGoogleStretch {
+    #[serde(default)]
+    start: String,
+    #[serde(default)]
+    end: String,
+}
+
+/// Why Google would not answer about one calendar.
+#[derive(serde::Deserialize)]
+struct OneGoogleRefusal {
+    #[serde(default)]
+    reason: String,
+}
+
+/// Google's word for a calendar it cannot find for this account.
+///
+/// Said about a guest outside the organisation whose calendar is not shared,
+/// which is the commonest guest a Google account asks about.
+const GOOGLE_CANNOT_FIND_IT: &str = "notFound";
+
 /// What a reply from Google said about each person asked about.
-fn what_google_said(_reply: &str, _about: Span) -> Result<WhatTheySaid> {
-    Ok(HashMap::new())
+fn what_google_said(reply: &str, about: Span) -> Result<WhatTheySaid> {
+    let read: WhatGoogleSaid = serde_json::from_str(reply).map_err(|e| {
+        Error::Protocol(format!(
+            "Google's answer about when people are free could not be read: {e}"
+        ))
+    })?;
+    Ok(read
+        .calendars
+        .into_iter()
+        .map(|(id, calendar)| {
+            (
+                the_same_person(&id),
+                what_this_google_calendar_said(&calendar, about),
+            )
+        })
+        .collect())
+}
+
+/// What one calendar in Google's reply said.
+///
+/// A refusal wins over a list of busy time, because Google sends an empty list
+/// beside a refusal and that empty list is not an empty diary.
+fn what_this_google_calendar_said(calendar: &OneGoogleCalendar, about: Span) -> TheirCalendar {
+    if !calendar.errors.is_empty() {
+        let not_found = calendar
+            .errors
+            .iter()
+            .any(|refusal| refusal.reason == GOOGLE_CANNOT_FIND_IT);
+        return TheirCalendar::NotKnown(match not_found {
+            true => WhyNot::NotSharedWithYou,
+            false => WhyNot::TheServerWouldNotSay,
+        });
+    }
+    let stretches: Option<Vec<Stretch>> = calendar.busy.iter().map(a_google_stretch).collect();
+    match stretches {
+        // Google answers for exactly the window it was asked about.
+        Some(stretches) => TheirCalendar::Answered {
+            covering: about,
+            stretches,
+        },
+        // One stretch nobody here can read makes the whole diary unknown, for
+        // the reason Microsoft's reader gives.
+        None => TheirCalendar::NotKnown(WhyNot::TheReplyCouldNotBeRead),
+    }
+}
+
+/// One busy stretch, read out of Google's shape.
+///
+/// Google's free/busy answer says busy and nothing finer, so every stretch in it
+/// is busy.
+fn a_google_stretch(written: &OneGoogleStretch) -> Option<Stretch> {
+    let instant = |at: &str| {
+        DateTime::parse_from_rfc3339(at.trim())
+            .ok()
+            .map(|fixed| fixed.with_timezone(&Utc))
+    };
+    Some(Stretch {
+        span: Span {
+            from: instant(&written.start)?,
+            until: instant(&written.end)?,
+        },
+        how_busy: HowBusy::Busy,
+    })
 }
 
 // ── What a failure means for one person's diary ─────────────────────────────
@@ -831,7 +936,9 @@ async fn what_this_server_said(
         WhereToAsk::Microsoft { base, token } => {
             ask_microsoft(outward, base, token, &addresses, about, within).await
         }
-        WhereToAsk::Google { .. } => what_google_said("", about),
+        WhereToAsk::Google { base, token } => {
+            ask_google(outward, base, token, &addresses, about, within).await
+        }
     };
     if let Err(failure) = &answer {
         // The reason and nothing else. Who was asked about is somebody's
@@ -977,6 +1084,47 @@ async fn ask_microsoft(
     let status = answer.status().as_u16();
     let body = answer.text().await.map_err(the_answer_stopped_short)?;
     what_microsoft_said(&the_answer_read(status, body)?, about)
+}
+
+/// Ask Google about everybody at once.
+///
+/// One request, at the endpoint Google's calendar service has for this exact
+/// question, for the reason [`ask_microsoft`] gives. Each address goes bare,
+/// because Google names a calendar by its address and knows no `mailto:`.
+async fn ask_google(
+    outward: &crate::service::outward::Outward,
+    base: &str,
+    token: &str,
+    addresses: &[String],
+    about: Span,
+    within: std::time::Duration,
+) -> Result<WhatTheySaid> {
+    let url = format!("{}/freeBusy", base.trim_end_matches('/'));
+    let asking = serde_json::json!({
+        "timeMin": as_google_writes_it(about.from),
+        "timeMax": as_google_writes_it(about.until),
+        "items": addresses
+            .iter()
+            .map(|address| serde_json::json!({ "id": the_same_person(address) }))
+            .collect::<Vec<_>>(),
+    });
+    let answer = outward
+        .asking_when_people_are_free(&url)?
+        .bearer_auth(token)
+        .timeout(within)
+        .json(&asking)
+        .send()
+        .await
+        .map_err(could_not_be_reached)?;
+    let status = answer.status().as_u16();
+    let body = answer.text().await.map_err(the_answer_stopped_short)?;
+    what_google_said(&the_answer_read(status, body)?, about)
+}
+
+/// One end of the window, in the shape Google wants it: an instant in
+/// universal time, to the second.
+fn as_google_writes_it(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 /// One end of the window, in the shape Microsoft wants it.
