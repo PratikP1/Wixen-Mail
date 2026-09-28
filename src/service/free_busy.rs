@@ -416,7 +416,10 @@ struct TheOutbox {
 /// put themselves in the middle, would be handed both. Refused, and the account
 /// is told the server does not offer this rather than being quietly pointed
 /// somewhere it never agreed to.
-fn the_same_server(address: &str, server: &str) -> bool {
+///
+/// Public because the same question decides when two calendars are one server
+/// to ask rather than two: `asking_when_free` asks each server once.
+pub fn the_same_server(address: &str, server: &str) -> bool {
     let (Ok(address), Ok(server)) = (url::Url::parse(address), url::Url::parse(server)) else {
         return false;
     };
@@ -883,18 +886,79 @@ fn everybody_in<'a>(
 
 /// One answer per person, however many places were asked about them.
 ///
-/// Stub for the red half: every place's answer as it came.
+/// People are told apart by address, here where the address is still known:
+/// two guests who share a name are two people, and merged on the name one of
+/// them would vanish from every sentence and take the other's busy week. In the
+/// order each person was first asked about, which is the order they were
+/// invited in.
 fn one_answer_each<'a>(
     heard: impl IntoIterator<Item = (&'a AskAbout, TheirCalendar)>,
 ) -> Vec<Invited> {
-    heard
+    let mut people: Vec<(String, &AskAbout, Vec<TheirCalendar>)> = Vec::new();
+    for (person, said) in heard {
+        let address = the_same_person(&person.address);
+        match people.iter_mut().find(|(known, _, _)| *known == address) {
+            Some((_, _, answers)) => answers.push(said),
+            None => people.push((address, person, vec![said])),
+        }
+    }
+    people
         .into_iter()
-        .map(|(person, calendar)| Invited {
+        .map(|(_, person, answers)| Invited {
             called: person.called.clone(),
             zone: person.zone,
-            calendar,
+            calendar: what_every_place_said(answers),
         })
         .collect()
+}
+
+/// One person's diary, out of what every place said about it.
+///
+/// Answered wherever any place answered, with every place's busy time kept:
+/// one place's quiet week never replaces another's meeting, because either
+/// alone would offer a time the other is busy at. Unknown only where no place
+/// answered, with the first place's reason, so the sentence can still say why.
+fn what_every_place_said(answers: Vec<TheirCalendar>) -> TheirCalendar {
+    answers
+        .into_iter()
+        .reduce(|kept, said| match (kept, said) {
+            (
+                TheirCalendar::Answered {
+                    covering,
+                    mut stretches,
+                },
+                TheirCalendar::Answered {
+                    covering: also_covering,
+                    stretches: more,
+                },
+            ) => {
+                stretches.extend(more);
+                TheirCalendar::Answered {
+                    covering: what_both_cover(covering, also_covering),
+                    stretches,
+                }
+            }
+            (TheirCalendar::NotKnown(_), answered @ TheirCalendar::Answered { .. }) => answered,
+            (kept, _) => kept,
+        })
+        // Nobody is asked about at no place at all; were they, never free.
+        .unwrap_or(TheirCalendar::NotKnown(WhyNot::ThereIsNowhereToAsk))
+}
+
+/// How much of the window two answers cover between them.
+///
+/// Joined where the two meet. Where they do not, the longer, because the gap
+/// between them is time nobody spoke about and a covering stretched across it
+/// would read that gap as free.
+fn what_both_cover(one: Span, other: Span) -> Span {
+    match one.from <= other.until && other.from <= one.until {
+        true => Span {
+            from: one.from.min(other.from),
+            until: one.until.max(other.until),
+        },
+        false if one.until - one.from >= other.until - other.from => one,
+        false => other,
+    }
 }
 
 /// What one person's diary came back as.

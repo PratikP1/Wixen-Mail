@@ -26,7 +26,7 @@ use crate::application::when_people_are_free::{
 };
 use crate::application::who_is_coming::Coming;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry};
-use crate::service::free_busy::{AskAbout, AskHere, WhereToAsk};
+use crate::service::free_busy::{AskAbout, AskHere, WhereToAsk, the_same_server};
 
 /// How far ahead the search looks when somebody asks.
 ///
@@ -157,7 +157,20 @@ fn how_long_it_lasts(event: &TheEventSoFar) -> chrono::Duration {
     (event.ends - event.starts).max(chrono::Duration::minutes(AT_LEAST_THIS_LONG))
 }
 
-/// Where one account's free/busy questions go.
+/// The first of [`every_place_to_ask`], until the event form asks them all.
+pub fn where_to_ask(
+    calendars: &[CalendarContainer],
+    sign_in: impl Fn(&str) -> Option<(String, String)>,
+    microsoft: Option<(&str, &str)>,
+    google: Option<(&str, &str)>,
+) -> WhereToAsk {
+    every_place_to_ask(calendars, sign_in, microsoft, google)
+        .into_iter()
+        .next()
+        .unwrap_or(WhereToAsk::Nowhere)
+}
+
+/// Every place one account's free/busy questions go.
 ///
 /// `sign_in` looks a calendar server's stored name and password up by calendar
 /// id; `microsoft` and `google` are where each service is and this account's
@@ -165,49 +178,35 @@ fn how_long_it_lasts(event: &TheEventSoFar) -> chrono::Duration {
 /// machine's credential store and the others have to be refreshed over the
 /// network, and a test can reach none of them.
 ///
-/// A calendar server first, because an account that has one has been pointed at
-/// it deliberately, then Microsoft, then Google. Google only for an account
-/// that keeps a calendar there, because asking Google about a guest list tells
-/// Google who is meeting whom. Nowhere is a real answer and not a failure: a
-/// mail account with no calendar on it has nobody to ask, and everybody on it
-/// comes back unknown rather than free.
-pub fn where_to_ask(
-    calendars: &[CalendarContainer],
-    sign_in: impl Fn(&str) -> Option<(String, String)>,
-    microsoft: Option<(&str, &str)>,
-    google: Option<(&str, &str)>,
-) -> WhereToAsk {
-    if let Some(asking) = the_first_calendar_server_signed_in_to(calendars, sign_in) {
-        return asking;
-    }
-    if let Some((base, token)) = microsoft {
-        return WhereToAsk::Microsoft {
-            base: base.to_string(),
-            token: token.to_string(),
-        };
-    }
-    match google.filter(|_| holds_a_google_calendar(calendars)) {
-        Some((base, token)) => WhereToAsk::Google {
-            base: base.to_string(),
-            token: token.to_string(),
-        },
-        None => WhereToAsk::Nowhere,
-    }
-}
-
-/// Every place one account's free/busy questions go.
-///
-/// Stub for the red half: the one place `where_to_ask` picks.
+/// Every calendar server the account signed in to, then Microsoft, then Google,
+/// all of them asked at once, so a place that is slow or refuses costs only
+/// what it would have said. Google only for an account that keeps a calendar
+/// there, because asking Google about a guest list tells Google who is meeting
+/// whom. No place at all is a real answer and not a failure: a mail account
+/// with no calendar on it has nobody to ask, and
+/// [`questions_for_every_place`] then asks nowhere, so everybody on it comes
+/// back unknown rather than free.
 pub fn every_place_to_ask(
     calendars: &[CalendarContainer],
     sign_in: impl Fn(&str) -> Option<(String, String)>,
     microsoft: Option<(&str, &str)>,
     google: Option<(&str, &str)>,
 ) -> Vec<WhereToAsk> {
-    match where_to_ask(calendars, sign_in, microsoft, google) {
-        WhereToAsk::Nowhere => Vec::new(),
-        somewhere => vec![somewhere],
-    }
+    let microsoft = microsoft.map(|(base, token)| WhereToAsk::Microsoft {
+        base: base.to_string(),
+        token: token.to_string(),
+    });
+    let google = google
+        .filter(|_| holds_a_google_calendar(calendars))
+        .map(|(base, token)| WhereToAsk::Google {
+            base: base.to_string(),
+            token: token.to_string(),
+        });
+    every_calendar_server_signed_in_to(calendars, sign_in)
+        .into_iter()
+        .chain(microsoft)
+        .chain(google)
+        .collect()
 }
 
 /// Whether any of these calendars is a Google account's calendar.
@@ -220,23 +219,27 @@ pub fn holds_a_google_calendar(calendars: &[CalendarContainer]) -> bool {
     })
 }
 
-/// The first calendar server among these this account can sign in to.
+/// Every calendar server among these this account can sign in to, each once.
 ///
-/// A calendar with no sign-in stored is passed over rather than being the
-/// answer, because half a sign-in is not a sign-in: asked with one the question
-/// comes back refused, which is the same answer arrived at through a round trip
-/// and somebody's waiting.
-fn the_first_calendar_server_signed_in_to(
+/// A calendar with no sign-in stored is passed over rather than being asked,
+/// because half a sign-in is not a sign-in: asked with one the question comes
+/// back refused, which is the same answer arrived at through a round trip and
+/// somebody's waiting.
+///
+/// Two calendars on one server under one sign-in are asked once. The question
+/// goes to the account's outbox rather than to a calendar, so both would post
+/// the same guest list to the same place for the same answer.
+fn every_calendar_server_signed_in_to(
     calendars: &[CalendarContainer],
     sign_in: impl Fn(&str) -> Option<(String, String)>,
-) -> Option<WhereToAsk> {
+) -> Vec<WhereToAsk> {
     calendars
         .iter()
         .filter(|calendar| {
             calendar.source_provider.as_deref()
                 == Some(crate::application::calendar_source::ON_A_SERVER)
         })
-        .find_map(|calendar| {
+        .filter_map(|calendar| {
             let server = calendar
                 .caldav_url
                 .as_deref()
@@ -249,6 +252,32 @@ fn the_first_calendar_server_signed_in_to(
                 password,
             })
         })
+        .fold(Vec::new(), |mut servers, found| {
+            if !servers
+                .iter()
+                .any(|kept| the_same_account_asked_twice(kept, &found))
+            {
+                servers.push(found);
+            }
+            servers
+        })
+}
+
+/// Whether two calendar servers are one sign-in on one server.
+fn the_same_account_asked_twice(one: &WhereToAsk, other: &WhereToAsk) -> bool {
+    match (one, other) {
+        (
+            WhereToAsk::CalendarServer {
+                server, user_name, ..
+            },
+            WhereToAsk::CalendarServer {
+                server: another_server,
+                user_name: another_name,
+                ..
+            },
+        ) => user_name == another_name && the_same_server(server, another_server),
+        _ => false,
+    }
 }
 
 /// The guest list, as people to ask a server about.
@@ -278,12 +307,27 @@ pub fn one_question(server: WhereToAsk, people: Vec<AskAbout>) -> Vec<AskHere> {
 
 /// Every place to ask, and everybody to ask each of them about.
 ///
-/// Stub for the red half: the first place only.
+/// Everybody goes to every place, because nothing here knows whose diary is
+/// where: a colleague may be at the calendar server and a friend at Google, and
+/// `free_busy` builds each person's one answer out of whatever every place
+/// said. With no place at all, everybody is asked about nowhere, which brings
+/// them back as people nobody could check rather than dropping them unheard.
+/// Nobody to ask about is no question anywhere.
 pub fn questions_for_every_place(places: Vec<WhereToAsk>, people: Vec<AskAbout>) -> Vec<AskHere> {
-    one_question(
-        places.into_iter().next().unwrap_or(WhereToAsk::Nowhere),
-        people,
-    )
+    if people.is_empty() {
+        return Vec::new();
+    }
+    let places = match places.is_empty() {
+        true => vec![WhereToAsk::Nowhere],
+        false => places,
+    };
+    places
+        .into_iter()
+        .map(|server| AskHere {
+            server,
+            people: people.clone(),
+        })
+        .collect()
 }
 
 /// Where the person arranging the meeting is standing.

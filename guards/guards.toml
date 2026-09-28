@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 457 records have arrived since and have not been through it.
+# 459 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33990,7 +33990,7 @@ red = [
     "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 44 },
+    { file = "src/service/free_busy.rs", tests = 52 },
 ]
 
 # Google's free/busy question sent with no sign-in on it, so every answer is a
@@ -34011,37 +34011,43 @@ red = [
     "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 44 },
+    { file = "src/service/free_busy.rs", tests = 52 },
 ]
 
 # An account whose calendar is at Google passed over, so every guest on it
 # comes back unknown although Google could have said. Written 2026-09-28 by
-# 13-29.
+# 13-29. Rewritten 2026-09-28 by 13-30 onto every_place_to_ask, which replaced
+# where_to_ask's single answer.
 [[guard]]
 name = "an account whose calendar is at google asks google"
 file = "src/application/asking_when_free.rs"
-before = '''    match google.filter(|_| holds_a_google_calendar(calendars)) {'''
-after = '''    match google.filter(|_| false) {'''
+before = '''        .filter(|_| holds_a_google_calendar(calendars))'''
+after = '''        .filter(|_| false)'''
 red = [
     "application::asking_when_free::tests::test_an_account_whose_calendar_is_at_google_asks_google",
+    "application::asking_when_free::tests::test_every_place_the_account_keeps_a_calendar_is_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/asking_when_free.rs", tests = 16 },
+    { file = "src/application/asking_when_free.rs", tests = 20 },
 ]
 
 # A Google token used for an account keeping no calendar at Google, so the
 # guest list goes to a company the account never chose to tell (T-13-29-02).
-# Written 2026-09-28 by 13-29.
+# Written 2026-09-28 by 13-29, rewritten the same day by 13-30 onto
+# every_place_to_ask.
 [[guard]]
 name = "google is never asked for an account with no google calendar"
 file = "src/application/asking_when_free.rs"
-before = '''    match google.filter(|_| holds_a_google_calendar(calendars)) {'''
-after = '''    match google {'''
+before = '''    let google = google
+        .filter(|_| holds_a_google_calendar(calendars))
+'''
+after = '''    let google = google
+'''
 red = [
     "application::asking_when_free::tests::test_a_google_token_is_never_used_for_an_account_with_no_google_calendar",
 ]
 tests_last_seen = [
-    { file = "src/application/asking_when_free.rs", tests = 16 },
+    { file = "src/application/asking_when_free.rs", tests = 20 },
 ]
 
 # Find when everyone is free stops handing the Google token it fetched to
@@ -34061,4 +34067,40 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "tests/item_form_free_busy.rs", tests = 5 },
+]
+
+# One place's busy time replacing another's rather than joining it, so a guest
+# busy at one place and quiet at the next is offered the time they are busy at
+# (T-13-30-01). Written 2026-09-28 by 13-30.
+[[guard]]
+name = "busy time from every place a person was asked about is united, not replaced"
+file = "src/service/free_busy.rs"
+before = '''                stretches.extend(more);'''
+after = '''                stretches = more;'''
+red = [
+    "service::free_busy::tests::test_busy_time_from_two_places_is_united_not_replaced",
+    "service::free_busy::tests::test_every_place_is_asked_and_each_person_comes_back_once_from_all_of_them",
+]
+tests_last_seen = [
+    { file = "src/service/free_busy.rs", tests = 52 },
+]
+
+# Only the first place an account keeps a calendar at is asked, so everybody
+# whose diary is at the others comes back unknown. Written 2026-09-28 by 13-30.
+[[guard]]
+name = "every place an account keeps a calendar at is asked, not only the first"
+file = "src/application/asking_when_free.rs"
+before = '''        .chain(microsoft)
+        .chain(google)
+        .collect()'''
+after = '''        .chain(microsoft)
+        .chain(google)
+        .take(1)
+        .collect()'''
+red = [
+    "application::asking_when_free::tests::test_every_place_the_account_keeps_a_calendar_is_asked",
+    "application::asking_when_free::tests::test_every_calendar_server_signed_in_to_is_asked_once",
+]
+tests_last_seen = [
+    { file = "src/application/asking_when_free.rs", tests = 20 },
 ]
