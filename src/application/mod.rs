@@ -111,6 +111,8 @@ pub mod receipts;
 pub mod reordering;
 pub mod repeating;
 pub mod reply;
+/// Report as Junk: what a report does on each kind of account, and its one sentence.
+pub mod reporting_junk;
 pub mod running;
 pub mod saved_searches;
 pub mod scrolling;
