@@ -1058,14 +1058,17 @@ impl ReminderItem {
 
 /// The date or date range the loaded calendar events cover, for the
 /// calendar header. Returns "No events" when there is nothing to show.
+///
+/// Each by the day it starts on this computer, so a meeting written at five in
+/// the morning in Tokyo counts on the evening before here.
 pub fn calendar_range_label(events: &[CalendarEventItem]) -> String {
-    let mut dates: Vec<&str> = events
+    let mut dates: Vec<String> = events
         .iter()
-        .map(|e| e.start.get(..10).unwrap_or(e.start.as_str()))
+        .map(CalendarEventItem::the_day_it_starts)
         .collect();
     dates.sort_unstable();
     match (dates.first(), dates.last()) {
-        (Some(first), Some(last)) if first == last => (*first).to_string(),
+        (Some(first), Some(last)) if first == last => first.clone(),
         (Some(first), Some(last)) => format!("{} to {}", first, last),
         _ => "No events".to_string(),
     }

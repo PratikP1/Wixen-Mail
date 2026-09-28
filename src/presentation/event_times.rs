@@ -15,8 +15,10 @@
 
 use std::borrow::Cow;
 
+use chrono::{DateTime, Local};
+
 use super::ui_types::CalendarEventItem;
-use crate::common::moment;
+use crate::common::moment::{self, Moment};
 
 impl CalendarEventItem {
     /// When this event starts, written so any reader of a stored time says the
@@ -48,56 +50,85 @@ impl CalendarEventItem {
 
     /// The day this event starts on this computer, as "2026-03-05", for the
     /// calendar's header.
+    ///
+    /// A whole day, and a start nothing can read, give the stored date.
     pub fn the_day_it_starts(&self) -> String {
-        self.start.get(..10).unwrap_or(&self.start).to_string()
+        self.the_start_here().map_or_else(
+            || self.the_stored_day().to_string(),
+            |at| at.format("%Y-%m-%d").to_string(),
+        )
+    }
+
+    /// Where this event starts on this computer's clock, when its start names
+    /// an hour.
+    fn the_start_here(&self) -> Option<DateTime<Local>> {
+        match moment::read(&self.when_it_starts())? {
+            Moment::WholeDay(_) => None,
+            names_an_hour => names_an_hour.on_this_computer(),
+        }
+    }
+
+    /// The first ten characters of the stored start, the date, or the whole
+    /// of it when it is shorter.
+    fn the_stored_day(&self) -> &str {
+        self.start.get(..10).unwrap_or(&self.start)
     }
 }
 
 /// The Calendar window's Date/Time column: "2026-03-05 10:00" for a timed
-/// event, on this computer's clock, and "2026-03-05 (All day)" for a whole
-/// day.
+/// event, the date and the 24-hour clock on this computer, and
+/// "2026-03-05 (All day)" for a whole day. A start nothing can read is shown
+/// as it was stored.
 pub fn the_list_column(item: &CalendarEventItem) -> String {
     if item.is_all_day {
-        return format!("{} (All day)", item.start.get(..10).unwrap_or(&item.start));
+        return format!("{} (All day)", item.the_stored_day());
     }
-    item.start.get(..16).unwrap_or(&item.start).to_string()
+    item.the_start_here().map_or_else(
+        || item.start.clone(),
+        |at| at.format("%Y-%m-%d %H:%M").to_string(),
+    )
 }
 
 /// What the due window needs to know about one day of an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DueParts {
     /// When the alert rises: the start less its lead.
-    pub raise_at: chrono::DateTime<chrono::Local>,
+    pub raise_at: DateTime<Local>,
     /// The start, written so the alert's sentence says the hour it is here.
     pub when: String,
     /// When it is over, so an event that has ended is not raised.
-    pub ends: Option<chrono::DateTime<chrono::Local>>,
+    pub ends: Option<DateTime<Local>>,
 }
 
 /// One day of an event, as the due window asks about it.
 ///
 /// `hour` is when a whole day is raised, the hour the working day starts, and
 /// `lead` the minutes before the start the alert is set for.
+///
+/// The start is read in the zone it was written in, so an Outlook meeting
+/// stored in universal time rises at its lead before the instant it starts,
+/// and `when` is that instant written out, so the alert's sentence and its
+/// "in 15 minutes" say the hour it is here. A whole day is raised at `hour` on
+/// its own day. The identity stays the row's own, the stored start, so a
+/// snooze or a hold kept before this read the zone still holds.
 pub fn the_due_parts(day: &CalendarEventItem, hour: u32, lead: i64) -> Option<DueParts> {
     use crate::application::due;
-    use moment::Moment;
 
-    let raise_at = match moment::read(&day.start)? {
+    let starts = day.when_it_starts();
+    let start = match moment::read(&starts)? {
         Moment::WholeDay(on) => Moment::ClockFace(on.and_hms_opt(hour, 0, 0)?),
         names_an_hour => names_an_hour,
     };
     Some(DueParts {
-        raise_at: due::when_an_event_alerts(raise_at, lead)?,
-        when: day.start.clone(),
-        ends: when_it_is_over(&day.end),
+        raise_at: due::when_an_event_alerts(start, lead)?,
+        ends: when_it_is_over(&day.when_it_ends()),
+        when: starts.into_owned(),
     })
 }
 
 /// When a stored end is over on this computer: a whole day at the midnight
 /// after it, anything with an hour at that hour.
-fn when_it_is_over(stored: &str) -> Option<chrono::DateTime<chrono::Local>> {
-    use moment::Moment;
-
+fn when_it_is_over(stored: &str) -> Option<DateTime<Local>> {
     match moment::read(stored)? {
         Moment::WholeDay(on) => moment::on_this_computer(on.succ_opt()?.and_hms_opt(0, 0, 0)?),
         names_an_hour => names_an_hour.on_this_computer(),

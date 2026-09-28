@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 407 records have arrived since and have not been through it.
+# 411 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33033,7 +33033,7 @@ red = [
     "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
 ]
 tests_last_seen = [
-    { file = "src/presentation/event_times.rs", tests = 7 },
+    { file = "src/presentation/event_times.rs", tests = 15 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
@@ -33052,6 +33052,76 @@ red = [
     "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
 ]
 tests_last_seen = [
-    { file = "src/presentation/event_times.rs", tests = 7 },
+    { file = "src/presentation/event_times.rs", tests = 15 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
+]
+
+# The due window's day read from its stored start again: an Outlook meeting
+# stored in universal time rises at its universal hour less the lead, and the
+# alert's sentence says that hour. Written 2026-09-27 by 13-21.2, measured
+# against the library.
+[[guard]]
+name = "an event's alert rises at its lead before the instant it starts"
+file = "src/presentation/event_times.rs"
+before = """    let starts = day.when_it_starts();"""
+after = """    let starts = Cow::Borrowed(day.start.as_str());"""
+red = [
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_alerts_at_its_lead_before_the_instant_it_starts",
+    "presentation::event_times::tests::test_an_outlook_meeting_alerts_at_its_lead_before_the_instant_it_starts",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 15 },
+]
+
+# The full reading without the clock an event was written on: a meeting from
+# Tokyo is said at this computer's hour with nothing to explain why the
+# organiser's note says another. Written 2026-09-27 by 13-21.2, measured
+# against the library.
+[[guard]]
+name = "the full reading of an event says the clock it was written on once"
+file = "src/presentation/read_aloud.rs"
+before = """            Some(elsewhere) => format!("{when}, {elsewhere}"),"""
+after = """            Some(_) => when,"""
+red = [
+    "presentation::event_times::tests::test_the_full_reading_says_the_zone_a_meeting_was_written_in_once",
+]
+tests_last_seen = [
+    { file = "src/presentation/event_times.rs", tests = 15 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
+]
+
+# The due window reading each day's stored start itself again, beside the
+# call that reads it in its zone. Written 2026-09-27 by 13-21.2, measured
+# against the target.
+[[guard]]
+name = "the due window asks each day of an event through its zone"
+file = "src/presentation/wx_app.rs"
+suite = "an_event_is_shown_on_this_computers_clock"
+before = """                let identity = day.due_identity();"""
+after = """                let _ = crate::common::moment::read(&day.start);
+                let identity = day.due_identity();"""
+red = [
+    "test_a_due_window_reading_the_stored_start_again_would_be_named",
+    "test_the_due_window_asks_each_day_of_an_event_through_its_zone",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_event_is_shown_on_this_computers_clock.rs", tests = 5 },
+]
+
+# The Calendar window's Date/Time column printing the stored text again.
+# Written 2026-09-27 by 13-21.2, measured against the target.
+[[guard]]
+name = "the calendar window's column is worded through its zone"
+file = "src/presentation/wx_calendar.rs"
+suite = "an_event_is_shown_on_this_computers_clock"
+before = """        let time_display = crate::presentation::event_times::the_list_column(event);"""
+after = """        let time_display = event.start.get(..16).unwrap_or(&event.start).to_string();"""
+red = [
+    "test_a_column_worded_from_the_stored_text_would_be_named",
+    "test_the_calendar_windows_column_is_worded_through_its_zone",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_calendar.rs", tests = 15 },
+    { file = "tests/an_event_is_shown_on_this_computers_clock.rs", tests = 5 },
 ]
