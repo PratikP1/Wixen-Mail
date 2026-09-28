@@ -698,6 +698,10 @@ pub enum UIUpdate {
     /// arm moves them through Move's own path, which is gated and made here
     /// first, and says the report's one sentence in place of Move's.
     ReportedAsJunk(crate::application::reporting_junk::ReadyToMove),
+    /// A block was made and the mail already here it catches was counted on
+    /// a worker (13-25). The arm asks once whether to move it, moves it
+    /// through the one runner when told to, and says what blocking did.
+    WhatABlockCaught(crate::application::blocking::WhatABlockCaught),
     /// Active PIM module changed
     ModuleChanged(PimModule),
     /// Calendar containers loaded

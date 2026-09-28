@@ -813,8 +813,9 @@ anything.
 | Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way. `Ctrl+Z` in the message list brings them back only while the mail server has not yet been told; once it has, the message is gone and Undo says so |
 | Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, except a move to another account, which Undo refuses and says so. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept. In every module `Ctrl+Z` in the list moves the item back |
 | Report as Junk | `Ctrl+Shift+J` | Mail. Every selected message goes to its account's junk folder, and one sentence per account says what the provider was told: on a server that keeps a junk mark the mark is set first, on Gmail the move into Spam is the report, and Microsoft is not told, because it offers a mail program no way to. A POP account, an account with no junk folder, and one whose mail changes are off each say why nothing was reported. A conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, and a junk mark already set stays. Experimental |
+| Block This Sender | `Ctrl+Shift+B` | Mail. On the Block submenu. Mail from the sender of the message the cursor is on goes to the account's junk folder from now on. When messages from them are already here, it asks once, with the count, whether to move those to the junk folder too: Enter answers Yes, and No leaves them where they are. More than 5,000 are never moved; it says how many there are and to search for the sender and use Move to. Messages in Junk, Trash, Sent, Drafts and the Outbox are left alone. Blocking tells the mail provider nothing; Report as Junk does that. Experimental |
 
-Five submenus hold the rest:
+Seven submenus hold the rest:
 
 | Submenu | What is on it |
 |--------|----------|
@@ -824,6 +825,7 @@ Five submenus hold the rest:
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
 | Saved Searches | Rename or delete the saved search you are on in the folder tree. Deleting one never deletes mail |
+| Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
 
 ### Account Management
 

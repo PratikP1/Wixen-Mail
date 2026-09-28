@@ -14,7 +14,7 @@
 //! and the questions worth asking before the rule exists.
 
 use crate::application::allowed::Allowed;
-use crate::application::choosing_messages::with_commas;
+use crate::application::choosing_messages::{Chosen, with_commas};
 use crate::application::editing::MOST_ROWS_WORTH_SELECTING;
 use crate::common::types::FolderType;
 use crate::common::{Error, Result};
@@ -606,6 +606,22 @@ pub enum MailAlreadyHere {
     Moved { moved: usize, not_moved: usize },
     /// More were here than one command moves, so none were moved.
     TooMany(usize),
+}
+
+/// A block just made and the mail already here it catches, carried from the
+/// worker that counted it to the window's thread, which asks about it and
+/// says what blocking did (13-25).
+#[derive(Debug, Clone)]
+pub struct WhatABlockCaught {
+    pub block: Block,
+    /// The junk folder's path: what the rule files into and the sentences
+    /// name.
+    pub junk_folder: String,
+    pub allowed: Allowed,
+    pub junk: TheJunkFolder,
+    /// The messages caught, as a command over a set meets them, or why the
+    /// mail already here could not be read.
+    pub here: std::result::Result<Chosen, String>,
 }
 
 /// The question asked once a block is made and mail it catches is already
