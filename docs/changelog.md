@@ -252,10 +252,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   been cut since 1.0.0-alpha.1. Known limitations: no invitation from a real Outlook, Google or
   calendar server organiser has been read here, and nobody has heard the sentence with a
   screen reader. Opening a message left your calendar as it was; the entry above changes
-  that. A time an
-  invitation names in the sender's own time zone is read as that time on your clock, as the
-  calendar already reads one, so a meeting from somebody in another zone is said at the hour
-  they wrote. A message whose text the download brought before this version still has no
+  that. A time an invitation named in the sender's own time zone was read as that time on
+  your clock; the Fixed entry for an invitation from another time zone changes that. A
+  message whose text the download brought before this version still has no
   record of its attachments, and opening it does not make one, so it lists none and its
   meeting is not said.
 - **File, Print prints what you are on, everywhere a message or an item is shown.** The tester
@@ -773,6 +772,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **An invitation from another time zone is said at your hour (#50, ledger 632).** A meeting
+  invitation names its times in the organiser's time zone, and Wixen Mail read that hour as
+  an hour on your own clock, so a meeting set for nine in the morning in Tokyo was said at
+  nine wherever you were. The sentence before the message and the three answer buttons now
+  say the time on your computer's clock. Both kinds of time zone name are read: the ones
+  Outlook writes, such as Pacific Standard Time, through Windows' own table, and the ones
+  Google and calendar servers write, such as America/Los_Angeles. When the meeting was
+  written on a clock that differs from yours, the sentence says that clock once as well,
+  right after the time: "04/03/2026 at 19:00 to 20:00, which is 05/03/2026 at 09:00 to 10:00
+  Tokyo Standard Time". Nothing is added for a meeting that lasts all day, for a time written
+  in universal time, or where the clocks agree, and the buttons say your time only. "Already
+  on your calendar", and a move made by opening an organiser's update, now compare the
+  moments rather than the words, so a Microsoft calendar's copy kept in universal time and an
+  Outlook invitation written in Pacific time for the same moment are the same meeting. The
+  version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: nobody has heard the new clause with a screen reader; no invitation from a
+  real organiser in another time zone has been read here; a time zone neither Windows nor the
+  time zone database knows, such as one an organiser built by hand, keeps the hour as it was
+  written and the sentence says it could not be placed; a meeting whose end is written in a
+  different time zone from its start is read in the start's; and the calendar itself still
+  shows and says such a meeting at the hour it was written.
 - **An ordinary RSA PGP private key can be imported on Windows.** Windows keeps at most 1,280
   characters in one entry of its credential store, and a PGP private key made with RSA is
   longer: the test key here is 1,836 characters, and a usual key with an encryption subkey is

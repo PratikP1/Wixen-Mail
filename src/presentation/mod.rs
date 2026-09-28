@@ -48,6 +48,7 @@ pub mod status_line;
 pub mod text_history_keys;
 pub mod text_undo;
 pub mod theme;
+pub mod time_elsewhere;
 pub mod toolbar_text;
 pub mod tree_walk;
 pub mod ui_types;

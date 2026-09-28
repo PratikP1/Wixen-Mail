@@ -47,5 +47,7 @@ pub mod version;
 /// where a uniform one is wanted.
 #[cfg(feature = "what-ships")]
 pub mod what_ships;
+/// Which zone a stored zone name means, a Windows name or the zone database's.
+pub mod zones;
 
 pub use error::{Error, Result};

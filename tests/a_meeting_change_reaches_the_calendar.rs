@@ -136,6 +136,11 @@ fn sam(_account: &str) -> AnsweringAs {
 /// calendar at Thursday nine to ten: accepted here at version 2, with Ada
 /// recorded as who called it, the way 13-12's answer path leaves it.
 fn a_store_holding_the_meeting(dir: &tempfile::TempDir) -> MessageCache {
+    a_store_holding(dir, &the_meeting())
+}
+
+/// The same store, holding `copy` as the calendar's copy of the meeting.
+fn a_store_holding(dir: &tempfile::TempDir, copy: &CalendarEventEntry) -> MessageCache {
     let cache = MessageCache::new(dir.path().join("meetings.db"), None).expect("a store");
     cache
         .save_folder(&CachedFolder {
@@ -148,9 +153,7 @@ fn a_store_holding_the_meeting(dir: &tempfile::TempDir) -> MessageCache {
             total_count: 0,
         })
         .expect("an inbox");
-    cache
-        .save_calendar_event(&the_meeting())
-        .expect("the meeting filed");
+    cache.save_calendar_event(copy).expect("the meeting filed");
     cache
         .remember_the_answer(
             "evt-1",
@@ -329,6 +332,72 @@ fn test_an_update_from_the_organiser_opened_in_a_reader_moves_the_meeting_and_sa
             .iter()
             .any(|line| line.ends_with(", and it is already on your calendar.")),
         "{spoken:?}"
+    );
+}
+
+/// The instant a stored time names in the zone stored beside it, in
+/// universal time.
+fn in_universal_time(stored: &str, zone: Option<&str>) -> String {
+    use wixen_mail::common::moment::{self, Moment};
+    match moment::read_in(stored, zone) {
+        Some(Moment::Fixed(at)) => at.with_timezone(&chrono::Utc).to_rfc3339(),
+        other => panic!("{stored} beside {zone:?} names no instant: {other:?}"),
+    }
+}
+
+#[test]
+fn test_a_move_keeps_the_zone_the_update_was_written_in() {
+    // The calendar's copy as Microsoft Graph stores one, a clock face in
+    // universal time with "UTC" beside it, and Ada's update written for ten
+    // in Los Angeles, an hour later. Stored as ten beside "UTC", the move
+    // would put the meeting eight hours early here and send that hour back
+    // (13-21.1, premise 9). America/Los_Angeles rather than Windows' name, so
+    // the instant does not depend on Windows' ICU.
+    let dir = tempfile::tempdir().expect("somewhere to put the store");
+    let graphs_copy = CalendarEventEntry {
+        start_datetime: "2026-03-05T17:00:00.0000000".to_string(),
+        end_datetime: "2026-03-05T18:00:00.0000000".to_string(),
+        time_zone: Some("UTC".to_string()),
+        ..the_meeting()
+    };
+    let cache = a_store_holding(&dir, &graphs_copy);
+    let update = an_update_from(ADA)
+        .replace(
+            "DTSTART:20260306T140000",
+            "DTSTART;TZID=America/Los_Angeles:20260305T100000",
+        )
+        .replace(
+            "DTEND:20260306T150000",
+            "DTEND;TZID=America/Los_Angeles:20260305T110000",
+        );
+    let (item, body) = opened(&cache, 1, &update, ADA);
+
+    let document = opened_in_a_reader(&cache, &item, body);
+
+    let spoken = spoken_as_it_opens(&document);
+    assert!(
+        spoken
+            .iter()
+            .any(|line| line.starts_with("Moved on your calendar")),
+        "{spoken:?}"
+    );
+    let moved = the_meeting_now(&cache);
+    let zone = moved.time_zone.as_deref();
+    assert_eq!(
+        (zone, moved.start_datetime.as_str()),
+        (Some("America/Los_Angeles"), "2026-03-05T10:00:00"),
+        "premise 9: the move keeps the copy's zone beside the update's clock face"
+    );
+    assert_eq!(
+        (
+            in_universal_time(&moved.start_datetime, zone),
+            in_universal_time(&moved.end_datetime, zone)
+        ),
+        (
+            "2026-03-05T18:00:00+00:00".to_string(),
+            "2026-03-05T19:00:00+00:00".to_string()
+        ),
+        "premise 9: the moved meeting is not at the instant the organiser wrote"
     );
 }
 

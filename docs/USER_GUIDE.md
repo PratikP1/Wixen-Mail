@@ -579,8 +579,30 @@ who sent it, then says what it means for your calendar:
 > 4, from Ada Lovelace, and it is new to your calendar.
 
 The date is written in full, the way you chose on the Reading tab of Settings,
-even where a list would say how long ago. The end of the sentence is one of
-four:
+even where a list would say how long ago.
+
+The time is always said on your computer's clock. When the organiser wrote the
+meeting in a time zone whose clock differs from yours, the sentence also says
+that clock, once, right after the time, because the covering note usually gives
+the organiser's own hour. A meeting set for nine in the morning in Tokyo, heard
+on a computer in New York:
+
+> Meeting invitation: Quarterly review, 04/03/2026 at 19:00 to 20:00, which is
+> 05/03/2026 at 09:00 to 10:00 Tokyo Standard Time, in Room 4, from Ada
+> Lovelace, and it is new to your calendar.
+
+The other clock's date is said only when it is a different day there. Nothing
+is added for a meeting that lasts all day, for a time a server wrote in
+universal time (UTC), or when the other clock agrees with yours. The answer
+buttons say your time only. Wixen Mail knows the time zone names Outlook
+writes, such as Pacific Standard Time, and the ones Google and calendar
+servers write, such as America/Los_Angeles, said as "Los Angeles time". A time
+zone it cannot place, such as one an organiser built by hand in Outlook, leaves
+the time as it was written, and the sentence says so: "05/03/2026 at 09:00 to
+10:00, as written in Customized Time Zone, a time zone this computer cannot
+place".
+
+The end of the sentence is one of four:
 
 | The sentence ends | What it means |
 |---|---|
@@ -677,10 +699,11 @@ Outlook, Google or calendar server organiser has been read here, nor has any
 answer reached one, and a move or a removal sent back to Google or Microsoft
 after they applied the same update themselves has not been tried. A sender's
 address can be forged, and nothing here checks the provider's own verdict on
-it yet. Nobody has listened to the buttons with a screen reader yet. A time an invitation names in the sender's own
-time zone is read as that time on your clock, as the calendar reads one, so a
-meeting from somebody in another zone is said at the hour they wrote. A
-message whose text was downloaded in the background before this version has no
+it yet. Nobody has listened to the buttons with a screen reader yet, nor to the
+other clock the sentence says for a meeting set in another time zone, and no
+invitation from a real organiser in another time zone has been read here. The
+calendar itself still shows and says such a meeting at the hour it was written.
+A message whose text was downloaded in the background before this version has no
 record of its attachments, and opening it does not make one, so it lists none
 and its meeting is not said.
 

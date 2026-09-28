@@ -563,8 +563,27 @@ fn date_part_asking(which: WhichLocale<'_>, when: impl Datelike, settings: DateS
     }
 }
 
+/// A clock face in some other zone, the whole date and the hour, worded the
+/// way [`absolute`] words a moment here: "05/03/2026 at 09:00".
+///
+/// For saying the clock a meeting was written on beside the hour it is here,
+/// where the clock face is that zone's and moving it to this computer's would
+/// say the wrong hour.
+pub fn a_clock_face(face: chrono::NaiveDateTime, settings: DateSettings) -> String {
+    format!(
+        "{} at {}",
+        date_part_asking(WhichLocale::ThisComputer, face, settings),
+        clock(face, settings)
+    )
+}
+
+/// The hour of a clock face in some other zone, and nothing else: "09:00".
+pub fn the_clock_of(face: chrono::NaiveDateTime, settings: DateSettings) -> String {
+    clock(face, settings)
+}
+
 /// The clock reading, on whichever clock this reader keeps.
-fn clock(when: DateTime<Local>, settings: DateSettings) -> String {
+fn clock(when: impl Timelike, settings: DateSettings) -> String {
     match settings.clock {
         // No leading zero on the hour: "09:07 AM" is a zero read out for
         // nothing, on every row.

@@ -255,24 +255,28 @@ fn the_move(
     let newer = held
         .answered_version
         .is_none_or(|answered| invitation.version > answered);
-    let was = invitations::when_the_copy_is(held.copy, dates);
-    let now = invitations::when_the_invitation_is(invitation, dates);
-    if !newer || was == now {
+    let copy = held.copy;
+    if !newer || invitations::at_the_copys_time(invitation, copy) {
         return None;
     }
-    let copy = held.copy;
-    let started = invitations::when_it_starts(
-        copy.start_date.as_deref().unwrap_or(&copy.start_datetime),
-        copy.is_all_day,
-        dates,
-    );
-    let starts = invitations::when_it_starts(&invitation.starts, invitation.is_all_day, dates);
-    Some(if started == starts {
-        Wanted::Move { from: was, to: now }
+    let copy_starts = copy.start_date.as_deref().unwrap_or(&copy.start_datetime);
+    let (the_copys_zone, its_zone) = (copy.time_zone.as_deref(), invitation.time_zone.as_deref());
+    let only_the_end_moved = copy.is_all_day == invitation.is_all_day
+        && invitations::the_same_instant(copy_starts, the_copys_zone, &invitation.starts, its_zone);
+    Some(if only_the_end_moved {
+        Wanted::Move {
+            from: invitations::when_the_copy_is(copy, dates),
+            to: invitations::when_the_invitation_is(invitation, dates),
+        }
     } else {
         Wanted::Move {
-            from: started,
-            to: starts,
+            from: invitations::when_it_starts(copy_starts, copy.is_all_day, the_copys_zone, dates),
+            to: invitations::when_it_starts(
+                &invitation.starts,
+                invitation.is_all_day,
+                its_zone,
+                dates,
+            ),
         }
     })
 }
@@ -333,6 +337,9 @@ pub fn the_copy_moved(copy: &CalendarEventEntry, invitation: &Invitation) -> Cal
         start_date: invitation.is_all_day.then(|| invitation.starts.clone()),
         end_date: invitation.is_all_day.then_some(ends),
         is_all_day: invitation.is_all_day,
+        // A clock face means an hour only in the zone beside it, so the
+        // update's zone goes with the update's times: beside the copy's
+        // "UTC", ten in Los Angeles would be stored as ten in universal time.
         time_zone: invitation.time_zone.clone(),
         // A change this computer made, which is what puts it in front of the
         // push.
@@ -690,6 +697,56 @@ mod tests {
         };
 
         assert_eq!(opening(THE_UPDATE, ADA, &copy), MeetingChange::Nothing);
+    }
+
+    /// The update written for `starts` to `ends` o'clock on Thursday in Los
+    /// Angeles, as Outlook names the zone for somebody there.
+    fn the_update_in_los_angeles(starts: &str, ends: &str) -> String {
+        THE_UPDATE
+            .replace(
+                "DTSTART:20260306T140000",
+                &format!("DTSTART;TZID=America/Los_Angeles:20260305T{starts}"),
+            )
+            .replace(
+                "DTEND:20260306T150000",
+                &format!("DTEND;TZID=America/Los_Angeles:20260305T{ends}"),
+            )
+    }
+
+    /// The copy as Microsoft Graph stores one, five to six in the afternoon
+    /// in universal time with "UTC" beside it: nine to ten in Los Angeles.
+    fn graphs_copy() -> CalendarEventEntry {
+        CalendarEventEntry {
+            start_datetime: "2026-03-05T17:00:00.0000000".to_string(),
+            end_datetime: "2026-03-05T18:00:00.0000000".to_string(),
+            time_zone: Some("UTC".to_string()),
+            ..the_copy()
+        }
+    }
+
+    #[test]
+    fn test_one_instant_written_in_two_zones_moves_nothing() {
+        // The texts differ and the instants do not: moving the meeting would
+        // be a move to where it already is, said as a change.
+        assert_eq!(
+            opening(
+                &the_update_in_los_angeles("090000", "100000"),
+                ADA,
+                &graphs_copy()
+            ),
+            MeetingChange::Nothing
+        );
+    }
+
+    #[test]
+    fn test_an_update_at_another_instant_moves_a_copy_kept_in_another_zone() {
+        let change = opening(
+            &the_update_in_los_angeles("100000", "110000"),
+            ADA,
+            &graphs_copy(),
+        );
+
+        assert!(matches!(change, MeetingChange::Move { .. }), "{change:?}");
     }
 
     #[test]

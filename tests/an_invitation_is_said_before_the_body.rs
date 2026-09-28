@@ -357,6 +357,111 @@ fn test_a_signed_invitation_says_the_meeting_above_the_account_of_the_signature(
     );
 }
 
+// ── A meeting written in another zone ────────────────────────────────────
+
+/// The invitation above written the way an organiser in Tokyo's calendar
+/// writes it: a zone definition, and both times named in that zone. `zone`
+/// is the name the document gives it, the zone database's or Windows'.
+fn an_invitation_written_in(zone: &str) -> String {
+    let definition = format!(
+        "BEGIN:VTIMEZONE\r\n\
+         TZID:{zone}\r\n\
+         BEGIN:STANDARD\r\n\
+         DTSTART:16010101T000000\r\n\
+         TZOFFSETFROM:+0900\r\n\
+         TZOFFSETTO:+0900\r\n\
+         END:STANDARD\r\n\
+         END:VTIMEZONE\r\n\
+         BEGIN:VEVENT\r\n"
+    );
+    AN_INVITATION
+        .replacen("BEGIN:VEVENT\r\n", &definition, 1)
+        .replace(
+            "DTSTART:20260305T090000\r\n",
+            &format!("DTSTART;TZID={zone}:20260305T090000\r\n"),
+        )
+        .replace(
+            "DTEND:20260305T100000\r\n",
+            &format!("DTEND;TZID={zone}:20260305T100000\r\n"),
+        )
+}
+
+/// How the sentence must begin for a meeting at nine in Tokyo: at midnight
+/// universal time, on this computer's clock, whatever zone it runs in. Tokyo
+/// rather than somewhere near, so the case is red here and on CI alike.
+fn begins_at_the_hour_that_is_here() -> String {
+    let midnight_universal = chrono::DateTime::parse_from_rfc3339("2026-03-05T00:00:00Z")
+        .expect("an instant")
+        .with_timezone(&chrono::Local);
+    format!(
+        "Meeting invitation: Quarterly review, {}",
+        wixen_mail::presentation::date_display::absolute(midnight_universal, written_out_in_full())
+    )
+}
+
+/// What the bar says as the message opens, for a raw message.
+fn spoken_opening(raw: &str) -> String {
+    let dir = tempfile::tempdir().expect("somewhere to put the store");
+    let cache = a_store(&dir);
+    let (item, body) = opened(&cache, 5, raw);
+    spoken_as_it_opens(&in_the_text_reader(&item, &asked(&cache, &item, body)))
+}
+
+/// The clause the sentence carries for a meeting at nine to ten in Tokyo, said
+/// as `zone_said`: nothing on a computer whose clock is Tokyo's that morning,
+/// and Tokyo's clock otherwise, with Tokyo's day when it is not the day here.
+fn the_clause_for_tokyo(zone_said: &str) -> Option<String> {
+    use chrono::Offset;
+
+    let midnight_universal = chrono::DateTime::parse_from_rfc3339("2026-03-05T00:00:00Z")
+        .expect("an instant")
+        .with_timezone(&chrono::Local);
+    if midnight_universal.offset().fix().local_minus_utc() == 9 * 60 * 60 {
+        return None;
+    }
+    let the_day_there = if midnight_universal.date_naive().to_string() == "2026-03-05" {
+        ""
+    } else {
+        "05/03/2026 at "
+    };
+    Some(format!(
+        ", which is {the_day_there}09:00 to 10:00 {zone_said}, in Room 4,"
+    ))
+}
+
+/// Whether the sentence carries the clause exactly when it should.
+fn says_the_other_clock_when_it_differs(said: &str, zone_said: &str) {
+    match the_clause_for_tokyo(zone_said) {
+        Some(clause) => assert!(said.contains(&clause), "no {clause:?} in {said}"),
+        None => assert!(!said.contains(", which is "), "{said}"),
+    }
+}
+
+#[test]
+fn test_an_invitation_written_in_another_zone_is_said_at_this_computers_hour() {
+    let said = spoken_opening(&an_invitation_written_in("Asia/Tokyo"));
+
+    assert!(
+        said.starts_with(&begins_at_the_hour_that_is_here()),
+        "the meeting is said at the hour Tokyo wrote, not the hour here: {said}"
+    );
+    says_the_other_clock_when_it_differs(&said, "Tokyo time");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn test_an_invitation_naming_its_zone_as_windows_does_is_said_at_this_computers_hour() {
+    // Outlook names the zone by its Windows name, which the zone database
+    // does not know; Windows' own ICU places it.
+    let said = spoken_opening(&an_invitation_written_in("Tokyo Standard Time"));
+
+    assert!(
+        said.starts_with(&begins_at_the_hour_that_is_here()),
+        "the meeting is said at the hour Tokyo wrote, not the hour here: {said}"
+    );
+    says_the_other_clock_when_it_differs(&said, "Tokyo Standard Time");
+}
+
 // ── A message whose text the download of everything brought ──────────────
 
 /// A meeting with its agenda attached: a file the download keeps the name of
