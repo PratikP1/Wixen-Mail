@@ -926,6 +926,15 @@ pub struct CalendarEventItem {
     /// from a row without it, the guest list box opens empty and the next Save
     /// writes that emptiness over everybody who was coming.
     pub attendees_json: Option<String>,
+    /// The zone [`Self::start`] and [`Self::end`] are written in, as stored
+    /// beside them.
+    ///
+    /// Read with them and never alone: a clock face means an hour in this
+    /// zone, and `presentation::event_times` is where the two meet, so every
+    /// surface says the hour it is on this computer. `start` and `end` keep the
+    /// stored text, because the due window's identity, the series edits and
+    /// the editor's comparison all read it as stored.
+    pub time_zone: Option<String>,
 }
 
 /// Calendar container item for UI display (represents a whole calendar)
@@ -1646,6 +1655,7 @@ impl CalendarEventItem {
             changed_on_its_own: entry.cut_from_event_id.is_some()
                 || entry.provider_recurrence_id.is_some(),
             attendees_json: entry.attendees_json.clone(),
+            time_zone: None,
         }
     }
 
@@ -1894,6 +1904,7 @@ mod tests {
     fn event(start: &str) -> CalendarEventItem {
         CalendarEventItem {
             attendees_json: None,
+            time_zone: None,
             id: "e1".into(),
             summary: "Standup".into(),
             description: String::new(),

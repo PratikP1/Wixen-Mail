@@ -436,6 +436,7 @@ mod tests {
     fn event() -> CalendarEventItem {
         CalendarEventItem {
             attendees_json: None,
+            time_zone: None,
             id: "e1".to_string(),
             summary: "Standup".to_string(),
             description: String::new(),
