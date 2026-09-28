@@ -352,7 +352,8 @@ pub(crate) async fn sync<M: PopMailbox>(
         // close enough to the message to be held to the same rule as its body.
         tracing::warn!("A rule could not file a message: {reason}");
     }
-    filtered.could_not_be_filed = could_not;
+    // After what the rules said, not in place of it, as on the IMAP path.
+    filtered.could_not_be_filed.extend(could_not);
 
     Ok(PopSync {
         fetched: written.len(),
@@ -968,6 +969,33 @@ Subject: Weekly roundup",
             said.matches("Receipts").count(),
             1,
             "one broken rule was read out once per message it matched: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_check_says_a_rule_named_a_label_the_account_does_not_have() {
+        // `apply_rules` says it and the check kept only what the filing said,
+        // so the sentence was built and dropped before anybody heard it.
+        let (cache, inbox) = a_cache();
+        let raw = raw_message("From: news@example.com\r\nSubject: Weekly roundup", "Body");
+
+        let done = run_with_rules(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            inbox,
+            &[a_rule(
+                "Label the news",
+                "news@example.com",
+                "add_tag",
+                Some("Travel"),
+            )],
+        )
+        .expect("the check runs");
+
+        assert_eq!(
+            done.filtered.could_not_be_filed,
+            [crate::application::tagging::no_label_of_that_name("Travel")],
+            "the check dropped what the rules said"
         );
     }
 

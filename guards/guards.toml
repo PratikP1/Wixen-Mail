@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 425 records have arrived since and have not been through it.
+# 429 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -671,6 +671,10 @@ red = [
     # 13-09's sentence about what could not come back counts through
     # `how_many`, in a file this record had never named.
     "application::undoing::tests::test_what_could_not_come_back_is_said_once_with_the_count",
+    # Added 2026-09-28 by 13-23, found by --remeasure rather than predicted:
+    # 13-22's sentence for one reported message counts through `how_many`,
+    # in a file this record had never named.
+    "application::reporting_junk::tests::test_one_message_is_said_in_the_singular",
 ]
 tests_last_seen = [
     { file = "src/application/bringing_everything_down.rs", tests = 23 },
@@ -678,9 +682,10 @@ tests_last_seen = [
     { file = "src/application/choosing_messages.rs", tests = 18 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
+    { file = "src/application/reporting_junk.rs", tests = 21 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/application/undoing.rs", tests = 30 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
@@ -4907,7 +4912,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── A seam the sync reaches past ─────────────────────────────────────────────
@@ -4944,7 +4949,7 @@ red = [
     "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── A folder that was synced before, asked what it holds all over again ──────
@@ -4996,7 +5001,7 @@ red = [
     "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── A mailbox counted full and then listed empty ─────────────────────────────
@@ -5052,7 +5057,7 @@ red = [
     "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -5085,7 +5090,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -5253,7 +5258,7 @@ red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 49 },
+    { file = "src/application/pop_sync.rs", tests = 50 },
 ]
 
 # ── A subscription change nothing had ever sent ─────────────────────────────
@@ -12635,7 +12640,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 18 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/pop_sync.rs", tests = 49 },
+    { file = "src/application/pop_sync.rs", tests = 50 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 11 },
@@ -15521,7 +15526,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -15819,7 +15824,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
@@ -16703,7 +16708,7 @@ red = [
     "application::mail_sync::tests::test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 [[guard]]
@@ -16716,7 +16721,7 @@ red = [
     "application::pop_sync::tests::test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 49 },
+    { file = "src/application/pop_sync.rs", tests = 50 },
 ]
 
 # ── What a message says about its own form, and who is told ──────────────────
@@ -25317,7 +25322,7 @@ red = [
     "application::mail_sync::tests::test_a_chunk_stops_before_the_next_message_when_asked_to",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # Three failures in a row that are not the gate's refusal end the chunk,
@@ -25341,7 +25346,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # What a person hears when the server stops answering is this program's
@@ -25368,7 +25373,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── Every Settings check box stays a check box (#67) ──────────────────────────
@@ -25913,7 +25918,7 @@ red = [
     "application::mail_sync::tests::test_what_arrived_names_each_folder_that_received_something_with_its_count",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
 ]
 
 # ── A disabled account is never due a check (#37) ───────────────────────────
@@ -28234,7 +28239,7 @@ red = [
     "test_a_rule_with_a_sound_counts_once_per_message_it_matched_and_one_without_counts_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 149 },
+    { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
 
@@ -33396,4 +33401,84 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
+]
+
+# A rule stores its label by name and a message's labels are keyed on the
+# label's id; the name written as the id is refused by the database, and no
+# label a rule names ever arrived (RESEARCH-4, F1). Written 2026-09-28 by
+# 13-23, measured against the target.
+[[guard]]
+name = "a rule's label is written by the label's id and not by the name the rule typed"
+file = "src/application/mail_sync.rs"
+suite = "a_rule_that_adds_a_label_labels_the_message"
+before = """            match crate::application::tagging::the_label_a_rule_names(&labels, named) {
+                Some(label) => cache.add_tag_to_message(id, &label.id)?,"""
+after = """            match crate::application::tagging::the_label_a_rule_names(&labels, named) {
+                Some(_) => cache.add_tag_to_message(id, named)?,"""
+red = [
+    "test_a_rule_that_adds_a_label_puts_the_accounts_label_on_the_message",
+    "test_a_rule_naming_the_label_in_other_capitals_finds_it",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "tests/a_rule_that_adds_a_label_labels_the_message.rs", tests = 8 },
+]
+
+# A folder a rule names is found in any capitals, and a label is found the
+# same way; matched exactly, a rule written "money" puts nothing on under a
+# label called Money. Written 2026-09-28 by 13-23, measured against the
+# target.
+[[guard]]
+name = "a rule finds its label by name in any capitals"
+file = "src/application/tagging.rs"
+suite = "a_rule_that_adds_a_label_labels_the_message"
+before = """    let wanted = named.to_lowercase();
+    labels
+        .iter()
+        .find(|label| label.name.trim().to_lowercase() == wanted || label.id == named)"""
+after = """    let wanted = named;
+    labels
+        .iter()
+        .find(|label| label.name.trim() == wanted || label.id == named)"""
+red = [
+    "test_a_rule_naming_the_label_in_other_capitals_finds_it",
+    "test_the_resolver_finds_a_label_by_its_name_in_any_capitals_and_with_spaces_around_it",
+]
+tests_last_seen = [
+    { file = "src/application/tagging.rs", tests = 19 },
+    { file = "tests/a_rule_that_adds_a_label_labels_the_message.rs", tests = 8 },
+]
+
+# What the rules said about a check comes first and what the mover said
+# after it; assigned rather than extended, the mover's list replaces the
+# rules' and a missing label is said to nobody. Written 2026-09-28 by 13-23,
+# measured against the library.
+[[guard]]
+name = "an IMAP sync keeps what the rules said beside what the mover said"
+file = "src/application/mail_sync.rs"
+before = """    // it before anybody heard it.
+    filtered.could_not_be_filed.extend(could_not);"""
+after = """    // it before anybody heard it.
+    filtered.could_not_be_filed = could_not;"""
+red = [
+    "application::mail_sync::tests::test_a_sync_says_a_rule_named_a_label_the_account_does_not_have",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+]
+
+# The same on a POP check, which ran the same assignment. Written
+# 2026-09-28 by 13-23, measured against the library.
+[[guard]]
+name = "a POP check keeps what the rules said beside what the filing said"
+file = "src/application/pop_sync.rs"
+before = """    // After what the rules said, not in place of it, as on the IMAP path.
+    filtered.could_not_be_filed.extend(could_not);"""
+after = """    // After what the rules said, not in place of it, as on the IMAP path.
+    filtered.could_not_be_filed = could_not;"""
+red = [
+    "application::pop_sync::tests::test_a_check_says_a_rule_named_a_label_the_account_does_not_have",
+]
+tests_last_seen = [
+    { file = "src/application/pop_sync.rs", tests = 50 },
 ]

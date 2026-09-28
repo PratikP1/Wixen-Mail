@@ -46,6 +46,8 @@
 //! every other change to a mailbox and does not happen at all until somebody
 //! allows it.
 
+use crate::data::message_cache::Tag;
+
 /// A label somebody can put on a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Label {
@@ -242,6 +244,41 @@ pub fn turns_on(already_on: &[String], name: &str) -> bool {
 /// here for one message went with the arm that said them.
 pub fn nothing_there(number: usize) -> String {
     format!("There is no label {number}")
+}
+
+/// The label a rule means, out of the ones its message's account has.
+///
+/// A rule stores the label it adds by the name somebody typed, and a message's
+/// labels are keyed on the label's id, so the name is resolved here and never
+/// written as an id. Until 2026-09-28 it was, the database refused the row, and
+/// no rule ever put a label on anything.
+///
+/// By name in any capitals, the way a rule finds a folder, and in any alphabet
+/// rather than only in ASCII, because a label is a word somebody chose. By id
+/// as well, so a rule written with one still works. `labels` is one account's,
+/// which is what keeps a label of the same name on another account out of it.
+pub fn the_label_a_rule_names<'a>(labels: &'a [Tag], named: &str) -> Option<&'a Tag> {
+    let named = named.trim();
+    if named.is_empty() {
+        return None;
+    }
+    let wanted = named.to_lowercase();
+    labels
+        .iter()
+        .find(|label| label.name.trim().to_lowercase() == wanted || label.id == named)
+}
+
+/// What to say when a rule names a label the account does not have.
+///
+/// Said rather than made. Making the label would put one on the account that
+/// nobody asked for, and a rule naming a label somebody has since renamed goes
+/// on looking enabled in the Rules Manager for as long as nobody opens it.
+pub fn no_label_of_that_name(named: &str) -> String {
+    format!(
+        "A rule puts the label {} on mail, and this account does not have that label, so no \
+         label was put on",
+        named.trim()
+    )
 }
 
 /// A message's labels, as a list column and as something to read out.

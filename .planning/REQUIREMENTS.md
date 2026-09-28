@@ -6512,8 +6512,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-08 | Phase 13 | Planned 2026-09-24: 13-29 to 13-32, 13-31 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-09 | Phase 13 | Planned 2026-09-24: 13-37 to 13-39, 13-39 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | GAP-10 | Phase 13 | Planned 2026-09-24: 13-33 to 13-36, 13-36 ticks it; not built. Until then "Not planned, 2026-09-20" |
-| GAP-11 | Phase 13 | Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; not built. Until then "Not planned, 2026-09-20" |
-| GAP-12 | Phase 13 | Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; not built. Until then "Not planned, 2026-09-20" |
+| GAP-11 | Phase 13 | Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary Quick Steps reuse; otherwise not built. Until then "Not planned, 2026-09-20" |
+| GAP-12 | Phase 13 | Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; otherwise not built. Until then "Not planned, 2026-09-20" |
 | GAP-13 | Phase 13 | Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
 | REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |

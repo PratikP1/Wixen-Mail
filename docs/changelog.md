@@ -789,6 +789,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A rule that adds a label now puts the label on.** A rule keeps the label it adds by the name
+  you typed, and that name was handed to the database where the label's own identifier belongs.
+  The database refused it every time, so no rule ever labelled a message, and the only trace
+  was a line in the log. Now the name is matched against the account's labels, in any capitals
+  and with spaces around it ignored, and the label goes on when new mail arrives. A rule naming
+  a label the account does not have puts nothing on and says so after the check, once however
+  many messages it matched, the way a rule naming a missing folder is said: for example "A rule
+  puts the label Travel on mail, and this account does not have that label, so no label was put
+  on". The label is not made for you. A message counts as sorted by your rules only when its
+  label really went on. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: a rule's label is put on here and is not sent to the mail
+  server, on Gmail or on any other IMAP account, and a later check can take it off again if the
+  server reports that message's flags; a rule's Mark as read and Flag also stay on this
+  computer; a message a rule both files and labels with a missing label is still counted as
+  sorted when the move happens; nobody has heard it with a screen reader; and it has not run
+  against a real mail account.
 - **A message the download brought earlier lists its attachments and says its meeting (ledger
   633).** The download of everything used to keep a message's text and nothing about its
   attachments, and the reader downloads nothing for a message whose text is here, so such a
