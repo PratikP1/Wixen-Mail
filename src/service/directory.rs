@@ -18,8 +18,8 @@ use crate::common::error::redact_provider_message;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{ContactEntry, EmailEntry};
 use ldap3::{
-    LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Scope, SearchEntry, SearchOptions,
-    ldap_escape,
+    LdapConnAsync, LdapConnSettings, LdapError, LdapResult, ResultEntry, Scope, SearchEntry,
+    SearchOptions, ldap_escape,
 };
 use std::time::Duration;
 
@@ -32,7 +32,8 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Directory {
     /// Where it is: `ldaps://directory.example.com`, or `ldap://host:389`
-    /// where the directory offers no encrypted connection.
+    /// where the directory offers no encrypted connection, which is then
+    /// asked only without a sign-in.
     pub url: String,
     /// The part of the directory to search under, as that directory names it.
     pub search_under: String,
@@ -292,6 +293,62 @@ fn a_contact_from(entry: &SearchEntry, account_id: &str, found_at: &str) -> Opti
     })
 }
 
+// ── The password, kept where Windows keeps passwords ────────────────────────
+//
+// Through `service::secret_store`, the one way in and out of the credential
+// store, and under one service name owned here. Nothing else writes it:
+// uninstalling names it through `application::forget`, and removing an
+// account forgets it in `delete_account`, both by this constant.
+
+/// Credential store service name holding each account's directory password,
+/// with the account id as the user, the shape `credentials::KEYRING_SERVICE`
+/// has.
+///
+/// Spelled out once, because uninstalling has to delete the same entries this
+/// creates. Changing it strands every directory password already kept.
+pub const KEYRING_SERVICE: &str = "wixen-mail-directory";
+
+/// Keep the password an account signs in to its directory with.
+///
+/// An empty password is a request to forget, not a password to keep: an empty
+/// entry would read back as a password that is saved, and the lookup would
+/// then send it as an anonymous sign-in.
+pub fn keep_the_password(account_id: &str, password: &str) -> Result<()> {
+    if password.is_empty() {
+        return forget_the_password(account_id);
+    }
+    crate::service::secret_store::write(KEYRING_SERVICE, account_id, password)
+        .map_err(|cause| the_store_would_not("save", &cause))
+}
+
+/// The directory password kept for an account, or `None` when there is none.
+///
+/// `None` and an error are different answers: nothing kept is a password to
+/// add, and a store that will not answer is one that exists and cannot be got
+/// at.
+pub fn the_saved_password(account_id: &str) -> Result<Option<String>> {
+    crate::service::secret_store::read(KEYRING_SERVICE, account_id)
+        .map_err(|cause| the_store_would_not("read back", &cause))
+}
+
+/// Forget the directory password kept for an account.
+pub fn forget_the_password(account_id: &str) -> Result<()> {
+    crate::service::secret_store::remove(KEYRING_SERVICE, account_id)
+        .map_err(|cause| the_store_would_not("remove", &cause))
+}
+
+/// What went wrong, saying which password and never what it was.
+///
+/// "This account's", not the account's id: the sentence reaches the line a
+/// screen reader speaks under the recipient box, and an id is a string of
+/// hexadecimal nobody can use.
+fn the_store_would_not(what: &str, cause: &Error) -> Error {
+    Error::Security(format!(
+        "Could not {what} this account's directory password in the Windows credential store: \
+         {cause}"
+    ))
+}
+
 /// What to say when the account names no directory at all.
 const NO_DIRECTORY_IS_SET_UP: &str = "This account does not name a directory to look people up in. Add one in the account's \
      settings: the address of the directory, and the part of it to search under.";
@@ -356,11 +413,12 @@ async fn look_up_through<D: AsksADirectory>(
     let Some(directory) = directory else {
         return Err(Error::Config(NO_DIRECTORY_IS_SET_UP.to_string()));
     };
-    let named = where_this_directory_is(directory)?;
+    let place = where_this_directory_is(directory)?;
+    let named = &place.host;
     if nobody_typed_anything(typed) {
         return Err(Error::Other(NOTHING_TO_LOOK_FOR.to_string()));
     }
-    let signing_in = the_password_to_sign_in_with(directory, password, &named)?;
+    let signing_in = the_password_to_sign_in_with(directory, password, &place)?;
 
     // One more than will be shown, so that "exactly as many as the limit" and
     // "more than the limit" do not arrive looking the same.
@@ -372,7 +430,7 @@ async fn look_up_through<D: AsksADirectory>(
             AT_MOST + 1,
         )
         .await
-        .map_err(|failure| how_the_directory_failed(failure, &named, typed))?;
+        .map_err(|failure| how_the_directory_failed(failure, named, typed))?;
 
     if found.len() > AT_MOST {
         return Err(too_many_people_match(typed));
@@ -390,8 +448,16 @@ async fn look_up_through<D: AsksADirectory>(
     }
 }
 
-/// The directory this account names, checked, and the name to call it by in a
-/// message.
+/// Where a directory is, read once from its address.
+struct WhereItIs {
+    /// The name to call it by in a sentence.
+    host: String,
+    /// Whether the connection is encrypted from its start, which `ldaps` is
+    /// and `ldap` is not.
+    is_encrypted: bool,
+}
+
+/// The directory this account names, checked, and where it is.
 ///
 /// Checked here rather than left to the connection, because a setting that is
 /// not an address is something somebody has to correct, and it should not be
@@ -399,10 +465,11 @@ async fn look_up_through<D: AsksADirectory>(
 ///
 /// Two schemes and no more. `ldaps` is a connection encrypted from the start
 /// and is what a workplace directory offers; `ldap` is the plain one, still
-/// what some internal directories run. The library also understands `ldapi`,
-/// a socket file on this computer, which no account should be pointed at and
-/// which does not exist on every platform this program has to run on.
-fn where_this_directory_is(directory: &Directory) -> Result<String> {
+/// what some internal directories run, and never sent a password. The library
+/// also understands `ldapi`, a socket file on this computer, which no account
+/// should be pointed at and which does not exist on every platform this
+/// program has to run on.
+fn where_this_directory_is(directory: &Directory) -> Result<WhereItIs> {
     if directory.search_under.trim().is_empty() {
         return Err(Error::Config(
             "This account does not say which part of the directory to search under. Add it in \
@@ -418,13 +485,13 @@ fn where_this_directory_is(directory: &Directory) -> Result<String> {
         ))
     };
     let parsed = url::Url::parse(directory.url.trim()).map_err(|_| not_an_address())?;
-    if !matches!(parsed.scheme(), "ldap" | "ldaps") {
-        return Err(not_an_address());
-    }
-    parsed
-        .host_str()
-        .map(str::to_string)
-        .ok_or_else(not_an_address)
+    let is_encrypted = match parsed.scheme() {
+        "ldaps" => true,
+        "ldap" => false,
+        _ => return Err(not_an_address()),
+    };
+    let host = parsed.host_str().ok_or_else(not_an_address)?.to_string();
+    Ok(WhereItIs { host, is_encrypted })
 }
 
 /// The password to sign in with, or nothing, or a refusal.
@@ -436,20 +503,30 @@ fn where_this_directory_is(directory: &Directory) -> Result<String> {
 /// treat as anonymous. That does not fail. It quietly succeeds as somebody
 /// else, reading whatever that somebody is allowed to read, and every search
 /// afterwards looks like a directory that holds less than it does.
+///
+/// Nor is a password ever sent to an address that is not encrypted. A simple
+/// sign-in carries it as it was typed, so over `ldap://` anybody on the
+/// network path between here and the directory reads it.
 fn the_password_to_sign_in_with<'a>(
     directory: &Directory,
     password: Option<&'a str>,
-    named: &str,
+    place: &WhereItIs,
 ) -> Result<Option<&'a str>> {
     let Some(sign_in_as) = &directory.sign_in_as else {
         return Ok(None);
     };
+    let named = &place.host;
     match password.map(str::trim).filter(|held| !held.is_empty()) {
-        Some(_) => Ok(password),
         None => Err(Error::Authentication(format!(
             "This account signs in to the directory at {named} as {sign_in_as}, and no password \
              for it has been saved. Add the password in the account's settings."
         ))),
+        Some(_) if !place.is_encrypted => Err(Error::Config(format!(
+            "The directory at {named} is reached without encryption (its address begins \
+             ldap://), so the password for it is not sent. Change the address to one beginning \
+             ldaps://, which your organisation's directory administrator can give you."
+        ))),
+        Some(_) => Ok(password),
     }
 }
 
@@ -572,6 +649,27 @@ fn what_the_directory_answered(answered: LdapResult, named: &str, typed: &str) -
     ))
 }
 
+/// The entries among a search's results, in the order they arrived.
+///
+/// A search is answered with more than entries. Active Directory sends
+/// continuation references beside the people it found whenever the search
+/// starts at the domain root, and a search can carry intermediate messages.
+/// `SearchEntry::construct` panics on either (ldap3 #156, read in 0.12.1's
+/// `search.rs:152-156`), and the catch below would turn that into a failed
+/// search, throwing the real people away with the reference.
+///
+/// 0.12.1's `search` already drops both through its `EntriesOnly` adapter,
+/// read in `adapters.rs:262-279`, so this is not what stands between a
+/// search and that panic today. It is here so that nothing does rest on a
+/// library's adapter chain: a search that pages through a large directory
+/// goes through a different adapter, and one that streams goes through none.
+fn the_entries_among(results: Vec<ResultEntry>) -> Vec<ResultEntry> {
+    results
+        .into_iter()
+        .filter(|result| !result.is_ref() && !result.is_intermediate())
+        .collect()
+}
+
 /// The directory itself, over the network.
 ///
 /// Everything above this decides; this is the only part that dials. It is
@@ -651,7 +749,7 @@ impl AsksADirectory for TheDirectoryItself {
         // stops carries no reason with it: the sentence somebody hears would
         // be nothing at all.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            entries
+            the_entries_among(entries)
                 .into_iter()
                 .map(SearchEntry::construct)
                 .collect::<Vec<SearchEntry>>()
@@ -1454,6 +1552,288 @@ mod tests {
         // the other bounds a search that connected and then went quiet.
         assert!(BEFORE_GIVING_UP_ON_CONNECTING <= std::time::Duration::from_secs(30));
         assert!(BEFORE_GIVING_UP_ON_AN_ANSWER <= std::time::Duration::from_secs(60));
+    }
+
+    // ── What a search answers besides entries ───────────────────────────────
+
+    /// One message of a search's answer, tagged the way a directory tags it.
+    fn a_result_tagged(id: u64, payload: ldap3::asn1::PL) -> ResultEntry {
+        ResultEntry::new(ldap3::asn1::StructureTag {
+            class: ldap3::asn1::TagClass::Application,
+            id,
+            payload,
+        })
+    }
+
+    /// An entry as it arrives on the wire: its name and an empty attribute list.
+    ///
+    /// Tag 4 is RFC 4511's `searchResEntry`, the one shape `construct` reads.
+    fn an_entry_on_the_wire(dn: &str) -> ResultEntry {
+        use ldap3::asn1::{PL, StructureTag, TagClass};
+        a_result_tagged(
+            4,
+            PL::C(vec![
+                StructureTag {
+                    class: TagClass::Universal,
+                    id: 4,
+                    payload: PL::P(dn.as_bytes().to_vec()),
+                },
+                StructureTag {
+                    class: TagClass::Universal,
+                    id: 16,
+                    payload: PL::C(Vec::new()),
+                },
+            ]),
+        )
+    }
+
+    /// A continuation reference, tag 19: "the rest of this search is at
+    /// another server". Active Directory sends them beside the entries
+    /// whenever the search starts at the domain root.
+    fn a_reference_on_the_wire() -> ResultEntry {
+        a_result_tagged(
+            19,
+            ldap3::asn1::PL::C(vec![ldap3::asn1::StructureTag {
+                class: ldap3::asn1::TagClass::Universal,
+                id: 4,
+                payload: ldap3::asn1::PL::P(
+                    b"ldap://DomainDnsZones.example.com/DC=DomainDnsZones,DC=example,DC=com"
+                        .to_vec(),
+                ),
+            }]),
+        )
+    }
+
+    /// An intermediate message, tag 25, which a search can carry and which
+    /// holds nobody.
+    fn an_intermediate_message_on_the_wire() -> ResultEntry {
+        a_result_tagged(25, ldap3::asn1::PL::C(Vec::new()))
+    }
+
+    /// The names of the entries a search's results turn into, built the way
+    /// the network half builds them.
+    fn the_names_built_from(results: Vec<ResultEntry>) -> Vec<String> {
+        the_entries_among(results)
+            .into_iter()
+            .map(SearchEntry::construct)
+            .map(|entry| entry.dn)
+            .collect()
+    }
+
+    #[test]
+    fn test_a_reference_beside_an_entry_leaves_the_entry_found() {
+        // ldap3 #156: `construct` panics on a reference, and the catch around
+        // it turns that into a failed search, so the real people beside the
+        // reference were thrown away with it. The entries come out in the
+        // order they arrived.
+        let found = the_names_built_from(vec![
+            an_entry_on_the_wire("cn=Ada Lovelace,dc=example,dc=com"),
+            a_reference_on_the_wire(),
+            an_entry_on_the_wire("cn=Grace Hopper,dc=example,dc=com"),
+        ]);
+
+        assert_eq!(
+            found,
+            vec![
+                "cn=Ada Lovelace,dc=example,dc=com".to_string(),
+                "cn=Grace Hopper,dc=example,dc=com".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_intermediate_message_is_not_taken_for_an_entry() {
+        let found = the_names_built_from(vec![
+            an_intermediate_message_on_the_wire(),
+            an_entry_on_the_wire("cn=Ada Lovelace,dc=example,dc=com"),
+        ]);
+
+        assert_eq!(found, vec!["cn=Ada Lovelace,dc=example,dc=com".to_string()]);
+    }
+
+    #[test]
+    fn test_an_answer_of_nothing_but_references_holds_nobody() {
+        let found = the_entries_among(vec![a_reference_on_the_wire(), a_reference_on_the_wire()]);
+
+        assert!(
+            found.is_empty(),
+            "{} references were kept as entries",
+            found.len()
+        );
+    }
+
+    // ── A password and an address that is not encrypted ─────────────────────
+
+    fn reached_without_encryption(sign_in_as: Option<&str>) -> Directory {
+        Directory {
+            url: "ldap://directory.example.com".to_string(),
+            sign_in_as: sign_in_as.map(str::to_string),
+            ..a_directory()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_password_is_never_sent_over_an_unencrypted_address() {
+        // Over ldap:// a simple bind carries the password as it was typed, so
+        // anybody on the network path reads it. Refused before any connection.
+        let asking = ADirectoryThat::answers_with(vec![somebody("Ada", "ada@example.com")]);
+        let plain = reached_without_encryption(Some("cn=reader,dc=example,dc=com"));
+
+        let refused = look_up_through(&asking, Some(&plain), Some("hunter2"), "Ada", "acct", "t")
+            .await
+            .expect_err("a refusal");
+
+        let said = refused.to_string();
+        assert!(
+            matches!(refused, Error::Config(_)),
+            "not a setting to correct: {refused:?}"
+        );
+        assert!(said.contains("directory.example.com"), "{said}");
+        assert!(said.contains("without encryption"), "{said}");
+        assert!(said.contains("ldaps://"), "{said}");
+        assert!(
+            !said.contains("hunter2"),
+            "the refusal quoted the password: {said}"
+        );
+        assert!(
+            asking.the_query_it_was_asked().is_empty(),
+            "the directory was dialled with a password over an unencrypted address"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_directory_that_signs_nobody_in_is_still_asked_over_an_unencrypted_address() {
+        // Nothing secret crosses the network, so the plain address stays
+        // usable for a directory that answers anybody.
+        let asking = ADirectoryThat::answers_with(vec![somebody("Ada", "ada@example.com")]);
+        let plain = reached_without_encryption(None);
+
+        let found = look_up_through(&asking, Some(&plain), Some("hunter2"), "Ada", "acct", "t")
+            .await
+            .expect("one person");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            *asking
+                .was_given_a_password
+                .lock()
+                .expect("whether a password was sent"),
+            vec![false]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_password_is_sent_over_an_encrypted_address() {
+        let asking = ADirectoryThat::answers_with(vec![somebody("Ada", "ada@example.com")]);
+        let encrypted = Directory {
+            sign_in_as: Some("cn=reader,dc=example,dc=com".to_string()),
+            ..a_directory()
+        };
+
+        look_up_through(
+            &asking,
+            Some(&encrypted),
+            Some("hunter2"),
+            "Ada",
+            "acct",
+            "t",
+        )
+        .await
+        .expect("one person");
+
+        assert_eq!(
+            *asking
+                .was_given_a_password
+                .lock()
+                .expect("whether a password was sent"),
+            vec![true]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_sign_in_with_no_password_over_an_unencrypted_address_asks_for_the_password() {
+        // The refusal it had before: a name with no password is never sent as
+        // an anonymous sign-in, whichever address it is on.
+        let asking = ADirectoryThat::answers_with(Vec::new());
+        let plain = reached_without_encryption(Some("cn=reader,dc=example,dc=com"));
+
+        let refused = look_up_through(&asking, Some(&plain), None, "Ada", "acct", "t")
+            .await
+            .expect_err("a refusal");
+
+        assert!(matches!(refused, Error::Authentication(_)), "{refused:?}");
+        assert!(asking.the_query_it_was_asked().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod the_password_kept_for_it {
+    use super::*;
+    use crate::service::secret_store;
+
+    /// Spelled out rather than read from the constant: changing the name
+    /// strands every directory password already kept, and this is what makes
+    /// that a decision.
+    const THE_SERVICE: &str = "wixen-mail-directory";
+
+    #[test]
+    fn test_a_directory_password_comes_back_the_way_it_went_in() {
+        keep_the_password("acc-1", "hunter2").expect("the store to keep it");
+
+        assert_eq!(
+            the_saved_password("acc-1").expect("the store to answer"),
+            Some("hunter2".to_string())
+        );
+        assert_eq!(
+            secret_store::entries_under(THE_SERVICE),
+            vec![("acc-1".to_string(), "hunter2".to_string())],
+            "the password is not kept under one service with the account as its user"
+        );
+    }
+
+    #[test]
+    fn test_a_forgotten_directory_password_is_gone() {
+        secret_store::write(THE_SERVICE, "acc-1", "hunter2").expect("the store to keep it");
+
+        forget_the_password("acc-1").expect("the store to let it go");
+
+        assert_eq!(
+            secret_store::read(THE_SERVICE, "acc-1").expect("the store to answer"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_an_empty_directory_password_is_forgotten_rather_than_kept() {
+        // A box emptied on the screen is somebody taking the password away,
+        // and an empty entry would read back as a password that is saved.
+        secret_store::write(THE_SERVICE, "acc-1", "hunter2").expect("the store to keep it");
+
+        keep_the_password("acc-1", "").expect("the store to let it go");
+
+        assert_eq!(
+            secret_store::read(THE_SERVICE, "acc-1").expect("the store to answer"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_directory_password_the_store_will_not_give_up_is_an_error_not_nothing() {
+        // Nothing saved means a password to add; a store that will not answer
+        // means one that exists and cannot be got at. Told apart, or the
+        // second reads as the first and somebody types a password again.
+        secret_store::refuse("the credential store is locked");
+        let answered = the_saved_password("acc-1");
+        secret_store::allow();
+
+        let refused = answered.expect_err("an error, not nothing saved");
+        let said = refused.to_string();
+        assert!(said.contains("directory password"), "{said}");
+        assert!(said.contains("the credential store is locked"), "{said}");
+        assert!(
+            !said.contains("acc-1"),
+            "the sentence reads out an account id nobody can use: {said}"
+        );
     }
 }
 

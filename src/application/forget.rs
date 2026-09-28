@@ -10,7 +10,7 @@
 //! removes any files.
 
 use crate::data::account::Account;
-use crate::service::{caldav, carddav, credentials, oauth, pgp, security};
+use crate::service::{caldav, carddav, credentials, directory, oauth, pgp, security};
 
 /// One entry in the operating system's credential store.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +56,12 @@ fn entries_for(
     for account in accounts {
         entries.push(CredentialEntry {
             service: credentials::KEYRING_SERVICE.to_string(),
+            user: account.id.clone(),
+        });
+        // Every account, whether or not it names a directory today: one that
+        // named one yesterday may have left its password behind.
+        entries.push(CredentialEntry {
+            service: directory::KEYRING_SERVICE.to_string(),
             user: account.id.clone(),
         });
         // Asked rather than listed here, because removing one account has to
@@ -738,6 +744,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_the_directory_password_is_an_entry_uninstalling_erases() {
+        // The second shape the guard below asks the next owner for: the entry
+        // itself, spelled out, not only the module named. Every account is
+        // listed whether or not it names a directory, because uninstalling
+        // reads nothing before it deletes.
+        let entries = entries_for(&[account("a1", "me@example.com")], &[], &[]);
+
+        assert!(
+            entries.contains(&CredentialEntry {
+                service: "wixen-mail-directory".to_string(),
+                user: "a1".to_string(),
+            }),
+            "uninstalling does not name the account's directory password, so it \
+             outlives the program that kept it: {entries:?}"
+        );
+    }
+
     /// Every module under `src/service/` that owns credential store entries.
     ///
     /// # How this enumerates, and the two ways the obvious version is blind
@@ -897,6 +921,7 @@ mod tests {
             "caldav",
             "carddav",
             "credentials",
+            "directory",
             "oauth",
             "pgp",
             "security",

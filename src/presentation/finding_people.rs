@@ -151,15 +151,16 @@ fn the_organisation(
         return Vec::new();
     };
 
-    // The password is deliberately not fetched. Nothing in this application
-    // stores one for a directory yet, and a sign-in with a name and an empty
-    // password is one many directory servers accept and treat as anonymous, so
-    // `service::directory` refuses that outright and says so. An account whose
-    // directory needs a sign-in therefore gets a sentence rather than a search
-    // that quietly returns less than the directory holds.
+    let password = match the_password_to_offer(directory, account_id) {
+        Ok(password) => password,
+        Err(said) => {
+            trouble.push(said);
+            return Vec::new();
+        }
+    };
     let asked = handle.block_on(crate::service::directory::look_up(
         Some(directory),
-        None,
+        password.as_deref(),
         name,
         account_id,
     ));
@@ -178,6 +179,78 @@ fn the_organisation(
             }
             Vec::new()
         }
+    }
+}
+
+/// The password to offer the directory, or the sentence saying why none can
+/// be.
+///
+/// Read only for a directory that signs somebody in: one that answers anybody
+/// is never sent a password, so a credential store that will not answer is no
+/// reason not to ask it. Whether the password may cross the network, and what
+/// to say when none is saved, is `service::directory`'s to decide.
+///
+/// A store that will not give the password up stops the lookup. Asking
+/// without it would be refused for a password nobody saved, which sends
+/// somebody off to type it again when the store is what is wrong.
+fn the_password_to_offer(
+    directory: &crate::service::directory::Directory,
+    account_id: &str,
+) -> std::result::Result<Option<String>, String> {
+    if directory.sign_in_as.is_none() {
+        return Ok(None);
+    }
+    crate::service::directory::the_saved_password(account_id)
+        .map_err(|why| format!("{why}. The directory was not asked."))
+}
+
+#[cfg(test)]
+mod the_password_offered {
+    use super::the_password_to_offer;
+    use crate::service::directory::Directory;
+    use crate::service::secret_store;
+
+    fn a_directory(sign_in_as: Option<&str>) -> Directory {
+        Directory {
+            url: "ldaps://directory.example.com".to_string(),
+            search_under: "dc=example,dc=com".to_string(),
+            sign_in_as: sign_in_as.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn test_a_directory_that_signs_nobody_in_is_offered_no_password_and_the_store_is_not_asked() {
+        // A store that will not answer is no reason to stop asking a
+        // directory that never wanted a password.
+        secret_store::refuse("the credential store is locked");
+        let offered = the_password_to_offer(&a_directory(None), "acc-1");
+        secret_store::allow();
+
+        assert_eq!(offered, Ok(None));
+    }
+
+    #[test]
+    fn test_the_password_saved_for_a_directory_is_the_one_offered() {
+        secret_store::write("wixen-mail-directory", "acc-1", "hunter2")
+            .expect("the directory password to be kept");
+
+        let offered = the_password_to_offer(&a_directory(Some("cn=reader")), "acc-1");
+
+        assert_eq!(offered, Ok(Some("hunter2".to_string())));
+    }
+
+    #[test]
+    fn test_a_password_the_store_will_not_give_up_is_said_and_the_directory_not_asked() {
+        // Looking up without it would be refused for a password nobody saved,
+        // which sends somebody to type one again when the store is the
+        // trouble.
+        secret_store::refuse("the credential store is locked");
+        let offered = the_password_to_offer(&a_directory(Some("cn=reader")), "acc-1");
+        secret_store::allow();
+
+        let said = offered.expect_err("a sentence rather than no password");
+        assert!(said.contains("the credential store is locked"), "{said}");
+        assert!(said.contains("not asked"), "{said}");
     }
 }
 

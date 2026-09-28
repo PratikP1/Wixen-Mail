@@ -257,7 +257,7 @@ impl MessageCache {
 
     /// Delete an account from the database
     pub fn delete_account(&self, account_id: &str) -> Result<()> {
-        // The password and the tokens go first, and nothing else happens if
+        // The passwords and the tokens go first, and nothing else happens if
         // any of them will not go. This row is the only thing naming those
         // entries: erasing everything at uninstall works out what to remove by
         // walking the accounts that exist, so a secret belonging to a row
@@ -274,6 +274,9 @@ impl MessageCache {
         let mut still_stored: Vec<String> = Vec::new();
         if let Err(e) = credentials::forget(account_id) {
             still_stored.push(format!("its saved password ({e})"));
+        }
+        if let Err(e) = crate::service::directory::forget_the_password(account_id) {
+            still_stored.push(format!("its directory password ({e})"));
         }
         still_stored.extend(
             crate::service::oauth::forget_every_token_for(account_id)
@@ -934,6 +937,28 @@ mod tests {
             "the password outlived the account"
         );
         assert!(cache.load_accounts().expect("accounts to load").is_empty());
+    }
+
+    #[test]
+    fn test_deleting_an_account_takes_its_directory_password_with_it() {
+        // Uninstalling names a directory password by walking the accounts
+        // that exist, so one left behind by a removed account is never named
+        // again.
+        let cache = a_cache("directory_password_deletion");
+        cache
+            .save_account(&an_account("acc-going", "going@example.com", "secret123"))
+            .expect("an account to save");
+        crate::service::secret_store::write("wixen-mail-directory", "acc-going", "hunter2")
+            .expect("the directory password to be kept");
+
+        cache.delete_account("acc-going").expect("it to be deleted");
+
+        assert_eq!(
+            crate::service::secret_store::read("wixen-mail-directory", "acc-going")
+                .expect("the credential store to answer"),
+            None,
+            "the directory password outlived the account"
+        );
     }
 
     #[test]
