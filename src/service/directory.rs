@@ -360,8 +360,13 @@ fn the_store_would_not(what: &str, cause: &Error) -> Error {
 pub const WHERE_A_DIRECTORY_IS_SET_UP: &str = "Look People Up at Work on the Account Manager";
 
 /// What to say when the account names no directory at all.
-const NO_DIRECTORY_IS_SET_UP: &str = "This account does not name a directory to look people up in. Add one in the account's \
-     settings: the address of the directory, and the part of it to search under.";
+///
+/// Spells out [`WHERE_A_DIRECTORY_IS_SET_UP`] because a constant cannot be
+/// formatted into another; the test reading every such sentence holds the two
+/// to the same words.
+const NO_DIRECTORY_IS_SET_UP: &str = "This account does not name a directory to look people up \
+     in. Add one in Look People Up at Work on the Account Manager: the address of the directory, \
+     and the part of it to search under.";
 
 /// What to say when the search box is empty.
 const NOTHING_TO_LOOK_FOR: &str =
@@ -481,11 +486,11 @@ struct WhereItIs {
 /// program has to run on.
 fn where_this_directory_is(directory: &Directory) -> Result<WhereItIs> {
     if directory.search_under.trim().is_empty() {
-        return Err(Error::Config(
-            "This account does not say which part of the directory to search under. Add it in \
-             the account's settings: your organisation's directory administrator will know it."
-                .to_string(),
-        ));
+        return Err(Error::Config(format!(
+            "This account does not say which part of the directory to search under. Add it \
+                 in {WHERE_A_DIRECTORY_IS_SET_UP}: your organisation's directory administrator \
+                 will know it."
+        )));
     }
     let not_an_address = || {
         Error::Config(format!(
@@ -548,7 +553,7 @@ fn the_password_to_sign_in_with<'a>(
 pub fn no_password_is_saved_for(named: &str, sign_in_as: &str) -> String {
     format!(
         "This account signs in to the directory at {named} as {sign_in_as}, and no password \
-         for it has been saved. Add the password in the account's settings."
+         for it has been saved. Type it in {WHERE_A_DIRECTORY_IS_SET_UP}."
     )
 }
 
@@ -615,8 +620,8 @@ fn how_the_directory_failed(failure: LdapError, named: &str, typed: &str) -> Err
         }
         could_not_connect => Error::Network(format!(
             "The directory at {named} did not answer. Check that you are connected to your \
-             organisation's network, and that the directory address in this account's settings \
-             is right. The directory said: {}",
+             organisation's network, and that the directory address in \
+             {WHERE_A_DIRECTORY_IS_SET_UP} is right. The directory said: {}",
             redact_provider_message(&could_not_connect.to_string())
         )),
     }
@@ -649,14 +654,14 @@ fn what_the_directory_answered(answered: LdapResult, named: &str, typed: &str) -
     if THE_SIGN_IN_WAS_NOT_ACCEPTED.contains(&answered.rc) {
         return Error::Authentication(format!(
             "The directory at {named} would not accept the sign-in. Check the name and password \
-             for it in this account's settings."
+             for it in {WHERE_A_DIRECTORY_IS_SET_UP}."
         ));
     }
     if NOTHING_IS_THERE_TO_SEARCH.contains(&answered.rc) {
         return Error::Config(format!(
             "The directory at {named} has nothing at the place this account says to search \
-             under. Check that setting: your organisation's directory administrator will know \
-             what it should be."
+             under. Check Where in it to look, in {WHERE_A_DIRECTORY_IS_SET_UP}: your \
+             organisation's directory administrator will know what it should be."
         ));
     }
     if answered.rc == 50 {

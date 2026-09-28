@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 444 records have arrived since and have not been through it.
+# 445 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33756,7 +33756,7 @@ red = [
     "service::directory::tests::test_an_answer_of_nothing_but_references_holds_nobody",
 ]
 tests_last_seen = [
-    { file = "src/service/directory.rs", tests = 53 },
+    { file = "src/service/directory.rs", tests = 54 },
 ]
 
 # A password sent to a directory whose address begins ldap://, where a
@@ -33771,7 +33771,7 @@ red = [
     "service::directory::tests::test_a_password_is_never_sent_over_an_unencrypted_address",
 ]
 tests_last_seen = [
-    { file = "src/service/directory.rs", tests = 53 },
+    { file = "src/service/directory.rs", tests = 54 },
 ]
 
 # Uninstalling leaves every account's directory password in the credential
@@ -33810,4 +33810,19 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 23 },
+]
+
+# Clearing the sign-in name in Look People Up at Work and saving leaves the
+# directory password in the credential store, where nothing will ever send
+# it and nothing on screen says it is there. Written 2026-09-28 by 13-27.
+[[guard]]
+name = "clearing the directory sign-in name forgets the saved password"
+file = "src/application/directory_sign_in.rs"
+before = '''        (true, _, _) => PasswordChange::Forget,'''
+after = '''        (true, _, _) => PasswordChange::Keep,'''
+red = [
+    "application::directory_sign_in::tests::test_no_sign_in_name_forgets_any_saved_password",
+]
+tests_last_seen = [
+    { file = "src/application/directory_sign_in.rs", tests = 11 },
 ]

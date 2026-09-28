@@ -14,15 +14,17 @@
 //! description.
 
 use crate::common::{Error, Result};
-use crate::service::directory::Directory;
+use crate::service::directory::{self, Directory};
 
 /// What the password box says, on the box and beside it, when a password is
 /// already saved. The box itself opens empty: a saved password is never
 /// shown back.
-pub const A_PASSWORD_IS_SAVED: &str = "";
+pub const A_PASSWORD_IS_SAVED: &str = "A password is saved for this directory. Type a new one \
+     to replace it, or clear the sign-in name to forget it.";
 
 /// What the window says first, where the person reads it.
-pub const NOT_TRIED_YET: &str = "";
+pub const NOT_TRIED_YET: &str =
+    "Looking people up in a directory has not been tried against a real directory yet.";
 
 /// What happens to the password the credential store holds for this
 /// account's directory.
@@ -61,19 +63,55 @@ pub struct WhatIsKept {
 /// A refusal comes before anything is written, so a refused save changes
 /// nothing.
 pub fn what_the_window_keeps(
-    _address: &str,
-    _look_in: &str,
-    _sign_in_as: &str,
-    _typed_password: &str,
-    _a_password_is_saved: bool,
+    address: &str,
+    look_in: &str,
+    sign_in_as: &str,
+    typed_password: &str,
+    a_password_is_saved: bool,
 ) -> Result<WhatIsKept> {
-    Err(Error::InPlainWords(String::new()))
+    let (address, look_in, sign_in_as) = (address.trim(), look_in.trim(), sign_in_as.trim());
+    if address.is_empty() && look_in.is_empty() {
+        return Ok(WhatIsKept {
+            directory: None,
+            password: PasswordChange::Forget,
+        });
+    }
+    // Spaces alone are an empty box, as the lookup reads them; anything else
+    // is kept as typed, since a space can be part of a password.
+    let typed = Some(typed_password).filter(|typed| !typed.trim().is_empty());
+    let password = match (sign_in_as.is_empty(), typed, a_password_is_saved) {
+        (true, _, _) => PasswordChange::Forget,
+        (false, Some(typed), _) => PasswordChange::Replace(typed.to_string()),
+        (false, None, true) => PasswordChange::Keep,
+        (false, None, false) => {
+            return Err(Error::InPlainWords(directory::no_password_is_saved_for(
+                &the_name_it_goes_by(address),
+                sign_in_as,
+            )));
+        }
+    };
+    Ok(WhatIsKept {
+        directory: Some(Directory {
+            url: address.to_string(),
+            search_under: look_in.to_string(),
+            sign_in_as: Some(sign_in_as.to_string()).filter(|name| !name.is_empty()),
+        }),
+        password,
+    })
+}
+
+/// The directory's host, the name the lookup's sentences call it by, or the
+/// address as typed when it is not an address anything could reach.
+fn the_name_it_goes_by(address: &str) -> String {
+    url::Url::parse(address)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_string))
+        .unwrap_or_else(|| address.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::directory;
 
     const ADDRESS: &str = "ldaps://directory.example.com";
     const LOOK_IN: &str = "ou=people,dc=example,dc=com";
