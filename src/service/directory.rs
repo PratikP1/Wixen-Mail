@@ -18,8 +18,8 @@ use crate::common::error::redact_provider_message;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{ContactEntry, EmailEntry};
 use ldap3::{
-    LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Scope, SearchEntry, SearchOptions,
-    ldap_escape,
+    LdapConnAsync, LdapConnSettings, LdapError, LdapResult, ResultEntry, Scope, SearchEntry,
+    SearchOptions, ldap_escape,
 };
 use std::time::Duration;
 
@@ -572,6 +572,11 @@ fn what_the_directory_answered(answered: LdapResult, named: &str, typed: &str) -
     ))
 }
 
+/// The entries among a search's results. Stub for the red half.
+fn the_entries_among(results: Vec<ResultEntry>) -> Vec<ResultEntry> {
+    results
+}
+
 /// The directory itself, over the network.
 ///
 /// Everything above this decides; this is the only part that dials. It is
@@ -651,7 +656,7 @@ impl AsksADirectory for TheDirectoryItself {
         // stops carries no reason with it: the sentence somebody hears would
         // be nothing at all.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            entries
+            the_entries_among(entries)
                 .into_iter()
                 .map(SearchEntry::construct)
                 .collect::<Vec<SearchEntry>>()
@@ -1454,6 +1459,217 @@ mod tests {
         // the other bounds a search that connected and then went quiet.
         assert!(BEFORE_GIVING_UP_ON_CONNECTING <= std::time::Duration::from_secs(30));
         assert!(BEFORE_GIVING_UP_ON_AN_ANSWER <= std::time::Duration::from_secs(60));
+    }
+
+    // ── What a search answers besides entries ───────────────────────────────
+
+    /// One message of a search's answer, tagged the way a directory tags it.
+    fn a_result_tagged(id: u64, payload: ldap3::asn1::PL) -> ResultEntry {
+        ResultEntry::new(ldap3::asn1::StructureTag {
+            class: ldap3::asn1::TagClass::Application,
+            id,
+            payload,
+        })
+    }
+
+    /// An entry as it arrives on the wire: its name and an empty attribute list.
+    ///
+    /// Tag 4 is RFC 4511's `searchResEntry`, the one shape `construct` reads.
+    fn an_entry_on_the_wire(dn: &str) -> ResultEntry {
+        use ldap3::asn1::{PL, StructureTag, TagClass};
+        a_result_tagged(
+            4,
+            PL::C(vec![
+                StructureTag {
+                    class: TagClass::Universal,
+                    id: 4,
+                    payload: PL::P(dn.as_bytes().to_vec()),
+                },
+                StructureTag {
+                    class: TagClass::Universal,
+                    id: 16,
+                    payload: PL::C(Vec::new()),
+                },
+            ]),
+        )
+    }
+
+    /// A continuation reference, tag 19: "the rest of this search is at
+    /// another server". Active Directory sends them beside the entries
+    /// whenever the search starts at the domain root.
+    fn a_reference_on_the_wire() -> ResultEntry {
+        a_result_tagged(
+            19,
+            ldap3::asn1::PL::C(vec![ldap3::asn1::StructureTag {
+                class: ldap3::asn1::TagClass::Universal,
+                id: 4,
+                payload: ldap3::asn1::PL::P(
+                    b"ldap://DomainDnsZones.example.com/DC=DomainDnsZones,DC=example,DC=com"
+                        .to_vec(),
+                ),
+            }]),
+        )
+    }
+
+    /// An intermediate message, tag 25, which a search can carry and which
+    /// holds nobody.
+    fn an_intermediate_message_on_the_wire() -> ResultEntry {
+        a_result_tagged(25, ldap3::asn1::PL::C(Vec::new()))
+    }
+
+    /// The names of the entries a search's results turn into, built the way
+    /// the network half builds them.
+    fn the_names_built_from(results: Vec<ResultEntry>) -> Vec<String> {
+        the_entries_among(results)
+            .into_iter()
+            .map(SearchEntry::construct)
+            .map(|entry| entry.dn)
+            .collect()
+    }
+
+    #[test]
+    fn test_a_reference_beside_an_entry_leaves_the_entry_found() {
+        // ldap3 #156: `construct` panics on a reference, and the catch around
+        // it turns that into a failed search, so the real people beside the
+        // reference were thrown away with it. The entries come out in the
+        // order they arrived.
+        let found = the_names_built_from(vec![
+            an_entry_on_the_wire("cn=Ada Lovelace,dc=example,dc=com"),
+            a_reference_on_the_wire(),
+            an_entry_on_the_wire("cn=Grace Hopper,dc=example,dc=com"),
+        ]);
+
+        assert_eq!(
+            found,
+            vec![
+                "cn=Ada Lovelace,dc=example,dc=com".to_string(),
+                "cn=Grace Hopper,dc=example,dc=com".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_intermediate_message_is_not_taken_for_an_entry() {
+        let found = the_names_built_from(vec![
+            an_intermediate_message_on_the_wire(),
+            an_entry_on_the_wire("cn=Ada Lovelace,dc=example,dc=com"),
+        ]);
+
+        assert_eq!(found, vec!["cn=Ada Lovelace,dc=example,dc=com".to_string()]);
+    }
+
+    #[test]
+    fn test_an_answer_of_nothing_but_references_holds_nobody() {
+        let found = the_entries_among(vec![a_reference_on_the_wire(), a_reference_on_the_wire()]);
+
+        assert!(
+            found.is_empty(),
+            "{} references were kept as entries",
+            found.len()
+        );
+    }
+
+    // ── A password and an address that is not encrypted ─────────────────────
+
+    fn reached_without_encryption(sign_in_as: Option<&str>) -> Directory {
+        Directory {
+            url: "ldap://directory.example.com".to_string(),
+            sign_in_as: sign_in_as.map(str::to_string),
+            ..a_directory()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_password_is_never_sent_over_an_unencrypted_address() {
+        // Over ldap:// a simple bind carries the password as it was typed, so
+        // anybody on the network path reads it. Refused before any connection.
+        let asking = ADirectoryThat::answers_with(vec![somebody("Ada", "ada@example.com")]);
+        let plain = reached_without_encryption(Some("cn=reader,dc=example,dc=com"));
+
+        let refused = look_up_through(&asking, Some(&plain), Some("hunter2"), "Ada", "acct", "t")
+            .await
+            .expect_err("a refusal");
+
+        let said = refused.to_string();
+        assert!(
+            matches!(refused, Error::Config(_)),
+            "not a setting to correct: {refused:?}"
+        );
+        assert!(said.contains("directory.example.com"), "{said}");
+        assert!(said.contains("without encryption"), "{said}");
+        assert!(said.contains("ldaps://"), "{said}");
+        assert!(
+            !said.contains("hunter2"),
+            "the refusal quoted the password: {said}"
+        );
+        assert!(
+            asking.the_query_it_was_asked().is_empty(),
+            "the directory was dialled with a password over an unencrypted address"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_directory_that_signs_nobody_in_is_still_asked_over_an_unencrypted_address() {
+        // Nothing secret crosses the network, so the plain address stays
+        // usable for a directory that answers anybody.
+        let asking = ADirectoryThat::answers_with(vec![somebody("Ada", "ada@example.com")]);
+        let plain = reached_without_encryption(None);
+
+        let found = look_up_through(&asking, Some(&plain), Some("hunter2"), "Ada", "acct", "t")
+            .await
+            .expect("one person");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            *asking
+                .was_given_a_password
+                .lock()
+                .expect("whether a password was sent"),
+            vec![false]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_password_is_sent_over_an_encrypted_address() {
+        let asking = ADirectoryThat::answers_with(vec![somebody("Ada", "ada@example.com")]);
+        let encrypted = Directory {
+            sign_in_as: Some("cn=reader,dc=example,dc=com".to_string()),
+            ..a_directory()
+        };
+
+        look_up_through(
+            &asking,
+            Some(&encrypted),
+            Some("hunter2"),
+            "Ada",
+            "acct",
+            "t",
+        )
+        .await
+        .expect("one person");
+
+        assert_eq!(
+            *asking
+                .was_given_a_password
+                .lock()
+                .expect("whether a password was sent"),
+            vec![true]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_sign_in_with_no_password_over_an_unencrypted_address_asks_for_the_password() {
+        // The refusal it had before: a name with no password is never sent as
+        // an anonymous sign-in, whichever address it is on.
+        let asking = ADirectoryThat::answers_with(Vec::new());
+        let plain = reached_without_encryption(Some("cn=reader,dc=example,dc=com"));
+
+        let refused = look_up_through(&asking, Some(&plain), None, "Ada", "acct", "t")
+            .await
+            .expect_err("a refusal");
+
+        assert!(matches!(refused, Error::Authentication(_)), "{refused:?}");
+        assert!(asking.the_query_it_was_asked().is_empty());
     }
 }
 
