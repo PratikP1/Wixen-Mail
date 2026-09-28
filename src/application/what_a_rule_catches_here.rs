@@ -18,6 +18,7 @@
 
 use std::collections::HashSet;
 
+use crate::application::choosing_messages::Chosen;
 use crate::application::filters::{FilterEngine, FilterRule};
 use crate::common::types::FolderType;
 use crate::data::message_cache::{CachedFolder, CachedMessage};
@@ -41,6 +42,14 @@ pub fn which_messages_here_a_rule_catches(
         .filter(|message| FilterEngine::matches(rule, message))
         .map(|message| message.id)
         .collect()
+}
+
+/// The caught messages as a command over a set meets them, in the order
+/// `messages` holds them: the shape a selection is turned into, so the
+/// runner meets the same thing whoever chose the messages.
+pub fn the_messages_caught(messages: &[CachedMessage], caught: &[i64]) -> Chosen {
+    let _ = (messages, caught);
+    Chosen::default()
 }
 
 /// Whether mail in a folder of this kind stays where it is whatever a rule
@@ -235,6 +244,47 @@ mod tests {
         let caught = which_messages_here_a_rule_catches(&blocking_ada(), &messages, &the_folders());
 
         assert!(caught.is_empty(), "{caught:?}");
+    }
+
+    #[test]
+    fn test_the_caught_messages_become_a_set_with_what_each_row_holds() {
+        // In the order the store read them, not the order the ids came in,
+        // each carrying its uid, subject and flags, and no conversation.
+        let mut read_and_starred = from(10, INBOX, "ada@example.com");
+        read_and_starred.read = true;
+        read_and_starred.starred = true;
+        let messages = [
+            read_and_starred,
+            from(11, INBOX, "bob@example.com"),
+            from(12, RECEIPTS, "ada@example.com"),
+        ];
+
+        let set = the_messages_caught(&messages, &[12, 10]);
+
+        let held: Vec<(i64, u32, &str, bool, bool)> = set
+            .messages
+            .iter()
+            .map(|m| (m.row_id, m.uid, m.subject.as_str(), m.read, m.starred))
+            .collect();
+        assert_eq!(
+            held,
+            vec![
+                (10, 10, "Message 10", true, true),
+                (12, 12, "Message 12", false, false),
+            ]
+        );
+        assert!(set.conversations.is_empty());
+        assert_eq!(set.from_conversations, 0);
+    }
+
+    #[test]
+    fn test_an_id_no_message_carries_is_left_out_of_the_set() {
+        let messages = [from(10, INBOX, "ada@example.com")];
+
+        let set = the_messages_caught(&messages, &[10, 99]);
+
+        let ids: Vec<i64> = set.messages.iter().map(|m| m.row_id).collect();
+        assert_eq!(ids, vec![10]);
     }
 
     #[test]
