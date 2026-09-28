@@ -690,6 +690,14 @@ pub enum UIUpdate {
         waiting: crate::data::message_cache::moves_waiting::AWaitingMove,
         reason: String,
     },
+    /// One account's junk report was marked at its server, or needed no mark,
+    /// and its messages are ready to move into its junk folder (13-22).
+    ///
+    /// Sent by the worker once the mark is settled, because the mark goes to
+    /// the message in the folder its number belongs to, before it moves. The
+    /// arm moves them through Move's own path, which is gated and made here
+    /// first, and says the report's one sentence in place of Move's.
+    ReportedAsJunk(crate::application::reporting_junk::ReadyToMove),
     /// Active PIM module changed
     ModuleChanged(PimModule),
     /// Calendar containers loaded

@@ -55,6 +55,39 @@ impl AccountKind {
     }
 }
 
+/// The description on the Action menu's Report as Junk, which is where
+/// somebody deciding whether to press it reads it: that it is experimental,
+/// what it does on each kind of account, and what could go wrong.
+pub const REPORTING_JUNK_IS_EXPERIMENTAL: &str = "Move the selected messages to the junk \
+     folder and tell the provider where it listens. Experimental: this has never been run \
+     against a real mail server, so whether your provider learns from it is not known. \
+     Microsoft offers no way for a mail program to report junk, so it is not told.";
+
+/// One message a report is moving, as the window needs it for the move.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AReportedMessage {
+    pub row_id: i64,
+    pub uid: u32,
+    pub subject: String,
+    /// The folder it is in now, by its path.
+    pub folder: String,
+    /// Its size as its headers said, or nothing where nobody knows.
+    pub size_bytes: Option<i64>,
+}
+
+/// One account's report, marked or not, ready to move into its junk folder,
+/// with the one sentence that is said once the move is made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadyToMove {
+    pub account_id: String,
+    /// The junk folder by its path, where the messages go.
+    pub junk_path: String,
+    /// The junk folder by the name the sentence says.
+    pub junk_name: String,
+    pub messages: Vec<AReportedMessage>,
+    pub sentence: String,
+}
+
 /// What a POP account's report says.
 pub const POP_HAS_NO_JUNK_FOLDER: &str = "This account collects its mail with POP, which has no \
      junk folder at the server, so nothing was reported.";

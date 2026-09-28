@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 423 records have arrived since and have not been through it.
+# 425 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33356,4 +33356,44 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reporting_junk.rs", tests = 21 },
+]
+
+# The mark goes to the message in the folder its number belongs to, so the
+# worker asks for the move only once the mark is settled; an update sent
+# first moves the message out from under the mark. Written 2026-09-28 by
+# 13-22, measured against the target.
+[[guard]]
+name = "a junk report asks for the move only after the mark is settled"
+file = "src/presentation/wx_app.rs"
+suite = "report_as_junk_is_on_the_action_menu"
+before = """        for report in reports {
+            let marked = match report.mark {"""
+after = """        for report in reports {
+            let _ = tx.try_send(UIUpdate::ReportedAsJunk(report.going.clone()));
+            let marked = match report.mark {"""
+red = [
+    "test_the_worker_marks_at_the_server_before_it_asks_the_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
+]
+
+# A report's sentence says what the provider was told; dropped, the move
+# says nothing for the set and the person never hears whether Microsoft was
+# told. Written 2026-09-28 by 13-22, measured against the target.
+[[guard]]
+name = "the sentence a command hands the move is spoken in place of Move's"
+file = "src/presentation/wx_app.rs"
+suite = "report_as_junk_is_on_the_action_menu"
+before = """    if let Some(said) = said_for_the_set
+        && !made.is_empty()"""
+after = """    if let Some(said) = None::<String>
+        && !made.is_empty()"""
+red = [
+    "test_the_reports_sentence_replaces_moves_for_the_set",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
 ]
