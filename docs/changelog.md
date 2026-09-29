@@ -481,6 +481,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The Outbox and saved drafts remember the address a message was written from (GAP-10).**
+  Four columns are added to the mail on this computer: `from_address` and `from_name` on
+  the Outbox and the same two on drafts. They are added to an existing database without
+  changing any row, and a row with nothing in them goes out from its account's own address
+  and name, which is what every message and draft already here was written from. A message
+  in the Outbox leaves from the address its row names, and a draft is filed in the Drafts
+  folder from the address the draft names, both through the same rule, so the two cannot
+  disagree about who a message is from. Nothing you do changes yet: the message window
+  does not offer another address until a later change, so every row still names none.
+
 - **Find when everyone is free asks every place the account keeps a calendar, experimental
   (GAP-08's second point, #57 point 2).** It used to ask one place: the first calendar
   server the account signs in to, else Microsoft, else Google. Now every calendar server the
