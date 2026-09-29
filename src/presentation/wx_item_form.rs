@@ -411,10 +411,12 @@ pub struct RecurrencePages {
     /// Everything about the thing itself: title, when, where. Selected when
     /// the dialog opens, so recurrence is reached by moving to it rather
     /// than sitting in the way of finishing the form for everybody who was
-    /// never going to touch it.
-    pub one_time_page: Panel,
+    /// never going to touch it. Scrolled, like every page of the form, so a
+    /// field below the bottom of a small screen is brought into view when it
+    /// takes focus (ledger 417).
+    pub one_time_page: ScrolledWindow,
     /// How often, and when it stops.
-    pub recurrence_page: Panel,
+    pub recurrence_page: ScrolledWindow,
 }
 
 /// The item form dialog's widgets, returned so a test can build it without a
@@ -539,8 +541,9 @@ pub fn build_item_form_dialog<W: WxWidget>(
         true => format!("Edit {}", kind.label()),
         false => format!("New {}", kind.label()),
     };
-    // No height here. It is worked out from what goes in the window, by
-    // `set_sizer_and_fit` at the bottom of this function.
+    // No height here. It is worked out from what goes in the window, and from
+    // the screen the window opens on, by `fit_within_the_screen` at the bottom
+    // of this function.
     //
     // It used to be a guess: forty pixels plus fifty-two per field. The guess
     // was too small, and what fell off the bottom of every one of these windows
@@ -565,54 +568,42 @@ pub fn build_item_form_dialog<W: WxWidget>(
         .iter()
         .partition(|field| !field.name.is_about_recurrence());
 
-    // Built onto whichever page the fields themselves went on, right under
-    // them, so it is reached by carrying on through the form rather than by
-    // knowing it is there. Filled in after this so it can read every field back.
-    let mut free_busy = None;
-
-    let recurrence = if recurrence_fields.is_empty() {
-        build_fields_onto(&dialog, &sizer, &main_fields, &ctx, &mut built);
-        if chrome.asking.is_some() {
-            free_busy = Some(build_asking_when_free_onto(&dialog, &sizer));
-        }
-        None
+    // The fields of every page go in a scrolled area, so a form taller than
+    // its screen scrolls rather than losing its last fields off the bottom
+    // (ledger 417). Save, Cancel and the problem line stay outside it.
+    //
+    // The controls that ask when people are free are built onto whichever
+    // page the fields themselves went on, right under them, so they are
+    // reached by carrying on through the form rather than by knowing they are
+    // there. Wired after this so they can read every field back.
+    let can_ask = chrome.asking.is_some();
+    let (recurrence, areas, free_busy) = if recurrence_fields.is_empty() {
+        let (area, free_busy) =
+            a_scrolled_page_of(&dialog, &main_fields, &ctx, &mut built, can_ask);
+        sizer.add(&area, 1, SizerFlag::Expand, 0);
+        (None, vec![area], free_busy)
     } else {
         let notebook = Notebook::builder(&dialog).build();
 
-        let one_time_page = Panel::builder(&notebook).build();
-        let one_time_sizer = BoxSizer::builder(Orientation::Vertical).build();
-        build_fields_onto(
-            &one_time_page,
-            &one_time_sizer,
-            &main_fields,
-            &ctx,
-            &mut built,
-        );
-        if chrome.asking.is_some() {
-            free_busy = Some(build_asking_when_free_onto(&one_time_page, &one_time_sizer));
-        }
-        one_time_page.set_sizer(one_time_sizer, true);
+        let (one_time_page, free_busy) =
+            a_scrolled_page_of(&notebook, &main_fields, &ctx, &mut built, can_ask);
         notebook.add_page(&one_time_page, "One-Time", true, None);
 
-        let recurrence_page = Panel::builder(&notebook).build();
-        let recurrence_sizer = BoxSizer::builder(Orientation::Vertical).build();
-        build_fields_onto(
-            &recurrence_page,
-            &recurrence_sizer,
-            &recurrence_fields,
-            &ctx,
-            &mut built,
-        );
-        recurrence_page.set_sizer(recurrence_sizer, true);
+        let (recurrence_page, _) =
+            a_scrolled_page_of(&notebook, &recurrence_fields, &ctx, &mut built, false);
         notebook.add_page(&recurrence_page, "Recurrence", false, None);
 
         sizer.add(&notebook, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
-        Some(RecurrencePages {
-            notebook,
-            one_time_page,
-            recurrence_page,
-        })
+        (
+            Some(RecurrencePages {
+                notebook,
+                one_time_page,
+                recurrence_page,
+            }),
+            vec![one_time_page, recurrence_page],
+            free_busy,
+        )
     };
 
     // Where Save says why it refused an answer, both on screen and, through
@@ -717,10 +708,16 @@ pub fn build_item_form_dialog<W: WxWidget>(
         }
     });
 
-    // Sized by what is in it. Anything else is a guess that is wrong on a
-    // display it was not guessed on, and the part that falls off the bottom is
-    // the part added last.
+    // Sized by what is in it and by the screen it opens on. Anything else is a
+    // guess that is wrong on a display it was not guessed on, and the part
+    // that falls off the bottom is the part added last.
     dialog.set_sizer_and_fit(sizer, true);
+    fit_within_the_screen(
+        &dialog,
+        &areas,
+        the_tallest_field(&built, free_busy.as_ref()),
+        the_screen_around(parent),
+    );
 
     // Focus starts on the first field rather than on Save, so the first thing
     // heard is what to fill in. Always a field on the page already showing:
@@ -788,17 +785,18 @@ pub fn build_item_form_dialog<W: WxWidget>(
     // here and Windows decides. Every other kind of field this form can
     // build (the date and time controls, `Choice`, `ComboBox`, `SpinCtrl`,
     // `CheckBox`) is left to Windows, matching every one of those elsewhere
-    // in this round; only a real `TextCtrl` gets its own call. The notebook
-    // and its two pages, when there is one, are painted the same way
-    // `wx_settings::build_settings_dialog` paints its own tabs: a `Panel`
-    // does not inherit a colour set on its parent, so left alone it would
-    // stay the one colour this dialog no longer is.
+    // in this round; only a real `TextCtrl` gets its own call. The notebook,
+    // when there is one, and every scrolled area the fields sit in are painted
+    // the same way `wx_settings::build_settings_dialog` paints its own tabs: a
+    // panel does not inherit a colour set on its parent, so left alone it
+    // would stay the one colour this dialog no longer is.
     if let Some(palette) = chrome.palette {
         theme::paint(&dialog, palette.main_surface());
         if let Some(pages) = recurrence {
             theme::paint(&pages.notebook, palette.main_surface());
-            theme::paint(&pages.one_time_page, palette.main_surface());
-            theme::paint(&pages.recurrence_page, palette.main_surface());
+        }
+        for area in &areas {
+            theme::paint(area, palette.main_surface());
         }
         for (_, field) in &text_fields {
             theme::paint(field, palette.main_surface());
@@ -823,12 +821,167 @@ pub fn build_item_form_dialog<W: WxWidget>(
     })
 }
 
+/// How far, in pixels, one press of a scroll bar's arrow moves the fields; a
+/// notch of the wheel moves them three steps, about two lines of text.
+const A_SCROLL_STEP: i32 = 10;
+
+/// A scrolled page on `parent` holding `fields`, with the controls that ask
+/// when people are free under them when `can_ask` says so.
+///
+/// Every page of every form is one: the single page of a task or a note, and
+/// both pages of an event's or a reminder's notebook. A scrolled window is a
+/// panel, so it is no stop of its own for Tab and moves focus through its
+/// fields the way a panel does; and wxWidgets scrolls a field into view when
+/// it takes focus, so nothing here watches focus. It does that only for a
+/// field that fits the page, which [`fit_within_the_screen`] keeps room for,
+/// and sets the scroll rate after the form has been sized by its fields.
+fn a_scrolled_page_of<W: WxWidget>(
+    parent: &W,
+    fields: &[&'static Field],
+    ctx: &FormContext,
+    built: &mut Vec<(&'static Field, Control)>,
+    can_ask: bool,
+) -> (ScrolledWindow, Option<TheAskingControls>) {
+    // A panel's own tab traversal, which wxdragon's scrolled window style has
+    // no name for: without it Windows does not treat the page as holding
+    // controls, and Tab in a field would leave the page for Save.
+    let page = ScrolledWindow::builder(parent)
+        .with_style(
+            ScrolledWindowStyle::VScroll
+                | ScrolledWindowStyle::HScroll
+                | ScrolledWindowStyle::from_bits_retain(PanelStyle::TabTraversal.bits()),
+        )
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+    build_fields_onto(&page, &sizer, fields, ctx, built);
+    let asking = can_ask.then(|| build_asking_when_free_onto(&page, &sizer));
+    page.set_sizer(sizer, true);
+    (page, asking)
+}
+
+/// The part of a screen a window can use, and how wide a scroll bar is on it.
+#[derive(Clone, Copy)]
+struct Screen {
+    /// The screen less the taskbar.
+    room: Size,
+    scroll_bar: i32,
+}
+
+/// The screen `window` is on, which is where a form opened from it is
+/// centred. `None` when Windows would not say.
+#[cfg(target_os = "windows")]
+fn the_screen_around(window: &impl WxWidget) -> Option<Screen> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXVSCROLL};
+
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..MONITORINFO::default()
+    };
+    // SAFETY: the window is a live one on this thread, and a monitor handle
+    // Windows hands back is one it can be asked about; the structure carries
+    // its own size, as the call requires.
+    let answered = unsafe {
+        let monitor = MonitorFromWindow(HWND(window.get_handle()), MONITOR_DEFAULTTONEAREST);
+        GetMonitorInfoW(monitor, &mut info).as_bool()
+    };
+    let work = info.rcWork;
+    answered.then(|| Screen {
+        room: Size::new(work.right - work.left, work.bottom - work.top),
+        // SAFETY: no arguments beyond the metric asked for.
+        scroll_bar: unsafe { GetSystemMetrics(SM_CXVSCROLL) },
+    })
+}
+
+/// Everywhere else. A port needs its own answer here; until it has one a
+/// form there opens as big as its fields, as it did everywhere before, and
+/// still scrolls when it is dragged smaller.
+#[cfg(not(target_os = "windows"))]
+fn the_screen_around(_window: &impl WxWidget) -> Option<Screen> {
+    None
+}
+
+/// The height of the tallest field on any page: a box of several lines, the
+/// guest list, the description or the answer about who is free.
+///
+/// wxWidgets scrolls a field into view when it takes focus only if the field
+/// fits in the page; one taller than the page is not scrolled to at all, so
+/// it could take focus wholly out of sight. So a page keeps room for this
+/// however small the form is made.
+fn the_tallest_field(
+    built: &[(&'static Field, Control)],
+    asking: Option<&TheAskingControls>,
+) -> i32 {
+    let fields = built.iter().map(|(_, control)| match control {
+        Control::Date(date) => date.month.get_size().height,
+        Control::Time(time) => time.hour.get_size().height,
+        other => as_widget(other).get_size().height,
+    });
+    let answer = asking.map(|asking| asking.shown.answer.get_size().height);
+    fields.chain(answer).max().unwrap_or(0)
+}
+
+/// Size the form to show every field where the screen has room for them, and
+/// to scroll where it has not (ledger 417, #57). Called once the dialog has
+/// been fitted to its fields, while no page can scroll yet and so each still
+/// asks for all of its fields.
+///
+/// The form opens as big as its fields, as it always did, but never bigger
+/// than the working area of its screen, and it can be dragged smaller than
+/// its fields, down to a page with room for its tallest field. However small
+/// it gets, the dialog's sizer gives the problem line and the row of buttons
+/// their room first and the fields what is left, so Save never scrolls away.
+///
+/// A scroll bar's width is added to the width the fields ask for, so a page
+/// that starts to scroll up and down does not then need to scroll sideways as
+/// well to show the right edge of its fields.
+fn fit_within_the_screen(
+    dialog: &Dialog,
+    areas: &[ScrolledWindow],
+    tallest_field: i32,
+    screen: Option<Screen>,
+) {
+    let everything = dialog.get_size();
+    let pages = areas
+        .iter()
+        .map(|area| area.get_size().height)
+        .max()
+        .unwrap_or(0);
+    for area in areas {
+        area.set_scroll_rate(A_SCROLL_STEP, A_SCROLL_STEP);
+    }
+
+    let wanted = Size::new(
+        everything.width + screen.map_or(0, |screen| screen.scroll_bar),
+        everything.height,
+    );
+    let opening = screen.map_or(wanted, |screen| {
+        Size::new(
+            wanted.width.min(screen.room.width),
+            wanted.height.min(screen.room.height),
+        )
+    });
+    // Two steps over the tallest field, because a page scrolls a whole step
+    // at a time and a field only just shorter than the page could otherwise
+    // lose its top edge to the rounding.
+    let least_page = (tallest_field + 2 * A_SCROLL_STEP).min(pages);
+    let least_height = (everything.height - pages + least_page).min(opening.height);
+    dialog.set_min_size(Size::new(opening.width, least_height));
+    if let Some(screen) = screen {
+        dialog.set_max_size(screen.room);
+    }
+    dialog.set_size(opening);
+}
+
 /// Build every field in `fields` onto `parent`, in order, adding each one to
 /// `sizer` and recording it in `built`.
 ///
 /// The one place a field becomes a label and a control, whichever page it
 /// ends up on: a kind with nothing to say about recurrence calls this once,
-/// straight onto the dialog; one that does calls it twice, once per page of
+/// for its one scrolled page; one that does calls it twice, once per page of
 /// the notebook that splits recurrence off. Same building, same naming, same
 /// tab order either way.
 fn build_fields_onto<W: WxWidget>(
