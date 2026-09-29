@@ -525,7 +525,7 @@ impl WhenWeCouldMeet {
             .take(HOW_MANY_TIMES_ARE_SAID)
             .map(|time| self.a_time_on_every_clock(time.span.from, say, on_their_clock))
             .collect();
-        format!("Everyone is free {}.", one_after_another(&said, "or"))
+        format!("Everyone is free {}.", each_heard_whole(&said, "or"))
     }
 
     /// One time, "Tuesday at 10:00, which is 15:00 for Ada and 13:00 for Bo".
@@ -697,6 +697,21 @@ fn one_after_another(things: &[String], joined_by: &str) -> String {
         [only] => only.clone(),
         [first, second] => format!("{first} {joined_by} {second}"),
         [rest @ .., last] => format!("{}, {joined_by} {last}", rest.join(", ")),
+    }
+}
+
+/// Several things said out loud, kept apart by semicolons where any of them
+/// holds a comma of its own.
+///
+/// "Monday at 9, which is 04:00 for Grace, Monday at 9:30" is heard as one
+/// thing running into the next, so once a thing carries a comma the list is
+/// kept apart by something longer, the two-item list included.
+fn each_heard_whole(things: &[String], joined_by: &str) -> String {
+    match things {
+        [rest @ .., last] if things.iter().any(|thing| thing.contains(',')) && !rest.is_empty() => {
+            format!("{}; {joined_by} {last}", rest.join("; "))
+        }
+        _ => one_after_another(things, joined_by),
     }
 }
 
