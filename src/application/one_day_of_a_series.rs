@@ -344,6 +344,9 @@ mod tests {
             at: at.to_string(),
             zone: zone.map(str::to_string),
             from_then_on: false,
+            // The calendar format's own spelling of the same moment, the way
+            // an invitation writes it.
+            as_written: at.replace(['-', ':'], ""),
         }
     }
 

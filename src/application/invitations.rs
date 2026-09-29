@@ -143,6 +143,12 @@ pub struct OneDay {
     /// Whether the change runs from that day on, `RANGE=THISANDFUTURE`,
     /// rather than for that day alone.
     pub from_then_on: bool,
+    /// The day as the invitation wrote it on its `RECURRENCE-ID` line, before
+    /// it was read into this program's shape.
+    ///
+    /// What an answer to that day carries back, because the organiser matches
+    /// the day by the value they wrote.
+    pub as_written: String,
 }
 
 /// What the invitation says, read out of the document it arrived as.
@@ -209,6 +215,7 @@ fn the_day_named_on(its_own: &[String], read: Option<&str>) -> Result<Option<One
         zone: parameter_named_on(line, "TZID"),
         from_then_on: parameter_named_on(line, "RANGE")
             .is_some_and(|range| range.trim().eq_ignore_ascii_case("THISANDFUTURE")),
+        as_written: String::new(),
     }))
 }
 
@@ -2752,6 +2759,7 @@ mod tests {
                 at: "2026-03-12T09:00:00".to_string(),
                 zone: Some("Europe/London".to_string()),
                 from_then_on: false,
+                as_written: "20260312T090000".to_string(),
             })
         );
     }
@@ -2764,6 +2772,7 @@ mod tests {
                 at: "2026-03-12T09:00:00Z".to_string(),
                 zone: None,
                 from_then_on: false,
+                as_written: "20260312T090000Z".to_string(),
             })
         );
     }
@@ -2776,6 +2785,7 @@ mod tests {
                 at: "2026-03-12".to_string(),
                 zone: None,
                 from_then_on: false,
+                as_written: "20260312".to_string(),
             })
         );
     }
@@ -2792,6 +2802,7 @@ mod tests {
                 at: "2026-03-12T09:00:00".to_string(),
                 zone: Some("Europe/London".to_string()),
                 from_then_on: true,
+                as_written: "20260312T090000".to_string(),
             })
         );
     }
@@ -2945,5 +2956,85 @@ mod tests {
         assert_eq!(once.the_day, None);
         assert_eq!(once.repeats, None);
         assert_eq!(once.called_off, None);
+    }
+
+    // ── Answering one day ──
+    //
+    // RFC 5546 section 3.2.3: a REPLY carries a RECURRENCE-ID "only if
+    // referring to an instance of a recurring calendar component", and without
+    // one the organiser reads the answer for every day of the series.
+
+    /// The lines of Sam's reply to the update for one day written as
+    /// `day_line` that name a day.
+    fn the_day_the_reply_names(day_line: &str) -> Vec<String> {
+        let invitation =
+            read_the_invitation(&an_update_for_one_day(day_line)).expect("the update to read");
+        let reply = a_reply_to(
+            &invitation,
+            "sam@example.com",
+            Answer::Declined,
+            answered_at(),
+        )
+        .expect("a reply to build");
+        reply
+            .lines()
+            .filter(|line| names_the_day(line))
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn test_the_answer_to_one_day_names_that_day_as_the_invitation_did() {
+        assert_eq!(
+            the_day_the_reply_names("RECURRENCE-ID;TZID=Europe/London:20260312T090000"),
+            vec!["RECURRENCE-ID;TZID=Europe/London:20260312T090000".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_a_day_named_in_universal_time_is_answered_in_universal_time() {
+        assert_eq!(
+            the_day_the_reply_names("RECURRENCE-ID:20260312T090000Z"),
+            vec!["RECURRENCE-ID:20260312T090000Z".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_a_whole_day_is_answered_as_a_date() {
+        assert_eq!(
+            the_day_the_reply_names("RECURRENCE-ID;VALUE=DATE:20260312"),
+            vec!["RECURRENCE-ID;VALUE=DATE:20260312".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_the_buttons_for_one_day_say_one_day() {
+        let the_twelfth = read_the_invitation(&an_update_for_one_day(
+            "RECURRENCE-ID;TZID=Europe/London:20260312T090000",
+        ))
+        .expect("the update to read");
+
+        assert_eq!(
+            what_will_happen(
+                &the_twelfth,
+                Answer::Accepted,
+                "13/03/2026 at 14:00 to 15:00"
+            ),
+            "Accept one day of Weekly sync, 13/03/2026 at 14:00 to 15:00. Ada Lovelace will be \
+             told."
+        );
+    }
+
+    #[test]
+    fn test_what_answering_one_day_did_says_one_day() {
+        let the_twelfth = read_the_invitation(&an_update_for_one_day(
+            "RECURRENCE-ID;TZID=Europe/London:20260312T090000",
+        ))
+        .expect("the update to read");
+
+        assert_eq!(
+            what_was_done(&the_twelfth, Answer::Declined),
+            "Declined one day of Weekly sync."
+        );
     }
 }

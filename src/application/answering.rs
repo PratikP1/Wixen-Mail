@@ -1068,6 +1068,60 @@ mod tests {
         assert_eq!(answering.invitation().summary, "Quarterly review");
     }
 
+    /// A weekly meeting sent whole with one changed day after it, the way
+    /// Outlook sends a series somebody already moved a day of.
+    fn a_series_sent_with_a_changed_day() -> String {
+        an_invitation_that_arrived().replace(
+            "END:VEVENT\r\n",
+            "RRULE:FREQ=WEEKLY;COUNT=10\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSEQUENCE:2\r\n\
+             SUMMARY:Quarterly review\r\nRECURRENCE-ID:20260312T090000Z\r\n\
+             DTSTART:20260313T140000Z\r\nDTEND:20260313T150000Z\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\n",
+        )
+    }
+
+    #[test]
+    fn test_a_series_sent_with_a_changed_day_is_answered_as_the_series() {
+        // The first meeting in the document is the one it is about, and the
+        // changed day after it names no day for the series. A reply naming no
+        // day is an answer to every day, which is what this is.
+        let answering = whether_it_can_be_answered(
+            &a_series_sent_with_a_changed_day(),
+            "sam@example.com",
+            Allowed::EVERYTHING,
+        )
+        .expect("a series sent with a changed day to be answerable as the series");
+
+        assert_eq!(answering.invitation().the_day, None);
+        assert_eq!(
+            answering.invitation().repeats.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10")
+        );
+    }
+
+    #[test]
+    fn test_the_answer_to_a_series_names_no_day() {
+        // The changed day's RECURRENCE-ID is in the document the answer is
+        // built from, and it is not what the answer is about.
+        let sending = whether_it_can_be_answered(
+            &a_series_sent_with_a_changed_day(),
+            "sam@example.com",
+            Allowed::EVERYTHING,
+        )
+        .expect("a series sent with a changed day to be answerable as the series")
+        .the_answer_to_send(Answer::Accepted, answered_at(), THE_INVITATION_ID, None)
+        .expect("the answer to be built");
+
+        assert!(
+            !sending.calendar_document.contains("RECURRENCE-ID"),
+            "{}",
+            sending.calendar_document
+        );
+    }
+
     #[test]
     fn test_an_organiser_named_by_something_that_is_not_an_address_cannot_be_written_to() {
         // Exchange names a room, and sometimes a person, with a `urn:` rather
