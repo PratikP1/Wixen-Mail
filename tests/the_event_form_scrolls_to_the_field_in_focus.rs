@@ -294,6 +294,35 @@ fn within(size: Size, work: &Rect) -> String {
     }
 }
 
+/// The event form opened from a window near the bottom of the screen: whether
+/// the whole form, Save with it, lies inside the working area.
+///
+/// Found by the Accessibility run of 13-32's pull request (run 36510066030):
+/// on the runner's 1024 by 768 screen the form was capped to the 720 pixels
+/// of its working area and scrolled, and it opened with its top at 95, so its
+/// bottom 47 pixels and Save were below the edge of the screen. A dialog is
+/// placed when it is made, around its parent and at the size it was made at,
+/// and growing it afterwards keeps its top where it was. A parent low on the
+/// screen reads the same fault on any screen.
+fn read_the_place_opened(a11y: &Arc<Accessibility>, into: &mut Harvest) -> Result<(), String> {
+    let frame = a_frame();
+    let work = working_area_of(frame.get_handle() as isize);
+    frame.move_window(work.left + 40, work.bottom - 160);
+    let form = a_form(&frame, a11y, ItemKind::Event)?;
+    form.dialog.show(true);
+    let opened = window_rect(form.dialog.get_handle() as isize);
+    into.insert(
+        "event opened low on the screen: where it lies",
+        match work.holds(&opened) {
+            true => "within".to_string(),
+            false => format!("{opened:?} runs outside the working area {work:?}"),
+        },
+    );
+    form.dialog.destroy();
+    frame.destroy();
+    Ok(())
+}
+
 /// The event form as built, against the working area of the screen its
 /// parent is on: the size it opens at, and the largest it can be made.
 ///
@@ -531,6 +560,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     ],
                 )?;
                 read_the_size_built(&a11y, &mut harvest)?;
+                read_the_place_opened(&a11y, &mut harvest)?;
                 read_the_task(&a11y, &mut harvest)?;
                 read_the_walks(&a11y, &mut harvest)?;
                 Ok(harvest)
@@ -641,6 +671,14 @@ fn test_at_its_smallest_save_and_the_problem_line_stay_in_the_window() {
 #[test]
 fn test_the_event_form_opens_within_the_working_area() {
     assert_eq!(reading("event: the size it opens at"), "within");
+}
+
+#[test]
+fn test_the_event_form_opened_low_on_the_screen_lies_inside_the_working_area() {
+    assert_eq!(
+        reading("event opened low on the screen: where it lies"),
+        "within"
+    );
 }
 
 #[test]
