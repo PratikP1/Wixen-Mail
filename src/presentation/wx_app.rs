@@ -1920,6 +1920,7 @@ impl WxMailApp {
                         &runtime,
                         &message_cache,
                         removal,
+                        crate::application::allowed::allowed_for,
                     );
                 }
             });
@@ -15493,14 +15494,19 @@ fn answer_the_invitation(
 /// called off the series and nothing else is touched: the series and every
 /// other day stay. The button was offered only because the organiser the
 /// calendar recorded sent the cancellation; the account's Allow Changes answer
-/// is asked again here, since it may have changed while the window was open.
-/// Every outcome is said once, through the status line, which speaks what it
-/// shows. Public so the one-day target can press the real handler.
+/// is asked again here, through `allowed`, since it may have changed while the
+/// window was open. Every outcome is said once, through the status line, which
+/// speaks what it shows.
+///
+/// Public, and handed the Allow Changes question rather than reading the
+/// stored settings itself, so the one-day target presses the real handler
+/// against a store of its own; the program hands it `allowed::allowed_for`.
 pub fn take_the_called_off_meeting_off_the_calendar(
     ui_tx: &Sender<UIUpdate>,
     runtime: &Arc<Runtime>,
     cache: &Option<Arc<MessageCache>>,
     removal: &crate::application::meeting_changes::Removal,
+    allowed: impl Fn(&str) -> crate::application::allowed::Allowed,
 ) {
     use crate::application::meeting_changes::Removal;
 
@@ -15521,7 +15527,7 @@ pub fn take_the_called_off_meeting_off_the_calendar(
         refused("That meeting is no longer on your calendar.");
         return;
     };
-    if !crate::application::allowed::allowed_for(&meeting.account_id).personal_information {
+    if !allowed(&meeting.account_id).personal_information {
         refused(
             "Your calendar was not changed, because changes to calendars are switched off \
              for this account in Allow Changes.",
@@ -15537,7 +15543,21 @@ pub fn take_the_called_off_meeting_off_the_calendar(
                 refused("Your calendar could not be changed, so the meeting is still on it.");
             }
         },
-        Removal::OneDay { .. } => {}
+        Removal::OneDay { the_day, .. } => {
+            let without_that_day =
+                crate::application::calendar::one_day_called_off(&meeting, the_day);
+            match cache.save_calendar_event(&without_that_day) {
+                Ok(()) => send_status(
+                    ui_tx,
+                    runtime,
+                    &crate::application::calendar::one_day_taken_off(&meeting.summary),
+                ),
+                Err(e) => {
+                    tracing::warn!("Could not call one day of a meeting off: {e}");
+                    refused("Your calendar could not be changed, so that day is still on it.");
+                }
+            }
+        }
     }
 }
 

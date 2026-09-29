@@ -244,9 +244,20 @@ pub enum Removal {
 
 impl Removal {
     /// What pressing Remove from Calendar does, as its description says it.
+    ///
+    /// Two different sentences, because taking a whole meeting off and taking
+    /// one Thursday off it are different things to press, and somebody should
+    /// hear which before pressing.
     pub fn what_pressing_does(&self) -> String {
-        "Marks this meeting cancelled on your calendar. Nothing is sent to the organiser."
-            .to_string()
+        match self {
+            Removal::TheMeeting { .. } => "Marks this meeting cancelled on your calendar. Nothing \
+                                           is sent to the organiser."
+                .to_string(),
+            Removal::OneDay { when, .. } => format!(
+                "Takes {when} off this repeating meeting on your calendar. Nothing is sent to \
+                 the organiser."
+            ),
+        }
     }
 }
 

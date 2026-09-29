@@ -868,7 +868,11 @@ fn take_the_harvest() -> Result<Harvest, String> {
             // with it when the program runs.
             reader.on_remove(move |removal| {
                 wx_app::take_the_called_off_meeting_off_the_calendar(
-                    &ui_tx, &runtime, &cache, removal,
+                    &ui_tx,
+                    &runtime,
+                    &cache,
+                    removal,
+                    |_| Allowed::EVERYTHING,
                 );
             });
             let offered = document.removal.clone();

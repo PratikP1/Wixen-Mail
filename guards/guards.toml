@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 500 records have arrived since and have not been through it.
+# 502 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34992,7 +34992,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 8 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
 ]
 
 # The store's read of one day of a meeting ignoring which day, so a message
@@ -35009,4 +35009,49 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/calendar.rs", tests = 56 },
+]
+
+# Remove from Calendar on one cancelled day marking the whole series
+# cancelled, so every other Thursday goes with it (T-13-36.3-04). Written
+# 2026-09-29 by 13-36.3, measured through `scripts/guards.sh --remeasure`
+# against the target.
+[[guard]]
+name = "the one-day arm calls the day off rather than marking the series cancelled"
+file = "src/presentation/wx_app.rs"
+suite = "one_day_of_a_repeating_meeting_is_changed_alone"
+before = '''            let without_that_day =
+                crate::application::calendar::one_day_called_off(&meeting, the_day);
+            match cache.save_calendar_event(&without_that_day) {'''
+after = '''            let _ = the_day;
+            match cache.mark_the_meeting_called_off(&meeting.id).map(|_| ()) {'''
+red = [
+    "test_pressing_it_calls_that_day_off_and_keeps_the_series",
+    "test_the_one_day_arm_calls_the_day_off_and_deletes_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
+]
+
+# The one-day button described as taking the whole meeting off, so somebody
+# about to take one Thursday off hears that the meeting goes. Written
+# 2026-09-29 by 13-36.3, measured through `scripts/guards.sh --remeasure`
+# against the target.
+[[guard]]
+name = "the one-day button is described as one day"
+file = "src/application/meeting_changes.rs"
+suite = "one_day_of_a_repeating_meeting_is_changed_alone"
+before = '''            Removal::OneDay { when, .. } => format!(
+                "Takes {when} off this repeating meeting on your calendar. Nothing is sent to \
+                 the organiser."
+            ),'''
+after = '''            Removal::OneDay { .. } => "Marks this meeting cancelled on your calendar. Nothing \
+                                       is sent to the organiser."
+                .to_string(),'''
+red = [
+    "test_a_cancelled_day_is_offered_one_button_described_as_that_day",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
 ]
