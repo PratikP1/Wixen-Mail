@@ -293,6 +293,14 @@ Written down so you do not spend time reporting things already on the list.
   An account with calendars in more than one place, a calendar server and
   Google say, now asks every one of them; tell us if a guest one of them knows
   is still said as not checked.
+- **A guest's time zone from Microsoft has been read only from answers written
+  in its tests.** On an Outlook or Office 365 work account, Find when everyone
+  is free now takes each colleague's time zone from the working hours Microsoft
+  gives, judges their working day there, and says each offered time on their
+  clock as well as yours: "which is 15:00 for Ada". No real colleague's answer
+  has been read. If you have such an account, invite a colleague in another
+  time zone and tell us whether their clock was said, whether its hour was
+  right, and whether the answer still said nobody knew where they were.
 - **Opening S/MIME encrypted mail is experimental, and it has met no message
   from Outlook or Thunderbird.** Since the build of 2026-09-26, a message
   encrypted to a certificate in your Windows certificate store is opened with

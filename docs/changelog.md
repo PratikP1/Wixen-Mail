@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Find when everyone is free says a colleague's time on their own clock, experimental
+  (GAP-08's third point, #57 point 3).** Microsoft's answer gives each colleague's working
+  hours with the time zone they keep them in, and that zone is now read, through the same
+  Windows lookup the calendar uses for a zone named the Windows way. A colleague it places
+  is judged against the working day in their own zone rather than yours, is no longer named
+  in the sentence saying nobody said where they are, and hears each offered time on their
+  clock as well: "03/03/2026 at 10:00, which is 15:00 for Ada", with their date as well
+  when it is already another day there. Up to three guests whose clock differs are named
+  per time, in the order invited; a guest on your clock adds nothing. Once times carry a
+  clock they are kept apart by semicolons rather than commas. A zone somebody built by
+  hand in Outlook gives no zone, as before. An event on your own calendar written in a
+  Windows zone now blocks the hour that zone names, where it used to block that hour on
+  your clock. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitation: no real colleague's answer from Microsoft has been read,
+  and a time zone kept on a contact is later work.
 - **Find when everyone is free asks Google on a Google account, experimental (GAP-08's first
   point, #57).** On an account whose calendar is at Google, Find when everyone is free in the
   event window now asks Google's free/busy service, where before it asked nobody and every

@@ -1821,6 +1821,54 @@ under the 5th and says 15:00 on the 4th. The row's own words are right; the
 view it sits in follows the organiser's day. This is known and not yet
 changed.
 
+### Finding a time everyone is free
+
+**Find when everyone is free**, in the event window under Who is coming, asks
+when the people on the guest list are free and answers in sentences. It is
+experimental: no answer from a real account has been read yet, only answers
+written in its tests.
+
+**What is asked, and where.** Every place the account keeps a calendar is asked
+at the same time: each calendar server it signs in to, Microsoft's service and
+Google's. The question names the guest list's addresses and the window of dates,
+and nothing about the meeting. What the places say about one guest is put
+together, so busy time any of them knows about is kept.
+
+**The answer.** The first sentence gives up to three times that suit everybody,
+the most useful first; the rest are in Times offered. A time outside somebody's
+working day, or one they have pencilled something into, is still offered, and a
+sentence after it says whose.
+
+**A guest nobody could check** is never counted as free. The answer names them
+and gives the reason, which is one of these:
+
+| The answer says | What it means |
+|---|---|
+| there is no calendar to ask | The account keeps no calendar anywhere that can be asked, its calendar server does not answer this question, or the guest's address could not be sent |
+| the server would not say | A place was asked and refused, could not be reached, or passed over this guest. Asking again may work |
+| the reply could not be read | An answer came back that Wixen Mail could not make sense of |
+| their calendar is not shared with you | Google could not find this guest's calendar for you, usually because they are outside your organisation |
+
+**Where each guest is.** A time is judged against each guest's working day in
+their own time zone. The working day is the one set in the Working Day section
+of the Calendar and PIM tab in Settings. Microsoft says which time zone a
+colleague keeps their working hours in, so a colleague on Outlook or Office 365
+is judged on their own clock. For anybody else nobody said where they are, so
+their day is judged on your clock and the answer says so: "Nobody said where Bo
+is, so the times were judged against the working hours set here."
+
+**Each time on their clock.** Where a guest's clock says a different hour from
+yours, each time says theirs too, for up to three guests in the order they were
+invited, worded the way your settings word dates and times. Asked in March
+from London about a colleague in Karachi, with dates written day first, a time
+reads "03/03/2026 at 10:00, which is 15:00 for Ada". When it is already
+another day there, the date is said too: "03/03/2026 at 23:00, which is
+04/03/2026 at 04:00 for Ada". A guest whose clock agrees with yours adds
+nothing. Once times carry a clock they are kept apart by semicolons.
+
+A time zone an organiser built by hand in Outlook cannot be placed, so that
+guest is treated as one nobody said the place of.
+
 ## Keyboard Shortcuts
 
 ### Application Control
