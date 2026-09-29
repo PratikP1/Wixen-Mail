@@ -1770,6 +1770,191 @@ mod tests {
         );
     }
 
+    // ── A repeating meeting answered stays a repeating meeting ──
+    //
+    // Found while planning 13-36.4 (ledger 723): the row an answer left wrote
+    // no repeat rule and no called-off days, so a weekly meeting answered here
+    // was one appointment on the calendar, and a series a calendar server held
+    // lost both, which the next push would have sent the server.
+
+    /// A weekly meeting in London, ten Thursdays from 5 March with the
+    /// nineteenth called off, as its organiser's invitation sends it.
+    fn a_weekly_invitation() -> String {
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:REQUEST\r\n\
+         BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSEQUENCE:2\r\nSUMMARY:Weekly sync\r\n\
+         DTSTART;TZID=Europe/London:20260305T090000\r\n\
+         DTEND;TZID=Europe/London:20260305T100000\r\n\
+         RRULE:FREQ=WEEKLY;COUNT=10\r\n\
+         EXDATE;TZID=Europe/London:20260319T090000\r\n\
+         ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+         ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+         END:VEVENT\r\nEND:VCALENDAR\r\n"
+            .to_string()
+    }
+
+    /// The same series as a calendar server holds it, with the twenty-sixth
+    /// called off there as well, and Ada remembered as who called it.
+    fn the_series_a_calendar_server_holds(cache: &MessageCache) -> CalendarEventEntry {
+        let calendar = a_calendar_at_a_server(cache);
+        let held = CalendarEventEntry {
+            id: "evt-series".to_string(),
+            account_id: "acct".to_string(),
+            provider_event_id: Some("m-1@example.com".to_string()),
+            calendar_id: Some(calendar.id),
+            summary: "Weekly sync".to_string(),
+            description: None,
+            location: None,
+            start_datetime: "2026-03-05T09:00:00".to_string(),
+            end_datetime: "2026-03-05T10:00:00".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: Some("Europe/London".to_string()),
+            status: "confirmed".to_string(),
+            recurrence_rule: Some("FREQ=WEEKLY;COUNT=10".to_string()),
+            categories: String::new(),
+            source_provider: Some("caldav".to_string()),
+            etag: Some("\"tag-s-1\"".to_string()),
+            web_link: Some("https://dav.example.com/cal/m-1.ics".to_string()),
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-03-01T00:00:00Z".to_string(),
+            updated_at: "2026-03-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: Some("20260319T090000,20260326T090000".to_string()),
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        };
+        cache
+            .save_calendar_event(&held)
+            .expect("the server's copy filed");
+        cache
+            .remember_where_it_came_from(
+                "evt-series",
+                Some("m-1@example.com"),
+                Some("ada@example.com"),
+            )
+            .expect("where it came from remembered");
+        held
+    }
+
+    /// The days a row calls off, one value each.
+    fn the_days_called_off(row: &CalendarEventEntry) -> Vec<String> {
+        row.exception_dates
+            .as_deref()
+            .unwrap_or_default()
+            .split(',')
+            .map(|day| day.trim().to_string())
+            .filter(|day| !day.is_empty())
+            .collect()
+    }
+
+    #[test]
+    fn test_answering_a_repeating_meeting_puts_a_repeating_meeting_on_the_calendar() {
+        let cache = a_calendar_on_this_computer("a_repeating_meeting_answered");
+
+        answer_it(&cache, &a_weekly_invitation(), Answer::Accepted);
+
+        let on_the_calendar =
+            the_meeting_on_the_calendar(&cache).expect("the meeting to be on the calendar");
+        assert_eq!(
+            on_the_calendar.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10"),
+            "a weekly meeting answered here is one appointment on the calendar"
+        );
+        assert_eq!(
+            the_days_called_off(&on_the_calendar),
+            vec!["20260319T090000".to_string()],
+            "the day the organiser called off came back on the calendar"
+        );
+    }
+
+    #[test]
+    fn test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off()
+    {
+        let cache = a_calendar_on_this_computer("a_server_series_answered");
+        the_series_a_calendar_server_holds(&cache);
+
+        answer_it(&cache, &a_weekly_invitation(), Answer::Tentative);
+
+        let answered = cache
+            .get_event_by_id("evt-series")
+            .expect("the calendar to be readable")
+            .expect("the series to still be on the calendar");
+        assert_eq!(
+            answered.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10"),
+            "answering the series took its repeat away"
+        );
+        let mut called_off = the_days_called_off(&answered);
+        called_off.sort();
+        assert_eq!(
+            called_off,
+            vec!["20260319T090000".to_string(), "20260326T090000".to_string()],
+            "a day the calendar server's copy calls off came back when the series was answered"
+        );
+        assert_eq!(answered.source_provider.as_deref(), Some("caldav"));
+        assert_eq!(answered.show_as, "tentative");
+    }
+
+    #[test]
+    fn test_what_a_calendar_server_is_sent_for_an_answered_series_still_repeats() {
+        // What the next push would PUT, read off the document itself. Only the
+        // meeting's own lines count: the zone block carries RRULE lines of its
+        // own, and a search over the whole document finds those and passes with
+        // the repeat gone.
+        let cache = a_calendar_on_this_computer("a_server_series_sent");
+        the_series_a_calendar_server_holds(&cache);
+        answer_it(&cache, &a_weekly_invitation(), Answer::Accepted);
+        let answered = cache
+            .get_event_by_id("evt-series")
+            .expect("the calendar to be readable")
+            .expect("the series to still be on the calendar");
+        let what_the_server_holds = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n\
+             BEGIN:VTIMEZONE\r\nTZID:Europe/London\r\n\
+             BEGIN:DAYLIGHT\r\nTZOFFSETFROM:+0000\r\nTZOFFSETTO:+0100\r\nTZNAME:BST\r\n\
+             DTSTART:19700329T010000\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n\
+             END:DAYLIGHT\r\n\
+             BEGIN:STANDARD\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0000\r\nTZNAME:GMT\r\n\
+             DTSTART:19701025T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n\
+             END:STANDARD\r\nEND:VTIMEZONE\r\n\
+             BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSUMMARY:Weekly sync\r\n\
+             DTSTART;TZID=Europe/London:20260305T090000\r\n\
+             DTEND;TZID=Europe/London:20260305T100000\r\n\
+             RRULE:FREQ=WEEKLY;COUNT=10\r\n\
+             EXDATE;TZID=Europe/London:20260319T090000,20260326T090000\r\n\
+             ORGANIZER;CN=Ada:mailto:ada@example.com\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let sent = crate::service::caldav::ical_with_the_event_changed(
+            what_the_server_holds,
+            &crate::application::caldav_sync::local_to_caldav_event(&answered),
+        )
+        .expect("the change to be written into the server's document");
+
+        let meeting_starts = sent
+            .find("BEGIN:VEVENT")
+            .expect("a meeting in what is sent");
+        let meeting_ends = sent[meeting_starts..]
+            .find("END:VEVENT")
+            .expect("the meeting to end")
+            + meeting_starts;
+        let its_own: Vec<&str> = sent[meeting_starts..meeting_ends].lines().collect();
+        assert!(
+            its_own
+                .iter()
+                .any(|line| line.trim_end() == "RRULE:FREQ=WEEKLY;COUNT=10"),
+            "the series goes to the calendar server without its repeat: {sent}"
+        );
+        assert!(
+            its_own.iter().any(|line| line.starts_with("EXDATE")),
+            "the series goes to the calendar server without the days it calls off: {sent}"
+        );
+    }
+
     #[test]
     fn test_the_three_stored_words_are_the_ones_the_column_documents() {
         // `show_as`'s own documentation names the words it holds. This is the
