@@ -146,28 +146,73 @@ fn now() -> String {
 const EVERY_SIGNED_FORM_WAS_KEPT: &str = "every signed form was kept";
 
 impl MessageCache {
-    /// Note the last message this database holds, once.
+    /// Note the last message this database holds, once: the highest message
+    /// number, zero for a database with none, and the time.
+    ///
+    /// Asked on every open and written on the first by a build that carries
+    /// it, and every such build keeps each form signed mail arrives in, which
+    /// builds have done since 13-18. `INSERT OR IGNORE`, so no later open
+    /// moves it: a mark that moved
+    /// would turn mail stored since into mail stored before, and hide a form
+    /// nothing checks behind a reason that is not its own. The log line names
+    /// the number and the time, which hold nothing of any message.
     pub(super) fn note_the_last_message_before_every_signed_form_was_kept(&self) -> Result<()> {
-        self.conn
+        let noted_at = now();
+        // Once: a mark already there is left where it is.
+        let written = self
+            .conn
             .execute(
-                "INSERT OR REPLACE INTO last_message_before (what, message_id, noted_at)
+                "INSERT OR IGNORE INTO last_message_before (what, message_id, noted_at)
                  SELECT ?1, COALESCE(MAX(id), 0), ?2 FROM messages",
-                rusqlite::params![EVERY_SIGNED_FORM_WAS_KEPT, now()],
+                rusqlite::params![EVERY_SIGNED_FORM_WAS_KEPT, noted_at],
             )
             .map_err(|e| Error::Other(format!("Failed to note the last message: {}", e)))?;
+        if written > 0 {
+            tracing::info!(
+                "Messages up to number {} were stored before every signed form was kept, noted at {noted_at}",
+                self.the_last_message_before_every_signed_form_was_kept()?
+            );
+        }
         Ok(())
     }
 
-    /// Whether a message was stored before this database began keeping every
-    /// form signed mail arrives in.
-    pub fn stored_before_every_signed_form_was_kept(&self, message_id: i64) -> Result<bool> {
-        let _ = message_id;
-        Ok(true)
+    /// The mark's message number, or an error when the mark cannot be read.
+    fn the_last_message_before_every_signed_form_was_kept(&self) -> Result<i64> {
+        self.conn
+            .query_row(
+                "SELECT message_id FROM last_message_before WHERE what = ?1",
+                [EVERY_SIGNED_FORM_WAS_KEPT],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to read the last message noted: {}", e)))
     }
 
-    /// Put the mark where a database an earlier build wrote would have it.
+    /// Whether a message was stored before this database began keeping every
+    /// form signed mail arrives in: at or below the mark.
+    ///
+    /// Message numbers only rise and are never used twice, so a number at or
+    /// below the mark is a message this database held when the mark was
+    /// taken. A mark that is missing or cannot be read is an error and never
+    /// a no: it says nothing about when a message was stored, and the caller
+    /// answers for that.
+    pub fn stored_before_every_signed_form_was_kept(&self, message_id: i64) -> Result<bool> {
+        Ok(message_id <= self.the_last_message_before_every_signed_form_was_kept()?)
+    }
+
+    /// Put the mark where a database an earlier build wrote would have it:
+    /// taken away and taken again, through the same note an open makes, so
+    /// every message already stored is below it.
     #[cfg(test)]
-    pub(crate) fn as_an_earlier_build_left_it(&self) {}
+    pub(crate) fn as_an_earlier_build_left_it(&self) {
+        self.conn
+            .execute(
+                "DELETE FROM last_message_before WHERE what = ?1",
+                [EVERY_SIGNED_FORM_WAS_KEPT],
+            )
+            .expect("the mark taken away");
+        self.note_the_last_message_before_every_signed_form_was_kept()
+            .expect("the mark taken again");
+    }
 
     /// Keep the form a message arrived in, if it says it is signed.
     ///

@@ -95,7 +95,13 @@ pub fn for_message(
     if matches!(kept, SignedOriginal::NotSigned) && carries_a_signature_part(cache, message_row_id)
     {
         return why_its_signature_was_not_checked(
-            cache.stored_before_every_signed_form_was_kept(message_row_id),
+            cache
+                .stored_before_every_signed_form_was_kept(message_row_id)
+                .inspect_err(|problem| {
+                    tracing::warn!(
+                        "Could not read when message {message_row_id} was stored against the mark: {problem}"
+                    );
+                }),
         );
     }
     from_what_was_kept(
@@ -108,10 +114,27 @@ pub fn for_message(
 }
 
 /// Why a message carrying a signature part, with nothing kept of its form,
-/// was not checked.
+/// was not checked (ledger 653).
+///
+/// Stored before the database's mark, it arrived before this computer kept
+/// the form signed mail arrives in, and that is the reason. Stored after it,
+/// every form a whole signed message arrives in was being kept, so its
+/// signature is a file of its own or sits inside a part another program
+/// wrapped around it, and the reason is that the form is one nothing here
+/// checks. A mark that cannot be read is evidence of neither, so it gives the
+/// second, the sentence that claims nothing about when a message was stored.
+///
+/// On a computer that ran a build keeping those forms before this one, a
+/// message of the second kind stored between the two builds' first runs is
+/// below the mark and gives the first reason. Nothing stored can tell those
+/// days apart.
 fn why_its_signature_was_not_checked(stored_before: crate::common::Result<bool>) -> SignatureCheck {
-    let _ = stored_before;
-    SignatureCheck::StoredBeforeSignaturesWereKept
+    match stored_before {
+        Ok(true) => SignatureCheck::StoredBeforeSignaturesWereKept,
+        // Above the mark, or no mark to read: the sentence that claims
+        // nothing about when the message was stored.
+        Ok(false) | Err(_) => SignatureCheck::InAFormNotChecked,
+    }
 }
 
 /// The media types a signature part is stored under: S/MIME's two spellings

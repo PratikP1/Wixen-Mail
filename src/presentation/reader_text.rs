@@ -699,8 +699,48 @@ const STORED_BEFORE_SIGNATURES_WERE_KEPT: &str = "This message is signed, and it
 
 /// The bar for a signed message stored before its arrived-in form was kept.
 fn stored_before_bar(filter_said: Option<&str>) -> String {
+    unchecked_signature_bar(
+        filter_said,
+        STORED_BEFORE_SIGNATURES_WERE_KEPT,
+        "Nothing was checked. A signature can only be checked against the exact bytes the \
+         message arrived in, and this message was stored before Wixen Mail kept them. Signed \
+         mail that arrives now is kept in that form, up to a size limit.",
+    )
+}
+
+/// What is said above a message carrying a signature in a form nothing here
+/// checks: a signature file of its own, or a signature inside a part another
+/// program wrapped around the message (ledger 653).
+///
+/// Said rather than nothing, because nothing would put the message back among
+/// unsigned ones, which is the silence #52 point 6 was raised against.
+const IN_A_FORM_NOT_CHECKED: &str =
+    "This message carries a signature in a form Wixen Mail does not check.";
+
+/// The bar for a message whose signature is in a form nothing here checks.
+fn in_a_form_not_checked_bar(filter_said: Option<&str>) -> String {
+    unchecked_signature_bar(
+        filter_said,
+        IN_A_FORM_NOT_CHECKED,
+        "Nothing was checked. Wixen Mail checks a signature that covers the whole message as \
+         it arrived, and this one is a file of its own or sits inside a part another program \
+         added around the message, as a mailing list does when it adds a footer.",
+    )
+}
+
+/// The bar for a signature nothing checked: why, that nothing was found
+/// wrong, how it was not checked, and what that leaves it worth.
+///
+/// Both of its callers keep [`nothing_kept_to_check_bar`]'s second sentence,
+/// for that bar's reason: this is a fact about this computer, and must not be
+/// heard as a signature that failed.
+fn unchecked_signature_bar(
+    filter_said: Option<&str>,
+    headline: &str,
+    how_nothing_was_checked: &str,
+) -> String {
     let mut lines: Vec<String> = filter_said.map(str::to_string).into_iter().collect();
-    lines.push(STORED_BEFORE_SIGNATURES_WERE_KEPT.to_string());
+    lines.push(headline.to_string());
     lines.push(
         "That is not the same as a signature that does not match. Nothing has been found wrong \
          with this message."
@@ -709,12 +749,7 @@ fn stored_before_bar(filter_said: Option<&str>) -> String {
 
     lines.push(String::new());
     lines.push(HOW_IT_WAS_CHECKED.to_string());
-    lines.push(
-        "Nothing was checked. A signature can only be checked against the exact bytes the \
-         message arrived in, and this message was stored before Wixen Mail kept them. Signed \
-         mail that arrives now is kept in that form, up to a size limit."
-            .to_string(),
-    );
+    lines.push(how_nothing_was_checked.to_string());
 
     lines.push(String::new());
     lines.push(WHAT_A_SIGNATURE_IS_WORTH.to_string());
@@ -1901,7 +1936,9 @@ impl ReaderDocument {
             SignatureCheck::StoredBeforeSignaturesWereKept => {
                 Some(stored_before_bar(self.warning.as_deref()))
             }
-            SignatureCheck::InAFormNotChecked => Some(stored_before_bar(self.warning.as_deref())),
+            SignatureCheck::InAFormNotChecked => {
+                Some(in_a_form_not_checked_bar(self.warning.as_deref()))
+            }
         };
         self
     }

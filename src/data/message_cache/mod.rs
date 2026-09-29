@@ -1824,11 +1824,34 @@ impl MessageCache {
         // all S/MIME, because nothing else was kept.
         self.ensure_column_exists("signed_original", "kind", "TEXT")?;
 
-        // The last message this database held when a build that keeps every
-        // form signed mail arrives in first opened it (13-36.1, ledger 653).
-        // One row, named in words, holding a message number and the time it
-        // was noted; written once and never moved, so a later open cannot
-        // turn mail stored since into mail stored before. See
+        // The last message this database held when a build carrying this
+        // mark first opened it (13-36.1, ledger 653). Every such build keeps
+        // each form signed mail arrives in, as builds have since 13-18.
+        // A message at or below it with a signature part and nothing kept was
+        // stored before those forms were kept; one above it carries its
+        // signature in a form nothing checks. One row, named in words, holding
+        // a message number and the time it was noted; written once and never
+        // moved, so a later open cannot turn mail stored since into mail
+        // stored before.
+        //
+        // Data here and not a setting. It describes the messages in this
+        // database, so it lives and dies with them: a new database starts
+        // with nothing before its mark, and a database copied to another
+        // computer carries its own. And nobody should choose it, which a
+        // setting is for.
+        //
+        // A number and not a time, because nothing stored says when a message
+        // was stored, and `messages.id` is AUTOINCREMENT: numbers only rise and
+        // are never used twice, even after the highest row is deleted.
+        // `work_done_once` below was the nearest shape and has no column for
+        // a number.
+        //
+        // What it cannot see: on a computer that ran a build keeping those
+        // forms (13-18) before this one, a message with a lone signature
+        // file, or a signed message a mailing list wrapped, stored between
+        // the two first runs is below the mark and gives the stored-before
+        // reason. Nothing stored can tell those days apart. Additive: one
+        // table, nothing dropped, nothing renamed. See
         // `signed_original::stored_before_every_signed_form_was_kept`.
         self.conn
             .execute(
