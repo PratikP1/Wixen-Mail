@@ -329,15 +329,16 @@ Written down so you do not spend time reporting things already on the list.
   and the first time you open a message to it in a reader window, Wixen Mail
   asks for the passphrase and remembers it until you close the program. If
   you use PGP, import your key and tell us whether each row reads as the
-  person the key is for, whether the question before a removal is read in
-  full, and, for a locked key, whether pasting its passphrase from your
+  person the key is for, whether its Created and Expires dates read the way
+  your Reading tab in Settings says dates are written, whether the question
+  before a removal is read in full, and, for a locked key, whether pasting its passphrase from your
   password manager works and whether a wrong one is said clearly.
 - **PGP signatures are checked, and no real correspondent's signature has
   been.** A PGP-signed message says whether its signature holds against a key
   in File, PGP Keys, and names the key it would need when that key is not
   there. Every signature it has checked was made with GnuPG for the tests. If
   somebody sends you PGP-signed mail, import their public key and tell us
-  which of the five sentences you heard, and whether it matched what their
+  which of the six sentences you heard, and whether it matched what their
   own program says.
 - **Sending signed and encrypted mail is experimental, and nothing sent this
   way has been read by another program.** The composer has two boxes beside
