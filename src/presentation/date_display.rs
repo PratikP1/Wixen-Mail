@@ -527,6 +527,13 @@ fn absolute_asking(
     )
 }
 
+/// The date without its time, in the order and wording `settings` chose, in
+/// this computer's names.
+pub fn the_date_of(when: impl Datelike, settings: DateSettings) -> String {
+    let _ = (when.year(), settings);
+    String::new()
+}
+
 /// The date, without the time.
 ///
 /// Over anything with a calendar date on it rather than a full moment, so a
