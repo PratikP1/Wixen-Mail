@@ -1247,8 +1247,14 @@ pub async fn sync_microsoft_calendar(
                 result.updated += 1;
             }
             None => {
-                save_what_outlook_sent(cache, &local_event, event)?;
-                result.created += 1;
+                // Outlook's copy, onto the row an answer filed first if there is one.
+                let went = answered_meetings::file_the_providers_copy(
+                    cache,
+                    &local_event,
+                    event.ical_uid.as_deref(),
+                    event.the_organisers_address(),
+                )?;
+                result.count_the_copy(went);
             }
         }
     }
