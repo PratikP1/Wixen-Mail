@@ -2000,6 +2000,29 @@ impl MessageCache {
                 ))
             })?;
 
+        // Other addresses an account sends from, and the name people see
+        // beside each (#59, 13-33). Added on its own, touching no table
+        // above, so a database written before it opens as it was.
+        //
+        // The address is folded for case by the table, as a saved search's
+        // name is: one account holding one address twice is two rows in the
+        // From list that read the same. `position` is the order the person
+        // put them in, and `created_at` settles a tie.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS identities (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                address TEXT NOT NULL COLLATE NOCASE,
+                sender_name TEXT NOT NULL DEFAULT '',
+                position INTEGER,
+                created_at TEXT NOT NULL,
+                UNIQUE(account_id, address)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create identities table: {}", e)))?;
+
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS contacts (

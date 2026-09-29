@@ -73,18 +73,78 @@ pub struct Refused {
 /// `held` is the account's other addresses apart from the one being edited;
 /// see [`the_others`].
 pub fn what_stops_an_address_being_kept(
-    _address: &str,
-    _sender_name: &str,
-    _account: &Account,
-    _held: &[Identity],
+    address: &str,
+    sender_name: &str,
+    account: &Account,
+    held: &[Identity],
 ) -> Option<Refused> {
+    let address = address.trim();
+    let sender_name = sender_name.trim();
+    let refused = |said: &str, at: TheBox| {
+        Some(Refused {
+            said: said.to_string(),
+            at,
+        })
+    };
+    if !is_an_email_address(address) {
+        return refused(
+            "That is not an email address. One is written like name@example.com.",
+            TheBox::Address,
+        );
+    }
+    if the_same_address(address, &account.email) {
+        return refused("That is this account's own address.", TheBox::Address);
+    }
+    if held
+        .iter()
+        .any(|kept| the_same_address(address, &kept.address))
+    {
+        return refused(
+            "This account already sends from that address.",
+            TheBox::Address,
+        );
+    }
+    if sender_name.chars().count() > LONGEST_SENDER_NAME {
+        return refused(
+            &format!("The name people see can be at most {LONGEST_SENDER_NAME} characters."),
+            TheBox::Name,
+        );
+    }
+    if sender_name.chars().any(char::is_control) {
+        return refused(
+            "The name people see cannot hold a line break or a tab.",
+            TheBox::Name,
+        );
+    }
     None
+}
+
+/// `name@host.tld` by the recogniser the snippet and the contact editor use,
+/// and nothing that could end a From header early or add a second address to
+/// it: no space, no line break, no colon, and none of the marks that bracket,
+/// separate or quote addresses in a header.
+fn is_an_email_address(typed: &str) -> bool {
+    const ENDS_OR_JOINS_AN_ADDRESS: &[char] =
+        &[':', '<', '>', ',', ';', '"', '(', ')', '[', ']', '\\'];
+    typed.contains('@')
+        && !typed.contains(|c: char| {
+            c.is_whitespace() || c.is_control() || ENDS_OR_JOINS_AN_ADDRESS.contains(&c)
+        })
+        && crate::application::links_in_text::is_an_address(typed)
+}
+
+/// Two addresses are one address whatever case each is written in.
+fn the_same_address(one: &str, other: &str) -> bool {
+    one.trim().to_lowercase() == other.trim().to_lowercase()
 }
 
 /// Every address the account holds except the one being edited, which is the
 /// set a new address is compared with.
-pub fn the_others(_rows: &[Identity], _editing: Option<&Identity>) -> Vec<Identity> {
-    Vec::new()
+pub fn the_others(rows: &[Identity], editing: Option<&Identity>) -> Vec<Identity> {
+    rows.iter()
+        .filter(|row| editing.is_none_or(|edited| edited.id != row.id))
+        .cloned()
+        .collect()
 }
 
 /// One entry of compose's From list.
@@ -100,30 +160,63 @@ pub struct FromEntry {
 /// The From list for these accounts: each account's own entry first, said as
 /// it is today, then its other addresses in the order the person put them.
 pub fn the_from_list(
-    _accounts: &[Account],
-    _identities: &HashMap<String, Vec<Identity>>,
+    accounts: &[Account],
+    identities: &HashMap<String, Vec<Identity>>,
 ) -> Vec<FromEntry> {
-    Vec::new()
+    accounts
+        .iter()
+        .flat_map(|account| {
+            let own = FromEntry {
+                account_id: account.id.clone(),
+                address: account.email.clone(),
+                sender_name: account.sender_name.clone(),
+                said: account.email.clone(),
+            };
+            let others = identities
+                .get(&account.id)
+                .into_iter()
+                .flatten()
+                .map(move |identity| FromEntry {
+                    account_id: account.id.clone(),
+                    address: identity.address.clone(),
+                    sender_name: identity.sender_name.clone(),
+                    said: format!(
+                        "{}, another address on {}",
+                        identity.address,
+                        what_an_account_is_called(account)
+                    ),
+                });
+            std::iter::once(own).chain(others)
+        })
+        .collect()
+}
+
+/// The account's label, or its address when it has none.
+fn what_an_account_is_called(account: &Account) -> &str {
+    match account.name.trim() {
+        "" => &account.email,
+        label => label,
+    }
 }
 
 /// The address a message goes out from and the name beside it: the account's
 /// own where none is given, the given ones otherwise. `None` for no name.
 pub fn who_it_goes_out_from(
-    _account: &Account,
-    _from_address: Option<&str>,
-    _from_name: Option<&str>,
+    account: &Account,
+    from_address: Option<&str>,
+    from_name: Option<&str>,
 ) -> (String, Option<String>) {
-    (String::new(), None)
+    let address = from_address.unwrap_or(&account.email);
+    let name = from_name.unwrap_or(&account.sender_name).trim();
+    (
+        address.to_string(),
+        (!name.is_empty()).then(|| name.to_string()),
+    )
 }
 
 /// Move one address up or down the account's list, and what to say.
-pub fn moved(_rows: &[(String, String)], _which: &str, _direction: Move) -> Moved {
-    let _ = reordering::moved;
-    Moved {
-        order: Vec::new(),
-        say: String::new(),
-        moved: false,
-    }
+pub fn moved(rows: &[(String, String)], which: &str, direction: Move) -> Moved {
+    reordering::moved(rows, which, direction, WHICH_ADDRESS)
 }
 
 #[cfg(test)]

@@ -6,42 +6,151 @@
 
 use super::MessageCache;
 use crate::application::identities::Identity;
-use crate::common::Result;
+use crate::common::{Error, Result};
+use rusqlite::params;
+
+/// A store error in the words somebody hears, with what the store said after.
+fn failed(what: &str) -> impl Fn(rusqlite::Error) -> Error + '_ {
+    move |e| Error::Other(format!("{what}: {e}"))
+}
 
 impl MessageCache {
     /// Keep an other address for an account, placed last.
-    pub fn add_identity(&self, _account_id: &str, _identity: &Identity) -> Result<()> {
+    ///
+    /// An address the account already holds, whatever its case, is refused
+    /// by the table.
+    pub fn add_identity(&self, account_id: &str, identity: &Identity) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT INTO identities (id, account_id, address, sender_name, position, created_at)
+                 SELECT ?1, ?2, ?3, ?4, COALESCE(MAX(position) + 1, 0), ?5
+                 FROM identities WHERE account_id = ?2",
+                params![
+                    &identity.id,
+                    account_id,
+                    &identity.address,
+                    &identity.sender_name,
+                    chrono::Utc::now().to_rfc3339(),
+                ],
+            )
+            .map_err(failed("Failed to keep the address"))?;
         Ok(())
     }
 
     /// One account's other addresses, in the order the person put them.
-    pub fn identities_for(&self, _account_id: &str) -> Result<Vec<Identity>> {
-        Ok(Vec::new())
+    pub fn identities_for(&self, account_id: &str) -> Result<Vec<Identity>> {
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT id, address, sender_name FROM identities WHERE account_id = ?1
+                 ORDER BY position, created_at",
+            )
+            .map_err(failed("Failed to read the other addresses"))?;
+        statement
+            .query_map(params![account_id], |row| {
+                Ok(Identity {
+                    id: row.get(0)?,
+                    address: row.get(1)?,
+                    sender_name: row.get(2)?,
+                })
+            })
+            .and_then(|rows| rows.collect())
+            .map_err(failed("Failed to read the other addresses"))
     }
 
     /// Take one other address away, and say whether there was one to take.
-    pub fn remove_identity(&self, _id: &str) -> Result<bool> {
-        Ok(false)
+    pub fn remove_identity(&self, id: &str) -> Result<bool> {
+        let removed = self
+            .conn
+            .execute("DELETE FROM identities WHERE id = ?1", params![id])
+            .map_err(failed("Failed to remove the address"))?;
+        Ok(removed > 0)
     }
 
-    /// Write the order an account's other addresses are in.
-    pub fn put_identities_in_order(&self, _account_id: &str, _ids: &[String]) -> Result<()> {
-        Ok(())
+    /// Write the order an account's other addresses are in, all of it or
+    /// none of it.
+    pub fn put_identities_in_order(&self, account_id: &str, ids: &[String]) -> Result<()> {
+        self.all_or_nothing(|| {
+            for (position, id) in ids.iter().enumerate() {
+                self.conn
+                    .execute(
+                        "UPDATE identities SET position = ?1 WHERE id = ?2 AND account_id = ?3",
+                        params![position as i64, id, account_id],
+                    )
+                    .map_err(failed("Failed to write the order of the addresses"))?;
+            }
+            Ok(())
+        })
     }
 
-    /// Keep an account's other addresses as the manager left them.
-    pub fn keep_the_identities(&self, _account_id: &str, _kept: &[Identity]) -> Result<()> {
-        Ok(())
+    /// Keep an account's other addresses as the manager left them, all of it
+    /// or none of it.
+    ///
+    /// A row the manager changed is taken away and written again, and every
+    /// row going is taken away before any is written, so two addresses that
+    /// swapped places in one visit never meet the table's rule that an
+    /// account holds an address once.
+    pub fn keep_the_identities(&self, account_id: &str, kept: &[Identity]) -> Result<()> {
+        self.all_or_nothing(|| {
+            let stored = self.identities_for(account_id)?;
+            for going in stored.iter().filter(|row| !kept.contains(row)) {
+                self.remove_identity(&going.id)?;
+            }
+            for coming in kept.iter().filter(|row| !stored.contains(row)) {
+                self.add_identity(account_id, coming)?;
+            }
+            let order: Vec<String> = kept.iter().map(|row| row.id.clone()).collect();
+            self.put_identities_in_order(account_id, &order)
+        })
     }
 
     /// Take away every other address an account has.
-    pub fn clear_identities(&self, _account_id: &str) -> Result<()> {
+    ///
+    /// Called when the account itself goes. An address left behind belongs
+    /// to an account nothing can reach, in a database that is not encrypted
+    /// and does get copied and backed up.
+    pub fn clear_identities(&self, account_id: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM identities WHERE account_id = ?1",
+                params![account_id],
+            )
+            .map_err(failed("Failed to clear the other addresses"))?;
         Ok(())
     }
 
-    /// Whether the store holds this account yet.
-    pub fn is_a_stored_account(&self, _account_id: &str) -> Result<bool> {
-        Ok(false)
+    /// Whether the store holds this account yet. An account added in the
+    /// Account Manager is written when that window closes, and until then an
+    /// address given to it would belong to nothing.
+    pub fn is_a_stored_account(&self, account_id: &str) -> Result<bool> {
+        let found: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .map_err(failed("Failed to look the account up"))?;
+        Ok(found > 0)
+    }
+
+    /// Run `work` inside one transaction, or inside the one already open.
+    ///
+    /// SQLite has no transaction inside a transaction, so a write that is
+    /// whole on its own and also a step of a larger write joins the larger
+    /// one rather than opening its own.
+    fn all_or_nothing(&self, work: impl FnOnce() -> Result<()>) -> Result<()> {
+        if !self.conn.is_autocommit() {
+            return work();
+        }
+        let writing = self
+            .conn
+            .unchecked_transaction()
+            .map_err(failed("Failed to start writing the addresses"))?;
+        work()?;
+        writing
+            .commit()
+            .map_err(failed("Failed to write the addresses"))
     }
 }
 

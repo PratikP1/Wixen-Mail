@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 464 records have arrived since and have not been through it.
+# 466 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34197,4 +34197,35 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 16 },
     { file = "tests/the_event_form_scrolls_to_the_field_in_focus.rs", tests = 14 },
+]
+
+# An account's other addresses outliving the account: removing it leaves them
+# in a database that is not encrypted, belonging to nothing that can reach
+# them (#59, T-13-33-03). Written 2026-09-28 by 13-33.
+[[guard]]
+name = "an account's other addresses go when the account does"
+file = "src/data/message_cache/identities.rs"
+before = '''                "DELETE FROM identities WHERE account_id = ?1",'''
+after = '''                "DELETE FROM identities WHERE account_id = ?1 AND 0",'''
+red = [
+    "data::message_cache::identities::tests::test_an_identity_goes_with_its_account",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/identities.rs", tests = 10 },
+]
+
+# An address compared with its case: the account's own address typed in
+# capitals is kept as a second address to send from, and so is one the
+# account already holds (#59). Written 2026-09-28 by 13-33.
+[[guard]]
+name = "an other address is compared with the ones an account holds without case"
+file = "src/application/identities.rs"
+before = '''    one.trim().to_lowercase() == other.trim().to_lowercase()'''
+after = '''    one.trim() == other.trim()'''
+red = [
+    "application::identities::tests::test_an_address_already_the_accounts_own_is_refused_with_a_sentence",
+    "application::identities::tests::test_an_address_the_account_already_sends_from_is_refused_whatever_its_case",
+]
+tests_last_seen = [
+    { file = "src/application/identities.rs", tests = 12 },
 ]
