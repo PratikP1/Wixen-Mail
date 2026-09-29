@@ -998,7 +998,10 @@ fn test_the_manager_is_titled_for_its_account_and_lists_the_addresses_in_their_o
         [
             "help@example.com | Help Desk",
             "sales@example.com | Sales",
-            "old@example.com | ",
+            // Said rather than left empty: an empty cell has no name, which
+            // the scan finds on UI Automation, and reads as a row that did
+            // not load.
+            "old@example.com | No name",
         ]
     );
 }
@@ -1011,7 +1014,7 @@ fn test_moving_an_address_down_moves_its_row_and_says_where_it_went() {
         harvest.rows_after_a_move,
         [
             "help@example.com | Help Desk",
-            "old@example.com | ",
+            "old@example.com | No name",
             "sales@example.com | Sales",
         ]
     );
