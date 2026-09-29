@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 643
+open_count: 644
 waived_count: 0
 fixed_count: 73
-total_count: 716
-last_updated: 2026-09-29T06:45:00.000Z
+total_count: 717
+last_updated: 2026-09-29T08:50:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -674,7 +674,7 @@ last_updated: 2026-09-29T06:45:00.000Z
 | 657 | 14 | unrun-verify | src/service/pgp/sending.rs |  | 13-20, phase 14's: nothing signed or encrypted with OpenPGP by this program has been opened by another mail program. GnuPG 2.4.9 decrypted a message encrypted here to Alice's RSA key and Carol's Curve25519 subkey, byte for byte, and said Good signature for a detached signature by Carol over a CRLF part and BAD over its LF form, once, on 2026-09-27; this program's own reader checks both through the RFC 3156 wrapping in the tests. What a real account settles: that a PGP/MIME message signed here reads as signed and unchanged in Thunderbird and Proton Mail, and one encrypted here opens in each, signed and encrypted laid out as RFC 3156 section 6.1 rather than the combined form of 6.2; whether SEIPD version 2 should be offered beside version 1 once those programs are tried; and whether a real correspondent's key with no key flags at all, which this answers as unusable where GnuPG would go by its algorithm, turns up in practice | open |  | 2026-09-27T17:45:00.000Z |  |
 | 658 | 13 | unrun-verify | src/presentation/wx_compose.rs |  | 13-21: the composer's Sign and Encrypt boxes have not been heard with a screen reader. Their names and descriptions on arrival by Tab, Alt+G and Alt+Y pressed inside the message with "Sign on" or "Encrypt off" said there, the refusal at Send read and shown in its message box, the passphrase asked at Send, and the sentence after a protected message goes. tests/signing_and_encrypting_from_the_composer.rs reads the boxes over MSAA at their own handles and the accessibility scan reaches the composer; neither is a listening | open |  | 2026-09-27T23:30:00.000Z |  |
 | 659 | 13 | todo | src/application/protecting.rs |  | 13-21, a question for Pratik: encrypting a message that has a Bcc is refused at Send, because S/MIME and OpenPGP both write every recipient's key on the envelope where anybody who received the message can read it, so a blind copy would not stay blind. The other shapes: encrypt to the Bcc recipients too and say their keys show, or send each Bcc recipient an encrypted copy of their own. Recommendation: keep the refusal until phase 14 has tried a real correspondent, then offer the separate copies, the only shape that keeps a blind copy blind. The guide and the changelog say the refusal meanwhile | open |  | 2026-09-27T23:30:00.000Z |  |
-| 660 | 13 | todo | src/presentation/wx_app.rs |  | 13-21: the composer's From list chooses nothing the Outbox reads. ComposeData.account_index is read by nothing in wx_app.rs, queue_for_sending puts the row under the active account, and the send loop sends from that account's address. So the Sign and Encrypt check at Send reads what is held for the active account's address, the one the message really goes from, and the changelog says so. 13-34, which puts the From on the queued row, is where the check at Send and the gathering in the send loop have to read the row's address instead; its plan names this entry | open |  | 2026-09-27T23:30:00.000Z |  |
+| 660 | 13 | todo | src/presentation/wx_app.rs |  | 13-21: the composer's From list chooses nothing the Outbox reads. ComposeData.account_index is read by nothing in wx_app.rs, queue_for_sending puts the row under the active account, and the send loop sends from that account's address. So the Sign and Encrypt check at Send reads what is held for the active account's address, the one the message really goes from, and the changelog says so. 13-34, which puts the From on the queued row, is where the check at Send and the gathering in the send loop have to read the row's address instead; its plan names this entry. 13-34 on 2026-09-29: the send loop's half is done, since from_queued now takes the row's address through who_it_goes_out_from and protected_as_asked gathers for request.from_address, held by tests/a_message_goes_out_from_the_address_it_was_written_from.rs. The check at Send cannot read a row that is not written yet, because nothing in the composer chooses an address until 13-35, so that half moves to 13-35, whose premise 5 names this entry | open |  | 2026-09-27T23:30:00.000Z |  |
 | 661 | 13 | deviation | src/presentation/wx_compose.rs |  | 13-21: a red commit's stub put two visible check boxes after Cancel in the composer's button row, and three window targets that build the composer, a_marker_counts_at_the_start_of_any_line, a_signature_follows_the_from_account and signing_and_encrypting_from_the_composer, ended with exit 0xc000041d after a wxStaticCast assert from wx/object.h, every time under scripts/check.sh (three runs, two of them the hook) and never by hand, alone, after the gate's lib runs, after clippy with every feature, or as the gate's whole list of 134 targets. Hidden, or where the green puts them in the toolbar after Schedule, all three pass under the gate. Not diagnosed; it has the look of ledger 466's WebView2 completion reaching a control it no longer fits. Whoever next adds a control to the composer's button row should expect it | open |  | 2026-09-27T23:30:00.000Z |  |
 | 662 | 13 | unrun-verify | src/presentation/time_elsewhere.rs |  | 13-21.1: nobody has heard an invitation from another time zone said at this computer's hour, the clause that says the other clock once ("which is 05/03/2026 at 09:00 to 10:00 Tokyo Standard Time"), or the sentence for a zone this computer cannot place ("as written in Customized Time Zone, a time zone this computer cannot place"); the tester's ear | open |  | 2026-09-27T23:32:00.000Z |  |
 | 663 | 13 | unrun-verify | src/common/zones.rs |  | 13-21.1, for phase 14: no invitation from a real organiser in another time zone has been read here, neither Outlook's, whose TZID is a Windows name placed through Windows' ICU, nor Google's, whose TZID is a zone database name; both said at the right hour is untried against a real account | open |  | 2026-09-27T23:32:00.000Z |  |
@@ -731,6 +731,7 @@ last_updated: 2026-09-29T06:45:00.000Z
 | 714 | 13 | todo | src/application/identities.rs |  | 13-33, phase 13 decision 34 (RESEARCH-3 question 11): Gmail's own Send mail as list could be read with the permission the account already has and offered without typing. Typed addresses came first; reading Gmail's list is later work with no plan yet | open |  | 2026-09-29T06:45:00.000Z |  |
 | 715 | 13 | unrun-verify | src/presentation/wx_identities.rs | 109 | 13-33, the tester's ear: nobody has heard Other Addresses to Send From. From the Account Manager, Alt+O on a saved account: whether the title, the line saying a provider may refuse an address and the list named Other addresses are read; Add, an address that is not one and OK, whether the sentence is heard and focus is heard landing back in Address; Move Down, whether where the address went is heard; and Alt+O on an account added in the same visit, whether the sentence saying to close and reopen the Account Manager is heard | open |  | 2026-09-29T06:45:00.000Z |  |
 | 716 | 13 | todo | tests/a_locked_key_asks_for_its_passphrase.rs | 225 | 13-33: the paste reading fails six cases with "OpenClipboard failed" whenever the Windows session is locked. OpenClipboard answers error 5, access denied, on the interactive window station and on a new one alike while LockApp and LogonUI run, measured 2026-09-29 with a throwaway program, and the target passes once the session is unlocked; 13-25 read the same failure as a flake. It held 13-33's full gate for about ninety minutes. Recommended: the message names the error code and says the session may be locked, so a locked machine reads as a place the test cannot run rather than a paste that broke | open |  | 2026-09-29T06:45:00.000Z |  |
+| 717 | 13 | todo | src/presentation/wx_app.rs | 18104 | 13-34: the Outbox and the drafts keep the address and name a message was written from, and sending and filing a draft use them, and nothing writes one yet. put_in_the_outbox and save_as_draft pass None for both, so every message still goes out from its account's own address and name, exactly as before. 13-35's composer writes the address chosen in its From list and closes this; its premise 1 names it | open |  | 2026-09-29T08:50:00.000Z |  |
 
 ````json
 [
@@ -8648,7 +8649,7 @@ last_updated: 2026-09-29T06:45:00.000Z
     "phase": "13",
     "file": "src/presentation/wx_app.rs",
     "line": null,
-    "description": "13-21: the composer's From list chooses nothing the Outbox reads. ComposeData.account_index is read by nothing in wx_app.rs, queue_for_sending puts the row under the active account, and the send loop sends from that account's address. So the Sign and Encrypt check at Send reads what is held for the active account's address, the one the message really goes from, and the changelog says so. 13-34, which puts the From on the queued row, is where the check at Send and the gathering in the send loop have to read the row's address instead; its plan names this entry",
+    "description": "13-21: the composer's From list chooses nothing the Outbox reads. ComposeData.account_index is read by nothing in wx_app.rs, queue_for_sending puts the row under the active account, and the send loop sends from that account's address. So the Sign and Encrypt check at Send reads what is held for the active account's address, the one the message really goes from, and the changelog says so. 13-34, which puts the From on the queued row, is where the check at Send and the gathering in the send loop have to read the row's address instead; its plan names this entry. 13-34 on 2026-09-29: the send loop's half is done, since from_queued now takes the row's address through who_it_goes_out_from and protected_as_asked gathers for request.from_address, held by tests/a_message_goes_out_from_the_address_it_was_written_from.rs. The check at Send cannot read a row that is not written yet, because nothing in the composer chooses an address until 13-35, so that half moves to 13-35, whose premise 5 names this entry",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-27T23:30:00.000Z",
@@ -9324,6 +9325,18 @@ last_updated: 2026-09-29T06:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T06:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 717,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": 18104,
+    "description": "13-34: the Outbox and the drafts keep the address and name a message was written from, and sending and filing a draft use them, and nothing writes one yet. put_in_the_outbox and save_as_draft pass None for both, so every message still goes out from its account's own address and name, exactly as before. 13-35's composer writes the address chosen in its From list and closes this; its premise 1 names it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T08:50:00.000Z",
     "resolved_at": null
   }
 ]

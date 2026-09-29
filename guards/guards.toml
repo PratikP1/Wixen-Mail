@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 468 records have arrived since and have not been through it.
+# 471 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34266,4 +34266,62 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
     { file = "tests/other_addresses_are_managed_per_account.rs", tests = 16 },
+]
+
+# The Outbox forgetting the address a message was written from, so a message
+# written from one of the account's other addresses goes out from its own
+# address without a word (T-13-34-01). Written 2026-09-29 by 13-34.
+[[guard]]
+name = "a queued message keeps the address it was written from"
+file = "src/data/message_cache/outbox.rs"
+suite = "a_message_goes_out_from_the_address_it_was_written_from"
+before = '''                &somebody_chose_it, item.protection.as_stored(),
+                &item.from_address, &item.from_name,'''
+after = '''                &somebody_chose_it, item.protection.as_stored(),
+                &None::<String>, &item.from_name,'''
+red = [
+    "test_a_queued_message_keeps_the_address_and_name_it_was_written_from",
+    "test_a_queued_message_goes_out_from_the_address_its_row_carries",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/outbox.rs", tests = 27 },
+    { file = "tests/a_message_goes_out_from_the_address_it_was_written_from.rs", tests = 9 },
+]
+
+# Sending ignoring the address the queued row carries, so a message written
+# from one of the account's other addresses leaves from its own address
+# (T-13-34-02). Written 2026-09-29 by 13-34.
+[[guard]]
+name = "a queued message goes out from the address its row carries"
+file = "src/application/mail_controller.rs"
+suite = "a_message_goes_out_from_the_address_it_was_written_from"
+before = '''            account,
+            queued.from_address.as_deref(),'''
+after = '''            account,
+            None,'''
+red = [
+    "test_a_queued_message_goes_out_from_the_address_its_row_carries",
+]
+tests_last_seen = [
+    { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "tests/a_message_goes_out_from_the_address_it_was_written_from.rs", tests = 9 },
+]
+
+# Filing a draft ignoring the address its row carries, so the copy in the
+# Drafts folder says a different sender from the one the message goes out
+# with (T-13-34-02). Written 2026-09-29 by 13-34.
+[[guard]]
+name = "a filed draft is from the address its row carries"
+file = "src/application/draft_message.rs"
+suite = "a_message_goes_out_from_the_address_it_was_written_from"
+before = '''        account,
+        draft.from_address.as_deref(),'''
+after = '''        account,
+        None,'''
+red = [
+    "test_a_filed_draft_is_from_the_address_its_row_carries",
+]
+tests_last_seen = [
+    { file = "src/application/draft_message.rs", tests = 18 },
+    { file = "tests/a_message_goes_out_from_the_address_it_was_written_from.rs", tests = 9 },
 ]

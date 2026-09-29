@@ -1092,6 +1092,8 @@ mod tests {
                 in_reply_to: None,
                 references: None,
                 protection: choice,
+                from_address: None,
+                from_name: None,
                 attempt_count: 0,
                 last_error: None,
                 created_at: "2026-09-27T09:00:00Z".to_string(),

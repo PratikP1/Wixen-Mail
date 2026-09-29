@@ -3,7 +3,37 @@
 use super::{CachedDraft, MessageCache};
 use crate::application::protecting::Choice;
 use crate::common::{Error, Result};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Row, params};
+
+/// Every column a draft is read from, for both of the reads a draft has.
+const DRAFT_COLUMNS: &str = "id, account_id, to_addr, cc, bcc, subject, body, created_at, \
+     updated_at, in_reply_to, references_header, body_html, attachments, protection, \
+     from_address, from_name";
+
+/// One draft from a row selected with [`DRAFT_COLUMNS`].
+///
+/// Read by column name, so a column added to the list cannot move another,
+/// and the listing and the opening of a draft cannot come to disagree.
+fn a_draft(row: &Row<'_>) -> rusqlite::Result<CachedDraft> {
+    Ok(CachedDraft {
+        id: row.get("id")?,
+        account_id: row.get("account_id")?,
+        to_addr: row.get("to_addr")?,
+        cc: row.get("cc")?,
+        bcc: row.get("bcc")?,
+        subject: row.get("subject")?,
+        body: row.get("body")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        in_reply_to: row.get("in_reply_to")?,
+        references: row.get("references_header")?,
+        body_html: row.get("body_html")?,
+        attachments: crate::application::attaching::split(&row.get::<_, String>("attachments")?),
+        protection: Choice::from_stored(row.get::<_, Option<String>>("protection")?.as_deref()),
+        from_address: row.get("from_address")?,
+        from_name: row.get("from_name")?,
+    })
+}
 
 impl MessageCache {
     /// Save a draft to cache
@@ -11,9 +41,9 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
 
         self.conn.execute(
-            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments, protection)
+            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments, protection, from_address, from_name)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9, ?10, ?11, ?12, ?13, ?14)",
+                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 draft.id,
                 draft.account_id,
@@ -29,6 +59,8 @@ impl MessageCache {
                 draft.body_html,
                 crate::application::attaching::joined(&draft.attachments),
                 draft.protection.as_stored(),
+                draft.from_address,
+                draft.from_name,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save draft: {}", e)))?;
 
@@ -39,33 +71,16 @@ impl MessageCache {
     pub fn load_drafts(&self, account_id: &str) -> Result<Vec<CachedDraft>> {
         let mut stmt = self
             .conn
-            .prepare_cached(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments, protection
-             FROM drafts
-             WHERE account_id = ?1
-             ORDER BY updated_at DESC",
-            )
+            .prepare_cached(&format!(
+                "SELECT {DRAFT_COLUMNS}
+                     FROM drafts
+                     WHERE account_id = ?1
+                     ORDER BY updated_at DESC"
+            ))
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
         let drafts = stmt
-            .query_map(params![account_id], |row| {
-                Ok(CachedDraft {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    to_addr: row.get(2)?,
-                    cc: row.get(3)?,
-                    bcc: row.get(4)?,
-                    subject: row.get(5)?,
-                    body: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
-                    in_reply_to: row.get(9)?,
-                    references: row.get(10)?,
-                    body_html: row.get(11)?,
-                    attachments: crate::application::attaching::split(&row.get::<_, String>(12)?),
-                    protection: Choice::from_stored(row.get::<_, Option<String>>(13)?.as_deref()),
-                })
-            })
+            .query_map(params![account_id], a_draft)
             .map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
 
         let mut result = Vec::new();
@@ -81,32 +96,9 @@ impl MessageCache {
         let result = self
             .conn
             .query_row(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments, protection
-             FROM drafts
-             WHERE id = ?1",
+                &format!("SELECT {DRAFT_COLUMNS} FROM drafts WHERE id = ?1"),
                 params![draft_id],
-                |row| {
-                    Ok(CachedDraft {
-                        id: row.get(0)?,
-                        account_id: row.get(1)?,
-                        to_addr: row.get(2)?,
-                        cc: row.get(3)?,
-                        bcc: row.get(4)?,
-                        subject: row.get(5)?,
-                        body: row.get(6)?,
-                        created_at: row.get(7)?,
-                        updated_at: row.get(8)?,
-                        in_reply_to: row.get(9)?,
-                        references: row.get(10)?,
-                        body_html: row.get(11)?,
-                        attachments: crate::application::attaching::split(
-                            &row.get::<_, String>(12)?,
-                        ),
-                        protection: Choice::from_stored(
-                            row.get::<_, Option<String>>(13)?.as_deref(),
-                        ),
-                    })
-                },
+                a_draft,
             )
             .optional()
             .map_err(|e| Error::Other(format!("Failed to load draft: {}", e)))?;
@@ -173,6 +165,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
         cache.save_draft(&draft).expect("the draft to save");
 
@@ -256,6 +250,8 @@ mod tests {
                 created_at: chrono::Utc::now().to_rfc3339(),
                 updated_at: chrono::Utc::now().to_rfc3339(),
                 protection: Choice::Plain,
+                from_address: None,
+                from_name: None,
             })
             .expect("the draft to save");
 
@@ -306,6 +302,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
         cache.save_draft(&draft).expect("the draft to save");
 
@@ -343,6 +341,8 @@ mod tests {
                     created_at: chrono::Utc::now().to_rfc3339(),
                     updated_at: chrono::Utc::now().to_rfc3339(),
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                 })
                 .expect("the draft to save");
             for column in ["in_reply_to", "references_header"] {
@@ -377,6 +377,8 @@ mod tests {
             in_reply_to: None,
             references: None,
             protection: choice,
+            from_address: None,
+            from_name: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
@@ -450,6 +452,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
 
         cache.save_draft(&draft).unwrap();
@@ -486,6 +490,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
 
         cache.save_draft(&draft).unwrap();

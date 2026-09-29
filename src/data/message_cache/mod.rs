@@ -289,6 +289,15 @@ pub struct CachedDraft {
     /// Kept because a draft reopened and sent without its Encrypt box is a
     /// private message sent in the clear.
     pub protection: crate::application::protecting::Choice,
+    /// The address it was written from, when that is not the account's own.
+    ///
+    /// `None` means the account's own address, which is what every draft
+    /// saved before this column existed was written from.
+    /// [`crate::application::identities::who_it_goes_out_from`] is the one
+    /// place the two are turned into a sender.
+    pub from_address: Option<String>,
+    /// The name that goes in front of `from_address`; `None` for the account's.
+    pub from_name: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -981,6 +990,16 @@ pub struct QueuedOutboxMessage {
     /// scheduled or tried again goes out as it was asked to. Plain on every
     /// row queued before the column existed, which is what each of them was.
     pub protection: crate::application::protecting::Choice,
+    /// The address it goes out from, when that is not the account's own.
+    ///
+    /// On the row so the address chosen in the composer survives the wait in
+    /// the Outbox. `None` means the account's own address, which is what every
+    /// message queued before this column existed went out from.
+    /// [`crate::application::identities::who_it_goes_out_from`] is the one
+    /// place the two are turned into a sender.
+    pub from_address: Option<String>,
+    /// The name that goes in front of `from_address`; `None` for the account's.
+    pub from_name: Option<String>,
     pub attempt_count: i64,
     pub last_error: Option<String>,
     pub created_at: String,
@@ -3242,6 +3261,17 @@ impl MessageCache {
         // row and draft already here, which reads as plain: what each was.
         self.ensure_column_exists("outbox_queue", "protection", "TEXT")?;
         self.ensure_column_exists("drafts", "protection", "TEXT")?;
+        // The address a message or a draft was written from, and the name in
+        // front of it, when that is one of the account's other addresses. On
+        // the row so the choice made in the composer survives the wait in the
+        // Outbox and a draft reopened tomorrow. Nothing on every row and draft
+        // already here, which reads as the account's own address and name:
+        // what each of them went out from. No backfill, on purpose, so an
+        // account's address changed later is the one its older rows use.
+        self.ensure_column_exists("outbox_queue", "from_address", "TEXT")?;
+        self.ensure_column_exists("outbox_queue", "from_name", "TEXT")?;
+        self.ensure_column_exists("drafts", "from_address", "TEXT")?;
+        self.ensure_column_exists("drafts", "from_name", "TEXT")?;
         // What kind of day an event is. Empty for every event stored before
         // there were categories, which is the right answer for all of them.
         self.ensure_column_exists("calendar_events", "categories", "TEXT NOT NULL DEFAULT ''")?;

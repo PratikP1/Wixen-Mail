@@ -79,14 +79,15 @@ impl MessageCache {
     ) -> Result<()> {
         let (send_after, somebody_chose_it) = when.written_down();
         self.conn.execute(
-            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection, from_address, from_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 &item.id, &item.account_id, &item.to_addr, &item.cc_addr, &item.bcc_addr,
                 &item.subject, &item.body, &item.body_html, &item.attachments,
                 &item.attempt_count, &item.last_error, &item.created_at,
                 &item.in_reply_to, &item.references, &send_after,
                 &somebody_chose_it, item.protection.as_stored(),
+                &item.from_address, &item.from_name,
             ],
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
@@ -164,7 +165,7 @@ impl MessageCache {
         account_id: &str,
     ) -> Result<Vec<(QueuedOutboxMessage, GoAfter)>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection, from_address, from_name
              FROM outbox_queue
              WHERE account_id = ?1
              ORDER BY created_at ASC"
@@ -188,6 +189,9 @@ impl MessageCache {
                     in_reply_to: row.get(12)?,
                     references: row.get(13)?,
                     protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
+                    // By name, so the next column added cannot move them.
+                    from_address: row.get("from_address")?,
+                    from_name: row.get("from_name")?,
                 };
                 let when =
                     GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
@@ -439,6 +443,8 @@ mod tests {
                     in_reply_to: None,
                     references: None,
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),
@@ -489,6 +495,8 @@ mod tests {
             in_reply_to: None,
             references: None,
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
             attempt_count: 0,
             last_error: None,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -533,6 +541,8 @@ mod tests {
             in_reply_to: None,
             references: None,
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
             attempt_count: 0,
             last_error: None,
             created_at: created_at.to_string(),
@@ -558,6 +568,8 @@ mod tests {
                 .queue_outbox_message_to_go(
                     &QueuedOutboxMessage {
                         protection: choice,
+                        from_address: None,
+                        from_name: None,
                         ..queued(&format!("p-{index}"), "acc-1", "Protected", &at)
                     },
                     &GoAfter::AsSoonAsPossible,
@@ -797,6 +809,8 @@ mod tests {
                     in_reply_to: None,
                     references: None,
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),
@@ -832,6 +846,8 @@ mod tests {
                     in_reply_to: Some("<c@x>".to_string()),
                     references: Some("<a@x> <b@x> <c@x>".to_string()),
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),

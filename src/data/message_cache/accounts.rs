@@ -1020,6 +1020,8 @@ mod tests {
                     body_html: None,
                     attachments: Vec::new(),
                     protection: Default::default(),
+                    from_address: None,
+                    from_name: None,
                     created_at: "2026-08-01".to_string(),
                     updated_at: "2026-08-01".to_string(),
                 })

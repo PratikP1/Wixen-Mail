@@ -17812,6 +17812,9 @@ fn save_as_draft(
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
         protection: data.protection,
+        // The account's own until the composer offers another (13-35).
+        from_address: None,
+        from_name: None,
         created_at: chrono::Local::now().to_rfc3339(),
         updated_at: chrono::Local::now().to_rfc3339(),
     };
@@ -17850,14 +17853,7 @@ fn file_draft_copy(
             .cloned()
     };
     let Some(account) = account else { return };
-    // The same sender the message would go out with, name and all, so the copy
-    // somebody comes back to on another device is a copy of this message.
-    let sender_name = account.sender_name.trim();
-    let raw = draft_message::bytes_for(
-        draft,
-        &account.email,
-        Some(sender_name).filter(|name| !name.is_empty()),
-    );
+    let raw = draft_message::the_copy_to_file(draft, &account);
 
     // A local Drafts folder is written here and now. There is no server, and
     // the cache holds a connection that cannot cross an await.
@@ -18105,6 +18101,9 @@ fn put_in_the_outbox(
         // Signed, encrypted, both or neither, as the boxes were at Send, so
         // the send loop builds it that way however long it waits.
         protection: data.protection,
+        // The account's own until the composer offers another (13-35).
+        from_address: None,
+        from_name: None,
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),
