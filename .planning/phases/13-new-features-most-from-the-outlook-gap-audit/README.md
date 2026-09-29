@@ -26,7 +26,7 @@ carry:
 
 - The waves collided across ranges: 13-35 and 13-37 both sat at wave 37,
   13-36 and 13-38 at 38, and 13-37 sat below its own dependency. Every plan
-  from 13-37 on moved two waves later, so the waves run 1 to 56 with no
+  from 13-37 on moved two waves later, so the waves run 1 to 60 with no
   two plans on one.
 - The 13-24 split had not reached the plans that call the runner. 13-40,
   13-42, 13-43 and 13-44 now depend on 13-24.1, load its summary, and say
@@ -141,34 +141,42 @@ ledger entry a plan carries for one of the four answers.
 | 13-34 | 39 | The outbox and drafts keep the address a message was written from | GAP-10 | no | nothing |
 | 13-35 | 40 | Compose's From list offers the other addresses and sends from the one chosen | GAP-10 | yes | nothing |
 | 13-36 | 41 | A reply goes out from the address it was sent to; GAP-10 ticked, #59 left open for shared mailboxes | GAP-10 | yes | nothing |
-| 13-37 | 42 | Saved searches keep an order somebody chooses, moved with the tree's gesture | GAP-09 | yes | nothing |
-| 13-38 | 43 | Alt+4 to Alt+9 for the first six saved searches, and the Saved Searches menu | GAP-09 | yes | nothing |
-| 13-39 | 44 | A saved search made from nothing, every or any changeable afterwards; GAP-09 ticked, #58 closed | GAP-09 | yes | nothing |
-| 13-40 | 45 | Quick Steps as data | GAP-11 | no | nothing |
-| 13-41 | 46 | The Quick Step Manager under Action, Quick Steps | GAP-11 | yes | nothing |
-| 13-42 | 47 | Quick Steps on the menu with Ctrl+Shift+7 to Ctrl+Shift+9, run over the selection through the runner; GAP-11 ticked, #60 closed | GAP-11 | yes | nothing |
-| 13-43 | 48 | What a rule would change in a folder, counted and worded before anything runs | GAP-12 | no | nothing |
-| 13-44 | 49 | Run a rule over a folder from This Folder and the Filter Manager; GAP-12 ticked, #61 closed | GAP-12 | yes | nothing |
-| 13-45 | 50 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
-| 13-46 | 51 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
-| 13-47 | 52 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
-| 13-48 | 53 | `.msg` through both import commands | GAP-13 | yes | nothing |
-| 13-49 | 54 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
-| 13-50 | 55 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
-| 13-51 | 56 | The pages, the listening lines, the closing read of GAP-01 to GAP-13, and `scripts/check.sh all` once by hand before its merge | all thirteen | yes | reports where (a) to (d) stand |
+| 13-36.1 | 42 | A PGP/MIME message holding only files says so where its words would be, and an S/MIME one's page stops saying it may not have been downloaded; the key list's Created and Expires follow the Reading tab; stored-before said only below the mark this build notes in the database, a signature file on later mail saying its form is not checked; ledgers 643, 649, 653 | GAP-05, GAP-03 | yes | nothing |
+| 13-36.2 | 43 | A meeting answered before the calendar check brought it and the provider's copy become one meeting on Google, Outlook and calendar servers, the provider's copy on the answer's row; ledger 154's other order | GAP-04 | no | nothing |
+| 13-36.3 | 44 | An organiser's update or cancellation naming one day of a repeating meeting changes that day only, one naming no day is applied to every day, and Remove from Calendar takes one day off; ledger 638's first half | GAP-04 | yes | nothing |
+| 13-36.4 | 45 | One day of a repeating meeting answered for that day with the reply naming the day, and a whole repeating meeting answered keeps its repeat, a defect fixed; ledger 638 closed | GAP-04 | yes | nothing |
+| 13-37 | 46 | Saved searches keep an order somebody chooses, moved with the tree's gesture | GAP-09 | yes | nothing |
+| 13-38 | 47 | Alt+4 to Alt+9 for the first six saved searches, and the Saved Searches menu | GAP-09 | yes | nothing |
+| 13-39 | 48 | A saved search made from nothing, every or any changeable afterwards; GAP-09 ticked, #58 closed | GAP-09 | yes | nothing |
+| 13-40 | 49 | Quick Steps as data | GAP-11 | no | nothing |
+| 13-41 | 50 | The Quick Step Manager under Action, Quick Steps | GAP-11 | yes | nothing |
+| 13-42 | 51 | Quick Steps on the menu with Ctrl+Shift+7 to Ctrl+Shift+9, run over the selection through the runner; GAP-11 ticked, #60 closed | GAP-11 | yes | nothing |
+| 13-43 | 52 | What a rule would change in a folder, counted and worded before anything runs | GAP-12 | no | nothing |
+| 13-44 | 53 | Run a rule over a folder from This Folder and the Filter Manager; GAP-12 ticked, #61 closed | GAP-12 | yes | nothing |
+| 13-45 | 54 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
+| 13-46 | 55 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
+| 13-47 | 56 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
+| 13-48 | 57 | `.msg` through both import commands | GAP-13 | yes | nothing |
+| 13-49 | 58 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
+| 13-50 | 59 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
+| 13-51 | 60 | The pages, the listening lines, the closing read of GAP-01 to GAP-13, and `scripts/check.sh all` once by hand before its merge | all thirteen | yes | reports where (a) to (d) stand |
 
-Forty-seven plans push and nine do not (13-02, 13-12, 13-16, 13-19, 13-20,
-13-34, 13-40, 13-43, 13-47). Four carry a checkpoint (13-03, 13-20, 13-28,
+Fifty plans push and ten do not (13-02, 13-12, 13-16, 13-19, 13-20, 13-34,
+13-36.2, 13-40, 13-43, 13-47). Four carry a checkpoint (13-03, 13-20, 13-28,
 13-47, each `autonomous: false`), and each stops only when its executor's
 brief does not carry Pratik's answer.
 
 **Requirement coverage.** GAP-01 by 13-02 to 13-04 (ticked by 13-04);
 GAP-02 by 13-01 and 13-05 to 13-09 (the box ticked by 13-08, #47 closed by
-13-09); GAP-03 by 13-16, 13-17 and 13-17.1 (ticked by 13-17.1); GAP-04 by
-13-10 to 13-13 (ticked by 13-13), 13-21.1 and 13-21.2 for times written in
-another zone (ledger 632), and 13-21.3 for mail brought before 13-10
-(ledger 633); GAP-05 by 13-14, 13-15 and 13-18 to 13-21
-(ticked by 13-21); GAP-06 by 13-22, 13-24, 13-24.1 and 13-25 (ticked by
+13-09); GAP-03 by 13-16, 13-17 and 13-17.1 (ticked by 13-17.1), and 13-36.1
+for the key list's dates (ledger 649); GAP-04 by 13-10 to 13-13 (ticked by
+13-13), 13-21.1 and 13-21.2 for times written in another zone (ledger 632),
+13-21.3 for mail brought before 13-10 (ledger 633), 13-36.2 for a meeting
+answered before its calendar check (ledger 154), and 13-36.3 and 13-36.4 for
+one day of a repeating meeting (ledger 638); GAP-05 by 13-14, 13-15 and 13-18
+to 13-21 (ticked by 13-21), and 13-36.1 for a PGP/MIME message holding only
+files and the stored-before reason (ledgers 643 and 653); GAP-06 by 13-22,
+13-24, 13-24.1 and 13-25 (ticked by
 13-25); GAP-07 by 13-26 to 13-28 (ticked by 13-28); GAP-08 by 13-29 to 13-32
 (ticked by 13-31, 13-32 after it); GAP-09 by 13-37 to 13-39 (ticked by
 13-39); GAP-10 by 13-33 to 13-36 (ticked by 13-36); GAP-11 by 13-23, 13-24,
@@ -194,7 +202,7 @@ lists on 2026-09-24. A wave is a set of plans sharing no file, and with the
 files the project writes by rule added to every list (`CLAUDE.md`, "Add the
 files this project writes by rule to every plan's `files_modified`") no two
 plans are disjoint. So the phase is a chain: each plan depends on the one
-before it, and the waves run 1 to 56 in plan order.
+before it, and the waves run 1 to 60 in plan order.
 
 - **Keyboard basics first** (13-01 to 13-09). Undo and Print are small,
   touch every surface, and every later plan that adds a text box or a
@@ -453,6 +461,138 @@ identified issues."
     13-10. Reaching it means fetching every earlier download once when
     selected. 13-21.3 leaves it, ledgers it, and recommends leaving it.
 
+**Pratik's answer of 2026-09-27**, to six questions the ledger carried from
+13-11 to 13-21, each asked with a recommendation in brackets. His word:
+"Yes." Items 1 to 5 are carried by 13-36.1 to 13-36.4, written that day and
+added on 2026-09-29; item 6 by no plan.
+
+65. Item 1, ledger 638: one day of a repeating meeting, both halves ("a plan
+    handling one day of a series, both"). An organiser's update or
+    cancellation naming one day changes that day only (13-36.3), and one day
+    is answered for that day only (13-36.4). Two plans, because one executor
+    cannot finish both halves in one sitting; 13-36.4 is this item's second
+    half, not a split of 13-36.1.
+66. Item 2, ledger 154's other order: a Google, Outlook or calendar-server
+    check that meets a meeting whose UID matches a row an answer filed merges
+    the two rather than adding a second meeting (13-36.2).
+67. Item 3, ledger 643: a PGP/MIME message that opened to files and no words
+    says "This message was encrypted with PGP and was opened here. It holds
+    files and no words." where its words would be, and never in the bar
+    (13-36.1).
+68. Item 4, ledger 649: the key manager's Created and Expires follow the date
+    setting on the Reading tab (13-36.1).
+69. Item 5, ledger 653: the moment this build first opens the mail database
+    is noted, and the stored-before reason is given only for mail stored
+    before it (13-36.1).
+70. Item 6, ledger 659: encrypting a message that has a Bcc stays refused
+    until phase 14 has tried a real correspondent; then each Bcc recipient
+    gets an encrypted copy of their own, the only shape that keeps a blind
+    copy blind. No phase 13 plan carries it, and ledger 659 records the
+    answer.
+
+The planners' choices under that answer, each for him to overrule; an
+overrule is a change to the named plan before it runs:
+
+71. The words for mail stored after the mark, taken from ledger 653's own
+    recommendation, since item 5 answered only its stored-before half: "This
+    message carries a signature in a form Wixen Mail does not check." Saying
+    nothing would put such a message back among unsigned mail, the silence
+    #52 point 6 was raised against (13-36.1, D4).
+72. The mark is data in the mail database, one row of a new table,
+    `last_message_before`, and not a setting. It describes the messages in
+    that database, so it lives and dies with them; nobody should choose it;
+    and a field no screen offers would break the rule that every setting is
+    reachable from the settings screen. It is the highest message number
+    when this build first opens the database, written with `INSERT OR
+    IGNORE` so no later open moves it, and a mark that cannot be read gives
+    decision 71's sentence, which claims nothing about when a message was
+    stored (13-36.1, D5 and D6).
+73. Found while planning, by reading and not running: an S/MIME message that
+    opened to files alone says on its page, in the formatted window and the
+    preview, that it has no text or has not been downloaded. The line that
+    fixes PGP's page fixes it too. 13-36.1's red commit must show the S/MIME
+    half failing, or that half is dropped and the summary says the reading
+    was wrong (13-36.1, D7).
+74. The key dates follow the date order and the numbers-or-words choice, not
+    the relative style or the clock, as a birthday does, each day on this
+    computer's clock (13-36.1, D8). A PGP/MIME message that opened to nothing
+    at all keeps today's sentence, because "It holds files" would be false
+    about it (D9).
+75. What the mark cannot see: on a computer that already ran a build carrying
+    13-18, a message with a lone signature file, or a signed message a
+    mailing list wrapped, stored between that build's first run and this
+    one's, is below the mark and still says the stored-before reason. The
+    changelog says so (13-36.1, D10).
+76. The merged meeting is the provider's copy, on the answer's row. The
+    answer keeps its record and its busy, tentative or free; the title, time,
+    place, guests and repeat are the provider's, so a stranger's invitation
+    carrying a real meeting's UID cannot put its words on the real meeting.
+    The cost: anything typed onto the answered meeting before its first
+    calendar check is replaced, and the guide and the changelog say so
+    (13-36.2, D2).
+77. After a merge the row waits to be sent only when the answer's busy,
+    tentative or free differs from the provider's copy: an Accept sends
+    nothing, a Tentative or a Decline sends once (13-36.2, D3). Google keeps
+    only busy or free, so a Tentative merged onto a Google copy is sent as
+    busy and reads busy after the next Google read, while the answer stays
+    recorded as Tentative. That half was read on `main` at `fe9bd124` and
+    not run, and a ledger `todo` carries it.
+78. The provider's organiser wins, and the answer's stays only where the
+    provider names nobody; "a row an answer filed" is a row in the account
+    whose provider identifier is still the meeting's UID, with no source,
+    answered here and not one day of a series; a merge counts as updated;
+    the merged row moves into the provider's calendar; a published feed is
+    not merged (13-36.2, D4 to D8).
+79. A database where a calendar check already put the provider's copy beside
+    an answer keeps both rows. None is known (his profile held no calendar
+    events, read 2026-09-27), and folding two rows means deleting one, which
+    is his decision; a ledger `todo` carries it (13-36.2, D9).
+80. 13-36.2 merges locally without a pull request, because no file under
+    `src/presentation` changes and no NVDA or Accessibility case reaches what
+    a person meets differently. He may prefer a pull request.
+81. One day of a repeating meeting is kept apart the calendar's own way: an
+    appointment of its own naming its series, with that day called off the
+    series. That happens only where the calendar can carry one day on its
+    own, a calendar server or a calendar kept here
+    (`calendar::can_be_honoured`); on a Google or Outlook calendar the change
+    is said, not applied, and the calendar is named. A cancelled day gets the
+    same Remove from Calendar button, which takes that day off. The day is
+    read on the series' clock; a change from one day onwards
+    (RANGE=THISANDFUTURE) is said and not applied; a one-day message against
+    a single appointment applies only when that appointment is on that day
+    (13-36.3).
+82. Past the literal item: an update or cancellation that names no day is
+    applied to every day of the series, as decision 16 applies a single
+    meeting's, because 13-13 refused it only while the day could not be read.
+    Overruling this keeps 13-13's refusal for a message naming no day, with
+    its sentence reworded, and takes 13-36.3's every-day cases out; the
+    answer is wanted before 13-36.3 runs (13-36.3).
+83. A one-day answer is filed the way 13-36.3 keeps a day apart, and an
+    Accept at the series' own time is kept apart too, so the answer has a row
+    to be remembered on. On a Google or Outlook calendar the answer is sent
+    and the calendar left as it was, and the sentence after answering says
+    so. With no series on the calendar the day is filed alone. A series sent
+    with one changed day is answered as the series; a change from one day
+    onwards is refused; the reply's RECURRENCE-ID is rebuilt from the value
+    and the zone the invitation wrote (13-36.4).
+84. Found while planning and fixed in 13-36.4's first task: answering any
+    repeating meeting files one appointment, and for a series a calendar
+    server holds, the next push would send the server the meeting with no
+    RRULE and no EXDATE. Nothing has met a real calendar server, so it has
+    not happened. A ledger `todo` opened when these plans landed, 723,
+    carries it until then. He may want the fix sooner than the wave order
+    puts it.
+85. Found while planning and ledgered, not fixed. An answer on an account
+    whose calendar nothing syncs sits in My Calendar as a change waiting to
+    be sent, so every calendar check says one change made here cannot be
+    sent; 13-36.2 merges it away for Google, Outlook and calendar servers and
+    opens a `todo` for the rest. And the guard check
+    `test_every_guard_record_still_names_one_place_in_the_tree` has been
+    blind for all of `src/presentation/wx_app.rs` since 13-07's `4d7d513f`,
+    through the whole-file exemption ledger 545 already names; 545 was
+    updated when these plans landed, and 13-36.3 and 13-36.4 find that
+    file's anchors by script.
+
 ## Four things that wait on Pratik
 
 Each is a checkpoint that stops only when the executor's brief does not
@@ -491,7 +631,7 @@ stands:
 | Action menu: J, Q and Z free | Report as Junk takes J (13-22), Quick Steps Q (13-41, 13-42), Z stays free; the next new Action item goes on a submenu. Run a Rule on This Folder is on the This Folder submenu, on L (13-44) |
 | Keys: Ctrl+Shift+J, Ctrl+Shift+B, Ctrl+Shift+7 to 9, Alt+4 to 9 | 13-22, 13-25, 13-42 and 13-38; none was bound or documented on 2026-09-24, and each plan adds its keys to `tests/wired.rs`'s stated list where they are counted |
 | The shared runner | 13-23 (the label fix), 13-24 (the do-halves), 13-24.1 (the runner) before 13-25 (the block), 13-42 (Quick Steps) and 13-44 (a rule over a folder), which call it |
-| The schema, `message_cache/mod.rs` | Twelve plans in sequence, each additive with `CREATE TABLE IF NOT EXISTS` or `ensure_column_exists`: 13-09, 13-11, 13-12, 13-15, 13-16, 13-18, 13-19, 13-21, 13-33, 13-34, 13-37, 13-40 |
+| The schema, `message_cache/mod.rs` | Fourteen plans in sequence, each additive with `CREATE TABLE IF NOT EXISTS` or `ensure_column_exists`: 13-09, 13-11, 13-12, 13-15, 13-16, 13-18, 13-19, 13-21, 13-33, 13-34, 13-36.1, 13-36.3, 13-37, 13-40 |
 | The composer, the account editor and the item form | The composer by 13-06, 13-21, 13-35; the Account Manager by 13-06, 13-27, 13-33; the item form by 13-06 and 13-32; in wave order |
 | The credential store's 1,280-character limit | 13-16 splits keys into parts and makes the test store refuse what Windows refuses; a sign-in test it reddens is fixed there (decision 50); 13-26's directory password is short; the Microsoft token question is a ledger `todo` 13-16 opens |
 | Item undo built before junk moves, blocks, Quick Steps and rule runs | Open. 13-42 reads 13-24.1's and 13-08's summaries and says whether a step's writes join Edit, Undo; 13-22, 13-25 and 13-44 do not ask, and 13-51's closing read says which of the four are undoable |
