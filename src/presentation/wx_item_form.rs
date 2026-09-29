@@ -458,6 +458,11 @@ pub struct ItemFormWidgets {
     /// was given somewhere to ask. `None` for every other form. See
     /// [`FreeBusyControls`].
     pub free_busy: Option<FreeBusyControls>,
+    /// Save, which has to stay on screen however little room the form has:
+    /// a form whose Save has scrolled away cannot be kept.
+    pub save: Button,
+    /// Where Save says why it refused, which has to stay on screen with it.
+    pub problem_line: StaticText,
     built: Vec<(&'static Field, Control)>,
 }
 
@@ -812,6 +817,8 @@ pub fn build_item_form_dialog<W: WxWidget>(
         category_field,
         recurrence,
         free_busy: free_busy.map(|controls| controls.shown),
+        save,
+        problem_line,
         built,
     })
 }
