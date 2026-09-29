@@ -52,7 +52,7 @@ metrics:
 actuals:
   tokens: 26000
   tasks: 3
-  commits: 5
+  commits: 7
 ---
 
 # Phase 13 Plan 33: Other addresses to send from, kept per account and managed from the Account Manager
@@ -130,7 +130,9 @@ address and that none has been asked. Compose does not offer them yet: that is 1
 | `5db934d2` | feat: the table, the data module, the clear call and the rules; 2 records | affected, 296 s |
 | `0f96b286` | test: 16 failing readings on bare stubs | red, 246 s |
 | `ce9e9d97` | feat: the manager, the window, the button, the scan target, the shortcuts page; 2 records | all (the workflow line), 706 s; refused once before at 607 s |
-| docs | the changelog, the ledger, this summary, the marks | this commit |
+| `31aadc9a` | docs: the changelog, the ledger, this summary, the marks | docs only, 106 s |
+| `9cc7d053` | test: an address with no name says "No name" in its row, red (CI's scan) | red, 81 s |
+| green | the name column says "No name" when an address has none; this deviation | this commit |
 
 ## Guard records
 
@@ -207,6 +209,13 @@ banned tool.** None ran it and nothing was written by them. Read-only Python par
 error code added to `a_locked_key_asks_for_its_passphrase`'s message) was made with Edit and
 put back with `git checkout --` before any commit.
 
+**12. [Rule 1, after CI] An address kept with no name left an empty cell, which the scan
+found.** The Accessibility run on pull request 135 (36533332611) read the `identities` target
+with one violation: the Name people see cell of the fixture's second address, empty, so
+nameless on UI Automation. `accounts`' one violation, an empty IMAP Server cell, was there
+before this plan. The row now says "No name" there, a red and green pair after the documents
+commit, which the brief allows when CI asks for a fix.
+
 ## Ledger
 
 Opened, both halves: 713 (`todo`, not offered in compose until 13-35, named in its premise 1),
@@ -229,4 +238,4 @@ outside tests, which ledger 713 records.
 
 ## Self-Check: PASSED
 
-The four commits above are on the branch; the created files exist.
+The commits above are on the branch; the created files exist.

@@ -11,8 +11,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 - **Other addresses to send from, kept per account and managed from the Account Manager,
   experimental (GAP-10's first half, #59).** `Alt+O` on the Account Manager opens Other
   Addresses to Send From for the chosen account: the other addresses it sends from, each with
-  the name people see beside it, in the order you put them with Move Up and Move Down or
-  `Alt+Shift+Up` and `Alt+Shift+Down` in the list. Add and Edit open a window holding the
+  the name people see beside it, or "No name" when it has none, in the order you put them
+  with Move Up and Move Down or `Alt+Shift+Up` and `Alt+Shift+Down` in the list. Add and
+  Edit open a window holding the
   address (`Alt+A`) and the name people see (`Alt+N`). OK refuses, with a sentence, something
   that is not an email address, the account's own address, an address the account already
   has however it is capitalised, and a name longer than 100 characters or holding a line

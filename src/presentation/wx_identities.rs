@@ -94,13 +94,24 @@ pub fn build_identity_manager(
     }
 }
 
+/// What the name column says for an address kept with no name.
+///
+/// Said rather than left empty: an empty cell has no name on UI Automation,
+/// which the scan found on pull request 135, and it reads as a row that did
+/// not load.
+const NO_NAME: &str = "No name";
+
 /// Fill the manager's list, one row per address in its order.
 pub fn populate_identities(list: &ListCtrl, rows: &[Identity]) {
     list.delete_all_items();
     for (at, row) in rows.iter().enumerate() {
         let at = at as i64;
         list.insert_item(at, &row.address, None);
-        list.set_item_text_by_column(at, 1, &row.sender_name);
+        let name = match row.sender_name.as_str() {
+            "" => NO_NAME,
+            name => name,
+        };
+        list.set_item_text_by_column(at, 1, name);
     }
 }
 
