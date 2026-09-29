@@ -974,6 +974,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A meeting answered before the calendar check brought it is no longer shown twice (ledger
+  154).** Answering an invitation your calendar provider had not sent yet put the meeting on My
+  Calendar, and the next Google, Outlook or calendar-server check then added the provider's copy
+  beside it, so the meeting was on your calendar twice. The check now moves the provider's copy
+  onto the meeting your answer filed, in the provider's calendar, and counts it as updated
+  rather than new. The meeting is the provider's copy: its title, time, place, guests and repeat
+  come from the provider, never from the invitation, so an invitation from somebody else naming
+  a real meeting cannot change it. Your answer stays with it, and so does whether it takes up
+  your time; when that differs from the provider's copy, as it does for Tentative and Decline,
+  the change waits to be sent once. Where the provider names who called the meeting, that name
+  wins over the invitation's. From that check on, the check no longer says the meeting is a
+  change made here that cannot be sent. A title, place or category you typed onto the meeting
+  before the check is replaced by the provider's. The version does not move for this: no build
+  has been cut since 1.0.0-alpha.1. Known limitations: no real provider has sent a meeting
+  answered here first, only copies built for the tests; a meeting already shown twice before
+  this build stays that way; and on Google, which keeps only busy or free, a Tentative answer
+  is sent as busy and reads busy after the next check, while your answer stays recorded as
+  Tentative.
 - **An encrypted message that opened to files and no words says it opened (ledger 643).** A
   PGP/MIME message that opened here to files alone said "This message has no text, or it has
   not been downloaded yet.", which is false about it and sends you to fetch it again. It now

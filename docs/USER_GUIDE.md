@@ -686,6 +686,14 @@ meeting is put
 on your calendar, and your answer is kept beside it, so the next time the
 invitation is opened the sentence says which way you answered.
 
+If your calendar provider has not sent the meeting yet, your answer puts it
+on My Calendar. The next calendar check moves it to the provider's calendar
+as the provider's copy of the meeting, rather than adding the meeting a
+second time. Your answer, and whether the meeting takes up your time, stay
+with it. Google keeps only busy or free, so a Tentative answer shows as busy
+there after the next check. A title, place or category you typed onto the
+meeting before that check is replaced by the provider's.
+
 #### When the organiser moves or cancels a meeting
 
 Opening an update or a cancellation in the reader window or the formatted
