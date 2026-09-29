@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 639
 waived_count: 0
-fixed_count: 72
-total_count: 711
-last_updated: 2026-09-29T00:15:00.000Z
+fixed_count: 73
+total_count: 712
+last_updated: 2026-09-29T03:40:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -431,7 +431,7 @@ last_updated: 2026-09-29T00:15:00.000Z
 | 414 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 21: the text field of the End time Minute spinner has no name on either channel; as 408. Reopened 2026-09-23: 12-06 wrote this field's name through the annotation service at b439452e and tests read it in a test process, but the Accessibility scan of the running program on pull request #97, runs 35927025769 and 35930014324, found the field as before; the cause is unknown and 12-06.1 owns it | fixed | 12-06.1: Accessibility run 35976411245 on #98 read this field in the running program with its arrows' words on MSAA and on UI Automation at its handle; the fix, e50aee6f, makes the process's first annotation write before the WebView2 preview | 2026-09-14T15:28:42.628Z | 2026-09-24T08:52:00.000Z |
 | 415 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 22: the element showing the current value of the End time AM or PM list has no name on UI Automation; as 411 | open |  | 2026-09-14T15:28:43.082Z |  |
 | 416 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 23, unjudged: the Category combo box is reported as not supporting ExpandCollapse. Every combo box in the window is exposed through the MSAA proxy because each carries an accessible object of ours, and the proxy offers ExpandCollapse to none of them, yet only this one was flagged. The one difference in the tree is that it has no child showing a value. To judge it: read the scanner's condition for ControlShouldSupportExpandCollapsePattern in the v2.4.2 source, or open the window on a taller screen and scan again | open |  | 2026-09-14T15:29:12.669Z |  |
-| 417 | 06 | todo | src/presentation/wx_item_form.rs |  | Found in the scan's tree, not a scan finding: Edit Event is 720 pixels tall on the runner's 768-pixel screen and its content runs past the bottom. Show as, Status, Category and Times offered are six pixels tall at the bottom edge; the panel inside the tab is 562 tall and the form is taller. On a small screen or at 200 percent text size the last four fields are cut off and the form does not scroll. WCAG 1.4.10 Reflow and 1.4.4 Resize Text, and a keyboard user reaches a field nobody can see | open |  | 2026-09-14T15:29:13.123Z |  |
+| 417 | 06 | todo | src/presentation/wx_item_form.rs |  | Found in the scan's tree, not a scan finding: Edit Event is 720 pixels tall on the runner's 768-pixel screen and its content runs past the bottom. Show as, Status, Category and Times offered are six pixels tall at the bottom edge; the panel inside the tab is 562 tall and the form is taller. On a small screen or at 200 percent text size the last four fields are cut off and the form does not scroll. WCAG 1.4.10 Reflow and 1.4.4 Resize Text, and a keyboard user reaches a field nobody can see | fixed | 13-32: every page of the item form scrolls and the focused field is scrolled into view, the form is capped to and centred in its screen's working area, and Save and the problem line stay outside the scrolling. Accessibility run 36513896729 on pull request 134 read new-event on the runner's 1024 by 768 screen at [245, 0, 553, 720], the page 562 tall and scrolling, Show as, Status and Category 23 pixels tall each, and Save at 675 to 698, on the screen; run 36510066030 before the centring read Save at 770, below it. tests/the_event_form_scrolls_to_the_field_in_focus.rs holds it; 200 percent text by ear and eye is ledger 712 | 2026-09-14T15:29:13.123Z | 2026-09-29T03:40:00.000Z |
 | 418 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 24: the element showing the current value of the Send on Month list has no name on UI Automation. No static label precedes any control in this window, so nothing is given to it by the platform either. As 411 | open |  | 2026-09-14T15:29:13.548Z |  |
 | 419 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 25: the text field of the Send on Day spinner has no name on either channel. The name Send on Day is on the arrows; as 408. Reopened 2026-09-23: 12-06 wrote this field's name through the annotation service at b439452e and tests read it in a test process, but the Accessibility scan of the running program on pull request #97, runs 35927025769 and 35930014324, found the field as before; the cause is unknown and 12-06.1 owns it | fixed | 12-06.1: Accessibility run 35976411245 on #98 read this field in the running program with its arrows' words on MSAA and on UI Automation at its handle; the fix, e50aee6f, makes the process's first annotation write before the WebView2 preview | 2026-09-14T15:29:13.982Z | 2026-09-24T08:52:00.000Z |
 | 420 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 26: the text field of the Send on Year spinner has no name on either channel; as 408. Reopened 2026-09-23: 12-06 wrote this field's name through the annotation service at b439452e and tests read it in a test process, but the Accessibility scan of the running program on pull request #97, runs 35927025769 and 35930014324, found the field as before; the cause is unknown and 12-06.1 owns it | fixed | 12-06.1: Accessibility run 35976411245 on #98 read this field in the running program with its arrows' words on MSAA and on UI Automation at its handle; the fix, e50aee6f, makes the process's first annotation write before the WebView2 preview | 2026-09-14T15:29:14.419Z | 2026-09-24T08:52:00.000Z |
@@ -726,6 +726,7 @@ last_updated: 2026-09-29T00:15:00.000Z
 | 709 | 13 | unrun-verify | src/service/free_busy.rs | 553 | 13-31, for phase 14: no real colleague's getSchedule answer has been read. On an Outlook or Office 365 work account, invite a colleague whose mailbox keeps another time zone: whether workingHours.timeZone.name arrives as a Windows name this computer places, whether the colleague leaves the sentence saying nobody said where they are, whether their clock is said beside each time at the right hour, and what arrives for a colleague whose mailbox keeps a zone built by hand | open |  | 2026-09-29T00:15:00.000Z |  |
 | 710 | 13 | unrun-verify | src/application/when_people_are_free.rs | 536 | 13-31, the tester's ear: nobody has heard an offered time with a guest's clock beside it, "03/03/2026 at 10:00, which is 15:00 for Ada; or 03/03/2026 at 10:30, which is 15:30 for Ada", read as the first sentence of the answer and in What came back. Whether three clocks on each of three times is too long to hold, and whether the semicolons are heard as the break between times | open |  | 2026-09-29T00:15:00.000Z |  |
 | 711 | 13 | todo | src/service/free_busy.rs | 553 | 13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it | open |  | 2026-09-29T00:15:00.000Z |  |
+| 712 | 13 | unrun-verify | src/presentation/wx_item_form.rs | 941 | 13-32, the tester's ear and eye: nobody has opened Edit Event at 200 percent text or on a small screen since it scrolls. With Windows' text size at 200 percent, open File, New, Event, Tab to Show as, Category, Description and Times offered: whether each is scrolled into sight as focus reaches it, whether Save and Cancel stay on screen, whether the window opens wholly on the screen, and whether the screen reader says anything new as focus moves into the scrolled page. The test reads the smallest size in place of twice the text, which it cannot set | open |  | 2026-09-29T02:00:00.000Z |  |
 
 ````json
 [
@@ -5728,10 +5729,10 @@ last_updated: 2026-09-29T00:15:00.000Z
     "file": "src/presentation/wx_item_form.rs",
     "line": null,
     "description": "Found in the scan's tree, not a scan finding: Edit Event is 720 pixels tall on the runner's 768-pixel screen and its content runs past the bottom. Show as, Status, Category and Times offered are six pixels tall at the bottom edge; the panel inside the tab is 562 tall and the form is taller. On a small screen or at 200 percent text size the last four fields are cut off and the form does not scroll. WCAG 1.4.10 Reflow and 1.4.4 Resize Text, and a keyboard user reaches a field nobody can see",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "13-32: every page of the item form scrolls and the focused field is scrolled into view, the form is capped to and centred in its screen's working area, and Save and the problem line stay outside the scrolling. Accessibility run 36513896729 on pull request 134 read new-event on the runner's 1024 by 768 screen at [245, 0, 553, 720], the page 562 tall and scrolling, Show as, Status and Category 23 pixels tall each, and Save at 675 to 698, on the screen; run 36510066030 before the centring read Save at 770, below it. tests/the_event_form_scrolls_to_the_field_in_focus.rs holds it; 200 percent text by ear and eye is ledger 712",
     "recorded_at": "2026-09-14T15:29:13.123Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-29T03:40:00.000Z"
   },
   {
     "id": 418,
@@ -9259,6 +9260,18 @@ last_updated: 2026-09-29T00:15:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T00:15:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 712,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": 941,
+    "description": "13-32, the tester's ear and eye: nobody has opened Edit Event at 200 percent text or on a small screen since it scrolls. With Windows' text size at 200 percent, open File, New, Event, Tab to Show as, Category, Description and Times offered: whether each is scrolled into sight as focus reaches it, whether Save and Cancel stay on screen, whether the window opens wholly on the screen, and whether the screen reader says anything new as focus moves into the scrolled page. The test reads the smallest size in place of twice the text, which it cannot set",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T02:00:00.000Z",
     "resolved_at": null
   }
 ]

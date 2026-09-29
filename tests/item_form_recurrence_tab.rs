@@ -35,11 +35,12 @@ fn expect(name: &'static str, got: bool, want: bool, into: &mut Wrong) {
     }
 }
 
-/// Whether a control's parent really is the panel a test expects it on,
+/// Whether a control's parent really is the page a test expects it on,
 /// compared by the underlying native handle: the one thing that cannot lie
 /// about which page a control ended up on, where wxdragon derives no
-/// equality for either `Window` or `Panel` itself.
-fn on_page(control: &impl WxWidget, page: &Panel) -> bool {
+/// equality for `Window` or for any page. A page is a scrolled window since
+/// 13-32, and was a plain panel before it.
+fn on_page(control: &impl WxWidget, page: &impl WxWidget) -> bool {
     control
         .get_parent()
         .is_some_and(|parent| parent.handle_ptr() == page.handle_ptr())

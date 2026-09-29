@@ -912,6 +912,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Edit Event scrolls, so every field can be reached and seen on a small screen (ledger 417,
+  #57 point 4).** The event form was as tall as its fields and could not scroll. On a screen
+  768 pixels tall it filled the screen, and Show as, Status, Category and Times offered were
+  squeezed to a sliver at the bottom; at larger text they were cut off, so Tab reached fields
+  nobody could see. Now the fields of every page sit in an area that scrolls, and the field
+  that takes focus is scrolled into view. The window opens as big as its fields but never
+  bigger than the screen, and wholly on it, where before a tall form could open with its
+  bottom and Save below the edge of the screen. It can be dragged smaller, down to a page
+  that still holds the tallest box whole. Save, Cancel and the line that says why Save refused stay below the
+  fields and never scroll away. The reminder, task and note forms scroll the same way, and
+  look as they did wherever they fit. Tab meets the same fields in the same order as before.
+  The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: the form has been read at small sizes, not at twice the text, which a test
+  cannot set; a field twice as wide as the screen scrolls sideways rather than wrapping; and
+  nobody has used it at a large text size yet.
 - **Microsoft task changes reach Microsoft (ledger 282).** A task made, ticked off or deleted
   here on an Outlook or Office 365 account was refused by Microsoft at every sync since tasks
   started syncing both ways, even after signing in again, because the tasks sync asked for its
