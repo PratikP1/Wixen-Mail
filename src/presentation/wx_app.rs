@@ -15555,7 +15555,7 @@ fn send_the_answer(
         body: to_send.body.clone(),
         body_plain: to_send.body.clone(),
         html_mode: false,
-        account_index: None,
+        from: None,
         attachments: vec![written],
         // Under the invitation in the organiser's mailbox, rather than a
         // conversation of its own (#50 point 8).
@@ -17563,22 +17563,28 @@ fn open_compose(
     // message is being sent from, and the window knows only the position in
     // the list, so a second read to turn that position into an id would be a
     // second answer to the same question.
-    let (names, account_ids, active) = state
+    let (from_list, active) = state
         .lock()
         .map(|s| {
-            let names: Vec<String> = s.accounts.iter().map(|a| a.email.clone()).collect();
-            let ids: Vec<String> = s.accounts.iter().map(|a| a.id.clone()).collect();
+            let from_list = crate::application::identities::the_from_list(
+                &s.accounts,
+                &std::collections::HashMap::new(),
+            );
             let sender = crate::application::new_item::sends_from(
                 replying,
                 s.active_account_id.as_deref(),
                 s.default_account_id.as_deref(),
             );
             let active = sender
-                .and_then(|id| s.accounts.iter().position(|a| a.id == id))
+                .and_then(|id| from_list.iter().position(|entry| entry.account_id == id))
                 .unwrap_or(0) as u32;
-            (names, ids, active)
+            (from_list, active)
         })
         .unwrap_or_default();
+    let account_ids: Vec<String> = from_list
+        .iter()
+        .map(|entry| entry.account_id.clone())
+        .collect();
 
     // One id for this window, shared by the automatic saves and the button, so
     // every save after the first updates the same draft.
@@ -17650,7 +17656,7 @@ fn open_compose(
     match wx_compose::show_compose_dialog_full(
         frame,
         mode,
-        &names,
+        &from_list,
         active,
         preview_first,
         &signatures,
@@ -22349,7 +22355,7 @@ fn a_message_taken_back(
             .unwrap_or_else(|| message.body.clone()),
         body_plain: message.body.clone(),
         html_mode: written_as_html,
-        account_index: None,
+        from: None,
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
         // Taking a message back undoes the time set on it as well, and this
@@ -29577,7 +29583,7 @@ fn send_the_report(
         body: String::new(),
         body_plain: composed.body,
         html_mode: false,
-        account_index: None,
+        from: None,
         attachments,
         answering: None,
         send_at: None,
@@ -33987,7 +33993,7 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,
@@ -34098,7 +34104,7 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,
@@ -34205,7 +34211,7 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,
@@ -34305,7 +34311,7 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,

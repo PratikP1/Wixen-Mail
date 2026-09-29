@@ -613,7 +613,12 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
             let widgets = wx_compose::build_compose_dialog(
                 &frame,
                 "Compose New Message",
-                &["person@example.com".to_string()],
+                &[wixen_mail::application::identities::FromEntry {
+                    account_id: "an-account".to_string(),
+                    address: "person@example.com".to_string(),
+                    sender_name: String::new(),
+                    said: "person@example.com".to_string(),
+                }],
                 0,
                 None,
             );

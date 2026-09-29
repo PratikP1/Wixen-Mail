@@ -5,6 +5,7 @@
 //! [`crate::presentation::editor_document`].
 
 use crate::application::conversations;
+use crate::application::identities::FromEntry;
 use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
@@ -102,7 +103,12 @@ pub struct ComposeData {
     /// engine computed somebody to be looking at.
     pub body_plain: String,
     pub html_mode: bool,
-    pub account_index: Option<u32>,
+    /// Who it is from: the entry the From list was on, which names the
+    /// account it goes out through and the address it goes out from.
+    ///
+    /// `None` for a message no composer wrote, such as an answer to an
+    /// invitation, which goes out from the account open in the main window.
+    pub from: Option<crate::application::identities::FromEntry>,
     /// The files to send with it, where they are on this computer.
     ///
     /// Paths rather than bytes, all the way to the moment of sending. A message
@@ -785,8 +791,8 @@ pub struct ComposeDialogWidgets {
 pub fn build_compose_dialog(
     parent: &Frame,
     title: &str,
-    account_names: &[String],
-    active_account_index: u32,
+    from_list: &[FromEntry],
+    opens_on: u32,
     palette: Option<theme::Palette>,
 ) -> ComposeDialogWidgets {
     // ── Create Dialog ────────────────────────────────────────────────────
@@ -947,8 +953,13 @@ pub fn build_compose_dialog(
         .with_label(Reached::From.label())
         .build();
     let account_choice = Choice::builder(&dialog)
-        .with_choices(account_names.iter().map(|s| s.to_string()).collect())
-        .with_selection(Some(active_account_index))
+        .with_choices(
+            from_list
+                .iter()
+                .map(|entry| entry.address.clone())
+                .collect(),
+        )
+        .with_selection(Some(opens_on))
         .build();
     set_accessible_name(&account_choice, "From account");
     fields_sizer.add(
@@ -1327,14 +1338,17 @@ fn the_passphrase_was_typed(
 pub fn show_compose_dialog_full(
     parent: &Frame,
     mode: ComposeMode,
-    account_names: &[String],
-    active_account_index: u32,
+    // Every address a message can go out from, and the one the window opens
+    // on. The entry chosen is who the message is from, for everything that
+    // asks: the signature, people lookup, the preview, and the send.
+    from_list: &[FromEntry],
+    opens_on: u32,
     preview_before_send: bool,
-    // One per account in the From list, in its order: the signature each
-    // signs with, or nothing. The From account's goes above the quoted
+    // One per entry in the From list, in its order: the signature its account
+    // signs with, or nothing. The chosen entry's goes above the quoted
     // original when the window opens, so it can be read and edited before
     // sending rather than appearing on the way out, and it follows a change
-    // of From account (#43).
+    // of From (#43).
     signatures: &[SignatureFor],
     autosave: crate::application::autosave::AutosaveInterval,
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
@@ -1378,8 +1392,8 @@ pub fn show_compose_dialog_full(
     } = build_compose_dialog(
         parent,
         title,
-        account_names,
-        active_account_index,
+        from_list,
+        opens_on,
         theme::current_from_stored_config(),
     );
 
@@ -1414,7 +1428,7 @@ pub fn show_compose_dialog_full(
     set_body(&MessageBody::Plain(String::new()));
 
     let signature = signatures
-        .get(active_account_index as usize)
+        .get(opens_on as usize)
         .map_or("", |signed| signed.text.as_str());
 
     // ── Pre-populate fields based on mode ────────────────────────────────
@@ -1523,7 +1537,7 @@ pub fn show_compose_dialog_full(
         account_choice,
         body_editor,
         signatures.to_vec(),
-        active_account_index as usize,
+        opens_on as usize,
         a11y.clone(),
     );
 
@@ -2045,7 +2059,7 @@ pub fn show_compose_dialog_full(
                 // automatic save.
                 body_plain: crate::application::sign_off::canonical_delimiter(&body_plain),
                 html_mode: true,
-                account_index: account_choice.get_selection(),
+                from: None,
                 attachments: attached
                     .borrow()
                     .iter()
@@ -2883,12 +2897,7 @@ pub fn show_compose_dialog_full(
                 }
                 if preview_before_send {
                     // Show preview-before-send dialog
-                    match show_send_preview(
-                        &dialog,
-                        &data,
-                        account_names,
-                        theme::current_from_stored_config(),
-                    ) {
+                    match show_send_preview(&dialog, &data, theme::current_from_stored_config()) {
                         PreviewDecision::ConfirmSend => break 'compose ComposeResult::Send(data),
                         PreviewDecision::GoBack => continue, // re-show compose dialog
                     }
@@ -3875,7 +3884,6 @@ pub struct SendPreviewWidgets {
 pub fn build_send_preview_dialog(
     parent: &Dialog,
     data: &ComposeData,
-    account_names: &[String],
     palette: Option<theme::Palette>,
 ) -> SendPreviewWidgets {
     let dlg = Dialog::builder(parent, "Preview Before Send")
@@ -3892,11 +3900,7 @@ pub fn build_send_preview_dialog(
         .build();
     hdr.add_growable_col(1, 1);
 
-    let from_display = data
-        .account_index
-        .and_then(|i| account_names.get(i as usize))
-        .cloned()
-        .unwrap_or_else(|| "(default account)".to_string());
+    let from_display = "(default account)".to_string();
 
     for (label, value) in [
         ("From:", from_display.as_str()),
@@ -4022,14 +4026,13 @@ pub fn build_send_preview_dialog(
 fn show_send_preview(
     parent: &Dialog,
     data: &ComposeData,
-    account_names: &[String],
     palette: Option<theme::Palette>,
 ) -> PreviewDecision {
     let SendPreviewWidgets {
         dialog: dlg,
         browser,
         ..
-    } = build_send_preview_dialog(parent, data, account_names, palette);
+    } = build_send_preview_dialog(parent, data, palette);
 
     let answer = dlg.show_modal();
     // With the browser control the preview renders into. One per message sent,
@@ -4427,7 +4430,7 @@ mod tests {
             body: body.to_string(),
             body_plain: body_plain.to_string(),
             html_mode: true,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,
