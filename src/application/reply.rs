@@ -202,15 +202,28 @@ pub fn reply_recipients(
 /// Mail that arrived at help@ is answered from help@, or the person answering
 /// support mail answers from their own address by accident. Only the replying
 /// account's entries are candidates, so a To naming another account's address
-/// chooses nothing.
+/// chooses nothing. An account's own entry is the first of its entries, as
+/// [`crate::application::identities::the_from_list`] builds the list.
 pub fn the_entry_a_reply_goes_out_from<'a>(
     original_to: &str,
     original_cc: &str,
     entries: &'a [FromEntry],
     account_id: &str,
 ) -> Option<&'a FromEntry> {
-    let _ = (original_to, original_cc);
-    entries.iter().find(|entry| entry.account_id == account_id)
+    let sent_to: Vec<String> = split_addresses(original_to)
+        .iter()
+        .chain(&split_addresses(original_cc))
+        .map(|address| key_of(address))
+        .collect();
+    let mut the_accounts = entries
+        .iter()
+        .filter(|entry| entry.account_id == account_id);
+    let own = the_accounts.next()?;
+    Some(
+        the_accounts
+            .find(|other| sent_to.contains(&key_of(&other.address)))
+            .unwrap_or(own),
+    )
 }
 
 /// Split a header value into its addresses.

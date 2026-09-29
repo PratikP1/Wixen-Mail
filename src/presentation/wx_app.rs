@@ -8,7 +8,7 @@ use crate::application::conversations::RowMessage;
 use crate::application::destinations::Deleting;
 use crate::application::identities;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
-use crate::application::reply::ReplyMode;
+use crate::application::reply::{self, ReplyMode};
 use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun};
 // The one wording for a refusal when nothing was chosen (#75). Named here so
 // that the seven places this window refuses a command for that reason are
@@ -17206,16 +17206,13 @@ fn start_reply(
     mode: ReplyMode,
 ) {
     let AppHandles { state, .. } = app;
-    let (selected, own_addresses, preview) = {
+    let (selected, accounts, preview) = {
         let s = lock_state(state);
         (
             s.selected_message_index
                 .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
                 .cloned(),
-            s.accounts
-                .iter()
-                .map(|a| a.email.clone())
-                .collect::<Vec<_>>(),
+            s.accounts.clone(),
             s.message_preview.clone(),
         )
     };
@@ -17223,6 +17220,13 @@ fn start_reply(
         let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
         return;
     };
+    // Every address you send from is yours, the other addresses an account
+    // keeps as much as its own, so Reply All sends none of them a copy.
+    let own_addresses: Vec<String> =
+        identities::the_from_list(&accounts, &the_other_addresses(cache.as_deref(), &accounts))
+            .into_iter()
+            .map(|entry| entry.address)
+            .collect();
 
     let recipients = crate::application::reply::reply_recipients(
         &crate::application::reply::RepliedTo {
@@ -17599,7 +17603,7 @@ fn open_compose(
     // other addresses it keeps (13-33). Each entry names its account, so the
     // window, people lookup, the signature and the send all read the entry
     // chosen rather than a position in the list.
-    let (accounts, sender) = state
+    let (accounts, sender, (sent_to, copied_to)) = state
         .lock()
         .map(|s| {
             let sender = crate::application::new_item::sends_from(
@@ -17608,16 +17612,33 @@ fn open_compose(
                 s.default_account_id.as_deref(),
             )
             .map(str::to_string);
-            (s.accounts.clone(), sender)
+            // The To and Cc of the message answered or forwarded, which is
+            // the one selected, as `start_reply` and Forward read it.
+            let answered = s
+                .selected_message_index
+                .filter(|_| replying)
+                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
+                .map(|message| (message.to.clone(), message.cc.clone()))
+                .unwrap_or_default();
+            (s.accounts.clone(), sender, answered)
         })
         .unwrap_or_default();
     let from_list =
         identities::the_from_list(&accounts, &the_other_addresses(cache.as_deref(), &accounts));
-    // A draft reopens on the address it was written from, and anything else
-    // on the account `sends_from` picks.
+    // A draft reopens on the address it was written from; a reply or a
+    // forward on the address the message was sent to, where it is one of the
+    // account's other addresses (13-36); anything else on the account
+    // `sends_from` picks.
     let (written_from, address) = match &mode {
         ComposeMode::Draft(draft) if draft.account_id.is_some() => {
             (draft.account_id.clone(), draft.from_address.clone())
+        }
+        _ if replying => {
+            let address = sender.as_deref().and_then(|account_id| {
+                reply::the_entry_a_reply_goes_out_from(&sent_to, &copied_to, &from_list, account_id)
+                    .map(|entry| entry.address.clone())
+            });
+            (sender, address)
         }
         _ => (sender, None),
     };

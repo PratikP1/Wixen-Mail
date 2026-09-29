@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 475 records have arrived since and have not been through it.
+# 478 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -9226,7 +9226,7 @@ tests_last_seen = [
     { file = "src/application/looking_people_up.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
-    { file = "src/application/reply.rs", tests = 28 },
+    { file = "src/application/reply.rs", tests = 35 },
     { file = "src/common/types.rs", tests = 30 },
     { file = "src/presentation/message_rows.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -34341,7 +34341,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
 
 # People lookup asking the first account's directory whatever the From list
@@ -34358,7 +34358,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
 
 # The composer's Send going out through the account open in the main window
@@ -34383,7 +34383,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
 
 # Undo Send reading the open account's queue alone, so a message sent from
@@ -34400,5 +34400,59 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
+]
+
+# A reply's From entry compared with the addresses the message was sent to
+# case and all, so mail a sender wrote to sales@ is answered from the account's
+# own address when the other address is kept as Sales@. Written 2026-09-29 by
+# 13-36.
+[[guard]]
+name = "a reply's From entry is compared with where the message was sent without case"
+file = "src/application/reply.rs"
+before = '''            .find(|other| sent_to.contains(&key_of(&other.address)))'''
+after = '''            .find(|other| sent_to.contains(&other.address))'''
+red = [
+    "application::reply::tests::test_an_other_address_is_found_without_case",
+]
+tests_last_seen = [
+    { file = "src/application/reply.rs", tests = 35 },
+]
+
+# Reply All handed each account's own address alone as yours, so a reply to
+# mail sent to help@ copies help@ back to itself (T-13-36-02). Written
+# 2026-09-29 by 13-36.
+[[guard]]
+name = "Reply All leaves out every address you send from"
+file = "src/presentation/wx_app.rs"
+suite = "the_from_list_chooses_who_sends"
+before = '''    let own_addresses: Vec<String> =
+        identities::the_from_list(&accounts, &the_other_addresses(cache.as_deref(), &accounts))'''
+after = '''    let own_addresses: Vec<String> =
+        identities::the_from_list(&accounts, &std::collections::HashMap::new())'''
+red = [
+    "test_reply_all_leaves_out_every_address_you_send_from",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
+]
+
+# A reply or a forward opening the From list on the account's own entry
+# whatever address the message was sent to, which is the shape before 13-36.
+# Written 2026-09-29 by 13-36.
+[[guard]]
+name = "a reply opens From on the address the message was sent to"
+file = "src/presentation/wx_app.rs"
+suite = "the_from_list_chooses_who_sends"
+before = '''            let address = sender.as_deref().and_then(|account_id| {
+                reply::the_entry_a_reply_goes_out_from(&sent_to, &copied_to, &from_list, account_id)'''
+after = '''            let address = sender.as_deref().and_then(|account_id| {
+                from_list.iter().find(|entry| entry.account_id == account_id)'''
+red = [
+    "test_a_reply_or_a_forward_opens_on_the_address_the_message_was_sent_to",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
