@@ -50,6 +50,7 @@
 //!
 //! None of this has run against a live calendar.
 
+use crate::application::answered_meetings::{self, WhereTheCopyWent};
 use crate::application::summing_up::SummingUp;
 use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
 use crate::common::Result;
@@ -139,6 +140,18 @@ pub struct CalendarSyncResult {
     /// now. `application::calendar_conflict` raises them.
     pub held_for_you_to_choose: usize,
     pub errors: Vec<String>,
+}
+
+impl CalendarSyncResult {
+    /// Count a provider's copy of a meeting by where it went. A copy put on
+    /// the row an answer filed first is an update, because the calendar
+    /// already held the meeting.
+    pub fn count_the_copy(&mut self, went: WhereTheCopyWent) {
+        match went {
+            WhereTheCopyWent::OntoTheAnswersRow => self.updated += 1,
+            WhereTheCopyWent::OntoARowOfItsOwn => self.created += 1,
+        }
+    }
 }
 
 /// What a calendar sync did, in the words the status line and a screen reader
@@ -839,8 +852,14 @@ pub async fn sync_google_calendar(
                 result.updated += 1;
             }
             None => {
-                save_what_google_sent(cache, &local_event, event)?;
-                result.created += 1;
+                // Google's copy, onto the row an answer filed first if there is one.
+                let went = answered_meetings::file_the_providers_copy(
+                    cache,
+                    &local_event,
+                    event.ical_uid.as_deref(),
+                    event.the_organisers_address(),
+                )?;
+                result.count_the_copy(went);
             }
         }
     }

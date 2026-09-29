@@ -19,6 +19,18 @@
 //! this module: [`crate::application::answering::Answering::what_the_calendar_should_hold`]
 //! was called by nothing at all.
 //!
+//! The calendar half can happen before any calendar check has brought the
+//! meeting. The answer then files it in the account's default calendar under
+//! the meeting's UID, and the check that brings the provider's copy meets it
+//! under the provider's own identifier, where nothing is filed. Left alone,
+//! that check filed a second meeting beside the first. [`file_the_providers_copy`]
+//! puts the copy on the answer's row instead, and the meeting there is the
+//! provider's copy rather than the invitation's: the provider is the
+//! calendar's authority on the meeting, an invitation comes by mail from
+//! somebody who may not have called it, and an answer files a repeating
+//! meeting without its rule. The answer keeps its row, its version, its word
+//! and whether it takes up the time.
+//!
 //! # What this deliberately does not decide
 //!
 //! **Whether the answer was worth sending.** Every reason not to answer is
@@ -260,24 +272,43 @@ fn still_where_it_came_from(
 }
 
 /// The provider's copy of a meeting, put on the row an answer filed for it.
+///
+/// Everything about the meeting is the copy's: its title, time, place,
+/// guests, repeat, status, calendar, identifier, version marker and link. The
+/// answer keeps its row, so the version and the word answered stay with it,
+/// and keeps whether it takes up the time. The row waits to be sent only when
+/// that differs from the copy's, because a change sent to a guest's copy is
+/// one a provider may refuse, and a refused change waits for ever.
 fn the_providers_copy_on_the_answers_row(
     copy: &CalendarEventEntry,
-    _answers_row: &CalendarEventEntry,
+    answers_row: &CalendarEventEntry,
 ) -> CalendarEventEntry {
-    copy.clone()
+    CalendarEventEntry {
+        id: answers_row.id.clone(),
+        show_as: answers_row.show_as.clone(),
+        pending: answers_row.show_as != copy.show_as,
+        ..copy.clone()
+    }
 }
 
 /// Where a calendar check put a meeting no row of the provider's held yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhereTheCopyWent {
     /// Onto the row an answer given here filed before any check brought the
-    /// meeting.
+    /// meeting, so the calendar already held it and the check updated it.
     OntoTheAnswersRow,
-    /// Onto a row of its own.
+    /// Onto a row of its own, as every meeting nobody answered first is.
     OntoARowOfItsOwn,
 }
 
 /// File a provider's copy of a meeting no row of that provider holds yet.
+///
+/// The one call a Google, Outlook or calendar-server check makes for a
+/// meeting it meets for the first time. Where an answer given here filed the
+/// meeting before any check brought it, the copy goes on that row rather than
+/// beside it; otherwise it is filed as new, as it always was. Either way the
+/// meeting's UID and who called it are written after the save, which names
+/// its columns and leaves them where they were.
 pub fn file_the_providers_copy(
     cache: &MessageCache,
     copy: &CalendarEventEntry,
@@ -288,13 +319,23 @@ pub fn file_the_providers_copy(
         Some(uid) => cache.the_meeting_only_an_answer_filed(&copy.account_id, uid)?,
         None => None,
     };
-    let row = match answers_row {
-        Some(answers_row) => the_providers_copy_on_the_answers_row(copy, &answers_row),
-        None => copy.clone(),
+    let Some(answers_row) = answers_row else {
+        cache.save_calendar_event(copy)?;
+        cache.remember_where_it_came_from(&copy.id, uid, organiser)?;
+        return Ok(WhereTheCopyWent::OntoARowOfItsOwn);
     };
-    cache.save_calendar_event(&row)?;
-    cache.remember_where_it_came_from(&row.id, uid, organiser)?;
-    Ok(WhereTheCopyWent::OntoARowOfItsOwn)
+
+    let merged = the_providers_copy_on_the_answers_row(copy, &answers_row);
+    cache.save_calendar_event(&merged)?;
+    // The organiser the provider names wins over the one the answer recorded
+    // off a mailed invitation, which a stranger could have written; only
+    // where the provider names nobody does the answer's stay.
+    let organiser = match organiser {
+        Some(named) => Some(named.to_string()),
+        None => cache.the_organiser_on_the_calendar(&merged.id)?,
+    };
+    cache.remember_where_it_came_from(&merged.id, uid, organiser.as_deref())?;
+    Ok(WhereTheCopyWent::OntoTheAnswersRow)
 }
 
 /// The message an invitation is answered from, as the answer needs it.

@@ -558,6 +558,17 @@ impl MessageCache {
 
     /// The row an answer given here filed for the meeting `uid` names, while
     /// no calendar has claimed it yet.
+    ///
+    /// An answer to a meeting no calendar has brought files it under the
+    /// meeting's UID as its provider identifier, from no provider, and
+    /// remembers the version answered. A provider that later claims the row
+    /// gives it an identifier or a source of its own, so each condition keeps
+    /// out a row that is somebody's: a calendar server's row answered here
+    /// carries a source, a meeting made here that nobody answered carries no
+    /// answer, and a day kept apart from its series, or filed on its own, is
+    /// one day and never the whole meeting a provider's copy stands for.
+    /// Scoped to the account, because the UID comes from a document a
+    /// stranger can write.
     pub fn the_meeting_only_an_answer_filed(
         &self,
         account_id: &str,
@@ -565,7 +576,15 @@ impl MessageCache {
     ) -> Result<Option<CalendarEventEntry>> {
         let sql = format!(
             "SELECT {EVENT_COLS} FROM calendar_events
-             WHERE provider_event_id = ?2 AND ?1 IS NOT NULL
+             WHERE account_id = ?1
+               AND provider_event_id = ?2
+               -- no provider has claimed it
+               AND source_provider IS NULL
+               -- an answer given here filed it
+               AND answered_version IS NOT NULL
+               -- the whole meeting, not one day of it
+               AND cut_from_event_id IS NULL
+               AND provider_recurrence_id IS NULL
              LIMIT 1"
         );
         let mut stmt = self.conn.prepare_cached(&sql).map_err(|e| {
