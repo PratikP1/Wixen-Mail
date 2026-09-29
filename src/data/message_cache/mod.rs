@@ -3261,6 +3261,17 @@ impl MessageCache {
         // row and draft already here, which reads as plain: what each was.
         self.ensure_column_exists("outbox_queue", "protection", "TEXT")?;
         self.ensure_column_exists("drafts", "protection", "TEXT")?;
+        // The address a message or a draft was written from, and the name in
+        // front of it, when that is one of the account's other addresses. On
+        // the row so the choice made in the composer survives the wait in the
+        // Outbox and a draft reopened tomorrow. Nothing on every row and draft
+        // already here, which reads as the account's own address and name:
+        // what each of them went out from. No backfill, on purpose, so an
+        // account's address changed later is the one its older rows use.
+        self.ensure_column_exists("outbox_queue", "from_address", "TEXT")?;
+        self.ensure_column_exists("outbox_queue", "from_name", "TEXT")?;
+        self.ensure_column_exists("drafts", "from_address", "TEXT")?;
+        self.ensure_column_exists("drafts", "from_name", "TEXT")?;
         // What kind of day an event is. Empty for every event stored before
         // there were categories, which is the right answer for all of them.
         self.ensure_column_exists("calendar_events", "categories", "TEXT NOT NULL DEFAULT ''")?;
