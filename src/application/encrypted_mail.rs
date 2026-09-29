@@ -129,6 +129,16 @@ pub const ENCRYPTED_AND_THE_DETAILS_COULD_NOT_BE_READ: &str = "This message is e
 pub const OPENED_HERE: &str = "This message was encrypted to your certificate and was opened here. \
      Opening encrypted mail is experimental.";
 
+/// What is said where the words would be, for a PGP/MIME message that opened
+/// here to files and no words.
+///
+/// Only there, and never in the bar: a PGP message that opened says nothing
+/// above its words, the rule 13-15 took from inline PGP, and a message with no
+/// words would otherwise say it has no text or has not been downloaded, which
+/// is false about it (ledger 643).
+pub const OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES: &str = "This message was encrypted with PGP and was opened here. \
+     It holds files and no words.";
+
 /// What is said when the envelope names nobody whose key is here.
 pub const NOT_ADDRESSED_HERE: &str = "This message is encrypted to a certificate this computer does not hold a key \
      for, so it cannot be opened here.";

@@ -657,6 +657,239 @@ fn test_an_opened_pgp_mime_message_is_its_words_with_no_pgp_sentence_in_the_bar(
     }
 }
 
+// ── A message that opened here to files and no words ─────────────────────────
+
+/// The words a PGP/MIME message that opened to files alone says where its
+/// words would be (ledger 643).
+const HOLDING_ONLY_FILES: &str =
+    wixen_mail::application::encrypted_mail::OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES;
+
+/// What an S/MIME message that opened says, in the words every surface uses.
+const OPENED_TO_YOUR_CERTIFICATE: &str =
+    "This message was encrypted to your certificate and was opened here.";
+
+/// What the reader says of a message it has no words for, which is false about
+/// a message that opened.
+const NOT_DOWNLOADED: &str = "not been downloaded";
+
+/// One file, the way a sealed message carries one.
+fn one_file() -> Vec<wixen_mail::service::mime::AttachmentWithBytes> {
+    use wixen_mail::service::mime::{AttachmentInfo, AttachmentWithBytes};
+    vec![AttachmentWithBytes {
+        described: AttachmentInfo {
+            filename: Some("figures.pdf".to_string()),
+            mime_type: "application/pdf".to_string(),
+            size: 4,
+            description: Default::default(),
+            content_id: None,
+        },
+        bytes: b"%PDF".to_vec(),
+    }]
+}
+
+/// A PGP/MIME message that opened here to `parts` and no words.
+fn opened_with_pgp_to(
+    parts: Vec<wixen_mail::service::mime::AttachmentWithBytes>,
+) -> wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays {
+    wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays::OpenedWithPgp {
+        body: wixen_mail::common::types::MessageBody::Plain(String::new()),
+        parts,
+        inside: Vec::new(),
+    }
+}
+
+/// An S/MIME message that opened here to one file and no words.
+fn opened_with_smime_to_one_file() -> wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays {
+    wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays::Opened {
+        body: wixen_mail::common::types::MessageBody::Plain(String::new()),
+        parts: one_file(),
+        inside: Vec::new(),
+    }
+}
+
+/// What the reader shows and says for a message that arrived in `envelope`
+/// with no body of its own and nothing else to say.
+fn put_together_from(
+    envelope: wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays,
+) -> wixen_mail::application::reading_a_message::WhatAMessageShowsAndSays {
+    use wixen_mail::application::answering::AnswerButtons;
+    use wixen_mail::application::checking_signatures::SignatureCheck;
+    use wixen_mail::application::invitations::WhatTheInvitationSays;
+    use wixen_mail::application::reading_a_message;
+    use wixen_mail::common::types::MessageBody;
+
+    reading_a_message::put_together(
+        MessageBody::Plain(String::new()),
+        envelope,
+        WhatTheInvitationSays::Nothing,
+        AnswerButtons::NotAsked,
+        SignatureCheck::NotSigned,
+    )
+}
+
+/// The text reader's document for a message that arrived in `envelope`.
+fn in_the_text_reader(
+    envelope: wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays,
+) -> wixen_mail::presentation::reader_text::ReaderDocument {
+    use wixen_mail::presentation::date_display::{
+        Clock, DateOrder, DateSettings, DateStyle, DateWording,
+    };
+    use wixen_mail::presentation::read_aloud::Reading;
+    use wixen_mail::presentation::reader_text;
+    use wixen_mail::presentation::ui_types::MessageItem;
+
+    let shown = put_together_from(envelope);
+    let reading = Reading {
+        dates: DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        },
+        now: chrono::Local::now(),
+    };
+    reader_text::single_message(&MessageItem::default(), &shown.body, reading)
+        .with_what_is_said(&shown.said)
+}
+
+/// One message of a conversation, from `from`, that arrived in `envelope`.
+fn a_part_from(
+    from: &str,
+    envelope: wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays,
+    depth: usize,
+) -> wixen_mail::presentation::reader_text::ConversationPart {
+    use wixen_mail::presentation::ui_types::MessageItem;
+
+    let shown = put_together_from(envelope);
+    wixen_mail::presentation::reader_text::ConversationPart {
+        message: MessageItem {
+            subject: "Figures".to_string(),
+            from: from.to_string(),
+            date: "2026-09-27 10:00".to_string(),
+            ..Default::default()
+        },
+        body: shown.body,
+        said: shown.said,
+        depth,
+    }
+}
+
+#[test]
+fn test_an_opened_pgp_mime_message_holding_only_files_says_so_where_its_words_would_be() {
+    // The text reader: the sentence where the words would be, and nothing in
+    // the bar, because an opened PGP message says nothing above its words.
+    let document = in_the_text_reader(opened_with_pgp_to(one_file()));
+
+    assert!(
+        document.text.contains(HOLDING_ONLY_FILES),
+        "{}",
+        document.text
+    );
+    assert!(!document.text.contains(NOT_DOWNLOADED), "{}", document.text);
+    let bar = document.warning.as_deref().unwrap_or_default();
+    for any_of_it in ["encrypted with PGP", "holds files"] {
+        assert!(!bar.contains(any_of_it), "{bar}");
+    }
+}
+
+#[test]
+fn test_one_message_opened_to_files_alone_says_it_opened_on_its_page_and_not_that_nothing_arrived()
+{
+    // The formatted window's page and the preview's, each for one message: a
+    // PGP/MIME message and an S/MIME one, each opened to one file and no
+    // words, say their own sentence on the page and never that the message may
+    // not have been downloaded (D7).
+    // Every page is read before anything is asserted, so a failure names each
+    // family and surface that is wrong rather than the first one.
+    use wixen_mail::presentation::reader_text;
+
+    let mut wrong = Vec::new();
+    for (family, said, envelope) in [
+        (
+            "PGP/MIME",
+            HOLDING_ONLY_FILES,
+            opened_with_pgp_to(one_file()),
+        ),
+        (
+            "S/MIME",
+            OPENED_TO_YOUR_CERTIFICATE,
+            opened_with_smime_to_one_file(),
+        ),
+    ] {
+        let parts = [a_part_from(
+            "Keyholder <keyholder@example.com>",
+            envelope,
+            0,
+        )];
+        for (surface, page) in [
+            (
+                "formatted",
+                reader_text::conversation_html("Figures", &parts),
+            ),
+            ("preview", reader_text::preview_html("Figures", &parts)),
+        ] {
+            if !page.contains(said) || page.contains(NOT_DOWNLOADED) {
+                wrong.push(format!("{family}, {surface}: {page}"));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
+}
+
+#[test]
+fn test_one_of_several_messages_opened_to_files_alone_says_so_under_its_own_heading() {
+    // A conversation of two: the PGP/MIME message holding only files says so
+    // once, under its own heading and before the reply's, and nowhere says it
+    // may not have been downloaded.
+    use wixen_mail::application::encrypted_mail::WhatTheEnvelopeSays;
+    use wixen_mail::presentation::reader_text;
+
+    let mut reply = a_part_from(
+        "Reader <reader@example.com>",
+        WhatTheEnvelopeSays::NotEncrypted,
+        1,
+    );
+    reply.body = wixen_mail::common::types::MessageBody::Plain("Thanks, got them.".to_string());
+    let parts = [
+        a_part_from(
+            "Keyholder <keyholder@example.com>",
+            opened_with_pgp_to(one_file()),
+            0,
+        ),
+        reply,
+    ];
+
+    let text = reader_text::conversation("Figures", &parts).text;
+    assert_eq!(text.matches(HOLDING_ONLY_FILES).count(), 1, "{text}");
+    let first_heading = text.find("1. Message from").expect("the first heading");
+    let said_at = text.find(HOLDING_ONLY_FILES).unwrap_or(0);
+    let second_heading = text.find("2. Reply").expect("the second heading");
+    assert!(
+        first_heading < said_at && said_at < second_heading,
+        "{text}"
+    );
+    assert!(!text.contains(NOT_DOWNLOADED), "{text}");
+
+    let page = reader_text::conversation_html("Figures", &parts);
+    assert!(page.contains(HOLDING_ONLY_FILES), "{page}");
+    assert!(!page.contains(NOT_DOWNLOADED), "{page}");
+}
+
+#[test]
+fn test_a_pgp_mime_message_opened_to_nothing_at_all_claims_no_files() {
+    // No words and no file: "It holds files" would be false, so the message
+    // keeps the sentence it had (D9).
+    let document = in_the_text_reader(opened_with_pgp_to(Vec::new()));
+
+    assert!(
+        !document.text.contains("It holds files"),
+        "{}",
+        document.text
+    );
+    let bar = document.warning.as_deref().unwrap_or_default();
+    assert!(!bar.contains("It holds files"), "{bar}");
+}
+
 #[test]
 fn test_a_file_inside_an_opened_envelope_is_taken_from_the_envelope() {
     // The reader lists the files inside an opened envelope, and the one place
