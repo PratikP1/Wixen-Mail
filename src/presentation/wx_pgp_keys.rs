@@ -12,7 +12,10 @@
 //! before a removal, the sentence saying what keys can do in this build and
 //! every answer are [`crate::application::pgp_keys`]'s, where a test can read
 //! them without a window, and every key operation goes through
-//! [`TheKeysUnderneath`], which [`show`] fills from that module.
+//! [`TheKeysUnderneath`], which [`show`] fills from that module. A row's two
+//! dates are the one thing it writes itself, through
+//! [`crate::presentation::date_display`], where every list's dates are
+//! written, so they follow the Reading tab of Settings.
 //!
 //! # Reaching it and leaving it
 //!
@@ -30,12 +33,11 @@
 use crate::application::pgp_keys::{self, Imported};
 use crate::application::status_sentences::nothing_chosen_named;
 use crate::common::Result;
-use crate::common::how_the_machine_writes_dates::WhichLocale;
 use crate::data::message_cache::MessageCache;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
-use crate::presentation::date_display::DateSettings;
+use crate::presentation::date_display::{self, DateSettings};
 use crate::presentation::status_line::said_and_shown;
 use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
@@ -261,6 +263,8 @@ pub struct KeyManager {
     showing: Rc<RefCell<Vec<KeyListing>>>,
     underneath: Rc<TheKeysUnderneath>,
     desktop: Rc<TheDesktop>,
+    /// How the list writes a key's two dates, as the Reading tab chose.
+    dates: DateSettings,
     a11y: Arc<Accessibility>,
 }
 
@@ -445,7 +449,7 @@ impl KeyManager {
                 Vec::new()
             }
         };
-        fill(&self.list, &keys);
+        fill(&self.list, &keys, self.dates);
         *self.showing.borrow_mut() = keys;
     }
 
@@ -463,7 +467,6 @@ pub fn build<W: WxWidget>(
     dates: DateSettings,
     a11y: &Arc<Accessibility>,
 ) -> KeyManager {
-    let _ = dates;
     let dialog = Dialog::builder(parent, TITLE)
         .with_size(860, 560)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -546,6 +549,7 @@ pub fn build<W: WxWidget>(
         showing: Rc::new(RefCell::new(Vec::new())),
         underneath: Rc::new(underneath),
         desktop: Rc::new(desktop),
+        dates,
         a11y: Arc::clone(a11y),
     };
     manager.read_the_keys_again();
@@ -599,9 +603,16 @@ fn land_the_row_cursor(list: &ListCtrl, at: Option<usize>) {
 
 /// What one key's row says, cell by cell, its dates written the way `dates`
 /// chose.
+///
+/// Each date is the day it falls on by this computer's clock, written in the
+/// order and wording the Reading tab chose (D8), and a key with no end says
+/// Never.
 pub fn the_cells_of(key: &KeyListing, dates: DateSettings) -> [String; THE_COLUMNS.len()] {
-    let _ = dates;
-    let row = pgp_keys::what_a_row_says(key, WhichLocale::ThisComputer);
+    // The day on this computer's clock, in the order and wording chosen.
+    let written = |when: chrono::DateTime<chrono::Utc>| {
+        date_display::the_date_of(when.with_timezone(&chrono::Local).date_naive(), dates)
+    };
+    let row = pgp_keys::what_a_row_says(key);
     // Paired with `THE_COLUMNS` by position and by length, so a heading
     // added without a cell does not compile rather than being silence.
     [
@@ -609,17 +620,19 @@ pub fn the_cells_of(key: &KeyListing, dates: DateSettings) -> [String; THE_COLUM
         row.kind,
         row.key_id,
         row.fingerprint,
-        row.created,
-        row.expires,
+        written(row.created),
+        // A key with no end says so in a word, whatever the date setting.
+        row.expires.map_or_else(|| "Never".to_string(), written),
         row.can,
     ]
 }
 
 /// Put the keys into the control, one row each.
-fn fill(list: &ListCtrl, keys: &[KeyListing]) {
+fn fill(list: &ListCtrl, keys: &[KeyListing], dates: DateSettings) {
     list.delete_all_items();
     for (at, key) in keys.iter().enumerate() {
-        let cells = the_cells_of(key, DateSettings::default());
+        // The window's own date choices, read once when it was built.
+        let cells = the_cells_of(key, dates);
         list.insert_item(at as i64, &cells[0], None);
         for (column, cell) in cells.iter().enumerate().skip(1) {
             list.set_item_text_by_column(at as i64, column as i32, cell);

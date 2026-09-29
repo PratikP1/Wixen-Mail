@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 481 records have arrived since and have not been through it.
+# 484 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32379,14 +32379,18 @@ red = [
     "service::pgp::keys::tests::test_one_text_holding_a_private_and_a_public_key_answers_for_each",
     "service::pgp::keys::tests::test_removing_a_private_key_takes_every_part_of_it_and_leaves_the_others",
     "service::pgp::keys::tests::test_the_public_half_of_a_key_is_armour_that_describes_as_public",
+    "service::pgp::sending::tests::test_a_key_that_does_not_sign_says_so",
+    "service::pgp::sending::tests::test_a_message_encrypted_for_alice_opens_with_her_key_to_the_same_bytes",
+    "service::pgp::sending::tests::test_somebody_it_was_not_encrypted_to_cannot_open_it",
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/presentation/reader_text.rs", tests = 151 },
-    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
     { file = "src/service/pgp/keys.rs", tests = 33 },
+    { file = "src/service/pgp/sending.rs", tests = 14 },
 ]
 
 # The last part of every slot left off the list uninstalling erases, so a key
@@ -32445,7 +32449,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pgp_keys.rs", tests = 22 },
-    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
 ]
 
 # The key manager's Remove acting without asking, so a stray press takes a
@@ -32464,8 +32468,8 @@ red = [
     "test_remove_asks_naming_the_key_and_no_keeps_it",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
-    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 12 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
+    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 13 },
 ]
 
 # The key manager's first sentence saying a key locked with a passphrase
@@ -34520,4 +34524,58 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 151 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
+]
+
+# The key list writing its dates the machine's way whatever the Reading tab
+# chose, which is ledger 649 before 13-36.1. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a key row's dates are written the way the date setting chose"
+file = "src/presentation/wx_pgp_keys.rs"
+before = '''    // The day on this computer's clock, in the order and wording chosen.
+    let written = |when: chrono::DateTime<chrono::Utc>| {
+        date_display::the_date_of(when.with_timezone(&chrono::Local).date_naive(), dates)'''
+after = '''    // The day on this computer's clock, in the order and wording chosen.
+    let written = |when: chrono::DateTime<chrono::Utc>| {
+        date_display::the_date_of(when.with_timezone(&chrono::Local).date_naive(), DateSettings::default())'''
+red = [
+    "presentation::wx_pgp_keys::tests::test_a_rows_dates_are_written_in_the_order_the_date_setting_chose",
+    "presentation::wx_pgp_keys::tests::test_a_rows_dates_in_words_are_the_dates_every_list_writes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
+]
+
+# The same, measured where the window is built: the list filled with the
+# machine's choices rather than the ones the window was handed. Its own record
+# because a record measures one suite. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "the key manager's list is filled with the date choices it was given"
+file = "src/presentation/wx_pgp_keys.rs"
+suite = "the_key_manager_lists_and_names_its_controls"
+before = '''        // The window's own date choices, read once when it was built.
+        let cells = the_cells_of(key, dates);'''
+after = '''        // The window's own date choices, read once when it was built.
+        let cells = the_cells_of(key, DateSettings::default());'''
+red = [
+    "test_the_rows_dates_follow_the_date_setting_the_window_was_given",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
+    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 13 },
+]
+
+# A key with no end written as an empty cell once its dates moved to the
+# window. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a key that never expires says never in the key list"
+file = "src/presentation/wx_pgp_keys.rs"
+before = '''        // A key with no end says so in a word, whatever the date setting.
+        row.expires.map_or_else(|| "Never".to_string(), written),'''
+after = '''        // A key with no end says so in a word, whatever the date setting.
+        row.expires.map_or_else(String::new, written),'''
+red = [
+    "presentation::wx_pgp_keys::tests::test_a_key_that_never_expires_says_never_whatever_the_date_setting",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
 ]

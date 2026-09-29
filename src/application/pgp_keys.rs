@@ -10,7 +10,6 @@
 //! be, and nothing in this program checks that.
 
 use crate::common::Result;
-use crate::common::how_the_machine_writes_dates::{self as the_machine, WhichLocale};
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::service::pgp::{self, KeyListing, WhatBecameOfAKey};
@@ -148,17 +147,6 @@ fn in_groups_of_four(digits: &str) -> String {
         .join(" ")
 }
 
-/// A date the way a person says one, in this computer's month names.
-fn in_words(when: &chrono::DateTime<chrono::Utc>, which: WhichLocale<'_>) -> String {
-    use chrono::Datelike;
-    the_machine::a_date(
-        which,
-        the_machine::Shape::DayMonthYear(when.year()),
-        when.month(),
-        when.day(),
-    )
-}
-
 /// What a key can do, in the words of the list's last column.
 fn what_it_can_do(listing: &KeyListing) -> &'static str {
     match (listing.can_encrypt, listing.can_sign) {
@@ -183,17 +171,21 @@ pub struct KeyRow {
     pub key_id: String,
     /// The fingerprint, in groups of four.
     pub fingerprint: String,
-    /// When the key was made, as a date in words.
-    pub created: String,
-    /// When it stops being valid, or "Never".
-    pub expires: String,
+    /// When the key was made.
+    ///
+    /// A moment and not words: how a date is written is the date setting's,
+    /// which the presentation layer reads, so this layer keeps no date
+    /// wording of its own (D8).
+    pub created: chrono::DateTime<chrono::Utc>,
+    /// When it stops being valid, or `None` for a key that never does.
+    pub expires: Option<chrono::DateTime<chrono::Utc>>,
     /// What it can do: encrypt, sign, both or neither.
     pub can: String,
 }
 
-/// What a row of the key manager says about one key, its dates in the month
-/// names of `which`: [`WhichLocale::ThisComputer`] in the window.
-pub fn what_a_row_says(listing: &KeyListing, which: WhichLocale<'_>) -> KeyRow {
+/// What a row of the key manager says about one key, its dates left for the
+/// window to write the way the date setting says.
+pub fn what_a_row_says(listing: &KeyListing) -> KeyRow {
     let mut kind = kind_of(listing).to_string();
     kind[..1].make_ascii_uppercase();
     if listing.locked {
@@ -208,11 +200,8 @@ pub fn what_a_row_says(listing: &KeyListing, which: WhichLocale<'_>) -> KeyRow {
         kind,
         key_id: in_groups_of_four(&listing.key_id),
         fingerprint: in_groups_of_four(&listing.fingerprint),
-        created: in_words(&listing.created, which),
-        expires: listing
-            .expires
-            .as_ref()
-            .map_or_else(|| "Never".to_string(), |when| in_words(when, which)),
+        created: listing.created,
+        expires: listing.expires,
         can: what_it_can_do(listing).to_string(),
     }
 }
@@ -822,9 +811,6 @@ mod tests {
 
     // ── The question before a removal, and a row of the list ───────────────
 
-    /// The month names a row is read in here, the same on every machine.
-    const IN_ENGLISH: WhichLocale<'static> = WhichLocale::NamedInATest("en-GB");
-
     fn adas_private_key() -> KeyListing {
         KeyListing {
             user_ids: vec![
@@ -887,27 +873,31 @@ mod tests {
 
     #[test]
     fn test_a_row_says_whose_key_it_is_before_its_numbers() {
+        // The dates are the listing's own; how they are written is the date
+        // setting's, in the window.
+        let ada = adas_private_key();
         assert_eq!(
-            what_a_row_says(&adas_private_key(), IN_ENGLISH),
+            what_a_row_says(&ada),
             KeyRow {
                 name: "Ada Lovelace <ada@example.com>".to_string(),
                 kind: "Private key".to_string(),
                 key_id: "9C0D 1E2F 3A4B 5C6D".to_string(),
                 fingerprint: "1A2B 3C4D 5E6F 7A8B 9C0D 1E2F 3A4B 5C6D 7E8F 9A0B".to_string(),
-                created: "27 September 2026".to_string(),
-                expires: "Never".to_string(),
+                created: ada.created,
+                expires: None,
                 can: "Encrypt and sign".to_string(),
             }
         );
+        let grace = graces_public_key();
         assert_eq!(
-            what_a_row_says(&graces_public_key(), IN_ENGLISH),
+            what_a_row_says(&grace),
             KeyRow {
                 name: "Grace Hopper <grace@example.com>".to_string(),
                 kind: "Public key".to_string(),
                 key_id: "0B1C 2D3E 4F5A 6B7C".to_string(),
                 fingerprint: "FEDC BA98 7654 3210 0123 4567 89AB CDEF 0B1C 2D3E".to_string(),
-                created: "5 January 2025".to_string(),
-                expires: "5 January 2028".to_string(),
+                created: grace.created,
+                expires: grace.expires,
                 can: "Encrypt only".to_string(),
             }
         );
@@ -983,13 +973,10 @@ mod tests {
         };
 
         assert_eq!(
-            what_a_row_says(&locked, IN_ENGLISH).kind,
+            what_a_row_says(&locked).kind,
             "Private key, locked with a passphrase"
         );
-        assert_eq!(
-            what_a_row_says(&adas_private_key(), IN_ENGLISH).kind,
-            "Private key"
-        );
+        assert_eq!(what_a_row_says(&adas_private_key()).kind, "Private key");
     }
 
     /// What the reader's composition makes of a body, with nothing else about
@@ -1058,7 +1045,7 @@ mod tests {
             ..adas_private_key()
         };
 
-        let row = what_a_row_says(&nameless, IN_ENGLISH);
+        let row = what_a_row_says(&nameless);
 
         assert_eq!(row.name, "No name or address");
         assert_eq!(row.can, "Sign only");

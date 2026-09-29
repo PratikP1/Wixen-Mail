@@ -529,9 +529,12 @@ fn absolute_asking(
 
 /// The date without its time, in the order and wording `settings` chose, in
 /// this computer's names.
+///
+/// For a day that carries no time worth saying, such as the day a key was
+/// made: the relative style and the clock are not asked, the rule
+/// [`a_day_in_words`] keeps for a birthday.
 pub fn the_date_of(when: impl Datelike, settings: DateSettings) -> String {
-    let _ = (when.year(), settings);
-    String::new()
+    date_part_asking(WhichLocale::ThisComputer, when, settings)
 }
 
 /// The date, without the time.
