@@ -943,8 +943,15 @@ fn thread_parts(parts: &[ConversationPart]) -> Vec<crate::presentation::html_ren
                     // Said, not shown as a blank space under a heading. A
                     // message that has not been fetched and a message with
                     // nothing in it are different facts, and neither of them
-                    // should look like the reader failing to render.
-                    MessageBody::Plain(nothing_to_read())
+                    // should look like the reader failing to render. A
+                    // message whose envelope has a sentence for where its
+                    // words would be says that, as the text reader does.
+                    MessageBody::Plain(
+                        part.said
+                            .envelope
+                            .said_where_its_words_would_be()
+                            .map_or_else(nothing_to_read, str::to_string),
+                    )
                 } else {
                     body
                 },
@@ -1949,6 +1956,10 @@ impl ReaderDocument {
     /// Say what became of an S/MIME encrypted message: opened here, or why it
     /// has nothing in it.
     ///
+    /// It answers for a PGP/MIME message that opened to files and no words
+    /// too, with that message's own sentence where the words would be and
+    /// nothing in the bar (ledger 643).
+    ///
     /// [`WhatTheEnvelopeSays::NotEncrypted`] for nearly all mail, and then
     /// nothing changes anywhere, which is [`with_encryption`](Self::with_encryption)'s
     /// reasoning unchanged.
@@ -1987,20 +1998,27 @@ impl ReaderDocument {
         mut self,
         says: &crate::application::encrypted_mail::WhatTheEnvelopeSays,
     ) -> Self {
+        // Where there are no words, the sentence for that stands where the body
+        // would otherwise say there is no text or that it has not been
+        // downloaded, which is false about every message that comes here: an
+        // opened envelope holding only files among them, of either family.
+        let nothing_below = self.text.ends_with(&format!("{}\n", nothing_to_read()));
+        if nothing_below && let Some(words) = says.said_where_its_words_would_be() {
+            self.text = instead_of_nothing_to_read(&self.text, words);
+        }
         let Some(sentence) = says.said() else {
             return self;
         };
         // An envelope that opened to words is the one case with words below:
         // they are the body now, so the sentence goes between the header lines
-        // and the first of them, the way a meeting's does. Every other
-        // sentence, an opened envelope holding only files among them, stands
-        // where the body would otherwise say there is no text or that it has
-        // not been downloaded, which is false about all of them.
-        let nothing_below = self.text.ends_with(&format!("{}\n", nothing_to_read()));
-        if says.is_opened() && !nothing_below {
-            self = self.said_above_the_body(sentence);
-        } else {
-            self.text = instead_of_nothing_to_read(&self.text, sentence);
+        // and the first of them, the way a meeting's does. One that did not
+        // open and has a body anyway gets it after the body.
+        if !nothing_below {
+            if says.is_opened() {
+                self = self.said_above_the_body(sentence);
+            } else {
+                self.text = instead_of_nothing_to_read(&self.text, sentence);
+            }
         }
         self.warning = Some(match self.warning.take() {
             // Under what the filter said, the way a signature verdict goes
@@ -2236,11 +2254,11 @@ fn the_reason_it_did_not_open(
 /// added anywhere.
 fn one_of_several(part: &ConversationPart) -> (Option<String>, MessageBody) {
     let reason = the_reason_it_did_not_open(part.said.opened.as_ref());
-    let (envelope, body) = match part.said.envelope.said() {
+    let (envelope, body) = match part.said.envelope.said_where_its_words_would_be() {
         Some(sentence) if nothing_in(&part.body) => {
             (None, MessageBody::Plain(sentence.to_string()))
         }
-        other => (other, part.body.clone()),
+        _ => (part.said.envelope.said(), part.body.clone()),
     };
     // The meeting after the envelope, the order the bar folds them in, and a
     // PGP signature's verdict last, where the bar puts a signature (ledger

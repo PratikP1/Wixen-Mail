@@ -171,6 +171,28 @@ impl WhatTheEnvelopeSays {
         }
     }
 
+    /// The sentence to stand where the words would be, for a message with no
+    /// words to show.
+    ///
+    /// [`said`](Self::said) for every S/MIME answer, because that one sentence
+    /// goes in the bar and in the body alike (13-14). For a PGP/MIME message
+    /// that opened to files alone, [`OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES`],
+    /// and only here and never in the bar, which `said` keeps empty for PGP:
+    /// an opened PGP message says nothing above its words (ledger 643, D1).
+    /// A PGP/MIME message that opened to no file either keeps the sentence the
+    /// reader already has, because "It holds files" would be false about it
+    /// (D9).
+    pub fn said_where_its_words_would_be(&self) -> Option<&str> {
+        match self {
+            // The one PGP answer said where the words would be, and only when
+            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {
+                Some(OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES)
+            }
+            _ => self.said(),
+        }
+    }
+
     /// Whether this is the words of a message that opened here, with either
     /// family's key.
     ///

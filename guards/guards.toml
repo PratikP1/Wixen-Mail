@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 478 records have arrived since and have not been through it.
+# 481 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16855,7 +16855,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 151 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 15 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
 
 # The other half-fix, and the one that reads best in a diff. The question is
@@ -16881,7 +16881,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 151 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 15 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
 
 # ── A reading gate that admits everything ───────────────────────────────────
@@ -34455,4 +34455,69 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
+]
+
+# A PGP/MIME message that opened to files and no words saying it has no text
+# or has not been downloaded, on every surface, which is ledger 643 before
+# 13-36.1. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a pgp/mime message opened to files alone says so where its words would be"
+file = "src/application/encrypted_mail.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {
+                Some(OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES)'''
+after = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {
+                None'''
+red = [
+    "test_an_opened_pgp_mime_message_holding_only_files_says_so_where_its_words_would_be",
+    "test_one_message_opened_to_files_alone_says_it_opened_on_its_page_and_not_that_nothing_arrived",
+    "test_one_of_several_messages_opened_to_files_alone_says_so_under_its_own_heading",
+]
+tests_last_seen = [
+    { file = "src/application/encrypted_mail.rs", tests = 11 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
+]
+
+# The same sentence said of a PGP/MIME message that opened to no file either,
+# where "It holds files" would be false (D9). Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a pgp/mime message opened to nothing at all claims no files"
+file = "src/application/encrypted_mail.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {'''
+after = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { .. } => {'''
+red = [
+    "test_a_pgp_mime_message_opened_to_nothing_at_all_claims_no_files",
+]
+tests_last_seen = [
+    { file = "src/application/encrypted_mail.rs", tests = 11 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
+]
+
+# The page for one message writing "no text, or not downloaded" under a
+# message that opened to files alone, which the text reader had stopped saying
+# for S/MIME in 13-14 and the page had not (D7). Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "the page for one message opened to files alone says it opened"
+file = "src/presentation/reader_text.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = '''                    // words would be says that, as the text reader does.
+                    MessageBody::Plain(
+                        part.said
+                            .envelope
+                            .said_where_its_words_would_be()
+                            .map_or_else(nothing_to_read, str::to_string),
+                    )'''
+after = '''                    // words would be says that, as the text reader does.
+                    MessageBody::Plain(nothing_to_read())'''
+red = [
+    "test_one_message_opened_to_files_alone_says_it_opened_on_its_page_and_not_that_nothing_arrived",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
