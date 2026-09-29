@@ -12,8 +12,9 @@
 //! store's answer for each account; the Signature Manager's rows, built
 //! through `wx_managers` and read off the live list; the account dialog's
 //! choice, built and read back; each surface after the other has written;
-//! the default set and cleared. Then the real composer: its page loaded the
-//! way the composer loads it, the From account changed through the control
+//! the default set and cleared. Then the real composer, built from a From
+//! list with Work, Home and an other address Home sends from: its page loaded
+//! the way the composer loads it, the From entry changed through the control
 //! with the key a person presses, and the page's markup read back.
 //!
 //! **Companions.** Each reading is a check that can be handed a wrong state.
@@ -33,9 +34,10 @@
 #![cfg(windows)]
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
+use wixen_mail::application::identities::{self, FromEntry, Identity};
 use wixen_mail::common::types::MessageBody;
 use wixen_mail::data::Account;
 use wixen_mail::data::message_cache::{MessageCache, Signature};
@@ -64,6 +66,7 @@ const NOBODY: &str = "acct-nobody";
 
 const WM_KEYDOWN: u32 = 0x0100;
 const WM_KEYUP: u32 = 0x0101;
+const VK_END: usize = 0x23;
 const VK_UP: usize = 0x26;
 const VK_DOWN: usize = 0x28;
 
@@ -427,6 +430,34 @@ fn read_the_surfaces(
 
 // ── The composer ──────────────────────────────────────────────────────────
 
+/// The From list the composer is built with, by the rule the program builds
+/// it by: Work, then Home, then the other address Home sends from.
+fn the_from_list() -> Vec<FromEntry> {
+    let others = HashMap::from([(
+        HOME.to_string(),
+        vec![Identity::typed("i-help", "help@example.com", "Help Desk")],
+    )]);
+    identities::the_from_list(
+        &[an_account(WORK, "Work"), an_account(HOME, "Home")],
+        &others,
+    )
+}
+
+/// The signature an entry's account signs with, which is what an other
+/// address signs with too (phase 13 decision 34).
+fn the_signature_of(account_id: &str) -> SignatureFor {
+    match account_id {
+        WORK => SignatureFor {
+            name: "Work signature".to_string(),
+            text: "Regards, Work".to_string(),
+        },
+        _ => SignatureFor {
+            name: "Home signature".to_string(),
+            text: "Cheers, Home".to_string(),
+        },
+    }
+}
+
 /// A reply's body the way the composer quotes one written as a page.
 fn a_reply() -> MessageBody {
     MessageBody::Html("<p><br></p><p>--- Original Message ---</p><p>Their words</p>".to_string())
@@ -463,6 +494,12 @@ fn the_composers_acts() -> Vec<Act> {
         Act::Open(a_reply(), "Regards, Work"),
         Act::Press(VK_DOWN),
         Act::Read("a reply, after From changed to Home"),
+        // Back to Work, then a new message from Work, and From taken straight
+        // to the last entry, the other address Home sends from.
+        Act::Press(VK_UP),
+        Act::Open(MessageBody::Plain(String::new()), "Regards, Work"),
+        Act::Press(VK_END),
+        Act::Read("a new message, after From changed to Home's other address"),
     ]
 }
 
@@ -577,13 +614,11 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 Err(why) => return finish(Err(why)),
             }
 
+            let from_list = the_from_list();
             let widgets = wx_compose::build_compose_dialog(
                 &frame,
                 "Compose New Message",
-                &[
-                    "work@example.com".to_string(),
-                    "home@example.com".to_string(),
-                ],
+                &from_list,
                 0,
                 None,
             );
@@ -594,16 +629,10 @@ fn take_the_harvest() -> Result<Harvest, String> {
             wx_compose::follow_the_from_account(
                 choice,
                 body_editor,
-                vec![
-                    SignatureFor {
-                        name: "Work signature".to_string(),
-                        text: "Regards, Work".to_string(),
-                    },
-                    SignatureFor {
-                        name: "Home signature".to_string(),
-                        text: "Cheers, Home".to_string(),
-                    },
-                ],
+                from_list
+                    .iter()
+                    .map(|entry| the_signature_of(&entry.account_id))
+                    .collect(),
                 0,
                 a11y.clone(),
             );
@@ -882,5 +911,16 @@ fn test_a_replys_signature_follows_the_from_account_above_the_quote() {
             && !after.contains("Regards, Work")
             && after.contains("Their words"),
         "the reply after the change: {after}"
+    );
+}
+
+#[test]
+fn test_an_other_address_signs_with_its_accounts_signature() {
+    // From Work straight to the address Home also sends from: the message
+    // takes Home's signature, as Home's own entry would.
+    let after = reading("a new message, after From changed to Home's other address");
+    assert!(
+        after.contains("Cheers, Home") && !after.contains("Regards, Work"),
+        "after the change: {after}"
     );
 }

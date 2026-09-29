@@ -607,13 +607,13 @@ fn check_send_preview(
         body: "<p>Test body</p>".to_string(),
         body_plain: "Test body".to_string(),
         html_mode: true,
-        account_index: None,
+        from: None,
         attachments: Vec::new(),
         answering: None,
         send_at: None,
         protection: Default::default(),
     };
-    let widgets = wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));
+    let widgets = wx_compose::build_send_preview_dialog(&scratch_parent, &data, Some(palette));
     check(
         "send preview dialog",
         &widgets.dialog,
@@ -1099,7 +1099,12 @@ fn check_compose(
     let widgets = wx_compose::build_compose_dialog(
         parent,
         "Compose New Message",
-        &["person@example.com".to_string()],
+        &[wixen_mail::application::identities::FromEntry {
+            account_id: "an-account".to_string(),
+            address: "person@example.com".to_string(),
+            sender_name: String::new(),
+            said: "person@example.com".to_string(),
+        }],
         0,
         Some(palette),
     );

@@ -6,6 +6,7 @@
 use crate::application::about;
 use crate::application::conversations::RowMessage;
 use crate::application::destinations::Deleting;
+use crate::application::identities;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
 use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun};
@@ -6299,19 +6300,26 @@ impl WxMailApp {
                     // straight to a send as guardrail 7, and what makes this
                     // safe is that the readiness filter still refuses anything
                     // not ready.
+                    //
+                    // Every account's queue is asked, because the From list
+                    // chooses the account a message waits in (13-35), and a
+                    // hold that runs out in an account nobody has open is
+                    // still a message somebody was told would go.
                     if looked_for_held_mail_at.get().elapsed() >= HOW_OFTEN_TO_LET_HELD_MAIL_GO {
                         looked_for_held_mail_at.set(std::time::Instant::now());
                         let up_to = chrono::Local::now();
                         let since = held_mail_looked_at_up_to.replace(Some(up_to));
                         let held_mail_is_due = {
                             let s = lock_state(&state);
-                            s.active_account_id.clone()
+                            s.accounts.clone()
                         }
-                        .zip(message_cache.as_ref())
-                        .is_some_and(|(account_id, cache)| {
-                            cache
-                                .anything_reached_its_moment(&account_id, since, up_to)
-                                .unwrap_or(false)
+                        .iter()
+                        .any(|account| {
+                            message_cache.as_ref().is_some_and(|cache| {
+                                cache
+                                    .anything_reached_its_moment(&account.id, since, up_to)
+                                    .unwrap_or(false)
+                            })
                         });
                         if held_mail_is_due {
                             flush_outbox(app);
@@ -15555,7 +15563,7 @@ fn send_the_answer(
         body: to_send.body.clone(),
         body_plain: to_send.body.clone(),
         html_mode: false,
-        account_index: None,
+        from: None,
         attachments: vec![written],
         // Under the invitation in the organiser's mailbox, rather than a
         // conversation of its own (#50 point 8).
@@ -17456,6 +17464,31 @@ fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
         .unwrap_or_default()
 }
 
+/// The other addresses each account sends from, as the store keeps them,
+/// for compose's From list.
+///
+/// An account whose addresses cannot be read offers its own alone, and the
+/// log says why: the message can still be written and sent from the account,
+/// which is better than a window that does not open.
+fn the_other_addresses(
+    cache: Option<&MessageCache>,
+    accounts: &[Account],
+) -> std::collections::HashMap<String, Vec<crate::application::identities::Identity>> {
+    let Some(cache) = cache else {
+        return std::collections::HashMap::new();
+    };
+    accounts
+        .iter()
+        .filter_map(|account| match cache.identities_for(&account.id) {
+            Ok(kept) => Some((account.id.clone(), kept)),
+            Err(e) => {
+                tracing::warn!("The other addresses of an account could not be read: {e}");
+                None
+            }
+        })
+        .collect()
+}
+
 /// The signature a message from one account starts with: the one assigned
 /// to it, else the default, else none (#43), and nothing at all when
 /// somebody has said not to start every message with one.
@@ -17489,9 +17522,10 @@ fn the_signature_a_message_starts_with(
 /// the message can go as they ask, from what this computer holds for the
 /// address it goes from and for each recipient.
 ///
-/// The address is the active account's, because that is the account the
-/// Outbox sends the message from. Nothing is read for a message with neither
-/// box ticked.
+/// The address is the one the From list chose, because that is the address
+/// the Outbox sends the message from and the one the send loop gathers keys
+/// for (ledger 660); the open account's for a message nothing chose. Nothing
+/// is read for a message with neither box ticked.
 fn the_protection_check(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -17503,13 +17537,16 @@ fn the_protection_check(
         if data.protection == Choice::Plain {
             return Ok(());
         }
-        let from = {
-            let s = lock_state(&state);
-            s.active_account_id
-                .as_ref()
-                .and_then(|id| s.accounts.iter().find(|a| &a.id == id))
-                .map(|account| account.email.clone())
-                .unwrap_or_default()
+        let from = match data.from.as_ref() {
+            Some(chosen) => chosen.address.clone(),
+            None => {
+                let s = lock_state(&state);
+                s.active_account_id
+                    .as_ref()
+                    .and_then(|id| s.accounts.iter().find(|a| &a.id == id))
+                    .map(|account| account.email.clone())
+                    .unwrap_or_default()
+            }
         };
         let held = match cache.as_deref() {
             Some(cache) => what_is_held(
@@ -17558,27 +17595,35 @@ fn open_compose(
         | ComposeMode::WriteTo { .. }
         | ComposeMode::MailTo { .. } => false,
     };
-    // The names shown in the From list and the ids behind them, read in one
-    // go. Looking somebody up asks the directory of whichever account the
-    // message is being sent from, and the window knows only the position in
-    // the list, so a second read to turn that position into an id would be a
-    // second answer to the same question.
-    let (names, account_ids, active) = state
+    // Every address a message can go out from: each account's own, then the
+    // other addresses it keeps (13-33). Each entry names its account, so the
+    // window, people lookup, the signature and the send all read the entry
+    // chosen rather than a position in the list.
+    let (accounts, sender) = state
         .lock()
         .map(|s| {
-            let names: Vec<String> = s.accounts.iter().map(|a| a.email.clone()).collect();
-            let ids: Vec<String> = s.accounts.iter().map(|a| a.id.clone()).collect();
             let sender = crate::application::new_item::sends_from(
                 replying,
                 s.active_account_id.as_deref(),
                 s.default_account_id.as_deref(),
-            );
-            let active = sender
-                .and_then(|id| s.accounts.iter().position(|a| a.id == id))
-                .unwrap_or(0) as u32;
-            (names, ids, active)
+            )
+            .map(str::to_string);
+            (s.accounts.clone(), sender)
         })
         .unwrap_or_default();
+    let from_list =
+        identities::the_from_list(&accounts, &the_other_addresses(cache.as_deref(), &accounts));
+    // A draft reopens on the address it was written from, and anything else
+    // on the account `sends_from` picks.
+    let (written_from, address) = match &mode {
+        ComposeMode::Draft(draft) if draft.account_id.is_some() => {
+            (draft.account_id.clone(), draft.from_address.clone())
+        }
+        _ => (sender, None),
+    };
+    let active =
+        identities::where_the_list_opens(&from_list, written_from.as_deref(), address.as_deref())
+            as u32;
 
     // One id for this window, shared by the automatic saves and the button, so
     // every save after the first updates the same draft.
@@ -17601,14 +17646,17 @@ fn open_compose(
         })
         .unwrap_or_else(|_| (Default::default(), true, true));
 
-    // Each account's signature, in the From list's order: its own, else the
-    // default, else none (#43), so the message starts with the From
-    // account's and follows a change of account. Signatures could be written,
-    // named and marked as the default, and none of that ever reached a message
+    // Each entry's signature, in the From list's order: its account's own,
+    // else the default, else none (#43), so the message starts with the From
+    // entry's and follows a change of From. An other address signs as its
+    // account does (phase 13 decision 34). Signatures could be written, named
+    // and marked as the default, and none of that ever reached a message
     // because nothing read them back.
-    let signatures: Vec<wx_compose::SignatureFor> = account_ids
+    let signatures: Vec<wx_compose::SignatureFor> = from_list
         .iter()
-        .map(|id| the_signature_a_message_starts_with(cache.as_deref(), id, sign_it))
+        .map(|entry| {
+            the_signature_a_message_starts_with(cache.as_deref(), &entry.account_id, sign_it)
+        })
         .collect();
 
     let saver = {
@@ -17650,16 +17698,13 @@ fn open_compose(
     match wx_compose::show_compose_dialog_full(
         frame,
         mode,
-        &names,
+        &from_list,
         active,
         preview_first,
         &signatures,
         autosave,
         a11y.clone(),
-        Some(crate::presentation::finding_people::through(
-            account_ids,
-            rt,
-        )),
+        Some(crate::presentation::finding_people::through(rt)),
         saver,
         checking_protection,
     ) {
@@ -17774,10 +17819,17 @@ fn save_as_draft(
             "The mail on this computer is not open, so the draft cannot be saved.".to_string(),
         );
     };
-    let account_id = lock_state(state)
-        .active_account_id
-        .clone()
-        .ok_or_else(|| "Choose an account first, so the draft has somewhere to go.".to_string())?;
+    // The entry the From list was on, as for Send; the account open in the
+    // main window only when nothing was chosen.
+    let goes_as = {
+        let s = lock_state(state);
+        identities::who_sends(
+            data.from.as_ref(),
+            &s.accounts,
+            s.active_account_id.as_deref(),
+        )
+    }
+    .ok_or_else(|| "Choose an account first, so the draft has somewhere to go.".to_string())?;
 
     let subject = if data.subject.trim().is_empty() {
         // Named rather than left blank, so the drafts list has something to
@@ -17793,7 +17845,7 @@ fn save_as_draft(
     let id = existing.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let draft = crate::data::message_cache::CachedDraft {
         id: id.clone(),
-        account_id,
+        account_id: goes_as.account_id,
         to_addr: data.to.trim().to_string(),
         cc: Some(data.cc.trim().to_string()).filter(|cc| !cc.is_empty()),
         bcc: Some(data.bcc.trim().to_string()).filter(|bcc| !bcc.is_empty()),
@@ -17812,9 +17864,10 @@ fn save_as_draft(
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
         protection: data.protection,
-        // The account's own until the composer offers another (13-35).
-        from_address: None,
-        from_name: None,
+        // The other address the From list chose, and its name; none for the
+        // account's own. The filed copy and the reopened draft both read it.
+        from_address: goes_as.from_address,
+        from_name: goes_as.from_name,
         created_at: chrono::Local::now().to_rfc3339(),
         updated_at: chrono::Local::now().to_rfc3339(),
     };
@@ -18058,14 +18111,23 @@ fn queue_for_sending(
                 .to_string(),
         );
     };
-    let account_id = lock_state(state).active_account_id.clone().ok_or_else(|| {
-        "Choose an account first, so the message has somewhere to go.".to_string()
-    })?;
-    put_in_the_outbox(cache, account_id, data)
+    // The entry the From list was on; the account open in the main window
+    // only for a message no composer wrote, such as an answer to an
+    // invitation.
+    let goes_as = {
+        let s = lock_state(state);
+        identities::who_sends(
+            data.from.as_ref(),
+            &s.accounts,
+            s.active_account_id.as_deref(),
+        )
+    }
+    .ok_or_else(|| "Choose an account first, so the message has somewhere to go.".to_string())?;
+    put_in_the_outbox(cache, goes_as, data)
 }
 
-/// Build the queued row for a message from one account and write it to the
-/// Outbox, answering who it is for and what the row waits for.
+/// Build the queued row for a message going out as `goes_as` and write it to
+/// the Outbox, answering who it is for and what the row waits for.
 ///
 /// The one place a queued row is built. The composer's Send and Send
 /// Feedback both come through here (12-05), so a report takes the same path
@@ -18073,7 +18135,7 @@ fn queue_for_sending(
 /// `allowed_for(account).mail` gate when the Outbox is handed to a server.
 fn put_in_the_outbox(
     cache: &Arc<MessageCache>,
-    account_id: String,
+    goes_as: identities::GoesOutAs,
     data: &wx_compose::ComposeData,
 ) -> std::result::Result<(String, crate::application::sending_later::GoAfter), String> {
     let recipient = data.to.trim();
@@ -18083,7 +18145,7 @@ fn put_in_the_outbox(
 
     let queued = crate::data::message_cache::QueuedOutboxMessage {
         id: uuid::Uuid::new_v4().to_string(),
-        account_id,
+        account_id: goes_as.account_id,
         to_addr: recipient.to_string(),
         cc_addr: data.cc.clone(),
         bcc_addr: data.bcc.clone(),
@@ -18101,9 +18163,10 @@ fn put_in_the_outbox(
         // Signed, encrypted, both or neither, as the boxes were at Send, so
         // the send loop builds it that way however long it waits.
         protection: data.protection,
-        // The account's own until the composer offers another (13-35).
-        from_address: None,
-        from_name: None,
+        // The other address the From list chose, and its name; none for the
+        // account's own, which then follows the account (13-34, 13-35).
+        from_address: goes_as.from_address,
+        from_name: goes_as.from_name,
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),
@@ -22222,17 +22285,17 @@ fn undo_send(
         let _ = tx.try_send(UIUpdate::CommandRefused(why.to_string()));
     };
 
-    let (Some(cache), Some(account_id)) =
-        (cache.as_ref(), lock_state(state).active_account_id.clone())
-    else {
+    let Some(cache) = cache.as_ref() else {
         refuse(WhatToTakeBack::NothingWaiting.why_not().unwrap_or_default());
         return;
     };
 
     // One read for the rows and their times together, so the message this is
     // about and the decision about whether it can be caught cannot be made
-    // from two different pictures of the queue.
-    let queue = match cache.queued_with_their_times(&account_id) {
+    // from two different pictures of the queue. Every account's queue, oldest
+    // first: the From list chooses the account a message waits in (13-35), so
+    // the message just sent need not be in the open account's.
+    let queue = match cache.every_queue_with_their_times() {
         Ok(queue) => queue,
         Err(e) => {
             refuse(&format!("The outbox could not be read: {e}"));
@@ -22269,7 +22332,12 @@ fn undo_send(
     // the send loop reached it between deciding and acting, and the spare
     // draft is taken away again below rather than left as a copy of a message
     // that has been sent.
-    let taken_back = a_message_taken_back(message);
+    let its_account = lock_state(state)
+        .accounts
+        .iter()
+        .find(|account| account.id == message.account_id)
+        .cloned();
+    let taken_back = a_message_taken_back(message, its_account.as_ref());
     let draft = match save_as_draft(app, &Some(cache.clone()), &taken_back, None) {
         Ok((draft_id, _)) => draft_id,
         Err(why) => {
@@ -22319,8 +22387,12 @@ fn undo_send(
 
     // The Outbox row is gone, so a list showing it is showing a message that is
     // no longer queued. Reading the tree back is what makes the counts and the
-    // rows agree; saying so without it is the shape that has shipped twice.
-    if let Ok(updates) = folder_tree_updates(cache, &account_id) {
+    // rows agree; saying so without it is the shape that has shipped twice. The
+    // tree on screen is the open account's.
+    let open_account_id = lock_state(state).active_account_id.clone();
+    if let Some(account_id) = open_account_id
+        && let Ok(updates) = folder_tree_updates(cache, &account_id)
+    {
         for update in updates {
             let _ = tx.try_send(update);
         }
@@ -22334,8 +22406,12 @@ fn undo_send(
 /// says: the plain half alone strips every heading and link the editor made,
 /// and the HTML half alone leaves a text-only reader with raw markup on the
 /// next attempt.
+///
+/// `its_account` is the account the row waits in, which the draft it becomes
+/// is saved under whichever account is open.
 fn a_message_taken_back(
     message: &crate::data::message_cache::QueuedOutboxMessage,
+    its_account: Option<&Account>,
 ) -> wx_compose::ComposeData {
     let written_as_html = message.body_html.is_some();
     wx_compose::ComposeData {
@@ -22349,7 +22425,19 @@ fn a_message_taken_back(
             .unwrap_or_else(|| message.body.clone()),
         body_plain: message.body.clone(),
         html_mode: written_as_html,
-        account_index: None,
+        // From the account and the address it was queued from, so the draft
+        // it becomes keeps both. A row naming no address is the account's
+        // own, which `who_sends` then keeps as none again.
+        from: message
+            .from_address
+            .clone()
+            .or_else(|| its_account.map(|account| account.email.clone()))
+            .map(|address| identities::FromEntry {
+                account_id: message.account_id.clone(),
+                sender_name: message.from_name.clone().unwrap_or_default(),
+                said: address.clone(),
+                address,
+            }),
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
         // Taking a message back undoes the time set on it as well, and this
@@ -22384,6 +22472,8 @@ fn the_draft_it_became(
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
         protection: written.protection,
+        account_id: Some(message.account_id.clone()),
+        from_address: message.from_address.clone(),
     }
 }
 
@@ -22450,15 +22540,16 @@ fn protected_as_asked(mut request: SendEmailRequest, cache: &MessageCache) -> Se
 
 fn flush_outbox(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
-    // The account travels with the task: sending needs its SMTP settings and
+    // The accounts travel with the task: sending needs their SMTP settings and
     // credentials, and the UI state cannot be locked from inside the runtime.
-    let (account_id, account) = {
+    //
+    // Every account, not only the open one. The From list chooses the account
+    // a message goes out through (13-35), so a message can wait in the Outbox
+    // of an account nobody has open, and reading the open account's alone
+    // would leave it there until somebody opened its account.
+    let (accounts, open_account_id) = {
         let s = lock_state(state);
-        let id = s.active_account_id.clone();
-        let account = id
-            .as_ref()
-            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned());
-        (id, account)
+        (s.accounts.clone(), s.active_account_id.clone())
     };
     let tx = tx.clone();
     let cache_dir = AppPaths::resolve().ok().map(|paths| paths.cache_dir());
@@ -22485,18 +22576,16 @@ fn flush_outbox(app: AppHandles<'_>) {
             }
         };
 
-        let aid = account_id.as_deref().unwrap_or("default");
-        let Some(account) = account else {
+        if accounts.is_empty() {
             let _ = tx
                 .send(UIUpdate::ErrorOccurred(
                     // Not the refusal for nothing chosen: there is no list to
-                    // send somebody back to. The active account is the one the
-                    // Outbox sends from, and this says which fact is missing.
-                    "There is no active account, so there is nothing to send from.".into(),
+                    // send somebody back to. This says which fact is missing.
+                    "There is no account, so there is nothing to send from.".into(),
                 ))
                 .await;
             return;
-        };
+        }
         // The ones that may go on this pass, not everything in the queue. A
         // message held back for the moment somebody can still take it back,
         // and one set for a time they chose, both stay where they are and are
@@ -22505,29 +22594,34 @@ fn flush_outbox(app: AppHandles<'_>) {
         //
         // The moment is taken once, here, so a pass is measured against one
         // clock reading rather than against a slightly later one for each
-        // message it looks at.
+        // message it looks at. Every account's is read before anything is
+        // sent, so the count said first is the whole pass.
         let now = chrono::Local::now();
-        let queued = match cache.outbox_messages_that_may_go_now(aid, now) {
-            Ok(msgs) => msgs,
-            Err(e) => {
-                let _ = tx
-                    .send(UIUpdate::ErrorOccurred(format!(
-                        "The Outbox could not be read: {}.",
-                        e
-                    )))
-                    .await;
-                return;
+        let mut waiting = Vec::new();
+        for account in &accounts {
+            match cache.outbox_messages_that_may_go_now(&account.id, now) {
+                Ok(queued) if queued.is_empty() => {}
+                Ok(queued) => waiting.push((account, queued)),
+                Err(e) => {
+                    let _ = tx
+                        .send(UIUpdate::ErrorOccurred(format!(
+                            "The Outbox could not be read: {}.",
+                            e
+                        )))
+                        .await;
+                    return;
+                }
             }
-        };
+        }
 
-        if queued.is_empty() {
+        if waiting.is_empty() {
             let _ = tx
                 .send(UIUpdate::StatusUpdated("The Outbox is empty.".into()))
                 .await;
             return;
         }
 
-        let total = queued.len();
+        let total: usize = waiting.iter().map(|(_, queued)| queued.len()).sum();
         let _ = tx
             .send(UIUpdate::StatusUpdated(format!(
                 "Sending {} messages from the Outbox...",
@@ -22563,111 +22657,119 @@ fn flush_outbox(app: AppHandles<'_>) {
         let keep_one_here = crate::data::config::ConfigManager::load_stored()
             .map(|stored| stored.app_config().keep_sent_mail_on_this_computer)
             .unwrap_or(false);
-        // Where every copy in this queue goes. The same answer for all of them,
-        // and worked out before the loop so the folder list is read once.
-        let copies_go_to = crate::application::sent_copy::destination(&cache, &account);
-        // One sign-in for the whole queue, closed when the queue ends. It used
-        // to sign in and disconnect around every single message, so a queue of
-        // fifty was fifty sign-ins and some providers turn that down. An
-        // account with no server folder to file anything in does not sign in at
-        // all.
-        //
-        // The cost is that a very long queue can outlive the session. After
-        // that each copy is refused, each one is kept on this computer instead,
-        // and the person is told. Nothing goes missing quietly.
-        let filing = crate::application::sent_copy::a_session_for(&copies_go_to, &account).await;
-
-        for msg in &queued {
-            // A message the account cannot send is a configuration problem, not
-            // a transport failure, and saying which is the difference between a
-            // fixable error and a mystery.
+        // One account's queue at a time, each through that account's server
+        // and filed in that account's Sent.
+        for (account, queued) in waiting {
+            // Where every copy in this queue goes. The same answer for all of them,
+            // and worked out before the loop so the folder list is read once.
+            let copies_go_to = crate::application::sent_copy::destination(&cache, account);
+            // One sign-in for the whole queue, closed when the queue ends. It used
+            // to sign in and disconnect around every single message, so a queue of
+            // fifty was fifty sign-ins and some providers turn that down. An
+            // account with no server folder to file anything in does not sign in at
+            // all.
             //
-            // The credential is fetched per message rather than once, because a
-            // long queue can outlive an access token, and a token that expired
-            // halfway through would fail every message after it for a reason
-            // that reads like a wrong password.
-            let auth = crate::application::mail_auth::for_account(&account).await;
-            let outcome = match auth {
-                Ok(auth) => match SendEmailRequest::from_queued(msg, &account, auth) {
-                    Some(request) => controller
-                        .send_email(&protected_as_asked(request, &cache))
-                        .await
-                        .map_err(|e| e.to_string()),
-                    None => Err(
-                        "Check the account's SMTP server, port, and recipient address".to_string(),
-                    ),
-                },
-                Err(e) => Err(e.to_string()),
-            };
+            // The cost is that a very long queue can outlive the session. After
+            // that each copy is refused, each one is kept on this computer instead,
+            // and the person is told. Nothing goes missing quietly.
+            let filing = crate::application::sent_copy::a_session_for(&copies_go_to, account).await;
 
-            match &outcome {
-                Ok(went) => {
-                    let raw = &went.bytes;
-                    // The one failure in this routine that reaches somebody
-                    // outside the program. The message has already gone to the
-                    // server; a row left behind is found by the next flush and
-                    // sent a second time, and the person it is addressed to
-                    // receives two copies.
-                    //
-                    // Said rather than dropped, and said as what it means
-                    // rather than as a database error, because the thing to do
-                    // about it is to look in Sent before sending anything else.
-                    if let Err(e) = cache.delete_outbox_message(&msg.id) {
-                        let said = format!(
-                            "{} was sent, but it is still in the Outbox and may be sent \
+            for msg in &queued {
+                // A message the account cannot send is a configuration problem, not
+                // a transport failure, and saying which is the difference between a
+                // fixable error and a mystery.
+                //
+                // The credential is fetched per message rather than once, because a
+                // long queue can outlive an access token, and a token that expired
+                // halfway through would fail every message after it for a reason
+                // that reads like a wrong password.
+                let auth = crate::application::mail_auth::for_account(account).await;
+                let outcome = match auth {
+                    Ok(auth) => match SendEmailRequest::from_queued(msg, account, auth) {
+                        Some(request) => controller
+                            .send_email(&protected_as_asked(request, &cache))
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err(
+                            "Check the account's SMTP server, port, and recipient address"
+                                .to_string(),
+                        ),
+                    },
+                    Err(e) => Err(e.to_string()),
+                };
+
+                match &outcome {
+                    Ok(went) => {
+                        let raw = &went.bytes;
+                        // The one failure in this routine that reaches somebody
+                        // outside the program. The message has already gone to the
+                        // server; a row left behind is found by the next flush and
+                        // sent a second time, and the person it is addressed to
+                        // receives two copies.
+                        //
+                        // Said rather than dropped, and said as what it means
+                        // rather than as a database error, because the thing to do
+                        // about it is to look in Sent before sending anything else.
+                        if let Err(e) = cache.delete_outbox_message(&msg.id) {
+                            let said = format!(
+                                "{} was sent, but it is still in the Outbox and may be sent \
                              again. Check Sent before trying once more. ({e})",
-                            msg.subject
+                                msg.subject
+                            );
+                            tracing::error!("{said}");
+                            let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                        }
+                        sent += 1;
+                        // The copy is filed after the send, and a failure to file
+                        // it is not a failure to send: the message has gone, and
+                        // reporting it as failed would have somebody send it again.
+                        // Where it ended up is said only when that is not the
+                        // ordinary answer, because a line after every message
+                        // buries the two that matter.
+                        //
+                        // Two steps, and the order matters: the server is asked
+                        // while nothing holds the database, and everything that
+                        // writes here happens afterwards. The connection to this
+                        // program's own database cannot be held across a wait for
+                        // a server.
+                        let said = crate::application::sent_copy::offer_through(
+                            &filing,
+                            &copies_go_to,
+                            raw,
+                        )
+                        .await;
+                        let filed = crate::application::sent_copy::file_the_copy(
+                            &cache,
+                            account,
+                            &copies_go_to,
+                            &said,
+                            keep_one_here,
+                            raw,
                         );
-                        tracing::error!("{said}");
-                        let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                        if filed.needs_saying() {
+                            let said = filed.what_happened();
+                            tracing::warn!("{said}");
+                            let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                        }
                     }
-                    sent += 1;
-                    // The copy is filed after the send, and a failure to file
-                    // it is not a failure to send: the message has gone, and
-                    // reporting it as failed would have somebody send it again.
-                    // Where it ended up is said only when that is not the
-                    // ordinary answer, because a line after every message
-                    // buries the two that matter.
-                    //
-                    // Two steps, and the order matters: the server is asked
-                    // while nothing holds the database, and everything that
-                    // writes here happens afterwards. The connection to this
-                    // program's own database cannot be held across a wait for
-                    // a server.
-                    let said =
-                        crate::application::sent_copy::offer_through(&filing, &copies_go_to, raw)
-                            .await;
-                    let filed = crate::application::sent_copy::file_the_copy(
-                        &cache,
-                        &account,
-                        &copies_go_to,
-                        &said,
-                        keep_one_here,
-                        raw,
-                    );
-                    if filed.needs_saying() {
-                        let said = filed.what_happened();
-                        tracing::warn!("{said}");
-                        let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                    Err(reason) => {
+                        let _ = cache.update_outbox_failure(&msg.id, reason);
+                        failed += 1;
                     }
                 }
-                Err(reason) => {
-                    let _ = cache.update_outbox_failure(&msg.id, reason);
-                    failed += 1;
-                }
+
+                let _ = tx
+                    .send(UIUpdate::OutboxSendResult {
+                        queue_id: msg.id.clone(),
+                        success: outcome.is_ok(),
+                        how: outcome.as_ref().ok().and_then(|went| went.how),
+                        error: outcome.err(),
+                    })
+                    .await;
             }
 
-            let _ = tx
-                .send(UIUpdate::OutboxSendResult {
-                    queue_id: msg.id.clone(),
-                    success: outcome.is_ok(),
-                    how: outcome.as_ref().ok().and_then(|went| went.how),
-                    error: outcome.err(),
-                })
-                .await;
+            filing.close().await;
         }
-
-        filing.close().await;
 
         // What actually happened, rather than an optimistic "Connected". One
         // message through is proof the server answered; nothing through is
@@ -22687,8 +22789,9 @@ fn flush_outbox(app: AppHandles<'_>) {
         }
 
         let _ = tx.send(UIUpdate::OutboxFlushComplete(sent, failed)).await;
+        // The open account's, which is the Outbox on screen.
         let remaining = cache
-            .load_outbox_messages(aid)
+            .load_outbox_messages(open_account_id.as_deref().unwrap_or("default"))
             .map(|v| v.len())
             .unwrap_or(0);
         let _ = tx.send(UIUpdate::OutboxQueueCount(remaining)).await;
@@ -29577,13 +29680,17 @@ fn send_the_report(
         body: String::new(),
         body_plain: composed.body,
         html_mode: false,
-        account_index: None,
+        from: None,
         attachments,
         answering: None,
         send_at: None,
         protection: crate::application::protecting::Choice::Plain,
     };
-    let (recipient, waiting_on) = put_in_the_outbox(cache, sender.account.id.clone(), &data)?;
+    let (recipient, waiting_on) = put_in_the_outbox(
+        cache,
+        identities::GoesOutAs::the_account(&sender.account.id),
+        &data,
+    )?;
     Ok((recipient, waiting_on, kept_in.display().to_string()))
 }
 
@@ -33978,7 +34085,8 @@ mod reply_recipients_reach_the_wire {
         );
 
         // What the compose window's To field holds after Reply pre-fills it,
-        // read back the way Send reads it.
+        // read back the way Send reads it, with the From list on the help
+        // desk address the second account also sends from (13-35).
         let data = wx_compose::ComposeData {
             to: reply.to.clone(),
             cc: String::new(),
@@ -33987,35 +34095,17 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: Some(crate::application::identities::FromEntry {
+                account_id: "a2".to_string(),
+                address: "help@example.com".to_string(),
+                sender_name: "Help Desk".to_string(),
+                said: "help@example.com, another address on Test".to_string(),
+            }),
             attachments: Vec::new(),
             answering: None,
             send_at: None,
             protection: crate::application::protecting::Choice::Plain,
         };
-
-        // The existing test-only cache builder, not a second one: it already
-        // carries the allow a real `rusqlite` connection needs to sit behind
-        // an `Arc` in a test, and one place carrying that is enough.
-        let cache = super::tests::test_cache();
-        let state = Arc::new(StdMutex::new(WxUIState::default()));
-        lock_state(&state).active_account_id = Some("a1".to_string());
-
-        queue_for_sending(&state, &cache, &data).expect("the message to queue");
-
-        let queued = cache
-            .as_ref()
-            .expect("the cache to be there")
-            .load_outbox_messages("a1")
-            .expect("the queue to load")
-            .into_iter()
-            .next()
-            .expect("the queued message to be there");
-        assert_eq!(
-            queued.to_addr, "Charles Babbage <charles@example.com>",
-            "the queue is expected to hold the field's raw text; this test proves the fix \
-             downstream of here"
-        );
 
         let server =
             crate::service::protocols::smtp::against_a_server_that_answers::an_smtp_server().await;
@@ -34023,10 +34113,41 @@ mod reply_recipients_reach_the_wire {
             crate::service::protocols::smtp::against_a_server_that_answers::pointed_at(&server);
 
         let mut account = Account::new("Test".to_string(), "ada@example.com".to_string());
-        account.id = "a1".to_string();
+        account.id = "a2".to_string();
         account.smtp_server = smtp_config.server.clone();
         account.smtp_port = smtp_config.port.to_string();
         account.smtp_use_tls = false;
+
+        // The existing test-only cache builder, not a second one: it already
+        // carries the allow a real `rusqlite` connection needs to sit behind
+        // an `Arc` in a test, and one place carrying that is enough. The first
+        // account is the one open in the main window; the message is from the
+        // second, because that is what the From list says.
+        let cache = super::tests::test_cache();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).active_account_id = Some("a1".to_string());
+        lock_state(&state).accounts = vec![account.clone()];
+
+        queue_for_sending(&state, &cache, &data).expect("the message to queue");
+
+        let queued = cache
+            .as_ref()
+            .expect("the cache to be there")
+            .load_outbox_messages("a2")
+            .expect("the queue to load")
+            .into_iter()
+            .next()
+            .expect("the message queued on the account the From list chose");
+        assert_eq!(
+            queued.to_addr, "Charles Babbage <charles@example.com>",
+            "the queue is expected to hold the field's raw text; this test proves the fix \
+             downstream of here"
+        );
+        assert_eq!(
+            (queued.from_address.as_deref(), queued.from_name.as_deref()),
+            (Some("help@example.com"), Some("Help Desk")),
+            "the row does not keep the address the From list chose"
+        );
 
         let request = SendEmailRequest::from_queued(
             &queued,
@@ -34058,6 +34179,10 @@ mod reply_recipients_reach_the_wire {
         assert!(
             server.was_told("RCPT TO:<charles@example.com>").await,
             "the bare address never reached the server"
+        );
+        assert!(
+            server.was_told("MAIL FROM:<help@example.com>").await,
+            "the message did not go out from the address the From list chose"
         );
     }
 
@@ -34098,7 +34223,7 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,
@@ -34205,7 +34330,7 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,
@@ -34305,7 +34430,7 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,

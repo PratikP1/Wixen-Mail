@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Compose's From list offers every address an account sends from, and the message goes out
+  from the one chosen, experimental (GAP-10, #59 step 1).** The list, which reads "From"
+  now rather than "From account" because it chooses an address, holds each account's own
+  address as before and then the other addresses kept in the Account Manager, each said as
+  "help@example.com, another address on Work". Choose one and the message is sent, and a
+  draft saved, from that address and the name kept with it, through that address's account.
+  The signature is its account's; people are looked up in its account's contacts and
+  directory; Preview Before Send shows it on the From line with its name; and Sign and
+  Encrypt are checked against the keys held for it. A draft, and a message taken back with
+  Undo Send, reopen with From on the address they were written from. Known limitations: no
+  provider has been asked to send from another address yet, so a provider may refuse one that
+  is not set up with it too, or send from the account's own address instead; a reply does not
+  yet choose the address it was sent to; shared mailboxes and sending on behalf of somebody
+  are later work.
 - **Other addresses to send from, kept per account and managed from the Account Manager,
   experimental (GAP-10's first half, #59).** `Alt+O` on the Account Manager opens Other
   Addresses to Send From for the chosen account: the other addresses it sends from, each with
@@ -25,8 +39,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   account is removed. The manager says, above the list, that a provider may refuse to send
   from an address that is not set up with it too, or send from the account's own instead.
   The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
-  limitations: compose does not offer these addresses yet, so nothing is sent from one until
-  a later change adds them to the From list; no provider has been asked to send from one.
+  limitations: no provider has been asked to send from one. Until 2026-09-29 compose did
+  not offer them; the entry above says what it does now.
 - **Find when everyone is free says a colleague's time on their own clock, experimental
   (GAP-08's third point, #57 point 3).** Microsoft's answer gives each colleague's working
   hours with the time zone they keep them in, and that zone is now read, through the same
@@ -481,6 +495,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The Outbox sends every account's waiting mail, not only the open account's.** Since the
+  From list chooses the account a message goes out through, a message can wait in the Outbox
+  of an account you do not have open. Send, Send Queued Mail, going back online and a hold
+  running out now send what is due in every account, each through its own server and filed
+  in its own Sent folder, where before mail in another account waited until you opened it.
+  Undo Send finds the message you just sent whichever account it waits in. The count said
+  after sending is still the open account's Outbox.
 - **The Outbox and saved drafts remember the address a message was written from (GAP-10).**
   Four columns are added to the mail on this computer: `from_address` and `from_name` on
   the Outbox and the same two on drafts. They are added to an existing database without
@@ -488,8 +509,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   and name, which is what every message and draft already here was written from. A message
   in the Outbox leaves from the address its row names, and a draft is filed in the Drafts
   folder from the address the draft names, both through the same rule, so the two cannot
-  disagree about who a message is from. Nothing you do changes yet: the message window
-  does not offer another address until a later change, so every row still names none.
+  disagree about who a message is from. Until 2026-09-29 nothing wrote an address into
+  either; the From list now does (see Added).
 
 - **Find when everyone is free asks every place the account keeps a calendar, experimental
   (GAP-08's second point, #57 point 2).** It used to ask one place: the first calendar
@@ -941,6 +962,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message and a draft went out from the account open in the main window, whatever the
+  From list said.** Send and Save Draft took the account from whichever mailbox was open,
+  while the signature, people lookup and Preview Before Send followed the From list. With a
+  default account that was not the one open, a new message showed the default's address and
+  signature and left from the open account. Now the From list is the one answer for all of
+  them. An answer to a meeting invitation, which no From list chose, still goes from the
+  open account.
 - **Edit Event scrolls, so every field can be reached and seen on a small screen (ledger 417,
   #57 point 4).** The event form was as tall as its fields and could not scroll. On a screen
   768 pixels tall it filled the screen, and Show as, Status, Category and Times offered were

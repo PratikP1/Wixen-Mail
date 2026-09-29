@@ -5,6 +5,7 @@
 //! [`crate::presentation::editor_document`].
 
 use crate::application::conversations;
+use crate::application::identities::FromEntry;
 use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
@@ -102,7 +103,12 @@ pub struct ComposeData {
     /// engine computed somebody to be looking at.
     pub body_plain: String,
     pub html_mode: bool,
-    pub account_index: Option<u32>,
+    /// Who it is from: the entry the From list was on, which names the
+    /// account it goes out through and the address it goes out from.
+    ///
+    /// `None` for a message no composer wrote, such as an answer to an
+    /// invitation, which goes out from the account open in the main window.
+    pub from: Option<crate::application::identities::FromEntry>,
     /// The files to send with it, where they are on this computer.
     ///
     /// Paths rather than bytes, all the way to the moment of sending. A message
@@ -308,13 +314,23 @@ pub struct SignatureFor {
     pub text: String,
 }
 
+/// The entry the From list is on, which is who the message is from: the
+/// account it goes out through and the address it goes out from.
+fn the_entry_chosen(from: &Choice, from_list: &[FromEntry]) -> Option<FromEntry> {
+    from.get_selection()
+        .and_then(|at| from_list.get(at as usize))
+        .cloned()
+}
+
 /// Make the signature follow the From account (#43).
 ///
-/// `signatures` is one per account, in the From list's order, and
-/// `opened_with` is the account the message opened signed by. When the From
-/// account changes, the block the last account's signature went in as is
-/// replaced by the next account's, if it is still in the message as it went
-/// in, and the change is said. A block somebody has typed into is left as it
+/// `signatures` is one per entry, in the From list's order, each its
+/// account's, so an other address signs as its account does; `opened_with`
+/// is the entry the message opened signed by. When the From entry changes,
+/// the block the last entry's signature went in as is replaced by the next
+/// one's, if it is still in the message as it went in, and the change is
+/// said. Two entries of one account sign alike, so moving between them
+/// changes and says nothing. A block somebody has typed into is left as it
 /// is, and nothing is said.
 pub fn follow_the_from_account(
     account_choice: Choice,
@@ -785,8 +801,8 @@ pub struct ComposeDialogWidgets {
 pub fn build_compose_dialog(
     parent: &Frame,
     title: &str,
-    account_names: &[String],
-    active_account_index: u32,
+    from_list: &[FromEntry],
+    opens_on: u32,
     palette: Option<theme::Palette>,
 ) -> ComposeDialogWidgets {
     // ── Create Dialog ────────────────────────────────────────────────────
@@ -946,11 +962,14 @@ pub fn build_compose_dialog(
     let account_label = StaticText::builder(&dialog)
         .with_label(Reached::From.label())
         .build();
+    // Every address a message can go out from, each account's own first and
+    // then its other addresses, said as `application::identities` says them.
+    // Named "From" and not "From account": it chooses an address.
     let account_choice = Choice::builder(&dialog)
-        .with_choices(account_names.iter().map(|s| s.to_string()).collect())
-        .with_selection(Some(active_account_index))
+        .with_choices(from_list.iter().map(|entry| entry.said.clone()).collect())
+        .with_selection(Some(opens_on))
         .build();
-    set_accessible_name(&account_choice, "From account");
+    set_accessible_name(&account_choice, "From");
     fields_sizer.add(
         &account_label,
         0,
@@ -1327,14 +1346,17 @@ fn the_passphrase_was_typed(
 pub fn show_compose_dialog_full(
     parent: &Frame,
     mode: ComposeMode,
-    account_names: &[String],
-    active_account_index: u32,
+    // Every address a message can go out from, and the one the window opens
+    // on. The entry chosen is who the message is from, for everything that
+    // asks: the signature, people lookup, the preview, and the send.
+    from_list: &[FromEntry],
+    opens_on: u32,
     preview_before_send: bool,
-    // One per account in the From list, in its order: the signature each
-    // signs with, or nothing. The From account's goes above the quoted
+    // One per entry in the From list, in its order: the signature its account
+    // signs with, or nothing. The chosen entry's goes above the quoted
     // original when the window opens, so it can be read and edited before
     // sending rather than appearing on the way out, and it follows a change
-    // of From account (#43).
+    // of From (#43).
     signatures: &[SignatureFor],
     autosave: crate::application::autosave::AutosaveInterval,
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
@@ -1378,10 +1400,13 @@ pub fn show_compose_dialog_full(
     } = build_compose_dialog(
         parent,
         title,
-        account_names,
-        active_account_index,
+        from_list,
+        opens_on,
         theme::current_from_stored_config(),
     );
+    // Kept by the window, so every reader of the list reads the entry chosen
+    // rather than a position in it.
+    let from_list: Rc<[FromEntry]> = Rc::from(from_list);
 
     // Everything the message will carry. Paths rather than bytes: the file is
     // read at Send, so a picture edited while the message was being written
@@ -1414,7 +1439,7 @@ pub fn show_compose_dialog_full(
     set_body(&MessageBody::Plain(String::new()));
 
     let signature = signatures
-        .get(active_account_index as usize)
+        .get(opens_on as usize)
         .map_or("", |signed| signed.text.as_str());
 
     // ── Pre-populate fields based on mode ────────────────────────────────
@@ -1523,7 +1548,7 @@ pub fn show_compose_dialog_full(
         account_choice,
         body_editor,
         signatures.to_vec(),
-        active_account_index as usize,
+        opens_on as usize,
         a11y.clone(),
     );
 
@@ -2027,6 +2052,7 @@ pub fn show_compose_dialog_full(
         // remember to. Saving a draft carries it too and drops it, which is
         // right: a draft is not queued, so it is not waiting for anything.
         let chosen_moment = std::rc::Rc::clone(&chosen_moment);
+        let from_list = from_list.clone();
         move || {
             let (body, body_plain) = editor_document::message_from_editor(
                 body_editor.run_script(&editor_document::read_body_script()),
@@ -2045,7 +2071,7 @@ pub fn show_compose_dialog_full(
                 // automatic save.
                 body_plain: crate::application::sign_off::canonical_delimiter(&body_plain),
                 html_mode: true,
-                account_index: account_choice.get_selection(),
+                from: the_entry_chosen(&account_choice, &from_list),
                 attachments: attached
                     .borrow()
                     .iter()
@@ -2196,6 +2222,7 @@ pub fn show_compose_dialog_full(
         let waiting_since = waiting_since.clone();
         let written_by_choosing = written_by_choosing.clone();
         let show = show_the_people_found.clone();
+        let from_list = from_list.clone();
         move |a11y: &crate::presentation::accessibility::Accessibility| {
             let Some(finding) = finding_people.as_ref() else {
                 return false;
@@ -2221,7 +2248,8 @@ pub fn show_compose_dialog_full(
             (finding.start)(looking::LookFor {
                 search,
                 name,
-                from_account: account_choice.get_selection(),
+                from_account_id: the_entry_chosen(&account_choice, &from_list)
+                    .map(|entry| entry.account_id),
             });
             true
         }
@@ -2883,12 +2911,7 @@ pub fn show_compose_dialog_full(
                 }
                 if preview_before_send {
                     // Show preview-before-send dialog
-                    match show_send_preview(
-                        &dialog,
-                        &data,
-                        account_names,
-                        theme::current_from_stored_config(),
-                    ) {
+                    match show_send_preview(&dialog, &data, theme::current_from_stored_config()) {
                         PreviewDecision::ConfirmSend => break 'compose ComposeResult::Send(data),
                         PreviewDecision::GoBack => continue, // re-show compose dialog
                     }
@@ -3875,7 +3898,6 @@ pub struct SendPreviewWidgets {
 pub fn build_send_preview_dialog(
     parent: &Dialog,
     data: &ComposeData,
-    account_names: &[String],
     palette: Option<theme::Palette>,
 ) -> SendPreviewWidgets {
     let dlg = Dialog::builder(parent, "Preview Before Send")
@@ -3892,11 +3914,7 @@ pub fn build_send_preview_dialog(
         .build();
     hdr.add_growable_col(1, 1);
 
-    let from_display = data
-        .account_index
-        .and_then(|i| account_names.get(i as usize))
-        .cloned()
-        .unwrap_or_else(|| "(default account)".to_string());
+    let from_display = the_from_line(data.from.as_ref());
 
     for (label, value) in [
         ("From:", from_display.as_str()),
@@ -4018,18 +4036,27 @@ pub fn build_send_preview_dialog(
     }
 }
 
+/// What the preview's From line says: the name people see and the address
+/// the message goes out from, or the address alone where it has no name.
+fn the_from_line(from: Option<&FromEntry>) -> String {
+    match from {
+        None => "(default account)".to_string(),
+        Some(entry) if entry.sender_name.trim().is_empty() => entry.address.clone(),
+        Some(entry) => format!("{} <{}>", entry.sender_name.trim(), entry.address),
+    }
+}
+
 /// Show a read-only preview of the composed email before sending.
 fn show_send_preview(
     parent: &Dialog,
     data: &ComposeData,
-    account_names: &[String],
     palette: Option<theme::Palette>,
 ) -> PreviewDecision {
     let SendPreviewWidgets {
         dialog: dlg,
         browser,
         ..
-    } = build_send_preview_dialog(parent, data, account_names, palette);
+    } = build_send_preview_dialog(parent, data, palette);
 
     let answer = dlg.show_modal();
     // With the browser control the preview renders into. One per message sent,
@@ -4427,7 +4454,7 @@ mod tests {
             body: body.to_string(),
             body_plain: body_plain.to_string(),
             html_mode: true,
-            account_index: None,
+            from: None,
             attachments: Vec::new(),
             answering: None,
             send_at: None,

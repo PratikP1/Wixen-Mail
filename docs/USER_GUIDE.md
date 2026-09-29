@@ -103,6 +103,9 @@ you have already added:
 - **Look People Up at Work** (`Alt+L`) sets up your organisation's directory
   for the account you chose, so a colleague's name typed into a message can
   be found. See [Looking people up](#looking-people-up).
+- **Other Addresses to Send From** (`Alt+O`) keeps the other addresses the
+  account you chose sends from. See
+  [Sending from another address](#sending-from-another-address).
 - **Delete** removes an account and its stored credentials.
 - **Set Active** switches which account's mail you are looking at.
 - **Sign In Again** re-authorises an account using browser sign-in, for
@@ -1249,6 +1252,45 @@ places, or looked at a page on paper from this build.
 5. Type your message in the body field
 6. Click **Send** or press `Ctrl+Enter`
 
+### Sending from another address
+
+One mailbox can send as more than one address: a help desk address beside your
+own, or an old address that still reaches the same inbox. Wixen Mail calls
+these other addresses, and keeps them per account.
+
+**Adding one.**
+
+1. Open the Account Manager (`Ctrl+Shift+A`) and choose the account.
+2. Choose **Other Addresses to Send From** (`Alt+O`).
+3. Choose **Add**, then fill in **Address** (`Alt+A`) and, if you want one,
+   **The name people see** (`Alt+N`), such as "Help Desk".
+4. Choose **OK**, then **Close**. The addresses are kept when the window closes.
+
+**Choosing one.** The **From** list (`Alt+F`) sits above To in the message
+window. It lists each account's own address, and after it the other addresses that
+account sends from, read as "help@example.com, another address on Work". The
+message goes out from the address you choose, with the name kept beside it,
+through that address's account, and it waits in that account's Outbox, even
+when another account is the one you have open. A draft you save keeps the
+address, and so does a message you take back with Undo Send: both reopen with
+From on it.
+
+**The signature.** An other address signs with its account's signature, so
+moving From between an account's own address and one of its other addresses
+leaves the signature as it is. Moving to another account's address changes it,
+as described under [Signatures](#signatures).
+
+**What a provider may do.** Your provider decides whether a message may go out
+from an address. One that is not set up with the provider too may be refused,
+or the provider may send it from your account's own address instead. In Gmail
+that is "Send mail as" in Gmail's settings; in Outlook and Microsoft 365 it is
+a permission your organisation gives. Sending from another address has not
+been tried against a real provider yet, so this is **experimental**.
+
+**Not built yet.** Shared mailboxes, and sending on behalf of somebody else,
+are later work. An other address here is an address your own account sends
+as, not somebody else's mailbox.
+
 ### Looking people up
 
 Type three letters or more of a name into To, Cc or Bcc and pause. A list of
@@ -1440,8 +1482,10 @@ it the default. Untick it on the default and there is no default, so an account
 you have not given a signature sends mail with none.
 
 A new message starts with the signature of the account in its **From** line.
-If you change the From account, the signature changes to the new account's, and
-you hear "Signature changed to" and its name. If you have typed into the
+If you change From to another account's address, the signature changes to the
+new account's, and you hear "Signature changed to" and its name. An other
+address signs with its account's signature, so moving between an account's
+addresses changes nothing. If you have typed into the
 signature, it stays as you left it and nothing is said, so you never lose what
 you wrote. A reply or forward keeps the signature above the quoted message.
 

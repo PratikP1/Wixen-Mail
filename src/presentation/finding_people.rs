@@ -21,21 +21,17 @@ use tokio::runtime::Runtime;
 
 /// Build what the compose window uses to find people to write to.
 ///
-/// `account_ids` is in the same order as the names in the From list, because
-/// that list is what somebody picks from and its position is all the window
-/// knows. Both come out of one read of the accounts, so they cannot describe
-/// two different lists.
-pub fn through(account_ids: Vec<String>, runtime: &Arc<Runtime>) -> FindingPeople {
+/// Each request names the account of the entry chosen in the From list, so
+/// nothing here turns a position in that list back into an account: an
+/// account with other addresses holds several positions.
+pub fn through(runtime: &Arc<Runtime>) -> FindingPeople {
     let (answers_go_to, answers) = async_channel::unbounded::<looking::WhoWasFound>();
     let runtime = runtime.clone();
 
     FindingPeople {
         answers,
         start: Box::new(move |asked| {
-            let account_id = asked
-                .from_account
-                .and_then(|position| account_ids.get(position as usize))
-                .cloned();
+            let account_id = asked.from_account_id.clone();
             let answers_go_to = answers_go_to.clone();
             let handle = runtime.handle().clone();
             // `spawn_blocking` and not `spawn`: this opens a database, which

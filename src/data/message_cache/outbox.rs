@@ -172,31 +172,28 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to prepare outbox query: {}", e)))?;
 
         let rows = stmt
-            .query_map(params![account_id], |row| {
-                let message = QueuedOutboxMessage {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    to_addr: row.get(2)?,
-                    cc_addr: row.get(3)?,
-                    bcc_addr: row.get(4)?,
-                    subject: row.get(5)?,
-                    body: row.get(6)?,
-                    body_html: row.get(7)?,
-                    attachments: row.get(8)?,
-                    attempt_count: row.get(9)?,
-                    last_error: row.get(10)?,
-                    created_at: row.get(11)?,
-                    in_reply_to: row.get(12)?,
-                    references: row.get(13)?,
-                    protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
-                    // By name, so the next column added cannot move them.
-                    from_address: row.get("from_address")?,
-                    from_name: row.get("from_name")?,
-                };
-                let when =
-                    GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
-                Ok((message, when))
-            })
+            .query_map(params![account_id], a_queued_row)
+            .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect outbox messages: {}", e)))?;
+        Ok(rows)
+    }
+
+    /// Every account's queue together, each message beside when it may go,
+    /// oldest first.
+    ///
+    /// What Undo Send reads, since the From list chooses the account a
+    /// message goes out through (13-35): the message just sent can wait in
+    /// the queue of an account nobody has open.
+    pub fn every_queue_with_their_times(&self) -> Result<Vec<(QueuedOutboxMessage, GoAfter)>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection, from_address, from_name
+             FROM outbox_queue
+             ORDER BY created_at ASC"
+        ).map_err(|e| Error::Other(format!("Failed to prepare outbox query: {}", e)))?;
+
+        let rows = stmt
+            .query_map([], a_queued_row)
             .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect outbox messages: {}", e)))?;
@@ -412,6 +409,33 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to update outbox failure: {}", e)))?;
         Ok(())
     }
+}
+
+/// One queued message and when it may go, from a row of the queue's own
+/// column list, which both readings of the queue select.
+fn a_queued_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(QueuedOutboxMessage, GoAfter)> {
+    let message = QueuedOutboxMessage {
+        id: row.get(0)?,
+        account_id: row.get(1)?,
+        to_addr: row.get(2)?,
+        cc_addr: row.get(3)?,
+        bcc_addr: row.get(4)?,
+        subject: row.get(5)?,
+        body: row.get(6)?,
+        body_html: row.get(7)?,
+        attachments: row.get(8)?,
+        attempt_count: row.get(9)?,
+        last_error: row.get(10)?,
+        created_at: row.get(11)?,
+        in_reply_to: row.get(12)?,
+        references: row.get(13)?,
+        protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
+        // By name, so the next column added cannot move them.
+        from_address: row.get("from_address")?,
+        from_name: row.get("from_name")?,
+    };
+    let when = GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
+    Ok((message, when))
 }
 
 #[cfg(test)]
@@ -1428,6 +1452,39 @@ mod tests {
                 .load_outbox_messages("acc-1")
                 .expect("the queue to load")
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_every_accounts_queue_is_read_together_oldest_first() {
+        // Queued out of order, across two accounts, so neither the order the
+        // rows were written in nor one account's queue can pass for the answer.
+        let cache = a_cache("outbox_every_queue");
+        let sent_at = at("2026-09-29 09:00:00");
+        for (id, account, created_at) in [
+            ("third", "acc-1", "2026-09-29T09:00:09Z"),
+            ("first", "acc-1", "2026-09-29T09:00:00Z"),
+            ("second", "acc-2", "2026-09-29T09:00:05Z"),
+        ] {
+            cache
+                .queue_outbox_message_to_go(
+                    &queued(id, account, "Hello", created_at),
+                    &GoAfter::held(crate::application::sending_later::Hold::DEFAULT, sent_at),
+                )
+                .expect("a message to queue");
+        }
+
+        let read: Vec<(String, String)> = cache
+            .every_queue_with_their_times()
+            .expect("every queue to be read")
+            .into_iter()
+            .map(|(message, _)| (message.id, message.account_id))
+            .collect();
+
+        assert_eq!(
+            read,
+            [("first", "acc-1"), ("second", "acc-2"), ("third", "acc-1")]
+                .map(|(id, account)| (id.to_string(), account.to_string()))
         );
     }
 

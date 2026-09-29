@@ -41,6 +41,7 @@ use std::fs;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::allowed::SIGNING_AND_ENCRYPTING_IS_EXPERIMENTAL;
+use wixen_mail::application::identities::FromEntry;
 use wixen_mail::application::pgp_keys::LockedKey;
 use wixen_mail::application::protecting::{
     CannotProtect, Choice, KeptFor, WhatIsHeld, YourPgpKey, at_send,
@@ -406,7 +407,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
             let widgets = wx_compose::build_compose_dialog(
                 &frame,
                 "Compose New Message",
-                &["ada@example.com".to_string()],
+                &[the_entry_for_ada()],
                 0,
                 None,
             );
@@ -598,6 +599,16 @@ const ADA: &str = "ada@example.com";
 const GRACE: &str = "grace@example.com";
 const ADAS_FINGERPRINT: &str = "ADA0000000000000000000000000000000000000";
 
+/// The From list's one entry: Ada's account and its own address.
+fn the_entry_for_ada() -> FromEntry {
+    FromEntry {
+        account_id: "acc-ada".to_string(),
+        address: ADA.to_string(),
+        sender_name: "Ada Lovelace".to_string(),
+        said: ADA.to_string(),
+    }
+}
+
 fn a_message_to_grace(protection: Choice) -> ComposeData {
     ComposeData {
         to: format!("Grace Hopper <{GRACE}>"),
@@ -607,7 +618,7 @@ fn a_message_to_grace(protection: Choice) -> ComposeData {
         body: "<p>Only for you.</p>".to_string(),
         body_plain: "Only for you.".to_string(),
         html_mode: true,
-        account_index: Some(0),
+        from: Some(the_entry_for_ada()),
         attachments: Vec::new(),
         answering: None,
         send_at: None,
