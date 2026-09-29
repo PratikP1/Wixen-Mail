@@ -699,8 +699,48 @@ const STORED_BEFORE_SIGNATURES_WERE_KEPT: &str = "This message is signed, and it
 
 /// The bar for a signed message stored before its arrived-in form was kept.
 fn stored_before_bar(filter_said: Option<&str>) -> String {
+    unchecked_signature_bar(
+        filter_said,
+        STORED_BEFORE_SIGNATURES_WERE_KEPT,
+        "Nothing was checked. A signature can only be checked against the exact bytes the \
+         message arrived in, and this message was stored before Wixen Mail kept them. Signed \
+         mail that arrives now is kept in that form, up to a size limit.",
+    )
+}
+
+/// What is said above a message carrying a signature in a form nothing here
+/// checks: a signature file of its own, or a signature inside a part another
+/// program wrapped around the message (ledger 653).
+///
+/// Said rather than nothing, because nothing would put the message back among
+/// unsigned ones, which is the silence #52 point 6 was raised against.
+const IN_A_FORM_NOT_CHECKED: &str =
+    "This message carries a signature in a form Wixen Mail does not check.";
+
+/// The bar for a message whose signature is in a form nothing here checks.
+fn in_a_form_not_checked_bar(filter_said: Option<&str>) -> String {
+    unchecked_signature_bar(
+        filter_said,
+        IN_A_FORM_NOT_CHECKED,
+        "Nothing was checked. Wixen Mail checks a signature that covers the whole message as \
+         it arrived, and this one is a file of its own or sits inside a part another program \
+         added around the message, as a mailing list does when it adds a footer.",
+    )
+}
+
+/// The bar for a signature nothing checked: why, that nothing was found
+/// wrong, how it was not checked, and what that leaves it worth.
+///
+/// Both of its callers keep [`nothing_kept_to_check_bar`]'s second sentence,
+/// for that bar's reason: this is a fact about this computer, and must not be
+/// heard as a signature that failed.
+fn unchecked_signature_bar(
+    filter_said: Option<&str>,
+    headline: &str,
+    how_nothing_was_checked: &str,
+) -> String {
     let mut lines: Vec<String> = filter_said.map(str::to_string).into_iter().collect();
-    lines.push(STORED_BEFORE_SIGNATURES_WERE_KEPT.to_string());
+    lines.push(headline.to_string());
     lines.push(
         "That is not the same as a signature that does not match. Nothing has been found wrong \
          with this message."
@@ -709,12 +749,7 @@ fn stored_before_bar(filter_said: Option<&str>) -> String {
 
     lines.push(String::new());
     lines.push(HOW_IT_WAS_CHECKED.to_string());
-    lines.push(
-        "Nothing was checked. A signature can only be checked against the exact bytes the \
-         message arrived in, and this message was stored before Wixen Mail kept them. Signed \
-         mail that arrives now is kept in that form, up to a size limit."
-            .to_string(),
-    );
+    lines.push(how_nothing_was_checked.to_string());
 
     lines.push(String::new());
     lines.push(WHAT_A_SIGNATURE_IS_WORTH.to_string());
@@ -943,8 +978,15 @@ fn thread_parts(parts: &[ConversationPart]) -> Vec<crate::presentation::html_ren
                     // Said, not shown as a blank space under a heading. A
                     // message that has not been fetched and a message with
                     // nothing in it are different facts, and neither of them
-                    // should look like the reader failing to render.
-                    MessageBody::Plain(nothing_to_read())
+                    // should look like the reader failing to render. A
+                    // message whose envelope has a sentence for where its
+                    // words would be says that, as the text reader does.
+                    MessageBody::Plain(
+                        part.said
+                            .envelope
+                            .said_where_its_words_would_be()
+                            .map_or_else(nothing_to_read, str::to_string),
+                    )
                 } else {
                     body
                 },
@@ -1894,6 +1936,9 @@ impl ReaderDocument {
             SignatureCheck::StoredBeforeSignaturesWereKept => {
                 Some(stored_before_bar(self.warning.as_deref()))
             }
+            SignatureCheck::InAFormNotChecked => {
+                Some(in_a_form_not_checked_bar(self.warning.as_deref()))
+            }
         };
         self
     }
@@ -1949,6 +1994,10 @@ impl ReaderDocument {
     /// Say what became of an S/MIME encrypted message: opened here, or why it
     /// has nothing in it.
     ///
+    /// It answers for a PGP/MIME message that opened to files and no words
+    /// too, with that message's own sentence where the words would be and
+    /// nothing in the bar (ledger 643).
+    ///
     /// [`WhatTheEnvelopeSays::NotEncrypted`] for nearly all mail, and then
     /// nothing changes anywhere, which is [`with_encryption`](Self::with_encryption)'s
     /// reasoning unchanged.
@@ -1987,20 +2036,27 @@ impl ReaderDocument {
         mut self,
         says: &crate::application::encrypted_mail::WhatTheEnvelopeSays,
     ) -> Self {
+        // Where there are no words, the sentence for that stands where the body
+        // would otherwise say there is no text or that it has not been
+        // downloaded, which is false about every message that comes here: an
+        // opened envelope holding only files among them, of either family.
+        let nothing_below = self.text.ends_with(&format!("{}\n", nothing_to_read()));
+        if nothing_below && let Some(words) = says.said_where_its_words_would_be() {
+            self.text = instead_of_nothing_to_read(&self.text, words);
+        }
         let Some(sentence) = says.said() else {
             return self;
         };
         // An envelope that opened to words is the one case with words below:
         // they are the body now, so the sentence goes between the header lines
-        // and the first of them, the way a meeting's does. Every other
-        // sentence, an opened envelope holding only files among them, stands
-        // where the body would otherwise say there is no text or that it has
-        // not been downloaded, which is false about all of them.
-        let nothing_below = self.text.ends_with(&format!("{}\n", nothing_to_read()));
-        if says.is_opened() && !nothing_below {
-            self = self.said_above_the_body(sentence);
-        } else {
-            self.text = instead_of_nothing_to_read(&self.text, sentence);
+        // and the first of them, the way a meeting's does. One that did not
+        // open and has a body anyway gets it after the body.
+        if !nothing_below {
+            if says.is_opened() {
+                self = self.said_above_the_body(sentence);
+            } else {
+                self.text = instead_of_nothing_to_read(&self.text, sentence);
+            }
         }
         self.warning = Some(match self.warning.take() {
             // Under what the filter said, the way a signature verdict goes
@@ -2236,11 +2292,11 @@ fn the_reason_it_did_not_open(
 /// added anywhere.
 fn one_of_several(part: &ConversationPart) -> (Option<String>, MessageBody) {
     let reason = the_reason_it_did_not_open(part.said.opened.as_ref());
-    let (envelope, body) = match part.said.envelope.said() {
+    let (envelope, body) = match part.said.envelope.said_where_its_words_would_be() {
         Some(sentence) if nothing_in(&part.body) => {
             (None, MessageBody::Plain(sentence.to_string()))
         }
-        other => (other, part.body.clone()),
+        _ => (part.said.envelope.said(), part.body.clone()),
     };
     // The meeting after the envelope, the order the bar folds them in, and a
     // PGP signature's verdict last, where the bar puts a signature (ledger
@@ -4028,8 +4084,9 @@ mod signature_tests {
         }
     }
 
-    /// The four PGP verdicts and the message stored before signatures were
-    /// kept, as the reader is handed them.
+    /// The four PGP verdicts, the message stored before signatures were kept
+    /// and the one carrying a signature in a form nothing checks, as the
+    /// reader is handed them.
     pub(super) fn every_pgp_signature_check() -> Vec<SignatureCheck> {
         vec![
             SignatureCheck::Pgp(PgpVerdict::Holds { whose: ada() }),
@@ -4039,6 +4096,7 @@ mod signature_tests {
             SignatureCheck::Pgp(PgpVerdict::DoesNotHold { whose: ada() }),
             SignatureCheck::Pgp(PgpVerdict::Damaged),
             SignatureCheck::StoredBeforeSignaturesWereKept,
+            SignatureCheck::InAFormNotChecked,
         ]
     }
 
@@ -4115,10 +4173,11 @@ mod signature_tests {
     }
 
     #[test]
-    fn test_the_pgp_signature_sentences_are_five_different_sentences() {
-        // Five different things to do next: nothing, import the sender's key,
-        // distrust the words, ask for them again, or fetch nothing because
-        // nothing can be fetched. Two alike would hide one of them.
+    fn test_the_pgp_signature_sentences_are_all_different_sentences() {
+        // Six different things to do next: nothing, import the sender's key,
+        // distrust the words, ask for them again, fetch nothing because
+        // nothing can be fetched, or read it as unsigned because its form is
+        // one nothing here checks. Two alike would hide one of them.
         let said: Vec<String> = every_pgp_signature_check().iter().map(said_first).collect();
 
         for (which, one) in said.iter().enumerate() {

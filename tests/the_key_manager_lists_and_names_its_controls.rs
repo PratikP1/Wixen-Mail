@@ -35,6 +35,9 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::pgp_keys::{Imported, WHAT_KEYS_CAN_DO_HERE};
 use wixen_mail::presentation::accessibility::Accessibility;
+use wixen_mail::presentation::date_display::{
+    Clock, DateOrder, DateSettings, DateStyle, DateWording,
+};
 use wixen_mail::presentation::wx_pgp_keys::{
     TheDesktop, TheKeysUnderneath, build, build_the_paste_dialog,
 };
@@ -134,6 +137,71 @@ unsafe extern "system" {
     fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
+    fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
+}
+
+/// commctrl.h: `LVM_FIRST + 115`.
+const LVM_GETITEMTEXTW: u32 = 0x1000 + 115;
+
+/// commctrl.h's `LVITEMW`, of which `LVM_GETITEMTEXTW` reads the sub-item,
+/// the buffer and its length.
+#[repr(C)]
+struct ListViewItem {
+    mask: u32,
+    item: i32,
+    sub_item: i32,
+    state: u32,
+    state_mask: u32,
+    text: *mut u16,
+    text_max: i32,
+    image: i32,
+    param: isize,
+    indent: i32,
+    group_id: i32,
+    columns: u32,
+    column_list: *mut u32,
+    column_formats: *mut i32,
+    group: i32,
+}
+
+/// One cell of the live list, read from the list itself.
+///
+/// Not through `ListCtrl::get_item_text`, which loses the last character of
+/// every cell and puts a NUL in its place (`wxdragon-0.9.17`,
+/// `src/widgets/list_ctrl.rs:429`): read that way, "27/09/2026" came back as
+/// "27/09/202" and a NUL on 2026-09-29. A date's last digit is the year, so
+/// the cell is read whole, the way `tests/a_signature_follows_the_from_account.rs`
+/// reads one.
+fn cell(list: &ListCtrl, row: i64, column: i32) -> String {
+    let mut buffer = [0u16; 512];
+    let mut item = ListViewItem {
+        mask: 0,
+        item: row as i32,
+        sub_item: column,
+        state: 0,
+        state_mask: 0,
+        text: buffer.as_mut_ptr(),
+        text_max: buffer.len() as i32,
+        image: 0,
+        param: 0,
+        indent: 0,
+        group_id: 0,
+        columns: 0,
+        column_list: std::ptr::null_mut(),
+        column_formats: std::ptr::null_mut(),
+        group: 0,
+    };
+    // SAFETY: a live list on this thread; the item and its buffer outlive the
+    // call, and the length handed over is the buffer's.
+    let length = unsafe {
+        SendMessageW(
+            list.get_handle() as isize,
+            LVM_GETITEMTEXTW,
+            row as usize,
+            &mut item as *mut ListViewItem as isize,
+        )
+    };
+    String::from_utf16_lossy(&buffer[..length.clamp(0, buffer.len() as isize) as usize])
 }
 
 #[link(name = "oleacc")]
@@ -357,10 +425,20 @@ fn keys_in_memory(keys: Rc<RefCell<Vec<KeyListing>>>) -> TheKeysUnderneath {
     }
 }
 
+/// The date choices the window is built with: the day first, in numbers.
+const DAY_FIRST_IN_NUMBERS: DateSettings = DateSettings {
+    style: DateStyle::Absolute,
+    order: DateOrder::DayFirst,
+    wording: DateWording::Numeric,
+    clock: Clock::TwentyFourHour,
+};
+
 /// Everything read out of the window session, as plain values.
 #[derive(Debug)]
 struct Harvest {
     on_open: Vec<Control>,
+    first_rows_created: String,
+    first_rows_expires: String,
     status_after_copy: String,
     clipboard: Vec<String>,
     questions: Vec<String>,
@@ -420,8 +498,16 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     }),
                 };
 
-                let manager = build(&frame, keys_in_memory(keys), desktop, &a11y);
+                let manager = build(
+                    &frame,
+                    keys_in_memory(keys),
+                    desktop,
+                    DAY_FIRST_IN_NUMBERS,
+                    &a11y,
+                );
                 let on_open = read_the_controls(&manager.dialog)?;
+                let first_rows_created = cell(&manager.list, 0, 4);
+                let first_rows_expires = cell(&manager.list, 0, 5);
 
                 manager.choose(0);
                 manager.copy_the_chosen_key();
@@ -452,6 +538,8 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 let questions = questions.borrow().clone();
                 Ok(Harvest {
                     on_open,
+                    first_rows_created,
+                    first_rows_expires,
                     status_after_copy,
                     clipboard,
                     questions,
@@ -532,6 +620,21 @@ fn test_every_control_is_named_at_its_own_handle_in_tab_order() {
             ("Close", ROLE_SYSTEM_PUSHBUTTON),
         ])
     );
+}
+
+#[test]
+fn test_the_rows_dates_follow_the_date_setting_the_window_was_given() {
+    // The window was built with the day first, in numbers, so the first key's
+    // Created cell is its day on this computer's clock written that way, and a
+    // key with no end says Never.
+    let made = a_key(ALICE, ALICES_FINGERPRINT, true)
+        .created
+        .with_timezone(&chrono::Local)
+        .format("%d/%m/%Y")
+        .to_string();
+
+    assert_eq!(the_harvest().first_rows_created, made);
+    assert_eq!(the_harvest().first_rows_expires, "Never");
 }
 
 #[test]

@@ -250,8 +250,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   signed mail arrives in, so the signature cannot be checked." That holds for S/MIME and PGP
   signatures alike. Known limitation: the reason is read from the signature file alone, so a
   message that merely carries a signature file as an attachment, or a signed message a
-  mailing list wrapped in one of its own, says the same sentence, with a reason that is not
-  its own.
+  mailing list wrapped in one of its own, said the same sentence, with a reason that is not
+  its own, until the entry under Fixed about a signature file on mail stored since, on
+  2026-09-29.
 - **PGP keys locked with a passphrase, experimentally (#49).** Most keys people export
   carry a passphrase, and Wixen Mail refused them, so the key manager served few real keys.
   A locked key is now imported and kept as it came, still locked, and the key manager lists
@@ -313,8 +314,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   be answered, and never changes your calendar when you open the message. The version does not
   move for this: no build has been cut since 1.0.0-alpha.1. Known limitations: no PGP/MIME
   message from Thunderbird or Proton Mail has been read, only one made with GnuPG for a test
-  key; a PGP/MIME message that opens to files and no words says it has no text, which is half
-  true; and words or a file inside a PGP/MIME message sent as raw bytes rather than in one of
+  key; a PGP/MIME message that opens to files and no words said it has no text, which is half
+  true, until the entry under Fixed about an encrypted message that opened to files, on
+  2026-09-29; and words or a file inside a PGP/MIME message sent as raw bytes rather than in one of
   the usual text-safe encodings may come out changed, a letter outside UTF-8 read as a
   replacement mark, because what the key opens is read as UTF-8 text before it is taken
   apart.
@@ -972,6 +974,42 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **An encrypted message that opened to files and no words says it opened (ledger 643).** A
+  PGP/MIME message that opened here to files alone said "This message has no text, or it has
+  not been downloaded yet.", which is false about it and sends you to fetch it again. It now
+  says "This message was encrypted with PGP and was opened here. It holds files and no
+  words." where its words would be: in the text reader, in the formatted message window, in
+  the preview, and under its own heading in a conversation. Nothing is added to the bar,
+  because an opened PGP message says nothing above its words. One that opened to nothing at
+  all, no words and no files, keeps the old sentence. The formatted window and the preview
+  said the same false sentence on the page of an S/MIME message that opened to files alone,
+  and of one that did not open, while the bar said the right thing; the page now says what
+  the bar says. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: nobody has heard it with a screen reader; no real
+  correspondent's message has been through it, only messages built for the tests.
+- **The key manager's dates follow the Reading tab (ledger 649).** File, PGP Keys wrote each
+  key's Created and Expires as a day in words whatever you chose in Settings. They now follow
+  the Reading tab's order, day or month first, and its choice of numbers or words, each the
+  day on this computer's clock, the way every other list writes a date. The relative style
+  and the 12 or 24 hour clock are not applied, because a key's date is a day with no time;
+  a birthday is written the same way. A key that never expires still says Never. The version
+  does not move for this: no build has been cut since 1.0.0-alpha.1. Known limitations:
+  nobody has heard the dates with a screen reader; only keys made with GnuPG for the tests
+  have been listed.
+- **A signature file on mail stored since says its form is not checked (ledger 653).** A
+  message carrying a signature part with nothing kept of its form said it was stored before
+  Wixen Mail kept the form signed mail arrives in, even when it arrived later as a lone
+  signature file or inside a part a mailing list wrapped around it. The first time this
+  version opens your mail it notes the last message already stored, in the mail database and
+  not as a setting, and no later open moves that note. A message up to that one still says
+  the stored-before sentence. One stored after it says "This message carries a signature in a
+  form Wixen Mail does not check.", that nothing has been found wrong, and to read it as you
+  would an unsigned message. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: if you ran an earlier version that already kept the form
+  signed mail arrives in, a message of the second kind that arrived between that version's
+  first run and this one's still says the stored-before sentence, because nothing stored can
+  tell those days apart; nobody has heard the new sentence with a screen reader; and no real
+  mailing list's signed message has been through it.
 - **A message and a draft went out from the account open in the main window, whatever the
   From list said.** Send and Save Draft took the account from whichever mailbox was open,
   while the signature, people lookup and Preview Before Send followed the From list. With a

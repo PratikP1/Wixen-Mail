@@ -12,7 +12,10 @@
 //! before a removal, the sentence saying what keys can do in this build and
 //! every answer are [`crate::application::pgp_keys`]'s, where a test can read
 //! them without a window, and every key operation goes through
-//! [`TheKeysUnderneath`], which [`show`] fills from that module.
+//! [`TheKeysUnderneath`], which [`show`] fills from that module. A row's two
+//! dates are the one thing it writes itself, through
+//! [`crate::presentation::date_display`], where every list's dates are
+//! written, so they follow the Reading tab of Settings.
 //!
 //! # Reaching it and leaving it
 //!
@@ -30,11 +33,11 @@
 use crate::application::pgp_keys::{self, Imported};
 use crate::application::status_sentences::nothing_chosen_named;
 use crate::common::Result;
-use crate::common::how_the_machine_writes_dates::WhichLocale;
 use crate::data::message_cache::MessageCache;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::date_display::{self, DateSettings};
 use crate::presentation::status_line::said_and_shown;
 use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
@@ -260,6 +263,8 @@ pub struct KeyManager {
     showing: Rc<RefCell<Vec<KeyListing>>>,
     underneath: Rc<TheKeysUnderneath>,
     desktop: Rc<TheDesktop>,
+    /// How the list writes a key's two dates, as the Reading tab chose.
+    dates: DateSettings,
     a11y: Arc<Accessibility>,
 }
 
@@ -444,7 +449,7 @@ impl KeyManager {
                 Vec::new()
             }
         };
-        fill(&self.list, &keys);
+        fill(&self.list, &keys, self.dates);
         *self.showing.borrow_mut() = keys;
     }
 
@@ -459,6 +464,7 @@ pub fn build<W: WxWidget>(
     parent: &W,
     underneath: TheKeysUnderneath,
     desktop: TheDesktop,
+    dates: DateSettings,
     a11y: &Arc<Accessibility>,
 ) -> KeyManager {
     let dialog = Dialog::builder(parent, TITLE)
@@ -543,6 +549,7 @@ pub fn build<W: WxWidget>(
         showing: Rc::new(RefCell::new(Vec::new())),
         underneath: Rc::new(underneath),
         desktop: Rc::new(desktop),
+        dates,
         a11y: Arc::clone(a11y),
     };
     manager.read_the_keys_again();
@@ -594,22 +601,38 @@ fn land_the_row_cursor(list: &ListCtrl, at: Option<usize>) {
     list.ensure_visible(at);
 }
 
+/// What one key's row says, cell by cell, its dates written the way `dates`
+/// chose.
+///
+/// Each date is the day it falls on by this computer's clock, written in the
+/// order and wording the Reading tab chose (D8), and a key with no end says
+/// Never.
+pub fn the_cells_of(key: &KeyListing, dates: DateSettings) -> [String; THE_COLUMNS.len()] {
+    // The day on this computer's clock, in the order and wording chosen.
+    let written = |when: chrono::DateTime<chrono::Utc>| {
+        date_display::the_date_of(when.with_timezone(&chrono::Local).date_naive(), dates)
+    };
+    let row = pgp_keys::what_a_row_says(key);
+    // Paired with `THE_COLUMNS` by position and by length, so a heading
+    // added without a cell does not compile rather than being silence.
+    [
+        row.name,
+        row.kind,
+        row.key_id,
+        row.fingerprint,
+        written(row.created),
+        // A key with no end says so in a word, whatever the date setting.
+        row.expires.map_or_else(|| "Never".to_string(), written),
+        row.can,
+    ]
+}
+
 /// Put the keys into the control, one row each.
-fn fill(list: &ListCtrl, keys: &[KeyListing]) {
+fn fill(list: &ListCtrl, keys: &[KeyListing], dates: DateSettings) {
     list.delete_all_items();
     for (at, key) in keys.iter().enumerate() {
-        let row = pgp_keys::what_a_row_says(key, WhichLocale::ThisComputer);
-        // Paired with `THE_COLUMNS` by position and by length, so a heading
-        // added without a cell does not compile rather than being silence.
-        let cells: [String; THE_COLUMNS.len()] = [
-            row.name,
-            row.kind,
-            row.key_id,
-            row.fingerprint,
-            row.created,
-            row.expires,
-            row.can,
-        ];
+        // The window's own date choices, read once when it was built.
+        let cells = the_cells_of(key, dates);
         list.insert_item(at as i64, &cells[0], None);
         for (column, cell) in cells.iter().enumerate().skip(1) {
             list.set_item_text_by_column(at as i64, column as i32, cell);
@@ -667,6 +690,7 @@ pub fn show(parent: &Frame, cache: Arc<MessageCache>, a11y: &Arc<Accessibility>)
         parent,
         TheKeysUnderneath::kept_in(cache),
         TheDesktop::this_one(),
+        crate::presentation::wx_app::date_settings_from_stored_config(),
         a11y,
     );
     match where_focus_goes(manager.rows()) {
@@ -716,6 +740,127 @@ mod tests {
     fn test_a_doubled_marker_is_a_literal_ampersand_and_claims_nothing() {
         assert_eq!(the_letter("Fish && Chips"), None);
         assert_eq!(the_letter("Fish && &Chips"), Some('c'));
+    }
+
+    // ── A row's two dates ───────────────────────────────────────────────────
+
+    /// Where the list's Created and Expires columns are.
+    fn the_column(heading: &str) -> usize {
+        THE_COLUMNS
+            .iter()
+            .position(|column| *column == heading)
+            .unwrap_or_else(|| panic!("no column called {heading}"))
+    }
+
+    /// Noon on a day, so the day holds in any zone within eleven hours.
+    fn at_noon(day: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(&format!("{day}T12:00:00Z"))
+            .expect("a date")
+            .to_utc()
+    }
+
+    /// The day a moment falls on by this computer's clock.
+    fn the_day_here(when: chrono::DateTime<chrono::Utc>) -> chrono::NaiveDate {
+        when.with_timezone(&chrono::Local).date_naive()
+    }
+
+    /// A key made on the 14th day of the 3rd month, a day and a month that
+    /// cannot be read either way round.
+    fn a_key_ending(expires: Option<chrono::DateTime<chrono::Utc>>) -> KeyListing {
+        KeyListing {
+            user_ids: vec!["Ada Lovelace <ada@example.com>".to_string()],
+            key_id: "9C0D1E2F3A4B5C6D".to_string(),
+            fingerprint: "1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B".to_string(),
+            created: at_noon("2026-03-14"),
+            expires,
+            private: false,
+            locked: false,
+            can_encrypt: true,
+            can_sign: true,
+        }
+    }
+
+    fn dates(
+        wording: crate::presentation::date_display::DateWording,
+        order: crate::presentation::date_display::DateOrder,
+    ) -> DateSettings {
+        DateSettings {
+            style: crate::presentation::date_display::DateStyle::Absolute,
+            order,
+            wording,
+            clock: crate::presentation::date_display::Clock::TwentyFourHour,
+        }
+    }
+
+    #[test]
+    fn test_a_rows_dates_are_written_in_the_order_the_date_setting_chose() {
+        use crate::presentation::date_display::{DateOrder, DateWording};
+        use chrono::Datelike;
+
+        let key = a_key_ending(Some(at_noon("2027-11-02")));
+        let made = the_day_here(key.created);
+        let ends = the_day_here(at_noon("2027-11-02"));
+        let day_first = the_cells_of(&key, dates(DateWording::Numeric, DateOrder::DayFirst));
+        let month_first = the_cells_of(&key, dates(DateWording::Numeric, DateOrder::MonthFirst));
+
+        let (created, expires) = (the_column("Created"), the_column("Expires"));
+        assert_eq!(
+            day_first[created],
+            format!("{:02}/{:02}/{}", made.day(), made.month(), made.year())
+        );
+        assert_eq!(
+            day_first[expires],
+            format!("{:02}/{:02}/{}", ends.day(), ends.month(), ends.year())
+        );
+        assert_eq!(
+            month_first[created],
+            format!("{:02}/{:02}/{}", made.month(), made.day(), made.year())
+        );
+        assert_eq!(
+            month_first[expires],
+            format!("{:02}/{:02}/{}", ends.month(), ends.day(), ends.year())
+        );
+        assert_ne!(day_first[created], month_first[created]);
+    }
+
+    #[test]
+    fn test_a_rows_dates_in_words_are_the_dates_every_list_writes() {
+        use crate::presentation::date_display::{self, DateOrder, DateWording};
+
+        let key = a_key_ending(Some(at_noon("2027-11-02")));
+        let made = the_day_here(key.created);
+        let ends = the_day_here(at_noon("2027-11-02"));
+        let (created, expires) = (the_column("Created"), the_column("Expires"));
+
+        let mut written = Vec::new();
+        for order in [DateOrder::DayFirst, DateOrder::MonthFirst] {
+            let chosen = dates(DateWording::Verbal, order);
+            let cells = the_cells_of(&key, chosen);
+            assert_eq!(cells[created], date_display::the_date_of(made, chosen));
+            assert_eq!(cells[expires], date_display::the_date_of(ends, chosen));
+            assert!(
+                cells[created].contains("2026") && !cells[created].contains('/'),
+                "{}",
+                cells[created]
+            );
+            written.push(cells[created].clone());
+        }
+        assert_ne!(written[0], written[1]);
+    }
+
+    #[test]
+    fn test_a_key_that_never_expires_says_never_whatever_the_date_setting() {
+        use crate::presentation::date_display::{DateOrder, DateWording};
+
+        let key = a_key_ending(None);
+        for wording in [DateWording::Numeric, DateWording::Verbal] {
+            for order in [DateOrder::DayFirst, DateOrder::MonthFirst] {
+                assert_eq!(
+                    the_cells_of(&key, dates(wording, order))[the_column("Expires")],
+                    "Never"
+                );
+            }
+        }
     }
 
     #[test]

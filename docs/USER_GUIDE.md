@@ -773,7 +773,10 @@ your private key in File, PGP Keys, and a PGP message encrypted
 to that key opens, whether its encrypted text sits in the body of the message
 or in a separate part, which is called PGP/MIME. Reading PGP mail is
 experimental, and the menu item says so. A PGP message that opens shows its
-words and its files with nothing said above them. One that does not open shows
+words and its files with nothing said above them. A PGP/MIME message that
+opens to files and no words says so where its words would be, "This message
+was encrypted with PGP and was opened here. It holds files and no words.", and
+nothing in the bar. One that does not open shows
 its encrypted text, and the bar says why: there is no private key on this
 computer, the key here is not the one it was encrypted to, the key could not be
 read back, the encrypted part is damaged, or the key is locked with a
@@ -803,8 +806,10 @@ File, PGP Keys opens the key manager, which lists every PGP key on this
 computer: your private keys first, then other people's public keys. Each row
 starts with the name and address the key carries, then says whether it is a
 private or a public key, its key id, its fingerprint, when it was made, when it
-expires, and whether it can encrypt, sign or both. The manager is experimental,
-and the menu says so.
+expires, and whether it can encrypt, sign or both. The two dates are written the
+way you chose on the Reading tab of Settings, day or month first and in numbers
+or words, each the day on this computer's clock; a key that never expires says
+Never. The manager is experimental, and the menu says so.
 
 The box at the top of the window says what keys can and cannot do in this
 build:
@@ -885,7 +890,7 @@ whether the signature is written into the message's text or sent in a separate
 part, which is called PGP/MIME, and it is checked again every time you open the
 message. Checking signatures is experimental.
 
-The bar above the message says one of five things:
+The bar above the message says one of six things:
 
 | The sentence | What it tells you | What it does not tell you |
 |---|---|---|
@@ -893,7 +898,8 @@ The bar above the message says one of five things:
 | This message carries a PGP signature by key (a key id), which is not in your list, so it could not be checked. | The message is signed, by a key you do not have. | Anything about the words. Nothing was checked, so the signature neither holds nor fails. |
 | This message's PGP signature does not hold against the key in your list for (a name). It was changed after it was signed, or the signature is not that key's. | Something is wrong: the words were changed after they were signed, or the signature names a key that did not make it. | Which of the two happened. Read the message as one you cannot trust. |
 | This message's PGP signature is damaged, so it could not be checked. | The signature arrived in a form that cannot be read. | Anything about the words. Ask the sender to send it again. |
-| This message is signed, and it was stored before Wixen Mail kept the form signed mail arrives in, so the signature cannot be checked. | The message was on this computer before Wixen Mail kept the exact form signed mail arrives in, and a signature can only be checked against that form. This is said about S/MIME signatures too. | Anything about the words. Nothing was checked. |
+| This message is signed, and it was stored before Wixen Mail kept the form signed mail arrives in, so the signature cannot be checked. | The message was on this computer before you first ran a version of Wixen Mail that keeps every form signed mail arrives in, and a signature can only be checked against that form. This is said about S/MIME signatures too. | Anything about the words. Nothing was checked. |
+| This message carries a signature in a form Wixen Mail does not check. | The message carries a signature as a file of its own, or inside a part another program added around the message, such as a mailing list's footer. Wixen Mail checks only a signature over the whole message as it arrived. This is said about S/MIME signatures too. | Anything about the words. Nothing was checked, so read it as you would an unsigned message. |
 
 To turn the second sentence into the first, get the sender's public key from
 them, check its fingerprint with them another way, such as on the phone, and
@@ -920,10 +926,13 @@ has expired, or its owner has withdrawn it, is not checked. A signature written
 only into the formatted half of a message cannot be read, and is said to be
 damaged. A signature written into text sent in a character set other than
 UTF-8, with letters outside plain English in it, has not been tried, and may
-read as not holding. And the last sentence in the table is chosen from the signature file
-among the message's files, so a message that only carries a signature file as
-an attachment, or a signed message a mailing list wrapped in one of its own,
-says it too.
+read as not holding. The first time this version opens your mail, it notes the
+last message already stored, and only mail up to that one can get the
+stored-before sentence. If you ran an earlier version that already kept the
+form signed mail arrives in, a message with a lone signature file, or a signed
+message a mailing list wrapped, that arrived between that version's first run
+and this one's still gets the stored-before sentence rather than the last one
+in the table, because nothing stored can tell those days apart.
 
 ### Message Actions
 

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 478 records have arrived since and have not been through it.
+# 486 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3729,7 +3729,7 @@ red = [
     "service::signed_mail::windows_store::tests::test_nothing_asked_about_withdrawal_is_not_the_same_as_nothing_wrong",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_signatures.rs", tests = 18 },
+    { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/service/signed_mail.rs", tests = 127 },
 ]
@@ -12658,12 +12658,12 @@ red = [
     "data::message_cache::signed_original::tests::test_the_form_a_pgp_mime_signed_message_arrived_in_comes_back_as_pgp_mime",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_signatures.rs", tests = 18 },
+    { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 50 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
-    { file = "src/data/message_cache/signed_original.rs", tests = 11 },
+    { file = "src/data/message_cache/signed_original.rs", tests = 15 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -16822,7 +16822,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
-    { file = "src/application/checking_signatures.rs", tests = 18 },
+    { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
@@ -16855,7 +16855,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 151 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 15 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
 
 # The other half-fix, and the one that reads best in a diff. The question is
@@ -16881,7 +16881,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 151 },
-    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 15 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
 
 # ── A reading gate that admits everything ───────────────────────────────────
@@ -32379,14 +32379,18 @@ red = [
     "service::pgp::keys::tests::test_one_text_holding_a_private_and_a_public_key_answers_for_each",
     "service::pgp::keys::tests::test_removing_a_private_key_takes_every_part_of_it_and_leaves_the_others",
     "service::pgp::keys::tests::test_the_public_half_of_a_key_is_armour_that_describes_as_public",
+    "service::pgp::sending::tests::test_a_key_that_does_not_sign_says_so",
+    "service::pgp::sending::tests::test_a_message_encrypted_for_alice_opens_with_her_key_to_the_same_bytes",
+    "service::pgp::sending::tests::test_somebody_it_was_not_encrypted_to_cannot_open_it",
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/presentation/reader_text.rs", tests = 151 },
-    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
     { file = "src/service/pgp/keys.rs", tests = 33 },
+    { file = "src/service/pgp/sending.rs", tests = 14 },
 ]
 
 # The last part of every slot left off the list uninstalling erases, so a key
@@ -32445,7 +32449,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pgp_keys.rs", tests = 22 },
-    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
 ]
 
 # The key manager's Remove acting without asking, so a stray press takes a
@@ -32464,8 +32468,8 @@ red = [
     "test_remove_asks_naming_the_key_and_no_keeps_it",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_pgp_keys.rs", tests = 6 },
-    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 12 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
+    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 13 },
 ]
 
 # The key manager's first sentence saying a key locked with a passphrase
@@ -32622,23 +32626,28 @@ red = [
     "application::checking_signatures::end_to_end::test_a_pgp_mime_message_reopened_from_the_cache_is_checked_against_the_keys_kept_here",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_signatures.rs", tests = 18 },
-    { file = "src/data/message_cache/signed_original.rs", tests = 11 },
+    { file = "src/application/checking_signatures.rs", tests = 21 },
+    { file = "src/data/message_cache/signed_original.rs", tests = 15 },
 ]
 
 # A signed message stored before its arrived-in form was kept read as never
 # having claimed a signature, which is what it said until 13-18 (#52 point
 # 6). Written 2026-09-27 by 13-18, measured with `scripts/guards.sh`.
+# Rewritten 2026-09-29 by 13-36.1: the same break now also reddens the two
+# cases for a signature file stored after the mark, which read as unsigned
+# under it too.
 [[guard]]
 name = "a signed message stored before signatures were kept says so rather than unsigned"
 file = "src/application/checking_signatures.rs"
 before = """    if matches!(kept, SignedOriginal::NotSigned) && carries_a_signature_part(cache, message_row_id)"""
 after = """    if false"""
 red = [
+    "application::checking_signatures::end_to_end::test_a_signature_file_stored_after_the_mark_says_its_form_is_not_checked",
+    "application::checking_signatures::end_to_end::test_a_signature_whose_form_is_not_checked_is_heard_so_and_not_as_stored_before",
     "application::checking_signatures::end_to_end::test_a_signed_message_stored_before_signatures_were_kept_says_so_and_not_unsigned",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_signatures.rs", tests = 18 },
+    { file = "src/application/checking_signatures.rs", tests = 21 },
 ]
 
 # A PGP signature's verdict dropped from what one message of several says at
@@ -34455,4 +34464,167 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
+]
+
+# A PGP/MIME message that opened to files and no words saying it has no text
+# or has not been downloaded, on every surface, which is ledger 643 before
+# 13-36.1. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a pgp/mime message opened to files alone says so where its words would be"
+file = "src/application/encrypted_mail.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {
+                Some(OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES)'''
+after = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {
+                None'''
+red = [
+    "test_an_opened_pgp_mime_message_holding_only_files_says_so_where_its_words_would_be",
+    "test_one_message_opened_to_files_alone_says_it_opened_on_its_page_and_not_that_nothing_arrived",
+    "test_one_of_several_messages_opened_to_files_alone_says_so_under_its_own_heading",
+]
+tests_last_seen = [
+    { file = "src/application/encrypted_mail.rs", tests = 11 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
+]
+
+# The same sentence said of a PGP/MIME message that opened to no file either,
+# where "It holds files" would be false (D9). Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a pgp/mime message opened to nothing at all claims no files"
+file = "src/application/encrypted_mail.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {'''
+after = '''            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { .. } => {'''
+red = [
+    "test_a_pgp_mime_message_opened_to_nothing_at_all_claims_no_files",
+]
+tests_last_seen = [
+    { file = "src/application/encrypted_mail.rs", tests = 11 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
+]
+
+# The page for one message writing "no text, or not downloaded" under a
+# message that opened to files alone, which the text reader had stopped saying
+# for S/MIME in 13-14 and the page had not (D7). Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "the page for one message opened to files alone says it opened"
+file = "src/presentation/reader_text.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = '''                    // words would be says that, as the text reader does.
+                    MessageBody::Plain(
+                        part.said
+                            .envelope
+                            .said_where_its_words_would_be()
+                            .map_or_else(nothing_to_read, str::to_string),
+                    )'''
+after = '''                    // words would be says that, as the text reader does.
+                    MessageBody::Plain(nothing_to_read())'''
+red = [
+    "test_one_message_opened_to_files_alone_says_it_opened_on_its_page_and_not_that_nothing_arrived",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
+]
+
+# The key list writing its dates the machine's way whatever the Reading tab
+# chose, which is ledger 649 before 13-36.1. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a key row's dates are written the way the date setting chose"
+file = "src/presentation/wx_pgp_keys.rs"
+before = '''    // The day on this computer's clock, in the order and wording chosen.
+    let written = |when: chrono::DateTime<chrono::Utc>| {
+        date_display::the_date_of(when.with_timezone(&chrono::Local).date_naive(), dates)'''
+after = '''    // The day on this computer's clock, in the order and wording chosen.
+    let written = |when: chrono::DateTime<chrono::Utc>| {
+        date_display::the_date_of(when.with_timezone(&chrono::Local).date_naive(), DateSettings::default())'''
+red = [
+    "presentation::wx_pgp_keys::tests::test_a_rows_dates_are_written_in_the_order_the_date_setting_chose",
+    "presentation::wx_pgp_keys::tests::test_a_rows_dates_in_words_are_the_dates_every_list_writes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
+]
+
+# The same, measured where the window is built: the list filled with the
+# machine's choices rather than the ones the window was handed. Its own record
+# because a record measures one suite. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "the key manager's list is filled with the date choices it was given"
+file = "src/presentation/wx_pgp_keys.rs"
+suite = "the_key_manager_lists_and_names_its_controls"
+before = '''        // The window's own date choices, read once when it was built.
+        let cells = the_cells_of(key, dates);'''
+after = '''        // The window's own date choices, read once when it was built.
+        let cells = the_cells_of(key, DateSettings::default());'''
+red = [
+    "test_the_rows_dates_follow_the_date_setting_the_window_was_given",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
+    { file = "tests/the_key_manager_lists_and_names_its_controls.rs", tests = 13 },
+]
+
+# A key with no end written as an empty cell once its dates moved to the
+# window. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a key that never expires says never in the key list"
+file = "src/presentation/wx_pgp_keys.rs"
+before = '''        // A key with no end says so in a word, whatever the date setting.
+        row.expires.map_or_else(|| "Never".to_string(), written),'''
+after = '''        // A key with no end says so in a word, whatever the date setting.
+        row.expires.map_or_else(String::new, written),'''
+red = [
+    "presentation::wx_pgp_keys::tests::test_a_key_that_never_expires_says_never_whatever_the_date_setting",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
+]
+
+# The mark moved by a later open, so mail stored since reads as stored before
+# and a form nothing checks hides behind a reason that is not its own
+# (T-13-36.1-02). Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "opening the database again leaves the signed-form mark where it was"
+file = "src/data/message_cache/signed_original.rs"
+before = '''        // Once: a mark already there is left where it is.
+        let written = self
+            .conn
+            .execute(
+                "INSERT OR IGNORE INTO last_message_before (what, message_id, noted_at)'''
+after = '''        // Once: a mark already there is left where it is.
+        let written = self
+            .conn
+            .execute(
+                "INSERT OR REPLACE INTO last_message_before (what, message_id, noted_at)'''
+red = [
+    "data::message_cache::signed_original::tests::test_opening_the_database_again_leaves_the_mark_where_it_was",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/signed_original.rs", tests = 15 },
+]
+
+# A signature file on mail stored after the mark given the stored-before
+# reason, which is ledger 653 before 13-36.1. Written 2026-09-29 by 13-36.1.
+[[guard]]
+name = "a signature file stored after the mark says its form is not checked"
+file = "src/application/checking_signatures.rs"
+before = '''        // Above the mark, or no mark to read: the sentence that claims
+        // nothing about when the message was stored.
+        Ok(false) | Err(_) => SignatureCheck::InAFormNotChecked,'''
+after = '''        // Above the mark, or no mark to read: the sentence that claims
+        // nothing about when the message was stored.
+        Ok(false) => SignatureCheck::StoredBeforeSignaturesWereKept,
+        Err(_) => SignatureCheck::InAFormNotChecked,'''
+red = [
+    "application::checking_signatures::end_to_end::test_a_signature_file_stored_after_the_mark_says_its_form_is_not_checked",
+    "application::checking_signatures::end_to_end::test_a_signature_whose_form_is_not_checked_is_heard_so_and_not_as_stored_before",
+    "application::checking_signatures::tests::test_a_mark_that_cannot_be_read_says_the_sentence_that_claims_nothing_about_when",
+]
+tests_last_seen = [
+    { file = "src/application/checking_signatures.rs", tests = 21 },
 ]

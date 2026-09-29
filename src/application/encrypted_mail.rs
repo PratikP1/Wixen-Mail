@@ -129,6 +129,16 @@ pub const ENCRYPTED_AND_THE_DETAILS_COULD_NOT_BE_READ: &str = "This message is e
 pub const OPENED_HERE: &str = "This message was encrypted to your certificate and was opened here. \
      Opening encrypted mail is experimental.";
 
+/// What is said where the words would be, for a PGP/MIME message that opened
+/// here to files and no words.
+///
+/// Only there, and never in the bar: a PGP message that opened says nothing
+/// above its words, the rule 13-15 took from inline PGP, and a message with no
+/// words would otherwise say it has no text or has not been downloaded, which
+/// is false about it (ledger 643).
+pub const OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES: &str = "This message was encrypted with PGP and was opened here. \
+     It holds files and no words.";
+
 /// What is said when the envelope names nobody whose key is here.
 pub const NOT_ADDRESSED_HERE: &str = "This message is encrypted to a certificate this computer does not hold a key \
      for, so it cannot be opened here.";
@@ -158,6 +168,28 @@ impl WhatTheEnvelopeSays {
             Self::NotAddressedHere => Some(NOT_ADDRESSED_HERE),
             Self::TheKeyRefused => Some(THE_KEY_HERE_REFUSED),
             Self::Damaged => Some(DAMAGED_ON_ARRIVAL),
+        }
+    }
+
+    /// The sentence to stand where the words would be, for a message with no
+    /// words to show.
+    ///
+    /// [`said`](Self::said) for every S/MIME answer, because that one sentence
+    /// goes in the bar and in the body alike (13-14). For a PGP/MIME message
+    /// that opened to files alone, [`OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES`],
+    /// and only here and never in the bar, which `said` keeps empty for PGP:
+    /// an opened PGP message says nothing above its words (ledger 643, D1).
+    /// A PGP/MIME message that opened to no file either keeps the sentence the
+    /// reader already has, because "It holds files" would be false about it
+    /// (D9).
+    pub fn said_where_its_words_would_be(&self) -> Option<&str> {
+        match self {
+            // The one PGP answer said where the words would be, and only when
+            // there are files for the sentence to be true of.
+            Self::OpenedWithPgp { parts, .. } if !parts.is_empty() => {
+                Some(OPENED_WITH_PGP_AND_HOLDING_ONLY_FILES)
+            }
+            _ => self.said(),
         }
     }
 
