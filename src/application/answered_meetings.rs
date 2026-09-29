@@ -259,6 +259,44 @@ fn still_where_it_came_from(
     }
 }
 
+/// The provider's copy of a meeting, put on the row an answer filed for it.
+fn the_providers_copy_on_the_answers_row(
+    copy: &CalendarEventEntry,
+    _answers_row: &CalendarEventEntry,
+) -> CalendarEventEntry {
+    copy.clone()
+}
+
+/// Where a calendar check put a meeting no row of the provider's held yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhereTheCopyWent {
+    /// Onto the row an answer given here filed before any check brought the
+    /// meeting.
+    OntoTheAnswersRow,
+    /// Onto a row of its own.
+    OntoARowOfItsOwn,
+}
+
+/// File a provider's copy of a meeting no row of that provider holds yet.
+pub fn file_the_providers_copy(
+    cache: &MessageCache,
+    copy: &CalendarEventEntry,
+    uid: Option<&str>,
+    organiser: Option<&str>,
+) -> Result<WhereTheCopyWent> {
+    let answers_row = match uid {
+        Some(uid) => cache.the_meeting_only_an_answer_filed(&copy.account_id, uid)?,
+        None => None,
+    };
+    let row = match answers_row {
+        Some(answers_row) => the_providers_copy_on_the_answers_row(copy, &answers_row),
+        None => copy.clone(),
+    };
+    cache.save_calendar_event(&row)?;
+    cache.remember_where_it_came_from(&row.id, uid, organiser)?;
+    Ok(WhereTheCopyWent::OntoARowOfItsOwn)
+}
+
 /// The message an invitation is answered from, as the answer needs it.
 ///
 /// Read from the message's own row rather than from whatever the message list
@@ -1119,6 +1157,332 @@ mod tests {
                 references: Some("root-1@example.com".to_string()),
                 inside_encrypted_mail: false,
             })
+        );
+    }
+
+    // ── The other order: answered here first, brought by a check after ──
+
+    use crate::application::calendar::{CalendarSyncResult, google_event_to_local};
+    use crate::common::answering::{answering_several, heard};
+    use crate::service::google_api::{GoogleApiClient, GoogleEvent};
+
+    /// The meeting the invitation names, as Google holds it: under Google's
+    /// own identifier, with the invitation's UID, time and organiser.
+    fn googles_copy_of_the_meeting() -> serde_json::Value {
+        serde_json::json!({
+            "id": "google-123",
+            "status": "confirmed",
+            "summary": "Quarterly review",
+            "location": "Room 3",
+            "etag": "\"g-1\"",
+            "htmlLink": "https://calendar.google.com/event?eid=google-123",
+            "iCalUID": "m-1@example.com",
+            "organizer": {"email": "ada@example.com"},
+            "start": {"dateTime": "2026-03-05T09:00:00Z"},
+            "end": {"dateTime": "2026-03-05T10:00:00Z"},
+        })
+    }
+
+    /// One Google calendar check against a loopback server holding `items`,
+    /// asserted to have made one request, the read.
+    async fn a_google_check_bringing(
+        cache: &MessageCache,
+        items: &[serde_json::Value],
+    ) -> CalendarSyncResult {
+        let reply = serde_json::json!({"items": items, "nextSyncToken": "marker-1"}).to_string();
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec![reply]).await;
+        let result = crate::application::calendar::sync_google_calendar(
+            cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the check to finish");
+        heard(listening, "one read").await.expect("one request");
+        result
+    }
+
+    /// The identity of the row the answer filed, read before any check.
+    fn the_answers_own_id(cache: &MessageCache) -> String {
+        the_meeting_on_the_calendar(cache)
+            .expect("the answer to have filed the meeting")
+            .id
+    }
+
+    /// The calendar's one row for the meeting after a check, asserted first
+    /// of all to be the row the answer filed: every case about the merge
+    /// asks this before its own point, so none passes on a check that filed
+    /// Google's copy beside the answer.
+    fn the_one_row_for_the_meeting(cache: &MessageCache, answers_id: &str) -> CalendarEventEntry {
+        let held = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            held.len(),
+            1,
+            "the check filed the meeting beside the answer's row: {held:?}"
+        );
+        let only = held.into_iter().next().expect("one row");
+        assert_eq!(
+            only.id, answers_id,
+            "the meeting is on a row the answer did not file"
+        );
+        only
+    }
+
+    #[tokio::test]
+    async fn test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row() {
+        // Ledger 154's other order. Answered before any check brought the
+        // meeting, the answer filed it in My Calendar under the invitation's
+        // UID; the check then met Google's copy under Google's identifier,
+        // found nothing there and filed a second meeting beside the first.
+        let cache = a_calendar_on_this_computer("a_google_read_after_an_answer");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        let answers_id = the_answers_own_id(&cache);
+
+        let result = a_google_check_bringing(&cache, &[googles_copy_of_the_meeting()]).await;
+
+        let merged = the_one_row_for_the_meeting(&cache, &answers_id);
+        let googles_calendar = cache
+            .ensure_provider_calendar("acct", crate::application::calendar::GOOGLE, "unused")
+            .expect("the calendar the check filed under");
+        let sent: GoogleEvent =
+            serde_json::from_value(googles_copy_of_the_meeting()).expect("Google's copy");
+        let expected = google_event_to_local(&sent, "acct", &googles_calendar.id);
+        assert_eq!(merged.provider_event_id, expected.provider_event_id);
+        assert_eq!(merged.source_provider, expected.source_provider);
+        assert_eq!(merged.calendar_id, expected.calendar_id);
+        assert_eq!(merged.etag, expected.etag);
+        assert_eq!(merged.web_link, expected.web_link);
+        assert_eq!(
+            cache
+                .the_answer_given_here(&answers_id)
+                .expect("the answer to be readable"),
+            Some(crate::data::message_cache::AnsweredHere {
+                version: 2,
+                answer: Some(Answer::Accepted),
+            }),
+            "the merge lost what was answered"
+        );
+        assert_eq!(
+            (result.created, result.updated),
+            (0, 1),
+            "a meeting the calendar already held was counted as new"
+        );
+    }
+
+    #[test]
+    fn test_the_meeting_merged_is_the_providers_copy_and_keeps_what_the_answer_said() {
+        // The provider's copy is the calendar's authority on the meeting; the
+        // answer keeps its own row and whether it takes up the time.
+        let answers_row = the_row_an_answer_leaves(
+            &ready_to_answer(&an_invitation_that_arrived())
+                .what_the_calendar_should_hold(Answer::Tentative, None),
+            &crate::application::invitations::read_the_invitation(&an_invitation_that_arrived())
+                .expect("the invitation to read"),
+            WhereItGoes {
+                account_id: "acct",
+                calendar_id: "my-calendar",
+                id: "evt-answer",
+                status: "confirmed",
+            },
+        );
+        let moved: GoogleEvent = serde_json::from_value(serde_json::json!({
+            "id": "google-123",
+            "status": "tentative",
+            "summary": "Quarterly review, moved",
+            "location": "Room 9",
+            "etag": "\"g-2\"",
+            "htmlLink": "https://calendar.google.com/event?eid=google-123",
+            "iCalUID": "m-1@example.com",
+            "start": {"dateTime": "2026-03-05T14:00:00Z"},
+            "end": {"dateTime": "2026-03-05T15:00:00Z"},
+        }))
+        .expect("Google's copy");
+        let copy = google_event_to_local(&moved, "acct", "google-calendar");
+
+        let merged = the_providers_copy_on_the_answers_row(&copy, &answers_row);
+
+        assert_eq!(merged.id, "evt-answer", "the merge left the answer's row");
+        assert_eq!(
+            merged.show_as, "tentative",
+            "the answer's time-blocking went"
+        );
+        assert_eq!(merged.summary, copy.summary);
+        assert_eq!(merged.start_datetime, copy.start_datetime);
+        assert_eq!(merged.end_datetime, copy.end_datetime);
+        assert_eq!(merged.location, copy.location);
+        assert_eq!(merged.status, copy.status);
+        assert_eq!(merged.calendar_id, copy.calendar_id);
+        assert_eq!(merged.provider_event_id, copy.provider_event_id);
+        assert_eq!(merged.source_provider, copy.source_provider);
+        assert_eq!(merged.etag, copy.etag);
+        assert_eq!(merged.web_link, copy.web_link);
+    }
+
+    #[tokio::test]
+    async fn test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing() {
+        // Every change sent to a guest's copy is one a provider may refuse,
+        // and a refused change waits for ever. An Accept against a busy copy
+        // says nothing the copy does not already say.
+        let cache = a_calendar_on_this_computer("an_accept_merged_owes_nothing");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        let answers_id = the_answers_own_id(&cache);
+
+        a_google_check_bringing(&cache, &[googles_copy_of_the_meeting()]).await;
+
+        let merged = the_one_row_for_the_meeting(&cache, &answers_id);
+        assert_eq!(merged.show_as, "busy");
+        assert!(
+            !merged.pending,
+            "an Accept on a busy copy was left waiting to be sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_tentative_answer_merged_onto_a_busy_copy_waits_to_be_sent() {
+        // The copy says busy and the answer said maybe, so the provider has
+        // not heard it yet.
+        let cache = a_calendar_on_this_computer("a_tentative_merged_waits");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Tentative);
+        let answers_id = the_answers_own_id(&cache);
+
+        a_google_check_bringing(&cache, &[googles_copy_of_the_meeting()]).await;
+
+        let merged = the_one_row_for_the_meeting(&cache, &answers_id);
+        assert_eq!(merged.show_as, "tentative");
+        assert!(
+            merged.pending,
+            "a Tentative on a busy copy is not waiting to be sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_organiser_the_provider_names_wins_over_the_answers() {
+        // The answer recorded the organiser a mailed invitation named, which a
+        // stranger could have written; the rule that only the organiser may
+        // move or cancel the meeting trusts what is recorded.
+        let cache = a_calendar_on_this_computer("the_providers_organiser_wins");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        let answers_id = the_answers_own_id(&cache);
+        let mut called_by_kit = googles_copy_of_the_meeting();
+        called_by_kit["organizer"] = serde_json::json!({"email": "kit@example.com"});
+
+        a_google_check_bringing(&cache, &[called_by_kit]).await;
+
+        the_one_row_for_the_meeting(&cache, &answers_id);
+        assert_eq!(
+            cache
+                .the_organiser_on_the_calendar(&answers_id)
+                .expect("the organiser to be readable")
+                .as_deref(),
+            Some("kit@example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_organiser_the_answer_recorded_stays_when_the_provider_names_nobody() {
+        let cache = a_calendar_on_this_computer("the_answers_organiser_stays");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        let answers_id = the_answers_own_id(&cache);
+        let mut named_by_nobody = googles_copy_of_the_meeting();
+        named_by_nobody
+            .as_object_mut()
+            .expect("an object")
+            .remove("organizer");
+
+        a_google_check_bringing(&cache, &[named_by_nobody]).await;
+
+        the_one_row_for_the_meeting(&cache, &answers_id);
+        assert_eq!(
+            cache
+                .the_organiser_on_the_calendar(&answers_id)
+                .expect("the organiser to be readable")
+                .as_deref(),
+            Some("ada@example.com"),
+            "the organiser the answer recorded went when Google named nobody"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_strangers_words_do_not_reach_the_meeting_the_provider_holds() {
+        // A stranger's invitation carrying a real meeting's UID, answered
+        // before the check brought the real meeting. The meeting on the
+        // calendar is the provider's, not the stranger's.
+        let cache = a_calendar_on_this_computer("a_strangers_words");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        let answers_id = the_answers_own_id(&cache);
+        let mut the_real_meeting = googles_copy_of_the_meeting();
+        the_real_meeting["summary"] = serde_json::json!("Board meeting");
+        the_real_meeting["location"] = serde_json::json!("Room 1");
+        the_real_meeting["start"] = serde_json::json!({"dateTime": "2026-03-05T14:00:00Z"});
+        the_real_meeting["end"] = serde_json::json!({"dateTime": "2026-03-05T15:00:00Z"});
+        let sent: GoogleEvent =
+            serde_json::from_value(the_real_meeting.clone()).expect("Google's copy");
+        let googles = google_event_to_local(&sent, "acct", "unused");
+
+        a_google_check_bringing(&cache, &[the_real_meeting]).await;
+
+        let merged = the_one_row_for_the_meeting(&cache, &answers_id);
+        assert_eq!(merged.summary, "Board meeting");
+        assert_eq!(merged.location.as_deref(), Some("Room 1"));
+        assert_eq!(merged.start_datetime, googles.start_datetime);
+        assert_eq!(merged.end_datetime, googles.end_datetime);
+    }
+
+    #[tokio::test]
+    async fn test_a_meeting_no_answer_filed_is_still_filed_as_new() {
+        let cache = a_calendar_on_this_computer("a_meeting_nobody_answered");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        let answers_id = the_answers_own_id(&cache);
+        let mut another = googles_copy_of_the_meeting();
+        another["id"] = serde_json::json!("google-456");
+        another["iCalUID"] = serde_json::json!("standup@example.com");
+        another["summary"] = serde_json::json!("Standup");
+
+        let result =
+            a_google_check_bringing(&cache, &[googles_copy_of_the_meeting(), another]).await;
+
+        let held = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(held.len(), 2, "{held:?}");
+        assert!(
+            held.iter().any(|row| row.id == answers_id
+                && row.provider_event_id.as_deref() == Some("google-123")),
+            "the answered meeting is not on the answer's row: {held:?}"
+        );
+        assert!(
+            held.iter()
+                .any(|row| row.provider_event_id.as_deref() == Some("google-456")),
+            "the meeting nobody answered was not filed: {held:?}"
+        );
+        assert_eq!((result.created, result.updated), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send() {
+        // Until a check brings the meeting, the answer's row waits in My
+        // Calendar, and every check says a change made there cannot be sent.
+        // Once the merge moves it into Google's calendar that is no longer true.
+        let cache = a_calendar_on_this_computer("no_longer_a_change_nothing_can_send");
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        let answers_id = the_answers_own_id(&cache);
+        let before = crate::application::calendar::changes_nothing_can_send(&cache, "acct")
+            .expect("the waiting changes to be readable");
+        assert_eq!(before.len(), 1, "{before:?}");
+        assert!(before[0].contains("My Calendar"), "{before:?}");
+
+        a_google_check_bringing(&cache, &[googles_copy_of_the_meeting()]).await;
+
+        the_one_row_for_the_meeting(&cache, &answers_id);
+        let after = crate::application::calendar::changes_nothing_can_send(&cache, "acct")
+            .expect("the waiting changes to be readable");
+        assert!(
+            after.is_empty(),
+            "the merged meeting is still said to be a change nothing can send: {after:?}"
         );
     }
 
