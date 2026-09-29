@@ -10903,7 +10903,7 @@ tests_last_seen = [
 [[guard]]
 name = "WhereAChangeGoes::named says which calendar it is, not a canned word for all five"
 file = "src/application/calendar.rs"
-before = """    const fn named(self) -> &'static str {
+before = """    pub(crate) const fn named(self) -> &'static str {
         match self {
             Self::ACalendarServer => "your calendar server",
             Self::Google => "your Google calendar",
@@ -10912,7 +10912,7 @@ before = """    const fn named(self) -> &'static str {
             Self::KeptHere => "this computer",
         }
     }"""
-after = """    const fn named(self) -> &'static str {
+after = """    pub(crate) const fn named(self) -> &'static str {
         "xyzzy"
     }"""
 red = ["application::calendar::tests::test_what_each_calendar_kind_is_called_in_the_middle_of_a_sentence"]

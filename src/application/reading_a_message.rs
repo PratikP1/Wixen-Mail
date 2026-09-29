@@ -614,13 +614,22 @@ pub fn what_opening_it_changed_among(
             })
             .map(|here| here.version)
     });
+    let allows = crate::application::calendar::WhatTheCalendarAllows::just(
+        crate::application::calendar::where_a_change_goes(
+            copy.as_ref()
+                .and_then(|copy| the_calendar_it_is_filed_in(cache, copy))
+                .as_ref(),
+        ),
+    );
     let change = meeting_changes::what_opening_it_changes(
         invitations::what_it_asks(&found.document),
         &invitation,
         copy.as_ref().map(|copy| TheCalendarsCopy {
             copy,
+            that_day: None,
             organiser: organiser.as_deref(),
             answered_version,
+            allows: &allows,
         }),
         from,
         if found.inside_encrypted_mail {
@@ -642,6 +651,19 @@ pub fn what_opening_it_changed_among(
         return MeetingChange::SaidNotApplied(Why::CouldNotBeSaved);
     }
     change
+}
+
+/// The calendar a row is filed in, or nothing for a row filed in none or one
+/// that cannot be read, which is the answer for a calendar kept here.
+fn the_calendar_it_is_filed_in(
+    cache: &MessageCache,
+    row: &crate::data::message_cache::CalendarEventEntry,
+) -> Option<crate::data::message_cache::CalendarContainer> {
+    let id = row.calendar_id.as_deref()?;
+    cache.get_calendar(id).unwrap_or_else(|e| {
+        tracing::warn!("Could not read the calendar a meeting is filed in: {e}");
+        None
+    })
 }
 
 /// Keep what a message downloaded for its text carried, so what is said about

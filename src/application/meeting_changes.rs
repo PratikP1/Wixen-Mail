@@ -30,6 +30,7 @@
 //! it would move or call off every day of the series.
 
 use crate::application::allowed::Allowed;
+use crate::application::calendar::{WhatTheCalendarAllows, WhereAChangeGoes};
 use crate::application::invitations::{self, Invitation, WhatItAsks};
 use crate::application::receipts::address_of;
 use crate::data::message_cache::CalendarEventEntry;
@@ -51,11 +52,33 @@ pub enum MeetingChange {
         /// When it is now, worded the same way.
         to: String,
     },
+    /// The organiser moved one day of a repeating meeting, and that day is
+    /// kept apart from the series at its new time.
+    MoveOneDay {
+        /// The series the day is cut out of.
+        series_id: String,
+        /// The day, written on the series' own clock.
+        the_day: String,
+        /// When that day was, worded the way this reader words a date.
+        from: String,
+        /// When it is now, worded the same way.
+        to: String,
+    },
     /// The organiser called the meeting off, and Remove from Calendar is
     /// offered for it.
     OfferRemoval {
         /// The calendar row pressing the button marks as called off.
         event_id: String,
+    },
+    /// The organiser called off one day of a repeating meeting, and Remove
+    /// from Calendar is offered for that day alone.
+    OfferRemovalOfOneDay {
+        /// The series the day comes off.
+        series_id: String,
+        /// The day, written on the series' own clock.
+        the_day: String,
+        /// When that day is, worded the way this reader words a date.
+        when: String,
     },
     /// The message would change the calendar and does not, for a reason that
     /// is said.
@@ -77,6 +100,19 @@ pub enum Why {
     /// The meeting repeats, and a message about one day of it would change
     /// every day.
     ARepeatingMeeting,
+    /// The message changes a repeating meeting from one day onwards.
+    FromThatDayOn,
+    /// The message is about one day of a repeating meeting, and the calendar
+    /// holds the meeting as a single appointment on another day.
+    AnotherDay,
+    /// The day the message names is written in a time zone this computer
+    /// cannot place against the series'.
+    TheDayCannotBePlaced,
+    /// The calendar the meeting is in cannot carry one day on its own.
+    OneDayCannotBeChangedAlone {
+        /// What stops it.
+        because: NotOnItsOwn,
+    },
     /// The account's Allow Changes answer does not allow changes to personal
     /// information, which is where calendars are.
     ChangesAreOff,
@@ -85,6 +121,17 @@ pub enum Why {
     /// It came inside an envelope opened here, and opening encrypted mail
     /// never changes anything on its own (decision 14 of phase 13).
     InsideEncryptedMail,
+}
+
+/// What stops one day of a repeating meeting being changed on its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotOnItsOwn {
+    /// The calendar the meeting is in, which is never told one day apart
+    /// from its series from here.
+    TheCalendar(WhereAChangeGoes),
+    /// The day kept apart would name a time zone no calendar server can be
+    /// told, as a clause.
+    ItsZone(String),
 }
 
 /// Where the meeting a message describes was found.
@@ -105,12 +152,18 @@ pub enum WhereItWasFound {
 /// it kept beside the row rather than on it.
 #[derive(Debug, Clone, Copy)]
 pub struct TheCalendarsCopy<'a> {
-    /// The row itself.
+    /// The row itself: the whole meeting, a series or a single appointment.
     pub copy: &'a CalendarEventEntry,
+    /// The row already standing for the one day the message names, when a
+    /// day of the series was kept apart before.
+    pub that_day: Option<&'a CalendarEventEntry>,
     /// Who called the meeting, as whoever filed the row recorded it.
     pub organiser: Option<&'a str>,
-    /// The version an answer given here last filed, if one was.
+    /// The version an answer given here last filed on the row the message is
+    /// about, if one was.
     pub answered_version: Option<u32>,
+    /// What the calendar the copy is filed in allows.
+    pub allows: &'a WhatTheCalendarAllows,
 }
 
 impl MeetingChange {
@@ -126,6 +179,7 @@ impl MeetingChange {
                  yours."
                     .to_string(),
             ),
+            MeetingChange::MoveOneDay { .. } | MeetingChange::OfferRemovalOfOneDay { .. } => None,
             MeetingChange::SaidNotApplied(why) => Some(why.said()),
         }
     }
@@ -156,6 +210,10 @@ impl Why {
                 "{NOT_CHANGED} this meeting repeats, and changing one day of a repeating \
                  meeting is not done here yet."
             ),
+            Why::FromThatDayOn
+            | Why::AnotherDay
+            | Why::TheDayCannotBePlaced
+            | Why::OneDayCannotBeChangedAlone { .. } => String::new(),
             Why::ChangesAreOff => format!(
                 "{NOT_CHANGED} changes to calendars are switched off for this account in Allow \
                  Changes."
@@ -463,8 +521,10 @@ mod tests {
             &read(document),
             Some(TheCalendarsCopy {
                 copy,
+                that_day: None,
                 organiser,
                 answered_version,
+                allows: &KEPT_HERE,
             }),
             sender,
             found,
@@ -472,6 +532,10 @@ mod tests {
             written_out_in_full(),
         )
     }
+
+    /// A calendar made on this computer, which carries one day on its own.
+    static KEPT_HERE: WhatTheCalendarAllows =
+        WhatTheCalendarAllows::just(WhereAChangeGoes::KeptHere);
 
     #[test]
     fn test_a_change_found_inside_encrypted_mail_is_said_and_not_applied() {
@@ -622,8 +686,10 @@ mod tests {
                 &read(&document),
                 Some(TheCalendarsCopy {
                     copy: &the_copy(),
+                    that_day: None,
                     organiser: Some("ada@example.com"),
                     answered_version: Some(2),
+                    allows: &KEPT_HERE,
                 }),
                 ADA,
                 WhereItWasFound::InTheMessage,
@@ -820,26 +886,396 @@ mod tests {
         assert_eq!(change.said(), None);
     }
 
-    #[test]
-    fn test_a_repeating_meeting_is_neither_moved_nor_offered_for_removal() {
-        // A message about one day of a series, applied to the series' copy,
-        // would move or call off every day of it.
-        let copy = CalendarEventEntry {
-            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+    /// The weekly sync, Thursdays at nine to ten from 5 March, ten times, on
+    /// a calendar made on this computer, with Ada recorded as its organiser.
+    fn the_series() -> CalendarEventEntry {
+        CalendarEventEntry {
+            id: "evt-series".to_string(),
+            summary: "Weekly sync".to_string(),
+            provider_event_id: Some("s-1@example.com".to_string()),
+            source_provider: None,
+            recurrence_rule: Some("FREQ=WEEKLY;COUNT=10".to_string()),
             ..the_copy()
+        }
+    }
+
+    /// The organiser's message about the Thursday of 12 March alone:
+    /// `method` is REQUEST or CANCEL, and the day moves to `starts` to `ends`
+    /// on the clock. `day_line` is the `RECURRENCE-ID` line.
+    fn about_one_day(method: &str, day_line: &str, starts: &str, ends: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:{method}\r\n\
+             BEGIN:VEVENT\r\nUID:s-1@example.com\r\nSEQUENCE:1\r\nSUMMARY:Weekly sync\r\n\
+             {day_line}\r\nDTSTART:{starts}\r\nDTEND:{ends}\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    const THE_TWELFTH: &str = "RECURRENCE-ID:20260312T090000";
+
+    /// The twelfth moved to Friday the thirteenth at two.
+    fn one_day_moved() -> String {
+        about_one_day("REQUEST", THE_TWELFTH, "20260313T140000", "20260313T150000")
+    }
+
+    /// The twelfth called off.
+    fn one_day_called_off() -> String {
+        about_one_day("CANCEL", THE_TWELFTH, "20260312T090000", "20260312T100000")
+    }
+
+    /// What opening `document` from `sender` changes against `copy`, with
+    /// `that_day` as the row already standing for the day named, Ada recorded
+    /// as the organiser, no version answered and changes allowed.
+    fn opening_one_day(
+        document: &str,
+        sender: &str,
+        copy: &CalendarEventEntry,
+        that_day: Option<&CalendarEventEntry>,
+        allows: &WhatTheCalendarAllows,
+    ) -> MeetingChange {
+        what_opening_it_changes(
+            invitations::what_it_asks(document),
+            &read(document),
+            Some(TheCalendarsCopy {
+                copy,
+                that_day,
+                organiser: Some("ada@example.com"),
+                answered_version: None,
+                allows,
+            }),
+            sender,
+            WhereItWasFound::InTheMessage,
+            Allowed::EVERYTHING,
+            written_out_in_full(),
+        )
+    }
+
+    #[test]
+    fn test_an_update_for_one_day_moves_that_day_and_says_it_is_one_day() {
+        let change = opening_one_day(&one_day_moved(), ADA, &the_series(), None, &KEPT_HERE);
+
+        assert_eq!(
+            change,
+            MeetingChange::MoveOneDay {
+                series_id: "evt-series".to_string(),
+                the_day: "2026-03-12T09:00:00".to_string(),
+                from: "12/03/2026 at 09:00".to_string(),
+                to: "13/03/2026 at 14:00".to_string(),
+            }
+        );
+        assert_eq!(
+            change.said().as_deref(),
+            Some(
+                "Moved one day of this repeating meeting on your calendar, from 12/03/2026 at \
+                 09:00 to 13/03/2026 at 14:00."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_of_one_day_offers_that_day_for_removal() {
+        let change = opening_one_day(&one_day_called_off(), ADA, &the_series(), None, &KEPT_HERE);
+
+        assert_eq!(
+            change,
+            MeetingChange::OfferRemovalOfOneDay {
+                series_id: "evt-series".to_string(),
+                the_day: "2026-03-12T09:00:00".to_string(),
+                when: "12/03/2026 at 09:00 to 10:00".to_string(),
+            }
+        );
+        assert_eq!(
+            change.said().as_deref(),
+            Some(
+                "The organiser has called off one day of this repeating meeting, 12/03/2026 at \
+                 09:00 to 10:00. Remove from Calendar takes that day off yours."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_of_a_day_the_series_already_calls_off_changes_nothing() {
+        let series = CalendarEventEntry {
+            exception_dates: Some("20260312T090000".to_string()),
+            ..the_series()
         };
 
-        for document in [THE_UPDATE.to_string(), the_cancellation()] {
-            let change = opening(&document, ADA, &copy);
-            assert_eq!(change, not_applied_because(Why::ARepeatingMeeting));
+        assert_eq!(
+            opening_one_day(&one_day_called_off(), ADA, &series, None, &KEPT_HERE),
+            MeetingChange::Nothing
+        );
+    }
+
+    #[test]
+    fn test_an_update_for_one_day_at_its_own_time_changes_nothing() {
+        // A new room for that Thursday, or the same update opened again after
+        // a provider applied it: the time is the day's own.
+        let same_time = about_one_day("REQUEST", THE_TWELFTH, "20260312T090000", "20260312T100000");
+
+        assert_eq!(
+            opening_one_day(&same_time, ADA, &the_series(), None, &KEPT_HERE),
+            MeetingChange::Nothing
+        );
+    }
+
+    /// The twelfth as a row of its own, kept apart at Friday two to three.
+    fn the_day_kept_apart() -> CalendarEventEntry {
+        CalendarEventEntry {
+            id: "evt-day".to_string(),
+            provider_event_id: None,
+            recurrence_rule: None,
+            cut_from_event_id: Some("evt-series".to_string()),
+            start_datetime: "2026-03-13T14:00:00".to_string(),
+            end_datetime: "2026-03-13T15:00:00".to_string(),
+            ..the_series()
+        }
+    }
+
+    #[test]
+    fn test_an_update_for_a_day_already_kept_apart_moves_that_row() {
+        // A second move of the same day moves the day's own row, and never
+        // cuts the day out of its series a second time.
+        let again = about_one_day("REQUEST", THE_TWELFTH, "20260313T160000", "20260313T170000");
+        let kept = the_day_kept_apart();
+
+        let change = opening_one_day(&again, ADA, &the_series(), Some(&kept), &KEPT_HERE);
+
+        assert_eq!(
+            change,
+            MeetingChange::Move {
+                event_id: "evt-day".to_string(),
+                from: "13/03/2026 at 14:00".to_string(),
+                to: "13/03/2026 at 16:00".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_for_a_day_already_kept_apart_offers_that_row() {
+        let kept = the_day_kept_apart();
+
+        let change = opening_one_day(
+            &one_day_called_off(),
+            ADA,
+            &the_series(),
+            Some(&kept),
+            &KEPT_HERE,
+        );
+
+        assert_eq!(
+            change,
+            MeetingChange::OfferRemoval {
+                event_id: "evt-day".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_one_day_on_a_calendar_that_cannot_carry_it_is_said_with_the_calendar_named() {
+        // The day kept apart would reach Google or Outlook as an extra meeting
+        // while the day called off would not reach it at all, because neither
+        // is told a repeat on a change; a calendar only read takes neither.
+        for (goes, named) in [
+            (WhereAChangeGoes::Google, "your Google calendar"),
+            (WhereAChangeGoes::Outlook, "your Outlook calendar"),
+            (
+                WhereAChangeGoes::OnlyReadable,
+                "a calendar this program can only read",
+            ),
+        ] {
+            let allows = WhatTheCalendarAllows::just(goes);
+            for document in [one_day_moved(), one_day_called_off()] {
+                let change = opening_one_day(&document, ADA, &the_series(), None, &allows);
+
+                assert_eq!(
+                    change,
+                    not_applied_because(Why::OneDayCannotBeChangedAlone {
+                        because: NotOnItsOwn::TheCalendar(goes),
+                    }),
+                    "{goes:?}"
+                );
+                assert_eq!(
+                    change.said(),
+                    Some(format!(
+                        "Your calendar was not changed, because one day of a repeating meeting \
+                         cannot be changed on its own in {named} from here."
+                    ))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies() {
+        // The day kept apart would name a zone the server cannot be told, so
+        // the move is refused before anything is written. A day called off
+        // keeps nothing, so nothing stops it.
+        let clause = "it names the time zone \"Custom\", which is not in the list.".to_string();
+        let allows = WhatTheCalendarAllows {
+            keeping_the_day_apart: Some(clause.clone()),
+            ..WhatTheCalendarAllows::just(WhereAChangeGoes::ACalendarServer)
+        };
+
+        let moved = opening_one_day(&one_day_moved(), ADA, &the_series(), None, &allows);
+        let called_off = opening_one_day(&one_day_called_off(), ADA, &the_series(), None, &allows);
+
+        assert_eq!(
+            moved,
+            not_applied_because(Why::OneDayCannotBeChangedAlone {
+                because: NotOnItsOwn::ItsZone(clause.clone()),
+            })
+        );
+        assert_eq!(
+            moved.said(),
+            Some(format!(
+                "Your calendar was not changed, because that day could not be kept as a \
+                 separate appointment: {clause}"
+            ))
+        );
+        assert!(
+            matches!(called_off, MeetingChange::OfferRemovalOfOneDay { .. }),
+            "{called_off:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_change_from_one_day_onwards_is_said_and_not_applied() {
+        let onwards = about_one_day(
+            "REQUEST",
+            "RECURRENCE-ID;RANGE=THISANDFUTURE:20260312T090000",
+            "20260312T100000",
+            "20260312T110000",
+        );
+
+        let change = opening_one_day(&onwards, ADA, &the_series(), None, &KEPT_HERE);
+
+        assert_eq!(change, not_applied_because(Why::FromThatDayOn));
+        assert_eq!(
+            change.said().as_deref(),
+            Some(
+                "Your calendar was not changed, because this changes the meeting from one day \
+                 onwards, and that is not done here."
+            )
+        );
+    }
+
+    #[test]
+    fn test_one_day_against_a_single_appointment_on_another_day_is_said_and_not_applied() {
+        // The calendar holds the meeting once, on 5 March, as an answer to one
+        // day of it files it; a message about the twelfth is not about that.
+        let once = CalendarEventEntry {
+            recurrence_rule: None,
+            ..the_series()
+        };
+
+        let change = opening_one_day(&one_day_moved(), ADA, &once, None, &KEPT_HERE);
+
+        assert_eq!(change, not_applied_because(Why::AnotherDay));
+        assert_eq!(
+            change.said().as_deref(),
+            Some(
+                "Your calendar was not changed, because this is about one day of a repeating \
+                 meeting, and your calendar holds the meeting as a single appointment on \
+                 another day."
+            )
+        );
+    }
+
+    #[test]
+    fn test_one_day_against_a_single_appointment_on_that_day_changes_it() {
+        let that_thursday = CalendarEventEntry {
+            recurrence_rule: None,
+            start_datetime: "2026-03-12T09:00:00".to_string(),
+            end_datetime: "2026-03-12T10:00:00".to_string(),
+            ..the_series()
+        };
+
+        let change = opening_one_day(&one_day_moved(), ADA, &that_thursday, None, &KEPT_HERE);
+
+        assert_eq!(
+            change,
+            MeetingChange::Move {
+                event_id: "evt-series".to_string(),
+                from: "12/03/2026 at 09:00".to_string(),
+                to: "13/03/2026 at 14:00".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_stranger_changing_one_day_is_refused_as_a_stranger() {
+        // The organiser the calendar recorded is asked before any reason about
+        // the day, so a stranger is told nothing about the calendar.
+        for document in [one_day_moved(), one_day_called_off()] {
             assert_eq!(
-                change.said().as_deref(),
-                Some(
-                    "Your calendar was not changed, because this meeting repeats, and changing \
-                     one day of a repeating meeting is not done here yet."
-                )
+                opening_one_day(&document, GRACE, &the_series(), None, &KEPT_HERE),
+                not_applied_because(Why::NotTheOrganiser {
+                    sender: "grace@example.com".to_string(),
+                    organiser: "ada@example.com".to_string(),
+                })
             );
         }
+    }
+
+    /// The organiser's update to every day of the series: from nine to ten
+    /// o'clock, still weekly ten times, and the twenty-sixth called off.
+    fn every_day(method: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:{method}\r\n\
+             BEGIN:VEVENT\r\nUID:s-1@example.com\r\nSEQUENCE:2\r\nSUMMARY:Weekly sync\r\n\
+             DTSTART:20260305T100000\r\nDTEND:20260305T110000\r\n\
+             RRULE:FREQ=WEEKLY;COUNT=10\r\nEXDATE:20260326T100000\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    #[test]
+    fn test_an_update_to_every_day_moves_the_series_and_carries_how_it_repeats() {
+        // A message naming no day is about every day, and is applied the way
+        // a single meeting's is: the series moves, keeps repeating, and adds
+        // the organiser's called-off days to its own.
+        let series = CalendarEventEntry {
+            exception_dates: Some("20260319T090000".to_string()),
+            ..the_series()
+        };
+        let update = every_day("REQUEST");
+
+        let change = opening_one_day(&update, ADA, &series, None, &KEPT_HERE);
+        let moved = the_copy_moved(&series, &read(&update));
+
+        assert_eq!(
+            change,
+            MeetingChange::Move {
+                event_id: "evt-series".to_string(),
+                from: "05/03/2026 at 09:00".to_string(),
+                to: "05/03/2026 at 10:00".to_string(),
+            }
+        );
+        assert_eq!(moved.start_datetime, "2026-03-05T10:00:00");
+        assert_eq!(
+            moved.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10")
+        );
+        assert_eq!(
+            moved.exception_dates.as_deref(),
+            Some("20260319T090000,20260326T100000")
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_of_every_day_offers_the_series_for_removal() {
+        let change = opening_one_day(&every_day("CANCEL"), ADA, &the_series(), None, &KEPT_HERE);
+
+        assert_eq!(
+            change,
+            MeetingChange::OfferRemoval {
+                event_id: "evt-series".to_string()
+            }
+        );
     }
 
     #[test]
@@ -850,8 +1286,10 @@ mod tests {
                 &read(THE_UPDATE),
                 Some(TheCalendarsCopy {
                     copy: &the_copy(),
+                    that_day: None,
                     organiser: Some("ada@example.com"),
                     answered_version: Some(2),
+                    allows: &KEPT_HERE,
                 }),
                 ADA,
                 WhereItWasFound::InTheMessage,
