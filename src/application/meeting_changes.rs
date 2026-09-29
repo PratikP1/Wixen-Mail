@@ -201,13 +201,52 @@ impl MeetingChange {
         }
     }
 
-    /// The calendar row Remove from Calendar marks, for a change that offers
-    /// it.
-    pub fn offered_removal(&self) -> Option<&str> {
+    /// What Remove from Calendar takes off, for a change that offers it.
+    pub fn offered_removal(&self) -> Option<Removal> {
         match self {
-            MeetingChange::OfferRemoval { event_id } => Some(event_id),
+            MeetingChange::OfferRemoval { event_id } => Some(Removal::TheMeeting {
+                event_id: event_id.clone(),
+            }),
+            MeetingChange::OfferRemovalOfOneDay {
+                series_id,
+                the_day,
+                when,
+            } => Some(Removal::OneDay {
+                series_id: series_id.clone(),
+                the_day: the_day.clone(),
+                when: when.clone(),
+            }),
             _ => None,
         }
+    }
+}
+
+/// What Remove from Calendar takes off the calendar: one type from the
+/// decision to the handler, so no row is ever carried beside a day it could
+/// disagree with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Removal {
+    /// The whole meeting, marked cancelled.
+    TheMeeting {
+        /// The calendar row marked.
+        event_id: String,
+    },
+    /// One day of a repeating meeting, called off its series.
+    OneDay {
+        /// The series the day comes off.
+        series_id: String,
+        /// The day, written on the series' own clock.
+        the_day: String,
+        /// When that day is, worded the way this reader words a date.
+        when: String,
+    },
+}
+
+impl Removal {
+    /// What pressing Remove from Calendar does, as its description says it.
+    pub fn what_pressing_does(&self) -> String {
+        "Marks this meeting cancelled on your calendar. Nothing is sent to the organiser."
+            .to_string()
     }
 }
 
@@ -1042,7 +1081,12 @@ mod tests {
                 event_id: "evt-1".to_string()
             }
         );
-        assert_eq!(change.offered_removal(), Some("evt-1"));
+        assert_eq!(
+            change.offered_removal(),
+            Some(Removal::TheMeeting {
+                event_id: "evt-1".to_string()
+            })
+        );
         assert_eq!(
             change.said().as_deref(),
             Some(

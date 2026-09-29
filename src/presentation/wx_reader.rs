@@ -19,6 +19,7 @@
 
 use crate::application::answering::TheButtons;
 use crate::application::invitations::Answer;
+use crate::application::meeting_changes::Removal;
 use crate::application::printing::{Kind, Paper};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
@@ -68,20 +69,18 @@ type AnswerHandler = Box<dyn Fn(i64, Answer)>;
 ///
 /// Set by the application for the reason the answer handler is: marking a
 /// meeting belongs to the calendar, not to a window whose job is to show text.
-/// Handed the calendar row the organiser's cancellation named, which was
-/// offered only because the organiser sent it (13-13).
-type RemoveHandler = Box<dyn Fn(&str)>;
+/// Handed what the organiser's cancellation offered, the whole meeting or one
+/// day of it, which was offered only because the organiser sent it (13-13,
+/// 13-36.3).
+type RemoveHandler = Box<dyn Fn(&Removal)>;
 
-/// Remove from Calendar: the label with its letter, the name, and what
-/// pressing it does.
+/// Remove from Calendar: the label with its letter, and the name. What
+/// pressing it does is the removal's own description, because a whole meeting
+/// and one day of it are taken off differently.
 ///
 /// R, which nothing else in the reader's tab, on its menu bar (File, Go) or in
 /// the formatted window's page answers.
-pub const THE_REMOVE_BUTTON: (&str, &str, &str) = (
-    "&Remove from Calendar",
-    "Remove from Calendar",
-    "Marks this meeting cancelled on your calendar. Nothing is sent to the organiser.",
-);
+pub const THE_REMOVE_BUTTON: (&str, &str) = ("&Remove from Calendar", "Remove from Calendar");
 
 /// The three answer buttons: the answer, the label with its letter, the name.
 ///
@@ -505,22 +504,22 @@ impl ReaderWindow {
     }
 
     /// Say what to do when somebody presses Remove from Calendar: mark the
-    /// meeting on that calendar row called off.
-    pub fn on_remove(&self, handler: impl Fn(&str) + 'static) {
+    /// meeting called off, or call its one day off its series.
+    pub fn on_remove(&self, handler: impl Fn(&Removal) + 'static) {
         *self.remove.borrow_mut() = Some(Box::new(handler));
     }
 
     /// Do the removal the application set up, for the formatted window, which
     /// has the same button and key: one handler, so the two cannot come to
     /// remove differently.
-    pub fn remove_now(&self, event_id: &str) {
+    pub fn remove_now(&self, removal: &Removal) {
         if let Some(handler) = self.remove.borrow().as_ref() {
-            handler(event_id);
+            handler(removal);
         }
     }
 
     /// Remove from Calendar on `parent`, added to `sizer`, pressing `press`
-    /// with the calendar row it marks.
+    /// with what it takes off.
     ///
     /// One builder for both message windows, so the two cannot come to name,
     /// describe or letter it differently. No key is bound for it, for the
@@ -528,17 +527,17 @@ impl ReaderWindow {
     pub fn remove_button_on(
         parent: &dyn WxWidget,
         sizer: &BoxSizer,
-        event_id: &str,
-        press: Rc<dyn Fn(&str)>,
+        removal: &Removal,
+        press: Rc<dyn Fn(&Removal)>,
     ) -> Button {
-        let (label, name, what_pressing_does) = THE_REMOVE_BUTTON;
+        let (label, name) = THE_REMOVE_BUTTON;
         let button = Button::builder(parent).with_label(label).build();
         // Not painted: a button keeps the colours Windows gives it, as every
         // other button in this program does.
-        set_accessible_name_and_description(&button, name, what_pressing_does);
+        set_accessible_name_and_description(&button, name, &removal.what_pressing_does());
         button.on_click({
-            let event_id = event_id.to_string();
-            move |_| press(&event_id)
+            let removal = removal.clone();
+            move |_| press(&removal)
         });
         sizer.add(&button, 0, SizerFlag::All, 4);
         button
@@ -615,15 +614,15 @@ impl ReaderWindow {
             });
         // Remove from Calendar goes where the answers go, for the same reason,
         // and only for a meeting its organiser called off (13-13).
-        let remove_button = document.removal.as_deref().map(|event_id| {
+        let remove_button = document.removal.as_ref().map(|removal| {
             let handler = self.remove.clone();
             Self::remove_button_on(
                 &panel,
                 &sizer,
-                event_id,
-                Rc::new(move |event_id| {
+                removal,
+                Rc::new(move |removal| {
                     if let Some(remove_it) = handler.borrow().as_ref() {
-                        remove_it(event_id);
+                        remove_it(removal);
                     }
                 }),
             )

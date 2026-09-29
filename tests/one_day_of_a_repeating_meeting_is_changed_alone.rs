@@ -17,6 +17,12 @@
 //! Outlook; no real organiser's message for one day has been read here,
 //! which is phase 14's, on the ledger.
 //!
+//! The last part builds the real text reader on a one-day cancellation, reads
+//! its one button over MSAA at its own handle, the way NVDA reads a native
+//! control, presses it through the reader's own `remove_now` into the main
+//! window's real handler, and reads the calendar back. A source reading holds
+//! the handler's one-day arm to calling the day off and nothing else.
+//!
 //! # What this cannot see
 //!
 //! Whether Google or Outlook apply an organiser's change to one day to the
@@ -25,23 +31,30 @@
 
 #![cfg(windows)]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ffi::c_void;
+use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::allowed::Allowed;
 use wixen_mail::application::invitations;
-use wixen_mail::application::meeting_changes::MeetingChange;
+use wixen_mail::application::meeting_changes::{MeetingChange, Removal};
 use wixen_mail::application::reading_a_message::{self, AnsweringAs, WhatIsSaidAboutIt};
 use wixen_mail::common::types::MessageBody;
 use wixen_mail::data::message_cache::attachment_content::AttachmentWithContent;
 use wixen_mail::data::message_cache::{
     CachedFolder, CachedMessage, CalendarContainer, CalendarEventEntry, MessageCache,
 };
+use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::date_display::{
     Clock, DateOrder, DateSettings, DateStyle, DateWording,
 };
 use wixen_mail::presentation::read_aloud::Reading;
 use wixen_mail::presentation::reader_text::{self, ReaderDocument};
-use wixen_mail::presentation::ui_types::{CalendarEventItem, MessageItem};
+use wixen_mail::presentation::ui_types::{CalendarEventItem, MessageItem, UIUpdate};
+use wixen_mail::presentation::wx_app;
+use wixen_mail::presentation::wx_reader::ReaderWindow;
 use wixen_mail::service::mime;
+use wxdragon::prelude::*;
 
 // ── The messages ──────────────────────────────────────────────────────────
 
@@ -581,4 +594,436 @@ fn test_the_invitations_sentence_names_the_day() {
         said_at("2026-03-12T09:00:00")
     );
     assert!(spoken.contains(&cancelled), "{spoken:?}");
+}
+
+// ── The window ────────────────────────────────────────────────────────────
+//
+// Another copy of the MSAA reading `a_meeting_change_reaches_the_calendar.rs`
+// holds, for the reason that file gives for its own copies: nothing here
+// reaches into another target.
+
+const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
+const VT_I4: u16 = 3;
+const CHILDID_SELF: i64 = 0;
+const ROLE_SYSTEM_PUSHBUTTON: i64 = 0x2b;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Guid {
+    data1: u32,
+    data2: u16,
+    data3: u16,
+    data4: [u8; 8],
+}
+
+/// {618736E0-3C3D-11CF-810C-00AA00389B71}
+const IID_IACCESSIBLE: Guid = Guid {
+    data1: 0x618736E0,
+    data2: 0x3C3D,
+    data3: 0x11CF,
+    data4: [0x81, 0x0C, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
+};
+
+/// A VARIANT as the 64-bit ABI lays it out: 24 bytes, the type at offset 0
+/// and the payload at offset 8.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Variant {
+    vt: u16,
+    reserved1: u16,
+    reserved2: u16,
+    reserved3: u16,
+    val: i64,
+    extra: u64,
+}
+
+impl Variant {
+    fn child(id: i64) -> Self {
+        Variant {
+            vt: VT_I4,
+            reserved1: 0,
+            reserved2: 0,
+            reserved3: 0,
+            val: id,
+            extra: 0,
+        }
+    }
+
+    fn empty() -> Self {
+        Variant::child(0)
+    }
+}
+
+type Hresult = i32;
+type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
+type GetVariantFn = unsafe extern "system" fn(*mut c_void, Variant, *mut Variant) -> Hresult;
+type GetBstrFn = unsafe extern "system" fn(*mut c_void, Variant, *mut *mut u16) -> Hresult;
+
+// IAccessible's vtable: IUnknown (3), IDispatch (4), then get_accName (10),
+// get_accDescription (12), get_accRole (13).
+const VTBL_RELEASE: usize = 2;
+const VTBL_GET_ACC_NAME: usize = 10;
+const VTBL_GET_ACC_DESCRIPTION: usize = 12;
+const VTBL_GET_ACC_ROLE: usize = 13;
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn EnumChildWindows(
+        parent: isize,
+        callback: extern "system" fn(isize, isize) -> i32,
+        lparam: isize,
+    ) -> i32;
+    fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+}
+
+#[link(name = "oleacc")]
+unsafe extern "system" {
+    fn AccessibleObjectFromWindow(
+        hwnd: isize,
+        id_object: u32,
+        riid: *const Guid,
+        out: *mut *mut c_void,
+    ) -> Hresult;
+}
+
+#[link(name = "oleaut32")]
+unsafe extern "system" {
+    fn SysStringLen(s: *mut u16) -> u32;
+    fn SysFreeString(s: *mut u16);
+}
+
+thread_local! {
+    static FOUND: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
+}
+
+extern "system" fn collect(hwnd: isize, _lparam: isize) -> i32 {
+    FOUND.with(|found| found.borrow_mut().push(hwnd));
+    1
+}
+
+fn descendants_of(parent: isize) -> Vec<isize> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumChildWindows(parent, collect, 0) };
+    FOUND.with(|found| found.borrow().clone())
+}
+
+fn class_name(hwnd: isize) -> String {
+    let mut buffer = [0u16; 256];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+fn window_text(hwnd: isize) -> String {
+    let mut buffer = [0u16; 4096];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+unsafe fn vtable_entry(object: *mut c_void, index: usize) -> *const c_void {
+    // SAFETY: a COM object is a pointer to its vtable.
+    unsafe {
+        let vtable = *(object as *const *const *const c_void);
+        *vtable.add(index)
+    }
+}
+
+unsafe fn take_bstr(s: *mut u16) -> String {
+    if s.is_null() {
+        return String::new();
+    }
+    // SAFETY: a BSTR carries its length; it is freed once, here.
+    unsafe {
+        let len = SysStringLen(s) as usize;
+        let text = String::from_utf16_lossy(std::slice::from_raw_parts(s, len));
+        SysFreeString(s);
+        text
+    }
+}
+
+/// What a window's own object answers over MSAA.
+#[derive(Debug, Clone, PartialEq)]
+struct Msaa {
+    name: String,
+    description: String,
+    role: i64,
+}
+
+fn msaa_of(hwnd: isize) -> Result<Msaa, String> {
+    let mut object: *mut c_void = std::ptr::null_mut();
+    // SAFETY: a live window handle; the object is released before returning.
+    let hr =
+        unsafe { AccessibleObjectFromWindow(hwnd, OBJID_CLIENT, &IID_IACCESSIBLE, &mut object) };
+    if hr < 0 || object.is_null() {
+        return Err(format!("AccessibleObjectFromWindow failed 0x{hr:x}"));
+    }
+    // SAFETY: `object` is a live IAccessible; the slots are IAccessible's.
+    unsafe {
+        let get_name: GetBstrFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_NAME));
+        let get_description: GetBstrFn =
+            std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_DESCRIPTION));
+        let get_role: GetVariantFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_ROLE));
+        let text = |getter: GetBstrFn| {
+            let mut s: *mut u16 = std::ptr::null_mut();
+            match getter(object, Variant::child(CHILDID_SELF), &mut s) >= 0 {
+                true => take_bstr(s),
+                false => String::new(),
+            }
+        };
+        let name = text(get_name);
+        let description = text(get_description);
+        let mut role = Variant::empty();
+        let hr_role = get_role(object, Variant::child(CHILDID_SELF), &mut role);
+        let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));
+        release(object);
+        Ok(Msaa {
+            name,
+            description,
+            role: match hr_role >= 0 && role.vt == VT_I4 {
+                true => role.val & 0xFFFF_FFFF,
+                false => -1,
+            },
+        })
+    }
+}
+
+/// One button of the tab, as Windows holds it.
+#[derive(Debug, Clone, PartialEq)]
+struct AButton {
+    text: String,
+    msaa: Msaa,
+}
+
+fn the_buttons_under(parent: isize) -> Result<Vec<AButton>, String> {
+    descendants_of(parent)
+        .into_iter()
+        .filter(|hwnd| class_name(*hwnd) == "Button")
+        .map(|hwnd| {
+            Ok(AButton {
+                text: window_text(hwnd),
+                msaa: msaa_of(hwnd)?,
+            })
+        })
+        .collect()
+}
+
+/// What the one window session of this process saw.
+#[derive(Debug)]
+struct Harvest {
+    /// What opening the cancellation offered for removal.
+    offered: Option<Removal>,
+    /// The buttons of the cancellation's tab in the text reader.
+    buttons: Vec<AButton>,
+    /// What the status line was told after Remove from Calendar was pressed.
+    said_after_the_press: Vec<String>,
+    /// The series after the press.
+    series_after_the_press: CalendarEventEntry,
+    /// The calendar, by date, after the press.
+    rows_after_the_press: HashMap<String, usize>,
+}
+
+/// The buttons of the tab, or why they could not be read.
+type TheButtonsRead = Result<Vec<AButton>, String>;
+
+fn take_the_harvest() -> Result<Harvest, String> {
+    if std::mem::size_of::<Variant>() != 24 {
+        return Err("VARIANT is not 24 bytes here, so the reader's layout is wrong".to_string());
+    }
+    let dir = tempfile::tempdir().map_err(|e| format!("no temporary folder: {e}"))?;
+    // Shared the way the main window shares its store with the handler, which
+    // takes it as that; it never leaves this thread.
+    let cache: Arc<MessageCache> = a_store_holding_the_series(&dir).into();
+    let (item, body) = opened(&cache, 1, &one_day_called_off());
+    let (_, document) = opened_in_a_reader(&cache, &item, body);
+    let offered = document.removal.clone();
+    let runtime = Arc::new(tokio::runtime::Runtime::new().map_err(|e| format!("no runtime: {e}"))?);
+    let (ui_tx, ui_rx) = async_channel::unbounded::<UIUpdate>();
+
+    let outcome: Arc<Mutex<Option<TheButtonsRead>>> = Arc::new(Mutex::new(None));
+    let result = {
+        let outcome = outcome.clone();
+        let cache = Some(cache.clone());
+        let runtime = runtime.clone();
+        wxdragon::main(move |app| {
+            let settle = move |taken: TheButtonsRead| {
+                if let Ok(mut slot) = outcome.lock() {
+                    *slot = Some(taken);
+                }
+                wxdragon::call_after(Box::new(move || app.exit_main_loop()));
+            };
+            let a11y = match Accessibility::new() {
+                Ok(a11y) => Arc::new(a11y),
+                Err(why) => {
+                    settle(Err(format!("no accessibility layer: {why}")));
+                    return;
+                }
+            };
+            let parent = Frame::builder().build();
+            let reader = ReaderWindow::new(&parent, &a11y);
+            reader.wire_menu();
+            // The main window's own handler, as the reader window is wired
+            // with it when the program runs.
+            reader.on_remove(move |removal| {
+                wx_app::take_the_called_off_meeting_off_the_calendar(
+                    &ui_tx, &runtime, &cache, removal,
+                );
+            });
+            let offered = document.removal.clone();
+            let tab = reader.open(document);
+            let buttons = the_buttons_under(tab.panel.get_handle() as isize);
+            if let Some(removal) = &offered {
+                reader.remove_now(removal);
+            }
+            settle(buttons);
+            std::mem::forget(reader);
+        })
+    };
+    if let Err(why) = result {
+        return Err(format!("wxdragon::main returned {why:?}"));
+    }
+    let buttons = outcome
+        .lock()
+        .map_err(|_| "the harvest's lock was poisoned".to_string())?
+        .take()
+        .unwrap_or_else(|| Err("the window session ended without a harvest".to_string()))?;
+    // What the handler said, sent from the runtime; a handler that says
+    // nothing leaves this empty rather than waiting for ever.
+    let said_after_the_press = runtime.block_on(async {
+        let mut said = Vec::new();
+        while let Ok(Ok(update)) =
+            tokio::time::timeout(std::time::Duration::from_secs(2), ui_rx.recv()).await
+        {
+            match update {
+                UIUpdate::StatusUpdated(line) => said.push(line),
+                UIUpdate::CommandRefused(line) => said.push(format!("refused: {line}")),
+                _ => {}
+            }
+        }
+        said
+    });
+    Ok(Harvest {
+        offered,
+        buttons,
+        said_after_the_press,
+        series_after_the_press: the_series_now(&cache),
+        rows_after_the_press: rows_by_date(&cache),
+    })
+}
+
+/// The one window session of this process, taken by whichever case asks first.
+fn the_harvest() -> &'static Harvest {
+    static HARVEST: OnceLock<Result<Harvest, String>> = OnceLock::new();
+    match HARVEST.get_or_init(take_the_harvest) {
+        Ok(harvest) => harvest,
+        Err(why) => panic!("the window session could not be read: {why}"),
+    }
+}
+
+#[test]
+fn test_a_cancelled_day_is_offered_one_button_described_as_that_day() {
+    let harvest = the_harvest();
+    let Some(Removal::OneDay { when, .. }) = &harvest.offered else {
+        panic!(
+            "the cancellation offered {:?}, not one day",
+            harvest.offered
+        );
+    };
+    let [button] = harvest.buttons.as_slice() else {
+        panic!(
+            "{} buttons, not the one: {:?}",
+            harvest.buttons.len(),
+            harvest.buttons
+        );
+    };
+
+    assert_eq!(button.msaa.name, "Remove from Calendar");
+    assert_eq!(button.text, "&Remove from Calendar");
+    assert_eq!(button.msaa.role, ROLE_SYSTEM_PUSHBUTTON);
+    assert_eq!(
+        button.msaa.description,
+        format!(
+            "Takes {when} off this repeating meeting on your calendar. Nothing is sent to the \
+             organiser."
+        )
+    );
+}
+
+#[test]
+fn test_pressing_it_calls_that_day_off_and_keeps_the_series() {
+    let harvest = the_harvest();
+    let series = &harvest.series_after_the_press;
+
+    assert_eq!(
+        series.status, "confirmed",
+        "the series itself is not called off"
+    );
+    assert_eq!(times_the_twelfth_is_called_off(series), 1, "{series:?}");
+    assert!(series.pending, "a day called off nobody sends never leaves");
+    assert_eq!(on(&harvest.rows_after_the_press, "2026-03-12"), 0);
+    every_other_thursday_is_shown_once(&harvest.rows_after_the_press);
+    assert_eq!(
+        harvest.said_after_the_press,
+        vec!["Weekly sync: that one day is taken off. The other days are unchanged.".to_string()]
+    );
+}
+
+// ── Read from the source ──────────────────────────────────────────────────
+
+/// The main window's source as it ships, without its tests.
+fn the_main_window() -> String {
+    const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
+    wixen_mail::common::what_ships::what_ships(
+        &std::fs::read_to_string(THE_MAIN_WINDOW)
+            .unwrap_or_else(|e| panic!("{THE_MAIN_WINDOW}: {e}"))
+            .replace("\r\n", "\n"),
+    )
+}
+
+/// The handler's arm for one day: from the last `Removal::OneDay` in the
+/// handler to the handler's end.
+fn the_one_day_arm(app: &str) -> Result<String, String> {
+    let signature = "fn take_the_called_off_meeting_off_the_calendar(";
+    let at = app
+        .find(signature)
+        .ok_or(format!("{signature} is gone, so this reads nothing"))?;
+    let rest = &app[at..];
+    let body = &rest[..rest.find("\n}\n").map_or(rest.len(), |end| end + 2)];
+    let arm = body
+        .rfind("Removal::OneDay")
+        .ok_or("the removal handler has no arm for one day")?;
+    Ok(body[arm..].to_string())
+}
+
+/// What is wrong with the one-day arm: it must call the day off the series,
+/// and never delete a row or mark the whole meeting cancelled.
+fn what_the_one_day_arm_does_wrong(arm: &str) -> Vec<&'static str> {
+    let mut wrong = Vec::new();
+    if !arm.contains("one_day_called_off(") {
+        wrong.push("the one-day arm does not call the day off its series");
+    }
+    if arm.contains("delete_calendar_event(") {
+        wrong.push("the one-day arm deletes a row");
+    }
+    if arm.contains("mark_the_meeting_called_off(") {
+        wrong.push("the one-day arm marks the whole meeting cancelled");
+    }
+    wrong
+}
+
+#[test]
+fn test_the_one_day_arm_calls_the_day_off_and_deletes_nothing() {
+    let arm = the_one_day_arm(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+
+    assert_eq!(what_the_one_day_arm_does_wrong(&arm), Vec::<&str>::new());
+    // The reading can see both ways the arm goes wrong.
+    for planted in ["delete_calendar_event(", "mark_the_meeting_called_off("] {
+        let with_it = format!("{arm}\n    cache.{planted}&series_id);");
+        assert!(
+            !what_the_one_day_arm_does_wrong(&with_it).is_empty(),
+            "{planted} planted in the arm was passed over"
+        );
+    }
 }
