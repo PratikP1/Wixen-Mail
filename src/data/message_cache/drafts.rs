@@ -64,6 +64,8 @@ impl MessageCache {
                     body_html: row.get(11)?,
                     attachments: crate::application::attaching::split(&row.get::<_, String>(12)?),
                     protection: Choice::from_stored(row.get::<_, Option<String>>(13)?.as_deref()),
+                    from_address: None,
+                    from_name: None,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
@@ -105,6 +107,8 @@ impl MessageCache {
                         protection: Choice::from_stored(
                             row.get::<_, Option<String>>(13)?.as_deref(),
                         ),
+                        from_address: None,
+                        from_name: None,
                     })
                 },
             )
@@ -173,6 +177,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
         cache.save_draft(&draft).expect("the draft to save");
 
@@ -256,6 +262,8 @@ mod tests {
                 created_at: chrono::Utc::now().to_rfc3339(),
                 updated_at: chrono::Utc::now().to_rfc3339(),
                 protection: Choice::Plain,
+                from_address: None,
+                from_name: None,
             })
             .expect("the draft to save");
 
@@ -306,6 +314,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
         cache.save_draft(&draft).expect("the draft to save");
 
@@ -343,6 +353,8 @@ mod tests {
                     created_at: chrono::Utc::now().to_rfc3339(),
                     updated_at: chrono::Utc::now().to_rfc3339(),
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                 })
                 .expect("the draft to save");
             for column in ["in_reply_to", "references_header"] {
@@ -377,6 +389,8 @@ mod tests {
             in_reply_to: None,
             references: None,
             protection: choice,
+            from_address: None,
+            from_name: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
@@ -450,6 +464,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
 
         cache.save_draft(&draft).unwrap();
@@ -486,6 +502,8 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
         };
 
         cache.save_draft(&draft).unwrap();

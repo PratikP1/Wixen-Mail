@@ -289,6 +289,15 @@ pub struct CachedDraft {
     /// Kept because a draft reopened and sent without its Encrypt box is a
     /// private message sent in the clear.
     pub protection: crate::application::protecting::Choice,
+    /// The address it was written from, when that is not the account's own.
+    ///
+    /// `None` means the account's own address, which is what every draft
+    /// saved before this column existed was written from.
+    /// [`crate::application::identities::who_it_goes_out_from`] is the one
+    /// place the two are turned into a sender.
+    pub from_address: Option<String>,
+    /// The name that goes in front of `from_address`; `None` for the account's.
+    pub from_name: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -981,6 +990,16 @@ pub struct QueuedOutboxMessage {
     /// scheduled or tried again goes out as it was asked to. Plain on every
     /// row queued before the column existed, which is what each of them was.
     pub protection: crate::application::protecting::Choice,
+    /// The address it goes out from, when that is not the account's own.
+    ///
+    /// On the row so the address chosen in the composer survives the wait in
+    /// the Outbox. `None` means the account's own address, which is what every
+    /// message queued before this column existed went out from.
+    /// [`crate::application::identities::who_it_goes_out_from`] is the one
+    /// place the two are turned into a sender.
+    pub from_address: Option<String>,
+    /// The name that goes in front of `from_address`; `None` for the account's.
+    pub from_name: Option<String>,
     pub attempt_count: i64,
     pub last_error: Option<String>,
     pub created_at: String,

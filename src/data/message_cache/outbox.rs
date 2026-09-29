@@ -188,6 +188,8 @@ impl MessageCache {
                     in_reply_to: row.get(12)?,
                     references: row.get(13)?,
                     protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
+                    from_address: None,
+                    from_name: None,
                 };
                 let when =
                     GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
@@ -439,6 +441,8 @@ mod tests {
                     in_reply_to: None,
                     references: None,
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),
@@ -489,6 +493,8 @@ mod tests {
             in_reply_to: None,
             references: None,
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
             attempt_count: 0,
             last_error: None,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -533,6 +539,8 @@ mod tests {
             in_reply_to: None,
             references: None,
             protection: Choice::Plain,
+            from_address: None,
+            from_name: None,
             attempt_count: 0,
             last_error: None,
             created_at: created_at.to_string(),
@@ -558,6 +566,8 @@ mod tests {
                 .queue_outbox_message_to_go(
                     &QueuedOutboxMessage {
                         protection: choice,
+                        from_address: None,
+                        from_name: None,
                         ..queued(&format!("p-{index}"), "acc-1", "Protected", &at)
                     },
                     &GoAfter::AsSoonAsPossible,
@@ -797,6 +807,8 @@ mod tests {
                     in_reply_to: None,
                     references: None,
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),
@@ -832,6 +844,8 @@ mod tests {
                     in_reply_to: Some("<c@x>".to_string()),
                     references: Some("<a@x> <b@x> <c@x>".to_string()),
                     protection: Choice::Plain,
+                    from_address: None,
+                    from_name: None,
                     attempt_count: 0,
                     last_error: None,
                     created_at: chrono::Utc::now().to_rfc3339(),

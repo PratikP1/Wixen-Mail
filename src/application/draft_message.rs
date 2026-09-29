@@ -205,6 +205,8 @@ mod tests {
             created_at: "2026-07-30T10:00:00+00:00".to_string(),
             updated_at: "2026-07-30T10:05:00+00:00".to_string(),
             protection: Default::default(),
+            from_address: None,
+            from_name: None,
         }
     }
 
@@ -443,6 +445,8 @@ mod what_the_filed_copy_says_it_is {
             created_at: "2026-07-30T10:00:00+00:00".to_string(),
             updated_at: "2026-07-30T10:05:00+00:00".to_string(),
             protection: Default::default(),
+            from_address: None,
+            from_name: None,
         }
     }
 

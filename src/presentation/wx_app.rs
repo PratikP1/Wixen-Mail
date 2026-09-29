@@ -17812,6 +17812,9 @@ fn save_as_draft(
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
         protection: data.protection,
+        // The account's own until the composer offers another (13-35).
+        from_address: None,
+        from_name: None,
         created_at: chrono::Local::now().to_rfc3339(),
         updated_at: chrono::Local::now().to_rfc3339(),
     };
@@ -18105,6 +18108,9 @@ fn put_in_the_outbox(
         // Signed, encrypted, both or neither, as the boxes were at Send, so
         // the send loop builds it that way however long it waits.
         protection: data.protection,
+        // The account's own until the composer offers another (13-35).
+        from_address: None,
+        from_name: None,
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),
