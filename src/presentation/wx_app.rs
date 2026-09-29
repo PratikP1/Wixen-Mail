@@ -6300,19 +6300,26 @@ impl WxMailApp {
                     // straight to a send as guardrail 7, and what makes this
                     // safe is that the readiness filter still refuses anything
                     // not ready.
+                    //
+                    // Every account's queue is asked, because the From list
+                    // chooses the account a message waits in (13-35), and a
+                    // hold that runs out in an account nobody has open is
+                    // still a message somebody was told would go.
                     if looked_for_held_mail_at.get().elapsed() >= HOW_OFTEN_TO_LET_HELD_MAIL_GO {
                         looked_for_held_mail_at.set(std::time::Instant::now());
                         let up_to = chrono::Local::now();
                         let since = held_mail_looked_at_up_to.replace(Some(up_to));
                         let held_mail_is_due = {
                             let s = lock_state(&state);
-                            s.active_account_id.clone()
+                            s.accounts.clone()
                         }
-                        .zip(message_cache.as_ref())
-                        .is_some_and(|(account_id, cache)| {
-                            cache
-                                .anything_reached_its_moment(&account_id, since, up_to)
-                                .unwrap_or(false)
+                        .iter()
+                        .any(|account| {
+                            message_cache.as_ref().is_some_and(|cache| {
+                                cache
+                                    .anything_reached_its_moment(&account.id, since, up_to)
+                                    .unwrap_or(false)
+                            })
                         });
                         if held_mail_is_due {
                             flush_outbox(app);
@@ -22278,17 +22285,17 @@ fn undo_send(
         let _ = tx.try_send(UIUpdate::CommandRefused(why.to_string()));
     };
 
-    let (Some(cache), Some(account_id)) =
-        (cache.as_ref(), lock_state(state).active_account_id.clone())
-    else {
+    let Some(cache) = cache.as_ref() else {
         refuse(WhatToTakeBack::NothingWaiting.why_not().unwrap_or_default());
         return;
     };
 
     // One read for the rows and their times together, so the message this is
     // about and the decision about whether it can be caught cannot be made
-    // from two different pictures of the queue.
-    let queue = match cache.queued_with_their_times(&account_id) {
+    // from two different pictures of the queue. Every account's queue, oldest
+    // first: the From list chooses the account a message waits in (13-35), so
+    // the message just sent need not be in the open account's.
+    let queue = match cache.every_queue_with_their_times() {
         Ok(queue) => queue,
         Err(e) => {
             refuse(&format!("The outbox could not be read: {e}"));
@@ -22325,7 +22332,12 @@ fn undo_send(
     // the send loop reached it between deciding and acting, and the spare
     // draft is taken away again below rather than left as a copy of a message
     // that has been sent.
-    let taken_back = a_message_taken_back(message);
+    let its_account = lock_state(state)
+        .accounts
+        .iter()
+        .find(|account| account.id == message.account_id)
+        .cloned();
+    let taken_back = a_message_taken_back(message, its_account.as_ref());
     let draft = match save_as_draft(app, &Some(cache.clone()), &taken_back, None) {
         Ok((draft_id, _)) => draft_id,
         Err(why) => {
@@ -22375,8 +22387,12 @@ fn undo_send(
 
     // The Outbox row is gone, so a list showing it is showing a message that is
     // no longer queued. Reading the tree back is what makes the counts and the
-    // rows agree; saying so without it is the shape that has shipped twice.
-    if let Ok(updates) = folder_tree_updates(cache, &account_id) {
+    // rows agree; saying so without it is the shape that has shipped twice. The
+    // tree on screen is the open account's.
+    let open_account_id = lock_state(state).active_account_id.clone();
+    if let Some(account_id) = open_account_id
+        && let Ok(updates) = folder_tree_updates(cache, &account_id)
+    {
         for update in updates {
             let _ = tx.try_send(update);
         }
@@ -22390,8 +22406,12 @@ fn undo_send(
 /// says: the plain half alone strips every heading and link the editor made,
 /// and the HTML half alone leaves a text-only reader with raw markup on the
 /// next attempt.
+///
+/// `its_account` is the account the row waits in, which the draft it becomes
+/// is saved under whichever account is open.
 fn a_message_taken_back(
     message: &crate::data::message_cache::QueuedOutboxMessage,
+    its_account: Option<&Account>,
 ) -> wx_compose::ComposeData {
     let written_as_html = message.body_html.is_some();
     wx_compose::ComposeData {
@@ -22405,18 +22425,19 @@ fn a_message_taken_back(
             .unwrap_or_else(|| message.body.clone()),
         body_plain: message.body.clone(),
         html_mode: written_as_html,
-        // From the other address it was queued from, so the draft it becomes
-        // keeps it. A row naming none is the account's own, and Undo Send
-        // takes back only from the account that is open, which is the one
-        // nothing chosen goes out through.
-        from: message.from_address.as_ref().map(|address| {
-            crate::application::identities::FromEntry {
+        // From the account and the address it was queued from, so the draft
+        // it becomes keeps both. A row naming no address is the account's
+        // own, which `who_sends` then keeps as none again.
+        from: message
+            .from_address
+            .clone()
+            .or_else(|| its_account.map(|account| account.email.clone()))
+            .map(|address| identities::FromEntry {
                 account_id: message.account_id.clone(),
-                address: address.clone(),
                 sender_name: message.from_name.clone().unwrap_or_default(),
                 said: address.clone(),
-            }
-        }),
+                address,
+            }),
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
         // Taking a message back undoes the time set on it as well, and this
@@ -22519,15 +22540,16 @@ fn protected_as_asked(mut request: SendEmailRequest, cache: &MessageCache) -> Se
 
 fn flush_outbox(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
-    // The account travels with the task: sending needs its SMTP settings and
+    // The accounts travel with the task: sending needs their SMTP settings and
     // credentials, and the UI state cannot be locked from inside the runtime.
-    let (account_id, account) = {
+    //
+    // Every account, not only the open one. The From list chooses the account
+    // a message goes out through (13-35), so a message can wait in the Outbox
+    // of an account nobody has open, and reading the open account's alone
+    // would leave it there until somebody opened its account.
+    let (accounts, open_account_id) = {
         let s = lock_state(state);
-        let id = s.active_account_id.clone();
-        let account = id
-            .as_ref()
-            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned());
-        (id, account)
+        (s.accounts.clone(), s.active_account_id.clone())
     };
     let tx = tx.clone();
     let cache_dir = AppPaths::resolve().ok().map(|paths| paths.cache_dir());
@@ -22554,18 +22576,16 @@ fn flush_outbox(app: AppHandles<'_>) {
             }
         };
 
-        let aid = account_id.as_deref().unwrap_or("default");
-        let Some(account) = account else {
+        if accounts.is_empty() {
             let _ = tx
                 .send(UIUpdate::ErrorOccurred(
                     // Not the refusal for nothing chosen: there is no list to
-                    // send somebody back to. The active account is the one the
-                    // Outbox sends from, and this says which fact is missing.
-                    "There is no active account, so there is nothing to send from.".into(),
+                    // send somebody back to. This says which fact is missing.
+                    "There is no account, so there is nothing to send from.".into(),
                 ))
                 .await;
             return;
-        };
+        }
         // The ones that may go on this pass, not everything in the queue. A
         // message held back for the moment somebody can still take it back,
         // and one set for a time they chose, both stay where they are and are
@@ -22574,29 +22594,34 @@ fn flush_outbox(app: AppHandles<'_>) {
         //
         // The moment is taken once, here, so a pass is measured against one
         // clock reading rather than against a slightly later one for each
-        // message it looks at.
+        // message it looks at. Every account's is read before anything is
+        // sent, so the count said first is the whole pass.
         let now = chrono::Local::now();
-        let queued = match cache.outbox_messages_that_may_go_now(aid, now) {
-            Ok(msgs) => msgs,
-            Err(e) => {
-                let _ = tx
-                    .send(UIUpdate::ErrorOccurred(format!(
-                        "The Outbox could not be read: {}.",
-                        e
-                    )))
-                    .await;
-                return;
+        let mut waiting = Vec::new();
+        for account in &accounts {
+            match cache.outbox_messages_that_may_go_now(&account.id, now) {
+                Ok(queued) if queued.is_empty() => {}
+                Ok(queued) => waiting.push((account, queued)),
+                Err(e) => {
+                    let _ = tx
+                        .send(UIUpdate::ErrorOccurred(format!(
+                            "The Outbox could not be read: {}.",
+                            e
+                        )))
+                        .await;
+                    return;
+                }
             }
-        };
+        }
 
-        if queued.is_empty() {
+        if waiting.is_empty() {
             let _ = tx
                 .send(UIUpdate::StatusUpdated("The Outbox is empty.".into()))
                 .await;
             return;
         }
 
-        let total = queued.len();
+        let total: usize = waiting.iter().map(|(_, queued)| queued.len()).sum();
         let _ = tx
             .send(UIUpdate::StatusUpdated(format!(
                 "Sending {} messages from the Outbox...",
@@ -22632,111 +22657,119 @@ fn flush_outbox(app: AppHandles<'_>) {
         let keep_one_here = crate::data::config::ConfigManager::load_stored()
             .map(|stored| stored.app_config().keep_sent_mail_on_this_computer)
             .unwrap_or(false);
-        // Where every copy in this queue goes. The same answer for all of them,
-        // and worked out before the loop so the folder list is read once.
-        let copies_go_to = crate::application::sent_copy::destination(&cache, &account);
-        // One sign-in for the whole queue, closed when the queue ends. It used
-        // to sign in and disconnect around every single message, so a queue of
-        // fifty was fifty sign-ins and some providers turn that down. An
-        // account with no server folder to file anything in does not sign in at
-        // all.
-        //
-        // The cost is that a very long queue can outlive the session. After
-        // that each copy is refused, each one is kept on this computer instead,
-        // and the person is told. Nothing goes missing quietly.
-        let filing = crate::application::sent_copy::a_session_for(&copies_go_to, &account).await;
-
-        for msg in &queued {
-            // A message the account cannot send is a configuration problem, not
-            // a transport failure, and saying which is the difference between a
-            // fixable error and a mystery.
+        // One account's queue at a time, each through that account's server
+        // and filed in that account's Sent.
+        for (account, queued) in waiting {
+            // Where every copy in this queue goes. The same answer for all of them,
+            // and worked out before the loop so the folder list is read once.
+            let copies_go_to = crate::application::sent_copy::destination(&cache, account);
+            // One sign-in for the whole queue, closed when the queue ends. It used
+            // to sign in and disconnect around every single message, so a queue of
+            // fifty was fifty sign-ins and some providers turn that down. An
+            // account with no server folder to file anything in does not sign in at
+            // all.
             //
-            // The credential is fetched per message rather than once, because a
-            // long queue can outlive an access token, and a token that expired
-            // halfway through would fail every message after it for a reason
-            // that reads like a wrong password.
-            let auth = crate::application::mail_auth::for_account(&account).await;
-            let outcome = match auth {
-                Ok(auth) => match SendEmailRequest::from_queued(msg, &account, auth) {
-                    Some(request) => controller
-                        .send_email(&protected_as_asked(request, &cache))
-                        .await
-                        .map_err(|e| e.to_string()),
-                    None => Err(
-                        "Check the account's SMTP server, port, and recipient address".to_string(),
-                    ),
-                },
-                Err(e) => Err(e.to_string()),
-            };
+            // The cost is that a very long queue can outlive the session. After
+            // that each copy is refused, each one is kept on this computer instead,
+            // and the person is told. Nothing goes missing quietly.
+            let filing = crate::application::sent_copy::a_session_for(&copies_go_to, account).await;
 
-            match &outcome {
-                Ok(went) => {
-                    let raw = &went.bytes;
-                    // The one failure in this routine that reaches somebody
-                    // outside the program. The message has already gone to the
-                    // server; a row left behind is found by the next flush and
-                    // sent a second time, and the person it is addressed to
-                    // receives two copies.
-                    //
-                    // Said rather than dropped, and said as what it means
-                    // rather than as a database error, because the thing to do
-                    // about it is to look in Sent before sending anything else.
-                    if let Err(e) = cache.delete_outbox_message(&msg.id) {
-                        let said = format!(
-                            "{} was sent, but it is still in the Outbox and may be sent \
+            for msg in &queued {
+                // A message the account cannot send is a configuration problem, not
+                // a transport failure, and saying which is the difference between a
+                // fixable error and a mystery.
+                //
+                // The credential is fetched per message rather than once, because a
+                // long queue can outlive an access token, and a token that expired
+                // halfway through would fail every message after it for a reason
+                // that reads like a wrong password.
+                let auth = crate::application::mail_auth::for_account(account).await;
+                let outcome = match auth {
+                    Ok(auth) => match SendEmailRequest::from_queued(msg, account, auth) {
+                        Some(request) => controller
+                            .send_email(&protected_as_asked(request, &cache))
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err(
+                            "Check the account's SMTP server, port, and recipient address"
+                                .to_string(),
+                        ),
+                    },
+                    Err(e) => Err(e.to_string()),
+                };
+
+                match &outcome {
+                    Ok(went) => {
+                        let raw = &went.bytes;
+                        // The one failure in this routine that reaches somebody
+                        // outside the program. The message has already gone to the
+                        // server; a row left behind is found by the next flush and
+                        // sent a second time, and the person it is addressed to
+                        // receives two copies.
+                        //
+                        // Said rather than dropped, and said as what it means
+                        // rather than as a database error, because the thing to do
+                        // about it is to look in Sent before sending anything else.
+                        if let Err(e) = cache.delete_outbox_message(&msg.id) {
+                            let said = format!(
+                                "{} was sent, but it is still in the Outbox and may be sent \
                              again. Check Sent before trying once more. ({e})",
-                            msg.subject
+                                msg.subject
+                            );
+                            tracing::error!("{said}");
+                            let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                        }
+                        sent += 1;
+                        // The copy is filed after the send, and a failure to file
+                        // it is not a failure to send: the message has gone, and
+                        // reporting it as failed would have somebody send it again.
+                        // Where it ended up is said only when that is not the
+                        // ordinary answer, because a line after every message
+                        // buries the two that matter.
+                        //
+                        // Two steps, and the order matters: the server is asked
+                        // while nothing holds the database, and everything that
+                        // writes here happens afterwards. The connection to this
+                        // program's own database cannot be held across a wait for
+                        // a server.
+                        let said = crate::application::sent_copy::offer_through(
+                            &filing,
+                            &copies_go_to,
+                            raw,
+                        )
+                        .await;
+                        let filed = crate::application::sent_copy::file_the_copy(
+                            &cache,
+                            account,
+                            &copies_go_to,
+                            &said,
+                            keep_one_here,
+                            raw,
                         );
-                        tracing::error!("{said}");
-                        let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                        if filed.needs_saying() {
+                            let said = filed.what_happened();
+                            tracing::warn!("{said}");
+                            let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                        }
                     }
-                    sent += 1;
-                    // The copy is filed after the send, and a failure to file
-                    // it is not a failure to send: the message has gone, and
-                    // reporting it as failed would have somebody send it again.
-                    // Where it ended up is said only when that is not the
-                    // ordinary answer, because a line after every message
-                    // buries the two that matter.
-                    //
-                    // Two steps, and the order matters: the server is asked
-                    // while nothing holds the database, and everything that
-                    // writes here happens afterwards. The connection to this
-                    // program's own database cannot be held across a wait for
-                    // a server.
-                    let said =
-                        crate::application::sent_copy::offer_through(&filing, &copies_go_to, raw)
-                            .await;
-                    let filed = crate::application::sent_copy::file_the_copy(
-                        &cache,
-                        &account,
-                        &copies_go_to,
-                        &said,
-                        keep_one_here,
-                        raw,
-                    );
-                    if filed.needs_saying() {
-                        let said = filed.what_happened();
-                        tracing::warn!("{said}");
-                        let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                    Err(reason) => {
+                        let _ = cache.update_outbox_failure(&msg.id, reason);
+                        failed += 1;
                     }
                 }
-                Err(reason) => {
-                    let _ = cache.update_outbox_failure(&msg.id, reason);
-                    failed += 1;
-                }
+
+                let _ = tx
+                    .send(UIUpdate::OutboxSendResult {
+                        queue_id: msg.id.clone(),
+                        success: outcome.is_ok(),
+                        how: outcome.as_ref().ok().and_then(|went| went.how),
+                        error: outcome.err(),
+                    })
+                    .await;
             }
 
-            let _ = tx
-                .send(UIUpdate::OutboxSendResult {
-                    queue_id: msg.id.clone(),
-                    success: outcome.is_ok(),
-                    how: outcome.as_ref().ok().and_then(|went| went.how),
-                    error: outcome.err(),
-                })
-                .await;
+            filing.close().await;
         }
-
-        filing.close().await;
 
         // What actually happened, rather than an optimistic "Connected". One
         // message through is proof the server answered; nothing through is
@@ -22756,8 +22789,9 @@ fn flush_outbox(app: AppHandles<'_>) {
         }
 
         let _ = tx.send(UIUpdate::OutboxFlushComplete(sent, failed)).await;
+        // The open account's, which is the Outbox on screen.
         let remaining = cache
-            .load_outbox_messages(aid)
+            .load_outbox_messages(open_account_id.as_deref().unwrap_or("default"))
             .map(|v| v.len())
             .unwrap_or(0);
         let _ = tx.send(UIUpdate::OutboxQueueCount(remaining)).await;

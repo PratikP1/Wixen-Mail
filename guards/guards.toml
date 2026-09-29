@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 474 records have arrived since and have not been through it.
+# 475 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34285,7 +34285,7 @@ red = [
     "test_a_queued_message_goes_out_from_the_address_its_row_carries",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/outbox.rs", tests = 27 },
+    { file = "src/data/message_cache/outbox.rs", tests = 28 },
     { file = "tests/a_message_goes_out_from_the_address_it_was_written_from.rs", tests = 9 },
 ]
 
@@ -34341,7 +34341,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 16 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
 ]
 
 # People lookup asking the first account's directory whatever the From list
@@ -34358,7 +34358,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 16 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
 ]
 
 # The composer's Send going out through the account open in the main window
@@ -34383,5 +34383,22 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 16 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
+]
+
+# Undo Send reading the open account's queue alone, so a message sent from
+# another account's address is said to be nothing waiting while it goes.
+# Written 2026-09-29 by 13-35.
+[[guard]]
+name = "Undo Send reads every account's queue"
+file = "src/presentation/wx_app.rs"
+suite = "the_from_list_chooses_who_sends"
+before = '''    let queue = match cache.every_queue_with_their_times() {'''
+after = '''    let queue = match cache.queued_with_their_times("") {'''
+red = [
+    "test_undo_send_reads_every_accounts_queue",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 20 },
 ]

@@ -172,31 +172,7 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to prepare outbox query: {}", e)))?;
 
         let rows = stmt
-            .query_map(params![account_id], |row| {
-                let message = QueuedOutboxMessage {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    to_addr: row.get(2)?,
-                    cc_addr: row.get(3)?,
-                    bcc_addr: row.get(4)?,
-                    subject: row.get(5)?,
-                    body: row.get(6)?,
-                    body_html: row.get(7)?,
-                    attachments: row.get(8)?,
-                    attempt_count: row.get(9)?,
-                    last_error: row.get(10)?,
-                    created_at: row.get(11)?,
-                    in_reply_to: row.get(12)?,
-                    references: row.get(13)?,
-                    protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
-                    // By name, so the next column added cannot move them.
-                    from_address: row.get("from_address")?,
-                    from_name: row.get("from_name")?,
-                };
-                let when =
-                    GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
-                Ok((message, when))
-            })
+            .query_map(params![account_id], a_queued_row)
             .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect outbox messages: {}", e)))?;
@@ -210,7 +186,18 @@ impl MessageCache {
     /// message goes out through (13-35): the message just sent can wait in
     /// the queue of an account nobody has open.
     pub fn every_queue_with_their_times(&self) -> Result<Vec<(QueuedOutboxMessage, GoAfter)>> {
-        Ok(Vec::new())
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it, protection, from_address, from_name
+             FROM outbox_queue
+             ORDER BY created_at ASC"
+        ).map_err(|e| Error::Other(format!("Failed to prepare outbox query: {}", e)))?;
+
+        let rows = stmt
+            .query_map([], a_queued_row)
+            .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect outbox messages: {}", e)))?;
+        Ok(rows)
     }
 
     /// Whether anything in this account's queue reached its moment since the
@@ -422,6 +409,33 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to update outbox failure: {}", e)))?;
         Ok(())
     }
+}
+
+/// One queued message and when it may go, from a row of the queue's own
+/// column list, which both readings of the queue select.
+fn a_queued_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(QueuedOutboxMessage, GoAfter)> {
+    let message = QueuedOutboxMessage {
+        id: row.get(0)?,
+        account_id: row.get(1)?,
+        to_addr: row.get(2)?,
+        cc_addr: row.get(3)?,
+        bcc_addr: row.get(4)?,
+        subject: row.get(5)?,
+        body: row.get(6)?,
+        body_html: row.get(7)?,
+        attachments: row.get(8)?,
+        attempt_count: row.get(9)?,
+        last_error: row.get(10)?,
+        created_at: row.get(11)?,
+        in_reply_to: row.get(12)?,
+        references: row.get(13)?,
+        protection: Choice::from_stored(row.get::<_, Option<String>>(16)?.as_deref()),
+        // By name, so the next column added cannot move them.
+        from_address: row.get("from_address")?,
+        from_name: row.get("from_name")?,
+    };
+    let when = GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
+    Ok((message, when))
 }
 
 #[cfg(test)]
