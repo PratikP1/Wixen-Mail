@@ -17,6 +17,7 @@ mod folders;
 pub mod held_alerts;
 pub mod held_conflicts;
 pub mod how_it_arrived;
+mod identities;
 mod messages;
 pub mod moves_in_flight;
 pub mod moves_waiting;

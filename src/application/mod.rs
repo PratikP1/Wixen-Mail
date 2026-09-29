@@ -62,6 +62,7 @@ pub mod help;
 /// What a sender hid is not read, and a reader is told when words were left out.
 pub mod hidden_text;
 pub mod how_far_it_got;
+pub mod identities;
 pub mod import_tree;
 pub mod importing_an_outlook_data_file;
 pub mod importing_contacts;
