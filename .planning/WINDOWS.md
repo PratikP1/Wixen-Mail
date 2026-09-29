@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 644
+open_count: 646
 waived_count: 0
 fixed_count: 76
-total_count: 720
-last_updated: 2026-09-29T10:32:21.000Z
+total_count: 722
+last_updated: 2026-09-29T11:31:38.000Z
 ---
 
 # Broken Windows Ledger
@@ -735,6 +735,8 @@ last_updated: 2026-09-29T10:32:21.000Z
 | 718 | 13 | unrun-verify | src/application/identities.rs |  | 13-35, phase 14: no provider has been asked to send from an other address. Gmail with an address set up under Send mail as and one not set up, and Exchange Online or Microsoft 365 with an address the account may send as and one it may not: whether each goes, what the recipient sees in From, and which sentence is said when a provider refuses (RESEARCH-3 A2 and A3). The guide and the alpha page say a provider may refuse or replace such an address | open |  | 2026-09-29T10:32:21.000Z |  |
 | 719 | 13 | unrun-verify | src/presentation/wx_compose.rs |  | 13-35, the tester's ear: nobody has heard compose's From list since it offers other addresses. Whether it is read as From with the entry, whether an other address is heard as "help@example.com, another address on Work", whether moving From onto another account's address says "Signature changed to" and its name, and whether moving between one account's own address and its other address says nothing. The name was read on MSAA at the handle focus reaches; the UI Automation reading is the Accessibility scan's | open |  | 2026-09-29T10:32:21.000Z |  |
 | 720 | 13 | todo | src/presentation/wx_app.rs |  | 13-35, a question for Pratik: the Outbox now sends what is due in every account on Send, Send Queued Mail, going back online and a hold running out, not only the open account's, because the From list can put a message in the Outbox of an account nobody has open and it would otherwise wait there unsaid. Mail left waiting in another account, such as a message that failed and is retried, now goes on those triggers too. Recommended: keep it, since it is what Outlook and Thunderbird do; the other choice is to send only the accounts a pass was asked about, which needs the Send path to name its account | open |  | 2026-09-29T10:32:21.000Z |  |
+| 721 | 13 | todo | src/application/identities.rs |  | 13-36, GAP-10's later work, said and not stubbed, and #59 steps 2 and 3 stay open for it. Shared mailboxes need IMAP NAMESPACE (RFC 2342) and ACL (RFC 4314) to find and open a mailbox that is not the account's own, and Microsoft Graph's shared mailbox access for Exchange. Sending on behalf of somebody else needs a Sender header beside From and a provider that allows it, such as Exchange's Send on Behalf permission. Delegation needs a provider's delegate grant, Gmail's mail delegation or Exchange's delegate access, and a way to say whose mail is open. All three need a real shared or delegated mailbox to test against, which is phase 14's | open |  | 2026-09-29T11:31:38.000Z |  |
+| 722 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-36, the tester's ear: nobody has heard a reply open on an other address. Whether a reply, a reply to all and a forward to mail sent to an account's other address open with From read as that address ("help@example.com, another address on Work"), whether the account's own address is heard when the mail was sent to it, and whether a reply to all to mail sent to help@ leaves help@ out of Cc as the reply's announcement counts it. The choice is tested by rows in application::reply and the wiring by readings | open |  | 2026-09-29T11:31:38.000Z |  |
 
 ````json
 [
@@ -9376,6 +9378,30 @@ last_updated: 2026-09-29T10:32:21.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T10:32:21.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 721,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/identities.rs",
+    "line": null,
+    "description": "13-36, GAP-10's later work, said and not stubbed, and #59 steps 2 and 3 stay open for it. Shared mailboxes need IMAP NAMESPACE (RFC 2342) and ACL (RFC 4314) to find and open a mailbox that is not the account's own, and Microsoft Graph's shared mailbox access for Exchange. Sending on behalf of somebody else needs a Sender header beside From and a provider that allows it, such as Exchange's Send on Behalf permission. Delegation needs a provider's delegate grant, Gmail's mail delegation or Exchange's delegate access, and a way to say whose mail is open. All three need a real shared or delegated mailbox to test against, which is phase 14's",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T11:31:38.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 722,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-36, the tester's ear: nobody has heard a reply open on an other address. Whether a reply, a reply to all and a forward to mail sent to an account's other address open with From read as that address (\"help@example.com, another address on Work\"), whether the account's own address is heard when the mail was sent to it, and whether a reply to all to mail sent to help@ leaves help@ out of Cc as the reply's announcement counts it. The choice is tested by rows in application::reply and the wiring by readings",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T11:31:38.000Z",
     "resolved_at": null
   }
 ]

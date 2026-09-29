@@ -10,6 +10,8 @@
 //! So the modes are separate keys rather than one key that guesses, and each
 //! one is named for what it does rather than for how it is spelled.
 
+use crate::application::identities::FromEntry;
+
 /// Which reply was asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplyMode {
@@ -190,6 +192,38 @@ pub fn reply_recipients(
         to: join(&to),
         cc: join(&cc),
     }
+}
+
+/// The From entry a reply or a forward opens on: of the replying account's
+/// entries, the first other address the message was sent to, among its To and
+/// Cc, compared without case; the account's own entry where none of its other
+/// addresses is there. `None` when the list holds nothing of the account.
+///
+/// Mail that arrived at help@ is answered from help@, or the person answering
+/// support mail answers from their own address by accident. Only the replying
+/// account's entries are candidates, so a To naming another account's address
+/// chooses nothing. An account's own entry is the first of its entries, as
+/// [`crate::application::identities::the_from_list`] builds the list.
+pub fn the_entry_a_reply_goes_out_from<'a>(
+    original_to: &str,
+    original_cc: &str,
+    entries: &'a [FromEntry],
+    account_id: &str,
+) -> Option<&'a FromEntry> {
+    let sent_to: Vec<String> = split_addresses(original_to)
+        .iter()
+        .chain(&split_addresses(original_cc))
+        .map(|address| key_of(address))
+        .collect();
+    let mut the_accounts = entries
+        .iter()
+        .filter(|entry| entry.account_id == account_id);
+    let own = the_accounts.next()?;
+    Some(
+        the_accounts
+            .find(|other| sent_to.contains(&key_of(&other.address)))
+            .unwrap_or(own),
+    )
 }
 
 /// Split a header value into its addresses.
@@ -650,6 +684,97 @@ mod tests {
         assert_eq!(ReplyMode::Default.description(), "Reply");
         assert_eq!(ReplyMode::All.description(), "Reply to all");
         assert_eq!(ReplyMode::Sender.description(), "Reply to sender only");
+    }
+
+    // ── The address a reply goes out from ────────────────────────────────
+
+    fn an_entry(account_id: &str, address: &str) -> FromEntry {
+        FromEntry {
+            account_id: account_id.to_string(),
+            address: address.to_string(),
+            sender_name: String::new(),
+            said: address.to_string(),
+        }
+    }
+
+    /// Two accounts as the From list holds them: each account's own entry
+    /// first, then the other addresses it keeps.
+    fn the_from_list() -> Vec<FromEntry> {
+        vec![
+            an_entry("work", "me@example.com"),
+            an_entry("work", "help@example.com"),
+            an_entry("work", "Sales@Example.com"),
+            an_entry("home", "home@example.com"),
+            an_entry("home", "family@example.com"),
+        ]
+    }
+
+    /// The address a reply from the work account opens on.
+    fn answered_from(to: &str, cc: &str) -> Option<String> {
+        the_entry_a_reply_goes_out_from(to, cc, &the_from_list(), "work")
+            .map(|entry| entry.address.clone())
+    }
+
+    #[test]
+    fn test_a_reply_to_mail_sent_to_an_other_address_goes_out_from_it() {
+        assert_eq!(
+            answered_from("Help Desk <help@example.com>", ""),
+            Some("help@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_reply_to_mail_sent_to_the_accounts_own_address_goes_out_from_it() {
+        assert_eq!(
+            answered_from("me@example.com, Grace <grace@example.com>", ""),
+            Some("me@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_reply_to_mail_sent_to_both_goes_out_from_the_other_address() {
+        assert_eq!(
+            answered_from(
+                "me@example.com",
+                "Charles <charles@example.com>, help@example.com"
+            ),
+            Some("help@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_an_other_address_is_found_beside_a_display_name_with_a_comma() {
+        assert_eq!(
+            answered_from("\"Desk, Help\" <help@example.com>, bob@example.com", ""),
+            Some("help@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_an_other_address_is_found_without_case() {
+        // Kept as "Sales@Example.com", written by the sender in lower case.
+        assert_eq!(
+            answered_from("sales@example.com", ""),
+            Some("Sales@Example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_another_accounts_address_never_chooses_the_entry() {
+        // A To naming the home account's address cannot move a reply from
+        // the work account onto it (T-13-36-01).
+        assert_eq!(
+            answered_from("family@example.com", ""),
+            Some("me@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_an_account_the_list_does_not_hold_has_no_entry() {
+        assert_eq!(
+            the_entry_a_reply_goes_out_from("help@example.com", "", &the_from_list(), "gone"),
+            None
+        );
     }
 
     #[test]

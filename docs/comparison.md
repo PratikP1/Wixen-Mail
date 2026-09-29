@@ -42,7 +42,7 @@ implying they exist.
 | Missing | Why it matters | Tracked |
 |---|---|---|
 | Templates | Repetitive replies without retyping | Not yet |
-| Several identities per account | One mailbox, more than one address to send as | Not yet |
+| Several identities per account | One mailbox, more than one address to send as | Built on 2026-09-29, and experimental. An account keeps other addresses to send from, the From list offers them, and a reply goes out from the address the message was sent to. No provider has sent from one yet. Shared mailboxes, sending on behalf of somebody else and delegation are not built, and issue 59 stays open for them |
 | Signing or encrypting what you send | Thunderbird has OpenPGP built in | Offered, and experimental. The composer has Sign and Encrypt boxes, and a message goes out with S/MIME or OpenPGP, whichever this computer holds keys for. No message sent this way has been opened by another mail program yet. Signed and encrypted mail that arrives is read and checked, also experimentally |
 | Vacation or automatic replies | Usually a server feature, and usually set from the client | Not yet |
 
@@ -121,6 +121,9 @@ What is left, in the order somebody would miss it:
 
 1. **Templates.** Repetitive replies without retyping.
 2. **Several identities per account.** One mailbox, more than one address.
+   Corrected on 2026-09-29: sending from more than one address is built, and
+   experimental until a provider has sent from one. What is still missing is
+   shared mailboxes, sending on behalf of somebody else, and delegation.
 3. **Signing and encrypting outgoing mail that other programs are known to
    read.** Both are offered now, experimentally; what is missing is a
    message from here opened by Outlook, Thunderbird or Apple Mail.

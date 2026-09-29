@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A reply goes out from the address the message was sent to, and Reply All leaves your
+  other addresses out, experimental (GAP-10, #59 step 1).** A reply, a reply to all and a
+  forward open with From on the account's other address that the message's To or Cc names,
+  compared without regard to capitals, so mail that arrived at help@example.com is answered
+  from help@example.com rather than from your own address by accident. Where none of the
+  account's other addresses is there, From opens on the account's own address as before, and
+  an address of another account is never chosen. A reply to all no longer copies any of your
+  other addresses, as it already did not copy your accounts' own. Known limitations: no
+  provider has sent from another address yet; shared mailboxes, sending on behalf of somebody
+  else and delegation are later work, and #59 stays open for them.
 - **Compose's From list offers every address an account sends from, and the message goes out
   from the one chosen, experimental (GAP-10, #59 step 1).** The list, which reads "From"
   now rather than "From account" because it chooses an address, holds each account's own
@@ -19,9 +29,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Encrypt are checked against the keys held for it. A draft, and a message taken back with
   Undo Send, reopen with From on the address they were written from. Known limitations: no
   provider has been asked to send from another address yet, so a provider may refuse one that
-  is not set up with it too, or send from the account's own address instead; a reply does not
-  yet choose the address it was sent to; shared mailboxes and sending on behalf of somebody
-  are later work.
+  is not set up with it too, or send from the account's own address instead; a reply chooses
+  the address it was sent to since the entry above; shared mailboxes and sending on behalf of
+  somebody are later work.
 - **Other addresses to send from, kept per account and managed from the Account Manager,
   experimental (GAP-10's first half, #59).** `Alt+O` on the Account Manager opens Other
   Addresses to Send From for the chosen account: the other addresses it sends from, each with

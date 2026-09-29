@@ -1275,6 +1275,20 @@ when another account is the one you have open. A draft you save keeps the
 address, and so does a message you take back with Undo Send: both reopen with
 From on it.
 
+**Replying and forwarding.** A reply, a reply to all and a forward open with
+From on the address the message was sent to, when that is one of the
+account's other addresses. Mail that arrived at help@example.com is answered
+from help@example.com, so answering support mail does not send it from your
+own address by accident. The message's To and Cc lines are both read, and
+capital letters do not matter. When none of the account's other addresses is
+there, From opens on the account's own address, as before. You can still
+choose another entry in the From list before you send.
+
+**Reply All leaves your addresses out.** A reply to all never sends a copy to
+any address you send from: not to the account's own address, and not to its
+other addresses. A reply to mail sent to help@example.com does not copy
+help@example.com back to itself.
+
 **The signature.** An other address signs with its account's signature, so
 moving From between an account's own address and one of its other addresses
 leaves the signature as it is. Moving to another account's address changes it,
@@ -1287,9 +1301,12 @@ that is "Send mail as" in Gmail's settings; in Outlook and Microsoft 365 it is
 a permission your organisation gives. Sending from another address has not
 been tried against a real provider yet, so this is **experimental**.
 
-**Not built yet.** Shared mailboxes, and sending on behalf of somebody else,
-are later work. An other address here is an address your own account sends
-as, not somebody else's mailbox.
+**Not built yet.** Three things are later work, and issue 59 stays open for
+them. Shared mailboxes: opening a mailbox that belongs to a team, not to you.
+Sending on behalf of somebody else: a message that says it is from them and
+sent by you. And delegation: somebody else reading and answering your mail
+with your permission. An other address here is an address your own account
+sends as, not somebody else's mailbox.
 
 ### Looking people up
 

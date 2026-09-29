@@ -747,3 +747,57 @@ fn test_undo_send_reads_every_accounts_queue() {
     )
     .unwrap();
 }
+
+// ── A reply, read from the source ─────────────────────────────────────────
+//
+// Once an account sends from several addresses, mail that arrived at help@ is
+// answered from help@, and Reply All sends none of your addresses a copy
+// (13-36). Which entry answers is `reply::the_entry_a_reply_goes_out_from`,
+// tested with rows where it lives; these read that the window asks it.
+
+/// Whether a reply or a forward opens the From list on the entry the message
+/// was sent to, rather than on the account's own.
+fn a_reply_opens_where_it_was_sent(open_compose: Result<String, String>) -> Result<(), String> {
+    it_says(
+        open_compose,
+        "reply::the_entry_a_reply_goes_out_from(&sent_to, &copied_to, &from_list,",
+    )
+}
+
+#[test]
+fn test_a_reply_or_a_forward_opens_on_the_address_the_message_was_sent_to() {
+    a_reply_opens_where_it_was_sent(body_of(&shipped(THE_MAIN_WINDOW), "fn open_compose("))
+        .unwrap();
+}
+
+#[test]
+fn test_companion_a_reply_opening_on_the_accounts_own_entry_is_refused() {
+    // The shape before 13-36: anything but a draft opened on the own entry of
+    // the account `sends_from` picked.
+    let planted = "fn open_compose(\n    let (written_from, address) = match &mode {\n        ComposeMode::Draft(draft) if draft.account_id.is_some() => {\n            (draft.account_id.clone(), draft.from_address.clone())\n        }\n        _ => (sender, None),\n    };\n}\n";
+    assert!(a_reply_opens_where_it_was_sent(body_of(planted, "fn open_compose(")).is_err());
+    assert!(a_reply_opens_where_it_was_sent(body_of(planted, "fn gone(")).is_err());
+}
+
+/// Whether Reply All is handed every address you send from as your own: each
+/// account's own and the other addresses it keeps.
+fn every_address_you_send_from_is_yours(start_reply: Result<String, String>) -> Result<(), String> {
+    it_says(
+        start_reply,
+        "identities::the_from_list(&accounts, &the_other_addresses(cache.as_deref(), &accounts))",
+    )
+}
+
+#[test]
+fn test_reply_all_leaves_out_every_address_you_send_from() {
+    every_address_you_send_from_is_yours(body_of(&shipped(THE_MAIN_WINDOW), "fn start_reply("))
+        .unwrap();
+}
+
+#[test]
+fn test_companion_reply_all_leaving_out_only_the_accounts_own_addresses_is_refused() {
+    // The shape before 13-36: each account's own address and nothing else, so
+    // a Reply All to mail sent to help@ copied help@ back to itself.
+    let planted = "fn start_reply(\n    let own_addresses = s.accounts.iter().map(|a| a.email.clone()).collect::<Vec<_>>();\n}\n";
+    assert!(every_address_you_send_from_is_yours(body_of(planted, "fn start_reply(")).is_err());
+}
