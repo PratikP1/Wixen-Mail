@@ -609,24 +609,71 @@ impl MessageCache {
     }
 
     /// Write down which meeting, and which day of it, a row stands for.
+    ///
+    /// Kept off [`CalendarEventEntry`] for the reason
+    /// [`Self::the_answer_given_here`] gives, and written by its own statement,
+    /// so no save and no sync ever clears it. Neither identifier on the row can
+    /// carry this: a day kept apart goes up to a calendar server under a fresh
+    /// UID of its own, which the server's read then records as the row's.
     pub fn remember_the_day_it_stands_for(
         &self,
-        _event_id: &str,
-        _uid: &str,
-        _day: &str,
+        event_id: &str,
+        uid: &str,
+        day: &str,
     ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendar_events SET replaces_day_of = ?2, replaces_day = ?3 WHERE id = ?1",
+                params![event_id, uid, day],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record which day of a meeting a row stands for: {}",
+                    e
+                ))
+            })?;
         Ok(())
     }
 
     /// The row standing for one day of the meeting `uid` names, on this
     /// account, when a day of it was kept apart.
+    ///
+    /// Kept apart here, by the link written beside it, or split out by a
+    /// calendar server, whose read gives such a day the compound identity
+    /// `{uid}:{day}`. Scoped to the account, because the UID and the day come
+    /// from a document a stranger can write.
     pub fn the_day_of_a_meeting(
         &self,
-        _account_id: &str,
-        _uid: &str,
-        _day: &str,
+        account_id: &str,
+        uid: &str,
+        day: &str,
     ) -> Result<Option<CalendarEventEntry>> {
-        Ok(None)
+        let sql = format!(
+            "SELECT {EVENT_COLS} FROM calendar_events
+             WHERE account_id = ?1
+               AND ((replaces_day_of = ?2 AND replaces_day = ?3)
+                    OR provider_event_id = ?2 || ':' || ?3)
+             LIMIT 1"
+        );
+        let mut stmt = self.conn.prepare_cached(&sql).map_err(|e| {
+            Error::Other(format!(
+                "Failed to prepare the lookup of one day of a meeting: {}",
+                e
+            ))
+        })?;
+
+        let mut rows = stmt
+            .query_map(params![account_id, uid, day], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to look one day of a meeting up: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!(
+                "Failed to read one day of a meeting: {}",
+                e
+            ))),
+            None => Ok(None),
+        }
     }
 
     /// Who called the meeting, as whoever filed it said; nothing when nobody

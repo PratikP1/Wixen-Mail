@@ -60,13 +60,59 @@ pub enum ThatDay {
 }
 
 /// What the calendar holds for `day` of the meeting `uid` names, on `account`.
+///
+/// The whole meeting is looked up first, only for its clock: the day's own
+/// row is found by the day on the series' clock, or as written when no
+/// meeting is held, and answers for the day whenever there is one. Then the
+/// whole meeting says the rest: a single appointment, or the series holding
+/// the day or calling it off.
 pub fn what_the_calendar_holds_for_that_day(
-    _cache: &MessageCache,
-    _account: &str,
-    _uid: &str,
-    _day: &OneDay,
+    cache: &MessageCache,
+    account: &str,
+    uid: &str,
+    day: &OneDay,
 ) -> Result<ThatDay> {
-    Ok(ThatDay::NotHeld)
+    let copy = cache.get_event_by_ical_uid(account, uid)?;
+    let the_day = match &copy {
+        None => day.at.clone(),
+        Some(copy) => match the_day_on_the_series_clock(day, copy) {
+            Some(the_day) => the_day,
+            None => {
+                return Ok(ThatDay::CannotBePlaced {
+                    series: copy.clone(),
+                });
+            }
+        },
+    };
+    if let Some(row) = cache.the_day_of_a_meeting(account, uid, &the_day)? {
+        let series = copy.filter(|copy| copy.id != row.id);
+        return Ok(ThatDay::ItsOwnRow { row, series });
+    }
+    let Some(copy) = copy else {
+        return Ok(ThatDay::NotHeld);
+    };
+    if !repeats(&copy) {
+        return Ok(ThatDay::OneAppointment(copy));
+    }
+    Ok(if still_on_the_series(&copy, &the_day) {
+        ThatDay::OnTheSeries {
+            as_it_falls: as_the_series_holds_it(&copy, &the_day),
+            series: copy,
+            the_day,
+        }
+    } else {
+        ThatDay::OffTheSeries {
+            series: copy,
+            the_day,
+        }
+    })
+}
+
+/// Whether a row repeats.
+pub fn repeats(row: &CalendarEventEntry) -> bool {
+    row.recurrence_rule
+        .as_deref()
+        .is_some_and(|rule| !rule.trim().is_empty())
 }
 
 /// A clock face with no zone on it, the way the calendar stores one.

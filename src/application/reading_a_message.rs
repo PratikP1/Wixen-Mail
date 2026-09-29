@@ -62,13 +62,15 @@
 //! a blank message that filled itself in afterwards.
 
 use crate::application::answering;
+use crate::application::calendar;
 use crate::application::checking_signatures::{self, SignatureCheck};
 use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
 use crate::application::invitations::{self, WhatTheInvitationSays};
 use crate::application::meeting_changes::MeetingChange;
+use crate::application::one_day_of_a_series;
 use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{CalendarEventEntry, MessageCache};
 use crate::presentation::date_display::DateSettings;
 use crate::service::mime::AttachmentWithBytes;
 use crate::service::pgp::WhatOpeningItFound;
@@ -352,28 +354,65 @@ pub fn invitation_check_among(
     let Some(document) = answering::the_invitation_a_message_carries(&parts) else {
         return WhatTheInvitationSays::CalendarFile;
     };
-    let on_the_calendar = the_account_it_arrived_on(cache, message_row_id)
-        .zip(invitations::the_meeting_named_in(&document))
-        .and_then(|(account, uid)| {
-            cache
-                .get_event_by_ical_uid(&account, &uid)
-                .unwrap_or_else(|e| {
-                    tracing::warn!("Could not look a meeting up on the calendar: {e}");
-                    None
-                })
+    let (on_the_calendar, answered_here) = the_account_it_arrived_on(cache, message_row_id)
+        .map_or((None, None), |account| {
+            what_it_is_said_against(cache, &account, &document)
         });
-    let answered_here = on_the_calendar.as_ref().and_then(|copy| {
-        cache.the_answer_given_here(&copy.id).unwrap_or_else(|e| {
-            tracing::warn!("Could not read which version of a meeting was answered: {e}");
-            None
-        })
-    });
     invitations::what_the_invitation_says(
         &document,
         on_the_calendar.as_ref(),
         answered_here,
         dates(),
     )
+}
+
+/// The row an invitation's sentence is said against, and the answer given to
+/// it here.
+///
+/// For a message about one day, that day: its own row, or the day as the
+/// series holds it with no answer of its own, or nothing when the series calls
+/// it off. Said against the series' first day, a move of the twelfth would be
+/// described as a change from the fifth.
+fn what_it_is_said_against(
+    cache: &MessageCache,
+    account: &str,
+    document: &str,
+) -> (
+    Option<CalendarEventEntry>,
+    Option<crate::data::message_cache::AnsweredHere>,
+) {
+    use one_day_of_a_series::ThatDay;
+
+    let answered = |row: &CalendarEventEntry| {
+        cache.the_answer_given_here(&row.id).unwrap_or_else(|e| {
+            tracing::warn!("Could not read which version of a meeting was answered: {e}");
+            None
+        })
+    };
+    let one_day = invitations::read_the_invitation(document)
+        .ok()
+        .and_then(|invitation| Some((invitation.the_day?, invitation.uid)));
+    let Some((day, uid)) = one_day else {
+        let copy = invitations::the_meeting_named_in(document)
+            .and_then(|uid| the_meeting_on_the_calendar(cache, account, &uid));
+        let answer = copy.as_ref().and_then(answered);
+        return (copy, answer);
+    };
+    let held =
+        one_day_of_a_series::what_the_calendar_holds_for_that_day(cache, account, &uid, &day)
+            .unwrap_or_else(|e| {
+                tracing::warn!("Could not look one day of a meeting up on the calendar: {e}");
+                ThatDay::NotHeld
+            });
+    match held {
+        ThatDay::ItsOwnRow { row, .. } | ThatDay::OneAppointment(row) => {
+            let answer = answered(&row);
+            (Some(row), answer)
+        }
+        ThatDay::OnTheSeries { as_it_falls, .. } => (Some(as_it_falls), None),
+        ThatDay::CannotBePlaced { series } => (Some(series), None),
+        ThatDay::OffTheSeries { .. } | ThatDay::NotHeld => (None, None),
+    }
 }
 
 /// What can be said about a message's signature: the one sealed inside its
@@ -591,13 +630,12 @@ pub fn what_opening_it_changed_among(
     let Ok(invitation) = invitations::read_the_invitation(&found.document) else {
         return MeetingChange::Nothing;
     };
-    let copy = cache
-        .get_event_by_ical_uid(&found.account, &invitation.uid)
-        .unwrap_or_else(|e| {
-            tracing::warn!("Could not look a meeting up on the calendar: {e}");
-            None
-        });
-    let organiser = copy.as_ref().and_then(|copy| {
+    let about = the_rows_it_is_about(cache, &found.account, &invitation);
+    let copy = about.copy.as_ref();
+    // The organiser the whole meeting records, and a day's own only when no
+    // meeting is held: never the one the message names, which a stranger
+    // writes too.
+    let organiser = copy.and_then(|copy| {
         cache
             .the_organiser_on_the_calendar(&copy.id)
             .unwrap_or_else(|e| {
@@ -605,28 +643,17 @@ pub fn what_opening_it_changed_among(
                 None
             })
     });
-    let answered_version = copy.as_ref().and_then(|copy| {
-        cache
-            .the_answer_given_here(&copy.id)
-            .unwrap_or_else(|e| {
-                tracing::warn!("Could not read which version of a meeting was answered: {e}");
-                None
-            })
-            .map(|here| here.version)
-    });
-    let allows = crate::application::calendar::WhatTheCalendarAllows::just(
-        crate::application::calendar::where_a_change_goes(
-            copy.as_ref()
-                .and_then(|copy| the_calendar_it_is_filed_in(cache, copy))
-                .as_ref(),
-        ),
-    );
+    let answered_version = about
+        .the_row_it_changes(&invitation)
+        .and_then(|row| the_version_answered_on(cache, row));
+    let kept_apart = about.the_day_to_keep_apart(&invitation);
+    let allows = what_the_calendar_allows(cache, copy, kept_apart.as_ref());
     let change = meeting_changes::what_opening_it_changes(
         invitations::what_it_asks(&found.document),
         &invitation,
-        copy.as_ref().map(|copy| TheCalendarsCopy {
+        copy.map(|copy| TheCalendarsCopy {
             copy,
-            that_day: None,
+            that_day: about.that_day.as_ref(),
             organiser: organiser.as_deref(),
             answered_version,
             allows: &allows,
@@ -643,14 +670,197 @@ pub fn what_opening_it_changed_among(
     // A move is saved here, before the document is built, so what is said
     // about the meeting is said against the calendar as it now is. A
     // cancellation is only offered: Remove from Calendar marks it.
-    if let (MeetingChange::Move { .. }, Some(copy)) = (&change, copy.as_ref())
-        && let Err(e) =
-            cache.save_calendar_event(&meeting_changes::the_copy_moved(copy, &invitation))
+    if let Err(e) = what_it_changed_saved(cache, &change, &about, kept_apart.as_ref(), &invitation)
     {
         tracing::warn!("Could not move a meeting on the calendar: {e}");
         return MeetingChange::SaidNotApplied(Why::CouldNotBeSaved);
     }
     change
+}
+
+/// The rows a message about a meeting is set against.
+struct TheRowsItIsAbout {
+    /// The whole meeting: a series, a single appointment, or a day's own row
+    /// when no meeting it came from is held.
+    copy: Option<CalendarEventEntry>,
+    /// The row already standing for the one day the message names.
+    that_day: Option<CalendarEventEntry>,
+}
+
+impl TheRowsItIsAbout {
+    /// The row a change from the message lands on as a whole: that day's
+    /// row, or the whole meeting unless the message is about one day of it.
+    fn the_row_it_changes(
+        &self,
+        invitation: &invitations::Invitation,
+    ) -> Option<&CalendarEventEntry> {
+        self.that_day.as_ref().or_else(|| {
+            self.copy
+                .as_ref()
+                .filter(|copy| invitation.the_day.is_none() || !one_day_of_a_series::repeats(copy))
+        })
+    }
+
+    /// The day an organiser's update for one day would keep apart from the
+    /// series, built once so the calendar's rule is asked about the very row
+    /// that is stored.
+    fn the_day_to_keep_apart(
+        &self,
+        invitation: &invitations::Invitation,
+    ) -> Option<CalendarEventEntry> {
+        let series = self
+            .copy
+            .as_ref()
+            .filter(|copy| self.that_day.is_none() && one_day_of_a_series::repeats(copy))?;
+        invitation
+            .the_day
+            .is_some()
+            .then(|| one_day_of_a_series::the_day_kept_apart(series, invitation))
+    }
+}
+
+/// What a message about `invitation` is set against on `account`'s calendar.
+///
+/// A message naming a day asks what the calendar holds for that day, the one
+/// answer the sentence and answering that day read too.
+fn the_rows_it_is_about(
+    cache: &MessageCache,
+    account: &str,
+    invitation: &invitations::Invitation,
+) -> TheRowsItIsAbout {
+    use one_day_of_a_series::ThatDay;
+
+    let Some(day) = invitation.the_day.as_ref() else {
+        return TheRowsItIsAbout {
+            copy: the_meeting_on_the_calendar(cache, account, &invitation.uid),
+            that_day: None,
+        };
+    };
+    let held = one_day_of_a_series::what_the_calendar_holds_for_that_day(
+        cache,
+        account,
+        &invitation.uid,
+        day,
+    )
+    .unwrap_or_else(|e| {
+        tracing::warn!("Could not look one day of a meeting up on the calendar: {e}");
+        ThatDay::NotHeld
+    });
+    let (copy, that_day) = match held {
+        ThatDay::NotHeld => (None, None),
+        ThatDay::ItsOwnRow { row, series } => {
+            (Some(series.unwrap_or_else(|| row.clone())), Some(row))
+        }
+        ThatDay::OnTheSeries { series, .. }
+        | ThatDay::OffTheSeries { series, .. }
+        | ThatDay::CannotBePlaced { series } => (Some(series), None),
+        ThatDay::OneAppointment(copy) => (Some(copy), None),
+    };
+    TheRowsItIsAbout { copy, that_day }
+}
+
+/// The calendar's copy of the meeting `uid` names, when there is one.
+fn the_meeting_on_the_calendar(
+    cache: &MessageCache,
+    account: &str,
+    uid: &str,
+) -> Option<CalendarEventEntry> {
+    cache
+        .get_event_by_ical_uid(account, uid)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not look a meeting up on the calendar: {e}");
+            None
+        })
+}
+
+/// The version an answer given here last filed on `row`, if one was.
+fn the_version_answered_on(cache: &MessageCache, row: &CalendarEventEntry) -> Option<u32> {
+    cache
+        .the_answer_given_here(&row.id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read which version of a meeting was answered: {e}");
+            None
+        })
+        .map(|here| here.version)
+}
+
+/// What the calendar the meeting is filed in allows, and, on a calendar
+/// server, why the day kept apart could not be written there.
+fn what_the_calendar_allows(
+    cache: &MessageCache,
+    copy: Option<&CalendarEventEntry>,
+    kept_apart: Option<&CalendarEventEntry>,
+) -> calendar::WhatTheCalendarAllows {
+    let goes = calendar::where_a_change_goes(
+        copy.and_then(|copy| the_calendar_it_is_filed_in(cache, copy))
+            .as_ref(),
+    );
+    calendar::WhatTheCalendarAllows {
+        keeping_the_day_apart: kept_apart
+            .filter(|_| goes == calendar::WhereAChangeGoes::ACalendarServer)
+            .and_then(calendar::the_zone_that_cannot_be_written),
+        ..calendar::WhatTheCalendarAllows::just(goes)
+    }
+}
+
+/// What opening a message decided, written to the calendar: a row moved, or
+/// one day kept apart from its series. Nothing else is written on opening.
+fn what_it_changed_saved(
+    cache: &MessageCache,
+    change: &MeetingChange,
+    about: &TheRowsItIsAbout,
+    kept_apart: Option<&CalendarEventEntry>,
+    invitation: &invitations::Invitation,
+) -> crate::common::Result<()> {
+    let missing = |what: &str| {
+        crate::common::Error::Other(format!(
+            "The calendar no longer holds the {what} a message about a meeting changes."
+        ))
+    };
+    match change {
+        MeetingChange::Move { event_id, .. } => {
+            let row = [about.that_day.as_ref(), about.copy.as_ref()]
+                .into_iter()
+                .flatten()
+                .find(|row| row.id == *event_id)
+                .ok_or_else(|| missing("row"))?;
+            cache.save_calendar_event(&crate::application::meeting_changes::the_copy_moved(
+                row, invitation,
+            ))
+        }
+        MeetingChange::MoveOneDay { the_day, .. } => {
+            let series = about.copy.as_ref().ok_or_else(|| missing("series"))?;
+            let kept = kept_apart.ok_or_else(|| missing("day"))?;
+            the_day_kept_apart_saved(cache, series, kept, &invitation.uid, the_day)
+        }
+        _ => Ok(()),
+    }
+}
+
+/// One day kept apart from its series on an organiser's word: the day saved
+/// first, then linked to its meeting and its day, then taken off the series.
+///
+/// The order `calendar::one_day_kept_out_of_the_series` gives, so a failure
+/// part way leaves the day on the calendar twice, which can be seen and put
+/// right, rather than lost. The link comes before the series gives the day
+/// up, or a second message about that day would find nothing standing for it
+/// and cut the day out again.
+fn the_day_kept_apart_saved(
+    cache: &MessageCache,
+    series: &CalendarEventEntry,
+    kept: &CalendarEventEntry,
+    uid: &str,
+    the_day: &str,
+) -> crate::common::Result<()> {
+    cache.save_calendar_event(kept)?;
+    cache.remember_the_day_it_stands_for(&kept.id, uid, the_day)?;
+    calendar::one_day_kept_out_of_the_series(
+        cache,
+        series,
+        kept,
+        the_day,
+        calendar::WhoTookTheDayOut::SomebodyHere,
+    )
 }
 
 /// The calendar a row is filed in, or nothing for a row filed in none or one

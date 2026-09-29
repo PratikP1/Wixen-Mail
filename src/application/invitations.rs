@@ -690,11 +690,12 @@ impl WhatTheInvitationSays {
                 when,
                 place,
                 organiser,
+                one_day,
                 standing,
-                ..
             } => Some(format!(
-                "Meeting invitation{}{}{}{}{}.",
+                "Meeting invitation{}{}{}{}{}{}.",
                 titled(summary),
+                if *one_day { ONE_DAY_OF_IT } else { "" },
                 clause("", when),
                 clause("in ", place.as_deref().unwrap_or_default()),
                 clause("from ", organiser.as_deref().unwrap_or_default()),
@@ -703,10 +704,13 @@ impl WhatTheInvitationSays {
             WhatTheInvitationSays::Cancellation {
                 summary,
                 on_the_calendar,
-                ..
+                the_day,
             } => Some(format!(
-                "Meeting cancelled{}. It is {}on your calendar.",
+                "Meeting cancelled{}{}. It is {}on your calendar.",
                 titled(summary),
+                the_day
+                    .as_deref()
+                    .map_or_else(String::new, |day| format!("{ONE_DAY_OF_IT}, {day}")),
                 if *on_the_calendar { "" } else { "not " }
             )),
             WhatTheInvitationSays::AnAnswer {
@@ -746,7 +750,9 @@ impl Standing {
             Standing::Changed { from } => {
                 format!(", a change to the meeting on your calendar, which was {from}")
             }
-            Standing::ADayChanged { .. } => String::new(),
+            Standing::ADayChanged { from } => {
+                format!(", a change to that day on your calendar, which was {from}")
+            }
             Standing::AlreadyAnswered { answer } => format!(
                 ", and you {} this version",
                 answer.map_or("have answered", Answer::what_you_did)
@@ -783,6 +789,10 @@ impl Answer {
         }
     }
 }
+
+/// The clause after the title that says a message is about one day of a
+/// repeating meeting, said wherever that is true so it is heard the same way.
+const ONE_DAY_OF_IT: &str = ", one day of a repeating meeting";
 
 /// The meeting's title after the kind of message, or nothing when it has none.
 ///
@@ -893,15 +903,28 @@ fn an_invitation_said(
             .organiser
             .as_ref()
             .map(|organiser| plainly(how_to_say(organiser))),
-        one_day: false,
+        one_day: invitation.the_day.is_some(),
         standing,
     }
 }
 
 /// The one day of a repeating meeting a document names, worded the way this
 /// reader words a date, or nothing when it names none.
-fn the_day_worded_in(_document: &str, _dates: DateSettings) -> Option<String> {
-    None
+///
+/// Worded from the message, in the zone its day is written in, and said on
+/// this computer's clock like every other time here.
+fn the_day_worded_in(document: &str, dates: DateSettings) -> Option<String> {
+    let day = read_the_invitation(document).ok()?.the_day?;
+    let a_whole_day = matches!(
+        crate::common::moment::read(&day.at),
+        Some(crate::common::moment::Moment::WholeDay(_))
+    );
+    Some(when_it_starts(
+        &day.at,
+        a_whole_day,
+        day.zone.as_deref(),
+        dates,
+    ))
 }
 
 /// What an invitation is to a meeting the calendar already holds.
@@ -939,6 +962,11 @@ fn the_standing_against(
             Standing::AlreadyAnswered { answer }
         }
         _ if at_the_copys_time(invitation, copy) => Standing::AlreadyOnTheCalendar,
+        // The copy is that day, as the caller found it, so "which was" names
+        // that day rather than the day the series began.
+        _ if invitation.the_day.is_some() => Standing::ADayChanged {
+            from: when_the_copy_is(copy, dates),
+        },
         _ => Standing::Changed {
             from: when_the_copy_is(copy, dates),
         },

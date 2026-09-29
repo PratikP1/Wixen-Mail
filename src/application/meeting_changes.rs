@@ -390,7 +390,7 @@ fn what_it_would_change(
     let Some(the_day) = one_day_of_a_series::the_day_on_the_series_clock(day, copy) else {
         return Some(Err(Why::TheDayCannotBePlaced));
     };
-    if !repeats(copy) {
+    if !one_day_of_a_series::repeats(copy) {
         return if one_day_of_a_series::is_at_that_day(copy, &the_day) {
             the_whole_meeting_changed(asked, invitation, copy, held.answered_version, dates).map(Ok)
         } else {
@@ -446,13 +446,6 @@ fn one_day_of_the_series_changed(
             }),
         WhatItAsks::SomebodysAnswer | WhatItAsks::SomethingElse => None,
     }
-}
-
-/// Whether a row repeats.
-fn repeats(row: &CalendarEventEntry) -> bool {
-    row.recurrence_rule
-        .as_deref()
-        .is_some_and(|rule| !rule.trim().is_empty())
 }
 
 /// The move an update asks for, when it is newer than the copy and at another
