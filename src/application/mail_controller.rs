@@ -170,6 +170,14 @@ impl SendEmailRequest {
         if recipients.is_empty() {
             return None;
         }
+        // The address the row was written from, or the account's own for a
+        // row that names none, which is every row queued before there was a
+        // choice. The same rule files a draft, so the two cannot disagree.
+        let (from_address, from_name) = crate::application::identities::who_it_goes_out_from(
+            account,
+            queued.from_address.as_deref(),
+            queued.from_name.as_deref(),
+        );
 
         Some(Self {
             queue_id: queued.id.clone(),
@@ -177,8 +185,8 @@ impl SendEmailRequest {
             server: account.smtp_server.clone(),
             port,
             username: account.username.clone(),
-            from_address: account.email.clone(),
-            from_name: Some(account.sender_name.trim().to_string()).filter(|n| !n.is_empty()),
+            from_address,
+            from_name,
             auth,
             use_tls: account.smtp_use_tls,
             to: recipients,
