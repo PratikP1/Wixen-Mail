@@ -17853,14 +17853,7 @@ fn file_draft_copy(
             .cloned()
     };
     let Some(account) = account else { return };
-    // The same sender the message would go out with, name and all, so the copy
-    // somebody comes back to on another device is a copy of this message.
-    let sender_name = account.sender_name.trim();
-    let raw = draft_message::bytes_for(
-        draft,
-        &account.email,
-        Some(sender_name).filter(|name| !name.is_empty()),
-    );
+    let raw = draft_message::the_copy_to_file(draft, &account);
 
     // A local Drafts folder is written here and now. There is no server, and
     // the cache holds a connection that cannot cross an await.

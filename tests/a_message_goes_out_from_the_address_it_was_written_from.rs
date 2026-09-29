@@ -15,12 +15,27 @@
 //! columns is made by hand, without them, before a cache ever opens it, so the
 //! only thing that can add them is the migration.
 
+use wixen_mail::application::draft_message;
+use wixen_mail::application::mail_controller::{SendEmailRequest, outgoing};
 use wixen_mail::application::sending_later::GoAfter;
+use wixen_mail::data::account::Account;
 use wixen_mail::data::message_cache::{CachedDraft, MessageCache, QueuedOutboxMessage};
+use wixen_mail::service::protocols::MailAuth;
 
 const ACCOUNT: &str = "acct-work";
+const OWN_ADDRESS: &str = "ada@example.com";
+const OWN_NAME: &str = "Ada Lovelace";
 const OTHER_ADDRESS: &str = "help@example.com";
 const OTHER_NAME: &str = "Help Desk";
+
+fn work() -> Account {
+    let mut account = Account::new("Work".to_string(), OWN_ADDRESS.to_string());
+    account.id = ACCOUNT.to_string();
+    account.sender_name = OWN_NAME.to_string();
+    account.smtp_server = "smtp.example.com".to_string();
+    account.smtp_port = "587".to_string();
+    account
+}
 
 fn a_cache() -> (tempfile::TempDir, MessageCache) {
     let dir = tempfile::tempdir().expect("a directory");
@@ -202,4 +217,62 @@ fn test_a_database_from_before_the_columns_opens_and_keeps_its_rows() {
     assert_eq!(draft.subject, "Drafted long ago");
     assert_eq!(draft.from_address, None);
     assert_eq!(draft.from_name, None);
+}
+
+// ── Sending and filing go out from the row's address ──────────────────────
+
+/// The From of the message the send loop builds from the one queued row.
+fn sent_from(row: &QueuedOutboxMessage) -> (String, Option<String>) {
+    let (_dir, cache) = a_cache();
+    let back = queued_and_read_back(&cache, row);
+    let request =
+        SendEmailRequest::from_queued(&back, &work(), MailAuth::Password("hunter2".to_string()))
+            .expect("a sendable request");
+    let email = outgoing(&request).expect("a message to build");
+    (email.from, email.from_name)
+}
+
+/// The From line of the copy filed for the one draft, as it reads back.
+fn filed_from(draft: &CachedDraft) -> String {
+    let (_dir, cache) = a_cache();
+    let [back, _] = saved_and_read_back(&cache, draft);
+    let bytes = draft_message::the_copy_to_file(&back, &work());
+    String::from_utf8(bytes)
+        .expect("a draft's headers are text")
+        .lines()
+        .find_map(|line| line.strip_prefix("From: ").map(str::to_string))
+        .expect("a From line")
+}
+
+#[test]
+fn test_a_queued_message_goes_out_from_the_address_its_row_carries() {
+    let (from, name) = sent_from(&queued_from(Some(OTHER_ADDRESS), Some(OTHER_NAME)));
+
+    assert_eq!(from, OTHER_ADDRESS);
+    assert_eq!(name.as_deref(), Some(OTHER_NAME));
+}
+
+#[test]
+fn test_a_queued_message_with_no_address_goes_out_from_the_accounts_own() {
+    let (from, name) = sent_from(&queued_from(None, None));
+
+    assert_eq!(from, OWN_ADDRESS);
+    assert_eq!(name.as_deref(), Some(OWN_NAME));
+}
+
+#[test]
+fn test_a_filed_draft_is_from_the_address_its_row_carries() {
+    let line = filed_from(&drafted_from(Some(OTHER_ADDRESS), Some(OTHER_NAME)));
+
+    assert!(line.contains(OTHER_ADDRESS), "{line}");
+    assert!(line.contains(OTHER_NAME), "{line}");
+    assert!(!line.contains(OWN_ADDRESS), "{line}");
+}
+
+#[test]
+fn test_a_filed_draft_with_no_address_is_from_the_accounts_own() {
+    let line = filed_from(&drafted_from(None, None));
+
+    assert!(line.contains(OWN_ADDRESS), "{line}");
+    assert!(line.contains(OWN_NAME), "{line}");
 }

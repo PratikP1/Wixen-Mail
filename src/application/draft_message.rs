@@ -20,7 +20,21 @@
 //! a real domain. A draft is not a message anybody has received, and its
 //! identifier should not look like one that could be replied to.
 
+use crate::data::account::Account;
 use crate::data::message_cache::CachedDraft;
+
+/// The draft as the copy filed in its account's Drafts folder.
+///
+/// From the same sender the message would go out with, name and all, so the
+/// copy somebody comes back to on another device is a copy of this message.
+pub fn the_copy_to_file(draft: &CachedDraft, account: &Account) -> Vec<u8> {
+    let sender_name = account.sender_name.trim();
+    bytes_for(
+        draft,
+        &account.email,
+        Some(sender_name).filter(|name| !name.is_empty()),
+    )
+}
 
 /// The `Message-ID` a draft is filed under, every time it is saved.
 ///
