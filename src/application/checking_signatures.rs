@@ -62,6 +62,12 @@ pub enum SignatureCheck {
     /// against (#52 point 6). **Not a failed check**, and not unsigned either:
     /// the message says it is signed and only the bytes are missing.
     StoredBeforeSignaturesWereKept,
+    /// It carries a signature part and was stored after this computer began
+    /// keeping every form signed mail arrives in, so the signature is in a form
+    /// nothing here checks: a file of its own, or inside a part another program
+    /// wrapped around the message (ledger 653). **Not a failed check**, and
+    /// not unsigned either.
+    InAFormNotChecked,
 }
 
 /// What can be said about one message's signature, from what the cache holds.
@@ -88,7 +94,9 @@ pub fn for_message(
         });
     if matches!(kept, SignedOriginal::NotSigned) && carries_a_signature_part(cache, message_row_id)
     {
-        return SignatureCheck::StoredBeforeSignaturesWereKept;
+        return why_its_signature_was_not_checked(
+            cache.stored_before_every_signed_form_was_kept(message_row_id),
+        );
     }
     from_what_was_kept(
         kept,
@@ -97,6 +105,13 @@ pub fn for_message(
         now,
         || crate::application::pgp_keys::every_key_that_checks_signatures(Some(cache)),
     )
+}
+
+/// Why a message carrying a signature part, with nothing kept of its form,
+/// was not checked.
+fn why_its_signature_was_not_checked(stored_before: crate::common::Result<bool>) -> SignatureCheck {
+    let _ = stored_before;
+    SignatureCheck::StoredBeforeSignaturesWereKept
 }
 
 /// The media types a signature part is stored under: S/MIME's two spellings
@@ -299,6 +314,27 @@ mod tests {
         ) -> Option<crate::service::signed_mail::sending::OwnCertificate> {
             None
         }
+    }
+
+    #[test]
+    fn test_a_mark_that_cannot_be_read_says_the_sentence_that_claims_nothing_about_when() {
+        // Below the mark is the stored-before reason and above it the form
+        // nothing checks; a mark nobody can read is evidence of neither, so
+        // it gives the sentence that says nothing about when (D6).
+        assert_eq!(
+            why_its_signature_was_not_checked(Err(crate::common::Error::Other(
+                "no mark".to_string()
+            ))),
+            SignatureCheck::InAFormNotChecked
+        );
+        assert_eq!(
+            why_its_signature_was_not_checked(Ok(true)),
+            SignatureCheck::StoredBeforeSignaturesWereKept
+        );
+        assert_eq!(
+            why_its_signature_was_not_checked(Ok(false)),
+            SignatureCheck::InAFormNotChecked
+        );
     }
 
     #[test]
@@ -768,20 +804,87 @@ mod end_to_end {
         // signature part is still among its files, and that is enough to say
         // it is signed and why it cannot be checked, rather than reading it as
         // a message that never claimed a signature.
+        // Stored, then the mark put where a database an earlier build wrote
+        // would have it, so each message is below it.
         let cache = a_cache();
-        for (uid, kind) in [
+        let kinds = [
             (1, "application/pgp-signature"),
             (2, "application/pkcs7-signature"),
             (3, "application/x-pkcs7-signature"),
-        ] {
-            let row = stored_before_with_a_file(&cache, uid, kind);
+        ];
+        let rows: Vec<(i64, &str)> = kinds
+            .iter()
+            .map(|&(uid, kind)| (stored_before_with_a_file(&cache, uid, kind), kind))
+            .collect();
+        cache.as_an_earlier_build_left_it();
 
+        for (row, kind) in rows {
             assert_eq!(
                 checked_now(&cache, row),
                 SignatureCheck::StoredBeforeSignaturesWereKept,
                 "{kind}"
             );
         }
+    }
+
+    /// The three types a signature part is stored under.
+    const SIGNATURE_TYPES: [&str; 3] = [
+        "application/pgp-signature",
+        "application/pkcs7-signature",
+        "application/x-pkcs7-signature",
+    ];
+
+    #[test]
+    fn test_a_signature_file_stored_after_the_mark_says_its_form_is_not_checked() {
+        // Ledger 653. In one store, a message of each type stored before the
+        // mark and one of each stored after it: the first keep the
+        // stored-before reason, which is true of them, and the second say the
+        // form is one nothing here checks, which is true of them.
+        let cache = a_cache();
+        let before: Vec<i64> = (1..)
+            .zip(SIGNATURE_TYPES)
+            .map(|(uid, kind)| stored_before_with_a_file(&cache, uid, kind))
+            .collect();
+        cache.as_an_earlier_build_left_it();
+        let after: Vec<i64> = (11..)
+            .zip(SIGNATURE_TYPES)
+            .map(|(uid, kind)| stored_before_with_a_file(&cache, uid, kind))
+            .collect();
+
+        for (row, kind) in before.into_iter().zip(SIGNATURE_TYPES) {
+            assert_eq!(
+                checked_now(&cache, row),
+                SignatureCheck::StoredBeforeSignaturesWereKept,
+                "before the mark, {kind}"
+            );
+        }
+        for (row, kind) in after.into_iter().zip(SIGNATURE_TYPES) {
+            assert_eq!(
+                checked_now(&cache, row),
+                SignatureCheck::InAFormNotChecked,
+                "after the mark, {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_signature_whose_form_is_not_checked_is_heard_so_and_not_as_stored_before() {
+        // What the reader says above such a message: its own sentence first,
+        // that nothing has been found wrong, and nothing about when it was
+        // stored.
+        let cache = a_cache();
+        let row = stored_before_with_a_file(&cache, 1, "application/pgp-signature");
+
+        let bar = opening(&cache, row).expect("a signed message says something");
+
+        assert!(
+            bar.starts_with(
+                "This message carries a signature in a form Wixen Mail does not check."
+            ),
+            "{bar}"
+        );
+        assert!(bar.contains("Nothing has been found wrong"), "{bar}");
+        assert!(!bar.contains("stored before"), "{bar}");
     }
 
     #[test]

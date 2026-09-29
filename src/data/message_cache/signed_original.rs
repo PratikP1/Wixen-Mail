@@ -142,7 +142,33 @@ fn now() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+/// The name of the one row in `last_message_before` this module keeps.
+const EVERY_SIGNED_FORM_WAS_KEPT: &str = "every signed form was kept";
+
 impl MessageCache {
+    /// Note the last message this database holds, once.
+    pub(super) fn note_the_last_message_before_every_signed_form_was_kept(&self) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO last_message_before (what, message_id, noted_at)
+                 SELECT ?1, COALESCE(MAX(id), 0), ?2 FROM messages",
+                rusqlite::params![EVERY_SIGNED_FORM_WAS_KEPT, now()],
+            )
+            .map_err(|e| Error::Other(format!("Failed to note the last message: {}", e)))?;
+        Ok(())
+    }
+
+    /// Whether a message was stored before this database began keeping every
+    /// form signed mail arrives in.
+    pub fn stored_before_every_signed_form_was_kept(&self, message_id: i64) -> Result<bool> {
+        let _ = message_id;
+        Ok(true)
+    }
+
+    /// Put the mark where a database an earlier build wrote would have it.
+    #[cfg(test)]
+    pub(crate) fn as_an_earlier_build_left_it(&self) {}
+
     /// Keep the form a message arrived in, if it says it is signed.
     ///
     /// Asked of every message that arrives, and it decides for itself whether
@@ -520,6 +546,97 @@ mod tests {
             cache.signed_original(row).expect("read"),
             SignedOriginal::Kept(raw)
         );
+    }
+
+    // ── The mark: the last message stored before every form was kept ──────
+
+    /// The mark's row as it stands: the message number and the time noted.
+    fn the_mark(cache: &MessageCache) -> (i64, String) {
+        cache
+            .conn
+            .query_row(
+                "SELECT message_id, noted_at FROM last_message_before WHERE what = ?1",
+                [EVERY_SIGNED_FORM_WAS_KEPT],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("the mark")
+    }
+
+    /// The mark taken away, as a database no build carrying it has opened.
+    fn with_no_mark(cache: &MessageCache) {
+        cache
+            .conn
+            .execute("DELETE FROM last_message_before", [])
+            .expect("the mark taken away");
+    }
+
+    #[test]
+    fn test_a_new_database_holds_no_message_stored_before_every_signed_form_was_kept() {
+        // A database this build made starts with nothing before its mark, so
+        // every message in it was stored while every form was being kept.
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+
+        assert!(
+            !cache
+                .stored_before_every_signed_form_was_kept(row)
+                .expect("the mark")
+        );
+    }
+
+    #[test]
+    fn test_the_messages_an_earlier_build_left_were_stored_before_and_later_ones_were_not() {
+        // A database an earlier build wrote: a message in it and no mark. The
+        // first open by this build marks that message, and one stored after
+        // it is above the mark.
+        let cache = signed_cache();
+        let earlier = a_message(&cache, 1);
+        with_no_mark(&cache);
+
+        let reopened = MessageCache::new(cache.path().to_path_buf(), None).expect("reopened");
+        let later = a_message(&reopened, 2);
+
+        assert!(
+            reopened
+                .stored_before_every_signed_form_was_kept(earlier)
+                .expect("the mark"),
+            "the message an earlier build stored"
+        );
+        assert!(
+            !reopened
+                .stored_before_every_signed_form_was_kept(later)
+                .expect("the mark"),
+            "the message stored since"
+        );
+    }
+
+    #[test]
+    fn test_opening_the_database_again_leaves_the_mark_where_it_was() {
+        // A later open moving the mark would turn mail stored since into mail
+        // stored before, and hide a form nothing checked behind a reason that
+        // is not its own (T-13-36.1-02).
+        let cache = signed_cache();
+        a_message(&cache, 1);
+        with_no_mark(&cache);
+        let first = MessageCache::new(cache.path().to_path_buf(), None).expect("first open");
+        let noted = the_mark(&first);
+        a_message(&first, 2);
+
+        let again = MessageCache::new(cache.path().to_path_buf(), None).expect("opened again");
+
+        assert_eq!(the_mark(&again), noted);
+        assert_eq!(noted.0, 1);
+    }
+
+    #[test]
+    fn test_a_mark_that_is_missing_is_an_error_and_not_a_no() {
+        // A mark that cannot be read says nothing about when a message was
+        // stored, so it is an error the caller answers for, never a "no".
+        let cache = signed_cache();
+        let row = a_message(&cache, 1);
+        with_no_mark(&cache);
+
+        assert!(cache.stored_before_every_signed_form_was_kept(row).is_err());
     }
 
     #[test]

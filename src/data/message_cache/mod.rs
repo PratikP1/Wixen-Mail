@@ -1824,6 +1824,26 @@ impl MessageCache {
         // all S/MIME, because nothing else was kept.
         self.ensure_column_exists("signed_original", "kind", "TEXT")?;
 
+        // The last message this database held when a build that keeps every
+        // form signed mail arrives in first opened it (13-36.1, ledger 653).
+        // One row, named in words, holding a message number and the time it
+        // was noted; written once and never moved, so a later open cannot
+        // turn mail stored since into mail stored before. See
+        // `signed_original::stored_before_every_signed_form_was_kept`.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS last_message_before (
+                what TEXT PRIMARY KEY,
+                message_id INTEGER NOT NULL,
+                noted_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to create last_message_before table: {}", e))
+            })?;
+        self.note_the_last_message_before_every_signed_form_was_kept()?;
+
         // A message being moved to a folder on another account, held from
         // before the append until the move ends. A row exists exactly while a
         // crossing is in the air, which is normally seconds; one that outlives

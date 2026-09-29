@@ -1901,6 +1901,7 @@ impl ReaderDocument {
             SignatureCheck::StoredBeforeSignaturesWereKept => {
                 Some(stored_before_bar(self.warning.as_deref()))
             }
+            SignatureCheck::InAFormNotChecked => Some(stored_before_bar(self.warning.as_deref())),
         };
         self
     }
@@ -4046,8 +4047,9 @@ mod signature_tests {
         }
     }
 
-    /// The four PGP verdicts and the message stored before signatures were
-    /// kept, as the reader is handed them.
+    /// The four PGP verdicts, the message stored before signatures were kept
+    /// and the one carrying a signature in a form nothing checks, as the
+    /// reader is handed them.
     pub(super) fn every_pgp_signature_check() -> Vec<SignatureCheck> {
         vec![
             SignatureCheck::Pgp(PgpVerdict::Holds { whose: ada() }),
@@ -4057,6 +4059,7 @@ mod signature_tests {
             SignatureCheck::Pgp(PgpVerdict::DoesNotHold { whose: ada() }),
             SignatureCheck::Pgp(PgpVerdict::Damaged),
             SignatureCheck::StoredBeforeSignaturesWereKept,
+            SignatureCheck::InAFormNotChecked,
         ]
     }
 
@@ -4133,10 +4136,11 @@ mod signature_tests {
     }
 
     #[test]
-    fn test_the_pgp_signature_sentences_are_five_different_sentences() {
-        // Five different things to do next: nothing, import the sender's key,
-        // distrust the words, ask for them again, or fetch nothing because
-        // nothing can be fetched. Two alike would hide one of them.
+    fn test_the_pgp_signature_sentences_are_all_different_sentences() {
+        // Six different things to do next: nothing, import the sender's key,
+        // distrust the words, ask for them again, fetch nothing because
+        // nothing can be fetched, or read it as unsigned because its form is
+        // one nothing here checks. Two alike would hide one of them.
         let said: Vec<String> = every_pgp_signature_check().iter().map(said_first).collect();
 
         for (which, one) in said.iter().enumerate() {
