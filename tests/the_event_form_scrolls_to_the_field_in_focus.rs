@@ -15,15 +15,22 @@
 //! it can be seen. Save and the line that says why Save refused are read the
 //! same way, since a form whose Save has scrolled away cannot be kept.
 //!
-//! **Twice the text is read as half the room.** The plan asked for the form
-//! built with its font doubled. That cannot be done from here: a dialog does
-//! not inherit its parent's font (measured 2026-09-28, the parent at 18 points
-//! and the form's title at 9), wxdragon offers no way to reach a form's labels
-//! once it is built, and Windows' own text size is a setting of the machine
-//! this runs on, which a test does not change. What twice the text does to
-//! the fields of a form in a given room is make them twice as tall as that
-//! room allows, which is the same fields in half the room, and that is read.
-//! What it cannot read is width: the fields twice as wide as well.
+//! **Twice the text is read as the smallest size the form can be made.** The
+//! plan asked for the form built with its font doubled. That cannot be done
+//! from here: a dialog does not inherit its parent's font (measured
+//! 2026-09-28, the parent set to 18 points and the form's title at 9),
+//! wxdragon offers no way to reach a form's labels once it is built, and
+//! Windows' own text size is a setting of the machine this runs on, which a
+//! test does not change. Twice the text in a given room is the same form in
+//! half of it, since every part of it doubles, so a form read at every size
+//! from the smallest it can be made up to its own has been read at twice the
+//! text wherever that lands. The first red of this file read half of 480
+//! instead, and found the description taller than the page that leaves it,
+//! which wxWidgets then does not scroll to at all; the form now keeps a page
+//! at least as tall as its tallest field, so half of 480 is below its
+//! smallest and the smallest is what is read.
+//!
+//! What this cannot read is width: the fields twice as wide as well.
 //!
 //! **The largest size is read as well as the size.** On a screen tall enough
 //! to hold the form, the size it opens at is within the working area whether
@@ -57,9 +64,9 @@ use wxdragon::prelude::*;
 /// fields cannot all show at once.
 const A_SMALL_SCREENS_ROOM: i32 = 480;
 
-/// What twice the text leaves the fields of a form on that screen: the same
-/// fields twice as tall in the same room are these fields in half of it.
-const HALF_A_SMALL_SCREENS_ROOM: i32 = A_SMALL_SCREENS_ROOM / 2;
+/// Less room than any form can be made to fit in, so the form takes the
+/// smallest it allows.
+const NO_ROOM_AT_ALL: i32 = 1;
 
 /// commctrl.h: `WM_USER + 106`, the field an up-down control is attached to.
 const UDM_GETBUDDY: u32 = 0x0400 + 106;
@@ -231,26 +238,25 @@ fn the_description(form: &ItemFormWidgets) -> Result<TextCtrl, String> {
         .ok_or_else(|| "the event form has no text field".to_string())
 }
 
-/// The event form given `height` pixels inside its frame: what it took, and
-/// whether the fields at the bottom and Save are seen.
+/// The event form given `height` pixels inside its frame: the height it
+/// opened at, the height it took, and whether the fields at the bottom and
+/// Save are seen.
 fn read_the_event_in(
     height: i32,
     a11y: &Arc<Accessibility>,
     into: &mut Harvest,
-    keys: [&'static str; 4],
+    keys: [&'static str; 5],
 ) -> Result<(), String> {
-    let [client_height, description, times_offered, save_and_problem] = keys;
+    let [opened, took, description, times_offered, save_and_problem] = keys;
     let frame = a_frame();
     let form = a_form(&frame, a11y, ItemKind::Event)?;
     let dialog = form.dialog.get_handle() as isize;
 
     form.dialog.show(true);
-    let width = form.dialog.get_client_size().width;
-    form.dialog.set_client_size(Size::new(width, height));
-    into.insert(
-        client_height,
-        form.dialog.get_client_size().height.to_string(),
-    );
+    let client = form.dialog.get_client_size();
+    into.insert(opened, client.height.to_string());
+    form.dialog.set_client_size(Size::new(client.width, height));
+    into.insert(took, form.dialog.get_client_size().height.to_string());
 
     let notes = the_description(&form)?;
     notes.set_focus();
@@ -505,6 +511,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     &a11y,
                     &mut harvest,
                     [
+                        "a small screen: the height it opened at",
                         "a small screen: the height it took",
                         "a small screen: the description with focus",
                         "a small screen: times offered with focus",
@@ -512,14 +519,15 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     ],
                 )?;
                 read_the_event_in(
-                    HALF_A_SMALL_SCREENS_ROOM,
+                    NO_ROOM_AT_ALL,
                     &a11y,
                     &mut harvest,
                     [
-                        "half a small screen: the height it took",
-                        "half a small screen: the description with focus",
-                        "half a small screen: times offered with focus",
-                        "half a small screen: save and the problem line",
+                        "its smallest: the height it opened at",
+                        "its smallest: the height it took",
+                        "its smallest: the description with focus",
+                        "its smallest: times offered with focus",
+                        "its smallest: save and the problem line",
                     ],
                 )?;
                 read_the_size_built(&a11y, &mut harvest)?;
@@ -592,36 +600,38 @@ fn test_on_a_small_screen_save_and_the_problem_line_stay_in_the_window() {
     );
 }
 
-// ── Half that, which is what twice the text leaves the fields ──────────────
+// ── The smallest it can be made, which is where twice the text lands ───────
+
+fn the_height(name: &str) -> i32 {
+    reading(name)
+        .parse()
+        .unwrap_or_else(|why| panic!("{name:?} is not a height: {why}"))
+}
 
 #[test]
-fn test_the_event_form_can_be_given_half_a_small_screens_room() {
-    assert_eq!(
-        reading("half a small screen: the height it took"),
-        HALF_A_SMALL_SCREENS_ROOM.to_string()
+fn test_the_event_form_can_be_made_smaller_than_its_fields() {
+    let opened = the_height("its smallest: the height it opened at");
+    let took = the_height("its smallest: the height it took");
+    assert!(
+        took < opened,
+        "asked for no room at all, the form stayed {took} of the {opened} its fields take"
     );
 }
 
 #[test]
-fn test_in_half_a_small_screen_the_description_is_seen_once_it_has_focus() {
-    assert_eq!(
-        reading("half a small screen: the description with focus"),
-        "seen"
-    );
+fn test_at_its_smallest_the_description_is_seen_once_it_has_focus() {
+    assert_eq!(reading("its smallest: the description with focus"), "seen");
 }
 
 #[test]
-fn test_in_half_a_small_screen_times_offered_is_seen_once_it_has_focus() {
-    assert_eq!(
-        reading("half a small screen: times offered with focus"),
-        "seen"
-    );
+fn test_at_its_smallest_times_offered_is_seen_once_it_has_focus() {
+    assert_eq!(reading("its smallest: times offered with focus"), "seen");
 }
 
 #[test]
-fn test_in_half_a_small_screen_save_and_the_problem_line_stay_in_the_window() {
+fn test_at_its_smallest_save_and_the_problem_line_stay_in_the_window() {
     assert_eq!(
-        reading("half a small screen: save and the problem line"),
+        reading("its smallest: save and the problem line"),
         "save seen, problem line seen"
     );
 }
