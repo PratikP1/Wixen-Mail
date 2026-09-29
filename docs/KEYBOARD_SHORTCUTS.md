@@ -843,6 +843,8 @@ Every letter on a page of the account editor is its own. On the first page: `Alt
 
 On the Account Manager, `Alt+L` is Look People Up at Work: the window for the chosen account's directory, where its organisation keeps its list of people, and how to sign in to it. With no account chosen it says so, as Edit does. In the window: `Alt+D` Directory address, `Alt+W` Where in it to look, `Alt+N` Sign-in name, `Alt+P` Password. `Enter` is OK and `Escape` is Cancel. The password box opens empty; when a password is saved, the box and the line under it say so, and leaving the box empty keeps it. Clearing the sign-in name and pressing OK forgets it. **Experimental.** Looking people up in a directory has not been tried against a real directory.
 
+On the Account Manager, `Alt+O` is Other Addresses to Send From: the other addresses the chosen account sends from, each with the name people see beside it. With no account chosen it says so, as Edit does; an account added in the same visit is saved when the Account Manager closes, and the button says to close it and open it again first. The manager has the buttons every manager window has: `Alt+A` Add, `Alt+E` Edit, `Alt+D` Delete, `Alt+U` Move Up, `Alt+W` Move Down, `Alt+C` Close. `Alt+Shift+Up` and `Alt+Shift+Down` in the list move the address the cursor is on, and say where it is now. The order is written when the window closes. In the window Add and Edit open: `Alt+A` Address, `Alt+N` The name people see. `Enter` is OK and `Escape` is Cancel. **Experimental.** A provider may refuse to send from an address that is not set up with it too, and sending from another address has not been tried against a real provider.
+
 ### Contact Management
 
 | Action | Shortcut | Description |

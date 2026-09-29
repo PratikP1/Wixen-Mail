@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 639
+open_count: 643
 waived_count: 0
 fixed_count: 73
-total_count: 712
-last_updated: 2026-09-29T03:40:00.000Z
+total_count: 716
+last_updated: 2026-09-29T06:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -727,6 +727,10 @@ last_updated: 2026-09-29T03:40:00.000Z
 | 710 | 13 | unrun-verify | src/application/when_people_are_free.rs | 536 | 13-31, the tester's ear: nobody has heard an offered time with a guest's clock beside it, "03/03/2026 at 10:00, which is 15:00 for Ada; or 03/03/2026 at 10:30, which is 15:30 for Ada", read as the first sentence of the answer and in What came back. Whether three clocks on each of three times is too long to hold, and whether the semicolons are heard as the break between times | open |  | 2026-09-29T00:15:00.000Z |  |
 | 711 | 13 | todo | src/service/free_busy.rs | 553 | 13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it | open |  | 2026-09-29T00:15:00.000Z |  |
 | 712 | 13 | unrun-verify | src/presentation/wx_item_form.rs | 941 | 13-32, the tester's ear and eye: nobody has opened Edit Event at 200 percent text or on a small screen since it scrolls. With Windows' text size at 200 percent, open File, New, Event, Tab to Show as, Category, Description and Times offered: whether each is scrolled into sight as focus reaches it, whether Save and Cancel stay on screen, whether the window opens wholly on the screen, and whether the screen reader says anything new as focus moves into the scrolled page. The test reads the smallest size in place of twice the text, which it cannot set | open |  | 2026-09-29T02:00:00.000Z |  |
+| 713 | 13 | todo | src/application/identities.rs | 172 | 13-33: other addresses are kept per account and managed from the Account Manager, and nothing offers them yet. Compose's From list still lists each account's own address alone, so the_from_list and who_it_goes_out_from have no caller outside tests. 13-34 keeps the chosen address on the outbox and drafts, and 13-35 builds the From list from the_from_list and closes this | open |  | 2026-09-29T06:45:00.000Z |  |
+| 714 | 13 | todo | src/application/identities.rs |  | 13-33, phase 13 decision 34 (RESEARCH-3 question 11): Gmail's own Send mail as list could be read with the permission the account already has and offered without typing. Typed addresses came first; reading Gmail's list is later work with no plan yet | open |  | 2026-09-29T06:45:00.000Z |  |
+| 715 | 13 | unrun-verify | src/presentation/wx_identities.rs | 109 | 13-33, the tester's ear: nobody has heard Other Addresses to Send From. From the Account Manager, Alt+O on a saved account: whether the title, the line saying a provider may refuse an address and the list named Other addresses are read; Add, an address that is not one and OK, whether the sentence is heard and focus is heard landing back in Address; Move Down, whether where the address went is heard; and Alt+O on an account added in the same visit, whether the sentence saying to close and reopen the Account Manager is heard | open |  | 2026-09-29T06:45:00.000Z |  |
+| 716 | 13 | todo | tests/a_locked_key_asks_for_its_passphrase.rs | 225 | 13-33: the paste reading fails six cases with "OpenClipboard failed" whenever the Windows session is locked. OpenClipboard answers error 5, access denied, on the interactive window station and on a new one alike while LockApp and LogonUI run, measured 2026-09-29 with a throwaway program, and the target passes once the session is unlocked; 13-25 read the same failure as a flake. It held 13-33's full gate for about ninety minutes. Recommended: the message names the error code and says the session may be locked, so a locked machine reads as a place the test cannot run rather than a paste that broke | open |  | 2026-09-29T06:45:00.000Z |  |
 
 ````json
 [
@@ -9272,6 +9276,54 @@ last_updated: 2026-09-29T03:40:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T02:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 713,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/identities.rs",
+    "line": 172,
+    "description": "13-33: other addresses are kept per account and managed from the Account Manager, and nothing offers them yet. Compose's From list still lists each account's own address alone, so the_from_list and who_it_goes_out_from have no caller outside tests. 13-34 keeps the chosen address on the outbox and drafts, and 13-35 builds the From list from the_from_list and closes this",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T06:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 714,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/identities.rs",
+    "line": null,
+    "description": "13-33, phase 13 decision 34 (RESEARCH-3 question 11): Gmail's own Send mail as list could be read with the permission the account already has and offered without typing. Typed addresses came first; reading Gmail's list is later work with no plan yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T06:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 715,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_identities.rs",
+    "line": 109,
+    "description": "13-33, the tester's ear: nobody has heard Other Addresses to Send From. From the Account Manager, Alt+O on a saved account: whether the title, the line saying a provider may refuse an address and the list named Other addresses are read; Add, an address that is not one and OK, whether the sentence is heard and focus is heard landing back in Address; Move Down, whether where the address went is heard; and Alt+O on an account added in the same visit, whether the sentence saying to close and reopen the Account Manager is heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T06:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 716,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/a_locked_key_asks_for_its_passphrase.rs",
+    "line": 225,
+    "description": "13-33: the paste reading fails six cases with \"OpenClipboard failed\" whenever the Windows session is locked. OpenClipboard answers error 5, access denied, on the interactive window station and on a new one alike while LockApp and LogonUI run, measured 2026-09-29 with a throwaway program, and the target passes once the session is unlocked; 13-25 read the same failure as a flake. It held 13-33's full gate for about ninety minutes. Recommended: the message names the error code and says the session may be locked, so a locked machine reads as a place the test cannot run rather than a paste that broke",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T06:45:00.000Z",
     "resolved_at": null
   }
 ]

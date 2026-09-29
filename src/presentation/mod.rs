@@ -73,6 +73,7 @@ pub mod wx_destination;
 pub mod wx_feedback;
 pub mod wx_first_run;
 pub mod wx_folder_choice;
+pub mod wx_identities;
 pub mod wx_item_form;
 pub mod wx_managers;
 pub mod wx_notes_module;

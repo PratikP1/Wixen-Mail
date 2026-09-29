@@ -186,6 +186,11 @@ jobs:
         # People Up at Work, which the Account Manager opens for an account's
         # directory and its sign-in. It opens on a made-up directory with a
         # password said to be saved, so the line saying so is walked too.
+        #
+        # The identities target, added 2026-09-29 (#59, 13-33), is Other
+        # Addresses to Send From, the manager the Account Manager opens for an
+        # account's other addresses. It opens on two made-up addresses and
+        # saves nothing.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
@@ -193,7 +198,7 @@ jobs:
           'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
           'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
           'account-details', 'phone-number', 'page', 'page-window', 'pgp-keys', 'unlock-a-pgp-key',
-          'directory-sign-in'
+          'directory-sign-in', 'identities'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

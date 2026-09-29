@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Other addresses to send from, kept per account and managed from the Account Manager,
+  experimental (GAP-10's first half, #59).** `Alt+O` on the Account Manager opens Other
+  Addresses to Send From for the chosen account: the other addresses it sends from, each with
+  the name people see beside it, or "No name" when it has none, in the order you put them
+  with Move Up and Move Down or `Alt+Shift+Up` and `Alt+Shift+Down` in the list. Add and
+  Edit open a window holding the
+  address (`Alt+A`) and the name people see (`Alt+N`). OK refuses, with a sentence, something
+  that is not an email address, the account's own address, an address the account already
+  has however it is capitalised, and a name longer than 100 characters or holding a line
+  break; the window stays open and puts you in the box the sentence is about. The list is
+  written when the manager closes. With no account chosen the button says so, as Edit does;
+  an account added in the same visit is saved when the Account Manager closes, so the button
+  says to close it and open it again first. The addresses are kept in a new table of their
+  own, `identities`, added beside the others without changing any, and they go when their
+  account is removed. The manager says, above the list, that a provider may refuse to send
+  from an address that is not set up with it too, or send from the account's own instead.
+  The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: compose does not offer these addresses yet, so nothing is sent from one until
+  a later change adds them to the From list; no provider has been asked to send from one.
 - **Find when everyone is free says a colleague's time on their own clock, experimental
   (GAP-08's third point, #57 point 3).** Microsoft's answer gives each colleague's working
   hours with the time zone they keep them in, and that zone is now read, through the same
