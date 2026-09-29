@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 502 records have arrived since and have not been through it.
+# 503 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -18136,9 +18136,14 @@ red = [
     "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
+    # 13-36.4's: a repeating meeting answered is read back off the row the
+    # answer saved. The third repeat case reads the server's own row, which
+    # still repeats when nothing is saved over it.
+    "application::answered_meetings::tests::test_answering_a_repeating_meeting_puts_a_repeating_meeting_on_the_calendar",
+    "application::answered_meetings::tests::test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # ── The version answered is written against the row that is really here ─────
@@ -18178,7 +18183,7 @@ red = [
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # ── The count of held-back pictures, kept and said ──────────────────────────
@@ -24632,9 +24637,14 @@ red = [
     "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
+    # 13-36.4's, which answer a repeating meeting through the fixture and read
+    # the row it saved; the third reads the server's row, which still repeats
+    # when the answer files nothing over it.
+    "application::answered_meetings::tests::test_answering_a_repeating_meeting_puts_a_repeating_meeting_on_the_calendar",
+    "application::answered_meetings::tests::test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # Answering a meeting with the hold off told "Sending to ..." and handed to
@@ -31739,7 +31749,7 @@ red = [
     "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
@@ -31945,7 +31955,7 @@ red = [
     "application::calendar::tests::test_an_outlook_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/calendar.rs", tests = 56 },
@@ -31964,7 +31974,7 @@ red = [
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # Google's UID read under the field name serde would guess, `icalUid`, rather
@@ -34768,10 +34778,10 @@ red = [
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
-# A merged Accept left waiting to be sent, so a change a provider may refuse
+#A merged Accept left waiting to be sent, so a change a provider may refuse
 # goes to a guest's copy that already says busy (T-13-36.2-04). Written
 # 2026-09-29 by 13-36.2.
 [[guard]]
@@ -34786,7 +34796,7 @@ red = [
     # the read skips it unchanged. Measured 2026-09-29 by 13-36.2.
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # The organiser a mailed invitation named surviving the merge over the one the
@@ -34809,7 +34819,7 @@ red = [
     "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # The Google read filing a meeting it meets for the first time beside the row
@@ -34840,7 +34850,7 @@ red = [
     "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
 ]
 
@@ -34864,7 +34874,7 @@ red = [
     "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
 ]
 
@@ -34898,7 +34908,7 @@ red = [
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/caldav_sync.rs", tests = 68 },
 ]
 
@@ -35054,4 +35064,25 @@ red = [
 tests_last_seen = [
     { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
+]
+
+# The row an answer leaves given no repeat rule again, so a weekly meeting
+# answered here is its first day alone on the calendar and a series a calendar
+# server holds is sent back to it without its repeat (ledger 723,
+# T-13-36.4-03). Written 2026-09-29 by 13-36.4, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an answered series keeps its repeat"
+file = "src/application/answered_meetings.rs"
+before = '''        // calendar rather than its first day alone (ledger 723).
+        recurrence_rule: invitation.repeats.clone(),'''
+after = '''        // calendar rather than its first day alone (ledger 723).
+        recurrence_rule: None,'''
+red = [
+    "application::answered_meetings::tests::test_answering_a_repeating_meeting_puts_a_repeating_meeting_on_the_calendar",
+    "application::answered_meetings::tests::test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off",
+    "application::answered_meetings::tests::test_what_a_calendar_server_is_sent_for_an_answered_series_still_repeats",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]

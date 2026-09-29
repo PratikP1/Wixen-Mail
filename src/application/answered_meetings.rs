@@ -26,10 +26,16 @@
 //! that check filed a second meeting beside the first. [`file_the_providers_copy`]
 //! puts the copy on the answer's row instead, and the meeting there is the
 //! provider's copy rather than the invitation's: the provider is the
-//! calendar's authority on the meeting, an invitation comes by mail from
-//! somebody who may not have called it, and an answer files a repeating
-//! meeting without its rule. The answer keeps its row, its version, its word
-//! and whether it takes up the time.
+//! calendar's authority on the meeting, and an invitation comes by mail from
+//! somebody who may not have called it. The answer keeps its row, its
+//! version, its word and whether it takes up the time.
+//!
+//! A repeating meeting answered here is filed repeating: the rule and the days
+//! the organiser called off go on the row with the answer, and a series the
+//! calendar already holds keeps the days it calls off itself. Until 13-36.4
+//! the row carried neither, so the calendar showed the first day alone, and a
+//! series a calendar server held would have been sent back to it without its
+//! repeat.
 //!
 //! # What this deliberately does not decide
 //!
@@ -123,7 +129,10 @@ fn the_row_an_answer_leaves(
         is_all_day: invitation.is_all_day,
         time_zone: invitation.time_zone.clone(),
         status: where_it_goes.status.to_string(),
-        recurrence_rule: None,
+        // How the meeting repeats and the days its organiser called off, so a
+        // repeating meeting answered here is a repeating meeting on the
+        // calendar rather than its first day alone (ledger 723).
+        recurrence_rule: invitation.repeats.clone(),
         categories: String::new(),
         // Nothing, which is what every event made on this computer carries. It
         // came by mail rather than from a calendar server, and saying it came
@@ -145,7 +154,7 @@ fn the_row_an_answer_leaves(
         // the push. Written false, the answer would sit here and the account's
         // provider would never hear it.
         pending: true,
-        exception_dates: None,
+        exception_dates: invitation.called_off.clone(),
         cut_from_event_id: None,
         provider_recurrence_id: None,
     }
@@ -255,18 +264,26 @@ pub fn file_the_answer(
 /// or the next sync finds nothing under that identifier and files the meeting
 /// again beside the answer. A row an answer filed carries nothing of the kind,
 /// and a meeting the calendar has never held has no row to keep them from.
+///
+/// It keeps every day the held row already calls off as well, beside the ones
+/// the invitation names: a day kept apart here or called off at a calendar
+/// server is off the series whatever the invitation says, and put back it
+/// would stand on the calendar twice or come back from being cancelled.
 fn still_where_it_came_from(
     answered: CalendarEventEntry,
     already: Option<&CalendarEventEntry>,
 ) -> CalendarEventEntry {
     match already {
-        Some(held) => CalendarEventEntry {
-            provider_event_id: held.provider_event_id.clone(),
-            source_provider: held.source_provider.clone(),
-            etag: held.etag.clone(),
-            web_link: held.web_link.clone(),
-            ..answered
-        },
+        Some(held) => crate::application::calendar::everything_both_copies_call_off(
+            CalendarEventEntry {
+                provider_event_id: held.provider_event_id.clone(),
+                source_provider: held.source_provider.clone(),
+                etag: held.etag.clone(),
+                web_link: held.web_link.clone(),
+                ..answered
+            },
+            held,
+        ),
         None => answered,
     }
 }

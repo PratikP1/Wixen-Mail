@@ -950,7 +950,7 @@ fn save_what_outlook_sent(
 ///
 /// Whether the series is waiting to be sent is carried through untouched. This
 /// is a read, and a read never makes a change owe anything to a provider.
-fn everything_both_copies_call_off(
+pub(crate) fn everything_both_copies_call_off(
     merged: CalendarEventEntry,
     held: &CalendarEventEntry,
 ) -> CalendarEventEntry {
