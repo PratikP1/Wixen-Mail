@@ -707,7 +707,11 @@ a meeting, so a change from anybody else is said and never applied.
 | A cancellation from the organiser | The bar says "The organiser has called this meeting off. Remove from Calendar takes it off yours." and there is one button, Remove from Calendar, on `Alt+R`. Pressing it marks the meeting cancelled, so the time is free, and keeps it on your calendar marked that way. Nothing is sent to the organiser. |
 | Either, from somebody other than the organiser | Nothing on your calendar changes, and the bar says who it came from and who the organiser is. |
 | Either, for a meeting your calendar does not record an organiser for | Nothing changes, and the bar says the meeting on your calendar does not say who organised it. A meeting put on your calendar by an earlier version records nobody until your calendar provider sends it again, or you answer it here. |
-| Either, for a repeating meeting | Nothing changes, and the bar says changing one day of a repeating meeting is not done here yet, because applied to the series it would change every day. |
+| An update from the organiser that moves one day of a repeating meeting | That day moves on your calendar when you open the message, and every other day stays where it was. The day becomes an appointment of its own, and the repeating meeting skips it. The bar says so: "Moved one day of this repeating meeting on your calendar, from 12/03/2026 at 09:00 to 13/03/2026 at 14:00." A later update for the same day moves that appointment again. The meeting's own sentence says "one day of a repeating meeting" and compares the day, not the day the meeting started. |
+| A cancellation from the organiser for one day of a repeating meeting | The bar says "The organiser has called off one day of this repeating meeting, 12/03/2026 at 09:00 to 10:00. Remove from Calendar takes that day off yours." Remove from Calendar, on `Alt+R`, takes that one day off and keeps the repeating meeting and every other day. The bar then says, for example, "Weekly sync: that one day is taken off. The other days are unchanged." Nothing is sent to the organiser. |
+| An update or a cancellation for every day of a repeating meeting | It is applied as a single meeting's is: an update moves the whole repeating meeting and keeps how it repeats and the days it skips, and Remove from Calendar marks the whole meeting cancelled. |
+| Either, for one day of a meeting in a Google or Outlook calendar, or in a calendar this program can only read | Nothing changes, and the bar names the calendar: "Your calendar was not changed, because one day of a repeating meeting cannot be changed on its own in your Google calendar from here." Google and Outlook are not told how a meeting repeats when it changes, so the day kept apart would arrive there as an extra meeting. |
+| Either, changing a repeating meeting from one day onwards | Nothing changes, and the bar says "Your calendar was not changed, because this changes the meeting from one day onwards, and that is not done here." |
 | Either, inside an encrypted message | Your calendar is left as it was, and the bar says the change came inside encrypted mail, which is never applied on opening. [Signed and encrypted mail](#signed-and-encrypted-mail) says why. |
 
 The preview pane never changes your calendar. It says what the message is,
@@ -715,12 +719,17 @@ as above, because it opens a message just by moving past it, and a meeting
 should not move because the cursor did. The account's Allow Changes answer
 applies: with changes to calendars switched off for the account, the bar says
 so and nothing moves. A change made here is sent to your calendar provider
-like any other change to an event, the next time the calendar is checked.
+like any other change to an event, the next time the calendar is checked. On
+a calendar server, one day moved is sent as two entries, the appointment for
+that day and the repeating meeting with the day skipped, as the event
+editor's "Just this one day" already sends it, so other calendar programs
+show them as two.
 
 What this does not do yet: no invitation, update or cancellation from a real
-Outlook, Google or calendar server organiser has been read here, nor has any
-answer reached one, and a move or a removal sent back to Google or Microsoft
-after they applied the same update themselves has not been tried. A sender's
+Outlook, Google or calendar server organiser has been read here, for one day
+or for a whole meeting, nor has any answer reached one, and a move or a
+removal sent back to Google or Microsoft after they applied the same update
+themselves has not been tried. A sender's
 address can be forged, and nothing here checks the provider's own verdict on
 it yet. Nobody has listened to the buttons with a screen reader yet, nor to the
 other clock the sentence says for a meeting set in another time zone, and no
