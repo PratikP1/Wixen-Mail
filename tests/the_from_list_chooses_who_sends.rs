@@ -697,3 +697,53 @@ fn test_a_reopened_draft_opens_on_the_address_it_was_written_from() {
     )
     .unwrap();
 }
+
+// ── Every account's Outbox, read from the source ──────────────────────────
+//
+// Once the From list chooses the account, a message can wait in the Outbox of
+// an account nobody has open. Until 13-35 the send loop, the clock that lets
+// held mail go and Undo Send each read the open account's queue alone, so
+// such a message would have waited until somebody opened its account, and
+// Undo Send would have said nothing was waiting while it went.
+
+/// Whether the send loop reads what may go in every account's Outbox.
+fn every_outbox_is_sent(flush: Result<String, String>) -> Result<(), String> {
+    let flush = flush?;
+    it_says(Ok(flush.clone()), "s.accounts.clone()")?;
+    it_says(
+        Ok(flush),
+        "cache.outbox_messages_that_may_go_now(&account.id, now)",
+    )
+}
+
+#[test]
+fn test_the_send_loop_sends_what_waits_in_every_accounts_outbox() {
+    every_outbox_is_sent(body_of(&shipped(THE_MAIN_WINDOW), "fn flush_outbox(")).unwrap();
+}
+
+#[test]
+fn test_companion_a_send_loop_that_reads_the_open_account_alone_is_refused() {
+    let planted = "fn flush_outbox(app: AppHandles<'_>) {\n    let id = s.active_account_id.clone();\n    let queued = match cache.outbox_messages_that_may_go_now(aid, now) {\n}\n";
+    assert!(every_outbox_is_sent(body_of(planted, "fn flush_outbox(")).is_err());
+}
+
+#[test]
+fn test_the_clock_lets_held_mail_go_in_every_account() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let asked = between(&app, "let held_mail_is_due = {", "if held_mail_is_due {");
+    it_says(asked.clone(), "s.accounts").unwrap();
+    it_says(
+        asked,
+        "anything_reached_its_moment(&account.id, since, up_to)",
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_undo_send_reads_every_accounts_queue() {
+    it_says(
+        body_of(&shipped(THE_MAIN_WINDOW), "fn undo_send("),
+        "cache.every_queue_with_their_times()",
+    )
+    .unwrap();
+}
