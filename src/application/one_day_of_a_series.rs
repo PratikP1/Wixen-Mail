@@ -22,8 +22,52 @@ use chrono::{DateTime, FixedOffset};
 
 use crate::application::calendar::{ADayWent, with_one_more_day_called_off};
 use crate::application::invitations::{Invitation, OneDay};
+use crate::common::Result;
 use crate::common::moment::{self, Moment, WHOLE_DAY};
-use crate::data::message_cache::CalendarEventEntry;
+use crate::data::message_cache::{CalendarEventEntry, MessageCache};
+
+/// What the calendar holds for one day of a meeting a message names.
+///
+/// One answer that the change a message makes, the sentence said about it and
+/// answering that one day all read, so none of them can come to find the day
+/// somewhere the others do not.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThatDay {
+    /// Nothing on the calendar goes by the meeting's name.
+    NotHeld,
+    /// The day has a row of its own, kept apart here before or split out by a
+    /// calendar server, with the series it came from when that is held.
+    ItsOwnRow {
+        row: CalendarEventEntry,
+        series: Option<CalendarEventEntry>,
+    },
+    /// The series holds the day, which is `the_day` on its own clock and falls
+    /// as `as_it_falls`.
+    OnTheSeries {
+        series: CalendarEventEntry,
+        the_day: String,
+        as_it_falls: CalendarEventEntry,
+    },
+    /// The series calls the day off already.
+    OffTheSeries {
+        series: CalendarEventEntry,
+        the_day: String,
+    },
+    /// The calendar holds the meeting once, as a single appointment.
+    OneAppointment(CalendarEventEntry),
+    /// The day is on a clock this computer cannot place against the series'.
+    CannotBePlaced { series: CalendarEventEntry },
+}
+
+/// What the calendar holds for `day` of the meeting `uid` names, on `account`.
+pub fn what_the_calendar_holds_for_that_day(
+    _cache: &MessageCache,
+    _account: &str,
+    _uid: &str,
+    _day: &OneDay,
+) -> Result<ThatDay> {
+    Ok(ThatDay::NotHeld)
+}
 
 /// A clock face with no zone on it, the way the calendar stores one.
 const A_CLOCK_FACE: &str = "%Y-%m-%dT%H:%M:%S";
@@ -211,6 +255,7 @@ pub fn the_day_kept_apart(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
 
     /// The weekly sync, Thursdays at nine to ten from 5 March, in London.
     fn the_series() -> CalendarEventEntry {
@@ -396,5 +441,131 @@ mod tests {
         assert_eq!(kept.web_link, None);
         assert_eq!(kept.provider_recurrence_id, None);
         assert!(kept.pending, "a day nobody sends never reaches the server");
+    }
+
+    // ── What the calendar holds for that day ──────────────────────────────
+
+    const THE_MEETING: &str = "s-1@example.com";
+
+    /// A store holding `rows`, each filed under the meeting's UID when it has
+    /// that as its provider identifier, the way a calendar server's read and
+    /// an answer here file one.
+    fn a_store_holding(label: &str, rows: &[CalendarEventEntry]) -> TempHome<MessageCache> {
+        let cache = TempHome::named(label, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a store")
+        });
+        for row in rows {
+            cache.save_calendar_event(row).expect("the row filed");
+        }
+        cache
+    }
+
+    fn what_it_holds(cache: &MessageCache, day: &OneDay) -> ThatDay {
+        what_the_calendar_holds_for_that_day(cache, "acct", THE_MEETING, day)
+            .expect("the calendar to be readable")
+    }
+
+    fn the_twelfth() -> OneDay {
+        a_day("2026-03-12T09:00:00", Some("Europe/London"))
+    }
+
+    #[test]
+    fn test_a_meeting_the_calendar_does_not_hold_is_not_held() {
+        let cache = a_store_holding("that_day_not_held", &[]);
+
+        assert_eq!(what_it_holds(&cache, &the_twelfth()), ThatDay::NotHeld);
+    }
+
+    #[test]
+    fn test_a_day_kept_apart_is_its_own_row_beside_its_series() {
+        let kept = CalendarEventEntry {
+            id: "evt-day".to_string(),
+            provider_event_id: None,
+            recurrence_rule: None,
+            exception_dates: None,
+            cut_from_event_id: Some("evt-series".to_string()),
+            start_datetime: "2026-03-13T14:00:00".to_string(),
+            end_datetime: "2026-03-13T15:00:00".to_string(),
+            ..the_series()
+        };
+        let cache = a_store_holding("that_day_its_own_row", &[the_series(), kept.clone()]);
+        cache
+            .remember_the_day_it_stands_for("evt-day", THE_MEETING, "2026-03-12T09:00:00")
+            .expect("the day linked");
+
+        let ThatDay::ItsOwnRow { row, series } = what_it_holds(&cache, &the_twelfth()) else {
+            panic!("the day's own row");
+        };
+        assert_eq!(row.id, "evt-day");
+        assert_eq!(
+            series.map(|series| series.id).as_deref(),
+            Some("evt-series")
+        );
+    }
+
+    #[test]
+    fn test_a_day_still_on_the_series_is_that_day_as_the_series_holds_it() {
+        let series = CalendarEventEntry {
+            exception_dates: None,
+            ..the_series()
+        };
+        let cache = a_store_holding("that_day_on_the_series", &[series]);
+
+        let ThatDay::OnTheSeries {
+            series,
+            the_day,
+            as_it_falls,
+        } = what_it_holds(&cache, &the_twelfth())
+        else {
+            panic!("the day on the series");
+        };
+        assert_eq!(series.id, "evt-series");
+        assert_eq!(the_day, "2026-03-12T09:00:00");
+        assert_eq!(as_it_falls.start_datetime, "2026-03-12T09:00:00");
+        assert_eq!(as_it_falls.end_datetime, "2026-03-12T10:00:00");
+    }
+
+    #[test]
+    fn test_a_day_the_series_calls_off_is_off_it() {
+        let cache = a_store_holding("that_day_off_the_series", &[the_series()]);
+
+        assert!(
+            matches!(
+                what_it_holds(&cache, &a_day("2026-03-19T09:00:00", Some("Europe/London"))),
+                ThatDay::OffTheSeries { ref the_day, .. } if the_day == "2026-03-19T09:00:00"
+            ),
+            "the series calls the nineteenth off"
+        );
+    }
+
+    #[test]
+    fn test_a_meeting_held_once_is_one_appointment() {
+        let once = CalendarEventEntry {
+            recurrence_rule: None,
+            exception_dates: None,
+            ..the_series()
+        };
+        let cache = a_store_holding("that_day_one_appointment", std::slice::from_ref(&once));
+
+        assert!(
+            matches!(what_it_holds(&cache, &the_twelfth()), ThatDay::OneAppointment(ref row) if row.id == once.id),
+            "a single appointment"
+        );
+    }
+
+    #[test]
+    fn test_a_day_on_no_clock_here_cannot_be_placed() {
+        let cache = a_store_holding("that_day_cannot_be_placed", &[the_series()]);
+
+        assert!(
+            matches!(
+                what_it_holds(
+                    &cache,
+                    &a_day("2026-03-12T09:00:00", Some("Nowhere/Atlantis"))
+                ),
+                ThatDay::CannotBePlaced { .. }
+            ),
+            "a zone nothing here can place"
+        );
     }
 }

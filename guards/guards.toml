@@ -31566,6 +31566,7 @@ file = "src/application/invitations.rs"
 before = '''        WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
             summary: the_title_of(document),
             on_the_calendar: on_the_calendar.is_some(),
+            the_day: the_day_worded_in(document, dates),
         },'''
 after = '''        WhatItAsks::Cancellation => read_the_invitation(document)
             .map_or(WhatTheInvitationSays::CalendarFile, |invitation| {

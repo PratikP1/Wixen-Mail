@@ -622,6 +622,8 @@ pub enum WhatTheInvitationSays {
         place: Option<String>,
         /// Who called it, as they are said aloud.
         organiser: Option<String>,
+        /// Whether the message is about one day of a repeating meeting.
+        one_day: bool,
         /// What it means for the calendar here.
         standing: Standing,
     },
@@ -630,6 +632,9 @@ pub enum WhatTheInvitationSays {
         summary: String,
         /// Whether the calendar here holds the meeting being called off.
         on_the_calendar: bool,
+        /// The one day of a repeating meeting called off, worded the way this
+        /// reader words a date, when the message names one.
+        the_day: Option<String>,
     },
     /// Somebody answering a meeting you called.
     AnAnswer {
@@ -651,6 +656,12 @@ pub enum Standing {
     /// The calendar holds the meeting and this moves or changes it.
     Changed {
         /// When the calendar has it now, worded as `when` is.
+        from: String,
+    },
+    /// The calendar holds the one day of a repeating meeting the message is
+    /// about, and this moves or changes that day.
+    ADayChanged {
+        /// When the calendar has that day now, worded as `when` is.
         from: String,
     },
     /// The version already answered here, or an older one.
@@ -680,6 +691,7 @@ impl WhatTheInvitationSays {
                 place,
                 organiser,
                 standing,
+                ..
             } => Some(format!(
                 "Meeting invitation{}{}{}{}{}.",
                 titled(summary),
@@ -691,6 +703,7 @@ impl WhatTheInvitationSays {
             WhatTheInvitationSays::Cancellation {
                 summary,
                 on_the_calendar,
+                ..
             } => Some(format!(
                 "Meeting cancelled{}. It is {}on your calendar.",
                 titled(summary),
@@ -733,6 +746,7 @@ impl Standing {
             Standing::Changed { from } => {
                 format!(", a change to the meeting on your calendar, which was {from}")
             }
+            Standing::ADayChanged { .. } => String::new(),
             Standing::AlreadyAnswered { answer } => format!(
                 ", and you {} this version",
                 answer.map_or("have answered", Answer::what_you_did)
@@ -849,6 +863,7 @@ pub fn what_the_invitation_says(
         WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
             summary: the_title_of(document),
             on_the_calendar: on_the_calendar.is_some(),
+            the_day: the_day_worded_in(document, dates),
         },
         WhatItAsks::SomebodysAnswer => somebodys_answer_said(document),
         WhatItAsks::SomethingElse => WhatTheInvitationSays::CalendarFile,
@@ -878,8 +893,15 @@ fn an_invitation_said(
             .organiser
             .as_ref()
             .map(|organiser| plainly(how_to_say(organiser))),
+        one_day: false,
         standing,
     }
+}
+
+/// The one day of a repeating meeting a document names, worded the way this
+/// reader words a date, or nothing when it names none.
+fn the_day_worded_in(_document: &str, _dates: DateSettings) -> Option<String> {
+    None
 }
 
 /// What an invitation is to a meeting the calendar already holds.
@@ -2260,6 +2282,7 @@ mod tests {
                 when: "05/03/2026 at 09:00 to 10:00".to_string(),
                 place: Some("Room 3".to_string()),
                 organiser: Some("Ada Lovelace".to_string()),
+                one_day: false,
                 standing: Standing::New,
             }
         );
@@ -2802,6 +2825,89 @@ mod tests {
         assert_eq!(series.starts, "2026-03-05T09:00:00");
         assert_eq!(series.repeats.as_deref(), Some("FREQ=WEEKLY;COUNT=10"));
         assert_eq!(series.the_day, None);
+    }
+
+    /// Ada's message about the Thursday of 12 March of the weekly sync alone,
+    /// under `method`, the day at `starts` to `ends` on the clock.
+    fn about_the_twelfth(method: &str, starts: &str, ends: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:{method}\r\n\
+             BEGIN:VEVENT\r\nUID:s-1@example.com\r\nSEQUENCE:1\r\nSUMMARY:Weekly sync\r\n\
+             RECURRENCE-ID:20260312T090000\r\nDTSTART:{starts}\r\nDTEND:{ends}\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    /// The twelfth as the weekly series holds it, nine to ten.
+    fn the_twelfth_on_the_calendar() -> crate::data::message_cache::CalendarEventEntry {
+        crate::data::message_cache::CalendarEventEntry {
+            summary: "Weekly sync".to_string(),
+            location: None,
+            ..the_calendar_holding("2026-03-12T09:00:00", "2026-03-12T10:00:00")
+        }
+    }
+
+    #[test]
+    fn test_an_update_for_one_day_says_it_is_one_day_and_what_that_day_was() {
+        // Compared with that day, not with the day the series began: the
+        // series' first Thursday is not what the organiser moved.
+        let said = what_the_invitation_says(
+            &about_the_twelfth("REQUEST", "20260313T140000", "20260313T150000"),
+            Some(&the_twelfth_on_the_calendar()),
+            None,
+            written_out_in_full(),
+        )
+        .said();
+
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Meeting invitation: Weekly sync, one day of a repeating meeting, 13/03/2026 at \
+                 14:00 to 15:00, from Ada Lovelace, a change to that day on your calendar, which \
+                 was 12/03/2026 at 09:00 to 10:00."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_of_one_day_says_which_day() {
+        let said = what_the_invitation_says(
+            &about_the_twelfth("CANCEL", "20260312T090000", "20260312T100000"),
+            Some(&the_twelfth_on_the_calendar()),
+            None,
+            written_out_in_full(),
+        )
+        .said();
+
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Meeting cancelled: Weekly sync, one day of a repeating meeting, 12/03/2026 at \
+                 09:00. It is on your calendar."
+            )
+        );
+    }
+
+    #[test]
+    fn test_one_day_at_the_time_the_series_holds_it_is_said_to_be_on_the_calendar() {
+        // A new room for that Thursday, or a move a provider already made.
+        let said = what_the_invitation_says(
+            &about_the_twelfth("REQUEST", "20260312T090000", "20260312T100000"),
+            Some(&the_twelfth_on_the_calendar()),
+            None,
+            written_out_in_full(),
+        )
+        .said();
+
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Meeting invitation: Weekly sync, one day of a repeating meeting, 12/03/2026 at \
+                 09:00 to 10:00, from Ada Lovelace, and it is already on your calendar."
+            )
+        );
     }
 
     #[test]

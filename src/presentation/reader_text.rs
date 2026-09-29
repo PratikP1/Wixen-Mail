@@ -5517,6 +5517,7 @@ mod invitation_tests {
             when: "05/03/2026 at 09:00 to 10:00".to_string(),
             place: Some("Room 4".to_string()),
             organiser: Some("Ada Lovelace".to_string()),
+            one_day: false,
             standing: Standing::New,
         }
     }
@@ -5525,6 +5526,7 @@ mod invitation_tests {
         WhatTheInvitationSays::Cancellation {
             summary: "Quarterly review".to_string(),
             on_the_calendar: true,
+            the_day: None,
         }
     }
 
@@ -5720,6 +5722,7 @@ mod answer_button_tests {
             when: "05/03/2026 at 09:00 to 10:00".to_string(),
             place: None,
             organiser: Some("Ada Lovelace".to_string()),
+            one_day: false,
             standing: Standing::New,
         }
     }
