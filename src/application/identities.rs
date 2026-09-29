@@ -29,6 +29,11 @@ pub const NOT_TRIED_WITH_A_PROVIDER: &str = "A provider may refuse to send from 
      that is not set up with it too, or send from this account's own address instead. \
      Sending from another address has not been tried against a real provider yet.";
 
+/// Said when the account chosen in the Account Manager was added in the same
+/// visit, so the store holds nothing an address could belong to yet.
+pub const NOT_SAVED_YET: &str = "This account is saved when the Account Manager closes. \
+     Close it, open it again, and then add other addresses.";
+
 /// Said by Move Up and Move Down when the cursor is on no row.
 pub const WHICH_ADDRESS: &str =
     "Choose an address first. Move Up and Move Down act on the row the cursor is on.";

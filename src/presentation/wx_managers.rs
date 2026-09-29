@@ -113,16 +113,16 @@ fn get_choice_string(choice: &Choice) -> Option<String> {
 /// as the description existed, every answer these windows gave was written
 /// there and said nowhere. Both go through one call now, so the line and the
 /// ear cannot come apart again.
-struct ManagerChrome<'a> {
-    dialog: &'a Dialog,
-    main_sizer: &'a BoxSizer,
-    list: &'a ListCtrl,
-    status_text: &'a StaticText,
+pub(crate) struct ManagerChrome<'a> {
+    pub(crate) dialog: &'a Dialog,
+    pub(crate) main_sizer: &'a BoxSizer,
+    pub(crate) list: &'a ListCtrl,
+    pub(crate) status_text: &'a StaticText,
     /// Owned rather than borrowed: Delete's own click (see [`delete_selected`])
     /// runs from a button handler that must outlive this function call, and a
     /// borrowed `&Accessibility` cannot go into one. Cloning an `Arc` is a
     /// refcount bump, not a copy of the accessibility layer itself.
-    a11y: Arc<Accessibility>,
+    pub(crate) a11y: Arc<Accessibility>,
 }
 
 /// The rows a manager dialog's Add/Edit/Delete loop is working on, and
@@ -230,7 +230,7 @@ pub fn delete_selected<T: Clone>(
 /// somebody emptied on purpose, and there is no reason to hold the window open
 /// over it. Named rather than written as `|_| None` at three call sites, so
 /// the decision reads as a decision that was made.
-fn nothing_stops_this_closing<T>(_rows: &[T]) -> Option<&'static str> {
+pub(crate) fn nothing_stops_this_closing<T>(_rows: &[T]) -> Option<&'static str> {
     None
 }
 
@@ -295,7 +295,10 @@ impl ManagedRow for TagEntry {
 /// store as well, and a window is where somebody can be told why.
 ///
 /// Returns `true` if any changes were made.
-fn run_manager_loop<T: ManagedRow>(
+///
+/// `pub(crate)` since 13-33, for the other addresses an account sends from,
+/// whose manager opens from the Account Manager in `wx_identities`.
+pub(crate) fn run_manager_loop<T: ManagedRow>(
     chrome: ManagerChrome<'_>,
     kind: &str,
     working: &mut Vec<T>,
@@ -534,8 +537,11 @@ fn run_manager_loop<T: ManagedRow>(
 /// count and the position in the set come from Windows' own provider for a
 /// native list in report mode, on both channels, so this is the one thing
 /// about the list this code has to say.
+///
+/// `parent` is any window since 13-33: the other addresses' manager opens
+/// over the Account Manager's dialog rather than the main window.
 pub fn make_shell(
-    parent: &Frame,
+    parent: &dyn WxWidget,
     title: &str,
     holds: &str,
     w: i32,

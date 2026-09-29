@@ -2489,6 +2489,17 @@ fn look_people_up_for(
     }
 }
 
+/// Other Addresses to Send From on the Account Manager (#59, 13-33).
+pub fn other_addresses_for(
+    _chosen: Option<&Account>,
+    _store: Option<&crate::data::MessageCache>,
+    _manager: &Dialog,
+    _status: &StaticText,
+    _a11y: &Arc<Accessibility>,
+    _palette: Option<theme::Palette>,
+) {
+}
+
 // ── Automatic OAuth Flow ────────────────────────────────────────────────────
 
 enum OAuthFlowResult {
