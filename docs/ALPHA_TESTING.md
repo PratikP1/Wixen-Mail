@@ -270,6 +270,16 @@ Written down so you do not spend time reporting things already on the list.
   set it up, type three letters of a colleague's name into To, and tell us
   whether they were found, which sentence you heard if they were not, and
   whether the window told you plainly when a password was already saved.
+- **Sending from another address has never been tried with a real provider.**
+  An account can keep other addresses to send from (Account Manager, `Alt+O`),
+  and compose's From list offers them. No provider has been asked to send
+  from one. A provider may refuse an address that is not set up with it too,
+  or send from the account's own address instead, and nobody knows yet which
+  Gmail and Outlook do. If you have an address set up as "Send mail as" in
+  Gmail, or one your organisation lets you send as, send yourself a message
+  from it and tell us which address the message arrived from, and which
+  sentence you heard if it did not go. Try one that is not set up too, if you
+  can.
 - **Microsoft's people search has never met a real Microsoft account.** On an
   Outlook or Office 365 account signed in through the browser, typing three
   letters of a name into To asks Microsoft too, and its rows end "from
