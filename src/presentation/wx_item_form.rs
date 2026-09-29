@@ -974,6 +974,13 @@ fn fit_within_the_screen(
         dialog.set_max_size(screen.room);
     }
     dialog.set_size(opening);
+    // Placed again at the size it opens at. A dialog is placed when it is
+    // made, around its parent at the size it was made at, and growing it keeps
+    // its top where it was: on the Accessibility runner's 768-pixel screen
+    // that left the bottom of a 720-pixel form, Save with it, below the edge.
+    // Centring a window that has a parent keeps it inside its screen's
+    // working area.
+    dialog.centre();
 }
 
 /// Build every field in `fields` onto `parent`, in order, adding each one to

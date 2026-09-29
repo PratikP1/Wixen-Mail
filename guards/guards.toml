@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 463 records have arrived since and have not been through it.
+# 464 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34160,7 +34160,7 @@ tests_last_seen = [
 
 # The pages of the item form cannot scroll, so on a small screen, or at twice
 # the text, the fields below the bottom of the page take focus out of sight
-# (ledger 417, #57 point 4). Written 2026-09-28 by 13-32.
+# (ledger 417, #57 point 4). Written 2026-09-29 by 13-32.
 [[guard]]
 name = "the item form's pages scroll the field in focus into view"
 file = "src/presentation/wx_item_form.rs"
@@ -34177,5 +34177,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 16 },
-    { file = "tests/the_event_form_scrolls_to_the_field_in_focus.rs", tests = 13 },
+    { file = "tests/the_event_form_scrolls_to_the_field_in_focus.rs", tests = 14 },
+]
+
+# The item form is sized and left where it was placed when it was made, so a
+# form grown to its screen's height runs off the bottom with Save, as the
+# Accessibility run of 13-32's pull request read on the runner (run
+# 36510066030). Written 2026-09-29 by 13-32.
+[[guard]]
+name = "the item form is placed inside its screen after it is sized"
+file = "src/presentation/wx_item_form.rs"
+suite = "the_event_form_scrolls_to_the_field_in_focus"
+before = '''    // working area.
+    dialog.centre();'''
+after = '''    // working area.'''
+red = [
+    "test_the_event_form_opened_low_on_the_screen_lies_inside_the_working_area",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_item_form.rs", tests = 16 },
+    { file = "tests/the_event_form_scrolls_to_the_field_in_focus.rs", tests = 14 },
 ]
