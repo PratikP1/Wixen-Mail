@@ -18,33 +18,194 @@
 //! So the day is written once, on the series' own clock, and that one
 //! spelling is what is linked, called off and compared everywhere.
 
+use chrono::{DateTime, FixedOffset};
+
+use crate::application::calendar::{ADayWent, with_one_more_day_called_off};
 use crate::application::invitations::{Invitation, OneDay};
+use crate::common::moment::{self, Moment, WHOLE_DAY};
 use crate::data::message_cache::CalendarEventEntry;
+
+/// A clock face with no zone on it, the way the calendar stores one.
+const A_CLOCK_FACE: &str = "%Y-%m-%dT%H:%M:%S";
+/// An instant in universal time, the way a calendar kept in it stores one.
+const IN_UNIVERSAL_TIME: &str = "%Y-%m-%dT%H:%M:%SZ";
 
 /// The day, written the way the series writes its own start, or nothing when
 /// either zone cannot be placed and they differ.
-pub fn the_day_on_the_series_clock(_day: &OneDay, _series: &CalendarEventEntry) -> Option<String> {
-    None
+///
+/// A day naming no zone, or exactly the series' zone, is on the series' clock
+/// already and is taken as written. Any other is read in its own zone, its
+/// `TZID` or universal time for a `Z`, through the reader that places Windows
+/// names too, and written as the series' start is written: a clock face in
+/// the series' zone, a `Z` moment for a series kept in universal time, a date
+/// for a series of whole days.
+pub fn the_day_on_the_series_clock(day: &OneDay, series: &CalendarEventEntry) -> Option<String> {
+    let written = moment::read(&day.at)?;
+    if series.is_all_day {
+        return Some(written.the_day().format(WHOLE_DAY).to_string());
+    }
+    let its_zone = moment::the_zone_named(day.zone.as_deref());
+    let the_series_zone = moment::the_zone_named(series.time_zone.as_deref());
+    if matches!(written, Moment::ClockFace(_))
+        && (its_zone.is_none() || its_zone == the_series_zone)
+    {
+        return Some(day.at.clone());
+    }
+    let Moment::Fixed(instant) = moment::read_in(&day.at, its_zone)? else {
+        // A clock face in a zone nothing here can place.
+        return None;
+    };
+    match moment::read(the_series_start(series))? {
+        Moment::Fixed(_) => Some(
+            instant
+                .with_timezone(&chrono::Utc)
+                .format(IN_UNIVERSAL_TIME)
+                .to_string(),
+        ),
+        Moment::ClockFace(_) => the_clock_face_in(instant, the_series_zone),
+        Moment::WholeDay(_) => Some(instant.date_naive().format(WHOLE_DAY).to_string()),
+    }
+}
+
+/// Where the series starts, in whichever column holds it.
+fn the_series_start(series: &CalendarEventEntry) -> &str {
+    series
+        .start_date
+        .as_deref()
+        .unwrap_or(&series.start_datetime)
+}
+
+/// The clock face an instant shows in a named zone, or on this computer's
+/// clock for a series naming none, which is how a clock face beside no zone
+/// is read everywhere else here.
+fn the_clock_face_in(instant: DateTime<FixedOffset>, zone: Option<&str>) -> Option<String> {
+    let face = match zone {
+        None => instant.with_timezone(&chrono::Local).naive_local(),
+        Some(named) => instant
+            .with_timezone(&crate::common::zones::the_zone_called(named)?)
+            .naive_local(),
+    };
+    Some(face.format(A_CLOCK_FACE).to_string())
 }
 
 /// The series' row moved to that day, as long as the series' own meeting is,
 /// and repeating nothing: the day as the series holds it.
-pub fn as_the_series_holds_it(series: &CalendarEventEntry, _the_day: &str) -> CalendarEventEntry {
-    series.clone()
+///
+/// What the calendar shows on that day, which is what a change to the day is
+/// compared with and what its sentence says it was.
+pub fn as_the_series_holds_it(series: &CalendarEventEntry, the_day: &str) -> CalendarEventEntry {
+    let ends = series.end_date.as_deref().unwrap_or(&series.end_datetime);
+    let the_end = the_same_length_after(the_series_start(series), ends, the_day)
+        .unwrap_or_else(|| the_day.to_string());
+    CalendarEventEntry {
+        start_datetime: the_day.to_string(),
+        end_datetime: the_end.clone(),
+        start_date: series.is_all_day.then(|| the_day.to_string()),
+        end_date: series.is_all_day.then_some(the_end),
+        recurrence_rule: None,
+        exception_dates: None,
+        ..series.clone()
+    }
+}
+
+/// The end of a meeting starting on `the_day` that lasts as long as one from
+/// `starts` to `ends`, written the way `the_day` is, or nothing when the three
+/// are not one shape.
+fn the_same_length_after(starts: &str, ends: &str, the_day: &str) -> Option<String> {
+    match (
+        moment::read(starts)?,
+        moment::read(ends)?,
+        moment::read(the_day)?,
+    ) {
+        (Moment::ClockFace(from), Moment::ClockFace(to), Moment::ClockFace(day)) => {
+            Some((day + (to - from)).format(A_CLOCK_FACE).to_string())
+        }
+        (Moment::Fixed(from), Moment::Fixed(to), Moment::Fixed(day)) => Some(
+            (day + (to - from))
+                .with_timezone(&chrono::Utc)
+                .format(IN_UNIVERSAL_TIME)
+                .to_string(),
+        ),
+        (Moment::WholeDay(from), Moment::WholeDay(to), Moment::WholeDay(day)) => {
+            Some((day + (to - from)).format(WHOLE_DAY).to_string())
+        }
+        _ => None,
+    }
 }
 
 /// Whether the series still holds that day, rather than calling it off.
-pub fn still_on_the_series(_series: &CalendarEventEntry, _the_day: &str) -> bool {
-    false
+///
+/// By the rule that decides whether calling a day off adds anything, so the
+/// question and the write cannot come to two answers about the same day.
+pub fn still_on_the_series(series: &CalendarEventEntry, the_day: &str) -> bool {
+    let called_off = crate::service::caldav::the_called_off_value_for(the_day, series.is_all_day);
+    with_one_more_day_called_off(series, &called_off).1 == ADayWent::OffTheSeries
+}
+
+/// Whether a single appointment is at that day's time, which is when a
+/// message about one day of a meeting is about it.
+pub fn is_at_that_day(appointment: &CalendarEventEntry, the_day: &str) -> bool {
+    let zone = appointment.time_zone.as_deref();
+    crate::application::invitations::the_same_instant(
+        the_series_start(appointment),
+        zone,
+        the_day,
+        zone,
+    )
 }
 
 /// The day kept apart from its series as an appointment of its own, at the
 /// time the organiser's update gives it.
+///
+/// It names its series, and carries the series' account, calendar, status and
+/// categories and nothing of its identity: no repeat, no called-off days, no
+/// identifier or address or version at any provider. A day kept apart that
+/// carried the rule would be a second series nobody asked for, and one
+/// carrying the series' address would be sent as the series. The same shape
+/// the editor's own one-day change leaves, so the push already knows the
+/// pair.
 pub fn the_day_kept_apart(
     series: &CalendarEventEntry,
-    _invitation: &Invitation,
+    invitation: &Invitation,
 ) -> CalendarEventEntry {
-    series.clone()
+    let ends = crate::application::caldav_sync::the_end_a_calendar_did_not_give(
+        &invitation.starts,
+        invitation.ends.as_deref(),
+        invitation.is_all_day,
+    );
+    CalendarEventEntry {
+        id: uuid::Uuid::new_v4().to_string(),
+        account_id: series.account_id.clone(),
+        provider_event_id: None,
+        calendar_id: series.calendar_id.clone(),
+        summary: invitation.summary.clone(),
+        description: None,
+        location: invitation.location.clone(),
+        start_datetime: invitation.starts.clone(),
+        end_datetime: ends.clone(),
+        start_date: invitation.is_all_day.then(|| invitation.starts.clone()),
+        end_date: invitation.is_all_day.then_some(ends),
+        is_all_day: invitation.is_all_day,
+        time_zone: invitation.time_zone.clone(),
+        status: series.status.clone(),
+        recurrence_rule: None,
+        categories: series.categories.clone(),
+        source_provider: None,
+        etag: None,
+        web_link: None,
+        show_as: series.show_as.clone(),
+        last_modified_remote: None,
+        last_synced_at: None,
+        attendees_json: None,
+        reminders_json: None,
+        created_at: String::new(),
+        updated_at: String::new(),
+        // A change made here, which is what puts it in front of the push.
+        pending: true,
+        exception_dates: None,
+        cut_from_event_id: Some(series.id.clone()),
+        provider_recurrence_id: None,
+    }
 }
 
 #[cfg(test)]

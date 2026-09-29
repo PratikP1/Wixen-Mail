@@ -158,6 +158,7 @@ pub struct OneDay {
 pub fn read_the_invitation(document: &str) -> Result<Invitation> {
     let its_own = the_meetings_own_lines(document);
     let meeting = the_meeting_those_lines_describe(&its_own)?;
+    let the_day = the_day_named_on(&its_own, meeting.recurrence_id.as_deref())?;
     Ok(Invitation {
         uid: meeting.uid,
         version: the_version_named_on(&its_own),
@@ -174,10 +175,49 @@ pub fn read_the_invitation(document: &str) -> Result<Invitation> {
             .iter()
             .filter_map(|line| a_person_named_on(line, "ATTENDEE"))
             .collect(),
-        the_day: None,
-        repeats: None,
-        called_off: None,
+        the_day,
+        repeats: meeting.recurrence_rule,
+        called_off: meeting.exception_dates,
     })
+}
+
+/// The one day of a series the meeting's own lines name, or nothing when they
+/// name none.
+///
+/// The moment is the calendar reader's, `read`, so it is normalised the way a
+/// calendar server's own copy of the same day is. The zone and the range are
+/// read off the line, which the calendar reader does not keep. A line naming
+/// the property with nothing on it that reads as a moment is refused rather
+/// than passed over: passed over, a message about one day would read as a
+/// message about every day.
+fn the_day_named_on(its_own: &[String], read: Option<&str>) -> Result<Option<OneDay>> {
+    let Some(line) = its_own.iter().find(|line| names_the_day(line)) else {
+        return Ok(None);
+    };
+    let at = read
+        .map(str::trim)
+        .filter(|at| crate::common::moment::read(at).is_some())
+        .ok_or_else(|| {
+            Error::Protocol(
+                "That message names a day of a repeating meeting that cannot be read, so \
+                 nothing about the meeting is changed or answered from it."
+                    .to_string(),
+            )
+        })?;
+    Ok(Some(OneDay {
+        at: at.to_string(),
+        zone: parameter_named_on(line, "TZID"),
+        from_then_on: parameter_named_on(line, "RANGE")
+            .is_some_and(|range| range.trim().eq_ignore_ascii_case("THISANDFUTURE")),
+    }))
+}
+
+/// Whether a line is a `RECURRENCE-ID`, whatever case it is written in and
+/// whether or not anything follows its colon.
+fn names_the_day(line: &str) -> bool {
+    const THE_DAY: &str = "RECURRENCE-ID";
+    let name_ends = line.find([';', ':']).unwrap_or(line.len());
+    line[..name_ends].trim().eq_ignore_ascii_case(THE_DAY)
 }
 
 /// The meeting one set of property lines describes, read through the reader a
