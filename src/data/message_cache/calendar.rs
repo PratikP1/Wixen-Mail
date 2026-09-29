@@ -556,6 +556,58 @@ impl MessageCache {
         }
     }
 
+    /// The row an answer given here filed for the meeting `uid` names, while
+    /// no calendar has claimed it yet.
+    ///
+    /// An answer to a meeting no calendar has brought files it under the
+    /// meeting's UID as its provider identifier, from no provider, and
+    /// remembers the version answered. A provider that later claims the row
+    /// gives it an identifier or a source of its own, so each condition keeps
+    /// out a row that is somebody's: a calendar server's row answered here
+    /// carries a source, a meeting made here that nobody answered carries no
+    /// answer, and a day kept apart from its series, or filed on its own, is
+    /// one day and never the whole meeting a provider's copy stands for.
+    /// Scoped to the account, because the UID comes from a document a
+    /// stranger can write.
+    pub fn the_meeting_only_an_answer_filed(
+        &self,
+        account_id: &str,
+        uid: &str,
+    ) -> Result<Option<CalendarEventEntry>> {
+        let sql = format!(
+            "SELECT {EVENT_COLS} FROM calendar_events
+             WHERE account_id = ?1
+               AND provider_event_id = ?2
+               -- no provider has claimed it
+               AND source_provider IS NULL
+               -- an answer given here filed it
+               AND answered_version IS NOT NULL
+               -- the whole meeting, not one day of it
+               AND cut_from_event_id IS NULL
+               AND provider_recurrence_id IS NULL
+             LIMIT 1"
+        );
+        let mut stmt = self.conn.prepare_cached(&sql).map_err(|e| {
+            Error::Other(format!(
+                "Failed to prepare the answered meeting lookup: {}",
+                e
+            ))
+        })?;
+
+        let mut rows = stmt
+            .query_map(params![account_id, uid], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to look the answered meeting up: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!(
+                "Failed to read the answered meeting: {}",
+                e
+            ))),
+            None => Ok(None),
+        }
+    }
+
     /// Who called the meeting, as whoever filed it said; nothing when nobody
     /// said, which is every row stored before this was kept.
     pub fn the_organiser_on_the_calendar(&self, event_id: &str) -> Result<Option<String>> {
@@ -2002,6 +2054,150 @@ mod tests {
                 .the_organiser_on_the_calendar("evt-2")
                 .expect("the organiser read"),
             None
+        );
+    }
+
+    /// A row as an answer given here files it before any calendar check has
+    /// brought the meeting: under the meeting's UID, from no provider, and
+    /// answered.
+    fn an_answers_row(
+        cache: &MessageCache,
+        id: &str,
+        account: &str,
+        uid: &str,
+    ) -> CalendarEventEntry {
+        let row = CalendarEventEntry {
+            source_provider: None,
+            pending: true,
+            ..make_event(id, account, uid, "Quarterly review")
+        };
+        cache
+            .save_calendar_event(&row)
+            .expect("the answer's row filed");
+        cache
+            .remember_the_answer(id, 2, Answer::Accepted)
+            .expect("the answer remembered");
+        row
+    }
+
+    /// What the read finds under `uid` on "acct", by the row's own identity.
+    fn the_answers_row_found(cache: &MessageCache, uid: &str) -> Option<String> {
+        cache
+            .the_meeting_only_an_answer_filed("acct", uid)
+            .expect("the calendar to be readable")
+            .map(|row| row.id)
+    }
+
+    /// Every case below holds a row only an answer filed, which the read has
+    /// to find, beside the row the case is about, which it has to refuse. The
+    /// two halves together are what make each case red against a read that
+    /// answers nothing and against one that answers too much.
+    #[test]
+    fn test_a_calendar_servers_row_answered_here_is_never_taken_for_an_answers_row() {
+        // A calendar server files a meeting under its UID too, and answering
+        // it writes on that row. The row is the server's, not an answer's.
+        let cache = temp_cache("a_servers_row_answered_here");
+        an_answers_row(&cache, "evt-answer", "acct", "a@example.com");
+        let servers = CalendarEventEntry {
+            source_provider: Some("caldav".to_string()),
+            ..make_event("evt-server", "acct", "b@example.com", "Standup")
+        };
+        cache
+            .save_calendar_event(&servers)
+            .expect("the server's row");
+        cache
+            .remember_the_answer("evt-server", 1, Answer::Tentative)
+            .expect("the answer remembered");
+
+        assert_eq!(
+            the_answers_row_found(&cache, "a@example.com").as_deref(),
+            Some("evt-answer")
+        );
+        assert_eq!(
+            the_answers_row_found(&cache, "b@example.com"),
+            None,
+            "a calendar server's row was taken for one only an answer filed"
+        );
+    }
+
+    #[test]
+    fn test_a_meeting_made_here_that_nobody_answered_is_never_taken_for_an_answers_row() {
+        // An event made in this program carries no provider either, and a
+        // meeting nobody answered is not an answer waiting for its meeting.
+        let cache = temp_cache("a_meeting_made_here");
+        an_answers_row(&cache, "evt-answer", "acct", "a@example.com");
+        let made_here = CalendarEventEntry {
+            source_provider: None,
+            ..make_event("evt-made", "acct", "b@example.com", "Dentist")
+        };
+        cache
+            .save_calendar_event(&made_here)
+            .expect("the event made here");
+
+        assert_eq!(
+            the_answers_row_found(&cache, "a@example.com").as_deref(),
+            Some("evt-answer")
+        );
+        assert_eq!(
+            the_answers_row_found(&cache, "b@example.com"),
+            None,
+            "a meeting nobody answered was taken for one an answer filed"
+        );
+    }
+
+    #[test]
+    fn test_one_day_of_a_series_is_never_taken_for_a_whole_meeting() {
+        // A day kept apart from its series, or a day filed on its own, is one
+        // day and not the meeting a provider's copy stands for.
+        let cache = temp_cache("one_day_of_a_series");
+        an_answers_row(&cache, "evt-answer", "acct", "a@example.com");
+        let cut_out = CalendarEventEntry {
+            cut_from_event_id: Some("evt-answer".to_string()),
+            ..an_answers_row(&cache, "evt-day", "acct", "b@example.com")
+        };
+        cache
+            .save_calendar_event(&cut_out)
+            .expect("the day kept apart");
+        let one_day = CalendarEventEntry {
+            provider_recurrence_id: Some("20260312T090000Z".to_string()),
+            ..an_answers_row(&cache, "evt-one-day", "acct", "c@example.com")
+        };
+        cache
+            .save_calendar_event(&one_day)
+            .expect("the day filed alone");
+
+        assert_eq!(
+            the_answers_row_found(&cache, "a@example.com").as_deref(),
+            Some("evt-answer")
+        );
+        assert_eq!(
+            the_answers_row_found(&cache, "b@example.com"),
+            None,
+            "a day cut from its series was taken for the whole meeting"
+        );
+        assert_eq!(
+            the_answers_row_found(&cache, "c@example.com"),
+            None,
+            "a day filed alone was taken for the whole meeting"
+        );
+    }
+
+    #[test]
+    fn test_another_accounts_answer_is_not_found() {
+        // The UID comes from a document a stranger can write, so the read is
+        // scoped to the account the check is for.
+        let cache = temp_cache("another_accounts_answer");
+        an_answers_row(&cache, "evt-answer", "acct", "a@example.com");
+        an_answers_row(&cache, "evt-theirs", "another-account", "b@example.com");
+
+        assert_eq!(
+            the_answers_row_found(&cache, "a@example.com").as_deref(),
+            Some("evt-answer")
+        );
+        assert_eq!(
+            the_answers_row_found(&cache, "b@example.com"),
+            None,
+            "another account's answer was found for this one"
         );
     }
 

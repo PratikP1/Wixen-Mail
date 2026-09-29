@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 486 records have arrived since and have not been through it.
+# 494 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -1542,7 +1542,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 47 },
+    { file = "src/data/message_cache/calendar.rs", tests = 51 },
 ]
 
 [[guard]]
@@ -1560,7 +1560,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 47 },
+    { file = "src/data/message_cache/calendar.rs", tests = 51 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -18089,9 +18089,22 @@ red = [
     # row is found by its UID and answered on.
     "application::answered_meetings::tests::test_an_answer_filed_as_a_new_row_records_who_called_the_meeting",
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
+    # 13-36.2's: every case of the other order answers first and then finds
+    # the row the answer filed.
+    "application::answered_meetings::tests::test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing",
+    "application::answered_meetings::tests::test_a_tentative_answer_merged_onto_a_busy_copy_waits_to_be_sent",
+    "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
+    "application::answered_meetings::tests::test_the_organiser_the_answer_recorded_stays_when_the_provider_names_nobody",
+    "application::answered_meetings::tests::test_a_strangers_words_do_not_reach_the_meeting_the_provider_holds",
+    "application::answered_meetings::tests::test_a_meeting_no_answer_filed_is_still_filed_as_new",
+    "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
+    "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/answered_meetings.rs", tests = 34 },
 ]
 
 # ── The version answered is written against the row that is really here ─────
@@ -18131,7 +18144,7 @@ red = [
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/answered_meetings.rs", tests = 34 },
 ]
 
 # ── The count of held-back pictures, kept and said ──────────────────────────
@@ -24573,9 +24586,21 @@ red = [
     # 13-12's, which answer through the same fixture.
     "application::answered_meetings::tests::test_an_answer_filed_as_a_new_row_records_who_called_the_meeting",
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
+    # 13-36.2's, which answer through it too before a check brings the meeting.
+    "application::answered_meetings::tests::test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing",
+    "application::answered_meetings::tests::test_a_tentative_answer_merged_onto_a_busy_copy_waits_to_be_sent",
+    "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
+    "application::answered_meetings::tests::test_the_organiser_the_answer_recorded_stays_when_the_provider_names_nobody",
+    "application::answered_meetings::tests::test_a_strangers_words_do_not_reach_the_meeting_the_provider_holds",
+    "application::answered_meetings::tests::test_a_meeting_no_answer_filed_is_still_filed_as_new",
+    "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
+    "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/answered_meetings.rs", tests = 34 },
 ]
 
 # Answering a meeting with the hold off told "Sending to ..." and handed to
@@ -31672,11 +31697,15 @@ red = [
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
     "application::reading_a_message::tests::test_each_button_says_what_it_does_to_an_answer_already_given_here",
     "application::reading_a_message::tests::test_the_buttons_say_the_answer_given_to_a_meeting_google_filed",
+    # 13-36.2's: the merge keeps the word answered on the answer's row.
+    "application::answered_meetings::tests::test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/answered_meetings.rs", tests = 34 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/data/message_cache/calendar.rs", tests = 47 },
+    { file = "src/data/message_cache/calendar.rs", tests = 51 },
 ]
 
 # The answer to a meeting sent with no In-Reply-To and no References, which is
@@ -31880,10 +31909,10 @@ red = [
     "application::calendar::tests::test_an_outlook_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/answered_meetings.rs", tests = 34 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/data/message_cache/calendar.rs", tests = 47 },
+    { file = "src/data/message_cache/calendar.rs", tests = 51 },
 ]
 
 # The answer looking its meeting up by the provider's identifier again, which
@@ -31899,7 +31928,7 @@ red = [
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 22 },
+    { file = "src/application/answered_meetings.rs", tests = 34 },
 ]
 
 # Google's UID read under the field name serde would guess, `icalUid`, rather
@@ -31988,7 +32017,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_called_off_is_marked_and_kept_and_waits_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 47 },
+    { file = "src/data/message_cache/calendar.rs", tests = 51 },
 ]
 
 # What opening a message changed folded in after the signature: in the bar,
@@ -34627,4 +34656,195 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
+]
+
+# A calendar server's row answered here taken for a row only an answer filed,
+# so a server's meeting could be moved onto another provider's copy
+# (T-13-36.2-03). Written 2026-09-29 by 13-36.2.
+[[guard]]
+name = "a calendar server's row is never taken for a row only an answer filed"
+file = "src/data/message_cache/calendar.rs"
+before = '''               -- no provider has claimed it
+               AND source_provider IS NULL'''
+after = '''               -- no provider has claimed it'''
+red = [
+    "data::message_cache::calendar::tests::test_a_calendar_servers_row_answered_here_is_never_taken_for_an_answers_row",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+]
+
+# A meeting made here that nobody answered taken for an answer's row, so a
+# provider's copy could land on somebody's own appointment (T-13-36.2-03).
+# Written 2026-09-29 by 13-36.2.
+[[guard]]
+name = "a meeting made here that nobody answered is never taken for an answer's row"
+file = "src/data/message_cache/calendar.rs"
+before = '''               -- an answer given here filed it
+               AND answered_version IS NOT NULL'''
+after = '''               -- an answer given here filed it'''
+red = [
+    "data::message_cache::calendar::tests::test_a_meeting_made_here_that_nobody_answered_is_never_taken_for_an_answers_row",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+]
+
+# The merge filing the provider's copy under its own identity, which is ledger
+# 154's other order back: two rows for one meeting. Written 2026-09-29 by
+# 13-36.2.
+[[guard]]
+name = "the provider's copy of an answered meeting lands on the answer's row"
+file = "src/application/answered_meetings.rs"
+before = '''    CalendarEventEntry {
+        id: answers_row.id.clone(),'''
+after = '''    CalendarEventEntry {
+        id: copy.id.clone(),'''
+red = [
+    "application::answered_meetings::tests::test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_the_meeting_merged_is_the_providers_copy_and_keeps_what_the_answer_said",
+    "application::answered_meetings::tests::test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing",
+    "application::answered_meetings::tests::test_a_tentative_answer_merged_onto_a_busy_copy_waits_to_be_sent",
+    "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
+    "application::answered_meetings::tests::test_the_organiser_the_answer_recorded_stays_when_the_provider_names_nobody",
+    "application::answered_meetings::tests::test_a_strangers_words_do_not_reach_the_meeting_the_provider_holds",
+    "application::answered_meetings::tests::test_a_meeting_no_answer_filed_is_still_filed_as_new",
+    "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
+    "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 34 },
+]
+
+# A merged Accept left waiting to be sent, so a change a provider may refuse
+# goes to a guest's copy that already says busy (T-13-36.2-04). Written
+# 2026-09-29 by 13-36.2.
+[[guard]]
+name = "an accept merged onto a busy copy is not left waiting to be sent"
+file = "src/application/answered_meetings.rs"
+before = '''        pending: answers_row.show_as != copy.show_as,'''
+after = '''        pending: true,'''
+red = [
+    "application::answered_meetings::tests::test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing",
+    # Not the next calendar-server read's case: a client that may not change
+    # things sends nothing, so a row left waiting makes no request there and
+    # the read skips it unchanged. Measured 2026-09-29 by 13-36.2.
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 34 },
+]
+
+# The organiser a mailed invitation named surviving the merge over the one the
+# provider names, so a stranger could move or cancel the meeting through 13-13
+# (T-13-36.2-02). Written 2026-09-29 by 13-36.2.
+[[guard]]
+name = "the organiser the provider names wins when its copy lands on an answer's row"
+file = "src/application/answered_meetings.rs"
+before = '''    // where the provider names nobody does the answer's stay.
+    let organiser = match organiser {
+        Some(named) => Some(named.to_string()),
+        None => cache.the_organiser_on_the_calendar(&merged.id)?,
+    };'''
+after = '''    // where the provider names nobody does the answer's stay.
+    let organiser = match cache.the_organiser_on_the_calendar(&merged.id)? {
+        Some(recorded) => Some(recorded),
+        None => organiser.map(str::to_string),
+    };'''
+red = [
+    "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 34 },
+]
+
+# The Google read filing a meeting it meets for the first time beside the row
+# an answer filed, which is how the calendar came to show it twice. Written
+# 2026-09-29 by 13-36.2.
+[[guard]]
+name = "a google read puts a meeting answered first on the answer's row"
+file = "src/application/calendar.rs"
+before = '''                // Google's copy, onto the row an answer filed first if there is one.
+                let went = answered_meetings::file_the_providers_copy(
+                    cache,
+                    &local_event,
+                    event.ical_uid.as_deref(),
+                    event.the_organisers_address(),
+                )?;
+                result.count_the_copy(went);'''
+after = '''                // Google's copy, onto the row an answer filed first if there is one.
+                save_what_google_sent(cache, &local_event, event)?;
+                result.count_the_copy(WhereTheCopyWent::OntoARowOfItsOwn);'''
+red = [
+    "application::answered_meetings::tests::test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing",
+    "application::answered_meetings::tests::test_a_tentative_answer_merged_onto_a_busy_copy_waits_to_be_sent",
+    "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
+    "application::answered_meetings::tests::test_the_organiser_the_answer_recorded_stays_when_the_provider_names_nobody",
+    "application::answered_meetings::tests::test_a_strangers_words_do_not_reach_the_meeting_the_provider_holds",
+    "application::answered_meetings::tests::test_a_meeting_no_answer_filed_is_still_filed_as_new",
+    "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/calendar.rs", tests = 196 },
+]
+
+# The Outlook read filing a meeting it meets for the first time beside the row
+# an answer filed. Written 2026-09-29 by 13-36.2.
+[[guard]]
+name = "an outlook read puts a meeting answered first on the answer's row"
+file = "src/application/calendar.rs"
+before = '''                // Outlook's copy, onto the row an answer filed first if there is one.
+                let went = answered_meetings::file_the_providers_copy(
+                    cache,
+                    &local_event,
+                    event.ical_uid.as_deref(),
+                    event.the_organisers_address(),
+                )?;
+                result.count_the_copy(went);'''
+after = '''                // Outlook's copy, onto the row an answer filed first if there is one.
+                save_what_outlook_sent(cache, &local_event, event)?;
+                result.count_the_copy(WhereTheCopyWent::OntoARowOfItsOwn);'''
+red = [
+    "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/calendar.rs", tests = 196 },
+]
+
+# The calendar-server read filing a meeting this calendar does not hold beside
+# the row an answer filed in My Calendar. The break still writes the UID and
+# the organiser, so it takes away the merge and nothing else. Written
+# 2026-09-29 by 13-36.2.
+[[guard]]
+name = "a calendar server read puts a meeting answered first on the answer's row"
+file = "src/application/caldav_sync.rs"
+before = '''                // The server's copy, onto the row an answer filed first if there is one.
+                let went = crate::application::answered_meetings::file_the_providers_copy(
+                    cache,
+                    &local_entry,
+                    Some(&remote.uid),
+                    organiser.as_deref(),
+                )?;
+                result.count_the_copy(went);'''
+after = '''                // The server's copy, onto the row an answer filed first if there is one.
+                cache.save_calendar_event(&local_entry)?;
+                cache.remember_where_it_came_from(
+                    &local_entry.id,
+                    Some(&remote.uid),
+                    organiser.as_deref(),
+                )?;
+                result.count_the_copy(
+                    crate::application::answered_meetings::WhereTheCopyWent::OntoARowOfItsOwn,
+                );'''
+red = [
+    "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/caldav_sync.rs", tests = 68 },
 ]

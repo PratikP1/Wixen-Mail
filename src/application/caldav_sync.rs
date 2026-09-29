@@ -911,26 +911,34 @@ pub async fn sync_caldav_calendar(
         }
 
         let mut local_entry = caldav_event_to_local(remote, account_id, &calendar.id);
+        // Who called the meeting is read off the document's ORGANIZER line,
+        // the way an invitation's is.
+        let organiser = crate::application::invitations::the_organiser_named_in(&remote.ical_data);
         match already {
             Some(held) => {
                 carry_over_local_only(&mut local_entry, held);
                 cache.save_calendar_event(&local_entry)?;
+                // The document's UID is already the row's provider identifier,
+                // and is kept in the UID column too so every source answers the
+                // same lookup.
+                cache.remember_where_it_came_from(
+                    &local_entry.id,
+                    Some(&remote.uid),
+                    organiser.as_deref(),
+                )?;
                 result.updated += 1;
             }
             None => {
-                cache.save_calendar_event(&local_entry)?;
-                result.created += 1;
+                // The server's copy, onto the row an answer filed first if there is one.
+                let went = crate::application::answered_meetings::file_the_providers_copy(
+                    cache,
+                    &local_entry,
+                    Some(&remote.uid),
+                    organiser.as_deref(),
+                )?;
+                result.count_the_copy(went);
             }
         }
-        // The document's UID is already the row's provider identifier, and is
-        // kept in the UID column too so every source answers the same lookup.
-        // Who called the meeting is read off the document's ORGANIZER line,
-        // the way an invitation's is.
-        cache.remember_where_it_came_from(
-            &local_entry.id,
-            Some(&remote.uid),
-            crate::application::invitations::the_organiser_named_in(&remote.ical_data).as_deref(),
-        )?;
     }
 
     // The days changed out of a series, after every whole event this sync
