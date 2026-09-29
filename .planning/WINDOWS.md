@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 635
+open_count: 639
 waived_count: 0
 fixed_count: 72
-total_count: 707
-last_updated: 2026-09-28T23:30:00.000Z
+total_count: 711
+last_updated: 2026-09-29T00:15:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -722,6 +722,10 @@ last_updated: 2026-09-28T23:30:00.000Z
 | 705 | 13 | unrun-verify | src/application/when_people_are_free.rs | 143 | 13-29, the tester's ear: nobody has heard "Bob could not be checked, because their calendar is not shared with you." beside the other reasons, or the waiting window's "Asking where your calendar is kept about everybody on the guest list. This is experimental and can take a few seconds." Whether the not-shared sentence is told apart from "the server would not say" when both are said, and whether the waiting sentence reads plainly | open |  | 2026-09-28T22:00:00.000Z |  |
 | 706 | 13 | todo | src/service/free_busy.rs | 1141 | 13-30, decision 2: now that every place is asked, a personal Microsoft account (outlook.com, hotmail.com) is asked getSchedule like any other. RESEARCH-3 pitfall 6 says getSchedule does not serve personal accounts, and what Microsoft answers such an account, its status and error code, is not known here. Until it is read, such an account's guests come back unknown from Microsoft for whatever reason that status maps to, and are answered by any other place the account has. Phase 14 reads the real reply on a personal account; a later plan words a sentence keyed on it, rather than on a guessed error | open |  | 2026-09-28T23:30:00.000Z |  |
 | 707 | 13 | unrun-verify | src/application/asking_when_free.rs | 176 | 13-30, for phase 14: no account with calendars in two places has been asked for real. On an account with a calendar server and a Google calendar, or a Microsoft sign-in and a Google calendar: whether every place is asked; whether a guest one place knows is answered and a guest no place knows is said once as not checked; whether busy time from both places shows as busy; whether two calendars on one server are asked once; and whether one slow place costs only its own answers within the twenty seconds each is given | open |  | 2026-09-28T23:30:00.000Z |  |
+| 708 | 13 | todo | src/application/asking_when_free.rs | 276 | 13-31, decision 1: a time zone kept on a contact, so a guest on a calendar server or at Google, whom no answer places, is judged on their own clock and hears it. people_to_ask_about gives every guest no zone. A contact field touches the editor and its three syncs (12-07 measured about seventeen files for one), so it is its own later plan rather than part of 13-31 | open |  | 2026-09-29T00:15:00.000Z |  |
+| 709 | 13 | unrun-verify | src/service/free_busy.rs | 553 | 13-31, for phase 14: no real colleague's getSchedule answer has been read. On an Outlook or Office 365 work account, invite a colleague whose mailbox keeps another time zone: whether workingHours.timeZone.name arrives as a Windows name this computer places, whether the colleague leaves the sentence saying nobody said where they are, whether their clock is said beside each time at the right hour, and what arrives for a colleague whose mailbox keeps a zone built by hand | open |  | 2026-09-29T00:15:00.000Z |  |
+| 710 | 13 | unrun-verify | src/application/when_people_are_free.rs | 536 | 13-31, the tester's ear: nobody has heard an offered time with a guest's clock beside it, "03/03/2026 at 10:00, which is 15:00 for Ada; or 03/03/2026 at 10:30, which is 15:30 for Ada", read as the first sentence of the answer and in What came back. Whether three clocks on each of three times is too long to hold, and whether the semicolons are heard as the break between times | open |  | 2026-09-29T00:15:00.000Z |  |
+| 711 | 13 | todo | src/service/free_busy.rs | 553 | 13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it | open |  | 2026-09-29T00:15:00.000Z |  |
 
 ````json
 [
@@ -9207,6 +9211,54 @@ last_updated: 2026-09-28T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-28T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 708,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/asking_when_free.rs",
+    "line": 276,
+    "description": "13-31, decision 1: a time zone kept on a contact, so a guest on a calendar server or at Google, whom no answer places, is judged on their own clock and hears it. people_to_ask_about gives every guest no zone. A contact field touches the editor and its three syncs (12-07 measured about seventeen files for one), so it is its own later plan rather than part of 13-31",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T00:15:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 709,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/service/free_busy.rs",
+    "line": 553,
+    "description": "13-31, for phase 14: no real colleague's getSchedule answer has been read. On an Outlook or Office 365 work account, invite a colleague whose mailbox keeps another time zone: whether workingHours.timeZone.name arrives as a Windows name this computer places, whether the colleague leaves the sentence saying nobody said where they are, whether their clock is said beside each time at the right hour, and what arrives for a colleague whose mailbox keeps a zone built by hand",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T00:15:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 710,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/when_people_are_free.rs",
+    "line": 536,
+    "description": "13-31, the tester's ear: nobody has heard an offered time with a guest's clock beside it, \"03/03/2026 at 10:00, which is 15:00 for Ada; or 03/03/2026 at 10:30, which is 15:30 for Ada\", read as the first sentence of the answer and in What came back. Whether three clocks on each of three times is too long to hold, and whether the semicolons are heard as the break between times",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T00:15:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 711,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/free_busy.rs",
+    "line": 553,
+    "description": "13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T00:15:00.000Z",
     "resolved_at": null
   }
 ]
