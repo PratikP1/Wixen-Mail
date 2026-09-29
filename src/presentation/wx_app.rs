@@ -18210,7 +18210,7 @@ fn open_for_scanning(
                 None,
                 None,
                 a11y,
-                cache.as_deref(),
+                cache.as_ref(),
             );
             OnReturn::WindowClosed
         }
@@ -18644,6 +18644,31 @@ fn open_for_scanning(
             );
             window.dialog.show_modal();
             window.dialog.destroy();
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Identities => {
+            // Other Addresses to Send From for the scan-only account, over
+            // two made-up addresses (#59, 13-33). What it hands back is
+            // thrown away, so nothing reaches the store.
+            let fixture = scan_only_account();
+            let _ = crate::presentation::wx_identities::show_identity_manager(
+                frame,
+                &fixture,
+                &[
+                    crate::application::identities::Identity::typed(
+                        "scan-1",
+                        "help@example.com",
+                        "Help Desk",
+                    ),
+                    crate::application::identities::Identity::typed(
+                        "scan-2",
+                        "sales@example.com",
+                        "",
+                    ),
+                ],
+                a11y,
+                theme::current_from_stored_config(),
+            );
             OnReturn::WindowClosed
         }
         // The main window with a module showing and nothing over it. `main`
@@ -20190,7 +20215,7 @@ fn handle_account_mgr(
         active_id.as_deref(),
         default_id.as_deref(),
         a11y,
-        cache.as_deref(),
+        cache.as_ref(),
     ) {
         // An account that has gone is signed out of rather than left holding a
         // session. Worked out before the list is replaced, because afterwards

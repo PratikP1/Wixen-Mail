@@ -34,6 +34,11 @@ pub const NOT_TRIED_WITH_A_PROVIDER: &str = "A provider may refuse to send from 
 pub const NOT_SAVED_YET: &str = "This account is saved when the Account Manager closes. \
      Close it, open it again, and then add other addresses.";
 
+/// Said when the mail database did not open, so there is nowhere to keep an
+/// address.
+pub const NOWHERE_TO_KEEP_THEM: &str =
+    "Other addresses cannot be kept, because the mail database could not be opened.";
+
 /// Said by Move Up and Move Down when the cursor is on no row.
 pub const WHICH_ADDRESS: &str =
     "Choose an address first. Move Up and Move Down act on the row the cursor is on.";

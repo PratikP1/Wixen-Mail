@@ -20,6 +20,8 @@ pub(crate) const SIGNATURE: &str = "signature";
 /// The sixth kind of row a manager window holds, and the first whose count is
 /// part of the answer; see [`this_kind_is_counted_out_loud`].
 pub(crate) const CONDITION: &str = "condition";
+/// One other address an account sends from (13-33).
+pub(crate) const ADDRESS: &str = "address";
 
 /// Whether a window over things of this kind says how many are left after
 /// every change.
@@ -107,7 +109,9 @@ mod tests {
     };
     use crate::service::protocols::imap::{Deletion, Moved, StillHere};
 
-    const EVERY_KIND: [&str; 6] = [ACCOUNT, CONTACT, FILTER, LABEL, SIGNATURE, CONDITION];
+    const EVERY_KIND: [&str; 7] = [
+        ACCOUNT, CONTACT, FILTER, LABEL, SIGNATURE, CONDITION, ADDRESS,
+    ];
 
     /// The three sentences a manager window says about one change, over a list
     /// that has `left` rows in it afterwards.

@@ -928,13 +928,14 @@ fn claimed_twice(controls: &[Control]) -> Vec<String> {
 /// The controls a keyboard reaches, in the order it reaches them, as name
 /// and role.
 ///
-/// Not the size grip: a window that can be resized carries one as a child,
-/// which takes no focus and which the scan reads on every manager.
+/// Not the size grip, which a window that can be resized carries as a child,
+/// and not the list's column headings, a child of the list itself: neither
+/// takes focus, and the scan reads both on every manager.
 fn names_and_roles(controls: &[Control]) -> Vec<(String, i64)> {
     controls
         .iter()
         .filter(|control| {
-            control.visible && control.class != "Static" && control.class != "ScrollBar"
+            control.visible && !["Static", "ScrollBar", "SysHeader32"].contains(&&*control.class)
         })
         .map(|control| (control.name.clone(), control.role))
         .collect()

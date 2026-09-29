@@ -17,8 +17,10 @@ use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
 use crate::application::directory_sign_in::{
     A_PASSWORD_IS_SAVED, NOT_TRIED_YET, PasswordChange, what_the_window_keeps,
 };
+use crate::application::identities::{NOT_SAVED_YET, NOWHERE_TO_KEEP_THEM};
 use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::common::types::Protocol;
+use crate::data::MessageCache;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
@@ -42,6 +44,7 @@ const APP_PASSWORD_HINT: &str = "Password: use an app password, not your ordinar
 Turn on two-step verification with your provider first, then generate one for mail. \
 See Setting up a provider in Help.";
 use crate::presentation::status_line::{said_and_shown, shown_and_signalled};
+use crate::presentation::wx_identities::show_identity_manager;
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::{AuthManager, OAuthService};
 use crate::service::oauth_credentials;
@@ -60,6 +63,7 @@ const ID_SET_DEFAULT: Id = ID_HIGHEST + 207;
 const ID_NEXT: Id = ID_HIGHEST + 208;
 const ID_BACK: Id = ID_HIGHEST + 209;
 const ID_LOOK_PEOPLE_UP: Id = ID_HIGHEST + 211;
+const ID_OTHER_ADDRESSES: Id = ID_HIGHEST + 212;
 
 #[derive(Debug, Clone)]
 pub enum AccountManagerAction {
@@ -93,6 +97,7 @@ pub struct AccountManagerDialogHandles {
     pub list: ListCtrl,
     pub status: StaticText,
     look_people_up: Button,
+    other_addresses: Button,
     reauthorize: Button,
     delete: Button,
     set_default: Button,
@@ -100,16 +105,20 @@ pub struct AccountManagerDialogHandles {
 }
 
 ///
-/// `signatures` is the store an account's signature choice is read from and
-/// written to; `None` offers the default alone and writes nothing.
+/// `store` is where an account's signature choice and its other addresses
+/// are read from and written to; `None` offers the default signature alone,
+/// writes nothing, and says the other addresses have nowhere to be kept. An
+/// `Arc` rather than a borrow, because Other Addresses to Send From answers
+/// its own click and a handler cannot hold a borrow.
 pub fn show_account_manager_dialog(
     parent: &Frame,
     accounts: &[Account],
     active_account_id: Option<&str>,
     default_account_id: Option<&str>,
     a11y: &Arc<Accessibility>,
-    signatures: Option<&crate::data::MessageCache>,
+    store: Option<&Arc<MessageCache>>,
 ) -> AccountManagerAction {
+    let signatures = store.map(Arc::as_ref);
     let palette = theme::current_from_stored_config();
     let widgets = build_account_manager_dialog(
         parent,
@@ -126,7 +135,7 @@ pub fn show_account_manager_dialog(
         changed: false,
     }));
 
-    wire_account_manager_actions(&widgets, &state, a11y, palette);
+    wire_account_manager_actions(&widgets, &state, a11y, palette, store.cloned());
     run_account_manager_loop(&widgets, &state, a11y, palette, signatures);
 
     let outcome = state.borrow();
@@ -203,6 +212,12 @@ pub fn build_account_manager_dialog(
         .with_label("&Look People Up at Work...")
         .with_id(ID_LOOK_PEOPLE_UP)
         .build();
+    // Beside it, about the chosen account too: the other addresses it sends
+    // from (#59, 13-33). O, its first letter, which nothing here holds.
+    let other_addresses = Button::builder(&dlg)
+        .with_label("&Other Addresses to Send From...")
+        .with_id(ID_OTHER_ADDRESSES)
+        .build();
     let del = Button::builder(&dlg)
         .with_label("&Delete")
         .with_id(ID_DELETE)
@@ -245,6 +260,7 @@ pub fn build_account_manager_dialog(
         &add,
         &edit,
         &look_people_up,
+        &other_addresses,
         &del,
         &active,
         &set_default,
@@ -311,6 +327,7 @@ pub fn build_account_manager_dialog(
         list,
         status,
         look_people_up,
+        other_addresses,
         reauthorize: reauth,
         delete: del,
         set_default,
@@ -366,6 +383,7 @@ fn wire_account_manager_actions(
     state: &Rc<RefCell<AccountManagerState>>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
+    store: Option<Arc<MessageCache>>,
 ) {
     let list = widgets.list;
     let status = widgets.status;
@@ -379,6 +397,22 @@ fn wire_account_manager_actions(
         move |_| {
             let chosen = get_selected(&list).and_then(|at| state.borrow().working.get(at).cloned());
             look_people_up_for(chosen.as_ref(), &manager, &status, &a11y, palette);
+        }
+    });
+    // The same, for the other addresses the chosen account sends from.
+    widgets.other_addresses.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            let chosen = get_selected(&list).and_then(|at| state.borrow().working.get(at).cloned());
+            other_addresses_for(
+                chosen.as_ref(),
+                store.as_deref(),
+                &manager,
+                &status,
+                &a11y,
+                palette,
+            );
         }
     });
     widgets.reauthorize.on_click({
@@ -2489,15 +2523,62 @@ fn look_people_up_for(
     }
 }
 
-/// Other Addresses to Send From on the Account Manager (#59, 13-33).
+/// Other Addresses to Send From on the Account Manager (#59, 13-33): the
+/// manager for the chosen account, or the sentence saying why not.
+///
+/// Only for an account the store already holds. One added in this visit is
+/// written when the Account Manager closes, and an address given to it before
+/// then would belong to nothing. What the manager hands back is written when
+/// it closes, the order with it, and said on this window's line.
 pub fn other_addresses_for(
-    _chosen: Option<&Account>,
-    _store: Option<&crate::data::MessageCache>,
-    _manager: &Dialog,
-    _status: &StaticText,
-    _a11y: &Arc<Accessibility>,
-    _palette: Option<theme::Palette>,
+    chosen: Option<&Account>,
+    store: Option<&MessageCache>,
+    manager: &Dialog,
+    status: &StaticText,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
 ) {
+    let say = |said: &str, priority: Priority| said_and_shown(status, a11y, said, priority);
+    let Some(account) = chosen else {
+        return say(&nothing_chosen(Thing::ACCOUNT), Priority::High);
+    };
+    let Some(store) = store else {
+        return say(NOWHERE_TO_KEEP_THEM, Priority::High);
+    };
+    let held = match store.is_a_stored_account(&account.id) {
+        Ok(false) => return say(NOT_SAVED_YET, Priority::High),
+        Ok(true) => store.identities_for(&account.id),
+        Err(why) => Err(why),
+    };
+    let held = match held {
+        Ok(held) => held,
+        Err(why) => {
+            return say(
+                &format!(
+                    "The other addresses {} sends from could not be read. {why}",
+                    account.name
+                ),
+                Priority::High,
+            );
+        }
+    };
+    let Some(kept) = show_identity_manager(manager, account, &held, a11y, palette) else {
+        return;
+    };
+    match store.keep_the_identities(&account.id, &kept) {
+        Ok(()) => say(
+            &format!("The other addresses {} sends from are kept.", account.name),
+            Priority::Normal,
+        ),
+        Err(why) => say(
+            &format!(
+                "The other addresses {} sends from could not be kept, and nothing about them \
+                 changed. {why}",
+                account.name
+            ),
+            Priority::High,
+        ),
+    }
 }
 
 // ── Automatic OAuth Flow ────────────────────────────────────────────────────

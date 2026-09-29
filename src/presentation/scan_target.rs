@@ -236,12 +236,16 @@ pub enum ScanTarget {
     /// scan-only account with a made-up directory and a password said to be
     /// saved, so the line saying so is walked too. Nothing is saved.
     DirectorySignIn,
+    /// Other Addresses to Send From, the manager the Account Manager opens
+    /// for an account's other addresses (#59, 13-33). Opened on the
+    /// scan-only account with two made-up addresses. Nothing is saved.
+    Identities,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 43] = [
+    pub const ALL: [ScanTarget; 44] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -285,6 +289,7 @@ impl ScanTarget {
         ScanTarget::PgpKeys,
         ScanTarget::UnlockAPgpKey,
         ScanTarget::DirectorySignIn,
+        ScanTarget::Identities,
     ];
 
     /// The name used on the command line.
@@ -333,6 +338,7 @@ impl ScanTarget {
             Self::PgpKeys => "pgp-keys",
             Self::UnlockAPgpKey => "unlock-a-pgp-key",
             Self::DirectorySignIn => "directory-sign-in",
+            Self::Identities => "identities",
         }
     }
 
@@ -465,6 +471,9 @@ mod tests {
         // the signature choice on it.
         //
         // Look People Up at Work arrived on 2026-09-28 (#55), with the window.
+        //
+        // Other Addresses to Send From arrived on 2026-09-29 (#59), with the
+        // manager.
         for name in [
             "columns",
             "which-copy",
@@ -496,6 +505,7 @@ mod tests {
             "page",
             "page-window",
             "directory-sign-in",
+            "identities",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));
