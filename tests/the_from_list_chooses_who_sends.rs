@@ -600,3 +600,100 @@ fn test_companion_a_lookup_by_the_lists_position_is_refused() {
     );
     assert!(it_says(the_lookup("nothing here"), "anything").is_err());
 }
+
+// ── The send and the draft, read from the source ──────────────────────────
+
+const THE_MANAGERS: &str = "src/presentation/managers.rs";
+
+/// Whether a function takes who the message is from out of the entry the
+/// composer chose, and never out of the account open in the main window
+/// first. The open account is only what `who_sends` falls back to when
+/// nothing was chosen.
+fn the_entry_decides(body: Result<String, String>) -> Result<(), String> {
+    let body = body?;
+    it_says(
+        Ok(body.clone()),
+        "identities::who_sends(data.from.as_ref(),",
+    )?;
+    match body.contains("active_account_id.clone().ok_or_else") {
+        true => Err(format!("it reads the open account first:\n{body}")),
+        false => Ok(()),
+    }
+}
+
+#[test]
+fn test_the_send_goes_out_as_the_entry_chosen() {
+    the_entry_decides(body_of(&shipped(THE_MAIN_WINDOW), "fn queue_for_sending(")).unwrap();
+}
+
+#[test]
+fn test_a_draft_is_saved_as_the_entry_chosen() {
+    let app = shipped(THE_MAIN_WINDOW);
+    the_entry_decides(body_of(&app, "fn save_as_draft(")).unwrap();
+    it_says(
+        body_of(&app, "fn save_as_draft("),
+        "from_address: goes_as.from_address,",
+    )
+    .unwrap();
+    it_says(
+        body_of(&app, "fn save_as_draft("),
+        "from_name: goes_as.from_name,",
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_the_outbox_row_keeps_the_address_and_the_name_of_the_entry() {
+    let put = body_of(&shipped(THE_MAIN_WINDOW), "fn put_in_the_outbox(");
+    it_says(put.clone(), "from_address: goes_as.from_address,").unwrap();
+    it_says(put, "from_name: goes_as.from_name,").unwrap();
+}
+
+#[test]
+fn test_companion_a_send_from_the_open_account_is_refused() {
+    // The shape this plan replaced: the account open in the main window,
+    // whatever the From list said.
+    let planted = "fn queue_for_sending(\n    let account_id = lock_state(state).active_account_id.clone().ok_or_else(|| {\n        \"Choose an account first\".to_string()\n    })?;\n    put_in_the_outbox(cache, account_id, data)\n}\n";
+    assert!(the_entry_decides(body_of(planted, "fn queue_for_sending(")).is_err());
+    let both = "fn queue_for_sending(\n    let goes_as = identities::who_sends(data.from.as_ref(), &s.accounts, None);\n    let account_id = lock_state(state).active_account_id.clone().ok_or_else(|| x)?;\n}\n";
+    assert!(the_entry_decides(body_of(both, "fn queue_for_sending(")).is_err());
+    assert!(the_entry_decides(body_of(planted, "fn gone(")).is_err());
+}
+
+#[test]
+fn test_the_check_at_send_reads_the_address_chosen() {
+    // Sign and Encrypt are checked against the keys held for the address the
+    // message goes out from (ledger 660).
+    it_says(
+        body_of(&shipped(THE_MAIN_WINDOW), "fn the_protection_check("),
+        "data.from.as_ref()",
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_a_reopened_draft_opens_on_the_address_it_was_written_from() {
+    let app = shipped(THE_MAIN_WINDOW);
+    it_says(
+        body_of(&app, "fn open_compose("),
+        "identities::where_the_list_opens(",
+    )
+    .unwrap();
+    it_says(
+        body_of(&shipped(THE_MANAGERS), "pub fn open_draft("),
+        "from_address: draft.from_address.clone(),",
+    )
+    .unwrap();
+    // A message taken back from the Outbox keeps the address it was queued
+    // from, as a draft and when it reopens.
+    it_says(
+        body_of(&app, "fn the_draft_it_became("),
+        "from_address: message.from_address.clone(),",
+    )
+    .unwrap();
+    it_says(
+        body_of(&app, "fn a_message_taken_back("),
+        "message.from_address",
+    )
+    .unwrap();
+}

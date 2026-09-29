@@ -224,6 +224,57 @@ pub fn who_it_goes_out_from(
     )
 }
 
+/// Who a message goes out as: the account it goes out through, and the
+/// address and name its row keeps. `None` for both is the account's own, so
+/// a row follows a later change to the account rather than keeping a copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoesOutAs {
+    pub account_id: String,
+    pub from_address: Option<String>,
+    pub from_name: Option<String>,
+}
+
+impl GoesOutAs {
+    /// The account's own address and name.
+    pub fn the_account(account_id: &str) -> Self {
+        GoesOutAs {
+            account_id: account_id.to_string(),
+            from_address: None,
+            from_name: None,
+        }
+    }
+}
+
+/// Who a message written in the composer goes out as: the entry chosen in
+/// its From list, or, where nothing was chosen, the account open in the main
+/// window. `None` when nothing was chosen and no account is open.
+pub fn who_sends(
+    chosen: Option<&FromEntry>,
+    accounts: &[Account],
+    open: Option<&str>,
+) -> Option<GoesOutAs> {
+    let _ = (chosen, accounts);
+    open.map(GoesOutAs::the_account)
+}
+
+/// Where the From list opens: on the entry a message was written from, when
+/// the list holds it, else on the own entry of the account it was written
+/// from, else on the first.
+pub fn where_the_list_opens(
+    from_list: &[FromEntry],
+    account_id: Option<&str>,
+    address: Option<&str>,
+) -> usize {
+    let _ = address;
+    account_id
+        .and_then(|account_id| {
+            from_list
+                .iter()
+                .position(|entry| entry.account_id == account_id)
+        })
+        .unwrap_or(0)
+}
+
 /// Move one address up or down the account's list, and what to say.
 pub fn moved(rows: &[(String, String)], which: &str, direction: Move) -> Moved {
     reordering::moved(rows, which, direction, WHICH_ADDRESS)
@@ -453,6 +504,82 @@ mod tests {
             who_it_goes_out_from(&work(), Some("sales@example.com"), Some("")),
             ("sales@example.com".to_string(), None)
         );
+    }
+
+    /// Work, Work's help desk address, a nameless address Work also sends
+    /// from, then Home.
+    fn a_from_list() -> Vec<FromEntry> {
+        let identities = HashMap::from([(
+            "acc-work".to_string(),
+            vec![
+                other("i1", "help@example.com", "Help Desk"),
+                other("i2", "sales@example.com", ""),
+            ],
+        )]);
+        the_from_list(&[work(), home()], &identities)
+    }
+
+    #[test]
+    fn test_the_entry_chosen_decides_the_account_and_an_other_address_is_kept_on_the_row() {
+        let list = a_from_list();
+
+        // Home is open in the main window; the message is from Work's help
+        // desk address all the same.
+        assert_eq!(
+            who_sends(Some(&list[1]), &[work(), home()], Some("acc-home")),
+            Some(GoesOutAs {
+                account_id: "acc-work".to_string(),
+                from_address: Some("help@example.com".to_string()),
+                from_name: Some("Help Desk".to_string()),
+            })
+        );
+        // An other address kept with no name keeps an empty one, so it goes
+        // out with none rather than under the account's own name.
+        assert_eq!(
+            who_sends(Some(&list[2]), &[work(), home()], Some("acc-home")),
+            Some(GoesOutAs {
+                account_id: "acc-work".to_string(),
+                from_address: Some("sales@example.com".to_string()),
+                from_name: Some(String::new()),
+            })
+        );
+    }
+
+    #[test]
+    fn test_an_accounts_own_entry_goes_out_through_it_and_keeps_nothing_on_the_row() {
+        let list = a_from_list();
+
+        assert_eq!(
+            who_sends(Some(&list[3]), &[work(), home()], Some("acc-work")),
+            Some(GoesOutAs::the_account("acc-home"))
+        );
+    }
+
+    #[test]
+    fn test_with_nothing_chosen_the_open_account_sends_as_itself() {
+        assert_eq!(
+            who_sends(None, &[work(), home()], Some("acc-work")),
+            Some(GoesOutAs::the_account("acc-work"))
+        );
+        assert_eq!(who_sends(None, &[work(), home()], None), None);
+    }
+
+    #[test]
+    fn test_the_list_opens_on_the_address_a_message_was_written_from() {
+        let list = a_from_list();
+        let opens = |account: Option<&str>, address: Option<&str>| {
+            where_the_list_opens(&list, account, address)
+        };
+
+        assert_eq!(opens(Some("acc-work"), Some("HELP@example.com")), 1);
+        assert_eq!(opens(Some("acc-work"), None), 0);
+        assert_eq!(opens(Some("acc-home"), None), 3);
+        // An address taken away since the draft was saved: its account's own.
+        assert_eq!(opens(Some("acc-work"), Some("gone@example.com")), 0);
+        assert_eq!(opens(Some("acc-home"), Some("help@example.com")), 3);
+        // An account removed since: the first entry.
+        assert_eq!(opens(Some("acc-gone"), None), 0);
+        assert_eq!(opens(None, None), 0);
     }
 
     #[test]

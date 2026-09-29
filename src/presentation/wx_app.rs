@@ -34005,7 +34005,8 @@ mod reply_recipients_reach_the_wire {
         );
 
         // What the compose window's To field holds after Reply pre-fills it,
-        // read back the way Send reads it.
+        // read back the way Send reads it, with the From list on the help
+        // desk address the second account also sends from (13-35).
         let data = wx_compose::ComposeData {
             to: reply.to.clone(),
             cc: String::new(),
@@ -34014,35 +34015,17 @@ mod reply_recipients_reach_the_wire {
             body: String::new(),
             body_plain: "Thanks!".to_string(),
             html_mode: false,
-            from: None,
+            from: Some(crate::application::identities::FromEntry {
+                account_id: "a2".to_string(),
+                address: "help@example.com".to_string(),
+                sender_name: "Help Desk".to_string(),
+                said: "help@example.com, another address on Test".to_string(),
+            }),
             attachments: Vec::new(),
             answering: None,
             send_at: None,
             protection: crate::application::protecting::Choice::Plain,
         };
-
-        // The existing test-only cache builder, not a second one: it already
-        // carries the allow a real `rusqlite` connection needs to sit behind
-        // an `Arc` in a test, and one place carrying that is enough.
-        let cache = super::tests::test_cache();
-        let state = Arc::new(StdMutex::new(WxUIState::default()));
-        lock_state(&state).active_account_id = Some("a1".to_string());
-
-        queue_for_sending(&state, &cache, &data).expect("the message to queue");
-
-        let queued = cache
-            .as_ref()
-            .expect("the cache to be there")
-            .load_outbox_messages("a1")
-            .expect("the queue to load")
-            .into_iter()
-            .next()
-            .expect("the queued message to be there");
-        assert_eq!(
-            queued.to_addr, "Charles Babbage <charles@example.com>",
-            "the queue is expected to hold the field's raw text; this test proves the fix \
-             downstream of here"
-        );
 
         let server =
             crate::service::protocols::smtp::against_a_server_that_answers::an_smtp_server().await;
@@ -34050,10 +34033,41 @@ mod reply_recipients_reach_the_wire {
             crate::service::protocols::smtp::against_a_server_that_answers::pointed_at(&server);
 
         let mut account = Account::new("Test".to_string(), "ada@example.com".to_string());
-        account.id = "a1".to_string();
+        account.id = "a2".to_string();
         account.smtp_server = smtp_config.server.clone();
         account.smtp_port = smtp_config.port.to_string();
         account.smtp_use_tls = false;
+
+        // The existing test-only cache builder, not a second one: it already
+        // carries the allow a real `rusqlite` connection needs to sit behind
+        // an `Arc` in a test, and one place carrying that is enough. The first
+        // account is the one open in the main window; the message is from the
+        // second, because that is what the From list says.
+        let cache = super::tests::test_cache();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).active_account_id = Some("a1".to_string());
+        lock_state(&state).accounts = vec![account.clone()];
+
+        queue_for_sending(&state, &cache, &data).expect("the message to queue");
+
+        let queued = cache
+            .as_ref()
+            .expect("the cache to be there")
+            .load_outbox_messages("a2")
+            .expect("the queue to load")
+            .into_iter()
+            .next()
+            .expect("the message queued on the account the From list chose");
+        assert_eq!(
+            queued.to_addr, "Charles Babbage <charles@example.com>",
+            "the queue is expected to hold the field's raw text; this test proves the fix \
+             downstream of here"
+        );
+        assert_eq!(
+            (queued.from_address.as_deref(), queued.from_name.as_deref()),
+            (Some("help@example.com"), Some("Help Desk")),
+            "the row does not keep the address the From list chose"
+        );
 
         let request = SendEmailRequest::from_queued(
             &queued,
@@ -34085,6 +34099,10 @@ mod reply_recipients_reach_the_wire {
         assert!(
             server.was_told("RCPT TO:<charles@example.com>").await,
             "the bare address never reached the server"
+        );
+        assert!(
+            server.was_told("MAIL FROM:<help@example.com>").await,
+            "the message did not go out from the address the From list chose"
         );
     }
 
