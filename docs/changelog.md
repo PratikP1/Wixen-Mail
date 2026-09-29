@@ -8,6 +8,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **An organiser's update or cancellation for one day of a repeating meeting changes that
+  day alone, and one for every day changes the whole meeting (GAP-04, ledger 638).** Until
+  now both were said and not applied, because the message is usually about one day and the
+  calendar holds the series, so applied to it every day would move or go. Now the day the
+  message names is read, and opening an organiser's update for one Thursday in the reader
+  window or the formatted window moves that Thursday alone: it becomes an appointment of its
+  own, the repeating meeting skips it, every other day stays, and the bar says "Moved one day
+  of this repeating meeting on your calendar, from 12/03/2026 at 09:00 to 13/03/2026 at
+  14:00." A later update for the same day moves that appointment, and never cuts the day out
+  twice. A cancellation of one day offers Remove from Calendar on `Alt+R`, described as
+  taking that day off; pressing it takes the day off the repeating meeting, keeps every other
+  day, sends nothing to the organiser, and says "Weekly sync: that one day is taken off. The
+  other days are unchanged." An update or a cancellation for every day is applied as a single
+  meeting's is, and the meeting keeps how it repeats. The meeting's own sentence says "one day
+  of a repeating meeting" and compares that day rather than the day the meeting started, and a
+  cancellation names the day. The organiser rule, the encrypted-mail rule, the preview and
+  Allow Changes are as before. The version does not move for this: no build has been cut
+  since 1.0.0-alpha.1. Known limitations: no real organiser's update or cancellation for one
+  day has been read here, from Outlook, Google or a calendar server. One day of a meeting in a
+  Google or Outlook calendar, or in a calendar this program can only read, is said and not
+  changed, because neither provider is told how a meeting repeats when it changes and the day
+  kept apart would arrive as an extra meeting; whether Google or Outlook apply the organiser's
+  change themselves is untried. A change from one day onwards is said and not applied. One
+  day cannot be answered yet. Nobody has heard the new sentences or the button's description
+  with a screen reader.
 - **A reply goes out from the address the message was sent to, and Reply All leaves your
   other addresses out, experimental (GAP-10, #59 step 1).** A reply, a reply to all and a
   forward open with From on the account's other address that the message's To or Cc names,
@@ -352,7 +377,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   only when the message comes from the organiser your calendar records for the meeting,
   because anybody can send a message naming one; from anybody else, or for a meeting that
   records no organiser, the bar says why and nothing changes. A repeating meeting is said and
-  not changed, because a message about one day of it would change every day. The preview
+  not changed, because a message about one day of it would change every day. (Since
+  2026-09-29 one day, and every day, of a repeating meeting are changed; see the entry on one
+  day of a repeating meeting.) The preview
   never changes the calendar, and the account's Allow Changes answer applies. A later version
   at the time your calendar already holds is now said to be already on your calendar rather
   than "a change ... which was" that same time. The version does not move for this: no build

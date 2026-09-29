@@ -3360,6 +3360,15 @@ impl MessageCache {
         // it said. Nothing for every event already stored, which is nobody
         // known rather than a guess.
         self.ensure_column_exists("calendar_events", "organiser", "TEXT")?;
+        // The meeting a row stands for one day of, by its UID, when an
+        // organiser's message about that day kept it apart from the series
+        // here. Nothing for every event already stored, which is the right
+        // answer for all of them: until this shipped no message kept a day
+        // apart.
+        self.ensure_column_exists("calendar_events", "replaces_day_of", "TEXT")?;
+        // And which day, written on the series' own clock. Nothing for every
+        // event already stored, for the same reason.
+        self.ensure_column_exists("calendar_events", "replaces_day", "TEXT")?;
         // Where an event was at the calendar server that held it. Nothing for
         // every note already written, which is the right answer for all of
         // them: until this shipped no deletion had ever been sent anywhere, so
@@ -4195,6 +4204,11 @@ impl MessageCache {
                 -- meeting's UID or organiser, so there is nothing to copy.
                 ical_uid TEXT,
                 organiser TEXT,
+                -- Named here for the reason `answered_version` is: a database
+                -- old enough to need this rebuild predates any message keeping
+                -- a day of a meeting apart, so there is nothing to copy.
+                replaces_day_of TEXT,
+                replaces_day TEXT,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 494 records have arrived since and have not been through it.
+# 502 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -1542,7 +1542,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -1560,7 +1560,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -2476,13 +2476,43 @@ red = [
     "presentation::event_times::tests::test_the_full_reading_says_the_zone_a_meeting_was_written_in_once",
     "presentation::event_times::tests::test_the_header_says_the_day_a_meeting_starts_on_this_computer",
     "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
+    # Added 2026-09-29 by 13-36.3, found by --remeasure: one day of a series
+    # is read, placed and said from stored moments with a T.
+    "application::invitations::tests::test_a_day_from_then_on_is_read_as_one",
+    "application::invitations::tests::test_an_invitation_for_one_day_reads_the_day_and_its_own_zone",
+    "application::meeting_changes::tests::test_a_cancellation_for_a_day_already_kept_apart_offers_that_row",
+    "application::meeting_changes::tests::test_a_cancellation_of_a_day_the_series_already_calls_off_changes_nothing",
+    "application::meeting_changes::tests::test_a_cancellation_of_one_day_offers_that_day_for_removal",
+    "application::meeting_changes::tests::test_a_change_from_one_day_onwards_is_said_and_not_applied",
+    "application::meeting_changes::tests::test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies",
+    "application::meeting_changes::tests::test_a_stranger_changing_one_day_is_refused_as_a_stranger",
+    "application::meeting_changes::tests::test_an_update_for_a_day_already_kept_apart_moves_that_row",
+    "application::meeting_changes::tests::test_an_update_for_one_day_at_its_own_time_changes_nothing",
+    "application::meeting_changes::tests::test_an_update_for_one_day_moves_that_day_and_says_it_is_one_day",
+    "application::meeting_changes::tests::test_an_update_to_every_day_moves_the_series_and_carries_how_it_repeats",
+    "application::meeting_changes::tests::test_one_day_against_a_single_appointment_on_another_day_is_said_and_not_applied",
+    "application::meeting_changes::tests::test_one_day_against_a_single_appointment_on_that_day_changes_it",
+    "application::meeting_changes::tests::test_one_day_on_a_calendar_that_cannot_carry_it_is_said_with_the_calendar_named",
+    "application::one_day_of_a_series::tests::test_that_day_as_the_series_holds_it_keeps_the_series_length_and_repeats_nothing",
+    "application::one_day_of_a_series::tests::test_the_day_is_written_on_the_series_clock",
+    "application::one_day_of_a_series::tests::test_the_day_kept_apart_names_its_series_and_carries_none_of_its_identity",
+    # And the day said, and what the calendar holds for it, both read from
+    # the day's stored moment with a T.
+    "application::invitations::tests::test_an_update_for_one_day_says_it_is_one_day_and_what_that_day_was",
+    "application::invitations::tests::test_a_cancellation_of_one_day_says_which_day",
+    "application::invitations::tests::test_one_day_at_the_time_the_series_holds_it_is_said_to_be_on_the_calendar",
+    "application::one_day_of_a_series::tests::test_a_day_kept_apart_is_its_own_row_beside_its_series",
+    "application::one_day_of_a_series::tests::test_a_day_still_on_the_series_is_that_day_as_the_series_holds_it",
+    "application::one_day_of_a_series::tests::test_a_day_the_series_calls_off_is_off_it",
+    "application::one_day_of_a_series::tests::test_a_meeting_held_once_is_one_appointment",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
-    { file = "src/application/invitations.rs", tests = 54 },
-    { file = "src/application/meeting_changes.rs", tests = 21 },
+    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
@@ -10903,7 +10933,7 @@ tests_last_seen = [
 [[guard]]
 name = "WhereAChangeGoes::named says which calendar it is, not a canned word for all five"
 file = "src/application/calendar.rs"
-before = """    const fn named(self) -> &'static str {
+before = """    pub(crate) const fn named(self) -> &'static str {
         match self {
             Self::ACalendarServer => "your calendar server",
             Self::Google => "your Google calendar",
@@ -10912,12 +10942,16 @@ before = """    const fn named(self) -> &'static str {
             Self::KeptHere => "this computer",
         }
     }"""
-after = """    const fn named(self) -> &'static str {
+after = """    pub(crate) const fn named(self) -> &'static str {
         "xyzzy"
     }"""
-red = ["application::calendar::tests::test_what_each_calendar_kind_is_called_in_the_middle_of_a_sentence"]
+red = [
+    "application::calendar::tests::test_what_each_calendar_kind_is_called_in_the_middle_of_a_sentence",
+    "application::meeting_changes::tests::test_one_day_on_a_calendar_that_cannot_carry_it_is_said_with_the_calendar_named",
+]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
 ]
 
 [[guard]]
@@ -31541,6 +31575,7 @@ file = "src/application/invitations.rs"
 before = '''        WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
             summary: the_title_of(document),
             on_the_calendar: on_the_calendar.is_some(),
+            the_day: the_day_worded_in(document, dates),
         },'''
 after = '''        WhatItAsks::Cancellation => read_the_invitation(document)
             .map_or(WhatTheInvitationSays::CalendarFile, |invitation| {
@@ -31549,9 +31584,10 @@ after = '''        WhatItAsks::Cancellation => read_the_invitation(document)
 red = [
     "application::invitations::tests::test_a_cancellation_says_it_is_one_and_whether_the_meeting_is_on_the_calendar",
     "application::invitations::tests::test_the_calendar_part_row_says_what_the_document_asks",
+    "application::invitations::tests::test_a_cancellation_of_one_day_says_which_day",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 54 },
+    { file = "src/application/invitations.rs", tests = 65 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31705,7 +31741,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 34 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
 # The answer to a meeting sent with no In-Reply-To and no References, which is
@@ -31912,7 +31948,7 @@ tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 34 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
 # The answer looking its meeting up by the provider's identifier again, which
@@ -31978,9 +32014,10 @@ after = """    if !the_organiser_sent_it(organiser, organiser) {"""
 red = [
     "application::meeting_changes::tests::test_a_cancellation_from_somebody_other_than_the_organiser_changes_nothing",
     "application::meeting_changes::tests::test_an_update_from_somebody_other_than_the_organiser_moves_nothing",
+    "application::meeting_changes::tests::test_a_stranger_changing_one_day_is_refused_as_a_stranger",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 21 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
 ]
 
 # The Allow Changes question left out, so an account whose calendar changes
@@ -31999,7 +32036,7 @@ red = [
     "application::meeting_changes::tests::test_nothing_changes_while_calendar_changes_are_switched_off",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 21 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
 ]
 
 # Remove from Calendar deleting the meeting instead of marking it, so a
@@ -32017,7 +32054,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_called_off_is_marked_and_kept_and_waits_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
 # What opening a message changed folded in after the signature: in the bar,
@@ -32206,7 +32243,7 @@ red = [
     "application::reading_a_message::tests::test_a_change_inside_an_opened_envelope_is_said_and_the_calendar_is_left_as_it_was",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 21 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
 ]
 
@@ -32975,11 +33012,27 @@ red = [
     "presentation::time_elsewhere::tests::test_a_meeting_on_another_day_there_names_that_day",
     "presentation::time_elsewhere::tests::test_a_meeting_set_on_another_clock_says_that_clock_once",
     "presentation::time_elsewhere::tests::test_a_zone_windows_names_is_said_by_its_windows_name",
+    "application::one_day_of_a_series::tests::test_the_day_is_written_on_the_series_clock",
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_alerts_at_its_lead_before_the_instant_it_starts",
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_a_meeting_from_tokyo_typed_across_midnight_moves_its_date_on_its_own_clock",
+    "presentation::event_times::tests::test_a_meeting_written_in_a_windows_zone_is_listed_at_this_computers_hour",
+    "presentation::event_times::tests::test_an_outlook_meeting_alerts_at_its_lead_before_the_instant_it_starts",
+    "presentation::event_times::tests::test_an_outlook_meeting_fills_the_editor_on_this_computers_clock",
+    "presentation::event_times::tests::test_an_outlook_meeting_stored_in_universal_time_is_read_as_that_instant",
+    "presentation::event_times::tests::test_space_says_this_computers_hour_and_no_other_clock",
+    "presentation::event_times::tests::test_the_calendar_window_lists_an_event_at_this_computers_hour",
+    "presentation::event_times::tests::test_the_full_reading_says_the_zone_a_meeting_was_written_in_once",
+    "presentation::event_times::tests::test_the_header_says_the_day_a_meeting_starts_on_this_computer",
+    "presentation::event_times::tests::test_the_list_is_in_the_order_the_instants_come",
+    "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 54 },
-    { file = "src/application/meeting_changes.rs", tests = 21 },
+    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/common/moment.rs", tests = 20 },
+    { file = "src/presentation/event_times.rs", tests = 23 },
     { file = "src/presentation/time_elsewhere.rs", tests = 9 },
 ]
 
@@ -33020,7 +33073,7 @@ red = [
     "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 54 },
+    { file = "src/application/invitations.rs", tests = 65 },
 ]
 
 # An organiser's move saved with the copy's zone beside the update's clock
@@ -33039,7 +33092,7 @@ red = [
     "test_a_move_keeps_the_zone_the_update_was_written_in",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 21 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "tests/a_meeting_change_reaches_the_calendar.rs", tests = 20 },
 ]
 
@@ -33075,7 +33128,7 @@ red = [
     "application::invitations::tests::test_one_meeting_written_in_two_zones_is_already_on_the_calendar",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 54 },
+    { file = "src/application/invitations.rs", tests = 65 },
 ]
 
 # An organiser's update compared with the calendar's copy by the stored text:
@@ -33094,7 +33147,7 @@ red = [
     "application::meeting_changes::tests::test_one_instant_written_in_two_zones_moves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 21 },
+    { file = "src/application/meeting_changes.rs", tests = 34 },
 ]
 
 # The calendar's item built without the zone its times were written in: every
@@ -34671,7 +34724,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_calendar_servers_row_answered_here_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
 # A meeting made here that nobody answered taken for an answer's row, so a
@@ -34687,7 +34740,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_made_here_that_nobody_answered_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 51 },
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
 # The merge filing the provider's copy under its own identity, which is ledger
@@ -34847,4 +34900,158 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 34 },
     { file = "src/application/caldav_sync.rs", tests = 68 },
+]
+
+# An organiser's update for one day of a repeating meeting answered as a move
+# of the whole series, so every Thursday moves for a message about one
+# (ledger 638). Written 2026-09-29 by 13-36.3, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a one-day update moves the day and not the series"
+file = "src/application/meeting_changes.rs"
+before = '''            .map(|(from, to)| Wanted::OneDayMoved { the_day, from, to }),'''
+after = '''            .map(|(from, to)| Wanted::Move { event_id: series.id.clone(), from, to }),'''
+red = [
+    "application::meeting_changes::tests::test_an_update_for_one_day_moves_that_day_and_says_it_is_one_day",
+    "application::meeting_changes::tests::test_one_day_on_a_calendar_that_cannot_carry_it_is_said_with_the_calendar_named",
+    "application::meeting_changes::tests::test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 34 },
+]
+
+# The calendar's rule for one day not asked, so a day of a Google or Outlook
+# series is kept apart here and reaches the provider as an extra meeting while
+# the day called off never does (T-13-36.3-02). Written 2026-09-29 by 13-36.3,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "one day on a Google or Outlook calendar is said and not applied"
+file = "src/application/meeting_changes.rs"
+before = '''    calendar::can_be_honoured(done, EditMeans::OneDay, allows)'''
+after = '''    calendar::can_be_honoured(done, EditMeans::WholeSeries, allows)'''
+red = [
+    "application::meeting_changes::tests::test_one_day_on_a_calendar_that_cannot_carry_it_is_said_with_the_calendar_named",
+    "application::meeting_changes::tests::test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 34 },
+]
+
+# A day named in universal time or another zone handed back as written, so it
+# is a second spelling of a Thursday the series already names and calling it
+# off leaves the real one on the calendar. Written 2026-09-29 by 13-36.3,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the day is written on the series' clock"
+file = "src/application/one_day_of_a_series.rs"
+before = '''    if matches!(written, Moment::ClockFace(_))
+        && (its_zone.is_none() || its_zone == the_series_zone)
+    {'''
+after = '''    if matches!(written, Moment::ClockFace(_) | Moment::Fixed(_)) {'''
+red = [
+    "application::one_day_of_a_series::tests::test_the_day_is_written_on_the_series_clock",
+    "application::one_day_of_a_series::tests::test_a_day_on_no_clock_here_cannot_be_placed",
+]
+tests_last_seen = [
+    { file = "src/application/one_day_of_a_series.rs", tests = 10 },
+]
+
+# The day kept apart carrying the series' repeat, so a moved Thursday becomes a
+# second weekly series nobody asked for. Written 2026-09-29 by 13-36.3,
+# measured through `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the day kept apart carries no repeat"
+file = "src/application/one_day_of_a_series.rs"
+before = '''        status: series.status.clone(),
+        recurrence_rule: None,'''
+after = '''        status: series.status.clone(),
+        recurrence_rule: series.recurrence_rule.clone(),'''
+red = [
+    "application::one_day_of_a_series::tests::test_the_day_kept_apart_names_its_series_and_carries_none_of_its_identity",
+]
+tests_last_seen = [
+    { file = "src/application/one_day_of_a_series.rs", tests = 10 },
+]
+
+# The link from a day kept apart to its meeting and its day never written, so
+# a second message about that day finds nothing standing for it and cuts the
+# day out of its series again (T-13-36.3-03). Written 2026-09-29 by 13-36.3,
+# measured through `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "a day moved here is linked before the series gives it up"
+file = "src/application/reading_a_message.rs"
+suite = "one_day_of_a_repeating_meeting_is_changed_alone"
+before = '''    cache.remember_the_day_it_stands_for(&kept.id, uid, the_day)?;
+'''
+after = ''''''
+red = [
+    "test_one_day_moved_by_the_organiser_leaves_the_other_days_where_they_were",
+    "test_the_same_update_opened_again_moves_nothing_more",
+    "test_a_second_update_for_that_day_moves_its_row_and_cuts_nothing_twice",
+    "test_a_cancellation_of_a_moved_day_offers_that_days_row",
+]
+tests_last_seen = [
+    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
+]
+
+# The store's read of one day of a meeting ignoring which day, so a message
+# about the nineteenth is set against the row kept for the twelfth. Written
+# 2026-09-29 by 13-36.3, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "a day is found by its meeting and its day"
+file = "src/data/message_cache/calendar.rs"
+before = '''               AND ((replaces_day_of = ?2 AND replaces_day = ?3)'''
+after = '''               AND ((replaces_day_of = ?2)'''
+red = [
+    "data::message_cache::calendar::tests::test_another_days_row_and_another_accounts_are_not_found",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+]
+
+# Remove from Calendar on one cancelled day marking the whole series
+# cancelled, so every other Thursday goes with it (T-13-36.3-04). Written
+# 2026-09-29 by 13-36.3, measured through `scripts/guards.sh --remeasure`
+# against the target.
+[[guard]]
+name = "the one-day arm calls the day off rather than marking the series cancelled"
+file = "src/presentation/wx_app.rs"
+suite = "one_day_of_a_repeating_meeting_is_changed_alone"
+before = '''            let without_that_day =
+                crate::application::calendar::one_day_called_off(&meeting, the_day);
+            match cache.save_calendar_event(&without_that_day) {'''
+after = '''            let _ = the_day;
+            match cache.mark_the_meeting_called_off(&meeting.id).map(|_| ()) {'''
+red = [
+    "test_pressing_it_calls_that_day_off_and_keeps_the_series",
+    "test_the_one_day_arm_calls_the_day_off_and_deletes_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
+]
+
+# The one-day button described as taking the whole meeting off, so somebody
+# about to take one Thursday off hears that the meeting goes. Written
+# 2026-09-29 by 13-36.3, measured through `scripts/guards.sh --remeasure`
+# against the target.
+[[guard]]
+name = "the one-day button is described as one day"
+file = "src/application/meeting_changes.rs"
+suite = "one_day_of_a_repeating_meeting_is_changed_alone"
+before = '''            Removal::OneDay { when, .. } => format!(
+                "Takes {when} off this repeating meeting on your calendar. Nothing is sent to \
+                 the organiser."
+            ),'''
+after = '''            Removal::OneDay { .. } => "Marks this meeting cancelled on your calendar. Nothing \
+                                       is sent to the organiser."
+                .to_string(),'''
+red = [
+    "test_a_cancelled_day_is_offered_one_button_described_as_that_day",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
 ]

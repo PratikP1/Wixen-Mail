@@ -1914,12 +1914,13 @@ impl WxMailApp {
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let message_cache = message_cache.clone();
-                move |event_id| {
+                move |removal| {
                     take_the_called_off_meeting_off_the_calendar(
                         &ui_tx,
                         &runtime,
                         &message_cache,
-                        event_id,
+                        removal,
+                        crate::application::allowed::allowed_for,
                     );
                 }
             });
@@ -15485,26 +15486,40 @@ fn answer_the_invitation(
 
 /// Remove from Calendar: the meeting its organiser called off, marked
 /// cancelled and free on the calendar and waiting to be sent like any change
-/// made here (13-13, #50 point 2).
+/// made here (13-13, #50 point 2), or the one day of a repeating meeting the
+/// organiser called off, taken off its series (13-36.3).
 ///
 /// Marked, never deleted: a deletion here is carried to the provider on the
-/// next push, and nothing but a message said the meeting was off. The button
-/// was offered only because the organiser the calendar recorded sent the
-/// cancellation; the account's Allow Changes answer is asked again here, since
-/// it may have changed while the window was open. Every outcome is said once,
-/// through the status line, which speaks what it shows.
-fn take_the_called_off_meeting_off_the_calendar(
+/// next push, and nothing but a message said the meeting was off. One day is
+/// called off the series and nothing else is touched: the series and every
+/// other day stay. The button was offered only because the organiser the
+/// calendar recorded sent the cancellation; the account's Allow Changes answer
+/// is asked again here, through `allowed`, since it may have changed while the
+/// window was open. Every outcome is said once, through the status line, which
+/// speaks what it shows.
+///
+/// Public, and handed the Allow Changes question rather than reading the
+/// stored settings itself, so the one-day target presses the real handler
+/// against a store of its own; the program hands it `allowed::allowed_for`.
+pub fn take_the_called_off_meeting_off_the_calendar(
     ui_tx: &Sender<UIUpdate>,
     runtime: &Arc<Runtime>,
     cache: &Option<Arc<MessageCache>>,
-    event_id: &str,
+    removal: &crate::application::meeting_changes::Removal,
+    allowed: impl Fn(&str) -> crate::application::allowed::Allowed,
 ) {
+    use crate::application::meeting_changes::Removal;
+
     let refused = |why: &str| send_refusal(ui_tx, runtime, why);
     let Some(cache) = cache.as_ref() else {
         refused("There is no calendar on this computer to change.");
         return;
     };
-    let meeting = cache.get_event_by_id(event_id).unwrap_or_else(|e| {
+    let the_row = match removal {
+        Removal::TheMeeting { event_id } => event_id,
+        Removal::OneDay { series_id, .. } => series_id,
+    };
+    let meeting = cache.get_event_by_id(the_row).unwrap_or_else(|e| {
         tracing::warn!("Could not read the meeting Remove from Calendar was pressed for: {e}");
         None
     });
@@ -15512,19 +15527,36 @@ fn take_the_called_off_meeting_off_the_calendar(
         refused("That meeting is no longer on your calendar.");
         return;
     };
-    if !crate::application::allowed::allowed_for(&meeting.account_id).personal_information {
+    if !allowed(&meeting.account_id).personal_information {
         refused(
             "Your calendar was not changed, because changes to calendars are switched off \
              for this account in Allow Changes.",
         );
         return;
     }
-    match cache.mark_the_meeting_called_off(event_id) {
-        Ok(true) => send_status(ui_tx, runtime, "Removed from your calendar."),
-        Ok(false) => refused("That meeting is no longer on your calendar."),
-        Err(e) => {
-            tracing::warn!("Could not mark a meeting called off: {e}");
-            refused("Your calendar could not be changed, so the meeting is still on it.");
+    match removal {
+        Removal::TheMeeting { event_id } => match cache.mark_the_meeting_called_off(event_id) {
+            Ok(true) => send_status(ui_tx, runtime, "Removed from your calendar."),
+            Ok(false) => refused("That meeting is no longer on your calendar."),
+            Err(e) => {
+                tracing::warn!("Could not mark a meeting called off: {e}");
+                refused("Your calendar could not be changed, so the meeting is still on it.");
+            }
+        },
+        Removal::OneDay { the_day, .. } => {
+            let without_that_day =
+                crate::application::calendar::one_day_called_off(&meeting, the_day);
+            match cache.save_calendar_event(&without_that_day) {
+                Ok(()) => send_status(
+                    ui_tx,
+                    runtime,
+                    &crate::application::calendar::one_day_taken_off(&meeting.summary),
+                ),
+                Err(e) => {
+                    tracing::warn!("Could not call one day of a meeting off: {e}");
+                    refused("Your calendar could not be changed, so that day is still on it.");
+                }
+            }
         }
     }
 }
@@ -26586,14 +26618,14 @@ pub fn show_conversation_as_page(
     // same reasons; its letter is heard from the page, in the arm below. The
     // reader's handler, so both windows remove the same way (13-13).
     let removal = above.removal.clone();
-    if let Some(event_id) = &removal {
+    if let Some(offered) = &removal {
         wx_reader::ReaderWindow::remove_button_on(
             &frame,
             &sizer,
-            event_id,
+            offered,
             Rc::new({
                 let reader = reader.clone();
-                move |event_id| reader.remove_now(event_id)
+                move |offered| reader.remove_now(offered)
             }),
         );
     }
@@ -26787,7 +26819,7 @@ pub fn show_conversation_as_page(
                 // What the button does, with the window's own meeting; with
                 // nothing to remove, said rather than left silent.
                 Some(page_jumps::Jump::Remove) => match &removal {
-                    Some(event_id) => reader.remove_now(event_id),
+                    Some(offered) => reader.remove_now(offered),
                     None => {
                         let _ = a11y.announce(
                             "There is no cancelled meeting here to remove.",

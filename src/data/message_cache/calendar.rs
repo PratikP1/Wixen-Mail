@@ -608,6 +608,74 @@ impl MessageCache {
         }
     }
 
+    /// Write down which meeting, and which day of it, a row stands for.
+    ///
+    /// Kept off [`CalendarEventEntry`] for the reason
+    /// [`Self::the_answer_given_here`] gives, and written by its own statement,
+    /// so no save and no sync ever clears it. Neither identifier on the row can
+    /// carry this: a day kept apart goes up to a calendar server under a fresh
+    /// UID of its own, which the server's read then records as the row's.
+    pub fn remember_the_day_it_stands_for(
+        &self,
+        event_id: &str,
+        uid: &str,
+        day: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendar_events SET replaces_day_of = ?2, replaces_day = ?3 WHERE id = ?1",
+                params![event_id, uid, day],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record which day of a meeting a row stands for: {}",
+                    e
+                ))
+            })?;
+        Ok(())
+    }
+
+    /// The row standing for one day of the meeting `uid` names, on this
+    /// account, when a day of it was kept apart.
+    ///
+    /// Kept apart here, by the link written beside it, or split out by a
+    /// calendar server, whose read gives such a day the compound identity
+    /// `{uid}:{day}`. Scoped to the account, because the UID and the day come
+    /// from a document a stranger can write.
+    pub fn the_day_of_a_meeting(
+        &self,
+        account_id: &str,
+        uid: &str,
+        day: &str,
+    ) -> Result<Option<CalendarEventEntry>> {
+        let sql = format!(
+            "SELECT {EVENT_COLS} FROM calendar_events
+             WHERE account_id = ?1
+               AND ((replaces_day_of = ?2 AND replaces_day = ?3)
+                    OR provider_event_id = ?2 || ':' || ?3)
+             LIMIT 1"
+        );
+        let mut stmt = self.conn.prepare_cached(&sql).map_err(|e| {
+            Error::Other(format!(
+                "Failed to prepare the lookup of one day of a meeting: {}",
+                e
+            ))
+        })?;
+
+        let mut rows = stmt
+            .query_map(params![account_id, uid, day], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to look one day of a meeting up: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!(
+                "Failed to read one day of a meeting: {}",
+                e
+            ))),
+            None => Ok(None),
+        }
+    }
+
     /// Who called the meeting, as whoever filed it said; nothing when nobody
     /// said, which is every row stored before this was kept.
     pub fn the_organiser_on_the_calendar(&self, event_id: &str) -> Result<Option<String>> {
@@ -2892,6 +2960,144 @@ mod tests {
                 .expect("the waiting days")
                 .is_empty(),
             "a day that has already reached the server still holds its series back"
+        );
+    }
+
+    /// The weekly sync's twelfth of March, kept apart here: a row of its own
+    /// with no provider identifier, naming its series.
+    fn the_twelfth_kept_apart(id: &str, account: &str) -> CalendarEventEntry {
+        CalendarEventEntry {
+            provider_event_id: None,
+            source_provider: None,
+            start_datetime: "2026-03-13T14:00:00".to_string(),
+            end_datetime: "2026-03-13T15:00:00".to_string(),
+            cut_from_event_id: Some("evt-series".to_string()),
+            ..make_event(id, account, "unused", "Weekly sync")
+        }
+    }
+
+    const THE_MEETING: &str = "s-1@example.com";
+    const THE_TWELFTH: &str = "2026-03-12T09:00:00";
+
+    fn found_id(found: Option<CalendarEventEntry>) -> Option<String> {
+        found.map(|row| row.id)
+    }
+
+    #[test]
+    fn test_a_day_kept_apart_is_found_by_its_meeting_and_its_day() {
+        let cache = temp_cache("a_day_kept_apart_is_found");
+        cache
+            .save_calendar_event(&the_twelfth_kept_apart("evt-day", "acct"))
+            .unwrap();
+        cache
+            .remember_the_day_it_stands_for("evt-day", THE_MEETING, THE_TWELFTH)
+            .unwrap();
+
+        assert_eq!(
+            found_id(
+                cache
+                    .the_day_of_a_meeting("acct", THE_MEETING, THE_TWELFTH)
+                    .unwrap()
+            ),
+            Some("evt-day".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_day_a_calendar_server_split_out_is_found_by_its_compound_identity() {
+        // The calendar server's read gives such a day `{uid}:{recurrence-id}`
+        // as its identifier and records no link of this program's own.
+        let cache = temp_cache("a_day_a_server_split_out_is_found");
+        let split = CalendarEventEntry {
+            provider_event_id: Some(format!("{THE_MEETING}:{THE_TWELFTH}")),
+            provider_recurrence_id: Some(THE_TWELFTH.to_string()),
+            source_provider: Some("caldav".to_string()),
+            ..the_twelfth_kept_apart("evt-split", "acct")
+        };
+        cache.save_calendar_event(&split).unwrap();
+
+        assert_eq!(
+            found_id(
+                cache
+                    .the_day_of_a_meeting("acct", THE_MEETING, THE_TWELFTH)
+                    .unwrap()
+            ),
+            Some("evt-split".to_string())
+        );
+    }
+
+    #[test]
+    fn test_another_days_row_and_another_accounts_are_not_found() {
+        // A stranger's message can name any UID and any day; neither may
+        // reach a row it does not name, and no account reaches another's.
+        let cache = temp_cache("another_days_row_is_not_found");
+        cache
+            .save_calendar_event(&the_twelfth_kept_apart("evt-day", "acct"))
+            .unwrap();
+        cache
+            .remember_the_day_it_stands_for("evt-day", THE_MEETING, THE_TWELFTH)
+            .unwrap();
+
+        for (account, uid, day) in [
+            ("acct", THE_MEETING, "2026-03-19T09:00:00"),
+            ("acct", "other@example.com", THE_TWELFTH),
+            ("another", THE_MEETING, THE_TWELFTH),
+        ] {
+            assert_eq!(
+                found_id(cache.the_day_of_a_meeting(account, uid, day).unwrap()),
+                None,
+                "{account} {uid} {day}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_save_leaves_the_day_a_row_stands_for_where_it_was() {
+        // Every save of the row, the next move of that day or a sync writing
+        // its copy back, names its columns; the link is not among them.
+        let cache = temp_cache("a_save_keeps_the_day_a_row_stands_for");
+        let kept = the_twelfth_kept_apart("evt-day", "acct");
+        cache.save_calendar_event(&kept).unwrap();
+        cache
+            .remember_the_day_it_stands_for("evt-day", THE_MEETING, THE_TWELFTH)
+            .unwrap();
+
+        cache
+            .save_calendar_event(&CalendarEventEntry {
+                start_datetime: "2026-03-13T16:00:00".to_string(),
+                end_datetime: "2026-03-13T17:00:00".to_string(),
+                ..kept
+            })
+            .unwrap();
+
+        let found = cache
+            .the_day_of_a_meeting("acct", THE_MEETING, THE_TWELFTH)
+            .unwrap()
+            .expect("the day still found after a save");
+        assert_eq!(found.start_datetime, "2026-03-13T16:00:00");
+    }
+
+    #[test]
+    fn test_a_day_kept_apart_is_never_found_as_the_whole_meeting() {
+        // The meeting's UID finds the series, whatever days were kept apart
+        // from it, or every message about the meeting would be set against
+        // one Thursday.
+        let cache = temp_cache("a_day_kept_apart_is_not_the_meeting");
+        let series = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=WEEKLY;COUNT=10".to_string()),
+            ..make_event("evt-series", "acct", THE_MEETING, "Weekly sync")
+        };
+        cache.save_calendar_event(&series).unwrap();
+        cache
+            .save_calendar_event(&the_twelfth_kept_apart("evt-day", "acct"))
+            .unwrap();
+        cache
+            .remember_the_day_it_stands_for("evt-day", THE_MEETING, THE_TWELFTH)
+            .unwrap();
+
+        assert_eq!(
+            found_id(cache.get_event_by_ical_uid("acct", THE_MEETING).unwrap()),
+            Some("evt-series".to_string())
         );
     }
 }

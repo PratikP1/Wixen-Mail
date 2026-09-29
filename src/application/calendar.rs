@@ -1751,7 +1751,7 @@ pub enum WhereAChangeGoes {
 
 impl WhereAChangeGoes {
     /// The calendar, named in the middle of a sentence.
-    const fn named(self) -> &'static str {
+    pub(crate) const fn named(self) -> &'static str {
         match self {
             Self::ACalendarServer => "your calendar server",
             Self::Google => "your Google calendar",

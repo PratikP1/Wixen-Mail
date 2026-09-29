@@ -114,6 +114,35 @@ pub struct Invitation {
     pub organiser: Option<EmailAddress>,
     /// Everybody the organiser asked, in the order the invitation lists them.
     pub guests: Vec<EmailAddress>,
+    /// The one day of a repeating meeting this message is about, when it names
+    /// one with `RECURRENCE-ID`.
+    ///
+    /// Nothing for a meeting that happens once and for a message about every
+    /// day of a series, which is the whole difference between moving one
+    /// Thursday and moving all of them.
+    pub the_day: Option<OneDay>,
+    /// How the meeting repeats, from `RRULE`, when it does.
+    pub repeats: Option<String>,
+    /// The days of the series the organiser called off, from `EXDATE`, as the
+    /// calendar reader stores them.
+    pub called_off: Option<String>,
+}
+
+/// One day of a repeating meeting, as a message about that day names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OneDay {
+    /// The day, in the shape this program stores a moment, read by the same
+    /// reader a calendar server's own copy is read by.
+    pub at: String,
+    /// The zone that day is written in, when its own line names one.
+    ///
+    /// Read off the `RECURRENCE-ID` line itself, because the calendar reader
+    /// keeps the moment and drops the name, and nine in London and nine in
+    /// universal time are an hour apart for half the year.
+    pub zone: Option<String>,
+    /// Whether the change runs from that day on, `RANGE=THISANDFUTURE`,
+    /// rather than for that day alone.
+    pub from_then_on: bool,
 }
 
 /// What the invitation says, read out of the document it arrived as.
@@ -129,6 +158,7 @@ pub struct Invitation {
 pub fn read_the_invitation(document: &str) -> Result<Invitation> {
     let its_own = the_meetings_own_lines(document);
     let meeting = the_meeting_those_lines_describe(&its_own)?;
+    let the_day = the_day_named_on(&its_own, meeting.recurrence_id.as_deref())?;
     Ok(Invitation {
         uid: meeting.uid,
         version: the_version_named_on(&its_own),
@@ -145,7 +175,49 @@ pub fn read_the_invitation(document: &str) -> Result<Invitation> {
             .iter()
             .filter_map(|line| a_person_named_on(line, "ATTENDEE"))
             .collect(),
+        the_day,
+        repeats: meeting.recurrence_rule,
+        called_off: meeting.exception_dates,
     })
+}
+
+/// The one day of a series the meeting's own lines name, or nothing when they
+/// name none.
+///
+/// The moment is the calendar reader's, `read`, so it is normalised the way a
+/// calendar server's own copy of the same day is. The zone and the range are
+/// read off the line, which the calendar reader does not keep. A line naming
+/// the property with nothing on it that reads as a moment is refused rather
+/// than passed over: passed over, a message about one day would read as a
+/// message about every day.
+fn the_day_named_on(its_own: &[String], read: Option<&str>) -> Result<Option<OneDay>> {
+    let Some(line) = its_own.iter().find(|line| names_the_day(line)) else {
+        return Ok(None);
+    };
+    let at = read
+        .map(str::trim)
+        .filter(|at| crate::common::moment::read(at).is_some())
+        .ok_or_else(|| {
+            Error::Protocol(
+                "That message names a day of a repeating meeting that cannot be read, so \
+                 nothing about the meeting is changed or answered from it."
+                    .to_string(),
+            )
+        })?;
+    Ok(Some(OneDay {
+        at: at.to_string(),
+        zone: parameter_named_on(line, "TZID"),
+        from_then_on: parameter_named_on(line, "RANGE")
+            .is_some_and(|range| range.trim().eq_ignore_ascii_case("THISANDFUTURE")),
+    }))
+}
+
+/// Whether a line is a `RECURRENCE-ID`, whatever case it is written in and
+/// whether or not anything follows its colon.
+fn names_the_day(line: &str) -> bool {
+    const THE_DAY: &str = "RECURRENCE-ID";
+    let name_ends = line.find([';', ':']).unwrap_or(line.len());
+    line[..name_ends].trim().eq_ignore_ascii_case(THE_DAY)
 }
 
 /// The meeting one set of property lines describes, read through the reader a
@@ -550,6 +622,8 @@ pub enum WhatTheInvitationSays {
         place: Option<String>,
         /// Who called it, as they are said aloud.
         organiser: Option<String>,
+        /// Whether the message is about one day of a repeating meeting.
+        one_day: bool,
         /// What it means for the calendar here.
         standing: Standing,
     },
@@ -558,6 +632,9 @@ pub enum WhatTheInvitationSays {
         summary: String,
         /// Whether the calendar here holds the meeting being called off.
         on_the_calendar: bool,
+        /// The one day of a repeating meeting called off, worded the way this
+        /// reader words a date, when the message names one.
+        the_day: Option<String>,
     },
     /// Somebody answering a meeting you called.
     AnAnswer {
@@ -579,6 +656,12 @@ pub enum Standing {
     /// The calendar holds the meeting and this moves or changes it.
     Changed {
         /// When the calendar has it now, worded as `when` is.
+        from: String,
+    },
+    /// The calendar holds the one day of a repeating meeting the message is
+    /// about, and this moves or changes that day.
+    ADayChanged {
+        /// When the calendar has that day now, worded as `when` is.
         from: String,
     },
     /// The version already answered here, or an older one.
@@ -607,10 +690,12 @@ impl WhatTheInvitationSays {
                 when,
                 place,
                 organiser,
+                one_day,
                 standing,
             } => Some(format!(
-                "Meeting invitation{}{}{}{}{}.",
+                "Meeting invitation{}{}{}{}{}{}.",
                 titled(summary),
+                if *one_day { ONE_DAY_OF_IT } else { "" },
                 clause("", when),
                 clause("in ", place.as_deref().unwrap_or_default()),
                 clause("from ", organiser.as_deref().unwrap_or_default()),
@@ -619,9 +704,13 @@ impl WhatTheInvitationSays {
             WhatTheInvitationSays::Cancellation {
                 summary,
                 on_the_calendar,
+                the_day,
             } => Some(format!(
-                "Meeting cancelled{}. It is {}on your calendar.",
+                "Meeting cancelled{}{}. It is {}on your calendar.",
                 titled(summary),
+                the_day
+                    .as_deref()
+                    .map_or_else(String::new, |day| format!("{ONE_DAY_OF_IT}, {day}")),
                 if *on_the_calendar { "" } else { "not " }
             )),
             WhatTheInvitationSays::AnAnswer {
@@ -661,6 +750,9 @@ impl Standing {
             Standing::Changed { from } => {
                 format!(", a change to the meeting on your calendar, which was {from}")
             }
+            Standing::ADayChanged { from } => {
+                format!(", a change to that day on your calendar, which was {from}")
+            }
             Standing::AlreadyAnswered { answer } => format!(
                 ", and you {} this version",
                 answer.map_or("have answered", Answer::what_you_did)
@@ -697,6 +789,10 @@ impl Answer {
         }
     }
 }
+
+/// The clause after the title that says a message is about one day of a
+/// repeating meeting, said wherever that is true so it is heard the same way.
+const ONE_DAY_OF_IT: &str = ", one day of a repeating meeting";
 
 /// The meeting's title after the kind of message, or nothing when it has none.
 ///
@@ -777,6 +873,7 @@ pub fn what_the_invitation_says(
         WhatItAsks::Cancellation => WhatTheInvitationSays::Cancellation {
             summary: the_title_of(document),
             on_the_calendar: on_the_calendar.is_some(),
+            the_day: the_day_worded_in(document, dates),
         },
         WhatItAsks::SomebodysAnswer => somebodys_answer_said(document),
         WhatItAsks::SomethingElse => WhatTheInvitationSays::CalendarFile,
@@ -806,8 +903,28 @@ fn an_invitation_said(
             .organiser
             .as_ref()
             .map(|organiser| plainly(how_to_say(organiser))),
+        one_day: invitation.the_day.is_some(),
         standing,
     }
+}
+
+/// The one day of a repeating meeting a document names, worded the way this
+/// reader words a date, or nothing when it names none.
+///
+/// Worded from the message, in the zone its day is written in, and said on
+/// this computer's clock like every other time here.
+fn the_day_worded_in(document: &str, dates: DateSettings) -> Option<String> {
+    let day = read_the_invitation(document).ok()?.the_day?;
+    let a_whole_day = matches!(
+        crate::common::moment::read(&day.at),
+        Some(crate::common::moment::Moment::WholeDay(_))
+    );
+    Some(when_it_starts(
+        &day.at,
+        a_whole_day,
+        day.zone.as_deref(),
+        dates,
+    ))
 }
 
 /// What an invitation is to a meeting the calendar already holds.
@@ -845,6 +962,11 @@ fn the_standing_against(
             Standing::AlreadyAnswered { answer }
         }
         _ if at_the_copys_time(invitation, copy) => Standing::AlreadyOnTheCalendar,
+        // The copy is that day, as the caller found it, so "which was" names
+        // that day rather than the day the series began.
+        _ if invitation.the_day.is_some() => Standing::ADayChanged {
+            from: when_the_copy_is(copy, dates),
+        },
         _ => Standing::Changed {
             from: when_the_copy_is(copy, dates),
         },
@@ -2188,6 +2310,7 @@ mod tests {
                 when: "05/03/2026 at 09:00 to 10:00".to_string(),
                 place: Some("Room 3".to_string()),
                 organiser: Some("Ada Lovelace".to_string()),
+                one_day: false,
                 standing: Standing::New,
             }
         );
@@ -2596,5 +2719,231 @@ mod tests {
             the_meeting_named_in("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"),
             None
         );
+    }
+
+    /// The organiser's update for one Thursday of a weekly meeting, its
+    /// `RECURRENCE-ID` line written as `day_line`, moved to Friday at two.
+    fn an_update_for_one_day(day_line: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:REQUEST\r\n\
+             BEGIN:VEVENT\r\nUID:s-1@example.com\r\nSEQUENCE:1\r\nSUMMARY:Weekly sync\r\n\
+             {day_line}\r\n\
+             DTSTART;TZID=Europe/London:20260313T140000\r\n\
+             DTEND;TZID=Europe/London:20260313T150000\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    fn the_day_read_off(day_line: &str) -> Option<OneDay> {
+        read_the_invitation(&an_update_for_one_day(day_line))
+            .expect("the update to read")
+            .the_day
+    }
+
+    #[test]
+    fn test_an_invitation_for_one_day_reads_the_day_and_its_own_zone() {
+        // The calendar reader keeps the moment and drops the zone, so the
+        // zone is read off the line itself.
+        assert_eq!(
+            the_day_read_off("RECURRENCE-ID;TZID=Europe/London:20260312T090000"),
+            Some(OneDay {
+                at: "2026-03-12T09:00:00".to_string(),
+                zone: Some("Europe/London".to_string()),
+                from_then_on: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_day_named_in_universal_time_keeps_its_letter() {
+        assert_eq!(
+            the_day_read_off("RECURRENCE-ID:20260312T090000Z"),
+            Some(OneDay {
+                at: "2026-03-12T09:00:00Z".to_string(),
+                zone: None,
+                from_then_on: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_whole_day_is_read_as_a_date() {
+        assert_eq!(
+            the_day_read_off("RECURRENCE-ID;VALUE=DATE:20260312"),
+            Some(OneDay {
+                at: "2026-03-12".to_string(),
+                zone: None,
+                from_then_on: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_day_from_then_on_is_read_as_one() {
+        // A change to a series from one day onwards, which is two series and
+        // is said rather than applied; lost, it would read as one day alone.
+        assert_eq!(
+            the_day_read_off(
+                "RECURRENCE-ID;RANGE=THISANDFUTURE;TZID=Europe/London:20260312T090000"
+            ),
+            Some(OneDay {
+                at: "2026-03-12T09:00:00".to_string(),
+                zone: Some("Europe/London".to_string()),
+                from_then_on: true,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_day_that_cannot_be_read_is_refused_with_a_sentence() {
+        // A stranger can write anything on the line, and a day nobody can
+        // read is no day to change.
+        for day_line in ["RECURRENCE-ID:", "RECURRENCE-ID:next Thursday"] {
+            let refused = read_the_invitation(&an_update_for_one_day(day_line))
+                .expect_err("a day nobody can read is refused");
+            assert!(
+                refused
+                    .to_string()
+                    .contains("names a day of a repeating meeting"),
+                "{day_line}: {refused}"
+            );
+        }
+    }
+
+    /// A weekly meeting sent whole: its repeat, one Thursday called off, and,
+    /// when `and_a_changed_day` is set, one changed day after it, the way
+    /// Outlook sends a series somebody already moved a day of.
+    fn a_series(and_a_changed_day: bool) -> String {
+        let changed = if and_a_changed_day {
+            "BEGIN:VEVENT\r\nUID:s-1@example.com\r\nSEQUENCE:1\r\nSUMMARY:Weekly sync\r\n\
+             RECURRENCE-ID:20260312T090000\r\n\
+             DTSTART:20260313T140000\r\nDTEND:20260313T150000\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\nEND:VEVENT\r\n"
+        } else {
+            ""
+        };
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:REQUEST\r\n\
+             BEGIN:VEVENT\r\nUID:s-1@example.com\r\nSEQUENCE:1\r\nSUMMARY:Weekly sync\r\n\
+             DTSTART:20260305T090000\r\nDTEND:20260305T100000\r\n\
+             RRULE:FREQ=WEEKLY;COUNT=10\r\nEXDATE:20260319T090000\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\n{changed}END:VCALENDAR\r\n"
+        )
+    }
+
+    #[test]
+    fn test_a_series_invitation_reads_how_it_repeats_and_the_days_it_calls_off() {
+        let series = read_the_invitation(&a_series(false)).expect("the series to read");
+
+        assert_eq!(series.repeats.as_deref(), Some("FREQ=WEEKLY;COUNT=10"));
+        assert_eq!(series.called_off.as_deref(), Some("20260319T090000"));
+        assert_eq!(series.the_day, None);
+    }
+
+    #[test]
+    fn test_a_series_sent_with_one_changed_day_reads_as_the_series() {
+        // The first meeting in the document is the series; the changed day
+        // after it is not the message's subject and names no day for it.
+        let series = read_the_invitation(&a_series(true)).expect("the series to read");
+
+        assert_eq!(series.starts, "2026-03-05T09:00:00");
+        assert_eq!(series.repeats.as_deref(), Some("FREQ=WEEKLY;COUNT=10"));
+        assert_eq!(series.the_day, None);
+    }
+
+    /// Ada's message about the Thursday of 12 March of the weekly sync alone,
+    /// under `method`, the day at `starts` to `ends` on the clock.
+    fn about_the_twelfth(method: &str, starts: &str, ends: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:{method}\r\n\
+             BEGIN:VEVENT\r\nUID:s-1@example.com\r\nSEQUENCE:1\r\nSUMMARY:Weekly sync\r\n\
+             RECURRENCE-ID:20260312T090000\r\nDTSTART:{starts}\r\nDTEND:{ends}\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    /// The twelfth as the weekly series holds it, nine to ten.
+    fn the_twelfth_on_the_calendar() -> crate::data::message_cache::CalendarEventEntry {
+        crate::data::message_cache::CalendarEventEntry {
+            summary: "Weekly sync".to_string(),
+            location: None,
+            ..the_calendar_holding("2026-03-12T09:00:00", "2026-03-12T10:00:00")
+        }
+    }
+
+    #[test]
+    fn test_an_update_for_one_day_says_it_is_one_day_and_what_that_day_was() {
+        // Compared with that day, not with the day the series began: the
+        // series' first Thursday is not what the organiser moved.
+        let said = what_the_invitation_says(
+            &about_the_twelfth("REQUEST", "20260313T140000", "20260313T150000"),
+            Some(&the_twelfth_on_the_calendar()),
+            None,
+            written_out_in_full(),
+        )
+        .said();
+
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Meeting invitation: Weekly sync, one day of a repeating meeting, 13/03/2026 at \
+                 14:00 to 15:00, from Ada Lovelace, a change to that day on your calendar, which \
+                 was 12/03/2026 at 09:00 to 10:00."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_of_one_day_says_which_day() {
+        let said = what_the_invitation_says(
+            &about_the_twelfth("CANCEL", "20260312T090000", "20260312T100000"),
+            Some(&the_twelfth_on_the_calendar()),
+            None,
+            written_out_in_full(),
+        )
+        .said();
+
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Meeting cancelled: Weekly sync, one day of a repeating meeting, 12/03/2026 at \
+                 09:00. It is on your calendar."
+            )
+        );
+    }
+
+    #[test]
+    fn test_one_day_at_the_time_the_series_holds_it_is_said_to_be_on_the_calendar() {
+        // A new room for that Thursday, or a move a provider already made.
+        let said = what_the_invitation_says(
+            &about_the_twelfth("REQUEST", "20260312T090000", "20260312T100000"),
+            Some(&the_twelfth_on_the_calendar()),
+            None,
+            written_out_in_full(),
+        )
+        .said();
+
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Meeting invitation: Weekly sync, one day of a repeating meeting, 12/03/2026 at \
+                 09:00 to 10:00, from Ada Lovelace, and it is already on your calendar."
+            )
+        );
+    }
+
+    #[test]
+    fn test_an_invitation_for_one_meeting_names_no_day_and_no_repeat() {
+        let once = read_the_invitation(&an_invitation_that_arrived()).expect("it to read");
+
+        assert_eq!(once.the_day, None);
+        assert_eq!(once.repeats, None);
+        assert_eq!(once.called_off, None);
     }
 }

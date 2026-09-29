@@ -91,6 +91,7 @@ pub mod new_item;
 pub mod notes_backend;
 pub mod notes_sync;
 pub mod occurrences;
+pub mod one_day_of_a_series;
 pub mod opening;
 /// Where a link in a message opens, and the one decision from the setting and the ask to the route (#80).
 pub mod opening_links;

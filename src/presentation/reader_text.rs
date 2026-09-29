@@ -88,11 +88,12 @@ pub struct ReaderDocument {
     /// all rather than greyed ones: an invitation that cannot be answered has
     /// its reason in the bar instead (#50 point 7).
     pub answering: Option<crate::application::answering::TheButtons>,
-    /// The calendar row a Remove from Calendar button marks called off, for
-    /// one message whose organiser cancelled a meeting on the calendar.
+    /// What a Remove from Calendar button takes off, for one message whose
+    /// organiser cancelled a meeting, or one day of a repeating meeting, on
+    /// the calendar.
     ///
     /// `None` for everything else, and then the window builds no such button.
-    pub removal: Option<String>,
+    pub removal: Option<crate::application::meeting_changes::Removal>,
 }
 
 /// A decoded picture, ready for a window to draw.
@@ -2243,7 +2244,7 @@ impl ReaderDocument {
                 None => sentence,
             });
         }
-        self.removal = change.offered_removal().map(str::to_string);
+        self.removal = change.offered_removal();
         self
     }
 }
@@ -5517,6 +5518,7 @@ mod invitation_tests {
             when: "05/03/2026 at 09:00 to 10:00".to_string(),
             place: Some("Room 4".to_string()),
             organiser: Some("Ada Lovelace".to_string()),
+            one_day: false,
             standing: Standing::New,
         }
     }
@@ -5525,6 +5527,7 @@ mod invitation_tests {
         WhatTheInvitationSays::Cancellation {
             summary: "Quarterly review".to_string(),
             on_the_calendar: true,
+            the_day: None,
         }
     }
 
@@ -5720,6 +5723,7 @@ mod answer_button_tests {
             when: "05/03/2026 at 09:00 to 10:00".to_string(),
             place: None,
             organiser: Some("Ada Lovelace".to_string()),
+            one_day: false,
             standing: Standing::New,
         }
     }
@@ -5884,7 +5888,7 @@ mod meeting_change_tests {
         // what has to carry the row it marks.
         let document = one_message(&a_removal_offered());
 
-        assert_eq!(document.removal.as_deref(), Some("evt-1"));
+        assert_eq!(document.removal, Some(the_meeting_removed()));
         assert!(
             document
                 .warning
@@ -5910,10 +5914,15 @@ mod meeting_change_tests {
             None
         );
         assert_eq!(
-            conversation("Quarterly review", &[part(0)])
-                .removal
-                .as_deref(),
-            Some("evt-1")
+            conversation("Quarterly review", &[part(0)]).removal,
+            Some(the_meeting_removed())
         );
+    }
+
+    /// Remove from Calendar for the whole meeting on row `evt-1`.
+    fn the_meeting_removed() -> crate::application::meeting_changes::Removal {
+        crate::application::meeting_changes::Removal::TheMeeting {
+            event_id: "evt-1".to_string(),
+        }
     }
 }

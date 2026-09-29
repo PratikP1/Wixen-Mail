@@ -34,7 +34,7 @@ use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::allowed::Allowed;
-use wixen_mail::application::meeting_changes::MeetingChange;
+use wixen_mail::application::meeting_changes::{MeetingChange, Removal};
 use wixen_mail::application::reading_a_message::{self, AnsweringAs, WhatIsSaidAboutIt};
 use wixen_mail::common::types::MessageBody;
 use wixen_mail::data::message_cache::attachment_content::AttachmentWithContent;
@@ -492,7 +492,7 @@ fn test_a_cancellation_from_the_organiser_is_offered_for_removal_and_nothing_is_
 
     let document = opened_in_a_reader(&cache, &item, body);
 
-    assert_eq!(document.removal.as_deref(), Some("evt-1"));
+    assert_eq!(document.removal, Some(the_meeting_removed()));
     assert_eq!(document.answering, None);
     assert_eq!(the_meeting_now(&cache).status, "confirmed");
     let spoken = spoken_as_it_opens(&document);
@@ -875,11 +875,18 @@ struct Harvest {
     /// The cancellation's tab in the text reader.
     text_tab: Vec<Control>,
     /// What the removal handler was handed after Alt+R in the message.
-    pressed_by_alt_r: Vec<String>,
+    pressed_by_alt_r: Vec<Removal>,
     /// The formatted window opened on the cancellation alone.
     formatted_window: Vec<Control>,
     /// What the removal handler was handed when its button was pressed there.
-    pressed_in_the_formatted_window: Vec<String>,
+    pressed_in_the_formatted_window: Vec<Removal>,
+}
+
+/// Remove from Calendar for the whole meeting on row `evt-1`.
+fn the_meeting_removed() -> Removal {
+    Removal::TheMeeting {
+        event_id: "evt-1".to_string(),
+    }
 }
 
 struct Gathered {
@@ -930,10 +937,10 @@ fn take_the_harvest() -> Result<Harvest, String> {
             let parent = Frame::builder().build();
             let reader = Rc::new(ReaderWindow::new(&parent, &a11y));
             reader.wire_menu();
-            let pressed: Rc<RefCell<Vec<String>>> = Rc::default();
+            let pressed: Rc<RefCell<Vec<Removal>>> = Rc::default();
             reader.on_remove({
                 let pressed = pressed.clone();
-                move |event_id| pressed.borrow_mut().push(event_id.to_string())
+                move |removal| pressed.borrow_mut().push(removal.clone())
             });
 
             let document = reader_text::single_message(
@@ -1134,7 +1141,7 @@ fn test_the_button_comes_after_the_bar_and_before_the_message() {
 fn test_alt_r_in_the_message_presses_remove_once_for_the_meeting_offered() {
     assert_eq!(
         the_harvest().pressed_by_alt_r,
-        vec!["evt-1".to_string()],
+        vec![the_meeting_removed()],
         "Alt+R in the message's text did not press Remove from Calendar exactly once"
     );
 }
@@ -1148,7 +1155,7 @@ fn test_the_formatted_window_has_the_button_and_it_reaches_the_same_handler() {
     );
     assert_eq!(
         harvest.pressed_in_the_formatted_window,
-        vec!["evt-1".to_string()],
+        vec![the_meeting_removed()],
         "Remove from Calendar in the formatted window did not reach the handler once"
     );
 }

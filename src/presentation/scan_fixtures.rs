@@ -390,7 +390,9 @@ mod tests {
         // at its own handle beside the three answers (13-13).
         assert_eq!(
             an_answerable_invitation(1).change.offered_removal(),
-            Some("scan-target"),
+            Some(crate::application::meeting_changes::Removal::TheMeeting {
+                event_id: "scan-target".to_string()
+            }),
             "{:?}",
             an_answerable_invitation(1).change
         );
