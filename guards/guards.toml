@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 471 records have arrived since and have not been through it.
+# 473 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -30436,7 +30436,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
 ]
 
 # ── The Signature Manager lists every account's signatures (#43) ──────────
@@ -30458,7 +30458,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
 ]
 
 # ── A box ticked in a signature's editor is the account's (#43, T-12-44) ──
@@ -30479,7 +30479,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 16 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
 ]
 
 # ── An account's labels are read in the order it keeps (#48, T-12-34) ──────
@@ -34324,4 +34324,38 @@ red = [
 tests_last_seen = [
     { file = "src/application/draft_message.rs", tests = 18 },
     { file = "tests/a_message_goes_out_from_the_address_it_was_written_from.rs", tests = 9 },
+]
+
+# Compose's From list named for the account it used to choose, while it now
+# chooses an address, so NVDA says "From account" over a list of addresses.
+# Written 2026-09-29 by 13-35.
+[[guard]]
+name = "compose's From list is named From at the handle focus reaches"
+file = "src/presentation/wx_compose.rs"
+suite = "the_from_list_chooses_who_sends"
+before = '''    set_accessible_name(&account_choice, "From");'''
+after = '''    set_accessible_name(&account_choice, "From account");'''
+red = [
+    "test_the_from_list_is_named_from_on_msaa_where_focus_lands",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 10 },
+]
+
+# People lookup asking the first account's directory whatever the From list
+# says, so a name typed for one account is sent to another's (T-13-35-02).
+# Written 2026-09-29 by 13-35.
+[[guard]]
+name = "people are looked up in the account of the From entry chosen"
+file = "src/presentation/wx_compose.rs"
+suite = "the_from_list_chooses_who_sends"
+before = '''                from_account_id: the_entry_chosen(&account_choice, &from_list)'''
+after = '''                from_account_id: from_list.first().cloned()'''
+red = [
+    "test_people_are_looked_up_in_the_chosen_entrys_account",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 10 },
 ]

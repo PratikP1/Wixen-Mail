@@ -216,12 +216,12 @@ pub struct LookFor {
     pub search: Search,
     /// The part of the recipient line being typed.
     pub name: String,
-    /// Which account the message is being sent from, as the From list numbers
-    /// them.
+    /// The account the message is being sent from: the account of the entry
+    /// chosen in the From list, whichever of its addresses that entry is.
     ///
     /// The directory belongs to an account, so changing the account a message
     /// is sent from changes which organisation is asked.
-    pub from_account: Option<u32>,
+    pub from_account_id: Option<String>,
 }
 
 /// What one search found.

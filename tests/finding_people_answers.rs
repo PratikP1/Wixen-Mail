@@ -99,13 +99,13 @@ fn test_a_name_typed_into_a_recipient_line_comes_back_with_somebody_to_write_to(
     }
 
     let runtime = Arc::new(tokio::runtime::Runtime::new().expect("a runtime"));
-    let finding = finding_people::through(vec![account.to_string()], &runtime);
+    let finding = finding_people::through(&runtime);
 
     let search = Search::default().and_then_another();
     (finding.start)(LookFor {
         search,
         name: "love".to_string(),
-        from_account: Some(0),
+        from_account_id: Some(account.to_string()),
     });
 
     // Looked for the way the window looks for it: come back and ask, rather

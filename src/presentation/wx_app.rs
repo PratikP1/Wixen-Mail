@@ -17456,6 +17456,31 @@ fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
         .unwrap_or_default()
 }
 
+/// The other addresses each account sends from, as the store keeps them,
+/// for compose's From list.
+///
+/// An account whose addresses cannot be read offers its own alone, and the
+/// log says why: the message can still be written and sent from the account,
+/// which is better than a window that does not open.
+fn the_other_addresses(
+    cache: Option<&MessageCache>,
+    accounts: &[Account],
+) -> std::collections::HashMap<String, Vec<crate::application::identities::Identity>> {
+    let Some(cache) = cache else {
+        return std::collections::HashMap::new();
+    };
+    accounts
+        .iter()
+        .filter_map(|account| match cache.identities_for(&account.id) {
+            Ok(kept) => Some((account.id.clone(), kept)),
+            Err(e) => {
+                tracing::warn!("The other addresses of an account could not be read: {e}");
+                None
+            }
+        })
+        .collect()
+}
+
 /// The signature a message from one account starts with: the one assigned
 /// to it, else the default, else none (#43), and nothing at all when
 /// somebody has said not to start every message with one.
@@ -17558,33 +17583,29 @@ fn open_compose(
         | ComposeMode::WriteTo { .. }
         | ComposeMode::MailTo { .. } => false,
     };
-    // The names shown in the From list and the ids behind them, read in one
-    // go. Looking somebody up asks the directory of whichever account the
-    // message is being sent from, and the window knows only the position in
-    // the list, so a second read to turn that position into an id would be a
-    // second answer to the same question.
-    let (from_list, active) = state
+    // Every address a message can go out from: each account's own, then the
+    // other addresses it keeps (13-33). Each entry names its account, so the
+    // window, people lookup, the signature and the send all read the entry
+    // chosen rather than a position in the list.
+    let (accounts, sender) = state
         .lock()
         .map(|s| {
-            let from_list = crate::application::identities::the_from_list(
-                &s.accounts,
-                &std::collections::HashMap::new(),
-            );
             let sender = crate::application::new_item::sends_from(
                 replying,
                 s.active_account_id.as_deref(),
                 s.default_account_id.as_deref(),
-            );
-            let active = sender
-                .and_then(|id| from_list.iter().position(|entry| entry.account_id == id))
-                .unwrap_or(0) as u32;
-            (from_list, active)
+            )
+            .map(str::to_string);
+            (s.accounts.clone(), sender)
         })
         .unwrap_or_default();
-    let account_ids: Vec<String> = from_list
-        .iter()
-        .map(|entry| entry.account_id.clone())
-        .collect();
+    let from_list = crate::application::identities::the_from_list(
+        &accounts,
+        &the_other_addresses(cache.as_deref(), &accounts),
+    );
+    let active = sender
+        .and_then(|id| from_list.iter().position(|entry| entry.account_id == id))
+        .unwrap_or(0) as u32;
 
     // One id for this window, shared by the automatic saves and the button, so
     // every save after the first updates the same draft.
@@ -17607,14 +17628,17 @@ fn open_compose(
         })
         .unwrap_or_else(|_| (Default::default(), true, true));
 
-    // Each account's signature, in the From list's order: its own, else the
-    // default, else none (#43), so the message starts with the From
-    // account's and follows a change of account. Signatures could be written,
-    // named and marked as the default, and none of that ever reached a message
+    // Each entry's signature, in the From list's order: its account's own,
+    // else the default, else none (#43), so the message starts with the From
+    // entry's and follows a change of From. An other address signs as its
+    // account does (phase 13 decision 34). Signatures could be written, named
+    // and marked as the default, and none of that ever reached a message
     // because nothing read them back.
-    let signatures: Vec<wx_compose::SignatureFor> = account_ids
+    let signatures: Vec<wx_compose::SignatureFor> = from_list
         .iter()
-        .map(|id| the_signature_a_message_starts_with(cache.as_deref(), id, sign_it))
+        .map(|entry| {
+            the_signature_a_message_starts_with(cache.as_deref(), &entry.account_id, sign_it)
+        })
         .collect();
 
     let saver = {
@@ -17662,10 +17686,7 @@ fn open_compose(
         &signatures,
         autosave,
         a11y.clone(),
-        Some(crate::presentation::finding_people::through(
-            account_ids,
-            rt,
-        )),
+        Some(crate::presentation::finding_people::through(rt)),
         saver,
         checking_protection,
     ) {

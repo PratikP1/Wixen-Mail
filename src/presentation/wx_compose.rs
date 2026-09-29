@@ -314,13 +314,23 @@ pub struct SignatureFor {
     pub text: String,
 }
 
+/// The entry the From list is on, which is who the message is from: the
+/// account it goes out through and the address it goes out from.
+fn the_entry_chosen(from: &Choice, from_list: &[FromEntry]) -> Option<FromEntry> {
+    from.get_selection()
+        .and_then(|at| from_list.get(at as usize))
+        .cloned()
+}
+
 /// Make the signature follow the From account (#43).
 ///
-/// `signatures` is one per account, in the From list's order, and
-/// `opened_with` is the account the message opened signed by. When the From
-/// account changes, the block the last account's signature went in as is
-/// replaced by the next account's, if it is still in the message as it went
-/// in, and the change is said. A block somebody has typed into is left as it
+/// `signatures` is one per entry, in the From list's order, each its
+/// account's, so an other address signs as its account does; `opened_with`
+/// is the entry the message opened signed by. When the From entry changes,
+/// the block the last entry's signature went in as is replaced by the next
+/// one's, if it is still in the message as it went in, and the change is
+/// said. Two entries of one account sign alike, so moving between them
+/// changes and says nothing. A block somebody has typed into is left as it
 /// is, and nothing is said.
 pub fn follow_the_from_account(
     account_choice: Choice,
@@ -952,16 +962,14 @@ pub fn build_compose_dialog(
     let account_label = StaticText::builder(&dialog)
         .with_label(Reached::From.label())
         .build();
+    // Every address a message can go out from, each account's own first and
+    // then its other addresses, said as `application::identities` says them.
+    // Named "From" and not "From account": it chooses an address.
     let account_choice = Choice::builder(&dialog)
-        .with_choices(
-            from_list
-                .iter()
-                .map(|entry| entry.address.clone())
-                .collect(),
-        )
+        .with_choices(from_list.iter().map(|entry| entry.said.clone()).collect())
         .with_selection(Some(opens_on))
         .build();
-    set_accessible_name(&account_choice, "From account");
+    set_accessible_name(&account_choice, "From");
     fields_sizer.add(
         &account_label,
         0,
@@ -1396,6 +1404,9 @@ pub fn show_compose_dialog_full(
         opens_on,
         theme::current_from_stored_config(),
     );
+    // Kept by the window, so every reader of the list reads the entry chosen
+    // rather than a position in it.
+    let from_list: Rc<[FromEntry]> = Rc::from(from_list);
 
     // Everything the message will carry. Paths rather than bytes: the file is
     // read at Send, so a picture edited while the message was being written
@@ -2041,6 +2052,7 @@ pub fn show_compose_dialog_full(
         // remember to. Saving a draft carries it too and drops it, which is
         // right: a draft is not queued, so it is not waiting for anything.
         let chosen_moment = std::rc::Rc::clone(&chosen_moment);
+        let from_list = from_list.clone();
         move || {
             let (body, body_plain) = editor_document::message_from_editor(
                 body_editor.run_script(&editor_document::read_body_script()),
@@ -2059,7 +2071,7 @@ pub fn show_compose_dialog_full(
                 // automatic save.
                 body_plain: crate::application::sign_off::canonical_delimiter(&body_plain),
                 html_mode: true,
-                from: None,
+                from: the_entry_chosen(&account_choice, &from_list),
                 attachments: attached
                     .borrow()
                     .iter()
@@ -2210,6 +2222,7 @@ pub fn show_compose_dialog_full(
         let waiting_since = waiting_since.clone();
         let written_by_choosing = written_by_choosing.clone();
         let show = show_the_people_found.clone();
+        let from_list = from_list.clone();
         move |a11y: &crate::presentation::accessibility::Accessibility| {
             let Some(finding) = finding_people.as_ref() else {
                 return false;
@@ -2235,7 +2248,8 @@ pub fn show_compose_dialog_full(
             (finding.start)(looking::LookFor {
                 search,
                 name,
-                from_account: account_choice.get_selection(),
+                from_account_id: the_entry_chosen(&account_choice, &from_list)
+                    .map(|entry| entry.account_id),
             });
             true
         }
@@ -3900,7 +3914,7 @@ pub fn build_send_preview_dialog(
         .build();
     hdr.add_growable_col(1, 1);
 
-    let from_display = "(default account)".to_string();
+    let from_display = the_from_line(data.from.as_ref());
 
     for (label, value) in [
         ("From:", from_display.as_str()),
@@ -4019,6 +4033,16 @@ pub fn build_send_preview_dialog(
         send_btn,
         back_btn,
         browser,
+    }
+}
+
+/// What the preview's From line says: the name people see and the address
+/// the message goes out from, or the address alone where it has no name.
+fn the_from_line(from: Option<&FromEntry>) -> String {
+    match from {
+        None => "(default account)".to_string(),
+        Some(entry) if entry.sender_name.trim().is_empty() => entry.address.clone(),
+        Some(entry) => format!("{} <{}>", entry.sender_name.trim(), entry.address),
     }
 }
 
