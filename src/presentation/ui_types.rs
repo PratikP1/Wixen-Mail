@@ -334,6 +334,12 @@ pub struct CompositionData {
     /// Whether it was to go signed, encrypted, both or neither, so the
     /// composer reopens with its boxes as they were left.
     pub protection: crate::application::protecting::Choice,
+    /// The account it was written from, so the From list reopens on it
+    /// rather than on the default account. `None` for nothing known.
+    pub account_id: Option<String>,
+    /// The other address it was written from, `None` for the account's own,
+    /// so the From list reopens on that address.
+    pub from_address: Option<String>,
 }
 
 /// Why the open folder's conversations were read again.

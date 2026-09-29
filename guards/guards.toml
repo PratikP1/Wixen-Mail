@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 473 records have arrived since and have not been through it.
+# 474 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34225,9 +34225,10 @@ after = '''    one.trim() == other.trim()'''
 red = [
     "application::identities::tests::test_an_address_already_the_accounts_own_is_refused_with_a_sentence",
     "application::identities::tests::test_an_address_the_account_already_sends_from_is_refused_whatever_its_case",
+    "application::identities::tests::test_the_list_opens_on_the_address_a_message_was_written_from",
 ]
 tests_last_seen = [
-    { file = "src/application/identities.rs", tests = 12 },
+    { file = "src/application/identities.rs", tests = 16 },
 ]
 
 # The address window's OK closing on anything typed: an address that is not
@@ -34340,7 +34341,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 10 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 16 },
 ]
 
 # People lookup asking the first account's directory whatever the From list
@@ -34357,5 +34358,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 10 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 16 },
+]
+
+# The composer's Send going out through the account open in the main window
+# whatever the From list chose, which is the defect 13-35 found under the list
+# (T-13-35-01). Written 2026-09-29 by 13-35.
+[[guard]]
+name = "the composer's Send goes out as the From entry chosen"
+file = "src/presentation/wx_app.rs"
+suite = "the_from_list_chooses_who_sends"
+before = '''    // invitation.
+    let goes_as = {
+        let s = lock_state(state);
+        identities::who_sends(
+            data.from.as_ref(),'''
+after = '''    // invitation.
+    let goes_as = {
+        let s = lock_state(state);
+        identities::who_sends(
+            None,'''
+red = [
+    "test_the_send_goes_out_as_the_entry_chosen",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_from_list_chooses_who_sends.rs", tests = 16 },
 ]

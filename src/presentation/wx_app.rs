@@ -6,6 +6,7 @@
 use crate::application::about;
 use crate::application::conversations::RowMessage;
 use crate::application::destinations::Deleting;
+use crate::application::identities;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
 use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun};
@@ -17514,9 +17515,10 @@ fn the_signature_a_message_starts_with(
 /// the message can go as they ask, from what this computer holds for the
 /// address it goes from and for each recipient.
 ///
-/// The address is the active account's, because that is the account the
-/// Outbox sends the message from. Nothing is read for a message with neither
-/// box ticked.
+/// The address is the one the From list chose, because that is the address
+/// the Outbox sends the message from and the one the send loop gathers keys
+/// for (ledger 660); the open account's for a message nothing chose. Nothing
+/// is read for a message with neither box ticked.
 fn the_protection_check(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -17528,13 +17530,16 @@ fn the_protection_check(
         if data.protection == Choice::Plain {
             return Ok(());
         }
-        let from = {
-            let s = lock_state(&state);
-            s.active_account_id
-                .as_ref()
-                .and_then(|id| s.accounts.iter().find(|a| &a.id == id))
-                .map(|account| account.email.clone())
-                .unwrap_or_default()
+        let from = match data.from.as_ref() {
+            Some(chosen) => chosen.address.clone(),
+            None => {
+                let s = lock_state(&state);
+                s.active_account_id
+                    .as_ref()
+                    .and_then(|id| s.accounts.iter().find(|a| &a.id == id))
+                    .map(|account| account.email.clone())
+                    .unwrap_or_default()
+            }
         };
         let held = match cache.as_deref() {
             Some(cache) => what_is_held(
@@ -17599,13 +17604,19 @@ fn open_compose(
             (s.accounts.clone(), sender)
         })
         .unwrap_or_default();
-    let from_list = crate::application::identities::the_from_list(
-        &accounts,
-        &the_other_addresses(cache.as_deref(), &accounts),
-    );
-    let active = sender
-        .and_then(|id| from_list.iter().position(|entry| entry.account_id == id))
-        .unwrap_or(0) as u32;
+    let from_list =
+        identities::the_from_list(&accounts, &the_other_addresses(cache.as_deref(), &accounts));
+    // A draft reopens on the address it was written from, and anything else
+    // on the account `sends_from` picks.
+    let (written_from, address) = match &mode {
+        ComposeMode::Draft(draft) if draft.account_id.is_some() => {
+            (draft.account_id.clone(), draft.from_address.clone())
+        }
+        _ => (sender, None),
+    };
+    let active =
+        identities::where_the_list_opens(&from_list, written_from.as_deref(), address.as_deref())
+            as u32;
 
     // One id for this window, shared by the automatic saves and the button, so
     // every save after the first updates the same draft.
@@ -17801,10 +17812,17 @@ fn save_as_draft(
             "The mail on this computer is not open, so the draft cannot be saved.".to_string(),
         );
     };
-    let account_id = lock_state(state)
-        .active_account_id
-        .clone()
-        .ok_or_else(|| "Choose an account first, so the draft has somewhere to go.".to_string())?;
+    // The entry the From list was on, as for Send; the account open in the
+    // main window only when nothing was chosen.
+    let goes_as = {
+        let s = lock_state(state);
+        identities::who_sends(
+            data.from.as_ref(),
+            &s.accounts,
+            s.active_account_id.as_deref(),
+        )
+    }
+    .ok_or_else(|| "Choose an account first, so the draft has somewhere to go.".to_string())?;
 
     let subject = if data.subject.trim().is_empty() {
         // Named rather than left blank, so the drafts list has something to
@@ -17820,7 +17838,7 @@ fn save_as_draft(
     let id = existing.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let draft = crate::data::message_cache::CachedDraft {
         id: id.clone(),
-        account_id,
+        account_id: goes_as.account_id,
         to_addr: data.to.trim().to_string(),
         cc: Some(data.cc.trim().to_string()).filter(|cc| !cc.is_empty()),
         bcc: Some(data.bcc.trim().to_string()).filter(|bcc| !bcc.is_empty()),
@@ -17839,9 +17857,10 @@ fn save_as_draft(
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
         protection: data.protection,
-        // The account's own until the composer offers another (13-35).
-        from_address: None,
-        from_name: None,
+        // The other address the From list chose, and its name; none for the
+        // account's own. The filed copy and the reopened draft both read it.
+        from_address: goes_as.from_address,
+        from_name: goes_as.from_name,
         created_at: chrono::Local::now().to_rfc3339(),
         updated_at: chrono::Local::now().to_rfc3339(),
     };
@@ -18085,14 +18104,23 @@ fn queue_for_sending(
                 .to_string(),
         );
     };
-    let account_id = lock_state(state).active_account_id.clone().ok_or_else(|| {
-        "Choose an account first, so the message has somewhere to go.".to_string()
-    })?;
-    put_in_the_outbox(cache, account_id, data)
+    // The entry the From list was on; the account open in the main window
+    // only for a message no composer wrote, such as an answer to an
+    // invitation.
+    let goes_as = {
+        let s = lock_state(state);
+        identities::who_sends(
+            data.from.as_ref(),
+            &s.accounts,
+            s.active_account_id.as_deref(),
+        )
+    }
+    .ok_or_else(|| "Choose an account first, so the message has somewhere to go.".to_string())?;
+    put_in_the_outbox(cache, goes_as, data)
 }
 
-/// Build the queued row for a message from one account and write it to the
-/// Outbox, answering who it is for and what the row waits for.
+/// Build the queued row for a message going out as `goes_as` and write it to
+/// the Outbox, answering who it is for and what the row waits for.
 ///
 /// The one place a queued row is built. The composer's Send and Send
 /// Feedback both come through here (12-05), so a report takes the same path
@@ -18100,7 +18128,7 @@ fn queue_for_sending(
 /// `allowed_for(account).mail` gate when the Outbox is handed to a server.
 fn put_in_the_outbox(
     cache: &Arc<MessageCache>,
-    account_id: String,
+    goes_as: identities::GoesOutAs,
     data: &wx_compose::ComposeData,
 ) -> std::result::Result<(String, crate::application::sending_later::GoAfter), String> {
     let recipient = data.to.trim();
@@ -18110,7 +18138,7 @@ fn put_in_the_outbox(
 
     let queued = crate::data::message_cache::QueuedOutboxMessage {
         id: uuid::Uuid::new_v4().to_string(),
-        account_id,
+        account_id: goes_as.account_id,
         to_addr: recipient.to_string(),
         cc_addr: data.cc.clone(),
         bcc_addr: data.bcc.clone(),
@@ -18128,9 +18156,10 @@ fn put_in_the_outbox(
         // Signed, encrypted, both or neither, as the boxes were at Send, so
         // the send loop builds it that way however long it waits.
         protection: data.protection,
-        // The account's own until the composer offers another (13-35).
-        from_address: None,
-        from_name: None,
+        // The other address the From list chose, and its name; none for the
+        // account's own, which then follows the account (13-34, 13-35).
+        from_address: goes_as.from_address,
+        from_name: goes_as.from_name,
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),
@@ -22376,7 +22405,18 @@ fn a_message_taken_back(
             .unwrap_or_else(|| message.body.clone()),
         body_plain: message.body.clone(),
         html_mode: written_as_html,
-        from: None,
+        // From the other address it was queued from, so the draft it becomes
+        // keeps it. A row naming none is the account's own, and Undo Send
+        // takes back only from the account that is open, which is the one
+        // nothing chosen goes out through.
+        from: message.from_address.as_ref().map(|address| {
+            crate::application::identities::FromEntry {
+                account_id: message.account_id.clone(),
+                address: address.clone(),
+                sender_name: message.from_name.clone().unwrap_or_default(),
+                said: address.clone(),
+            }
+        }),
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
         // Taking a message back undoes the time set on it as well, and this
@@ -22411,6 +22451,8 @@ fn the_draft_it_became(
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
         protection: written.protection,
+        account_id: Some(message.account_id.clone()),
+        from_address: message.from_address.clone(),
     }
 }
 
@@ -29610,7 +29652,11 @@ fn send_the_report(
         send_at: None,
         protection: crate::application::protecting::Choice::Plain,
     };
-    let (recipient, waiting_on) = put_in_the_outbox(cache, sender.account.id.clone(), &data)?;
+    let (recipient, waiting_on) = put_in_the_outbox(
+        cache,
+        identities::GoesOutAs::the_account(&sender.account.id),
+        &data,
+    )?;
     Ok((recipient, waiting_on, kept_in.display().to_string()))
 }
 

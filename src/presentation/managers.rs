@@ -4213,6 +4213,9 @@ pub fn open_draft(
         },
         // Reopened with its Sign and Encrypt boxes as they were left.
         protection: draft.protection,
+        // And From on the address it was written from.
+        account_id: Some(draft.account_id.clone()),
+        from_address: draft.from_address.clone(),
     })
 }
 

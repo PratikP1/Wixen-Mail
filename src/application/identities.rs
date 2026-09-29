@@ -253,8 +253,23 @@ pub fn who_sends(
     accounts: &[Account],
     open: Option<&str>,
 ) -> Option<GoesOutAs> {
-    let _ = (chosen, accounts);
-    open.map(GoesOutAs::the_account)
+    let Some(entry) = chosen else {
+        return open.map(GoesOutAs::the_account);
+    };
+    let is_the_accounts_own = accounts
+        .iter()
+        .find(|account| account.id == entry.account_id)
+        .is_some_and(|account| the_same_address(&entry.address, &account.email));
+    Some(match is_the_accounts_own {
+        true => GoesOutAs::the_account(&entry.account_id),
+        // The name as kept, empty included: an other address kept with no
+        // name goes out with none, not under the account's own.
+        false => GoesOutAs {
+            account_id: entry.account_id.clone(),
+            from_address: Some(entry.address.clone()),
+            from_name: Some(entry.sender_name.clone()),
+        },
+    })
 }
 
 /// Where the From list opens: on the entry a message was written from, when
@@ -265,13 +280,16 @@ pub fn where_the_list_opens(
     account_id: Option<&str>,
     address: Option<&str>,
 ) -> usize {
-    let _ = address;
-    account_id
-        .and_then(|account_id| {
-            from_list
-                .iter()
-                .position(|entry| entry.account_id == account_id)
-        })
+    let of_the_account = |entry: &FromEntry| Some(entry.account_id.as_str()) == account_id;
+    let written_from = |entry: &FromEntry| {
+        of_the_account(entry)
+            && address.is_some_and(|address| the_same_address(&entry.address, address))
+    };
+    // An account's own entry is the first of its entries in the list.
+    from_list
+        .iter()
+        .position(written_from)
+        .or_else(|| from_list.iter().position(of_the_account))
         .unwrap_or(0)
 }
 
