@@ -19217,6 +19217,37 @@ fn open_for_scanning(
             );
             OnReturn::WindowClosed
         }
+        ScanTarget::NewSavedSearch => {
+            // New Saved Search over the scan-only account's places, built and
+            // shown without `ask`, so no name is ever checked and nothing
+            // reaches the store (#58, 13-39).
+            let fixture = scan_only_account();
+            let window = crate::presentation::wx_new_saved_search::build_new_saved_search_dialog(
+                frame,
+                &crate::application::saved_searches::where_a_search_can_look(
+                    &fixture.name,
+                    &scan_fixtures::folders_a_search_can_look_in(),
+                ),
+                theme::current_from_stored_config(),
+            );
+            window.name.set_focus();
+            window.dialog.show_modal();
+            window.dialog.destroy();
+            OnReturn::WindowClosed
+        }
+        ScanTarget::SearchConditions => {
+            // The conditions window with its buttons, as Edit Conditions
+            // opens it, on two made-up conditions joined by any. What it
+            // hands back is thrown away, so nothing reaches the store.
+            let _ = crate::presentation::wx_managers::show_rule_manager_dialog(
+                frame,
+                "Scan target",
+                &scan_fixtures::search_conditions(),
+                crate::application::saved_searches::Join::Any,
+                a11y,
+            );
+            OnReturn::WindowClosed
+        }
         // The main window with a module showing and nothing over it. `main`
         // is the frame with the first-run question on top, because that
         // question opens whenever no target is given, so the bare window and

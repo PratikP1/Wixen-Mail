@@ -321,6 +321,28 @@ pub fn condition() -> Question {
     }
 }
 
+/// The two conditions the conditions window is opened on, with the
+/// condition above first, so the list the scan walks has rows and the
+/// window's own refusal to close on an empty list is not what it meets.
+pub fn search_conditions() -> Vec<Question> {
+    vec![
+        condition(),
+        Question {
+            field: "from".to_string(),
+            match_type: "contains".to_string(),
+            pattern: "example.com".to_string(),
+            case_sensitive: false,
+        },
+    ]
+}
+
+/// The folders New Saved Search offers for the scan-only account, which has
+/// none on a fresh profile, so the Look in choice the scan walks holds more
+/// than the whole account.
+pub fn folders_a_search_can_look_in() -> Vec<String> {
+    vec!["INBOX".to_string(), "INBOX/Receipts".to_string()]
+}
+
 /// A stored filter rule the filter editor can be opened on, with the same
 /// refusal to get past as the condition above.
 pub fn filter() -> FilterRule {
