@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 523 records have arrived since and have not been through it.
+# 525 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35514,4 +35514,48 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 27 },
+]
+
+# The account's Quick Steps stored when they load and never put on Action,
+# Quick Steps, so the menu keeps Manage Quick Steps alone and no step's key
+# runs anything. Written 2026-09-30 by 13-42, measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "the Quick Steps that load are put on the menu"
+file = "src/presentation/wx_app.rs"
+suite = "a_quick_step_runs_over_the_selection"
+before = '''            let names: Vec<String> = steps.iter().map(|step| step.name().to_string()).collect();
+            put_the_quick_steps_on_the_menu(frame, &names);'''
+after = '''            let names: Vec<String> = steps.iter().map(|step| step.name().to_string()).collect();
+            let _ = &names;'''
+red = [
+    "test_the_loaded_arm_puts_the_steps_on_the_menu",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 13 },
+]
+
+# The key handler past the last Quick Step asking for Alt where the keys are
+# Ctrl+Shift, so Ctrl+Shift and a digit with no step says nothing, which
+# cannot be told from a broken key. Written 2026-09-30 by 13-42, measured
+# through `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "a Quick Step key past the last step is answered from the list"
+file = "src/presentation/wx_app.rs"
+suite = "a_quick_step_runs_over_the_selection"
+before = '''    use crate::application::quick_steps::{REACHABLE_BY_KEY, key_for};
+    list.bind_internal(EventType::KEY_DOWN, move |event| {
+        event.skip(true);
+        if !event.control_down() || !event.shift_down() || event.alt_down() {'''
+after = '''    use crate::application::quick_steps::{REACHABLE_BY_KEY, key_for};
+    list.bind_internal(EventType::KEY_DOWN, move |event| {
+        event.skip(true);
+        if !event.control_down() || !event.alt_down() || event.shift_down() {'''
+red = [
+    "test_ctrl_shift_and_a_digit_past_the_last_step_reaches_the_list_whole",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 13 },
 ]

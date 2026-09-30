@@ -18,8 +18,10 @@
 //! on, with the real key handler bound, and `WM_KEYDOWN` for 9 and for 7
 //! posted to it with Ctrl and Shift held in this thread's keyboard state,
 //! through the window's own loop so the menu bar's accelerators are asked
-//! first as they are for a real key. A probe bound after the handler, so it
-//! runs first, writes down what each key event that reached the list saw.
+//! first as they are for a real key. A probe bound before the handler writes
+//! down what each key event that reached the list saw: measured 2026-09-30,
+//! handlers bound to one control run in the order they were bound, so a
+//! probe bound after the handler never sees a key the handler takes.
 //! With two steps Ctrl+Shift+9 has no item: the readings are what the event
 //! saw and which place the handler answered. Ctrl+Shift+7 has an item: the
 //! reading is the menu id the frame was sent.
@@ -437,11 +439,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
             let list = ListCtrl::builder(&frame)
                 .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel)
                 .build();
-            answer_the_quick_step_keys_the_menu_cannot(&list, frame, {
-                let reached = reached.clone();
-                move |place| reached.borrow_mut().list_answered.push(place)
-            });
-            // Bound after the handler, so it runs first and sees every key
+            // Bound before the handler, so it runs first and sees every key
             // event that reaches the list, then leaves it to the handler.
             list.bind_internal(EventType::KEY_DOWN, {
                 let reached = reached.clone();
@@ -465,6 +463,10 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     );
                     reached.borrow_mut().list_saw.push(saw.join("+"));
                 }
+            });
+            answer_the_quick_step_keys_the_menu_cannot(&list, frame, {
+                let reached = reached.clone();
+                move |place| reached.borrow_mut().list_answered.push(place)
             });
             frame.on_menu({
                 let reached = reached.clone();
