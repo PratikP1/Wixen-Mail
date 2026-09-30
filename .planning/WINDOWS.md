@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 656
+open_count: 657
 waived_count: 0
 fixed_count: 81
-total_count: 737
-last_updated: 2026-09-29T23:30:00.000Z
+total_count: 738
+last_updated: 2026-09-30T12:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -752,6 +752,7 @@ last_updated: 2026-09-29T23:30:00.000Z
 | 735 | 13 | todo | src/application/answered_meetings.rs |  | 13-36.4: an answer to one day of a repeating meeting on a Google or Outlook calendar is sent and the calendar left as it was, so nothing is written for that day and the answer is not remembered; the buttons for that day do not say how it was answered, and answering again reads as a first answer. Keeping the day apart there would reach the provider as an extra meeting. Recommended: remember the answer against the meeting and the day beside the calendar rather than on a row, when an answer to one day is worth remembering there; Pratik's to schedule | open |  | 2026-09-29T23:30:00.000Z |  |
 | 736 | 13 | todo | src/application/answered_meetings.rs |  | 13-36.4: a day answered with no series on the calendar is filed alone, linked to its meeting and its day. If a calendar check later brings the series, or the series is answered here later, the series is filed beside it without calling that day off, so the day shows twice until somebody removes one. Recommended: when a series is filed, call off every day a row stands for (the_day_of_a_meeting's link), the way the one-day filing already does | open |  | 2026-09-29T23:30:00.000Z |  |
 | 737 | 13 | todo | src/application/answered_meetings.rs |  | 13-36.4, found while writing the guide and not caused by it, since 13-11: a second, different answer at the version already answered files nothing, because what_changed answers NothingNew for that version, so the calendar keeps the first answer's busy, tentative or free and the remembered answer stays the first. Accept then Decline at one version sends Decline to the organiser and leaves the meeting busy, and the buttons go on saying "You have already accepted this". The same holds for one day. Read in the code on 2026-09-29, not run. Recommended: a different answer at the same version rewrites the time-blocking and the remembered answer and nothing about the meeting itself; Pratik's to schedule | open |  | 2026-09-29T23:30:00.000Z |  |
+| 738 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-37, the tester's ear: nobody has heard a saved search moved with Alt+Shift+Up or Alt+Shift+Down ("Invoices, 2 of 4.", "Invoices is already first of 4."), checked that the cursor stays on the moved row when the tree is read back, heard the new refusal on a row the gesture cannot move ("Move Up and Move Down rearrange accounts, pinned folders and saved searches. Choose an account branch, a folder under Favourites, or a saved search."), or found Move this search up and Move this search down on a saved search's own menu, with a screen reader | open |  | 2026-09-30T12:00:00.000Z |  |
 
 ````json
 [
@@ -9597,6 +9598,18 @@ last_updated: 2026-09-29T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 738,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-37, the tester's ear: nobody has heard a saved search moved with Alt+Shift+Up or Alt+Shift+Down (\"Invoices, 2 of 4.\", \"Invoices is already first of 4.\"), checked that the cursor stays on the moved row when the tree is read back, heard the new refusal on a row the gesture cannot move (\"Move Up and Move Down rearrange accounts, pinned folders and saved searches. Choose an account branch, a folder under Favourites, or a saved search.\"), or found Move this search up and Move this search down on a saved search's own menu, with a screen reader",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T12:00:00.000Z",
     "resolved_at": null
   }
 ]

@@ -6475,6 +6475,13 @@ stays at 122.
   - [S] #58, from the audit, in the tester's list.
   - [D] The reordering gesture the tree has; a key per search on the pattern labels take in
     EDIT-05; Save as Search from an empty box; the pages corrected by dating.
+    Its first clause closed 2026-09-30 by 13-37: Alt+Shift+Up and Alt+Shift+Down move a
+    saved search within its account's searches, held by
+    `test_the_order_written_is_the_order_read_back` in
+    `src/data/message_cache/saved_searches.rs` and by
+    `tests/a_saved_search_moves_with_the_gesture.rs`; the shortcuts page's "one row per saved
+    search" and the older changelog limit were dated the same day. The box and the
+    traceability row wait for 13-39.
   - [S] The order and the key heard are the tester's ear.
 
 - [x] **GAP-10**: Several identities per account, the first step to shared mailboxes and

@@ -122,12 +122,21 @@ one row per label. Choosing a label lists the mail carrying it. A label row
 reads as "Work, label" so you can tell it apart from a folder of the same
 name.
 
-After the labels comes a **Saved Searches** heading, with one row per saved
-search. A row reads as "Invoices, saved search", for the same reason a label
-says it is a label. Arrowing onto one does not run it, because running a search
-reads every message on this computer. `Enter` runs it and says how much it
-found. `F5` runs the one you are on again. `Delete` removes the saved search
-itself and never any mail.
+After the labels comes a **Saved Searches** heading, with a branch per account
+that has a saved search and one row under it for each of that account's
+searches. Until 2026-09-30 this page said the heading held
+one row per saved search, which stopped being true when searches were
+given a branch per account. A row reads as "Invoices, saved search", for the
+same reason a label says it is a label. Arrowing onto one does not run it,
+because running a search reads every message on this computer. `Enter` runs it
+and says how much it found. `F5` runs the one you are on again. `Delete`
+removes the saved search itself and never any mail.
+
+`Alt+Shift+Up` and `Alt+Shift+Down` move the saved search you are on one place
+up or down among its own account's searches, and say where it now is, such as
+"Invoices, 2 of 4." The row's own menu offers the same two moves. Nothing is
+sent to any server. Read the warning about Alt+Shift under Folder Actions
+before you use them.
 
 In the calendar sidebar, each calendar shows a tick box: `[x]` when it is
 showing and `[ ]` when it is hidden. `Enter` on a calendar hides or shows it,
@@ -1293,8 +1302,8 @@ and it is not in the tab order while it is empty.
 | Select Folder | `↑` `↓` | Navigate folder list |
 | Open Folder | `Enter` | Load messages from selected folder |
 | Refresh Folder | `F5` | Reload current folder |
-| Move Up | `Alt+Shift+Up` | Move the account, or the pinned folder, the cursor is on one place up. Nothing is sent to any server. See the warning below |
-| Move Down | `Alt+Shift+Down` | Move the account, or the pinned folder, the cursor is on one place down. Nothing is sent to any server. See the warning below |
+| Move Up | `Alt+Shift+Up` | Move the account, the pinned folder or the saved search the cursor is on one place up. A saved search moves among its own account's searches. Nothing is sent to any server. See the warning below |
+| Move Down | `Alt+Shift+Down` | Move the account, the pinned folder or the saved search the cursor is on one place down. A saved search moves among its own account's searches. Nothing is sent to any server. See the warning below |
 | Pin Folder | none | On the Action menu. Put the folder the cursor is on in Favourites, at the top of the tree. The folder also stays where it was |
 | Unpin Folder | none | On the Action menu. Take a folder out of Favourites. The folder itself is untouched |
 
