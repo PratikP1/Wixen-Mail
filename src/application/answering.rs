@@ -80,8 +80,9 @@ pub enum CannotAnswer {
         /// What the reader said was wrong with it.
         because: String,
     },
-    /// It asks about one day of a meeting that repeats.
-    ItIsOneDayOfARepeatingMeeting,
+    /// It changes a repeating meeting from one day onwards,
+    /// `RANGE=THISANDFUTURE`, which splits the series in two.
+    FromThatDayOn,
     /// The account reading it is not among the people the organiser asked.
     NotOnTheGuestList {
         /// The address that was reading it, so the sentence can name it.
@@ -123,10 +124,9 @@ impl CannotAnswer {
             CannotAnswer::TheInvitationDidNotRead { because } => {
                 format!("This invitation could not be read. {because}")
             }
-            CannotAnswer::ItIsOneDayOfARepeatingMeeting => {
-                "This is one day of a repeating meeting, and answering one day is not \
-                 built yet. An answer sent now would reach the organiser as an answer \
-                 to the whole series, so it has to be sent by hand."
+            CannotAnswer::FromThatDayOn => {
+                "This changes the meeting from one day onwards, and answering that is not \
+                 done here, so it has to be answered by hand."
                     .to_string()
             }
             CannotAnswer::NotOnTheGuestList { answering_as } => format!(
@@ -176,8 +176,16 @@ pub fn whether_it_can_be_answered(
         read_the_invitation(document).map_err(|refused| CannotAnswer::TheInvitationDidNotRead {
             because: refused.to_string(),
         })?;
-    if names_one_day_of_a_series(document) {
-        return Err(CannotAnswer::ItIsOneDayOfARepeatingMeeting);
+    // The meeting's own lines, as read: a series sent with a changed day after
+    // it names no day for the series, and is answered as the series. One day
+    // is answered for that day, and a change from one day onwards is not
+    // answered here.
+    if invitation
+        .the_day
+        .as_ref()
+        .is_some_and(|day| day.from_then_on)
+    {
+        return Err(CannotAnswer::FromThatDayOn);
     }
     let answering = the_guest_answering(&invitation, answering_as)?;
     let organiser = invitation
@@ -213,7 +221,7 @@ pub fn whether_it_can_be_answered(
 ///
 /// [`whether_it_can_be_answered`] is the only thing that builds one, so having
 /// one in hand is the proof that the buttons are worth offering: the document
-/// is an invitation, it reads, it is not one day of a series, this account is
+/// is an invitation, it reads, it is not a change from one day onwards, this account is
 /// on the guest list, both it and the organiser can be reached by mail, and
 /// sending is switched on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -745,29 +753,6 @@ const fn what_a_subject_calls(answer: Answer) -> &'static str {
     }
 }
 
-/// Whether the document says it is about one day of a meeting that repeats.
-///
-/// `RECURRENCE-ID` is what says so, and it names the day. A reply about one
-/// occurrence has to carry the same line back; nothing here builds one, so an
-/// answer to one day would reach the organiser as an answer to every day.
-///
-/// The whole document is read rather than one meeting's own lines, because
-/// `RECURRENCE-ID` belongs to a meeting and to nothing else: no alarm and no
-/// time zone block carries one. That leaves this with no view of its own about
-/// where a meeting ends, so it cannot come to disagree with the reader about
-/// which lines belong to which. A document holding a series and one changed
-/// day of it says so here too, and that is right: an answer built from it
-/// would carry the series and say nothing about the day.
-///
-/// The lines are put back together first, and the property is matched through
-/// the same reader the calendar uses, so a folded document and a document
-/// written in small letters both read the same way here as everywhere else.
-fn names_one_day_of_a_series(document: &str) -> bool {
-    crate::service::caldav::unfolded(document)
-        .iter()
-        .any(|line| crate::service::caldav::value_named_on(line, "RECURRENCE-ID").is_some())
-}
-
 /// Whether mail can reach the person a calendar document names.
 ///
 /// A calendar address is a URI and only the `mailto:` kind is an email
@@ -1034,21 +1019,47 @@ mod tests {
     }
 
     #[test]
-    fn test_one_day_of_a_repeating_meeting_is_refused_rather_than_answered_for_the_series() {
-        // An answer about one occurrence has to carry a RECURRENCE-ID naming
-        // the day. Nothing here builds that line, so the answer would reach
-        // the organiser as an answer to every day of the series, and the
-        // person who pressed Decline once would have declined all of them.
+    fn test_one_day_of_a_repeating_meeting_is_answered_for_that_day() {
+        // Until 13-36.4 this was refused, because nothing built the
+        // RECURRENCE-ID a reply about one day carries. The reply names the
+        // day now, so the person can answer the Thursday they were asked to.
         let one_day = an_invitation_that_arrived().replace(
             "DTSTART:20260305T090000Z",
             "RECURRENCE-ID:20260305T090000Z\r\nDTSTART:20260305T090000Z",
         );
 
-        let refused = whether_it_can_be_answered(&one_day, "sam@example.com", Allowed::EVERYTHING)
-            .expect_err("one day of a repeating meeting to be refused");
+        let answering =
+            whether_it_can_be_answered(&one_day, "sam@example.com", Allowed::EVERYTHING)
+                .unwrap_or_else(|why| panic!("one day was not offered its answers: {}", why.why()));
 
-        assert_eq!(refused, CannotAnswer::ItIsOneDayOfARepeatingMeeting);
-        assert!(refused.why().contains("whole series"), "{}", refused.why());
+        assert_eq!(
+            answering
+                .invitation()
+                .the_day
+                .as_ref()
+                .map(|day| day.as_written.as_str()),
+            Some("20260305T090000Z")
+        );
+    }
+
+    #[test]
+    fn test_a_change_from_one_day_onwards_is_refused_with_its_own_sentence() {
+        // RANGE=THISANDFUTURE splits a series in two, and an answer to it is
+        // not an answer to one day or to the series this calendar holds.
+        let from_then_on = an_invitation_that_arrived().replace(
+            "DTSTART:20260305T090000Z",
+            "RECURRENCE-ID;RANGE=THISANDFUTURE:20260305T090000Z\r\nDTSTART:20260305T090000Z",
+        );
+
+        let refused =
+            whether_it_can_be_answered(&from_then_on, "sam@example.com", Allowed::EVERYTHING)
+                .expect_err("a change from one day onwards to be refused");
+
+        assert_eq!(
+            refused.why(),
+            "This changes the meeting from one day onwards, and answering that is not done \
+             here, so it has to be answered by hand."
+        );
     }
 
     #[test]
@@ -1066,6 +1077,60 @@ mod tests {
                 .expect("a repeating meeting to be answerable as a whole");
 
         assert_eq!(answering.invitation().summary, "Quarterly review");
+    }
+
+    /// A weekly meeting sent whole with one changed day after it, the way
+    /// Outlook sends a series somebody already moved a day of.
+    fn a_series_sent_with_a_changed_day() -> String {
+        an_invitation_that_arrived().replace(
+            "END:VEVENT\r\n",
+            "RRULE:FREQ=WEEKLY;COUNT=10\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSEQUENCE:2\r\n\
+             SUMMARY:Quarterly review\r\nRECURRENCE-ID:20260312T090000Z\r\n\
+             DTSTART:20260313T140000Z\r\nDTEND:20260313T150000Z\r\n\
+             ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+             END:VEVENT\r\n",
+        )
+    }
+
+    #[test]
+    fn test_a_series_sent_with_a_changed_day_is_answered_as_the_series() {
+        // The first meeting in the document is the one it is about, and the
+        // changed day after it names no day for the series. A reply naming no
+        // day is an answer to every day, which is what this is.
+        let answering = whether_it_can_be_answered(
+            &a_series_sent_with_a_changed_day(),
+            "sam@example.com",
+            Allowed::EVERYTHING,
+        )
+        .expect("a series sent with a changed day to be answerable as the series");
+
+        assert_eq!(answering.invitation().the_day, None);
+        assert_eq!(
+            answering.invitation().repeats.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10")
+        );
+    }
+
+    #[test]
+    fn test_the_answer_to_a_series_names_no_day() {
+        // The changed day's RECURRENCE-ID is in the document the answer is
+        // built from, and it is not what the answer is about.
+        let sending = whether_it_can_be_answered(
+            &a_series_sent_with_a_changed_day(),
+            "sam@example.com",
+            Allowed::EVERYTHING,
+        )
+        .expect("a series sent with a changed day to be answerable as the series")
+        .the_answer_to_send(Answer::Accepted, answered_at(), THE_INVITATION_ID, None)
+        .expect("the answer to be built");
+
+        assert!(
+            !sending.calendar_document.contains("RECURRENCE-ID"),
+            "{}",
+            sending.calendar_document
+        );
     }
 
     #[test]
@@ -1160,7 +1225,7 @@ mod tests {
             CannotAnswer::TheInvitationDidNotRead {
                 because: "That invitation carried no meeting.".to_string(),
             },
-            CannotAnswer::ItIsOneDayOfARepeatingMeeting,
+            CannotAnswer::FromThatDayOn,
             CannotAnswer::NotOnTheGuestList {
                 answering_as: "passer-by@example.com".to_string(),
             },
@@ -1179,7 +1244,7 @@ mod tests {
                 | CannotAnswer::ItIsSomebodyElsesAnswer
                 | CannotAnswer::ItIsNotAnInvitationAtAll
                 | CannotAnswer::TheInvitationDidNotRead { .. }
-                | CannotAnswer::ItIsOneDayOfARepeatingMeeting
+                | CannotAnswer::FromThatDayOn
                 | CannotAnswer::NotOnTheGuestList { .. }
                 | CannotAnswer::NobodyCalledTheMeeting
                 | CannotAnswer::TheOrganiserHasNoAddress { .. }
@@ -1247,7 +1312,7 @@ mod tests {
     /// Lines nobody sane writes, each of them a shape one of the decisions
     /// here turns on: the method, the guest list, who called the meeting, and
     /// whether it is one day of a series.
-    const AWKWARD_LINES: [&str; 26] = [
+    const AWKWARD_LINES: [&str; 28] = [
         "BEGIN:VEVENT",
         "END:VEVENT",
         "BEGIN:VALARM",
@@ -1259,6 +1324,8 @@ mod tests {
         "METHOD:PUBLISH",
         "RECURRENCE-ID:20260305T090000Z",
         "RECURRENCE-ID:",
+        "RECURRENCE-ID;TZID=Europe/London:20260305T090000",
+        "RECURRENCE-ID;RANGE=THISANDFUTURE:20260305T090000Z",
         "RRULE:FREQ=WEEKLY;BYDAY=TH",
         "SEQUENCE:99999999999999999999",
         "ORGANIZER",
@@ -1859,6 +1926,24 @@ mod invitations_from_strangers {
                         sending.calendar_document.matches("ATTENDEE").count(),
                         1,
                         "seed {seed} built an answer carrying more than one person's: {}",
+                        sending.calendar_document
+                    );
+                    // One day answered names that day once, rebuilt rather
+                    // than copied, and a whole meeting answered names none.
+                    let naming_a_day = sending
+                        .calendar_document
+                        .lines()
+                        .filter(|line| line.starts_with("RECURRENCE-ID"))
+                        .count();
+                    assert_eq!(
+                        naming_a_day,
+                        usize::from(answering.invitation().the_day.is_some()),
+                        "seed {seed}: {}",
+                        sending.calendar_document
+                    );
+                    assert!(
+                        !sending.calendar_document.contains("RANGE="),
+                        "seed {seed} carried the stranger's range into the answer: {}",
                         sending.calendar_document
                     );
                 }

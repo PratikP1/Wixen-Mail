@@ -8,6 +8,29 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **One day of a repeating meeting can be answered, and the answer names that day (GAP-04,
+  ledger 638).** An invitation for one Thursday of a weekly meeting used to say it could not
+  be answered here, because an answer that names no day reaches the organiser as an answer
+  to every day. It is now offered Accept, Tentative and Decline like any invitation, and
+  each button says it answers one day: "Accept one day of Weekly sync, 12/03/2026 at 09:00
+  to 10:00. Ada Lovelace will be told." The answer carries the day the invitation named, in
+  the zone it named it, so the organiser's program reads it for that day only. On a
+  calendar server or a calendar kept on this computer, that day becomes an appointment of
+  its own showing your answer and the repeating meeting skips it, so declining one Thursday
+  leaves that Thursday free and every other Thursday busy. On a Google or Outlook calendar,
+  or a calendar this program can only read, the answer is sent and the calendar is left as
+  it was, and the status line says so after the answer. With no repeating meeting on your
+  calendar, that day is put there on its own. The buttons for that day then say how you
+  answered that day. An invitation sent as a whole series with one changed day after it,
+  the way Outlook sends one, is answered as the series rather than refused. An invitation
+  changing a repeating meeting from one day onwards still cannot be answered here, and now
+  says so in its own words. The version does not move for this: no build has been cut
+  since 1.0.0-alpha.1. Known limitations: no real organiser's program has read an answer to
+  one day from here, from Outlook, Google or a calendar server. On Google and Outlook your
+  answer to a day is not remembered here, because nothing is written to the calendar, so
+  the buttons for that day do not say how you answered it. A day put on your calendar on
+  its own shows twice if a calendar check later brings its repeating meeting. Nobody has
+  heard the new sentences with a screen reader.
 - **An organiser's update or cancellation for one day of a repeating meeting changes that
   day alone, and one for every day changes the whole meeting (GAP-04, ledger 638).** Until
   now both were said and not applied, because the message is usually about one day and the
@@ -30,9 +53,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Google or Outlook calendar, or in a calendar this program can only read, is said and not
   changed, because neither provider is told how a meeting repeats when it changes and the day
   kept apart would arrive as an extra meeting; whether Google or Outlook apply the organiser's
-  change themselves is untried. A change from one day onwards is said and not applied. One
-  day cannot be answered yet. Nobody has heard the new sentences or the button's description
-  with a screen reader.
+  change themselves is untried. A change from one day onwards is said and not applied.
+  Answering one day is the entry above. Nobody has heard the new sentences or the button's
+  description with a screen reader.
 - **A reply goes out from the address the message was sent to, and Reply All leaves your
   other addresses out, experimental (GAP-10, #59 step 1).** A reply, a reply to all and a
   forward open with From on the account's other address that the message's To or Cc names,
@@ -1001,6 +1024,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A repeating meeting you answer stays a repeating meeting on your calendar (ledger
+  723).** Answering a repeating meeting put one appointment on your calendar, and for a
+  meeting your calendar server held, the next sync would have sent the server the meeting
+  without its repeat or the days it skips. This had been so since answering invitations
+  arrived. The meeting now goes on your calendar with how it repeats and the days its
+  organiser called off, and a repeating meeting your calendar already holds keeps the days
+  it already skips. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: no real calendar server has met either the defect or
+  the fix, so nothing is known to have lost its repeat; only documents built for the tests
+  were read.
 - **A meeting answered before the calendar check brought it is no longer shown twice (ledger
   154).** Answering an invitation your calendar provider had not sent yet put the meeting on My
   Calendar, and the next Google, Outlook or calendar-server check then added the provider's copy

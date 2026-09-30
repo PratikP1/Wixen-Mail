@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 502 records have arrived since and have not been through it.
+# 507 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2505,12 +2505,18 @@ red = [
     "application::one_day_of_a_series::tests::test_a_day_still_on_the_series_is_that_day_as_the_series_holds_it",
     "application::one_day_of_a_series::tests::test_a_day_the_series_calls_off_is_off_it",
     "application::one_day_of_a_series::tests::test_a_meeting_held_once_is_one_appointment",
+    # Added 2026-09-29 by 13-36.4, found by --remeasure: a day named on a
+    # clock face is read before an answer to it is built or worded, so the
+    # reply and the two sentences for one day read a moment with a T too.
+    "application::invitations::tests::test_the_answer_to_one_day_names_that_day_as_the_invitation_did",
+    "application::invitations::tests::test_the_buttons_for_one_day_say_one_day",
+    "application::invitations::tests::test_what_answering_one_day_did_says_one_day",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
     { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
@@ -18136,9 +18142,14 @@ red = [
     "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
+    # 13-36.4's: a repeating meeting answered is read back off the row the
+    # answer saved. The third repeat case reads the server's own row, which
+    # still repeats when nothing is saved over it.
+    "application::answered_meetings::tests::test_answering_a_repeating_meeting_puts_a_repeating_meeting_on_the_calendar",
+    "application::answered_meetings::tests::test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # ── The version answered is written against the row that is really here ─────
@@ -18178,7 +18189,7 @@ red = [
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # ── The count of held-back pictures, kept and said ──────────────────────────
@@ -24582,7 +24593,7 @@ red = [
     "application::answering::tests::test_an_answer_queued_while_offline_says_it_waits_for_a_network",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 39 },
+    { file = "src/application/answering.rs", tests = 42 },
 ]
 
 # A queued meeting answer left off the calendar, which is what the filing
@@ -24632,9 +24643,14 @@ red = [
     "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
+    # 13-36.4's, which answer a repeating meeting through the fixture and read
+    # the row it saved; the third reads the server's row, which still repeats
+    # when the answer files nothing over it.
+    "application::answered_meetings::tests::test_answering_a_repeating_meeting_puts_a_repeating_meeting_on_the_calendar",
+    "application::answered_meetings::tests::test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # Answering a meeting with the hold off told "Sending to ..." and handed to
@@ -31587,7 +31603,7 @@ red = [
     "application::invitations::tests::test_a_cancellation_of_one_day_says_which_day",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31601,9 +31617,15 @@ before = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "appli
 after = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "text/calendar"];'''
 red = [
     "application::answering::finding_the_invitation::test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar",
+    # Added 2026-09-29 by 13-36.4, found by --remeasure and not caused by it:
+    # 13-21.3's report of what a fetch kept asks the same finder whether a
+    # part is a meeting, and its fixture's meeting is sent as application/ics.
+    # The record had been short since 13-21.3 in a file it never named.
+    "application::parts_left_behind::tests::test_a_kept_calendar_part_is_reported",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 39 },
+    { file = "src/application/answering.rs", tests = 42 },
+    { file = "src/application/parts_left_behind.rs", tests = 8 },
 ]
 
 # The meeting folded in after the signature: it is in the bar, below "More
@@ -31739,7 +31761,7 @@ red = [
     "application::answered_meetings::tests::test_a_calendar_server_read_after_an_answer_puts_its_copy_on_the_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
@@ -31757,7 +31779,7 @@ red = [
     "application::answering::tests::test_the_answer_goes_out_threaded_under_the_invitation",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 39 },
+    { file = "src/application/answering.rs", tests = 42 },
 ]
 
 # Why a meeting cannot be answered folded in after the signature: in the bar,
@@ -31945,7 +31967,7 @@ red = [
     "application::calendar::tests::test_an_outlook_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/calendar.rs", tests = 56 },
@@ -31964,7 +31986,7 @@ red = [
     "application::answered_meetings::tests::test_answering_a_meeting_google_already_holds_writes_on_that_row_and_adds_none",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # Google's UID read under the field name serde would guess, `icalUid`, rather
@@ -33028,7 +33050,7 @@ red = [
     "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
     { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/common/moment.rs", tests = 20 },
@@ -33073,7 +33095,7 @@ red = [
     "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
 ]
 
 # An organiser's move saved with the copy's zone beside the update's clock
@@ -33128,7 +33150,7 @@ red = [
     "application::invitations::tests::test_one_meeting_written_in_two_zones_is_already_on_the_calendar",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
 ]
 
 # An organiser's update compared with the calendar's copy by the stored text:
@@ -34768,10 +34790,10 @@ red = [
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
-# A merged Accept left waiting to be sent, so a change a provider may refuse
+#A merged Accept left waiting to be sent, so a change a provider may refuse
 # goes to a guest's copy that already says busy (T-13-36.2-04). Written
 # 2026-09-29 by 13-36.2.
 [[guard]]
@@ -34786,7 +34808,7 @@ red = [
     # the read skips it unchanged. Measured 2026-09-29 by 13-36.2.
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # The organiser a mailed invitation named surviving the merge over the one the
@@ -34809,7 +34831,7 @@ red = [
     "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
 ]
 
 # The Google read filing a meeting it meets for the first time beside the row
@@ -34840,7 +34862,7 @@ red = [
     "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
 ]
 
@@ -34864,7 +34886,7 @@ red = [
     "application::answered_meetings::tests::test_an_outlook_read_after_an_answer_puts_outlooks_copy_on_the_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
 ]
 
@@ -34898,7 +34920,7 @@ red = [
     "application::answered_meetings::tests::test_the_next_calendar_server_read_keeps_the_merged_meeting",
 ]
 tests_last_seen = [
-    { file = "src/application/answered_meetings.rs", tests = 34 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/caldav_sync.rs", tests = 68 },
 ]
 
@@ -35054,4 +35076,114 @@ red = [
 tests_last_seen = [
     { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
+]
+
+# The row an answer leaves given no repeat rule again, so a weekly meeting
+# answered here is its first day alone on the calendar and a series a calendar
+# server holds is sent back to it without its repeat (ledger 723,
+# T-13-36.4-03). Written 2026-09-29 by 13-36.4, measured through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an answered series keeps its repeat"
+file = "src/application/answered_meetings.rs"
+before = '''        // calendar rather than its first day alone (ledger 723).
+        recurrence_rule: invitation.repeats.clone(),'''
+after = '''        // calendar rather than its first day alone (ledger 723).
+        recurrence_rule: None,'''
+red = [
+    "application::answered_meetings::tests::test_answering_a_repeating_meeting_puts_a_repeating_meeting_on_the_calendar",
+    "application::answered_meetings::tests::test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off",
+    "application::answered_meetings::tests::test_what_a_calendar_server_is_sent_for_an_answered_series_still_repeats",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 37 },
+]
+
+# The reply to one day of a repeating meeting written without the day's
+# RECURRENCE-ID, so the organiser reads an answer to one Thursday as an answer
+# to every Thursday (RFC 5546 section 3.2.3, T-13-36.4-02). Written 2026-09-29
+# by 13-36.4, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "the answer to one day names that day"
+file = "src/application/invitations.rs"
+before = '''    lines.extend(invitation.the_day.as_ref().map(the_day_answered));'''
+after = '''    let _ = the_day_answered;'''
+red = [
+    "application::invitations::tests::test_the_answer_to_one_day_names_that_day_as_the_invitation_did",
+    "application::invitations::tests::test_a_day_named_in_universal_time_is_answered_in_universal_time",
+    "application::invitations::tests::test_a_whole_day_is_answered_as_a_date",
+    # From task 2, which offers one day its answers: the sweep asks every
+    # reply to one day for exactly one RECURRENCE-ID.
+    "application::answering::invitations_from_strangers::test_anything_this_says_can_be_answered_really_can_be",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 42 },
+    { file = "src/application/invitations.rs", tests = 70 },
+]
+
+# The question whether an invitation is for one day asked of the whole
+# document again, so a series sent with a changed day after it, the way
+# Outlook sends one, is refused instead of answered as the series. Written
+# 2026-09-29 by 13-36.4, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`. Rewritten the same day by its task 2, when the question
+# became whether the day runs from then on: the break now refuses anything
+# naming a day anywhere, which is also one day offered no answers.
+[[guard]]
+name = "a series sent with a changed day is answered as the series"
+file = "src/application/answering.rs"
+before = '''    if invitation
+        .the_day
+        .as_ref()
+        .is_some_and(|day| day.from_then_on)
+    {'''
+after = '''    if crate::service::caldav::unfolded(document)
+        .iter()
+        .any(|line| crate::service::caldav::value_named_on(line, "RECURRENCE-ID").is_some())
+    {'''
+red = [
+    "application::answering::tests::test_a_series_sent_with_a_changed_day_is_answered_as_the_series",
+    "application::answering::tests::test_the_answer_to_a_series_names_no_day",
+    "application::answering::tests::test_one_day_of_a_repeating_meeting_is_answered_for_that_day",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 42 },
+]
+
+# The day kept apart for an answer given the series' time-blocking, so a
+# declined Thursday still books the hour out while every other Thursday is
+# unchanged. Written 2026-09-29 by 13-36.4, measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "a declined day is kept free apart from the series"
+file = "src/application/answered_meetings.rs"
+suite = "one_day_of_a_repeating_meeting_is_answered_alone"
+before = '''        show_as: holding.blocks_time.as_stored().to_string(),
+        ..one_day_of_a_series::the_day_kept_apart(series, invitation)'''
+after = '''        ..one_day_of_a_series::the_day_kept_apart(series, invitation)'''
+red = [
+    "test_declining_one_day_keeps_that_day_free_and_the_series_busy",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 37 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_answered_alone.rs", tests = 11 },
+]
+
+# The calendar's rule for where one day can change on its own asked about the
+# whole series instead, so an answer to one day of a Google or Outlook series
+# keeps the day apart there, and the day reaches the provider as an extra
+# meeting (T-13-36.4-04). Written 2026-09-29 by 13-36.4, measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "one day answered on a Google or Outlook series leaves the calendar"
+file = "src/application/answered_meetings.rs"
+suite = "one_day_of_a_repeating_meeting_is_answered_alone"
+before = '''    calendar::can_be_honoured(WhatIsBeingDone::Changing, EditMeans::OneDay, &allows).err()?;'''
+after = '''    calendar::can_be_honoured(WhatIsBeingDone::Changing, EditMeans::WholeSeries, &allows).err()?;'''
+red = [
+    "test_one_day_answered_on_a_google_series_leaves_the_calendar_and_says_so",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 37 },
+    { file = "tests/one_day_of_a_repeating_meeting_is_answered_alone.rs", tests = 11 },
 ]

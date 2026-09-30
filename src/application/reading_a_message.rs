@@ -531,8 +531,9 @@ pub fn answer_buttons_among(
     let Some(found) = found else {
         return not_asked;
     };
-    let said_before = invitations::the_meeting_named_in(&found.document)
-        .and_then(|uid| the_answer_given_to(cache, &found.account, &uid));
+    let said_before = invitations::read_the_invitation(&found.document)
+        .ok()
+        .and_then(|invitation| the_answer_given_to(cache, &found.account, &invitation));
     let who = answering_as(&found.account);
     answering::the_answer_buttons(
         &found.document,
@@ -544,26 +545,51 @@ pub fn answer_buttons_among(
     )
 }
 
-/// What this account last answered the meeting named `uid`, here, if it did
-/// and the answer was kept.
+/// What this account last answered the meeting `invitation` is about, here,
+/// if it did and the answer was kept.
+///
+/// For an invitation to one day of a repeating meeting, the answer kept on
+/// that day's own row, and nothing when no row stands for the day, so a
+/// button never says the series' answer was given to the day.
 fn the_answer_given_to(
     cache: &MessageCache,
     account: &str,
-    uid: &str,
+    invitation: &invitations::Invitation,
 ) -> Option<invitations::Answer> {
-    let copy = cache
-        .get_event_by_ical_uid(account, uid)
-        .unwrap_or_else(|e| {
-            tracing::warn!("Could not look a meeting up on the calendar: {e}");
-            None
-        })?;
+    let answered = match invitation.the_day.as_ref() {
+        None => the_meeting_on_the_calendar(cache, account, &invitation.uid)?,
+        Some(day) => the_row_standing_for(cache, account, &invitation.uid, day)?,
+    };
     cache
-        .the_answer_given_here(&copy.id)
+        .the_answer_given_here(&answered.id)
         .unwrap_or_else(|e| {
             tracing::warn!("Could not read which answer a meeting was given: {e}");
             None
         })?
         .answer
+}
+
+/// The row that stands for one day of a meeting: the day's own row, or a
+/// single appointment at that day's time, and nothing otherwise.
+fn the_row_standing_for(
+    cache: &MessageCache,
+    account: &str,
+    uid: &str,
+    day: &invitations::OneDay,
+) -> Option<CalendarEventEntry> {
+    use one_day_of_a_series::ThatDay;
+
+    match one_day_of_a_series::what_the_calendar_holds_for_that_day(cache, account, uid, day) {
+        Ok(ThatDay::ItsOwnRow { row, .. }) => Some(row),
+        Ok(ThatDay::OneAppointment(copy)) => {
+            one_day_of_a_series::is_the_appointment_for(&copy, day).then_some(copy)
+        }
+        Ok(_) => None,
+        Err(e) => {
+            tracing::warn!("Could not look one day of a meeting up on the calendar: {e}");
+            None
+        }
+    }
 }
 
 /// What opening a stored message in a reader window changes on the calendar,
@@ -786,7 +812,7 @@ fn the_version_answered_on(cache: &MessageCache, row: &CalendarEventEntry) -> Op
 
 /// What the calendar the meeting is filed in allows, and, on a calendar
 /// server, why the day kept apart could not be written there.
-fn what_the_calendar_allows(
+pub(crate) fn what_the_calendar_allows(
     cache: &MessageCache,
     copy: Option<&CalendarEventEntry>,
     kept_apart: Option<&CalendarEventEntry>,
@@ -837,15 +863,16 @@ fn what_it_changed_saved(
     }
 }
 
-/// One day kept apart from its series on an organiser's word: the day saved
-/// first, then linked to its meeting and its day, then taken off the series.
+/// One day kept apart from its series, on an organiser's word or on an answer
+/// to that day: the day saved first, then linked to its meeting and its day,
+/// then taken off the series.
 ///
 /// The order `calendar::one_day_kept_out_of_the_series` gives, so a failure
 /// part way leaves the day on the calendar twice, which can be seen and put
 /// right, rather than lost. The link comes before the series gives the day
 /// up, or a second message about that day would find nothing standing for it
 /// and cut the day out again.
-fn the_day_kept_apart_saved(
+pub(crate) fn the_day_kept_apart_saved(
     cache: &MessageCache,
     series: &CalendarEventEntry,
     kept: &CalendarEventEntry,

@@ -657,6 +657,27 @@ after the name what pressing it will do and who will be told:
 If you answered this meeting here before, the same sentence says so and
 whether pressing the button says the same again or replaces that answer.
 
+An invitation can be for one day of a repeating meeting, such as one
+Thursday of a weekly meeting. Each button then says so:
+
+> Accept one day of Weekly sync, 12/03/2026 at 09:00 to 10:00. Ada Lovelace
+> will be told.
+
+Your answer names that day, so the organiser's calendar program reads it as
+an answer to that day only, and every other day keeps the answer you gave the
+whole meeting. What happens on your calendar depends on where the repeating
+meeting is:
+
+| Where the repeating meeting is | What your answer to one day does there |
+|---|---|
+| A calendar server, or a calendar kept on this computer | That day becomes an appointment of its own showing your answer, and the repeating meeting skips it. Declining one Thursday leaves that Thursday free and every other Thursday as it was. |
+| A Google or Outlook calendar, or a calendar this program can only read | Your answer is sent and your calendar is left as it was. The status line says so after the answer: "That day on your calendar was left as it was, because one day of a repeating meeting cannot be changed on its own in your Google calendar from here." |
+| Not on your calendar at all | That day is put on your calendar on its own, where a new meeting goes. |
+| On your calendar as a single meeting on that day | Your answer is filed on it, as for any meeting. |
+
+The next time the invitation for that day is opened, its buttons say how you
+answered that day, not how you answered the whole meeting.
+
 You do not have to reach the buttons. From anywhere in the message:
 
 | Key | Answer |
@@ -674,8 +695,8 @@ When an invitation cannot be answered there are no buttons at all, rather
 than greyed ones you would pass without hearing why, and the bar says why.
 In a new installation that is usually "Sending mail is switched off, so no
 answer can reach the organiser", with the setting to change; it can also be
-that the invitation was not addressed to you, or that it is one day of a
-repeating meeting, which Wixen Mail does not answer yet. A conversation of
+that the invitation was not addressed to you, or that it changes a repeating
+meeting from one day onwards, which you answer by hand. A conversation of
 several messages shows no buttons; open the message on its own to answer it.
 
 After you answer, the status line says what happened, once. The answer goes
@@ -684,7 +705,9 @@ back for the first seconds. It is sent as a reply to the invitation, with the
 headers a mail program uses to file a reply under the message it answers. The
 meeting is put
 on your calendar, and your answer is kept beside it, so the next time the
-invitation is opened the sentence says which way you answered.
+invitation is opened the sentence says which way you answered. A repeating
+meeting goes on your calendar repeating, without the days its organiser
+called off.
 
 If your calendar provider has not sent the meeting yet, your answer puts it
 on My Calendar. The next calendar check moves it to the provider's calendar
