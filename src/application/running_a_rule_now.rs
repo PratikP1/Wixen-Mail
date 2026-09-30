@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use crate::application::acting_on_a_set::{HeldMessage, WhyNot, the_work, what_each_message_needs};
 use crate::application::choosing_messages::{Chosen, MessageRef};
 use crate::application::editing::MOST_ROWS_WORTH_SELECTING;
-use crate::application::filters::{FilterAction, FilterEngine, FilterRule, settle};
+use crate::application::filters::{FilterAction, FilterEngine, FilterRule, Outcome, settle};
 use crate::data::message_cache::{CachedFolder, CachedMessage, Tag};
 
 /// The folder a rule is run over, as the worker read it, and what its
@@ -121,6 +121,47 @@ pub fn the_set_to_run(would: &WouldChange) -> Chosen {
             .collect(),
         ..Chosen::default()
     }
+}
+
+impl WouldChange {
+    /// What the runner is handed to carry out: the rule's one action,
+    /// settled the way a check settles it.
+    pub fn outcome(&self) -> Outcome {
+        Outcome::default()
+    }
+}
+
+/// Said in the question before "Run it?" whenever the run reaches the
+/// server, because none has met a real one.
+pub const RUNNING_A_RULE_NOW_IS_EXPERIMENTAL: &str = "No rule run has met a real mail server yet.";
+
+/// The question asked before a rule is run over a folder, and which answer
+/// Enter gives to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Question {
+    pub text: String,
+    /// Whether Enter answers yes: it does, except for a rule that deletes.
+    pub enter_answers_yes: bool,
+}
+
+/// The question asked before `rule_name` is run over `folder_name`, when
+/// it would change something.
+pub fn the_question(_rule_name: &str, _folder_name: &str, _would: &WouldChange) -> Question {
+    Question {
+        text: String::new(),
+        enter_answers_yes: false,
+    }
+}
+
+/// What is said instead of a question when a rule would change nothing.
+pub fn nothing_to_change(_rule_name: &str, _folder_name: &str, _matched: usize) -> String {
+    String::new()
+}
+
+/// The one sentence after a run, `done` being what the runner's answer
+/// was worded as.
+pub fn what_the_rule_did(_rule_name: &str, _done: &str) -> String {
+    String::new()
 }
 
 #[cfg(test)]
@@ -415,6 +456,201 @@ mod tests {
                 read: false,
                 starred: true,
             }]
+        );
+    }
+
+    /// `count` unread, unflagged newsletters in the inbox.
+    fn newsletters_in_the_inbox(count: i64) -> Vec<CachedMessage> {
+        (1..=count).map(|id| a_message(id, INBOX, NEWS)).collect()
+    }
+
+    /// The question the Newsletters rule, doing `action`, asks over
+    /// `messages` in the inbox.
+    fn asked(action: FilterAction, messages: &[CachedMessage]) -> Question {
+        let would = counted_in_the_inbox(&newsletters(action), messages);
+        the_question("Newsletters", "Inbox", &would)
+    }
+
+    fn archive() -> FilterAction {
+        FilterAction::MoveToFolder("Archive".to_string())
+    }
+
+    #[test]
+    fn test_the_question_for_a_move_says_the_rule_the_count_the_folder_and_where() {
+        let question = asked(archive(), &newsletters_in_the_inbox(214));
+        assert_eq!(
+            question.text,
+            "The rule Newsletters would move 214 messages in Inbox to Archive. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_the_question_for_marking_read_and_unread() {
+        let unread = newsletters_in_the_inbox(12);
+        let read_ones: Vec<CachedMessage> = unread.iter().cloned().map(read).collect();
+        assert_eq!(
+            asked(FilterAction::MarkAsRead, &unread).text,
+            "The rule Newsletters would mark 12 messages in Inbox as read. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+        assert_eq!(
+            asked(FilterAction::MarkAsUnread, &read_ones).text,
+            "The rule Newsletters would mark 12 messages in Inbox as unread. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_the_question_for_flagging_and_taking_the_flag_off() {
+        let plain = newsletters_in_the_inbox(3);
+        let flagged_ones: Vec<CachedMessage> = plain.iter().cloned().map(flagged).collect();
+        assert_eq!(
+            asked(FilterAction::Star, &plain).text,
+            "The rule Newsletters would flag 3 messages in Inbox. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+        assert_eq!(
+            asked(FilterAction::Unstar, &flagged_ones).text,
+            "The rule Newsletters would take the flag off 3 messages in Inbox. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_the_question_for_a_label_names_the_label() {
+        assert_eq!(
+            asked(
+                FilterAction::AddTag("Work".to_string()),
+                &newsletters_in_the_inbox(3)
+            )
+            .text,
+            "The rule Newsletters would label 3 messages in Inbox with Work. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_the_question_for_a_delete_and_enter_answers_no() {
+        let question = asked(FilterAction::Delete, &newsletters_in_the_inbox(3));
+        assert_eq!(
+            question,
+            Question {
+                text: "The rule Newsletters would delete 3 messages in Inbox. \
+                       No rule run has met a real mail server yet. Run it?"
+                    .to_string(),
+                enter_answers_yes: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_enter_answers_yes_to_a_move() {
+        assert!(asked(archive(), &newsletters_in_the_inbox(3)).enter_answers_yes);
+    }
+
+    #[test]
+    fn test_a_phrase_said_first_is_not_said_to_be_experimental() {
+        // The phrase is kept on this computer alone, so the run never meets
+        // a mail server and the question does not say it might.
+        assert_eq!(
+            asked(
+                FilterAction::SayFirst("Urgent".to_string()),
+                &newsletters_in_the_inbox(3)
+            )
+            .text,
+            "The rule Newsletters would say \"Urgent\" first on 3 messages in Inbox. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_one_message_is_said_in_the_singular() {
+        assert_eq!(
+            asked(archive(), &newsletters_in_the_inbox(1)).text,
+            "The rule Newsletters would move 1 message in Inbox to Archive. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_above_the_bound_the_question_says_the_count_with_its_comma_and_the_bound() {
+        assert_eq!(
+            asked(archive(), &newsletters_in_the_inbox(5_001)).text,
+            "The rule Newsletters would move 5,001 messages in Inbox to Archive. \
+             One run changes 5,000 at most, so this run would move the first 5,000 \
+             and running it again would move the rest. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_when_some_are_already_that_way_the_question_says_both_counts() {
+        let mut messages: Vec<CachedMessage> = newsletters_in_the_inbox(230)
+            .into_iter()
+            .map(read)
+            .collect();
+        for message in messages.iter_mut().take(12) {
+            message.read = false;
+        }
+        assert_eq!(
+            asked(FilterAction::MarkAsRead, &messages).text,
+            "The rule Newsletters matches 230 messages in Inbox; \
+             12 would be marked read and 218 are read already. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_one_already_that_way_is_said_in_the_singular() {
+        let messages = [
+            flagged(a_message(1, INBOX, NEWS)),
+            a_message(2, INBOX, NEWS),
+        ];
+        assert_eq!(
+            asked(FilterAction::Star, &messages).text,
+            "The rule Newsletters matches 2 messages in Inbox; \
+             1 would be flagged and 1 is flagged already. \
+             No rule run has met a real mail server yet. Run it?"
+        );
+    }
+
+    #[test]
+    fn test_a_rule_matching_nothing_says_it_would_change_nothing() {
+        assert_eq!(
+            nothing_to_change("Newsletters", "Inbox", 0),
+            "The rule Newsletters would change nothing in Inbox."
+        );
+    }
+
+    #[test]
+    fn test_a_rule_whose_matches_are_all_that_way_says_so() {
+        assert_eq!(
+            nothing_to_change("Newsletters", "Inbox", 16),
+            "The rule Newsletters matches 16 messages in Inbox, and every one is already that way."
+        );
+        assert_eq!(
+            nothing_to_change("Newsletters", "Inbox", 1),
+            "The rule Newsletters matches 1 message in Inbox, and it is already that way."
+        );
+    }
+
+    #[test]
+    fn test_what_the_rule_did_puts_the_rule_before_the_runners_words() {
+        assert_eq!(
+            what_the_rule_did("Newsletters", "214 messages moved to Archive"),
+            "Newsletters: 214 messages moved to Archive"
+        );
+    }
+
+    #[test]
+    fn test_the_outcome_a_run_is_handed_is_the_rules_action_settled() {
+        let would = counted_in_the_inbox(&newsletters(archive()), &newsletters_in_the_inbox(1));
+        assert_eq!(
+            would.outcome(),
+            Outcome {
+                move_to: Some("Archive".to_string()),
+                ..Outcome::default()
+            }
         );
     }
 }
