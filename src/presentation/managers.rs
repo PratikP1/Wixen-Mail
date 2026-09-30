@@ -216,6 +216,52 @@ fn write_the_labels(
     failures
 }
 
+/// Quick Steps (#60, 13-41): read the account's steps, edit and order them,
+/// and write back what changed and the order.
+///
+/// A step can put on this account's labels, in their order, and move to the
+/// folders its tree shows, by path, read from the tree's own reading, so a
+/// step never names a folder the person cannot see or another account's.
+pub fn manage_quick_steps(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    let stored = match cache.get_quick_steps_for_account(&account) {
+        Ok(steps) => steps,
+        Err(e) => return send_status(tx, rt, &format!("Quick Steps could not be read: {}.", e)),
+    };
+    let labels: Vec<String> = match cache.get_tags_for_account(&account) {
+        Ok(tags) => tags.into_iter().map(|tag| tag.name).collect(),
+        Err(e) => return send_status(tx, rt, &format!("Labels could not be read: {}.", e)),
+    };
+    let folders: Vec<String> =
+        match crate::presentation::wx_app::folders_in_the_tree(&cache, &account) {
+            Ok(folders) => folders.into_iter().map(|folder| folder.path).collect(),
+            Err(e) => return send_status(tx, rt, &format!("Folders could not be read: {}.", e)),
+        };
+    let rows: Vec<wx_managers::QuickStepEntry> = stored
+        .iter()
+        .map(wx_managers::QuickStepEntry::from)
+        .collect();
+
+    let wx_managers::QuickStepManagerAction::Updated(updated) =
+        wx_managers::show_quick_step_manager_dialog(frame, &rows, &labels, &folders, a11y)
+    else {
+        return;
+    };
+
+    let failures = save_what_the_quick_step_manager_returned(&cache, &account, &stored, updated);
+    report(tx, rt, "Quick Steps", failures);
+}
+
 /// Write back what the Quick Step Manager returned, and name anything that
 /// would not save.
 ///

@@ -13526,7 +13526,7 @@ fn folder_tree_updates(
 /// The same rule the sync uses, so the tree and the sync can never disagree
 /// about which folders exist. Turning one back on is File, then Folders to Keep
 /// Up to Date, which reads the whole stored list rather than this.
-fn folders_in_the_tree(
+pub(crate) fn folders_in_the_tree(
     cache: &MessageCache,
     account_id: &str,
 ) -> crate::common::Result<Vec<crate::data::message_cache::CachedFolder>> {

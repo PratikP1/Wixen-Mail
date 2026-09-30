@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 521 records have arrived since and have not been through it.
+# 522 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35445,7 +35445,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 8 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 23 },
 ]
 
 # The Quick Step Manager's save left without the order, so a step moved in
@@ -35465,5 +35465,29 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 8 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 23 },
+]
+
+# The Quick Step editor reading Mark unread as Mark read, so a step somebody
+# made to mark messages unread is kept marking them read. Written 2026-09-30
+# by 13-41, measured through `scripts/guards.sh --remeasure` against the
+# target.
+[[guard]]
+name = "the Quick Step editor reads Mark unread as unread"
+file = "src/presentation/wx_managers.rs"
+suite = "the_quick_step_manager_says_what_each_step_does"
+before = '''    match at {
+        Some(1) => Some(true),
+        Some(2) => Some(false),
+        _ => None,'''
+after = '''    match at {
+        Some(1) => Some(true),
+        Some(2) => Some(true),
+        _ => None,'''
+red = [
+    "test_the_editor_reads_marking_flagging_labelling_and_moving_together",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 23 },
 ]

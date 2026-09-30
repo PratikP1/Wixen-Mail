@@ -4702,7 +4702,159 @@ pub fn populate_quick_steps(list: &ListCtrl, steps: &[QuickStepEntry]) {
     }
 }
 
-/// The step editor's window and the controls it asks with.
+/// What the Quick Step Manager says when Edit is pressed on a step a newer
+/// version wrote, which it lists and does not open.
+pub const A_NEWER_STEP_IS_NOT_OPENED: &str = "A newer version of Wixen Mail wrote this Quick \
+     Step, and this version cannot read everything it does, so it is not opened here. You can \
+     move it or delete it here, or change it in the newer version.";
+
+#[derive(Debug, Clone)]
+pub enum QuickStepManagerAction {
+    None,
+    Updated(Vec<QuickStepEntry>),
+}
+
+/// The Quick Step Manager over an account's steps, with the labels a step
+/// can put on and the folders it can move to, which are the account's own.
+pub fn show_quick_step_manager_dialog(
+    parent: &Frame,
+    steps: &[QuickStepEntry],
+    labels: &[String],
+    folders: &[String],
+    a11y: &Arc<Accessibility>,
+) -> QuickStepManagerAction {
+    // Read once for the manager and every editor it opens, for the reason
+    // the Label Manager gives.
+    let palette = theme::current_from_stored_config();
+    let QuickStepManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+    } = build_quick_step_manager(parent, steps, palette);
+
+    let mut working = steps.to_vec();
+    let changed = run_manager_loop(
+        ManagerChrome {
+            dialog: &dialog,
+            main_sizer: &sizer,
+            list: &list,
+            status_text: &status,
+            a11y: a11y.clone(),
+        },
+        manager_words::QUICK_STEP,
+        &mut working,
+        populate_quick_steps,
+        |d, existing, rows| show_quick_step_edit(d, existing, rows, labels, folders, palette),
+        |step| step.name.clone(),
+        nothing_stops_this_closing,
+    );
+
+    match changed {
+        true => QuickStepManagerAction::Updated(working),
+        false => QuickStepManagerAction::None,
+    }
+}
+
+/// The answers to Mark as read or unread, by place: left alone, read, unread.
+const READ_ANSWERS: [&str; 3] = ["Leave as it is", "Mark read", "Mark unread"];
+/// The answers to Flag, by place: left alone, flagged, the flag taken off.
+const FLAG_ANSWERS: [&str; 3] = ["Leave as it is", "Flag it", "Take the flag off"];
+/// The first entry of Label, which puts on none.
+const NO_LABEL: &str = "No label";
+/// The first entry of Move to, which moves nothing.
+const LEAVE_IT_WHERE_IT_IS: &str = "Leave it where it is";
+
+/// A question a step may leave alone or answer yes or no, read from its
+/// place in a choice of three.
+fn yes_no_or_leave(at: Option<u32>) -> Option<bool> {
+    match at {
+        Some(1) => Some(true),
+        Some(2) => Some(false),
+        _ => None,
+    }
+}
+
+/// The place an answer has in a choice of three, the other way round from
+/// [`yes_no_or_leave`].
+fn place_of(answer: Option<bool>) -> u32 {
+    match answer {
+        None => 0,
+        Some(true) => 1,
+        Some(false) => 2,
+    }
+}
+
+/// A choice of the account's labels or of its folders: the entries it
+/// shows, the name behind each entry after the first, and the one chosen.
+struct Offered {
+    shown: Vec<String>,
+    names: Vec<String>,
+    chosen: u32,
+}
+
+/// What a choice of names offers, first the entry that names nothing and
+/// then the account's names in their order, with `held` chosen.
+///
+/// A name the step holds that the account no longer has is offered after
+/// the rest, said as gone, and chosen, so keeping it is a choice somebody
+/// sees rather than one made for them in silence.
+fn offered(first: &str, account_has: &[String], held: Option<&str>) -> Offered {
+    let mut shown: Vec<String> = std::iter::once(first.to_string())
+        .chain(account_has.iter().cloned())
+        .collect();
+    let mut names = account_has.to_vec();
+    let chosen = match held {
+        None => 0,
+        Some(held) => match account_has.iter().position(|name| name == held) {
+            Some(at) => at + 1,
+            None => {
+                shown.push(format!("{held} (not in this account any more)"));
+                names.push(held.to_string());
+                names.len()
+            }
+        },
+    };
+    Offered {
+        shown,
+        names,
+        chosen: u32::try_from(chosen).unwrap_or_default(),
+    }
+}
+
+/// The name behind a choice's entry; `None` for the first, which names
+/// nothing, and for no entry at all.
+fn named_at(names: &[String], at: Option<u32>) -> Option<String> {
+    let at = usize::try_from(at?).ok()?;
+    names.get(at.checked_sub(1)?).cloned()
+}
+
+/// Add a label and a choice to a two-column grid, the choice named from its
+/// label, so the channel NVDA reads hears the question rather than whatever
+/// static text Windows finds nearest.
+fn add_choice(
+    parent: &Dialog,
+    sizer: &FlexGridSizer,
+    label: &str,
+    entries: Vec<String>,
+    chosen: u32,
+) -> Choice {
+    let shown = StaticText::builder(parent).with_label(label).build();
+    let choice = Choice::builder(parent).with_choices(entries).build();
+    set_accessible_name(&choice, &name_from_label(label));
+    choice.set_selection(chosen);
+    sizer.add(
+        &shown,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    sizer.add(&choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    choice
+}
+
+/// The step editor's window and the controls it asks with, one question per
+/// control, and the names behind the Label and Move to entries.
 #[derive(Clone)]
 pub struct QuickStepEditor {
     pub dialog: Dialog,
@@ -4714,49 +4866,245 @@ pub struct QuickStepEditor {
     pub delete: CheckBox,
     pub phrase: TextCtrl,
     pub ok: Button,
+    labels: Vec<String>,
+    folders: Vec<String>,
 }
 
-/// Build the step editor without showing it.
+/// Build the step editor without showing it, filled from `existing` when a
+/// step is being changed.
+///
+/// `labels` and `folders` are the account's own, in the order the Label
+/// menu and the folder tree show them, and a folder is offered by its path.
+/// Nothing is bound to OK here: what OK refuses depends on the other steps'
+/// names, which the manager knows and a scan of the window does not need.
 pub fn build_quick_step_edit_dialog(
     parent: &dyn WxWidget,
-    _existing: Option<&QuickStepEntry>,
-    _labels: &[String],
-    _folders: &[String],
-    _palette: Option<theme::Palette>,
+    existing: Option<&QuickStepEntry>,
+    labels: &[String],
+    folders: &[String],
+    palette: Option<theme::Palette>,
 ) -> QuickStepEditor {
-    let dialog = Dialog::builder(parent, "").build();
+    let title = match existing {
+        Some(_) => "Edit Quick Step",
+        None => "New Quick Step",
+    };
+    let dialog = Dialog::builder(parent, title).with_size(460, 400).build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
+    fields.add_growable_col(1, 1);
+
+    let does = existing
+        .and_then(|step| step.does.clone())
+        .unwrap_or_default();
+    let label_offered = offered(NO_LABEL, labels, does.tags.first().map(String::as_str));
+    let folder_offered = offered(LEAVE_IT_WHERE_IT_IS, folders, does.move_to.as_deref());
+    let words = |answers: &[&str]| answers.iter().map(|said| said.to_string()).collect();
+
+    // Letters allocated once for the window: N, R, F, L, M, D, and H for the
+    // phrase, the rule editor's letter for the same words. OK and Cancel
+    // carry none, as the filter editor's do.
+    let name = add_field(&dialog, &fields, "&Name:");
+    let read = add_choice(
+        &dialog,
+        &fields,
+        "Mark as &read or unread:",
+        words(&READ_ANSWERS),
+        place_of(does.read),
+    );
+    let flag = add_choice(
+        &dialog,
+        &fields,
+        "&Flag:",
+        words(&FLAG_ANSWERS),
+        place_of(does.starred),
+    );
+    let label = add_choice(
+        &dialog,
+        &fields,
+        "&Label:",
+        label_offered.shown,
+        label_offered.chosen,
+    );
+    let move_to = add_choice(
+        &dialog,
+        &fields,
+        "&Move to:",
+        folder_offered.shown,
+        folder_offered.chosen,
+    );
+    let delete = add_checkbox(&dialog, &fields, "&Delete it");
+    let phrase = add_field(&dialog, &fields, "P&hrase to say first:");
+    sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let ok = Button::builder(&dialog)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dialog)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    btn_row.add_spacer(0);
+    btn_row.add(&ok, 0, SizerFlag::All, 4);
+    btn_row.add(&cancel, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
+    dialog.set_sizer(sizer, true);
+
+    if let Some(step) = existing {
+        set_anew(&name, &step.name);
+    }
+    delete.set_value(does.delete);
+    if let Some(said) = &does.say_first {
+        set_anew(&phrase, said);
+    }
+
+    cancel.on_click(move |_| dialog.end_modal(ID_CANCEL));
+
+    // Painted last, the choices and the check box left to Windows, as every
+    // other editor here leaves them.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        theme::paint(&name, palette.main_surface());
+        theme::paint(&phrase, palette.main_surface());
+    }
+
     QuickStepEditor {
         dialog,
-        name: TextCtrl::builder(&dialog).build(),
-        read: Choice::builder(&dialog).build(),
-        flag: Choice::builder(&dialog).build(),
-        label: Choice::builder(&dialog).build(),
-        move_to: Choice::builder(&dialog).build(),
-        delete: CheckBox::builder(&dialog).build(),
-        phrase: TextCtrl::builder(&dialog).build(),
-        ok: Button::builder(&dialog).build(),
+        name,
+        read,
+        flag,
+        label,
+        move_to,
+        delete,
+        phrase,
+        ok,
+        labels: label_offered.names,
+        folders: folder_offered.names,
     }
 }
 
-/// The name typed and what the step's controls say it does.
-pub fn what_the_editor_holds(_editor: &QuickStepEditor) -> (String, Outcome) {
-    (String::new(), Outcome::default())
+/// The name typed and what the editor's controls say the step does.
+///
+/// Each question read from its own control: a choice left on its first
+/// entry is a question left alone, and a phrase of nothing but spaces is no
+/// phrase.
+pub fn what_the_editor_holds(editor: &QuickStepEditor) -> (String, Outcome) {
+    let phrase = editor.phrase.get_value();
+    let phrase = phrase.trim();
+    let does = Outcome {
+        read: yes_no_or_leave(editor.read.get_selection()),
+        starred: yes_no_or_leave(editor.flag.get_selection()),
+        tags: named_at(&editor.labels, editor.label.get_selection())
+            .into_iter()
+            .collect(),
+        move_to: named_at(&editor.folders, editor.move_to.get_selection()),
+        delete: editor.delete.get_value(),
+        say_first: (!phrase.is_empty()).then(|| phrase.to_string()),
+    };
+    (editor.name.get_value(), does)
 }
 
-/// Why a step the editor holds cannot be kept.
+/// Why a step the editor holds cannot be kept, in the rules' own words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StepRefused {
+    /// The name is empty, too long or another step's.
     TheName(String),
+    /// What it does cannot be kept, or is nothing.
     WhatItDoes(String),
 }
 
-/// The step to keep from what the editor holds, or why not.
+impl StepRefused {
+    /// The sentence to say.
+    pub fn said(&self) -> &str {
+        match self {
+            StepRefused::TheName(said) | StepRefused::WhatItDoes(said) => said,
+        }
+    }
+}
+
+/// The step to keep, under its tidied name, from what the editor holds, or
+/// why it cannot be kept. `others` is every other step's name in the
+/// account.
+///
+/// The name is asked first, since it is the first question in the window.
 pub fn what_the_editor_keeps(
     name: &str,
     does: Outcome,
-    _others: &[String],
+    others: &[String],
 ) -> Result<(String, Outcome), StepRefused> {
-    Ok((name.to_string(), does))
+    let name = match quick_steps::name_for(name, others) {
+        quick_steps::StepNaming::Accepted(name) => name,
+        refused => return Err(StepRefused::TheName(refused.why_not().unwrap_or_default())),
+    };
+    match quick_steps::what_stops_a_step_being_saved(&does) {
+        Some(why) => Err(StepRefused::WhatItDoes(why)),
+        None => Ok((name, does)),
+    }
+}
+
+/// Open the step editor from the manager, and hand back the step it keeps.
+///
+/// A step a newer version wrote is refused with a sentence before anything
+/// is built. A step that cannot be kept is refused in a message box when OK
+/// is pressed, and the window stays open with what was chosen.
+fn show_quick_step_edit(
+    parent: &Dialog,
+    existing: Option<&QuickStepEntry>,
+    rows: &[QuickStepEntry],
+    labels: &[String],
+    folders: &[String],
+    palette: Option<theme::Palette>,
+) -> Option<QuickStepEntry> {
+    if existing.is_some_and(|step| step.does.is_none()) {
+        a_sub_dialog_needs(parent, "Not opened", A_NEWER_STEP_IS_NOT_OPENED);
+        return None;
+    }
+    let others: Vec<String> = rows
+        .iter()
+        .filter(|row| existing.is_none_or(|step| step.id != row.id))
+        .map(|row| row.name.clone())
+        .collect();
+
+    let editor = build_quick_step_edit_dialog(parent, existing, labels, folders, palette);
+    let kept: Rc<RefCell<Option<(String, Outcome)>>> = Rc::new(RefCell::new(None));
+    editor.ok.on_click({
+        let editor = editor.clone();
+        let kept = kept.clone();
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment.
+            event.event.skip(false);
+            let (name, does) = what_the_editor_holds(&editor);
+            match what_the_editor_keeps(&name, does, &others) {
+                Ok(step) => {
+                    *kept.borrow_mut() = Some(step);
+                    editor.dialog.end_modal(ID_OK);
+                }
+                Err(refused) => {
+                    a_sub_dialog_needs(&editor.dialog, "Not saved", refused.said());
+                    if matches!(refused, StepRefused::TheName(_)) {
+                        editor.name.set_focus();
+                    }
+                }
+            }
+        }
+    });
+
+    // Read first, then destroy, for the reason `show_tag_edit` gives.
+    let answered = editor.dialog.show_modal();
+    editor.dialog.destroy();
+    let (name, does) = kept.borrow_mut().take().filter(|_| answered == ID_OK)?;
+    Some(QuickStepEntry {
+        id: existing
+            .map(|step| step.id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        name,
+        does: Some(does),
+    })
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
