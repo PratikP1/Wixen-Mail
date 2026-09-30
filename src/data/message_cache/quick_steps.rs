@@ -2,34 +2,243 @@
 //!
 //! `crate::application::quick_steps` holds what a step is and what is said
 //! about one. Nothing is decided here.
+//!
+//! A step's actions are written with [`FilterAction::stored`] and read with
+//! [`FilterEngine::action_from_stored`], the words a rule's action is kept
+//! in, so rules and steps share one vocabulary and one reader.
 
 use super::MessageCache;
-use crate::application::quick_steps::{QuickStep, StoredStep};
-use crate::common::Result;
+use crate::application::filters::{FilterAction, FilterEngine, settle};
+use crate::application::quick_steps::{
+    QuickStep, StoredStep, actions_of, what_stops_a_step_being_saved,
+};
+use crate::common::{Error, Result};
+use rusqlite::{Connection, params};
+use std::collections::HashMap;
+
+/// A store error in the words somebody hears, with what the store said after.
+fn failed(what: &str) -> impl Fn(rusqlite::Error) -> Error + '_ {
+    move |e| Error::Other(format!("{what}: {e}"))
+}
 
 impl MessageCache {
-    pub fn create_quick_step(&self, _account_id: &str, _step: &QuickStep) -> Result<()> {
+    /// Keep a Quick Step under an account, after every step it already has.
+    ///
+    /// The step and its actions are written together, so a step never exists
+    /// doing half of what it says. A name another step in this account has,
+    /// whatever its case, is refused by the table; a step that
+    /// [`what_stops_a_step_being_saved`] refuses is refused here too, because
+    /// a manager is where somebody is told and a store is where nothing gets
+    /// past.
+    pub fn create_quick_step(&self, account_id: &str, step: &QuickStep) -> Result<()> {
+        refuse_what_cannot_be_saved(step)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let saving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(failed("Failed to save the Quick Step"))?;
+        saving
+            .execute(
+                "INSERT INTO quick_steps (id, account_id, name, position, created_at, updated_at)
+                 VALUES (?1, ?2, ?3,
+                         (SELECT COALESCE(MAX(position), 0) + 1 FROM quick_steps WHERE account_id = ?2),
+                         ?4, ?4)",
+                params![&step.id, account_id, &step.name, &now],
+            )
+            .map_err(failed("Failed to save the Quick Step"))?;
+        write_the_actions(&saving, step)?;
+        saving
+            .commit()
+            .map_err(failed("Failed to save the Quick Step"))
+    }
+
+    /// Write a step's name and actions back over itself, keeping its
+    /// identifier and its place, so the key on it stays the key on it.
+    ///
+    /// `false` when there is no such step: nothing is created, and a caller
+    /// that took silence for success would say an edit was saved over a row
+    /// that is not there. One transaction, the actions rewritten before the
+    /// row is stamped, for the reason `replace_saved_search` gives.
+    pub fn replace_quick_step(&self, step: &QuickStep) -> Result<bool> {
+        refuse_what_cannot_be_saved(step)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let saving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(failed("Failed to save the Quick Step"))?;
+        let there: i64 = saving
+            .query_row(
+                "SELECT COUNT(*) FROM quick_steps WHERE id = ?1",
+                params![&step.id],
+                |row| row.get(0),
+            )
+            .map_err(failed("Failed to look up the Quick Step"))?;
+        if there == 0 {
+            return Ok(false);
+        }
+        saving
+            .execute(
+                "DELETE FROM quick_step_actions WHERE step_id = ?1",
+                params![&step.id],
+            )
+            .map_err(failed("Failed to clear what the Quick Step did"))?;
+        write_the_actions(&saving, step)?;
+        saving
+            .execute(
+                "UPDATE quick_steps SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                params![&step.name, &now, &step.id],
+            )
+            .map_err(failed("Failed to save the Quick Step"))?;
+        saving
+            .commit()
+            .map_err(failed("Failed to save the Quick Step"))?;
+        Ok(true)
+    }
+
+    /// Take a Quick Step away, and say whether there was one to take. Its
+    /// actions go with it through the cascade.
+    pub fn delete_quick_step(&self, id: &str) -> Result<bool> {
+        let removed = self
+            .conn
+            .execute("DELETE FROM quick_steps WHERE id = ?1", params![id])
+            .map_err(failed("Failed to delete the Quick Step"))?;
+        Ok(removed > 0)
+    }
+
+    /// Write an account's steps in the order given, the first at one.
+    ///
+    /// The whole order, only this account's rows, and one transaction, for
+    /// the reasons `put_saved_searches_in_order` gives.
+    pub fn put_quick_steps_in_order(&self, account_id: &str, ids: &[String]) -> Result<()> {
+        let writing = self
+            .conn
+            .unchecked_transaction()
+            .map_err(failed("Failed to order the Quick Steps"))?;
+        for (at, id) in ids.iter().enumerate() {
+            writing
+                .execute(
+                    "UPDATE quick_steps SET position = ?1 WHERE id = ?2 AND account_id = ?3",
+                    params![at as i64 + 1, id, account_id],
+                )
+                .map_err(failed("Failed to order the Quick Steps"))?;
+        }
+        writing
+            .commit()
+            .map_err(failed("Failed to order the Quick Steps"))
+    }
+
+    /// One account's steps, in the order kept for them.
+    ///
+    /// A step with an action word this build cannot read is handed back as
+    /// [`StoredStep::WrittenByANewerVersion`] at its place, whole: running
+    /// the actions this build knows and skipping the one it does not would
+    /// be half a step under the whole step's name.
+    pub fn get_quick_steps_for_account(&self, account_id: &str) -> Result<Vec<StoredStep>> {
+        let mut actions = self.actions_of_each_step(account_id)?;
+        let mut statement = self
+            .conn
+            .prepare_cached(
+                "SELECT id, name FROM quick_steps WHERE account_id = ?1
+                 ORDER BY position, created_at, id",
+            )
+            .map_err(failed("Failed to read the Quick Steps"))?;
+        let rows: Vec<(String, String)> = statement
+            .query_map(params![account_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .and_then(|rows| rows.collect())
+            .map_err(failed("Failed to read the Quick Steps"))?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, name)| {
+                let read = actions.remove(&id).unwrap_or_default();
+                put_back_together(id, name, read)
+            })
+            .collect())
+    }
+
+    /// Take away every Quick Step an account has.
+    ///
+    /// Called when the account itself goes: a step left behind names an
+    /// account nothing can reach, and its name and folders stay in a database
+    /// that is not encrypted and does get copied and backed up.
+    pub fn clear_quick_steps(&self, account_id: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM quick_steps WHERE account_id = ?1",
+                params![account_id],
+            )
+            .map_err(failed("Failed to clear the Quick Steps"))?;
         Ok(())
     }
 
-    pub fn replace_quick_step(&self, _step: &QuickStep) -> Result<bool> {
-        Ok(false)
+    /// Each of an account's steps' actions, read in the order they are done,
+    /// `None` for a word this build does not know. One query for the
+    /// account rather than one per step.
+    fn actions_of_each_step(
+        &self,
+        account_id: &str,
+    ) -> Result<HashMap<String, Vec<Option<FilterAction>>>> {
+        let mut statement = self
+            .conn
+            .prepare_cached(
+                "SELECT a.step_id, a.action_type, a.action_value
+                 FROM quick_step_actions a
+                 JOIN quick_steps s ON s.id = a.step_id
+                 WHERE s.account_id = ?1
+                 ORDER BY a.step_id, a.position",
+            )
+            .map_err(failed("Failed to read what the Quick Steps do"))?;
+        let rows: Vec<(String, String, Option<String>)> = statement
+            .query_map(params![account_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .and_then(|rows| rows.collect())
+            .map_err(failed("Failed to read what the Quick Steps do"))?;
+        let mut each: HashMap<String, Vec<Option<FilterAction>>> = HashMap::new();
+        for (step_id, word, value) in rows {
+            each.entry(step_id)
+                .or_default()
+                .push(FilterEngine::action_from_stored(&word, value.as_ref()));
+        }
+        Ok(each)
     }
+}
 
-    pub fn delete_quick_step(&self, _id: &str) -> Result<bool> {
-        Ok(false)
+/// Refuse a step [`what_stops_a_step_being_saved`] would, in its words.
+fn refuse_what_cannot_be_saved(step: &QuickStep) -> Result<()> {
+    match what_stops_a_step_being_saved(&step.does) {
+        Some(why) => Err(Error::Other(format!(
+            "Failed to save the Quick Step {}: {why}",
+            step.name
+        ))),
+        None => Ok(()),
     }
+}
 
-    pub fn put_quick_steps_in_order(&self, _account_id: &str, _ids: &[String]) -> Result<()> {
-        Ok(())
+/// Write a step's actions, one row each, in the order they are done.
+fn write_the_actions(saving: &Connection, step: &QuickStep) -> Result<()> {
+    for (position, action) in actions_of(&step.does).iter().enumerate() {
+        let (word, value) = action.stored();
+        saving
+            .execute(
+                "INSERT INTO quick_step_actions (step_id, position, action_type, action_value)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![&step.id, position as i64, word, value],
+            )
+            .map_err(failed("Failed to save what the Quick Step does"))?;
     }
+    Ok(())
+}
 
-    pub fn get_quick_steps_for_account(&self, _account_id: &str) -> Result<Vec<StoredStep>> {
-        Ok(Vec::new())
-    }
-
-    pub fn clear_quick_steps(&self, _account_id: &str) -> Result<()> {
-        Ok(())
+/// A step's row and its actions, made back into a step, or kept as one a
+/// newer version wrote when any action is a word this build does not know.
+fn put_back_together(id: String, name: String, read: Vec<Option<FilterAction>>) -> StoredStep {
+    match read.into_iter().collect::<Option<Vec<FilterAction>>>() {
+        Some(actions) => StoredStep::Readable(QuickStep {
+            id,
+            name,
+            does: settle(&actions),
+        }),
+        None => StoredStep::WrittenByANewerVersion { id, name },
     }
 }
 

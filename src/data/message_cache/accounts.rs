@@ -308,6 +308,8 @@ impl MessageCache {
         // reach it, and the name and the question stay in a database that is
         // not encrypted and does get backed up.
         self.clear_saved_searches(account_id)?;
+        // And its Quick Steps, whose names and folders are the account's.
+        self.clear_quick_steps(account_id)?;
         // And the other addresses it sent from, for the same reason.
         self.clear_identities(account_id)?;
 

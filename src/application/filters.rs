@@ -510,6 +510,24 @@ impl FilterEngine {
     }
 }
 
+impl FilterAction {
+    /// The word and the value this action is stored as, the inverse of
+    /// [`FilterEngine::action_from_stored`], so what is written is what the
+    /// one reader reads.
+    pub fn stored(&self) -> (&'static str, Option<String>) {
+        match self {
+            FilterAction::MoveToFolder(folder) => ("move_to_folder", Some(folder.clone())),
+            FilterAction::AddTag(label) => ("add_tag", Some(label.clone())),
+            FilterAction::MarkAsRead => ("mark_as_read", None),
+            FilterAction::MarkAsUnread => ("mark_as_unread", None),
+            FilterAction::Star => ("star", None),
+            FilterAction::Unstar => ("unstar", None),
+            FilterAction::Delete => ("delete", None),
+            FilterAction::SayFirst(phrase) => ("say_first", Some(phrase.clone())),
+        }
+    }
+}
+
 /// What a message's matching rules add up to.
 ///
 /// Rules are written one at a time and a message can match several, so the

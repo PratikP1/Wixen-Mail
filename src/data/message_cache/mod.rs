@@ -2071,6 +2071,50 @@ impl MessageCache {
                 ))
             })?;
 
+        // A Quick Step: a rule's actions under a name, run by hand over the
+        // chosen messages (#60, 13-40). Shaped like a saved search: a row
+        // per step, kept per account because the folders and labels a step
+        // names are an account's, its name folded for case by the table for
+        // the reason the saved search's is, and `position` the order the
+        // person put them in, which is also which steps have a key.
+        // Added on its own, touching no table above, so a database written
+        // before it opens as it was.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS quick_steps (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL COLLATE NOCASE,
+                position INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, name)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create quick_steps table: {}", e)))?;
+
+        // One row per action, in the two columns a stored filter rule's
+        // action is kept in and holding the same words, so one reader,
+        // `FilterEngine::action_from_stored`, serves rules and steps.
+        // `position` keeps them in the order they are done. The actions go
+        // when the step does, through the cascade, however the step goes.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS quick_step_actions (
+                step_id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                action_type TEXT NOT NULL,
+                action_value TEXT,
+                PRIMARY KEY (step_id, position),
+                FOREIGN KEY(step_id) REFERENCES quick_steps(id) ON DELETE CASCADE
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to create quick_step_actions table: {}", e))
+            })?;
+
         // Other addresses an account sends from, and the name people see
         // beside each (#59, 13-33). Added on its own, touching no table
         // above, so a database written before it opens as it was.
