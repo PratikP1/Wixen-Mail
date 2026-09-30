@@ -37,6 +37,13 @@
 //! series a calendar server held would have been sent back to it without its
 //! repeat.
 //!
+//! An answer to one day of a repeating meeting is filed on that day alone, by
+//! the rule 13-36.3 keeps an organiser's change to one day by: the day kept
+//! apart from its series carrying the answer's busy, tentative or free on a
+//! calendar server or a calendar kept here, and on a Google or Outlook
+//! calendar the calendar left as it was, which is said after the answer
+//! ([`Filed::LeftAsItIs`]).
+//!
 //! # What this deliberately does not decide
 //!
 //! **Whether the answer was worth sending.** Every reason not to answer is
@@ -65,7 +72,11 @@
 //! moving a row between calendars takes it off the list somebody had it on.
 
 use crate::application::answering::{Answering, HowItWent, OnTheCalendar};
-use crate::application::invitations::{AlreadyOnTheCalendar, Answer, Invitation, WhatChanged};
+use crate::application::calendar::{self, EditMeans, WhatIsBeingDone, WhereAChangeGoes};
+use crate::application::invitations::{
+    AlreadyOnTheCalendar, Answer, Invitation, OneDay, WhatChanged,
+};
+use crate::application::one_day_of_a_series::{self, ThatDay};
 use crate::common::Result;
 use crate::data::message_cache::{CalendarEventEntry, MessageCache};
 
@@ -184,8 +195,10 @@ pub enum Filed {
 /// `filed` is nothing when filing failed, which the window logs rather than
 /// says: the reply is on its way, which is what the person asked for.
 pub fn what_answering_said(answering_did: String, filed: Option<&Filed>) -> String {
-    let _ = filed;
-    answering_did
+    match filed {
+        Some(Filed::LeftAsItIs(why)) => format!("{answering_did} {why}"),
+        _ => answering_did,
+    }
 }
 
 /// File the answer on this computer's calendar.
@@ -219,6 +232,12 @@ pub fn file_the_answer(
         return Ok(Filed::NotSent);
     }
     let invitation = answering.invitation();
+    if let Some(day) = invitation.the_day.as_ref()
+        && let OneDaysAnswer::Filed(filed) =
+            file_the_answer_to_one_day(cache, account_id, answering, answer, day)?
+    {
+        return Ok(filed);
+    }
 
     // Scoped to this account, so an invitation naming itself after a meeting on
     // somebody else's calendar in this program finds nothing and replaces
@@ -284,6 +303,205 @@ pub fn file_the_answer(
     .or_else(|| invitation.organiser.as_ref().map(|who| who.address.clone()));
     cache.remember_where_it_came_from(&the_row.id, Some(&invitation.uid), organiser.as_deref())?;
     Ok(Filed::OnTheCalendar)
+}
+
+/// Whether an answer to one day was filed for that day, or goes on to be
+/// filed the way a whole meeting is.
+enum OneDaysAnswer {
+    /// Filed on that day, or left as it was, and what happened.
+    Filed(Filed),
+    /// The calendar holds the meeting as a single appointment at that day's
+    /// time, which is the meeting the answer is about.
+    AsTheWholeMeeting,
+}
+
+/// File an answer to one day of a repeating meeting on that day alone.
+///
+/// Asked of [`what_the_calendar_holds_for_that_day`], the one reading the
+/// organiser's change to one day and the sentence about it take too, and by
+/// the calendar's own rule for where one day can change on its own
+/// ([`calendar::can_be_honoured`]), so a day is never kept apart where the
+/// organiser's change to it would not be. A declined day kept apart is free
+/// while the series stays busy, the way a declined meeting stays on the
+/// calendar marked free.
+///
+/// [`what_the_calendar_holds_for_that_day`]: crate::application::one_day_of_a_series::what_the_calendar_holds_for_that_day
+fn file_the_answer_to_one_day(
+    cache: &MessageCache,
+    account_id: &str,
+    answering: &Answering,
+    answer: Answer,
+    day: &OneDay,
+) -> Result<OneDaysAnswer> {
+    let uid = &answering.invitation().uid;
+    let filed = match one_day_of_a_series::what_the_calendar_holds_for_that_day(
+        cache, account_id, uid, day,
+    )? {
+        ThatDay::ItsOwnRow { row, .. } => {
+            the_answer_on_the_days_own_row(cache, answering, answer, row)?
+        }
+        ThatDay::OnTheSeries {
+            series, the_day, ..
+        }
+        | ThatDay::OffTheSeries { series, the_day } => {
+            the_day_kept_apart_with_the_answer(cache, answering, answer, &series, &the_day)?
+        }
+        ThatDay::NotHeld => the_day_filed_alone(cache, account_id, answering, answer, day)?,
+        ThatDay::OneAppointment(copy)
+            if one_day_of_a_series::is_the_appointment_for(&copy, day) =>
+        {
+            return Ok(OneDaysAnswer::AsTheWholeMeeting);
+        }
+        ThatDay::OneAppointment(_) => Filed::LeftAsItIs(
+            "That day was not put on your calendar, because your calendar holds this meeting \
+             as a single appointment on another day."
+                .to_string(),
+        ),
+        ThatDay::CannotBePlaced { .. } => Filed::LeftAsItIs(
+            "That day was not put on your calendar, because the day the invitation names is \
+             written in a time zone this computer cannot place."
+                .to_string(),
+        ),
+    };
+    Ok(OneDaysAnswer::Filed(filed))
+}
+
+/// The answer put on the row that already stands for the day, which keeps
+/// its identity and everything else about it.
+fn the_answer_on_the_days_own_row(
+    cache: &MessageCache,
+    answering: &Answering,
+    answer: Answer,
+    days_row: CalendarEventEntry,
+) -> Result<Filed> {
+    let already_here =
+        cache
+            .the_answer_given_here(&days_row.id)?
+            .map(|here| AlreadyOnTheCalendar {
+                uid: answering.invitation().uid.clone(),
+                version: here.version,
+            });
+    let holding = answering.what_the_calendar_should_hold(answer, already_here.as_ref());
+    if holding.the_meeting_itself == WhatChanged::NothingNew {
+        return Ok(Filed::AlreadyAnswered);
+    }
+    let answered = CalendarEventEntry {
+        show_as: holding.blocks_time.as_stored().to_string(),
+        // A change made here, which is what puts it in front of the push.
+        pending: true,
+        ..days_row
+    };
+    cache.save_calendar_event(&answered)?;
+    cache.remember_the_answer(&answered.id, holding.version, answer)?;
+    Ok(Filed::OnTheCalendar)
+}
+
+/// The day kept apart from the series it is on, carrying the answer's busy,
+/// tentative or free, in the order 13-36.3 keeps a day apart: the day saved,
+/// linked to its meeting and its day, then taken off the series.
+fn the_day_kept_apart_with_the_answer(
+    cache: &MessageCache,
+    answering: &Answering,
+    answer: Answer,
+    series: &CalendarEventEntry,
+    the_day: &str,
+) -> Result<Filed> {
+    let invitation = answering.invitation();
+    let holding = answering.what_the_calendar_should_hold(answer, None);
+    let kept = CalendarEventEntry {
+        show_as: holding.blocks_time.as_stored().to_string(),
+        ..one_day_of_a_series::the_day_kept_apart(series, invitation)
+    };
+    if let Some(why) = why_that_day_is_left_as_it_was(cache, series, &kept) {
+        return Ok(Filed::LeftAsItIs(why));
+    }
+    crate::application::reading_a_message::the_day_kept_apart_saved(
+        cache,
+        series,
+        &kept,
+        &invitation.uid,
+        the_day,
+    )?;
+    cache.remember_the_answer(&kept.id, holding.version, answer)?;
+    Ok(Filed::OnTheCalendar)
+}
+
+/// The day filed on its own, with no repeat and no provider's identifier, in
+/// the calendar a meeting the calendar has never held is filed in, linked to
+/// its meeting and its day.
+///
+/// No provider's identifier and no UID of its own, so neither a calendar
+/// check's read of an answer's row nor a later answer to the whole meeting
+/// takes it for the whole meeting.
+fn the_day_filed_alone(
+    cache: &MessageCache,
+    account_id: &str,
+    answering: &Answering,
+    answer: Answer,
+    day: &OneDay,
+) -> Result<Filed> {
+    let invitation = answering.invitation();
+    let calendar_id = cache.ensure_default_calendar(account_id)?.id;
+    let holding = answering.what_the_calendar_should_hold(answer, None);
+    let alone = CalendarEventEntry {
+        provider_event_id: None,
+        recurrence_rule: None,
+        exception_dates: None,
+        ..the_row_an_answer_leaves(
+            &holding,
+            invitation,
+            WhereItGoes {
+                account_id,
+                calendar_id: &calendar_id,
+                id: &uuid::Uuid::new_v4().to_string(),
+                status: "confirmed",
+            },
+        )
+    };
+    if let Some(why) = why_that_day_is_left_as_it_was(cache, &alone, &alone) {
+        return Ok(Filed::LeftAsItIs(why));
+    }
+    cache.save_calendar_event(&alone)?;
+    cache.remember_the_day_it_stands_for(&alone.id, &invitation.uid, &day.at)?;
+    cache.remember_the_answer(&alone.id, holding.version, answer)?;
+    cache.remember_where_it_came_from(
+        &alone.id,
+        None,
+        invitation
+            .organiser
+            .as_ref()
+            .map(|who| who.address.as_str()),
+    )?;
+    Ok(Filed::OnTheCalendar)
+}
+
+/// Why one day cannot be kept on its own in the calendar `filed_with` is in,
+/// as the sentence said after the answer, or nothing when it can be.
+///
+/// The event editor's rule and 13-36.3's, asked the same way: a calendar
+/// server and a calendar kept here carry one day on its own, and a calendar
+/// server refuses a day naming a zone it cannot be told.
+fn why_that_day_is_left_as_it_was(
+    cache: &MessageCache,
+    filed_with: &CalendarEventEntry,
+    kept: &CalendarEventEntry,
+) -> Option<String> {
+    let allows = crate::application::reading_a_message::what_the_calendar_allows(
+        cache,
+        Some(filed_with),
+        Some(kept),
+    );
+    calendar::can_be_honoured(WhatIsBeingDone::Changing, EditMeans::OneDay, &allows).err()?;
+    Some(match (allows.goes, allows.keeping_the_day_apart) {
+        (WhereAChangeGoes::ACalendarServer, Some(clause)) => {
+            format!("That day on your calendar was left as it was, because {clause}")
+        }
+        (goes, _) => format!(
+            "That day on your calendar was left as it was, because one day of a repeating \
+             meeting cannot be changed on its own in {} from here.",
+            goes.named()
+        ),
+    })
 }
 
 /// The answer's row, still filed where the calendar's copy came from.

@@ -244,6 +244,13 @@ pub fn is_at_that_day(appointment: &CalendarEventEntry, the_day: &str) -> bool {
     )
 }
 
+/// Whether a single appointment is the one a message about `day` means: at
+/// that day's time, read on the appointment's own clock.
+pub fn is_the_appointment_for(appointment: &CalendarEventEntry, day: &OneDay) -> bool {
+    the_day_on_the_series_clock(day, appointment)
+        .is_some_and(|the_day| is_at_that_day(appointment, &the_day))
+}
+
 /// The day kept apart from its series as an appointment of its own, at the
 /// time the organiser's update gives it.
 ///

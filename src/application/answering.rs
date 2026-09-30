@@ -80,8 +80,9 @@ pub enum CannotAnswer {
         /// What the reader said was wrong with it.
         because: String,
     },
-    /// It asks about one day of a meeting that repeats.
-    ItIsOneDayOfARepeatingMeeting,
+    /// It changes a repeating meeting from one day onwards,
+    /// `RANGE=THISANDFUTURE`, which splits the series in two.
+    FromThatDayOn,
     /// The account reading it is not among the people the organiser asked.
     NotOnTheGuestList {
         /// The address that was reading it, so the sentence can name it.
@@ -123,10 +124,9 @@ impl CannotAnswer {
             CannotAnswer::TheInvitationDidNotRead { because } => {
                 format!("This invitation could not be read. {because}")
             }
-            CannotAnswer::ItIsOneDayOfARepeatingMeeting => {
-                "This is one day of a repeating meeting, and answering one day is not \
-                 built yet. An answer sent now would reach the organiser as an answer \
-                 to the whole series, so it has to be sent by hand."
+            CannotAnswer::FromThatDayOn => {
+                "This changes the meeting from one day onwards, and answering that is not \
+                 done here, so it has to be answered by hand."
                     .to_string()
             }
             CannotAnswer::NotOnTheGuestList { answering_as } => format!(
@@ -177,9 +177,15 @@ pub fn whether_it_can_be_answered(
             because: refused.to_string(),
         })?;
     // The meeting's own lines, as read: a series sent with a changed day after
-    // it names no day for the series, and is answered as the series.
-    if invitation.the_day.is_some() {
-        return Err(CannotAnswer::ItIsOneDayOfARepeatingMeeting);
+    // it names no day for the series, and is answered as the series. One day
+    // is answered for that day, and a change from one day onwards is not
+    // answered here.
+    if invitation
+        .the_day
+        .as_ref()
+        .is_some_and(|day| day.from_then_on)
+    {
+        return Err(CannotAnswer::FromThatDayOn);
     }
     let answering = the_guest_answering(&invitation, answering_as)?;
     let organiser = invitation
@@ -215,7 +221,7 @@ pub fn whether_it_can_be_answered(
 ///
 /// [`whether_it_can_be_answered`] is the only thing that builds one, so having
 /// one in hand is the proof that the buttons are worth offering: the document
-/// is an invitation, it reads, it is not one day of a series, this account is
+/// is an invitation, it reads, it is not a change from one day onwards, this account is
 /// on the guest list, both it and the organiser can be reached by mail, and
 /// sending is switched on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1219,7 +1225,7 @@ mod tests {
             CannotAnswer::TheInvitationDidNotRead {
                 because: "That invitation carried no meeting.".to_string(),
             },
-            CannotAnswer::ItIsOneDayOfARepeatingMeeting,
+            CannotAnswer::FromThatDayOn,
             CannotAnswer::NotOnTheGuestList {
                 answering_as: "passer-by@example.com".to_string(),
             },
@@ -1238,7 +1244,7 @@ mod tests {
                 | CannotAnswer::ItIsSomebodyElsesAnswer
                 | CannotAnswer::ItIsNotAnInvitationAtAll
                 | CannotAnswer::TheInvitationDidNotRead { .. }
-                | CannotAnswer::ItIsOneDayOfARepeatingMeeting
+                | CannotAnswer::FromThatDayOn
                 | CannotAnswer::NotOnTheGuestList { .. }
                 | CannotAnswer::NobodyCalledTheMeeting
                 | CannotAnswer::TheOrganiserHasNoAddress { .. }

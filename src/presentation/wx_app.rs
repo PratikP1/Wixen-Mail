@@ -15459,16 +15459,23 @@ fn answer_the_invitation(
     // held, so the rule sits beside the writing rather than in this branch. A
     // calendar that could not be written is not worth interrupting the
     // answer's own sentence for: the reply is on its way, which is what the
-    // person asked for, and the meeting can be added by hand.
-    if let Err(why) = crate::application::answered_meetings::file_the_answer(
+    // person asked for, and the meeting can be added by hand. A calendar left
+    // as it was on purpose, one day of a repeating meeting on Google say, is
+    // said after the answer in the same line.
+    let filed = crate::application::answered_meetings::file_the_answer(
         cache, &account, &ready, answer, &went,
-    ) {
+    )
+    .inspect_err(|why| {
         tracing::warn!("The answer was queued and could not be put on the calendar: {why}");
-    }
+    })
+    .ok();
     send_status(
         ui_tx,
         runtime,
-        &ready.what_answering_did(answer, &went, chrono::Local::now()),
+        &crate::application::answered_meetings::what_answering_said(
+            ready.what_answering_did(answer, &went, chrono::Local::now()),
+            filed.as_ref(),
+        ),
     );
     // What the composer's Send does for a message with the hold off, and this
     // did not: the send loop runs on a clock only for rows carrying a moment,
