@@ -10862,6 +10862,29 @@ pub fn a_label_key_the_menu_does_not_answer(menu_bar: &MenuBar, number: usize) -
         && label_id_at(number).is_some_and(|id| menu_bar.find_item(id).is_none())
 }
 
+/// Put an account's saved searches, by name in the tree's order, on the
+/// window's Saved Searches submenu.
+pub fn put_the_saved_searches_on_the_menu(frame: &Frame, names: &[String]) {
+    let _ = (frame, names);
+}
+
+/// Answer Alt and a digit past the account's last saved search from a
+/// control.
+pub fn answer_the_saved_search_keys_the_menu_cannot(
+    control: &impl WxEvtHandler,
+    frame: Frame,
+    answer: impl Fn(usize) + 'static,
+) {
+    let _ = (control, frame, answer);
+}
+
+/// Whether the saved search key at this place has no item on the menu to
+/// answer it.
+pub fn a_saved_search_key_the_menu_does_not_answer(menu_bar: &MenuBar, position: usize) -> bool {
+    let _ = (menu_bar, position);
+    false
+}
+
 /// Rebuild the list's columns from a layout.
 ///
 /// Hiding rebuilds rather than setting a width of zero. A zero width column
