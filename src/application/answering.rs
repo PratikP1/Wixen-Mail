@@ -1013,21 +1013,47 @@ mod tests {
     }
 
     #[test]
-    fn test_one_day_of_a_repeating_meeting_is_refused_rather_than_answered_for_the_series() {
-        // An answer about one occurrence has to carry a RECURRENCE-ID naming
-        // the day. Nothing here builds that line, so the answer would reach
-        // the organiser as an answer to every day of the series, and the
-        // person who pressed Decline once would have declined all of them.
+    fn test_one_day_of_a_repeating_meeting_is_answered_for_that_day() {
+        // Until 13-36.4 this was refused, because nothing built the
+        // RECURRENCE-ID a reply about one day carries. The reply names the
+        // day now, so the person can answer the Thursday they were asked to.
         let one_day = an_invitation_that_arrived().replace(
             "DTSTART:20260305T090000Z",
             "RECURRENCE-ID:20260305T090000Z\r\nDTSTART:20260305T090000Z",
         );
 
-        let refused = whether_it_can_be_answered(&one_day, "sam@example.com", Allowed::EVERYTHING)
-            .expect_err("one day of a repeating meeting to be refused");
+        let answering =
+            whether_it_can_be_answered(&one_day, "sam@example.com", Allowed::EVERYTHING)
+                .unwrap_or_else(|why| panic!("one day was not offered its answers: {}", why.why()));
 
-        assert_eq!(refused, CannotAnswer::ItIsOneDayOfARepeatingMeeting);
-        assert!(refused.why().contains("whole series"), "{}", refused.why());
+        assert_eq!(
+            answering
+                .invitation()
+                .the_day
+                .as_ref()
+                .map(|day| day.as_written.as_str()),
+            Some("20260305T090000Z")
+        );
+    }
+
+    #[test]
+    fn test_a_change_from_one_day_onwards_is_refused_with_its_own_sentence() {
+        // RANGE=THISANDFUTURE splits a series in two, and an answer to it is
+        // not an answer to one day or to the series this calendar holds.
+        let from_then_on = an_invitation_that_arrived().replace(
+            "DTSTART:20260305T090000Z",
+            "RECURRENCE-ID;RANGE=THISANDFUTURE:20260305T090000Z\r\nDTSTART:20260305T090000Z",
+        );
+
+        let refused =
+            whether_it_can_be_answered(&from_then_on, "sam@example.com", Allowed::EVERYTHING)
+                .expect_err("a change from one day onwards to be refused");
+
+        assert_eq!(
+            refused.why(),
+            "This changes the meeting from one day onwards, and answering that is not done \
+             here, so it has to be answered by hand."
+        );
     }
 
     #[test]
@@ -1280,7 +1306,7 @@ mod tests {
     /// Lines nobody sane writes, each of them a shape one of the decisions
     /// here turns on: the method, the guest list, who called the meeting, and
     /// whether it is one day of a series.
-    const AWKWARD_LINES: [&str; 26] = [
+    const AWKWARD_LINES: [&str; 28] = [
         "BEGIN:VEVENT",
         "END:VEVENT",
         "BEGIN:VALARM",
@@ -1292,6 +1318,8 @@ mod tests {
         "METHOD:PUBLISH",
         "RECURRENCE-ID:20260305T090000Z",
         "RECURRENCE-ID:",
+        "RECURRENCE-ID;TZID=Europe/London:20260305T090000",
+        "RECURRENCE-ID;RANGE=THISANDFUTURE:20260305T090000Z",
         "RRULE:FREQ=WEEKLY;BYDAY=TH",
         "SEQUENCE:99999999999999999999",
         "ORGANIZER",
@@ -1892,6 +1920,24 @@ mod invitations_from_strangers {
                         sending.calendar_document.matches("ATTENDEE").count(),
                         1,
                         "seed {seed} built an answer carrying more than one person's: {}",
+                        sending.calendar_document
+                    );
+                    // One day answered names that day once, rebuilt rather
+                    // than copied, and a whole meeting answered names none.
+                    let naming_a_day = sending
+                        .calendar_document
+                        .lines()
+                        .filter(|line| line.starts_with("RECURRENCE-ID"))
+                        .count();
+                    assert_eq!(
+                        naming_a_day,
+                        usize::from(answering.invitation().the_day.is_some()),
+                        "seed {seed}: {}",
+                        sending.calendar_document
+                    );
+                    assert!(
+                        !sending.calendar_document.contains("RANGE="),
+                        "seed {seed} carried the stranger's range into the answer: {}",
                         sending.calendar_document
                     );
                 }

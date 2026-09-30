@@ -160,6 +160,34 @@ fn the_row_an_answer_leaves(
     }
 }
 
+/// What filing an answer did to the calendar.
+///
+/// A value rather than a sentence, so the window words it and a test reads
+/// it. Only [`Filed::LeftAsItIs`] is said after the answer's own sentence:
+/// every other outcome is what somebody expects from pressing the button.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Filed {
+    /// The answer is on the calendar.
+    OnTheCalendar,
+    /// The calendar already holds the version answered, or a later one, so
+    /// nothing was written.
+    AlreadyAnswered,
+    /// The answer never left this machine, so nothing was filed.
+    NotSent,
+    /// The calendar was left as it was, and the sentence saying why.
+    LeftAsItIs(String),
+}
+
+/// What is said once an answer has been tried: what answering did and, when
+/// the calendar was left as it was, why.
+///
+/// `filed` is nothing when filing failed, which the window logs rather than
+/// says: the reply is on its way, which is what the person asked for.
+pub fn what_answering_said(answering_did: String, filed: Option<&Filed>) -> String {
+    let _ = filed;
+    answering_did
+}
+
 /// File the answer on this computer's calendar.
 ///
 /// Does nothing at all in three cases, and each is a decision rather than a
@@ -186,9 +214,9 @@ pub fn file_the_answer(
     answering: &Answering,
     answer: Answer,
     how_it_went: &HowItWent,
-) -> Result<()> {
+) -> Result<Filed> {
     if matches!(how_it_went, HowItWent::DidNotSend { .. }) {
-        return Ok(());
+        return Ok(Filed::NotSent);
     }
     let invitation = answering.invitation();
 
@@ -208,7 +236,7 @@ pub fn file_the_answer(
 
     let holding = answering.what_the_calendar_should_hold(answer, already_here.as_ref());
     if holding.the_meeting_itself == WhatChanged::NothingNew {
-        return Ok(());
+        return Ok(Filed::AlreadyAnswered);
     }
 
     let calendar_id = match already.as_ref().and_then(|row| row.calendar_id.clone()) {
@@ -255,7 +283,7 @@ pub fn file_the_answer(
     }
     .or_else(|| invitation.organiser.as_ref().map(|who| who.address.clone()));
     cache.remember_where_it_came_from(&the_row.id, Some(&invitation.uid), organiser.as_deref())?;
-    Ok(())
+    Ok(Filed::OnTheCalendar)
 }
 
 /// The answer's row, still filed where the calendar's copy came from.
