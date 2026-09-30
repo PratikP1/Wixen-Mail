@@ -319,6 +319,8 @@ menu_ids!(
     // One id per saved search on the Saved Searches menu, by its place in
     // the account's order: the first six carry Alt+4 to Alt+9.
     ID_SAVED_SEARCH_FIRST[SAVED_SEARCHES_ON_THE_MENU],
+    // Action, Quick Steps, Manage Quick Steps (#60, 13-41).
+    ID_QUICK_STEP_MGR,
 );
 
 // Sort menu IDs
@@ -5737,6 +5739,19 @@ impl WxMailApp {
                             );
                             read_the_tree_back(&message_cache, &state, &ui_tx);
                         }
+                        // Action, Quick Steps. The tree is read back after it
+                        // closes, as it is after the Label Manager.
+                        _ if id == ID_QUICK_STEP_MGR => {
+                            managers::manage_quick_steps(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
+                            read_the_tree_back(&message_cache, &state, &ui_tx);
+                        }
                         _ if id == ID_SIG_MGR => managers::manage_signatures(
                             &state,
                             &message_cache,
@@ -7302,6 +7317,18 @@ impl WxMailApp {
         let saved_search_menu = Menu::builder().build();
         rebuild_the_saved_search_menu(&saved_search_menu, &[]);
 
+        // Quick Steps (#60): the manager where a step is named and made, and
+        // the steps themselves above it once they run. Its help is the
+        // experimental sentence, where the item is chosen, because no step
+        // has run against a real account.
+        let quick_steps_menu = Menu::builder()
+            .append_item(
+                ID_QUICK_STEP_MGR,
+                "&Manage Quick Steps...",
+                crate::application::quick_steps::QUICK_STEPS_ARE_EXPERIMENTAL,
+            )
+            .build();
+
         let folder_menu = Menu::builder()
             .append_item(
                 ID_REFRESH_FOLDER,
@@ -7591,6 +7618,13 @@ impl WxMailApp {
             saved_search_menu,
             "Saved Searc&hes",
             "Act on the saved search chosen in the folder tree",
+        );
+        // q, the letter this menu kept for Quick Steps when Report as Junk
+        // took j.
+        message.append_submenu(
+            quick_steps_menu,
+            "&Quick Steps",
+            "Commands you make that do several things to the selected messages at once",
         );
 
         let tools = Menu::builder()

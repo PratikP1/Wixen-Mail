@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 522 records have arrived since and have not been through it.
+# 523 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35445,7 +35445,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 23 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 27 },
 ]
 
 # The Quick Step Manager's save left without the order, so a step moved in
@@ -35465,7 +35465,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 23 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 27 },
 ]
 
 # The Quick Step editor reading Mark unread as Mark read, so a step somebody
@@ -35489,5 +35489,29 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 23 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 27 },
+]
+
+# The Quick Steps submenu left off the Action menu, so Manage Quick Steps is
+# built and reached by nothing, and a step can never be made. Written
+# 2026-09-30 by 13-41, measured through `scripts/guards.sh --remeasure`
+# against the target.
+[[guard]]
+name = "Action holds the Quick Steps submenu"
+file = "src/presentation/wx_app.rs"
+suite = "the_quick_step_manager_says_what_each_step_does"
+before = '''        // took j.
+        message.append_submenu(
+            quick_steps_menu,
+            "&Quick Steps",
+            "Commands you make that do several things to the selected messages at once",
+        );'''
+after = '''        // took j.
+        let _ = quick_steps_menu;'''
+red = [
+    "test_action_holds_quick_steps_after_saved_searches_with_manage_quick_steps_in_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 27 },
 ]
