@@ -68,6 +68,8 @@ pub struct SavedSearchesRead {
     /// Enough to put a row in the tree that says it could not run, in the
     /// words of [`crate::application::saved_searches::SAVED_BY_ANOTHER_VERSION`].
     pub saved_by_another_version: Vec<SearchSavedByAnotherVersion>,
+    /// Every search's identifier, readable or not, in the order kept for them.
+    pub order: Vec<String>,
 }
 
 /// A stored search whose questions this build cannot be sure it understands.
@@ -324,6 +326,16 @@ impl MessageCache {
                 params![account_id],
             )
             .map_err(|e| Error::Other(format!("Failed to clear the saved searches: {}", e)))?;
+        Ok(())
+    }
+
+    /// Write an account's searches in the order given.
+    pub fn put_saved_searches_in_order(&self, _account_id: &str, _ids: &[String]) -> Result<()> {
+        Ok(())
+    }
+
+    /// Give every search with no place in its account's order one.
+    pub fn number_the_unnumbered_saved_searches(&self) -> Result<()> {
         Ok(())
     }
 
@@ -1076,6 +1088,147 @@ mod tests {
             names_in(&cache, "acc-1"),
             ["Aardvark", "Alpha", "Middle"],
             "renaming a search moved its row in the tree"
+        );
+    }
+
+    /// Three searches in `acc-1`, made Zebra, Alpha, Middle, and two in
+    /// `acc-2`, made B then A.
+    fn searches_in_two_accounts(what_for: &str) -> TempHome<MessageCache> {
+        let cache = a_cache(what_for);
+        for (account, id, name) in [
+            ("acc-1", "s1", "Zebra"),
+            ("acc-1", "s2", "Alpha"),
+            ("acc-1", "s3", "Middle"),
+            ("acc-2", "t1", "B"),
+            ("acc-2", "t2", "A"),
+        ] {
+            cache
+                .create_saved_search(account, &a_search(id, name))
+                .expect("the search to be stored");
+        }
+        cache
+    }
+
+    fn ids(written: &[&str]) -> Vec<String> {
+        written.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn test_the_order_written_is_the_order_read_back() {
+        // The order somebody chose is the order the tree shows, and the read
+        // carries it whole. `t2` is another account's search handed to this
+        // account's write, which has to leave it where its own account keeps
+        // it rather than moving it to the top of `acc-2`.
+        let cache = searches_in_two_accounts("saved_search_order_written");
+
+        cache
+            .put_saved_searches_in_order("acc-1", &ids(&["t2", "s3", "s1", "s2"]))
+            .expect("the order to be written");
+
+        let read = cache
+            .get_saved_searches_for_account("acc-1")
+            .expect("the searches to be read");
+        assert_eq!(names_in(&cache, "acc-1"), ["Middle", "Zebra", "Alpha"]);
+        assert_eq!(read.order, ids(&["s3", "s1", "s2"]));
+        assert_eq!(
+            names_in(&cache, "acc-2"),
+            ["B", "A"],
+            "writing one account's order moved another account's search"
+        );
+    }
+
+    #[test]
+    fn test_a_new_search_goes_last_in_its_accounts_order() {
+        // Last rather than first: a search with no place would sort ahead of
+        // every search that has one, and the row somebody just made would
+        // push every row they had arranged down by one.
+        let cache = searches_in_two_accounts("saved_search_new_goes_last");
+        cache
+            .put_saved_searches_in_order("acc-1", &ids(&["s3", "s1", "s2"]))
+            .expect("the order to be written");
+
+        cache
+            .create_saved_search("acc-1", &a_search("s4", "Aardvark"))
+            .expect("the fourth search to be stored");
+
+        assert_eq!(
+            names_in(&cache, "acc-1"),
+            ["Middle", "Zebra", "Alpha", "Aardvark"]
+        );
+    }
+
+    #[test]
+    fn test_searches_from_before_the_order_keep_the_order_they_were_made() {
+        // A database from before 2026-09-30 holds searches with no place.
+        // They take the order the tree showed them in then, which is the
+        // order they were made in, readable and unreadable alike, and come
+        // after any search already given a place by this build. Each account
+        // is counted on its own.
+        //
+        // The days are set against the identifiers on purpose, so an order
+        // by identifier would come out differently and the test would say so.
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let older =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            for (account, id, name, made) in [
+                ("acc-1", "a", "Work", "2026-01-02"),
+                ("acc-1", "b", "Invoices", "2026-01-04"),
+                ("acc-1", "c", "Payslips", "2026-01-01"),
+                ("acc-1", "d", "Receipts", "2026-01-03"),
+                ("acc-1", "e", "Already placed", "2026-01-05"),
+                ("acc-2", "f", "Elsewhere", "2026-01-01"),
+            ] {
+                older
+                    .create_saved_search(account, &a_search(id, name))
+                    .expect("the search to be stored");
+                older
+                    .conn
+                    .execute(
+                        "UPDATE saved_searches SET created_at = ?1, position = NULL WHERE id = ?2",
+                        params![made, id],
+                    )
+                    .expect("a search written before the order existed");
+            }
+            older
+                .conn
+                .execute(
+                    "UPDATE saved_searches SET all_or_any = 'either' WHERE id IN ('b', 'c')",
+                    [],
+                )
+                .expect("two searches a newer version wrote");
+            older
+                .conn
+                .execute("UPDATE saved_searches SET position = 1 WHERE id = 'e'", [])
+                .expect("one search already given a place");
+        }
+
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
+
+        let read = reopened
+            .get_saved_searches_for_account("acc-1")
+            .expect("the searches to be read");
+        assert_eq!(read.order, ids(&["e", "c", "a", "d", "b"]));
+        let placed: Vec<(String, Option<i64>)> = reopened
+            .conn
+            .prepare("SELECT id, position FROM saved_searches ORDER BY id")
+            .expect("the places to be asked for")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("the places to be read")
+            .collect::<std::result::Result<_, _>>()
+            .expect("the places to be collected");
+        assert_eq!(
+            placed,
+            [
+                ("a".to_string(), Some(3)),
+                ("b".to_string(), Some(5)),
+                ("c".to_string(), Some(2)),
+                ("d".to_string(), Some(4)),
+                ("e".to_string(), Some(1)),
+                ("f".to_string(), Some(1)),
+            ],
+            "the searches from before were not each given a place on open"
         );
     }
 

@@ -31311,6 +31311,7 @@ mod tests {
                         id: "s2".to_string(),
                         name: "Invoices".to_string(),
                     }],
+                    order: vec!["s2".to_string(), "s1".to_string()],
                 },
             )]),
             active_account_id: Some("acc".to_string()),
@@ -31462,6 +31463,7 @@ mod tests {
                             a_readable_search("w2", "Payslips"),
                         ],
                         saved_by_another_version: Vec::new(),
+                        order: vec!["w1".to_string(), "w2".to_string()],
                     },
                 ),
                 (
@@ -31472,6 +31474,7 @@ mod tests {
                             a_readable_search("h2", "Receipts"),
                         ],
                         saved_by_another_version: Vec::new(),
+                        order: vec!["h1".to_string(), "h2".to_string()],
                     },
                 ),
             ]),
