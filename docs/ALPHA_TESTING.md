@@ -261,6 +261,17 @@ Written down so you do not spend time reporting things already on the list.
   to the junk folder, and that move has never been tried on a real server
   either. If you try it, tell us the count the question gave and whether the
   messages reached the junk folder in another mail program too.
+- **Quick Steps have never run against a real mail server.** A Quick Step, on
+  Action, Quick Steps or `Ctrl+Shift+7` to `Ctrl+Shift+9`, marks, flags,
+  labels, moves or deletes every selected message at once, and changes them
+  at your provider when Allowed Changes lets Wixen Mail change your mail. Its
+  menu items say it is experimental. What a provider does with many changes
+  arriving together has not been seen. A step that marks and moves sends the
+  marks first and then the move; whether the messages keep their marks where
+  they land is the thing to watch, on Gmail, where a move is a change of
+  label, and on a server with ordinary folders. If you try one, tell us the
+  sentence you heard and whether the messages look the same in another mail
+  program or on your phone.
 - **Looking people up in your organisation's directory has never met a real
   directory, and a directory sign-in never has either.** Look People Up at
   Work, on the Account Manager (`Alt+L`), takes the directory's address, where

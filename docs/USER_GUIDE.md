@@ -1234,9 +1234,40 @@ Archive. Each account has its own. Quick Steps are experimental: none has
 been run against a real mail server, and the menu item's description says
 so.
 
-Running a step, from the Quick Steps submenu or by its key, is not built
-yet and arrives with the next change. What you can do now is make your steps
-and put them in order.
+To run a Quick Step:
+
+1. Select the messages in the message list. A conversation row brings in the
+   messages of its conversation that the step's actions reach.
+2. Press the step's key, `Ctrl+Shift+7` for the first step in the account's
+   order, `Ctrl+Shift+8` for the second and `Ctrl+Shift+9` for the third. Or
+   choose the step on Action, Quick Steps (`Alt+A`, `Q`), where every step is
+   listed with its key.
+3. One sentence says what the step did, such as "Archive and read: 3
+   messages marked read and moved to Archive".
+
+A step changes your mail at your mail provider only when Allowed Changes lets
+Wixen Mail change your mail, the same as marking or moving a message by hand.
+When a step marks messages and moves them, the marks reach the provider
+first and then the move, so the marks stay on the messages where they land.
+
+A step does nothing, and says why, when:
+
+- nothing is selected;
+- more than 5,000 messages are selected, the most Select All chooses;
+- a selected message belongs to another account than the step, which can
+  happen in All Inboxes, since each account's steps name that account's
+  folders and labels;
+- the step moves to a folder or puts on a label the account no longer has,
+  for example after you renamed the folder. Edit the step in Manage Quick
+  Steps and choose again;
+- the step was written by a newer version of Wixen Mail.
+
+A key past the account's last step says which step it would run and how
+many steps the account has.
+
+Edit, Undo (`Ctrl+Z` in the message list) takes back the last thing a step
+did, not the whole step. For a step that marks messages read and moves them,
+Undo moves them back and leaves them marked read.
 
 To make a Quick Step:
 
