@@ -3816,14 +3816,22 @@ pub fn build_conditions_window(
     }
 }
 
-/// What a conditions window gives back once its loop ends.
+/// What a conditions window gives back once its loop ends: its answer to every
+/// or any and its questions when either changed, and `None` when neither did.
+///
+/// A changed answer on its own is a change, so a search made as "any" can
+/// become "every" with no condition touched (RESEARCH-4 question 3). The loop
+/// is modal, so this is the part of the window's ending a test can ask.
 pub fn what_the_conditions_window_gives_back(
-    _rows_changed: bool,
-    _opened_on: Join,
-    _answered: Join,
-    _questions: Vec<Question>,
+    rows_changed: bool,
+    opened_on: Join,
+    answered: Join,
+    questions: Vec<Question>,
 ) -> Option<EditedConditions> {
-    None
+    (rows_changed || answered != opened_on).then_some(EditedConditions {
+        join: answered,
+        questions,
+    })
 }
 
 /// The answer a conditions window's choice holds, or `was` when it holds
@@ -3897,11 +3905,7 @@ pub fn show_rule_manager_dialog(
         what_a_condition_list_still_needs,
     );
 
-    let join_now = answered.get();
-    (rows_changed || join_now != join).then_some(EditedConditions {
-        join: join_now,
-        questions: working,
-    })
+    what_the_conditions_window_gives_back(rows_changed, join, answered.get(), working)
 }
 
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {

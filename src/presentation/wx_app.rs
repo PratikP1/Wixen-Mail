@@ -311,6 +311,7 @@ menu_ids!(
     ID_RENAME_SEARCH,
     ID_DELETE_SEARCH,
     ID_EDIT_SEARCH_CONDITIONS,
+    ID_NEW_SAVED_SEARCH,
     ID_BLOCKED_SENDERS,
     // The row under the cursor read column by column with its headings, on
     // request (#26): the tester's chord, Ctrl, Shift and the semicolon.
@@ -5603,6 +5604,9 @@ impl WxMailApp {
                         _ if id == ID_EDIT_SEARCH_CONDITIONS => {
                             edit_the_chosen_searchs_conditions(app, &message_cache, &frame, &a11y)
                         }
+                        _ if id == ID_NEW_SAVED_SEARCH => {
+                            make_a_saved_search_from_nothing(app, &message_cache, &frame, &a11y)
+                        }
                         _ if id == ID_RENAME_SEARCH => {
                             rename_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
@@ -8437,13 +8441,11 @@ fn save_this_search(
         )
     };
     let Some(ran) = ran.filter(|ran| !ran.typed.trim().is_empty()) else {
-        // Refused out loud rather than on the status bar alone. From the
-        // keyboard, a command that writes into a bar at the bottom of the
-        // window is indistinguishable from one that was never wired up.
-        return refuse_a_command(
-            tx,
-            "Search your mail first, and then this will keep that search.",
-        );
+        // With nothing searched there is nothing to keep, so the search is
+        // made from nothing instead: a name, a place and its conditions
+        // (#58 point 3). This used to refuse, and a search could only be
+        // saved once one had been run.
+        return make_a_saved_search_from_nothing(app, cache, frame, a11y);
     };
     let Some(cache) = cache.as_ref() else {
         return refuse_a_command(tx, "There is no mail on this computer to search.");
@@ -8492,6 +8494,99 @@ fn save_this_search(
         join: asks.join,
         questions: asks.questions,
         folder: asks.folder,
+    };
+    if let Err(e) = cache.create_saved_search(&account_id, &search) {
+        tracing::error!("A saved search could not be kept: {e}");
+        let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+            "That search could not be saved: {e}."
+        )));
+        return;
+    }
+
+    read_the_tree_back(&Some(cache.clone()), state, tx);
+    let said = created(&name);
+    send_status(tx, rt, &said);
+    let _ = a11y.announce(&said, Priority::High);
+}
+
+/// Make a saved search from nothing: New Saved Search asks its name and where
+/// it looks, then the conditions window asks every or any and its conditions
+/// (#58 point 3, GAP-09).
+///
+/// Reached from New Saved Search on the Saved Searches submenu, and from Save
+/// This Search when nothing was searched. Saved under the account being worked
+/// in, as Save This Search saves one, and it can only look in that account's
+/// folders, since a folder path is not unique across accounts. Nothing is
+/// written until the conditions window closes with at least one condition, so
+/// cancelling either window leaves nothing behind.
+fn make_a_saved_search_from_nothing(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::saved_searches::{
+        Join, a_search_from_nothing, created, where_a_search_can_look,
+    };
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "There is no mail on this computer to search.");
+    };
+    // The account, its name and the names already taken, read together under
+    // one lock, for the reason Save This Search gives.
+    let (saving_under, already_used) = {
+        let held = lock_state(state);
+        let saving_under = held.active_account_id.as_ref().and_then(|under| {
+            held.accounts
+                .iter()
+                .find(|account| &account.id == under)
+                .map(|account| (account.id.clone(), account.name.clone()))
+        });
+        let already_used = saving_under
+            .as_ref()
+            .map(|(under, _)| names_already_used(&held, under))
+            .unwrap_or_default();
+        (saving_under, already_used)
+    };
+    let Some((account_id, account_name)) = saving_under else {
+        return refuse_a_command(tx, "Choose an account first.");
+    };
+    let folder_paths: Vec<String> = match folders_in_the_tree(cache, &account_id) {
+        Ok(folders) => folders.into_iter().map(|folder| folder.path).collect(),
+        Err(e) => {
+            tracing::error!("The folders a new saved search could look in were not read: {e}");
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The folders of this account could not be read, so no search was made: {e}."
+            )));
+            return;
+        }
+    };
+
+    let places = where_a_search_can_look(&account_name, &folder_paths);
+    let Some((name, folder)) =
+        crate::presentation::wx_new_saved_search::ask(frame, a11y, &places, &already_used)
+    else {
+        return;
+    };
+    let Some(edited) = crate::presentation::wx_managers::show_rule_manager_dialog(
+        frame,
+        &name,
+        &[],
+        Join::All,
+        a11y,
+    ) else {
+        return;
+    };
+    let search = match a_search_from_nothing(
+        uuid::Uuid::new_v4().to_string(),
+        name.clone(),
+        folder,
+        edited,
+    ) {
+        Ok(search) => search,
+        Err(why) => return refuse_a_command(tx, why),
     };
     if let Err(e) = cache.create_saved_search(&account_id, &search) {
         tracing::error!("A saved search could not be kept: {e}");
@@ -10950,11 +11045,11 @@ fn saved_search_position_of(id: Id) -> Option<usize> {
 /// the order the folder tree shows them.
 ///
 /// One item per search as `saved_searches::what_the_menu_says` words it,
-/// Alt+4 to Alt+9 on the first six, then Edit Conditions, Rename and Delete,
-/// which act on the search the tree's cursor is on. Everything on the menu
-/// goes first, so a search renamed or moved, or one that went, leaves
-/// nothing behind. The builder calls this with no searches, so the three
-/// commands are written here and nowhere else.
+/// Alt+4 to Alt+9 on the first six, then New Saved Search, and Edit
+/// Conditions, Rename and Delete, which act on the search the tree's cursor
+/// is on. Everything on the menu goes first, so a search renamed or moved, or
+/// one that went, leaves nothing behind. The builder calls this with no
+/// searches, so the four commands are written here and nowhere else.
 ///
 /// The parameter keeps the builder's name, `saved_search_menu`, because the
 /// check that no two items on a menu claim one letter finds a menu's items
@@ -10985,6 +11080,14 @@ pub fn rebuild_the_saved_search_menu(saved_search_menu: &Menu, names: &[String])
     if !searches.is_empty() {
         saved_search_menu.append_separator();
     }
+    // First, on N: a search made from nothing, the one command here that
+    // needs no search chosen (#58).
+    saved_search_menu.append(
+        ID_NEW_SAVED_SEARCH,
+        "&New Saved Search...",
+        "Make a saved search by giving it a name, a place to look and its conditions",
+        wxdragon::menus::ItemKind::Normal,
+    );
     // Delete here can never reach mail: it removes the question, and the
     // messages a search listed stay where they really live.
     saved_search_menu.append(
