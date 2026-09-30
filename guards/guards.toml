@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 507 records have arrived since and have not been through it.
+# 508 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -14576,7 +14576,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/saved_searches.rs", tests = 76 },
-    { file = "src/data/message_cache/saved_searches.rs", tests = 27 },
+    { file = "src/data/message_cache/saved_searches.rs", tests = 30 },
 ]
 
 # ── A search that asks nothing, joined by "all" ─────────────────────────────
@@ -25702,7 +25702,7 @@ red = [
     "test_what_a_saved_search_found_answers_in_the_order_it_is_handed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/saved_searches.rs", tests = 27 },
+    { file = "src/data/message_cache/saved_searches.rs", tests = 30 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
@@ -35186,4 +35186,24 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "tests/one_day_of_a_repeating_meeting_is_answered_alone.rs", tests = 11 },
+]
+
+# The read of an account's saved searches went back to the order they were
+# made, so an order somebody chose with Move Up and Move Down is written and
+# never read, and the tree goes on showing creation order (#58). Written
+# 2026-09-30 by 13-37, measured through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "saved searches are read in the order kept for them"
+file = "src/data/message_cache/saved_searches.rs"
+before = '''                 WHERE account_id = ?1
+                 ORDER BY position, created_at, id",'''
+after = '''                 WHERE account_id = ?1
+                 ORDER BY created_at, id",'''
+red = [
+    "data::message_cache::saved_searches::tests::test_the_order_written_is_the_order_read_back",
+    "data::message_cache::saved_searches::tests::test_a_new_search_goes_last_in_its_accounts_order",
+    "data::message_cache::saved_searches::tests::test_searches_from_before_the_order_keep_the_order_they_were_made",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/saved_searches.rs", tests = 30 },
 ]
