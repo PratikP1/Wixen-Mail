@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 511 records have arrived since and have not been through it.
+# 513 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35266,4 +35266,50 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/saved_searches.rs", tests = 80 },
+]
+
+# The searches loading and the menu left as it was built, so the Saved
+# Searches submenu holds its three commands whatever the account has and no
+# search has a key. Written 2026-09-30 by 13-38, measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "the Saved Searches menu is rebuilt from the searches an account has when they load"
+file = "src/presentation/wx_app.rs"
+suite = "the_saved_searches_menu_says_the_searches_an_account_has"
+before = '''                names_of(the_saved_searches_on_the_menu(&s))
+            };
+            put_the_saved_searches_on_the_menu(frame, &names);'''
+after = '''                names_of(the_saved_searches_on_the_menu(&s))
+            };
+            let _ = names;'''
+red = [
+    "test_the_loaded_arm_puts_the_searches_on_the_menu",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_saved_searches_menu_says_the_searches_an_account_has.rs", tests = 16 },
+]
+
+# The comparison that decides whether the Saved Searches menu is rebuilt made
+# always equal, so the menu keeps whatever it said first: a search renamed,
+# moved or added is not what the menu says, and a key runs a place the menu
+# does not show. Written 2026-09-30 by 13-38, measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "the Saved Searches menu is rebuilt when what it says differs from the searches"
+file = "src/presentation/wx_app.rs"
+suite = "the_saved_searches_menu_says_the_searches_an_account_has"
+before = '''    if lines_it_says != lines_it_should_say {'''
+after = '''    if false && lines_it_says != lines_it_should_say {'''
+red = [
+    "test_the_menu_says_an_accounts_searches_in_the_trees_order_with_their_keys",
+    "test_a_renamed_and_moved_search_is_what_the_menu_says_next",
+    "test_a_seventh_search_is_on_the_menu_without_a_key",
+    "test_a_key_past_the_last_search_is_one_the_menu_does_not_answer",
+    "test_alt_and_a_digit_past_the_last_search_reaches_the_tree_and_the_list",
+    "test_alt_and_a_digit_with_a_search_runs_the_menu_item",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_saved_searches_menu_says_the_searches_an_account_has.rs", tests = 16 },
 ]

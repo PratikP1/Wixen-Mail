@@ -1010,6 +1010,13 @@ fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
     for number in 1..=wixen_mail::application::tagging::REACHABLE_BY_KEY {
         stated.push_str(&format!("\nCtrl+{number}"));
     }
+    // The saved searches' keys, which the menu builds by counting from each
+    // search's place in the same way.
+    for position in 1..=wixen_mail::application::saved_searches::REACHABLE_BY_KEY {
+        if let Some(key) = wixen_mail::application::saved_searches::key_for(position) {
+            stated.push_str(&format!("\n{key}"));
+        }
+    }
 
     let mut invented = Vec::new();
     for key in documented_combinations(&doc) {

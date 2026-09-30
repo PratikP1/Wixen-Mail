@@ -20,7 +20,11 @@
 //! frame the menu bar is on, each with the real key handler bound, and
 //! `WM_SYSKEYDOWN` for 7 and for 4 posted to each with the Alt bit set, the
 //! way Windows delivers Alt and a digit, through the window's own loop so the
-//! menu bar's accelerators are asked first as they are for a real key. With
+//! menu bar's accelerators are asked first as they are for a real key. Alt is
+//! also held in this thread's keyboard state while the keys are delivered:
+//! measured 2026-09-30, without it the accelerators saw no Alt, since they
+//! ask the keyboard state, and Alt+4 reached the tree as a key, while the key
+//! event read Alt from the message's flag either way. With
 //! three searches Alt+7 has no item: the reading is which place each
 //! control's handler answered. Alt+4 has an item: the reading is the menu id
 //! the frame was sent, and whether either handler answered it as well.
@@ -72,9 +76,12 @@ const SEVEN: &str = "acct-seven";
 #[link(name = "user32")]
 unsafe extern "system" {
     fn PostMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> i32;
+    fn GetKeyboardState(state: *mut u8) -> i32;
+    fn SetKeyboardState(state: *const u8) -> i32;
 }
 
 /// winuser.h.
+const VK_MENU: usize = 0x12;
 const WM_SYSKEYDOWN: u32 = 0x0104;
 const WM_SYSKEYUP: u32 = 0x0105;
 /// A key press with Alt held, the context bit (29) set, repeat count one.
@@ -271,6 +278,24 @@ fn press_alt_and(control: isize, digit: u8) {
     }
 }
 
+/// Alt set down in this thread's keyboard state; the state before is
+/// handed back so it can be put back.
+fn alt_held_in_this_thread() -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    held[VK_MENU] = 0x80;
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
+}
+
+fn put_back_the_keyboard_state(before: &[u8; 256]) {
+    // SAFETY: as above, the state read before Alt was set down.
+    unsafe { SetKeyboardState(before.as_ptr()) };
+}
+
 fn the_places(answered: &[usize]) -> String {
     match answered {
         [] => "nothing".to_string(),
@@ -291,7 +316,7 @@ const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 const THE_LOADED_ARM: &str = "UIUpdate::SavedSearchesLoaded(searches) =>";
 
 /// Where a search item on the menu is answered.
-const THE_RANGE_ARM: &str = "id >= ID_SAVED_SEARCH_FIRST";
+const THE_RANGE_ARM: &str = "_ if saved_search_position_of(id).is_some() =>";
 
 fn the_main_window() -> String {
     let whole = fs::read_to_string(THE_MAIN_WINDOW)
@@ -433,6 +458,12 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 .and_then(|bar| the_saved_search_submenu(&bar))
                 .and_then(|menu| menu.find_item_by_position(0))
                 .map(|item| item.get_item_id());
+            // Alt is held in this thread's keyboard state until the keys have
+            // been read, because the menu's accelerators ask the keyboard
+            // state whether Alt is down, while the key event reads the flag
+            // the message carries. Never through `SendInput`, which would
+            // press a key for the whole desktop.
+            let before = alt_held_in_this_thread();
             for control in [tree.get_handle() as isize, list.get_handle() as isize] {
                 press_alt_and(control, b'7');
                 press_alt_and(control, b'4');
@@ -452,6 +483,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     let Some(mut harvest) = harvest.borrow_mut().take() else {
                         return;
                     };
+                    put_back_the_keyboard_state(&before);
                     let reached = reached.borrow();
                     harvest.insert(
                         "the places the tree answered",
@@ -625,9 +657,7 @@ const SHAPED: &str = r#"        UIUpdate::SavedSearchesLoaded(searches) => {
             put_the_saved_searches_on_the_menu(frame, &names);
         }
         UIUpdate::SavedSearchRan { messages, said } => {}
-                        _ if id >= ID_SAVED_SEARCH_FIRST
-                            && id < ID_SAVED_SEARCH_FIRST + SAVED_SEARCHES_ON_THE_MENU =>
-                        {
+                        _ if saved_search_position_of(id).is_some() => {
                             let row = the_saved_search_at(&lock_state(&state), id);
                             if let Some(row) = row {
                                 select_row(&folder_tree, &rows, &row.stored());
