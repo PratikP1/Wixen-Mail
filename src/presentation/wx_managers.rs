@@ -3816,6 +3816,16 @@ pub fn build_conditions_window(
     }
 }
 
+/// What a conditions window gives back once its loop ends.
+pub fn what_the_conditions_window_gives_back(
+    _rows_changed: bool,
+    _opened_on: Join,
+    _answered: Join,
+    _questions: Vec<Question>,
+) -> Option<EditedConditions> {
+    None
+}
+
 /// The answer a conditions window's choice holds, or `was` when it holds
 /// none.
 pub fn the_join_chosen(choice: &Choice, was: Join) -> Join {

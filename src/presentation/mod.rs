@@ -76,6 +76,7 @@ pub mod wx_folder_choice;
 pub mod wx_identities;
 pub mod wx_item_form;
 pub mod wx_managers;
+pub mod wx_new_saved_search;
 pub mod wx_notes_module;
 pub mod wx_passphrase;
 pub mod wx_pgp_keys;
