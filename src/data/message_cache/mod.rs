@@ -34,6 +34,7 @@ pub mod notes;
 mod outbox;
 mod parts_left_behind;
 pub mod pgp_keys;
+mod quick_steps;
 pub mod reminders;
 pub mod saved_searches;
 #[cfg(test)]
