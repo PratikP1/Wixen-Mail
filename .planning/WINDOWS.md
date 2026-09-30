@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 665
+open_count: 666
 waived_count: 0
 fixed_count: 83
-total_count: 748
+total_count: 749
 last_updated: 2026-09-30T23:55:00.000Z
 ---
 
@@ -763,6 +763,7 @@ last_updated: 2026-09-30T23:55:00.000Z
 | 746 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-42, the tester's ear: nobody has opened Action, Quick Steps and heard each step with its key ("Archive and read, Ctrl+Shift+7") and Manage Quick Steps after them, run a step by its key or its item and heard it as one act with one sentence ("Archive and read: 3 messages marked read and moved to Archive") and one Confirmed, heard a key past the last step ("Ctrl+Shift+9 runs Quick Step 3, and this account has 2."), or heard each refusal: another account's message, a folder or label the account lost, a step a newer version wrote, nothing selected, more than 5,000 selected | open |  | 2026-09-30T23:55:00.000Z |  |
 | 747 | 13 | todo | src/presentation/wx_app.rs |  | 13-42, read in source for whoever builds Undo next: a Quick Step is not one undo. run_these_actions_over remembers no action of its own and each do-half it calls remembers its own, so Edit, Undo after a step takes back its last write (the move of a step that marks and moves) and leaves the marks; tests/a_quick_step_runs_over_the_selection.rs's test_undo_takes_back_the_last_write_of_a_step_not_the_step holds that reading, and the guide and changelog say so | open |  | 2026-09-30T23:55:00.000Z |  |
 | 748 | 13 | todo | src/presentation/wx_app.rs |  | 13-42, found and left beside 688: two changes still reach the server on a worker of their own and so in either order with a move. A label a run puts on a message it also moves (label_these through spawn_server_change's Labelled change; on a server that keeps labels as keywords the keyword can arrive after the move and miss the message, and the next check takes the label off here), and a mark made by hand just before a move by hand (M, then Ctrl+Shift+V quickly). Recommendation, a question for Pratik: the waiting move carries the keywords as it now carries the read and flag marks, and a mark by hand on a row whose move is waiting joins that move's marks; the first is small, the second touches every mark key | open |  | 2026-09-30T23:55:00.000Z |  |
+| 749 | 13 | stub | src/application/running_a_rule_now.rs |  | 13-43: what a rule would change in a folder is counted (what_a_rule_would_change, through FilterEngine::matches and the runner's own what_each_message_needs, the no-ops dropped), the set a run takes is bounded to 5,000 (the_set_to_run), and the question before a run, the sentence when there is nothing to change and the sentence after are worded (the_question, nothing_to_change, what_the_rule_did), all tested; nothing in the running program calls them, so no rule can yet be run over a folder by hand. 13-44 builds the two doors, This Folder's Run a Rule on This Folder and the Filter Manager's Run on a Folder, and closes this entry; its premise 1 names it | open |  | 2026-09-30T22:50:30.000Z |  |
 
 ````json
 [
@@ -9740,6 +9741,18 @@ last_updated: 2026-09-30T23:55:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T23:55:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 749,
+    "kind": "stub",
+    "phase": "13",
+    "file": "src/application/running_a_rule_now.rs",
+    "line": null,
+    "description": "13-43: what a rule would change in a folder is counted (what_a_rule_would_change, through FilterEngine::matches and the runner's own what_each_message_needs, the no-ops dropped), the set a run takes is bounded to 5,000 (the_set_to_run), and the question before a run, the sentence when there is nothing to change and the sentence after are worded (the_question, nothing_to_change, what_the_rule_did), all tested; nothing in the running program calls them, so no rule can yet be run over a folder by hand. 13-44 builds the two doors, This Folder's Run a Rule on This Folder and the Filter Manager's Run on a Folder, and closes this entry; its premise 1 names it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T22:50:30.000Z",
     "resolved_at": null
   }
 ]

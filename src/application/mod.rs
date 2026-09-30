@@ -120,6 +120,8 @@ pub mod reply;
 /// Report as Junk: what a report does on each kind of account, and its one sentence.
 pub mod reporting_junk;
 pub mod running;
+/// What a rule would change in a folder, counted and asked before a run by hand.
+pub mod running_a_rule_now;
 pub mod saved_searches;
 pub mod scrolling;
 pub mod search;

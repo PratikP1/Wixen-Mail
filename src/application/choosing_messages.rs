@@ -31,6 +31,7 @@
 
 use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
 use crate::application::editing::MOST_ROWS_WORTH_SELECTING;
+use crate::data::message_cache::CachedMessage;
 use crate::service::caldav::how_many;
 
 /// One message, as much of it as a command over a set needs.
@@ -45,6 +46,19 @@ pub struct MessageRef {
     pub subject: String,
     pub read: bool,
     pub starred: bool,
+}
+
+/// A stored message as a command over a set meets it.
+impl From<&CachedMessage> for MessageRef {
+    fn from(message: &CachedMessage) -> Self {
+        MessageRef {
+            row_id: message.id,
+            uid: message.uid,
+            subject: message.subject.clone(),
+            read: message.read,
+            starred: message.starred,
+        }
+    }
 }
 
 /// What one selected row stands for.
