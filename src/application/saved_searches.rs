@@ -88,6 +88,7 @@
 //! it always was and is not for filtering with directly.
 
 use crate::application::filters::{FilterAction, FilterEngine, FilterRule};
+use crate::application::tagging::MenuLine;
 use crate::data::message_cache::CachedMessage;
 use crate::data::message_cache::saved_searches::TextStoredHere;
 use crate::data::message_cache::{TextTheIndexHolds, WhereToSearch};
@@ -1043,6 +1044,31 @@ fn tidied(asked: &str) -> String {
 /// A stored name as it would be compared against a typed one.
 fn tidied_lowercase(name: &str) -> String {
     tidied(name).to_lowercase()
+}
+
+/// How many saved searches have a key: Alt+4 to Alt+9.
+///
+/// Six, because Alt+1 to Alt+3 already move between the panes and nine is the
+/// last digit; the rest are reached from the Saved Searches menu.
+pub const REACHABLE_BY_KEY: usize = 6;
+
+/// The key that runs the saved search at this place in the account's order,
+/// if it has one.
+pub fn key_for(position: usize) -> Option<String> {
+    let _ = position;
+    None
+}
+
+/// What the Saved Searches submenu says, one line per search in the order
+/// given.
+pub fn what_the_menu_says(names: &[String]) -> Vec<MenuLine> {
+    crate::application::tagging::what_the_menu_says(names)
+}
+
+/// What is said when a saved search key has no search to run.
+pub fn nothing_there(position: usize, how_many: usize) -> String {
+    let _ = (position, how_many);
+    String::new()
 }
 
 /// A search kept under a name.
@@ -2775,5 +2801,82 @@ mod tests {
                 "{field} carries a warning, and a saved search searches it in full"
             );
         }
+    }
+
+    // ── The Saved Searches menu and its keys ───────────────────────────────
+
+    fn names(written: &[&str]) -> Vec<String> {
+        written.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn test_the_first_six_searches_have_keys_and_the_rest_do_not() {
+        assert_eq!(key_for(0), None, "there is no search before the first");
+        assert_eq!(key_for(1).as_deref(), Some("Alt+4"));
+        assert_eq!(key_for(6).as_deref(), Some("Alt+9"));
+        assert_eq!(
+            key_for(7),
+            None,
+            "a seventh search is reached from the menu"
+        );
+
+        let said: Vec<String> = what_the_menu_says(&names(&[
+            "One", "Two", "Three", "Four", "Five", "Six", "Seven",
+        ]))
+        .into_iter()
+        .map(|line| format!("{} {}", line.position, line.text))
+        .collect();
+
+        assert_eq!(
+            said,
+            [
+                "1 One\tAlt+4",
+                "2 Two\tAlt+5",
+                "3 Three\tAlt+6",
+                "4 Four\tAlt+7",
+                "5 Five\tAlt+8",
+                "6 Six\tAlt+9",
+                "7 Seven",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_name_with_an_ampersand_claims_no_letter() {
+        // A menu reads a lone ampersand as the mark before an access letter,
+        // so a search called "Tom & Jerry" would take J from the commands
+        // below it and be read as "Tom Jerry".
+        assert_eq!(
+            what_the_menu_says(&names(&["Tom & Jerry"])),
+            [MenuLine {
+                position: 1,
+                text: "Tom && Jerry\tAlt+4".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_no_searches_make_no_lines() {
+        // Unlike labels, which offer the five an account starts with because
+        // the first key makes them: a saved search is made on purpose, so an
+        // account with none has none to offer.
+        assert_eq!(what_the_menu_says(&[]), []);
+    }
+
+    #[test]
+    fn test_a_key_past_the_last_search_says_which_key_and_how_many_there_are() {
+        assert_eq!(
+            nothing_there(4, 3),
+            "Alt+7 runs saved search 4, and this account has 3."
+        );
+        assert_eq!(
+            nothing_there(2, 1),
+            "Alt+5 runs saved search 2, and this account has 1."
+        );
+        assert_eq!(
+            nothing_there(1, 0),
+            "Alt+4 runs saved search 1, and this account has none yet. Save This Search on \
+             the Edit menu makes one."
+        );
     }
 }
