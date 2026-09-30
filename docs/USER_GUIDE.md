@@ -1582,6 +1582,42 @@ everyone.
   needs no connection
 - Use specific terms for better results
 
+### Saved Searches
+
+A saved search keeps a question about your mail under a name, and the folder
+tree shows it under **Saved Searches** in the account you made it in. There
+are two ways to make one.
+
+To keep a search you have just run, choose **Edit → Save This Search** and
+give it a name.
+
+To make one from nothing:
+
+1. Choose **Action → Saved Searches → New Saved Search**, or **Edit → Save
+   This Search** with nothing searched. The New Saved Search window opens.
+2. Type a name in **Name for this search** (`Alt+N`).
+3. In **Look in** (`Alt+L`), choose everywhere in the account you are in, or
+   one of its folders.
+4. Press `Enter`. The conditions window opens, with no conditions yet.
+5. Press `Alt+A` to add a condition, such as the subject containing
+   "invoice". Add as many as you need.
+6. In **Find messages that match** (`Alt+M`), choose **every condition** or
+   **any condition**.
+7. Press `Alt+C` to close the window. The search is saved and Wixen Mail says
+   so, such as "Invoices saved. It is in the folder tree under Saved Searches."
+
+Nothing is saved until the conditions window closes with at least one
+condition. Pressing `Esc` in either window before then makes no search.
+
+To change a saved search later, put the cursor on its row and choose **Action
+→ Saved Searches → Edit Conditions**. The same conditions window opens, with
+the search's own answer to every or any. Changing that answer is saved like
+any other change, so a search made to match any condition can be made to
+match every condition.
+
+A saved search reads only the mail on this computer, and its list shows the
+newest 500 messages it finds.
+
 ### Arranging Saved Searches
 
 Saved searches sit in the folder tree under **Saved Searches**, in a branch for

@@ -710,7 +710,7 @@ it.
 | Paste | `Ctrl+V` | Put what is on the clipboard where the cursor is |
 | Select All | `Ctrl+A` | Select everything in the box or list you are in |
 | Search | `Ctrl+F` | Searches whichever module you are looking at |
-| Save This Search | none | Keeps the mail search you just ran, under a name, in the folder tree |
+| Save This Search | none | Keeps the mail search you just ran, under a name, in the folder tree. With nothing searched, it opens New Saved Search instead, to make a saved search from nothing. Until 2026-09-30 it refused unless a search had just run (#58) |
 
 **Undo and Redo work on the box you are typing in**, such as a note's title or
 body, or the contacts search. Each box remembers up to 100 steps, and Undo
@@ -854,7 +854,7 @@ Seven submenus hold the rest:
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
-| Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
+| Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then New Saved Search, which makes one from nothing: a name, where it looks, and its conditions. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
 | Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
 
 ### Account Management
@@ -1415,6 +1415,35 @@ message as it will be sent, then the buttons. Each letter is used once.
 | Copy to clipboard | `Alt+C` | Copy the whole message, to paste wherever you like |
 | Open the GitHub page | `Alt+G` | The public issue page, or for a security concern the private reporting page |
 | Cancel | `Esc` | Close without sending anything |
+
+### New Saved Search Dialog Accelerators
+
+New Saved Search on the Saved Searches submenu of the Action menu, or Save
+This Search with nothing searched. The window opens in the name box. After
+OK, the conditions window follows, empty, and nothing is saved until it
+closes with at least one condition.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Name for this search | `Alt+N` | The name the folder tree shows. A name the account already uses is refused, and the window stays open with what you typed |
+| Look in | `Alt+L` | Everywhere in the account you are in, or one of its folders |
+| OK | `Enter` | Go on to the conditions |
+| Cancel | `Esc` | Close without making a search |
+
+### Saved Search Conditions Dialog Accelerators
+
+The conditions window, which Edit Conditions opens for a saved search and New
+Saved Search opens for a new one. It opens on the list of conditions. Each
+letter is used once.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Find messages that match | `Alt+M` | Every condition, or any condition. Changing it on an existing search is saved when you close the window |
+| Add | `Alt+A` | Add a condition |
+| Edit | `Alt+E` | Change the condition you are on |
+| Delete | `Alt+D` | Remove the condition you are on |
+| Close | `Alt+C` | Save and close. With no conditions it refuses and says why |
+| Leave without saving a new search | `Esc` | For a new search with no conditions, closes and makes nothing |
 
 ### Contact Edit Dialog Accelerators
 

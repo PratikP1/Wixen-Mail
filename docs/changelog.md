@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A saved search can be made from nothing, and every or any changed later (#58 point
+  3, GAP-09).** A search could not be saved from scratch: Save This Search refused unless
+  a search had just run, and Edit Conditions edited only one that existed. Now New Saved
+  Search, first on the Saved Searches submenu of the Action menu, and Save This Search
+  with nothing searched open a window asking a name (`Alt+N`) and where to look (`Alt+L`),
+  everywhere in the account you are in or one of its folders. Then the conditions window
+  opens, empty, and nothing is saved until it closes with at least one condition. The
+  conditions window now asks "Find messages that match" (`Alt+M`), every condition or any
+  condition, for a new search and for one opened with Edit Conditions alike, so a search
+  made to match any condition can be changed to match every condition. A saved search
+  still shows the newest 500 messages it finds. The version does not move for this: no
+  build has been cut since 1.0.0-alpha.1. Known limitations: nobody has heard the two
+  windows in order with a screen reader, the refusal of a search with no conditions, or
+  the sentence saying the search was saved.
 - **A key for each saved search, and a menu that lists them (#58, GAP-09).** A saved
   search could only be run by finding its row in the folder tree and pressing `Enter`, and
   the Saved Searches submenu on the Action menu held only Edit Conditions, Rename and

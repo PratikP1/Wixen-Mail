@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 658
+open_count: 660
 waived_count: 0
 fixed_count: 81
-total_count: 739
-last_updated: 2026-09-30T18:00:00.000Z
+total_count: 741
+last_updated: 2026-09-30T23:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -754,6 +754,8 @@ last_updated: 2026-09-30T18:00:00.000Z
 | 737 | 13 | todo | src/application/answered_meetings.rs |  | 13-36.4, found while writing the guide and not caused by it, since 13-11: a second, different answer at the version already answered files nothing, because what_changed answers NothingNew for that version, so the calendar keeps the first answer's busy, tentative or free and the remembered answer stays the first. Accept then Decline at one version sends Decline to the organiser and leaves the meeting busy, and the buttons go on saying "You have already accepted this". The same holds for one day. Read in the code on 2026-09-29, not run. Recommended: a different answer at the same version rewrites the time-blocking and the remembered answer and nothing about the meeting itself; Pratik's to schedule | open |  | 2026-09-29T23:30:00.000Z |  |
 | 738 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-37, the tester's ear: nobody has heard a saved search moved with Alt+Shift+Up or Alt+Shift+Down ("Invoices, 2 of 4.", "Invoices is already first of 4."), checked that the cursor stays on the moved row when the tree is read back, heard the new refusal on a row the gesture cannot move ("Move Up and Move Down rearrange accounts, pinned folders and saved searches. Choose an account branch, a folder under Favourites, or a saved search."), or found Move this search up and Move this search down on a saved search's own menu, with a screen reader | open |  | 2026-09-30T12:00:00.000Z |  |
 | 739 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-38, the tester's ear: nobody has heard the Saved Searches submenu's items with their keys beside them ("Invoices, Alt+4"), heard the answer to a key past the last search ("Alt+7 runs saved search 4, and this account has 3."), or heard the cursor land on the row a key or an item ran and the search's result after it, with a screen reader | open |  | 2026-09-30T18:00:00.000Z |  |
+| 740 | 13 | unrun-verify | src/presentation/wx_new_saved_search.rs |  | 13-39, the tester's ear: nobody has gone through New Saved Search and then the conditions window in order with a screen reader (the name box and Look in heard by their names, Look in offering "Everywhere in" the account and then its folders, the conditions window opening empty with "Find messages that match" after the list), heard the refusal of a search with no conditions ("A saved search has to ask at least one thing about a message. Add a condition before closing this window."), heard the created sentence ("Invoices saved. It is in the folder tree under Saved Searches."), or changed an existing search from any condition to every condition with Edit Conditions | open |  | 2026-09-30T23:00:00.000Z |  |
+| 741 | 13 | todo | src/application/saved_searches.rs | 904 | 13-39, decision 2 of 2026-09-24: a saved search's list still shows the newest 500 messages it finds (MOST_RESULTS_SHOWN, read at src/presentation/wx_app.rs:8257 and :8285); #24's closing did not lift it and this plan left it as it is. No issue was opened, since a public post is Pratik's to make; his to file if he wants the cap changed | open |  | 2026-09-30T23:00:00.000Z |  |
 
 ````json
 [
@@ -9623,6 +9625,30 @@ last_updated: 2026-09-30T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 740,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_new_saved_search.rs",
+    "line": null,
+    "description": "13-39, the tester's ear: nobody has gone through New Saved Search and then the conditions window in order with a screen reader (the name box and Look in heard by their names, Look in offering \"Everywhere in\" the account and then its folders, the conditions window opening empty with \"Find messages that match\" after the list), heard the refusal of a search with no conditions (\"A saved search has to ask at least one thing about a message. Add a condition before closing this window.\"), heard the created sentence (\"Invoices saved. It is in the folder tree under Saved Searches.\"), or changed an existing search from any condition to every condition with Edit Conditions",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 741,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/saved_searches.rs",
+    "line": 904,
+    "description": "13-39, decision 2 of 2026-09-24: a saved search's list still shows the newest 500 messages it finds (MOST_RESULTS_SHOWN, read at src/presentation/wx_app.rs:8257 and :8285); #24's closing did not lift it and this plan left it as it is. No issue was opened, since a public post is Pratik's to make; his to file if he wants the cap changed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T23:00:00.000Z",
     "resolved_at": null
   }
 ]
