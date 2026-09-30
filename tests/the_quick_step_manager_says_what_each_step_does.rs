@@ -32,18 +32,23 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::filters::Outcome;
-use wixen_mail::application::quick_steps::{QuickStep, StoredStep, key_for};
+use wixen_mail::application::quick_steps::{
+    QuickStep, StoredStep, key_for, name_for, what_stops_a_step_being_saved,
+};
 use wixen_mail::application::reordering::Move;
 use wixen_mail::data::message_cache::MessageCache;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::managers::save_what_the_quick_step_manager_returned;
 use wixen_mail::presentation::wx_managers::{
-    ManagerState, QuickStepEntry, build_quick_step_manager, move_the_chosen_row,
-    populate_quick_steps,
+    ManagerState, QuickStepEditor, QuickStepEntry, StepRefused, build_quick_step_edit_dialog,
+    build_quick_step_manager, move_the_chosen_row, populate_quick_steps, what_the_editor_holds,
+    what_the_editor_keeps,
 };
 use wxdragon::prelude::*;
 
 const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
+const GWL_STYLE: i32 = -16;
+const WS_VISIBLE: isize = 0x1000_0000;
 const VT_I4: u16 = 3;
 const CHILDID_SELF: i64 = 0;
 const WINSTA_ALL_ACCESS: u32 = 0x037F;
@@ -53,6 +58,12 @@ const GENERIC_ALL: u32 = 0x1000_0000;
 const LVM_GETITEMTEXTW: u32 = 0x1000 + 115;
 const LVM_GETCOLUMNW: u32 = 0x1000 + 95;
 const LVCF_TEXT: u32 = 0x4;
+
+/// MSAA roles (oleacc.h).
+const ROLE_SYSTEM_TEXT: i64 = 0x2a;
+const ROLE_SYSTEM_PUSHBUTTON: i64 = 0x2b;
+const ROLE_SYSTEM_CHECKBUTTON: i64 = 0x2c;
+const ROLE_SYSTEM_COMBOBOX: i64 = 0x2e;
 
 /// The account the steps are kept under.
 const ACCOUNT: &str = "acct-quick";
@@ -102,16 +113,27 @@ impl Variant {
             extra: 0,
         }
     }
+
+    fn empty() -> Self {
+        Variant {
+            vt: 0,
+            ..Self::child(0)
+        }
+    }
 }
 
 type Hresult = i32;
 type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
+type GetVariantFn = unsafe extern "system" fn(*mut c_void, Variant, *mut Variant) -> Hresult;
 type GetBstrFn = unsafe extern "system" fn(*mut c_void, Variant, *mut *mut u16) -> Hresult;
 
 // IAccessible's vtable: IUnknown (3), IDispatch (4), then get_accParent (7),
-// get_accChildCount (8), get_accChild (9), get_accName (10).
+// get_accChildCount (8), get_accChild (9), get_accName (10), get_accValue
+// (11), get_accDescription (12), get_accRole (13).
 const VTBL_RELEASE: usize = 2;
 const VTBL_GET_ACC_NAME: usize = 10;
+const VTBL_GET_ACC_VALUE: usize = 11;
+const VTBL_GET_ACC_ROLE: usize = 13;
 
 /// commctrl.h's `LVITEMW`, of which `LVM_GETITEMTEXTW` reads the sub-item,
 /// the buffer and its length.
@@ -153,6 +175,14 @@ struct ListViewColumn {
 #[link(name = "user32")]
 unsafe extern "system" {
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
+    fn EnumChildWindows(
+        parent: isize,
+        callback: extern "system" fn(isize, isize) -> i32,
+        lparam: isize,
+    ) -> i32;
+    fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn CreateWindowStationW(
         name: *const u16,
         flags: u32,
@@ -252,9 +282,9 @@ unsafe fn take_bstr(s: *mut u16) -> String {
     }
 }
 
-/// A window's own name over MSAA, which is what NVDA reads for a native
-/// control.
-fn msaa_name_of(hwnd: isize) -> Result<String, String> {
+/// A window's own name, value and role over MSAA, which is what NVDA reads
+/// for a native control.
+fn msaa_of(hwnd: isize) -> Result<(String, String, i64), String> {
     let mut object: *mut c_void = std::ptr::null_mut();
     // SAFETY: a live window handle; the object is released before returning.
     let hr =
@@ -264,16 +294,85 @@ fn msaa_name_of(hwnd: isize) -> Result<String, String> {
     }
     // SAFETY: `object` is a live IAccessible; the slots are IAccessible's.
     unsafe {
-        let get: GetBstrFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_NAME));
-        let mut said: *mut u16 = std::ptr::null_mut();
-        let name = match get(object, Variant::child(CHILDID_SELF), &mut said) >= 0 {
-            true => take_bstr(said),
-            false => String::new(),
+        let text_at = |slot: usize| {
+            let get: GetBstrFn = std::mem::transmute(vtable_entry(object, slot));
+            let mut said: *mut u16 = std::ptr::null_mut();
+            match get(object, Variant::child(CHILDID_SELF), &mut said) >= 0 {
+                true => take_bstr(said),
+                false => String::new(),
+            }
+        };
+        let name = text_at(VTBL_GET_ACC_NAME);
+        let value = text_at(VTBL_GET_ACC_VALUE);
+        let get_role: GetVariantFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_ROLE));
+        let mut role = Variant::empty();
+        let role = match get_role(object, Variant::child(CHILDID_SELF), &mut role) >= 0
+            && role.vt == VT_I4
+        {
+            true => role.val & 0xFFFF_FFFF,
+            false => -1,
         };
         let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));
         release(object);
-        Ok(name)
+        Ok((name, value, role))
     }
+}
+
+thread_local! {
+    static FOUND: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
+}
+
+extern "system" fn collect(hwnd: isize, _lparam: isize) -> i32 {
+    FOUND.with(|found| found.borrow_mut().push(hwnd));
+    1
+}
+
+fn descendants_of(parent: isize) -> Vec<isize> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumChildWindows(parent, collect, 0) };
+    FOUND.with(|found| found.borrow().clone())
+}
+
+fn win32_text(hwnd: isize, read: unsafe extern "system" fn(isize, *mut u16, i32) -> i32) -> String {
+    let mut buffer = [0u16; 4096];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { read(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+/// One child of a window, as Windows holds it.
+#[derive(Debug, Clone, PartialEq)]
+struct Control {
+    class: String,
+    text: String,
+    visible: bool,
+    name: String,
+    value: String,
+    role: i64,
+}
+
+fn control_at(hwnd: isize) -> Result<Control, String> {
+    let (name, value, role) = msaa_of(hwnd)?;
+    // SAFETY: a live window handle; the style word is only read.
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
+    Ok(Control {
+        class: win32_text(hwnd, GetClassNameW),
+        text: win32_text(hwnd, GetWindowTextW),
+        visible: style & WS_VISIBLE != 0,
+        name,
+        value,
+        role,
+    })
+}
+
+/// A window's children in the order Windows holds them, which is the order
+/// Tab walks, each read over MSAA at its own handle.
+fn read_the_controls(window: &Dialog) -> Result<Vec<Control>, String> {
+    descendants_of(window.get_handle() as isize)
+        .into_iter()
+        .map(control_at)
+        .collect()
 }
 
 /// One cell of a live list, read from the list itself, whole: not through
@@ -467,6 +566,168 @@ struct Harvest {
     order_after_the_close: Vec<String>,
     what_the_save_failed_on: Vec<String>,
     the_newer_step_after_the_close: String,
+    editor: EditorReading,
+}
+
+/// What the step editor's controls hold, as plain values.
+#[derive(Debug, Default, PartialEq)]
+struct Filled {
+    name: String,
+    read: Option<u32>,
+    flag: Option<u32>,
+    label: Option<u32>,
+    move_to: Option<u32>,
+    delete: bool,
+    phrase: String,
+}
+
+/// Everything read out of the step editor.
+#[derive(Debug, Default)]
+struct EditorReading {
+    new_title: String,
+    existing_title: String,
+    controls: Vec<Control>,
+    with_a_second_n: Vec<Control>,
+    offered: Vec<Vec<String>>,
+    filled: Filled,
+    gone_offered: Vec<Vec<String>>,
+    gone_filled: Filled,
+    gone_holds: Outcome,
+    together: (String, Outcome),
+    delete_alone: Outcome,
+    a_phrase: Outcome,
+}
+
+/// The account's labels and folders the editor offers, in their order.
+fn the_labels() -> Vec<String> {
+    vec!["Work".to_string(), "Later".to_string()]
+}
+
+fn the_folders() -> Vec<String> {
+    vec!["INBOX".to_string(), "INBOX/Receipts".to_string()]
+}
+
+/// A step that marks read, moves to a folder the account has, and says a
+/// phrase first.
+fn a_receipts_step() -> QuickStepEntry {
+    QuickStepEntry {
+        id: "step-receipts".to_string(),
+        name: "Receipts".to_string(),
+        does: Some(Outcome {
+            read: Some(true),
+            move_to: Some("INBOX/Receipts".to_string()),
+            say_first: Some("Receipt".to_string()),
+            ..Outcome::default()
+        }),
+    }
+}
+
+/// A step whose label and folder the account no longer has.
+fn a_step_from_before() -> QuickStepEntry {
+    QuickStepEntry {
+        id: "step-before".to_string(),
+        name: "Old ways".to_string(),
+        does: Some(Outcome {
+            tags: vec!["Old".to_string()],
+            move_to: Some("Gone".to_string()),
+            ..Outcome::default()
+        }),
+    }
+}
+
+fn entries(choice: &Choice) -> Vec<String> {
+    (0..choice.get_count())
+        .filter_map(|at| choice.get_string(at))
+        .collect()
+}
+
+fn filled(editor: &QuickStepEditor) -> Filled {
+    Filled {
+        name: editor.name.get_value(),
+        read: editor.read.get_selection(),
+        flag: editor.flag.get_selection(),
+        label: editor.label.get_selection(),
+        move_to: editor.move_to.get_selection(),
+        delete: editor.delete.get_value(),
+        phrase: editor.phrase.get_value(),
+    }
+}
+
+/// Choose an entry the way somebody would, where there is one to choose.
+fn choose(choice: &Choice, at: u32) {
+    if at < choice.get_count() {
+        choice.set_selection(at);
+    }
+}
+
+fn read_the_editor(frame: &Frame) -> Result<EditorReading, String> {
+    let (labels, folders) = (the_labels(), the_folders());
+
+    let existing =
+        build_quick_step_edit_dialog(frame, Some(&a_receipts_step()), &labels, &folders, None);
+    let existing_title = existing.dialog.get_label().unwrap_or_default();
+    let controls = read_the_controls(&existing.dialog)?;
+    let offered = [
+        &existing.read,
+        &existing.flag,
+        &existing.label,
+        &existing.move_to,
+    ]
+    .into_iter()
+    .map(entries)
+    .collect();
+    let filled_in = filled(&existing);
+    // The companion: a second label on N, read the same way.
+    StaticText::builder(&existing.dialog)
+        .with_label("&Nothing here:")
+        .build();
+    let with_a_second_n = read_the_controls(&existing.dialog)?;
+    existing.dialog.destroy();
+
+    let gone =
+        build_quick_step_edit_dialog(frame, Some(&a_step_from_before()), &labels, &folders, None);
+    let gone_offered = [&gone.label, &gone.move_to]
+        .into_iter()
+        .map(entries)
+        .collect();
+    let gone_filled = filled(&gone);
+    let (_, gone_holds) = what_the_editor_holds(&gone);
+    gone.dialog.destroy();
+
+    let together = build_quick_step_edit_dialog(frame, None, &labels, &folders, None);
+    let new_title = together.dialog.get_label().unwrap_or_default();
+    together.name.set_value("Sort it");
+    choose(&together.read, 2);
+    choose(&together.flag, 1);
+    choose(&together.label, 1);
+    choose(&together.move_to, 1);
+    let held_together = what_the_editor_holds(&together);
+    together.dialog.destroy();
+
+    let deleting = build_quick_step_edit_dialog(frame, None, &labels, &folders, None);
+    deleting.delete.set_value(true);
+    let (_, delete_alone) = what_the_editor_holds(&deleting);
+    deleting.dialog.destroy();
+
+    let saying = build_quick_step_edit_dialog(frame, None, &labels, &folders, None);
+    saying.phrase.set_value("Urgent");
+    let (_, a_phrase) = what_the_editor_holds(&saying);
+    saying.dialog.destroy();
+
+    Ok(EditorReading {
+        new_title,
+        existing_title,
+        controls,
+        with_a_second_n,
+        offered,
+        filled: filled_in,
+        gone_offered,
+        gone_filled,
+        gone_holds,
+        together: held_together,
+        delete_alone,
+        a_phrase,
+    })
 }
 
 fn read_the_manager(
@@ -480,7 +741,7 @@ fn read_the_manager(
     let rows: Vec<QuickStepEntry> = stored.iter().map(QuickStepEntry::from).collect();
     let widgets = build_quick_step_manager(frame, &rows, None);
     let title = widgets.dialog.get_label().unwrap_or_default();
-    let list_name = msaa_name_of(widgets.list.get_handle() as isize)?;
+    let (list_name, _, _) = msaa_of(widgets.list.get_handle() as isize)?;
     let headings = (0..widgets.list.get_column_count().max(0) as usize)
         .map(|column| heading(&widgets.list, column))
         .collect();
@@ -528,6 +789,7 @@ fn read_the_manager(
         order_after_the_close,
         what_the_save_failed_on,
         the_newer_step_after_the_close,
+        editor: EditorReading::default(),
     })
 }
 
@@ -554,7 +816,8 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     Accessibility::new().map_err(|why| format!("accessibility: {why:?}"))?,
                 );
                 let cache = a_store(&store_at)?;
-                let harvest = read_the_manager(&frame, &a11y, &cache)?;
+                let mut harvest = read_the_manager(&frame, &a11y, &cache)?;
+                harvest.editor = read_the_editor(&frame)?;
                 frame.destroy();
                 Ok(harvest)
             })();
@@ -742,5 +1005,341 @@ fn test_a_step_a_newer_version_wrote_keeps_its_action_through_the_close() {
     assert_eq!(
         the_harvest().the_newer_step_after_the_close,
         "written by a newer version"
+    );
+}
+
+// ── The step editor ────────────────────────────────────────────────────────
+
+/// The questions in the order Tab reaches them, each with the name a screen
+/// reader hears over MSAA and the role. A labelled field's name ends in the
+/// comma `name_from_label` puts where its label's colon was.
+fn the_questions() -> Vec<(String, i64)> {
+    [
+        ("Name,", ROLE_SYSTEM_TEXT),
+        ("Mark as read or unread,", ROLE_SYSTEM_COMBOBOX),
+        ("Flag,", ROLE_SYSTEM_COMBOBOX),
+        ("Label,", ROLE_SYSTEM_COMBOBOX),
+        ("Move to,", ROLE_SYSTEM_COMBOBOX),
+        ("Delete it", ROLE_SYSTEM_CHECKBUTTON),
+        ("Phrase to say first,", ROLE_SYSTEM_TEXT),
+        ("OK", ROLE_SYSTEM_PUSHBUTTON),
+        ("Cancel", ROLE_SYSTEM_PUSHBUTTON),
+    ]
+    .into_iter()
+    .map(|(name, role)| (name.to_string(), role))
+    .collect()
+}
+
+/// The controls a keyboard reaches, in the order it reaches them, as name
+/// and role.
+fn names_and_roles(controls: &[Control]) -> Vec<(String, i64)> {
+    controls
+        .iter()
+        .filter(|control| control.visible && control.class != "Static")
+        .map(|control| (control.name.clone(), control.role))
+        .collect()
+}
+
+/// Every question read under some other name or role than it should be, or
+/// the count when the window asks more or fewer.
+fn what_is_wrong_with_the_names(controls: &[Control]) -> Vec<String> {
+    let (read, wanted) = (names_and_roles(controls), the_questions());
+    if read.len() != wanted.len() {
+        return vec![format!(
+            "{} controls where {} were wanted: {read:?}",
+            read.len(),
+            wanted.len()
+        )];
+    }
+    read.iter()
+        .zip(&wanted)
+        .filter(|(got, want)| got != want)
+        .map(|((name, role), (want_name, want_role))| {
+            format!("{want_name} ({want_role}) is read as {name:?} ({role})")
+        })
+        .collect()
+}
+
+/// The letter a label claims, when it claims one; `&&` is a literal
+/// ampersand, the rule Windows follows.
+fn alt_key_of(label: &str) -> Option<char> {
+    let mut chars = label.chars();
+    while let Some(c) = chars.next() {
+        if c == '&' {
+            match chars.next() {
+                Some('&') => continue,
+                Some(letter) if letter.is_alphanumeric() => {
+                    return Some(letter.to_ascii_uppercase());
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Every letter the showing labels, the check box and the buttons claim,
+/// with the labels that claim it.
+fn letters(controls: &[Control]) -> Vec<(char, Vec<String>)> {
+    let mut claimed: std::collections::BTreeMap<char, Vec<String>> = Default::default();
+    for control in controls.iter().filter(|control| {
+        control.visible && (control.class == "Static" || control.class == "Button")
+    }) {
+        if let Some(letter) = alt_key_of(&control.text) {
+            claimed
+                .entry(letter)
+                .or_default()
+                .push(control.text.clone());
+        }
+    }
+    claimed.into_iter().collect()
+}
+
+/// Every letter more than one showing control claims.
+fn claimed_twice(controls: &[Control]) -> Vec<String> {
+    letters(controls)
+        .into_iter()
+        .filter(|(_, labels)| labels.len() > 1)
+        .map(|(letter, labels)| format!("Alt+{letter} on {}", labels.join(" and ")))
+        .collect()
+}
+
+/// Which of a step's answers the editor read differently from the answer
+/// set, by the question's name.
+fn what_the_reading_got_wrong(got: &Outcome, wanted: &Outcome) -> Vec<&'static str> {
+    [
+        ("read", got.read != wanted.read),
+        ("flag", got.starred != wanted.starred),
+        ("label", got.tags != wanted.tags),
+        ("move", got.move_to != wanted.move_to),
+        ("delete", got.delete != wanted.delete),
+        ("phrase", got.say_first != wanted.say_first),
+    ]
+    .into_iter()
+    .filter(|(_, differs)| *differs)
+    .map(|(question, _)| question)
+    .collect()
+}
+
+/// Mark unread, flag it, label Work and move to INBOX, set together.
+fn marked_flagged_labelled_and_moved() -> Outcome {
+    Outcome {
+        read: Some(false),
+        starred: Some(true),
+        tags: vec!["Work".to_string()],
+        move_to: Some("INBOX".to_string()),
+        ..Outcome::default()
+    }
+}
+
+#[test]
+fn test_the_editor_is_titled_for_a_new_step_and_for_one_being_changed() {
+    let editor = &the_harvest().editor;
+
+    assert_eq!(editor.new_title, "New Quick Step");
+    assert_eq!(editor.existing_title, "Edit Quick Step");
+}
+
+#[test]
+fn test_the_editor_names_each_question_on_msaa_in_tab_order() {
+    let found = what_is_wrong_with_the_names(&the_harvest().editor.controls);
+
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn test_the_name_reading_sees_a_question_left_without_its_name() {
+    // The companion: the Flag choice read with no name, which is what a
+    // choice nothing named gives a screen reader that finds no label.
+    let mut planted = the_harvest().editor.controls.clone();
+    if let Some(flag) = planted.iter_mut().find(|control| control.name == "Flag,") {
+        flag.name = String::new();
+    }
+
+    assert_eq!(
+        what_is_wrong_with_the_names(&planted),
+        [format!(
+            "Flag, ({ROLE_SYSTEM_COMBOBOX}) is read as \"\" ({ROLE_SYSTEM_COMBOBOX})"
+        )]
+    );
+}
+
+#[test]
+fn test_the_editor_offers_each_questions_answers_in_order() {
+    assert_eq!(
+        the_harvest().editor.offered,
+        [
+            vec!["Leave as it is", "Mark read", "Mark unread"],
+            vec!["Leave as it is", "Flag it", "Take the flag off"],
+            vec!["No label", "Work", "Later"],
+            vec!["Leave it where it is", "INBOX", "INBOX/Receipts"],
+        ]
+    );
+}
+
+#[test]
+fn test_the_editor_opens_on_what_the_step_does() {
+    assert_eq!(
+        the_harvest().editor.filled,
+        Filled {
+            name: "Receipts".to_string(),
+            read: Some(1),
+            flag: Some(0),
+            label: Some(0),
+            move_to: Some(2),
+            delete: false,
+            phrase: "Receipt".to_string(),
+        }
+    );
+}
+
+#[test]
+fn test_a_label_and_a_folder_the_account_no_longer_has_are_shown_chosen_and_kept() {
+    // Shown for what they are, so saving the step with them again is a
+    // choice somebody sees rather than one made for them.
+    let editor = &the_harvest().editor;
+
+    assert_eq!(
+        editor.gone_offered,
+        [
+            vec![
+                "No label",
+                "Work",
+                "Later",
+                "Old (not in this account any more)"
+            ],
+            vec![
+                "Leave it where it is",
+                "INBOX",
+                "INBOX/Receipts",
+                "Gone (not in this account any more)"
+            ],
+        ]
+    );
+    assert_eq!(
+        (editor.gone_filled.label, editor.gone_filled.move_to),
+        (Some(3), Some(3))
+    );
+    assert_eq!(
+        (
+            editor.gone_holds.tags.clone(),
+            editor.gone_holds.move_to.clone()
+        ),
+        (vec!["Old".to_string()], Some("Gone".to_string()))
+    );
+}
+
+#[test]
+fn test_the_editor_reads_marking_flagging_labelling_and_moving_together() {
+    let (name, does) = &the_harvest().editor.together;
+
+    assert_eq!(name, "Sort it");
+    assert_eq!(
+        what_the_reading_got_wrong(does, &marked_flagged_labelled_and_moved()),
+        Vec::<&str>::new()
+    );
+}
+
+#[test]
+fn test_the_reading_sees_mark_unread_read_as_mark_read() {
+    // The companion: what a choice mapped the wrong way would hand back.
+    let (_, does) = &the_harvest().editor.together;
+    let planted = Outcome {
+        read: Some(true),
+        ..does.clone()
+    };
+
+    assert_eq!(
+        what_the_reading_got_wrong(&planted, &marked_flagged_labelled_and_moved()),
+        ["read"]
+    );
+}
+
+#[test]
+fn test_the_editor_reads_delete_alone() {
+    assert_eq!(
+        the_harvest().editor.delete_alone,
+        Outcome {
+            delete: true,
+            ..Outcome::default()
+        }
+    );
+}
+
+#[test]
+fn test_the_editor_reads_a_phrase_to_say_first() {
+    assert_eq!(
+        the_harvest().editor.a_phrase,
+        Outcome {
+            say_first: Some("Urgent".to_string()),
+            ..Outcome::default()
+        }
+    );
+}
+
+#[test]
+fn test_the_editors_letters_are_seven_and_none_is_claimed_twice() {
+    // Allocated once for the window: N, R, F, L, M, D and H, the rule
+    // editor's own letter for the phrase. OK and Cancel carry none.
+    assert_eq!(
+        letters(&the_harvest().editor.controls),
+        vec![
+            ('D', vec!["&Delete it".to_string()]),
+            ('F', vec!["&Flag:".to_string()]),
+            ('H', vec!["P&hrase to say first:".to_string()]),
+            ('L', vec!["&Label:".to_string()]),
+            ('M', vec!["&Move to:".to_string()]),
+            ('N', vec!["&Name:".to_string()]),
+            ('R', vec!["Mark as &read or unread:".to_string()]),
+        ]
+    );
+}
+
+#[test]
+fn test_the_editors_letter_reading_sees_a_second_n_when_one_is_planted() {
+    assert_eq!(
+        claimed_twice(&the_harvest().editor.with_a_second_n),
+        vec!["Alt+N on &Name: and &Nothing here:".to_string()]
+    );
+}
+
+#[test]
+fn test_a_name_another_step_has_is_refused_before_the_step_is_kept() {
+    let others = ["Archive and read".to_string()];
+    let does = marked_flagged_labelled_and_moved();
+
+    assert_eq!(
+        what_the_editor_keeps("archive and read", does, &others),
+        Err(StepRefused::TheName(
+            name_for("archive and read", &others)
+                .why_not()
+                .unwrap_or_default()
+        ))
+    );
+}
+
+#[test]
+fn test_a_step_that_deletes_and_moves_is_refused_before_it_is_kept() {
+    let does = Outcome {
+        delete: true,
+        move_to: Some("INBOX".to_string()),
+        ..Outcome::default()
+    };
+
+    assert_eq!(
+        what_the_editor_keeps("Tidy up", does.clone(), &[]),
+        Err(StepRefused::WhatItDoes(
+            what_stops_a_step_being_saved(&does).unwrap_or_default()
+        ))
+    );
+}
+
+#[test]
+fn test_a_step_the_editor_can_keep_is_kept_under_its_tidied_name() {
+    let does = marked_flagged_labelled_and_moved();
+
+    assert_eq!(
+        what_the_editor_keeps("  Sort it  ", does.clone(), &["Receipts".to_string()]),
+        Ok(("Sort it".to_string(), does))
     );
 }

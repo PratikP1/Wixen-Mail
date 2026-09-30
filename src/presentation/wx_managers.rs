@@ -4702,6 +4702,63 @@ pub fn populate_quick_steps(list: &ListCtrl, steps: &[QuickStepEntry]) {
     }
 }
 
+/// The step editor's window and the controls it asks with.
+#[derive(Clone)]
+pub struct QuickStepEditor {
+    pub dialog: Dialog,
+    pub name: TextCtrl,
+    pub read: Choice,
+    pub flag: Choice,
+    pub label: Choice,
+    pub move_to: Choice,
+    pub delete: CheckBox,
+    pub phrase: TextCtrl,
+    pub ok: Button,
+}
+
+/// Build the step editor without showing it.
+pub fn build_quick_step_edit_dialog(
+    parent: &dyn WxWidget,
+    _existing: Option<&QuickStepEntry>,
+    _labels: &[String],
+    _folders: &[String],
+    _palette: Option<theme::Palette>,
+) -> QuickStepEditor {
+    let dialog = Dialog::builder(parent, "").build();
+    QuickStepEditor {
+        dialog,
+        name: TextCtrl::builder(&dialog).build(),
+        read: Choice::builder(&dialog).build(),
+        flag: Choice::builder(&dialog).build(),
+        label: Choice::builder(&dialog).build(),
+        move_to: Choice::builder(&dialog).build(),
+        delete: CheckBox::builder(&dialog).build(),
+        phrase: TextCtrl::builder(&dialog).build(),
+        ok: Button::builder(&dialog).build(),
+    }
+}
+
+/// The name typed and what the step's controls say it does.
+pub fn what_the_editor_holds(_editor: &QuickStepEditor) -> (String, Outcome) {
+    (String::new(), Outcome::default())
+}
+
+/// Why a step the editor holds cannot be kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StepRefused {
+    TheName(String),
+    WhatItDoes(String),
+}
+
+/// The step to keep from what the editor holds, or why not.
+pub fn what_the_editor_keeps(
+    name: &str,
+    does: Outcome,
+    _others: &[String],
+) -> Result<(String, Outcome), StepRefused> {
+    Ok((name.to_string(), does))
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Signature Manager
 // ══════════════════════════════════════════════════════════════════════════════
