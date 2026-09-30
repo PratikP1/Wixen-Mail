@@ -10,6 +10,7 @@ use crate::application::saved_searches::{Naming, name_for};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::text_history_keys::keep_a_history;
 use crate::presentation::theme;
 use std::sync::Arc;
 use wxdragon::prelude::*;
@@ -62,6 +63,9 @@ pub fn build_new_saved_search_dialog(
     let name = TextCtrl::builder(&dialog)
         .with_size(Size::new(280, -1))
         .build();
+    // Several steps of Undo, as every box a person types into has, rather
+    // than Windows' single step.
+    keep_a_history(&name);
     // Each label is a separate control, which wxWidgets never associates with
     // the field beside it, so without a name the field announces as just
     // "edit" or "combo box".
