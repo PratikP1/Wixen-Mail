@@ -8548,22 +8548,24 @@ enum WhatToWriteBack {
     ThisSearch(Box<crate::application::saved_searches::SavedSearch>),
 }
 
-/// The saved search to write back, given what the condition editor gave back.
+/// The saved search to write back, given what the conditions window gave back.
 ///
 /// A list somebody emptied and then left by a route that does not pass the
 /// Close button is refused here. The window refuses it on the way out and the
-/// store refuses it again, and the sentence is the window's own, so there is
-/// one wording rather than three.
+/// store refuses it again, and the sentence is
+/// [`crate::application::saved_searches::ASKS_NOTHING`], so there is one
+/// wording rather than three.
 ///
-/// Everything but the questions is carried over from the search as it was
-/// stored. A window that was never asked about the name, the join, the folder
-/// or the identifier must not be able to change any of them, and a whole
-/// `SavedSearch` built from scratch here is how one of them would go missing.
+/// The join and the questions come from the window, which asks both, and are
+/// written in the one replace. The name, the folder and the identifier are
+/// carried over from the search as it was stored: the window was never asked
+/// about them, and a whole `SavedSearch` built from scratch here is how one of
+/// them would go missing.
 fn the_search_to_write_back(
     search: &crate::application::saved_searches::SavedSearch,
     edited: Option<crate::application::saved_searches::EditedConditions>,
 ) -> WhatToWriteBack {
-    let Some(crate::application::saved_searches::EditedConditions { questions, .. }) = edited
+    let Some(crate::application::saved_searches::EditedConditions { join, questions }) = edited
     else {
         return WhatToWriteBack::NothingChanged;
     };
@@ -8573,6 +8575,7 @@ fn the_search_to_write_back(
         return WhatToWriteBack::Refused(needed);
     }
     WhatToWriteBack::ThisSearch(Box::new(crate::application::saved_searches::SavedSearch {
+        join,
         questions,
         ..search.clone()
     }))
@@ -8610,17 +8613,14 @@ fn edit_the_chosen_searchs_conditions(
         ConditionsToEdit::Refused(why) => return refuse_a_command(tx, why),
     };
 
+    // Opened on the search's own answer to every or any, which the window can
+    // change along with the questions.
     let edited = crate::presentation::wx_managers::show_rule_manager_dialog(
         frame,
         &search.name,
         &search.questions,
+        search.join,
         a11y,
-    )
-    .map(
-        |questions| crate::application::saved_searches::EditedConditions {
-            join: search.join,
-            questions,
-        },
     );
     let asking_now = match the_search_to_write_back(&search, edited) {
         WhatToWriteBack::NothingChanged => return,
