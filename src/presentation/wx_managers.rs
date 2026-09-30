@@ -11,11 +11,12 @@
 
 use crate::application::contact_names::{self, NameParts, SUFFIXES, TITLES};
 use crate::application::filters::{
-    A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, SAY_FIRST_LIMIT,
+    A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, Outcome, SAY_FIRST_LIMIT,
     a_way_of_matching_compares_against_nothing, the_field_those_words_name,
     the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
 use crate::application::phone_numbers::{self, Reading, Region};
+use crate::application::quick_steps::StoredStep;
 use crate::application::reordering::{Move, Moved};
 use crate::application::saved_searches::{self, EditedConditions, Join, Question};
 use crate::presentation::accessibility::Accessibility;
@@ -4585,6 +4586,64 @@ fn show_tag_edit(
     dlg.destroy();
     chosen
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Quick Step Manager
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// One Quick Step as the Quick Step Manager holds it (#60, 13-41).
+///
+/// `does` is `None` for a step a newer version of Wixen Mail wrote, with an
+/// action this build cannot read. Such a row is listed, moved and removed
+/// here and never opened, because saving it again would drop the action this
+/// build cannot read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuickStepEntry {
+    pub id: String,
+    pub name: String,
+    pub does: Option<Outcome>,
+}
+
+impl From<&StoredStep> for QuickStepEntry {
+    fn from(stored: &StoredStep) -> Self {
+        QuickStepEntry {
+            id: stored.id().to_string(),
+            name: stored.name().to_string(),
+            does: match stored {
+                StoredStep::Readable(step) => Some(step.does.clone()),
+                StoredStep::WrittenByANewerVersion { .. } => None,
+            },
+        }
+    }
+}
+
+impl ManagedRow for QuickStepEntry {}
+
+/// The Quick Step Manager's window, built and filled without being shown.
+pub struct QuickStepManagerWidgets {
+    pub dialog: Dialog,
+    pub sizer: BoxSizer,
+    pub list: ListCtrl,
+    pub status: StaticText,
+}
+
+/// Build the Quick Step Manager over an account's steps, in their order.
+pub fn build_quick_step_manager(
+    parent: &Frame,
+    _steps: &[QuickStepEntry],
+    palette: Option<theme::Palette>,
+) -> QuickStepManagerWidgets {
+    let (dialog, sizer, list, status) = make_shell(parent, "", "", 640, 400, palette);
+    QuickStepManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+    }
+}
+
+/// Fill the Quick Step Manager's list.
+pub fn populate_quick_steps(_list: &ListCtrl, _steps: &[QuickStepEntry]) {}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Signature Manager

@@ -215,6 +215,17 @@ fn write_the_labels(
     failures
 }
 
+/// Write back what the Quick Step Manager returned, and name anything that
+/// would not save.
+pub fn save_what_the_quick_step_manager_returned(
+    _cache: &MessageCache,
+    _account: &str,
+    _stored: &[crate::application::quick_steps::StoredStep],
+    _updated: Vec<wx_managers::QuickStepEntry>,
+) -> Vec<String> {
+    Vec::new()
+}
+
 /// Signatures: one set for every account (#43), with who uses each.
 pub fn manage_signatures(
     state: &Arc<StdMutex<WxUIState>>,
