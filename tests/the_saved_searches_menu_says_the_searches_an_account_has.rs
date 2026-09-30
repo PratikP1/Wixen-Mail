@@ -541,11 +541,17 @@ fn reading(name: &str) -> &'static str {
 
 // ── The checks ────────────────────────────────────────────────────────────
 
-/// The commands the submenu ends with, as they read on 2026-09-24.
-const THE_COMMANDS: [&str; 3] = ["Edit &Conditions...", "&Rename...", "&Delete"];
+/// The commands the submenu ends with: the three that read on 2026-09-24, and
+/// New Saved Search before them since 2026-09-30 (13-39, #58 point 3).
+const THE_COMMANDS: [&str; 4] = [
+    "&New Saved Search...",
+    "Edit &Conditions...",
+    "&Rename...",
+    "&Delete",
+];
 
 /// The Saved Searches submenu offers exactly these searches, each with the
-/// key the menu's rule gives it, then a separator and the three commands.
+/// key the menu's rule gives it, then a separator and the four commands.
 fn the_menu_offers(menu: &str, searches: &[&str]) -> Result<(), String> {
     let mut wanted: Vec<String> = searches
         .iter()
@@ -569,7 +575,7 @@ fn the_menu_offers(menu: &str, searches: &[&str]) -> Result<(), String> {
 }
 
 #[test]
-fn test_the_menu_as_the_window_starts_holds_the_three_commands() {
+fn test_the_menu_as_the_window_starts_holds_the_commands() {
     the_menu_offers(reading("the menu as the window starts"), &[]).unwrap();
 }
 
@@ -728,8 +734,8 @@ fn test_companion_a_search_item_that_never_lands_is_refused() {
 
 #[test]
 fn test_companion_a_menu_of_the_commands_alone_is_refused_for_an_account_with_searches() {
-    // The submenu until 13-38: the three commands and nothing else, whatever
-    // the account's searches were.
+    // The submenu until 13-38: the commands and nothing else, whatever the
+    // account's searches were.
     let the_old_menu = THE_COMMANDS.join("\n");
     assert!(
         the_menu_offers(

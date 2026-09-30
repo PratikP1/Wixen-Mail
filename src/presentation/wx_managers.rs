@@ -17,7 +17,7 @@ use crate::application::filters::{
 };
 use crate::application::phone_numbers::{self, Reading, Region};
 use crate::application::reordering::{Move, Moved};
-use crate::application::saved_searches::Question;
+use crate::application::saved_searches::{self, EditedConditions, Join, Question};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
@@ -29,7 +29,7 @@ use crate::presentation::status_line::said_and_shown;
 use crate::presentation::text_history_keys::{keep_a_history, set_anew};
 use crate::presentation::theme;
 use crate::presentation::wx_item_form::{BirthdayFields, build_birthday_fields};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use wxdragon::prelude::*;
@@ -3693,9 +3693,8 @@ fn a_condition_in_words(question: &Question) -> String {
 /// What a saved search's condition list still needs before its window can
 /// close, if anything.
 ///
-/// At least one condition. A search that asks nothing takes the whole mailbox
-/// when its questions are joined with Any and nothing at all when they are
-/// joined with All, and neither is a search anybody wrote.
+/// At least one condition, refused in [`saved_searches::ASKS_NOTHING`]'s
+/// words, which say why.
 ///
 /// The store refuses the same thing (`MessageCache::replace_saved_search`),
 /// and two refusals is deliberate rather than a duplicate: a window is where
@@ -3704,13 +3703,10 @@ fn a_condition_in_words(question: &Question) -> String {
 ///
 /// Public because the Close button is not the only way out of a window. The
 /// caller reads this too, for a list somebody emptied and then left by the
-/// close box or Escape, so there is one wording of the refusal rather than a
-/// second one written where the write happens.
+/// close box or Escape. The wording lives in the application layer since
+/// 13-39, where a search made from nothing is refused in it as well.
 pub fn what_a_condition_list_still_needs(questions: &[Question]) -> Option<&'static str> {
-    questions.is_empty().then_some(
-        "A saved search has to ask at least one thing about a message. Add a condition \
-         before closing this window.",
-    )
+    questions.is_empty().then_some(saved_searches::ASKS_NOTHING)
 }
 
 /// The rows of a saved search's condition list, repainted from the working
@@ -3735,36 +3731,40 @@ pub fn populate_questions(list: &ListCtrl, questions: &[Question]) {
     }
 }
 
-/// Open the conditions of one saved search, and give back the new list if any
-/// of it changed.
+/// The label before the conditions window's every-or-any choice.
 ///
-/// The second door D-2-01 describes. The search box keeps writing its three
-/// questions; this writes any of the eleven fields the filter engine answers,
-/// with any of the eleven ways it can match. Both land in the same stored
-/// search and both run through `Question::as_a_rule`, so there is one matcher
-/// and one storage underneath the two doors.
+/// M, because the window's other letters are the loop's own, a, e, d and c,
+/// and its list carries no visible label.
+const FIND_MESSAGES_THAT_MATCH: &str = "Find messages that &match:";
+
+/// A saved search's conditions window, built and not yet shown.
 ///
-/// `None` means nothing was changed, which is not the same as an empty list:
-/// the caller writes only when something came back, so opening this window and
-/// closing it again touches nothing at all.
+/// What [`show_rule_manager_dialog`] runs its loop over, and what a scan
+/// target or a test builds to read without the loop. The loop adds the
+/// buttons and the status line to `sizer` and sets it on the dialog.
+pub struct ConditionsWindow {
+    pub dialog: Dialog,
+    pub sizer: BoxSizer,
+    pub list: ListCtrl,
+    pub status: StaticText,
+    /// "Find messages that match": every condition or any condition.
+    pub join: Choice,
+}
+
+/// Build a saved search's conditions window over its questions and its
+/// answer to every or any.
 ///
-/// On [`run_manager_loop`], which is the only shape here where the number of
-/// rows and the position in the set reach both accessibility channels from
-/// Windows' own provider for a native list. A hand-rolled stack of rows would
-/// have to say the count with `set_accessible_name`, which writes to MSAA
-/// only, and its tab order would change as conditions came and went.
-///
-/// Two dialogs deep at most: this window, and the condition editor it opens.
-/// The same depth the filter manager already reaches.
-pub fn show_rule_manager_dialog(
-    parent: &Frame,
+/// The choice sits under the list, before the buttons, so its place on
+/// screen and its place in the tab order agree: the list is built first by
+/// [`make_shell`], and the window opens on it as it always has, which is
+/// also where focus comes back after each Add and Edit.
+pub fn build_conditions_window(
+    parent: &dyn WxWidget,
     search_named: &str,
     questions: &[Question],
-    a11y: &Arc<Accessibility>,
-) -> Option<Vec<Question>> {
-    // Read once and reused for this shell and every condition dialog it opens,
-    // rather than a second, independent disk read per dialog.
-    let palette = theme::current_from_stored_config();
+    join: Join,
+    palette: Option<theme::Palette>,
+) -> ConditionsWindow {
     let (dialog, sizer, list, status) = make_shell(
         parent,
         &format!("Conditions for {search_named}"),
@@ -3778,14 +3778,123 @@ pub fn show_rule_manager_dialog(
     list.insert_column(1, "How", ListColumnFormat::Left, 190);
     list.insert_column(2, "What", ListColumnFormat::Left, 220);
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    populate_questions(&list, questions);
+
+    let join_label = StaticText::builder(&dialog)
+        .with_label(FIND_MESSAGES_THAT_MATCH)
+        .build();
+    let join_choice = Choice::builder(&dialog)
+        .with_choices(
+            Join::CHOICES
+                .iter()
+                .map(|answer| answer.in_the_window().to_string())
+                .collect(),
+        )
+        .build();
+    // The label is a separate control, which wxWidgets never associates with
+    // the choice, so without this it announces as just "combo box".
+    set_accessible_name(&join_choice, &name_from_label(FIND_MESSAGES_THAT_MATCH));
+    if let Some(place) = Join::CHOICES.iter().position(|answer| *answer == join) {
+        join_choice.set_selection(place as u32);
+    }
+    let join_row = BoxSizer::builder(Orientation::Horizontal).build();
+    join_row.add(
+        &join_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    join_row.add(&join_choice, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&join_row, 0, SizerFlag::Left | SizerFlag::Right, 4);
+
+    ConditionsWindow {
+        dialog,
+        sizer,
+        list,
+        status,
+        join: join_choice,
+    }
+}
+
+/// What a conditions window gives back once its loop ends: its answer to every
+/// or any and its questions when either changed, and `None` when neither did.
+///
+/// A changed answer on its own is a change, so a search made as "any" can
+/// become "every" with no condition touched (RESEARCH-4 question 3). The loop
+/// is modal, so this is the part of the window's ending a test can ask.
+pub fn what_the_conditions_window_gives_back(
+    rows_changed: bool,
+    opened_on: Join,
+    answered: Join,
+    questions: Vec<Question>,
+) -> Option<EditedConditions> {
+    (rows_changed || answered != opened_on).then_some(EditedConditions {
+        join: answered,
+        questions,
+    })
+}
+
+/// The answer a conditions window's choice holds, or `was` when it holds
+/// none.
+pub fn the_join_chosen(choice: &Choice, was: Join) -> Join {
+    choice
+        .get_selection()
+        .and_then(|place| Join::CHOICES.get(place as usize).copied())
+        .unwrap_or(was)
+}
+
+/// Open the conditions of one saved search, and give back its answer to every
+/// or any and its questions if either changed.
+///
+/// The second door D-2-01 describes. The search box keeps writing its three
+/// questions; this writes any of the eleven fields the filter engine answers,
+/// with any of the eleven ways it can match. Both land in the same stored
+/// search and both run through `Question::as_a_rule`, so there is one matcher
+/// and one storage underneath the two doors.
+///
+/// `None` means nothing was changed, which is not the same as an empty list:
+/// the caller writes only when something came back, so opening this window and
+/// closing it again touches nothing at all. A changed answer to every or any
+/// is a change, so a search made as "any" can become "every" (RESEARCH-4
+/// question 3).
+///
+/// The answer is followed as it changes rather than read at the end, because
+/// the loop takes the dialog down before it returns.
+///
+/// On [`run_manager_loop`], which is the only shape here where the number of
+/// rows and the position in the set reach both accessibility channels from
+/// Windows' own provider for a native list. A hand-rolled stack of rows would
+/// have to say the count with `set_accessible_name`, which writes to MSAA
+/// only, and its tab order would change as conditions came and went.
+///
+/// Two dialogs deep at most: this window, and the condition editor it opens.
+/// The same depth the filter manager already reaches.
+pub fn show_rule_manager_dialog(
+    parent: &Frame,
+    search_named: &str,
+    questions: &[Question],
+    join: Join,
+    a11y: &Arc<Accessibility>,
+) -> Option<EditedConditions> {
+    // Read once and reused for this shell and every condition dialog it opens,
+    // rather than a second, independent disk read per dialog.
+    let palette = theme::current_from_stored_config();
+    let window = build_conditions_window(parent, search_named, questions, join, palette);
+
+    let answered = Rc::new(Cell::new(join));
+    window.join.on_selection_changed({
+        let answered = answered.clone();
+        let choice = window.join;
+        move |_| answered.set(the_join_chosen(&choice, join))
+    });
 
     let mut working = questions.to_vec();
-    let changed = run_manager_loop(
+    let rows_changed = run_manager_loop(
         ManagerChrome {
-            dialog: &dialog,
-            main_sizer: &sizer,
-            list: &list,
-            status_text: &status,
+            dialog: &window.dialog,
+            main_sizer: &window.sizer,
+            list: &window.list,
+            status_text: &window.status,
             a11y: a11y.clone(),
         },
         manager_words::CONDITION,
@@ -3796,7 +3905,7 @@ pub fn show_rule_manager_dialog(
         what_a_condition_list_still_needs,
     );
 
-    changed.then_some(working)
+    what_the_conditions_window_gives_back(rows_changed, join, answered.get(), working)
 }
 
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {

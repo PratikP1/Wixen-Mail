@@ -240,12 +240,21 @@ pub enum ScanTarget {
     /// for an account's other addresses (#59, 13-33). Opened on the
     /// scan-only account with two made-up addresses. Nothing is saved.
     Identities,
+    /// New Saved Search, the first window of a saved search made from
+    /// nothing (#58, 13-39): a name, and where it looks, over the scan-only
+    /// account's places. Nothing is saved.
+    NewSavedSearch,
+    /// The conditions window of a saved search, with its every-or-any
+    /// choice, which Edit Conditions and New Saved Search both open (#58,
+    /// 13-39). Opened on a made-up search of two conditions joined by any.
+    /// Nothing is saved.
+    SearchConditions,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 44] = [
+    pub const ALL: [ScanTarget; 46] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -290,6 +299,8 @@ impl ScanTarget {
         ScanTarget::UnlockAPgpKey,
         ScanTarget::DirectorySignIn,
         ScanTarget::Identities,
+        ScanTarget::NewSavedSearch,
+        ScanTarget::SearchConditions,
     ];
 
     /// The name used on the command line.
@@ -339,6 +350,8 @@ impl ScanTarget {
             Self::UnlockAPgpKey => "unlock-a-pgp-key",
             Self::DirectorySignIn => "directory-sign-in",
             Self::Identities => "identities",
+            Self::NewSavedSearch => "new-saved-search",
+            Self::SearchConditions => "search-conditions",
         }
     }
 
@@ -474,6 +487,9 @@ mod tests {
         //
         // Other Addresses to Send From arrived on 2026-09-29 (#59), with the
         // manager.
+        //
+        // New Saved Search and the conditions window arrived on 2026-09-30
+        // (#58), with a saved search made from nothing.
         for name in [
             "columns",
             "which-copy",
@@ -506,6 +522,8 @@ mod tests {
             "page-window",
             "directory-sign-in",
             "identities",
+            "new-saved-search",
+            "search-conditions",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));

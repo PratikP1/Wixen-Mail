@@ -161,6 +161,20 @@ impl Join {
             Join::Any => "any",
         }
     }
+
+    /// Both answers, in the order the conditions window offers them: every
+    /// first, the narrower answer and the one a search made from nothing
+    /// starts on.
+    pub const CHOICES: [Join; 2] = [Join::All, Join::Any];
+
+    /// What the conditions window's choice says for this answer, after "Find
+    /// messages that match".
+    pub fn in_the_window(self) -> &'static str {
+        match self {
+            Join::All => "every condition",
+            Join::Any => "any condition",
+        }
+    }
 }
 
 /// What every saved search's row in the folder tree starts with.
@@ -953,6 +967,19 @@ pub fn created(name: &str) -> String {
     format!("{name} saved. It is in the folder tree under {THE_HEADING}.")
 }
 
+/// What refuses a saved search that asks nothing about a message.
+///
+/// A search that asks nothing takes the whole mailbox when its questions are
+/// joined with Any and nothing at all when they are joined with All, and
+/// neither is a search anybody wrote. The conditions window says this when
+/// its Close is pressed over an empty list, the write-back after Edit
+/// Conditions says it for a list left empty by the close box, and
+/// [`a_search_from_nothing`] says it before a new one reaches the store. One
+/// wording, here, because somebody meeting two hears two reasons for one
+/// thing.
+pub const ASKS_NOTHING: &str = "A saved search has to ask at least one thing about a message. Add a \
+                                condition before closing this window.";
+
 /// The most a saved search's name may run to.
 ///
 /// A hundred characters, counted in characters so a name written in another
@@ -1249,6 +1276,62 @@ impl SavedSearch {
             Join::Any => answered.any(|yes| yes),
         }
     }
+}
+
+/// What the conditions window gives back when anything in it changed: the
+/// answer to every or any, and the questions.
+///
+/// The two together, because the window asks both and a caller that took
+/// only the questions would keep a join the window had just changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditedConditions {
+    pub join: Join,
+    pub questions: Vec<Question>,
+}
+
+/// A saved search made from nothing: a name and a place from the New Saved
+/// Search window, and the conditions window's answer.
+///
+/// Refused in [`ASKS_NOTHING`]'s words when it asks nothing, before the store
+/// is reached, so the store's own refusal is a net under a caller that forgot
+/// rather than the sentence somebody hears.
+pub fn a_search_from_nothing(
+    id: String,
+    name: String,
+    folder: Option<String>,
+    edited: EditedConditions,
+) -> Result<SavedSearch, &'static str> {
+    let EditedConditions { join, questions } = edited;
+    if questions.is_empty() {
+        return Err(ASKS_NOTHING);
+    }
+    Ok(SavedSearch {
+        id,
+        name,
+        join,
+        questions,
+        folder,
+    })
+}
+
+/// The places a new saved search can look in: what the window's Look in
+/// choice says for each, and the folder it stores.
+///
+/// Everywhere in the account first, which stores no folder, then the
+/// account's folders by path in the order given, which is the tree's. Only
+/// the one account's, because a search runs inside the account it is saved
+/// under and a folder path is not unique across accounts.
+pub fn where_a_search_can_look(
+    account_name: &str,
+    folder_paths: &[String],
+) -> Vec<(String, Option<String>)> {
+    std::iter::once((format!("Everywhere in {account_name}"), None))
+        .chain(
+            folder_paths
+                .iter()
+                .map(|path| (path.clone(), Some(path.clone()))),
+        )
+        .collect()
 }
 
 #[cfg(test)]
@@ -2918,6 +3001,108 @@ mod tests {
             nothing_there(1, 0),
             "Alt+4 runs saved search 1, and this account has none yet. Save This Search on \
              the Edit menu makes one."
+        );
+    }
+
+    #[test]
+    fn test_a_search_from_nothing_keeps_its_name_join_folder_and_questions() {
+        // Every part comes from what was asked for, and the join is the
+        // window's answer rather than one assumed: a search made as "any"
+        // that came back "every" would find less than was asked for, in
+        // silence.
+        let questions = vec![
+            asking("from", "contains", "billing"),
+            asking("subject", "contains", "overdue"),
+        ];
+
+        let made = a_search_from_nothing(
+            "search-9".to_string(),
+            "Bills".to_string(),
+            Some("INBOX/Accounts".to_string()),
+            EditedConditions {
+                join: Join::Any,
+                questions: questions.clone(),
+            },
+        );
+
+        assert_eq!(
+            made,
+            Ok(SavedSearch {
+                id: "search-9".to_string(),
+                name: "Bills".to_string(),
+                join: Join::Any,
+                questions,
+                folder: Some("INBOX/Accounts".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_search_from_nothing_that_asks_nothing_is_refused_in_the_one_wording() {
+        // A search that asks nothing takes the whole mailbox joined with Any
+        // and nothing at all joined with All. The sentence is the one the
+        // conditions window has always said, moved here so the window, the
+        // write-back and this refusal read one wording.
+        for join in Join::CHOICES {
+            let made = a_search_from_nothing(
+                "search-9".to_string(),
+                "Bills".to_string(),
+                None,
+                EditedConditions {
+                    join,
+                    questions: Vec::new(),
+                },
+            );
+
+            assert_eq!(made, Err(ASKS_NOTHING), "joined with {join:?}");
+        }
+        assert_eq!(
+            ASKS_NOTHING,
+            "A saved search has to ask at least one thing about a message. Add a condition \
+             before closing this window."
+        );
+    }
+
+    #[test]
+    fn test_the_window_offers_every_condition_before_any_condition() {
+        // Every first, because it is the narrower answer and the one a search
+        // made from nothing starts on, so the first thing heard is the
+        // default rather than the alternative.
+        let offered: Vec<&str> = Join::CHOICES
+            .iter()
+            .map(|join| join.in_the_window())
+            .collect();
+
+        assert_eq!(offered, ["every condition", "any condition"]);
+        assert_eq!(Join::CHOICES, [Join::All, Join::Any]);
+    }
+
+    #[test]
+    fn test_a_search_can_look_everywhere_in_the_account_or_in_one_of_its_folders() {
+        // Everywhere first, naming the account, since that is the widest
+        // place and the one a search that names no folder means. Then the
+        // account's own folders by the path a search stores, in the order
+        // the tree shows them, and no other account's.
+        let places = where_a_search_can_look(
+            "Work",
+            &[
+                "INBOX".to_string(),
+                "INBOX/Accounts".to_string(),
+                "Sent".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            places,
+            [
+                ("Everywhere in Work".to_string(), None),
+                ("INBOX".to_string(), Some("INBOX".to_string())),
+                (
+                    "INBOX/Accounts".to_string(),
+                    Some("INBOX/Accounts".to_string())
+                ),
+                ("Sent".to_string(), Some("Sent".to_string())),
+            ]
         );
     }
 }

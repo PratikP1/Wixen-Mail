@@ -191,6 +191,12 @@ jobs:
         # Addresses to Send From, the manager the Account Manager opens for an
         # account's other addresses. It opens on two made-up addresses and
         # saves nothing.
+        #
+        # The new-saved-search and search-conditions targets, added 2026-09-30
+        # (#58, 13-39), are the two windows a saved search made from nothing
+        # passes through: New Saved Search, over the scan-only account's
+        # places, and the conditions window with its every-or-any choice, over
+        # a made-up search of two conditions. Neither saves anything.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
@@ -198,7 +204,8 @@ jobs:
           'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
           'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
           'account-details', 'phone-number', 'page', 'page-window', 'pgp-keys', 'unlock-a-pgp-key',
-          'directory-sign-in', 'identities'
+          'directory-sign-in', 'identities',
+          'new-saved-search', 'search-conditions'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

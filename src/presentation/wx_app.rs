@@ -311,6 +311,7 @@ menu_ids!(
     ID_RENAME_SEARCH,
     ID_DELETE_SEARCH,
     ID_EDIT_SEARCH_CONDITIONS,
+    ID_NEW_SAVED_SEARCH,
     ID_BLOCKED_SENDERS,
     // The row under the cursor read column by column with its headings, on
     // request (#26): the tester's chord, Ctrl, Shift and the semicolon.
@@ -5603,6 +5604,9 @@ impl WxMailApp {
                         _ if id == ID_EDIT_SEARCH_CONDITIONS => {
                             edit_the_chosen_searchs_conditions(app, &message_cache, &frame, &a11y)
                         }
+                        _ if id == ID_NEW_SAVED_SEARCH => {
+                            make_a_saved_search_from_nothing(app, &message_cache, &frame, &a11y)
+                        }
                         _ if id == ID_RENAME_SEARCH => {
                             rename_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
@@ -8437,13 +8441,11 @@ fn save_this_search(
         )
     };
     let Some(ran) = ran.filter(|ran| !ran.typed.trim().is_empty()) else {
-        // Refused out loud rather than on the status bar alone. From the
-        // keyboard, a command that writes into a bar at the bottom of the
-        // window is indistinguishable from one that was never wired up.
-        return refuse_a_command(
-            tx,
-            "Search your mail first, and then this will keep that search.",
-        );
+        // With nothing searched there is nothing to keep, so the search is
+        // made from nothing instead: a name, a place and its conditions
+        // (#58 point 3). This used to refuse, and a search could only be
+        // saved once one had been run.
+        return make_a_saved_search_from_nothing(app, cache, frame, a11y);
     };
     let Some(cache) = cache.as_ref() else {
         return refuse_a_command(tx, "There is no mail on this computer to search.");
@@ -8507,6 +8509,99 @@ fn save_this_search(
     let _ = a11y.announce(&said, Priority::High);
 }
 
+/// Make a saved search from nothing: New Saved Search asks its name and where
+/// it looks, then the conditions window asks every or any and its conditions
+/// (#58 point 3, GAP-09).
+///
+/// Reached from New Saved Search on the Saved Searches submenu, and from Save
+/// This Search when nothing was searched. Saved under the account being worked
+/// in, as Save This Search saves one, and it can only look in that account's
+/// folders, since a folder path is not unique across accounts. Nothing is
+/// written until the conditions window closes with at least one condition, so
+/// cancelling either window leaves nothing behind.
+fn make_a_saved_search_from_nothing(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::saved_searches::{
+        Join, a_search_from_nothing, created, where_a_search_can_look,
+    };
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "There is no mail on this computer to search.");
+    };
+    // The account, its name and the names already taken, read together under
+    // one lock, for the reason Save This Search gives.
+    let (saving_under, already_used) = {
+        let held = lock_state(state);
+        let saving_under = held.active_account_id.as_ref().and_then(|under| {
+            held.accounts
+                .iter()
+                .find(|account| &account.id == under)
+                .map(|account| (account.id.clone(), account.name.clone()))
+        });
+        let already_used = saving_under
+            .as_ref()
+            .map(|(under, _)| names_already_used(&held, under))
+            .unwrap_or_default();
+        (saving_under, already_used)
+    };
+    let Some((account_id, account_name)) = saving_under else {
+        return refuse_a_command(tx, "Choose an account first.");
+    };
+    let folder_paths: Vec<String> = match folders_in_the_tree(cache, &account_id) {
+        Ok(folders) => folders.into_iter().map(|folder| folder.path).collect(),
+        Err(e) => {
+            tracing::error!("The folders a new saved search could look in were not read: {e}");
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The folders of this account could not be read, so no search was made: {e}."
+            )));
+            return;
+        }
+    };
+
+    let places = where_a_search_can_look(&account_name, &folder_paths);
+    let Some((name, folder)) =
+        crate::presentation::wx_new_saved_search::ask(frame, a11y, &places, &already_used)
+    else {
+        return;
+    };
+    let Some(edited) = crate::presentation::wx_managers::show_rule_manager_dialog(
+        frame,
+        &name,
+        &[],
+        Join::All,
+        a11y,
+    ) else {
+        return;
+    };
+    let search = match a_search_from_nothing(
+        uuid::Uuid::new_v4().to_string(),
+        name.clone(),
+        folder,
+        edited,
+    ) {
+        Ok(search) => search,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+    if let Err(e) = cache.create_saved_search(&account_id, &search) {
+        tracing::error!("A saved search could not be kept: {e}");
+        let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+            "That search could not be saved: {e}."
+        )));
+        return;
+    }
+
+    read_the_tree_back(&Some(cache.clone()), state, tx);
+    let said = created(&name);
+    send_status(tx, rt, &said);
+    let _ = a11y.announce(&said, Priority::High);
+}
+
 /// The saved search whose conditions can be shown, or the sentence saying why
 /// they cannot.
 ///
@@ -8548,22 +8643,25 @@ enum WhatToWriteBack {
     ThisSearch(Box<crate::application::saved_searches::SavedSearch>),
 }
 
-/// The saved search to write back, given what the condition editor gave back.
+/// The saved search to write back, given what the conditions window gave back.
 ///
 /// A list somebody emptied and then left by a route that does not pass the
 /// Close button is refused here. The window refuses it on the way out and the
-/// store refuses it again, and the sentence is the window's own, so there is
-/// one wording rather than three.
+/// store refuses it again, and the sentence is
+/// [`crate::application::saved_searches::ASKS_NOTHING`], so there is one
+/// wording rather than three.
 ///
-/// Everything but the questions is carried over from the search as it was
-/// stored. A window that was never asked about the name, the join, the folder
-/// or the identifier must not be able to change any of them, and a whole
-/// `SavedSearch` built from scratch here is how one of them would go missing.
+/// The join and the questions come from the window, which asks both, and are
+/// written in the one replace. The name, the folder and the identifier are
+/// carried over from the search as it was stored: the window was never asked
+/// about them, and a whole `SavedSearch` built from scratch here is how one of
+/// them would go missing.
 fn the_search_to_write_back(
     search: &crate::application::saved_searches::SavedSearch,
-    edited: Option<Vec<crate::application::saved_searches::Question>>,
+    edited: Option<crate::application::saved_searches::EditedConditions>,
 ) -> WhatToWriteBack {
-    let Some(questions) = edited else {
+    let Some(crate::application::saved_searches::EditedConditions { join, questions }) = edited
+    else {
         return WhatToWriteBack::NothingChanged;
     };
     if let Some(needed) =
@@ -8572,6 +8670,7 @@ fn the_search_to_write_back(
         return WhatToWriteBack::Refused(needed);
     }
     WhatToWriteBack::ThisSearch(Box::new(crate::application::saved_searches::SavedSearch {
+        join,
         questions,
         ..search.clone()
     }))
@@ -8609,10 +8708,13 @@ fn edit_the_chosen_searchs_conditions(
         ConditionsToEdit::Refused(why) => return refuse_a_command(tx, why),
     };
 
+    // Opened on the search's own answer to every or any, which the window can
+    // change along with the questions.
     let edited = crate::presentation::wx_managers::show_rule_manager_dialog(
         frame,
         &search.name,
         &search.questions,
+        search.join,
         a11y,
     );
     let asking_now = match the_search_to_write_back(&search, edited) {
@@ -10943,11 +11045,11 @@ fn saved_search_position_of(id: Id) -> Option<usize> {
 /// the order the folder tree shows them.
 ///
 /// One item per search as `saved_searches::what_the_menu_says` words it,
-/// Alt+4 to Alt+9 on the first six, then Edit Conditions, Rename and Delete,
-/// which act on the search the tree's cursor is on. Everything on the menu
-/// goes first, so a search renamed or moved, or one that went, leaves
-/// nothing behind. The builder calls this with no searches, so the three
-/// commands are written here and nowhere else.
+/// Alt+4 to Alt+9 on the first six, then New Saved Search, and Edit
+/// Conditions, Rename and Delete, which act on the search the tree's cursor
+/// is on. Everything on the menu goes first, so a search renamed or moved, or
+/// one that went, leaves nothing behind. The builder calls this with no
+/// searches, so the four commands are written here and nowhere else.
 ///
 /// The parameter keeps the builder's name, `saved_search_menu`, because the
 /// check that no two items on a menu claim one letter finds a menu's items
@@ -10978,6 +11080,14 @@ pub fn rebuild_the_saved_search_menu(saved_search_menu: &Menu, names: &[String])
     if !searches.is_empty() {
         saved_search_menu.append_separator();
     }
+    // First, on N: a search made from nothing, the one command here that
+    // needs no search chosen (#58).
+    saved_search_menu.append(
+        ID_NEW_SAVED_SEARCH,
+        "&New Saved Search...",
+        "Make a saved search by giving it a name, a place to look and its conditions",
+        wxdragon::menus::ItemKind::Normal,
+    );
     // Delete here can never reach mail: it removes the question, and the
     // messages a search listed stay where they really live.
     saved_search_menu.append(
@@ -19104,6 +19214,37 @@ fn open_for_scanning(
                 ],
                 a11y,
                 theme::current_from_stored_config(),
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::NewSavedSearch => {
+            // New Saved Search over the scan-only account's places, built and
+            // shown without `ask`, so no name is ever checked and nothing
+            // reaches the store (#58, 13-39).
+            let fixture = scan_only_account();
+            let window = crate::presentation::wx_new_saved_search::build_new_saved_search_dialog(
+                frame,
+                &crate::application::saved_searches::where_a_search_can_look(
+                    &fixture.name,
+                    &scan_fixtures::folders_a_search_can_look_in(),
+                ),
+                theme::current_from_stored_config(),
+            );
+            window.name.set_focus();
+            window.dialog.show_modal();
+            window.dialog.destroy();
+            OnReturn::WindowClosed
+        }
+        ScanTarget::SearchConditions => {
+            // The conditions window with its buttons, as Edit Conditions
+            // opens it, on two made-up conditions joined by any. What it
+            // hands back is thrown away, so nothing reaches the store.
+            let _ = crate::presentation::wx_managers::show_rule_manager_dialog(
+                frame,
+                "Scan target",
+                &scan_fixtures::search_conditions(),
+                crate::application::saved_searches::Join::Any,
+                a11y,
             );
             OnReturn::WindowClosed
         }
@@ -37660,8 +37801,17 @@ mod editing_the_conditions_of_a_saved_search {
         the_search_to_write_back,
     };
     use crate::application::saved_searches::{
-        Join, Question, SAVED_BY_ANOTHER_VERSION, SavedSearch,
+        ASKS_NOTHING, EditedConditions, Join, Question, SAVED_BY_ANOTHER_VERSION, SavedSearch,
     };
+
+    /// What the conditions window gives back for these questions, answered
+    /// with the join the stored search already has unless a case changes it.
+    fn edited(questions: Vec<Question>) -> EditedConditions {
+        EditedConditions {
+            join: Join::All,
+            questions,
+        }
+    }
 
     fn asking(field: &str, match_type: &str, pattern: &str) -> Question {
         Question {
@@ -37700,27 +37850,32 @@ mod editing_the_conditions_of_a_saved_search {
 
     #[test]
     fn test_a_changed_condition_list_is_written_back_under_the_same_search() {
-        // Everything but the questions comes from the search as it was stored.
-        // The window was never asked about the name, the join, the folder or
-        // the identifier, so none of them may move; an identifier that moved
-        // would leave the tree row, and anything holding its path, pointing at
-        // a search that is not there.
+        // The questions and the join come from the window, which asks both,
+        // so a search made as "every" can become "any" (RESEARCH-4 question
+        // 3). The name, the folder and the identifier come from the search as
+        // it was stored: the window was never asked about them, and an
+        // identifier that moved would leave the tree row, and anything holding
+        // its path, pointing at a search that is not there.
         let stored = a_stored_search();
         let now = vec![
             asking("body_plain", "contains", "overdue"),
             asking("from", "contains", "billing"),
         ];
 
-        let WhatToWriteBack::ThisSearch(writing) =
-            the_search_to_write_back(&stored, Some(now.clone()))
-        else {
+        let WhatToWriteBack::ThisSearch(writing) = the_search_to_write_back(
+            &stored,
+            Some(EditedConditions {
+                join: Join::Any,
+                questions: now.clone(),
+            }),
+        ) else {
             panic!("a changed condition list was not written back");
         };
 
         assert_eq!(writing.questions, now);
+        assert_eq!(writing.join, Join::Any, "the window's answer was not kept");
         assert_eq!(writing.id, stored.id);
         assert_eq!(writing.name, stored.name);
-        assert_eq!(writing.join, stored.join);
         assert_eq!(writing.folder, stored.folder);
     }
 
@@ -37730,7 +37885,7 @@ mod editing_the_conditions_of_a_saved_search {
         // go through the Close button. A search that asks nothing takes the
         // whole mailbox when its questions are joined with Any and nothing at
         // all when they are joined with All.
-        let decided = the_search_to_write_back(&a_stored_search(), Some(Vec::new()));
+        let decided = the_search_to_write_back(&a_stored_search(), Some(edited(Vec::new())));
 
         let WhatToWriteBack::Refused(why) = decided else {
             panic!("a search asking nothing was written: {decided:?}");
@@ -37740,16 +37895,16 @@ mod editing_the_conditions_of_a_saved_search {
 
     #[test]
     fn test_one_wording_refuses_an_empty_condition_list() {
-        // The window's own sentence, read here rather than written again. Two
-        // wordings for one refusal is two things to keep true, and somebody
-        // meeting one and then the other hears two different reasons for the
-        // same thing.
+        // The one sentence, read here rather than written again. Two wordings
+        // for one refusal is two things to keep true, and somebody meeting one
+        // and then the other hears two different reasons for the same thing.
         let WhatToWriteBack::Refused(why) =
-            the_search_to_write_back(&a_stored_search(), Some(Vec::new()))
+            the_search_to_write_back(&a_stored_search(), Some(edited(Vec::new())))
         else {
             panic!("a search asking nothing was written");
         };
 
+        assert_eq!(why, ASKS_NOTHING);
         assert_eq!(
             Some(why),
             crate::presentation::wx_managers::what_a_condition_list_still_needs(&[])
