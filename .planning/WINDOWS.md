@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 660
+open_count: 661
 waived_count: 0
 fixed_count: 81
-total_count: 741
-last_updated: 2026-09-30T23:00:00.000Z
+total_count: 742
+last_updated: 2026-09-30T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -756,6 +756,7 @@ last_updated: 2026-09-30T23:00:00.000Z
 | 739 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-38, the tester's ear: nobody has heard the Saved Searches submenu's items with their keys beside them ("Invoices, Alt+4"), heard the answer to a key past the last search ("Alt+7 runs saved search 4, and this account has 3."), or heard the cursor land on the row a key or an item ran and the search's result after it, with a screen reader | open |  | 2026-09-30T18:00:00.000Z |  |
 | 740 | 13 | unrun-verify | src/presentation/wx_new_saved_search.rs |  | 13-39, the tester's ear: nobody has gone through New Saved Search and then the conditions window in order with a screen reader (the name box and Look in heard by their names, Look in offering "Everywhere in" the account and then its folders, the conditions window opening empty with "Find messages that match" after the list), heard the refusal of a search with no conditions ("A saved search has to ask at least one thing about a message. Add a condition before closing this window."), heard the created sentence ("Invoices saved. It is in the folder tree under Saved Searches."), or changed an existing search from any condition to every condition with Edit Conditions | open |  | 2026-09-30T23:00:00.000Z |  |
 | 741 | 13 | todo | src/application/saved_searches.rs | 904 | 13-39, decision 2 of 2026-09-24: a saved search's list still shows the newest 500 messages it finds (MOST_RESULTS_SHOWN, read at src/presentation/wx_app.rs:8257 and :8285); #24's closing did not lift it and this plan left it as it is. No issue was opened, since a public post is Pratik's to make; his to file if he wants the cap changed | open |  | 2026-09-30T23:00:00.000Z |  |
+| 742 | 13 | stub | src/application/quick_steps.rs |  | 13-40: Quick Steps are stored and named per account (application::quick_steps, data::message_cache::quick_steps) and nothing in the running program makes, shows or runs one. 13-41 gives them a manager on the Action menu, and 13-42 puts the steps on the Action menu with Ctrl+Shift+7 to Ctrl+Shift+9, runs them over the selection through 13-24.1's runner, and closes this entry | open |  | 2026-09-30T23:30:00.000Z |  |
 
 ````json
 [
@@ -9649,6 +9650,18 @@ last_updated: 2026-09-30T23:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 742,
+    "kind": "stub",
+    "phase": "13",
+    "file": "src/application/quick_steps.rs",
+    "line": null,
+    "description": "13-40: Quick Steps are stored and named per account (application::quick_steps, data::message_cache::quick_steps) and nothing in the running program makes, shows or runs one. 13-41 gives them a manager on the Action menu, and 13-42 puts the steps on the Action menu with Ctrl+Shift+7 to Ctrl+Shift+9, runs them over the selection through 13-24.1's runner, and closes this entry",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T23:30:00.000Z",
     "resolved_at": null
   }
 ]
