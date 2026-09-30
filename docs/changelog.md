@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A key for each saved search, and a menu that lists them (#58, GAP-09).** A saved
+  search could only be run by finding its row in the folder tree and pressing `Enter`, and
+  the Saved Searches submenu on the Action menu held only Edit Conditions, Rename and
+  Delete. Now `Alt+4` to `Alt+9` run the first six saved searches of the account you are
+  in, in the order the folder tree shows them, and the submenu lists that account's
+  searches in the same order with each key beside its search, then the three commands.
+  A key or an item puts the cursor on the search's row and runs it as `Enter` does,
+  switching to Mail first from another module; a search moved with `Alt+Shift+Up` takes
+  its key with it. A key with no search, pressed in the folder tree or the message list,
+  says which search it would run and how many there are, "Alt+7 runs saved search 4, and
+  this account has 3." Save This Search keeps its place on the Edit menu and has no key of
+  its own: #58 asked for one, and the requirement asks for a key per search, which is what
+  this is. The version does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: nobody has heard the submenu's items with their keys, the answer to a
+  key past the last search, or the cursor landing on the row a key ran.
 - **Saved searches can be moved (#58 point 1, GAP-09).** Saved searches used to
   keep the order they were made in and could not be moved: `Alt+Shift+Up` and
   `Alt+Shift+Down` rearranged accounts and pinned folders only, and on a saved

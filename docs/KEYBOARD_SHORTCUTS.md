@@ -138,6 +138,27 @@ up or down among its own account's searches, and say where it now is, such as
 sent to any server. Read the warning about Alt+Shift under Folder Actions
 before you use them.
 
+The first six saved searches of the account you are in each have a key, in
+the order the folder tree shows them. The account you are in is the one whose
+branch the cursor was last in.
+
+| Saved search | Shortcut |
+|--------------|----------|
+| First | `Alt+4` |
+| Second | `Alt+5` |
+| Third | `Alt+6` |
+| Fourth | `Alt+7` |
+| Fifth | `Alt+8` |
+| Sixth | `Alt+9` |
+
+The key puts the cursor on the search's row and runs it, as `Enter` on the row
+does, and it switches to Mail first if you are elsewhere. Move a search with
+`Alt+Shift+Up` or `Alt+Shift+Down` and its key moves with it. A key with no
+search, such as `Alt+7` when the account has three, says so when pressed in
+the folder tree or the message list: "Alt+7 runs saved search 4, and this
+account has 3." The seventh search and after are on the Saved Searches
+submenu of the Action menu, which lists them all.
+
 In the calendar sidebar, each calendar shows a tick box: `[x]` when it is
 showing and `[ ]` when it is hidden. `Enter` on a calendar hides or shows it,
 and says which it did. Its events leave and rejoin the day list to match.
@@ -833,7 +854,7 @@ Seven submenus hold the rest:
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
-| Saved Searches | Rename or delete the saved search you are on in the folder tree. Deleting one never deletes mail |
+| Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
 | Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
 
 ### Account Management
