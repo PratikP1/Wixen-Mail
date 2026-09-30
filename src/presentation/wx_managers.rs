@@ -308,15 +308,45 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
     name_fn: impl Fn(&T) -> String + Copy + 'static,
     what_it_still_needs: impl Fn(&[T]) -> Option<&'static str> + 'static,
 ) -> bool {
-    let ManagerChrome {
-        dialog,
-        main_sizer,
-        list,
-        status_text,
-        a11y,
-    } = chrome;
+    let buttons = put_the_buttons_on::<T>(chrome.dialog, chrome.main_sizer, chrome.status_text);
+    run_the_manager_loop(
+        LaidOut { chrome, buttons },
+        kind,
+        working,
+        populate,
+        open_one,
+        name_fn,
+        what_it_still_needs,
+    )
+}
 
-    // Create and attach buttons
+/// The buttons along the foot of a manager window.
+///
+/// Put on by the window's builder where it has one, since 13-44, so a test
+/// can read a built window's buttons the way a screen reader meets them
+/// without running its loop, which only a person can end.
+pub struct ManagerButtons {
+    add: Button,
+    edit: Button,
+    delete: Button,
+    moves: Option<(Button, Button)>,
+    close: Button,
+}
+
+/// A manager window with its buttons on, ready for its loop.
+pub(crate) struct LaidOut<'a> {
+    pub(crate) chrome: ManagerChrome<'a>,
+    pub(crate) buttons: ManagerButtons,
+}
+
+/// Put Add, Edit and Delete, Move Up and Move Down where the rows are kept
+/// in an order somebody chooses, and Close along the foot of a manager
+/// window, its status line under them, and lay the window out.
+pub(crate) fn put_the_buttons_on<T: ManagedRow>(
+    dialog: &Dialog,
+    main_sizer: &BoxSizer,
+    status_text: &StaticText,
+) -> ManagerButtons {
     let add_btn = Button::builder(dialog)
         .with_label("&Add...")
         .with_id(ID_MGR_ADD)
@@ -363,6 +393,44 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
     main_sizer.add_sizer(&btn_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
     main_sizer.add(status_text, 0, SizerFlag::Expand | SizerFlag::All, 4);
     dialog.set_sizer(*main_sizer, true);
+
+    ManagerButtons {
+        add: add_btn,
+        edit: edit_btn,
+        delete: del_btn,
+        moves: move_btns,
+        close: close_btn,
+    }
+}
+
+/// [`run_manager_loop`] over a window whose buttons are already on it.
+pub(crate) fn run_the_manager_loop<T: ManagedRow>(
+    laid: LaidOut<'_>,
+    kind: &str,
+    working: &mut Vec<T>,
+    populate: impl Fn(&ListCtrl, &[T]) + Copy + 'static,
+    open_one: impl Fn(&Dialog, Option<&T>, &[T]) -> Option<T>,
+    name_fn: impl Fn(&T) -> String + Copy + 'static,
+    what_it_still_needs: impl Fn(&[T]) -> Option<&'static str> + 'static,
+) -> bool {
+    let LaidOut {
+        chrome:
+            ManagerChrome {
+                dialog,
+                list,
+                status_text,
+                a11y,
+                ..
+            },
+        buttons:
+            ManagerButtons {
+                add: add_btn,
+                edit: edit_btn,
+                delete: del_btn,
+                moves: move_btns,
+                close: close_btn,
+            },
+    } = laid;
 
     // The working rows and the "did anything change" flag, shared between
     // this loop and Delete's own button click below. Delete mutates both
@@ -3075,23 +3143,25 @@ pub fn show_filter_manager_dialog(
     // `theme::current_from_stored_config`'s own doc comment for why that
     // matters).
     let palette = theme::current_from_stored_config();
-    let (dialog, sizer, list, status) =
-        make_shell(parent, "Filter Manager", "Filters", 650, 450, palette);
-
-    list.insert_column(0, "Name", ListColumnFormat::Left, 130);
-    list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
-    list.insert_column(2, "Action", ListColumnFormat::Left, 150);
-    list.insert_column(3, "Status", ListColumnFormat::Centre, 70);
-    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    let FilterManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+        buttons,
+    } = build_filter_manager(parent, rules, palette);
 
     let mut working = rules.to_vec();
-    let changed = run_manager_loop(
-        ManagerChrome {
-            dialog: &dialog,
-            main_sizer: &sizer,
-            list: &list,
-            status_text: &status,
-            a11y: a11y.clone(),
+    let changed = run_the_manager_loop(
+        LaidOut {
+            chrome: ManagerChrome {
+                dialog: &dialog,
+                main_sizer: &sizer,
+                list: &list,
+                status_text: &status,
+                a11y: a11y.clone(),
+            },
+            buttons,
         },
         manager_words::FILTER,
         &mut working,
@@ -3105,6 +3175,43 @@ pub fn show_filter_manager_dialog(
         FilterManagerAction::Updated(working)
     } else {
         FilterManagerAction::None
+    }
+}
+
+/// The Filter Manager's window, built and filled without being shown.
+pub struct FilterManagerWidgets {
+    pub dialog: Dialog,
+    pub sizer: BoxSizer,
+    pub list: ListCtrl,
+    pub status: StaticText,
+    pub buttons: ManagerButtons,
+}
+
+/// Build the Filter Manager over an account's rules, fill its list and put
+/// its buttons on. Split out of [`show_filter_manager_dialog`] in 13-44, as
+/// [`build_tag_manager`] was, so a test can read the built window.
+pub fn build_filter_manager(
+    parent: &Frame,
+    rules: &[FilterRule],
+    palette: Option<theme::Palette>,
+) -> FilterManagerWidgets {
+    let (dialog, sizer, list, status) =
+        make_shell(parent, "Filter Manager", "Filters", 650, 450, palette);
+
+    list.insert_column(0, "Name", ListColumnFormat::Left, 130);
+    list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
+    list.insert_column(2, "Action", ListColumnFormat::Left, 150);
+    list.insert_column(3, "Status", ListColumnFormat::Centre, 70);
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    populate_filters(&list, rules);
+    let buttons = put_the_buttons_on::<FilterRule>(&dialog, &sizer, &status);
+
+    FilterManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+        buttons,
     }
 }
 
@@ -4317,16 +4424,20 @@ pub fn show_tag_manager_dialog(
         sizer,
         list,
         status,
+        buttons,
     } = build_tag_manager(parent, tags, palette);
 
     let mut working = tags.to_vec();
-    let changed = run_manager_loop(
-        ManagerChrome {
-            dialog: &dialog,
-            main_sizer: &sizer,
-            list: &list,
-            status_text: &status,
-            a11y: a11y.clone(),
+    let changed = run_the_manager_loop(
+        LaidOut {
+            chrome: ManagerChrome {
+                dialog: &dialog,
+                main_sizer: &sizer,
+                list: &list,
+                status_text: &status,
+                a11y: a11y.clone(),
+            },
+            buttons,
         },
         manager_words::LABEL,
         &mut working,
@@ -4349,11 +4460,13 @@ pub struct TagManagerWidgets {
     pub sizer: BoxSizer,
     pub list: ListCtrl,
     pub status: StaticText,
+    pub buttons: ManagerButtons,
 }
 
-/// Build the Label Manager over an account's labels, in their order, and
-/// fill its list. Split out of [`show_tag_manager_dialog`] so a test can read
-/// the rows a live list holds.
+/// Build the Label Manager over an account's labels, in their order, fill
+/// its list and put its buttons on. Split out of [`show_tag_manager_dialog`]
+/// so a test can read the rows a live list holds, and since 13-44 the
+/// buttons it offers.
 pub fn build_tag_manager(
     parent: &Frame,
     tags: &[TagEntry],
@@ -4367,12 +4480,14 @@ pub fn build_tag_manager(
     list.insert_column(2, "Color", ListColumnFormat::Left, 100);
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
     populate_tags(&list, tags);
+    let buttons = put_the_buttons_on::<TagEntry>(&dialog, &sizer, &status);
 
     TagManagerWidgets {
         dialog,
         sizer,
         list,
         status,
+        buttons,
     }
 }
 
@@ -6115,8 +6230,9 @@ mod tests {
         // against real widgets; this proves each is actually wired to the
         // button that used to `end_modal` instead of calling it.
         let windows = the_manager_windows();
+        // The loop's own half since 13-44, where Delete's click is bound.
         for (function, extracted_fn) in [
-            ("fn run_manager_loop", "delete_selected("),
+            ("fn run_the_manager_loop", "delete_selected("),
             (
                 "fn build_contact_manager_dialog",
                 "delete_selected_contact(",
@@ -6130,7 +6246,7 @@ mod tests {
         // Step 4 of the fix: once end_modal is never called for Delete,
         // show_modal() can never return with its own ID, so the arm that
         // used to handle it is dead code, not defensive code worth keeping.
-        for function in ["fn run_manager_loop", "fn show_contact_manager_dialog"] {
+        for function in ["fn run_the_manager_loop", "fn show_contact_manager_dialog"] {
             let body = body_of(&windows, function);
             assert!(
                 !body.contains("r if r == ID_MGR_DELETE"),
@@ -6198,9 +6314,12 @@ mod tests {
         // real, unsabotaged wiring as sound.
         let windows = the_manager_windows();
         assert!(
-            appears_live(body_of(&windows, "fn run_manager_loop"), "delete_selected("),
-            "run_manager_loop no longer calls delete_selected live, so the check above is \
-             asleep on the real file"
+            appears_live(
+                body_of(&windows, "fn run_the_manager_loop"),
+                "delete_selected("
+            ),
+            "run_the_manager_loop no longer calls delete_selected live, so the check above \
+             is asleep on the real file"
         );
     }
 
