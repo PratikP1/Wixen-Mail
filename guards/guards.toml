@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 508 records have arrived since and have not been through it.
+# 510 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35206,4 +35206,45 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/saved_searches.rs", tests = 30 },
+]
+
+# The gesture's saved-search arm sent back to the refusal, so Alt+Shift+Up on
+# a saved search says to choose an account or a pinned folder and moves
+# nothing (#58). Written 2026-09-30 by 13-37, measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "the gesture on a saved search reaches the move"
+file = "src/presentation/wx_app.rs"
+suite = "a_saved_search_moves_with_the_gesture"
+before = '''        WhatMoves::SavedSearch { account, id } => {
+            move_the_chosen_search(app, cache, a11y, &account, &id, direction);
+        }'''
+after = '''        WhatMoves::SavedSearch { .. } => {
+            refuse_a_command(app.tx, crate::application::favourites::WHICH_ROW);
+        }'''
+red = [
+    "test_the_gesture_on_a_saved_search_reaches_the_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_saved_search_moves_with_the_gesture.rs", tests = 11 },
+]
+
+# A saved search's row answered with nothing again, so the gesture refuses on
+# it before the window is asked (#58). Written 2026-09-30 by 13-37, measured
+# through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a saved search row is one the gesture moves"
+file = "src/presentation/folder_tree.rs"
+before = '''        Some(WhichRow::SavedSearch { account, id }) => WhatMoves::SavedSearch {
+            account: account.clone(),
+            id: id.clone(),
+        },
+'''
+after = ''''''
+red = [
+    "presentation::folder_tree::tests::test_the_gesture_moves_an_account_on_an_account_row_and_a_pin_on_a_pinned_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/folder_tree.rs", tests = 97 },
 ]

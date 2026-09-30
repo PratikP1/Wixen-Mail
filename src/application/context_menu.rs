@@ -450,6 +450,8 @@ static SAVED_SEARCHES: &[Entry] = &[
     entry("Edit &conditions...", Action::EditSearchConditions),
     entry("&Run this search again", Action::RefreshFolder),
     entry("Re&name...", Action::RenameSavedSearch),
+    entry("Move this search &up", Action::MoveUp),
+    entry("Move this search do&wn", Action::MoveDown),
     entry("&Delete this search", Action::DeleteSavedSearch),
 ];
 

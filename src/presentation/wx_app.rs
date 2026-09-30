@@ -7332,20 +7332,21 @@ impl WxMailApp {
             // this program can suppress that, so it is written down in
             // docs/KEYBOARD_SHORTCUTS.md where somebody will look when their
             // layout changes, rather than papered over here.
-            // Named for what they do rather than for one of the two things
-            // they do. D-31 gives pinned folders the same gesture rather than a
-            // second chord, so the item that used to say Move Account Up now
-            // moves whichever of the two the cursor is on, and a label naming
-            // only the account would be wrong on every pinned row.
+            // Named for what they do rather than for one of the things they
+            // do. D-31 gives pinned folders the same gesture rather than a
+            // second chord, and #58 gives it saved searches, so the item that
+            // used to say Move Account Up now moves whichever the cursor is
+            // on, and a label naming only the account would be wrong on every
+            // pinned or saved-search row.
             .append_item(
                 ID_MOVE_UP,
                 "Move &Up\tAlt+Shift+Up",
-                "Move the chosen account or pinned folder one place up",
+                "Move the chosen account, pinned folder or saved search one place up",
             )
             .append_item(
                 ID_MOVE_DOWN,
                 "Move Do&wn\tAlt+Shift+Down",
-                "Move the chosen account or pinned folder one place down",
+                "Move the chosen account, pinned folder or saved search one place down",
             )
             // No chord. Both need a menu item regardless, by the rule above:
             // on Windows a shortcut with no menu item behind it is not a
@@ -10315,10 +10316,10 @@ const NOT_A_FOLDER: &str =
 /// Every account's place is written, not only the two that swapped. Leaving the
 /// rest unwritten would give a list half ordered by choice and half by arrival,
 /// which reorders itself the next time an account is added.
-/// Alt+Shift+Up and Alt+Shift+Down, sent to whichever of the two the cursor is
-/// on.
+/// Alt+Shift+Up and Alt+Shift+Down, sent to whichever of the three the cursor
+/// is on: an account, a pinned folder or, since #58, a saved search.
 ///
-/// D-31: one gesture for rearranging anything in this tree. Which of the two it
+/// D-31: one gesture for rearranging anything in this tree. Which of them it
 /// means is `folder_tree::what_the_gesture_moves`, decided over the row's
 /// identity where it can be tested without a window, rather than by a chain of
 /// comparisons here where only a running application could reach it.
@@ -10336,10 +10337,62 @@ fn move_the_chosen_row(
         WhatMoves::Pin { account, path } => {
             move_the_chosen_pin(app, cache, a11y, &account, &path, direction);
         }
-        WhatMoves::SavedSearch { .. } | WhatMoves::Nothing => {
+        WhatMoves::SavedSearch { account, id } => {
+            move_the_chosen_search(app, cache, a11y, &account, &id, direction);
+        }
+        WhatMoves::Nothing => {
             refuse_a_command(app.tx, crate::application::favourites::WHICH_ROW);
         }
     }
+}
+
+/// Move one saved search up or down its own account's searches (#58).
+///
+/// Within the account because a search's row sits under its account's
+/// branch, as a pin moves within its account's part of Favourites. The
+/// searches are read from this computer's store rather than from the window's
+/// copy, so a key held down moves from the order last written and not from a
+/// tree that has not been read back yet. Nothing here reaches a server, and
+/// the check in `application::favourites` reads this function to say so.
+fn move_the_chosen_search(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    account: &str,
+    id: &str,
+    direction: crate::application::reordering::Move,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { tx, rt, state } = app;
+    let Some(store) = cache.as_ref() else {
+        return refuse_a_command(tx, "No saved search is stored on this computer yet.");
+    };
+    let Ok(read) = store.get_saved_searches_for_account(account) else {
+        return refuse_a_command(
+            tx,
+            "The saved searches could not be read from this computer.",
+        );
+    };
+    let theirs: Vec<(String, String)> = every_saved_search(account, &read)
+        .into_iter()
+        .map(|search| (search.id, search.name))
+        .collect();
+
+    let after = crate::application::reordering::moved(&theirs, id, direction, WHICH_SAVED_SEARCH);
+    if !after.moved {
+        // First or last already, said rather than silent, for the reason a
+        // pin's move gives.
+        let _ = tx.try_send(UIUpdate::CommandAnswered(after.say));
+        return;
+    }
+    if let Err(why) = store.put_saved_searches_in_order(account, &after.order) {
+        tracing::warn!("The order of the saved searches could not be saved: {why}");
+        return refuse_a_command(tx, "The order of the saved searches could not be saved.");
+    }
+    read_the_tree_back(cache, state, tx);
+    send_status(tx, rt, &after.say);
+    let _ = a11y.announce(&after.say, Priority::High);
 }
 
 /// Move one pinned folder up or down its own account's part of the group.
@@ -13148,10 +13201,13 @@ fn folders_in_the_tree(
 
 /// Every saved search's row, in the order they sit in the tree.
 ///
-/// The readable ones first and the rest after, which is the order they were
-/// read in, so a row does not move because a newer version wrote one of them.
-/// Every row reads the same way, because somebody arrowing past is not being
-/// asked to tell a readable search from an unreadable one by ear.
+/// In the order kept for them, readable or not, which is the order Move Up
+/// and Move Down rearrange (#58). The read splits that order into the ones
+/// this build can run and the rest; walking those two lists one after the
+/// other would show every readable search first, and a move across the split
+/// would be written and never shown. Every row reads the same way, because
+/// somebody arrowing past is not being asked to tell a readable search from
+/// an unreadable one by ear.
 ///
 /// A search this build cannot run is still a row somebody can land on, rename
 /// and remove. Leaving it out would make it unreachable rather than merely
@@ -13160,22 +13216,27 @@ fn every_saved_search(
     account: &str,
     read: &crate::data::message_cache::saved_searches::SavedSearchesRead,
 ) -> Vec<folder_tree::SearchInTheTree> {
-    read.searches
+    let named = |id: &String| {
+        read.searches
+            .iter()
+            .map(|search| (&search.id, &search.name))
+            .chain(
+                read.saved_by_another_version
+                    .iter()
+                    .map(|search| (&search.id, &search.name)),
+            )
+            .find(|(held, _)| *held == id)
+            .map(|(_, name)| name.clone())
+    };
+    read.order
         .iter()
-        .map(|search| folder_tree::SearchInTheTree {
-            account: account.to_string(),
-            id: search.id.clone(),
-            name: search.name.clone(),
+        .filter_map(|id| {
+            named(id).map(|name| folder_tree::SearchInTheTree {
+                account: account.to_string(),
+                id: id.clone(),
+                name,
+            })
         })
-        .chain(
-            read.saved_by_another_version
-                .iter()
-                .map(|search| folder_tree::SearchInTheTree {
-                    account: account.to_string(),
-                    id: search.id.clone(),
-                    name: search.name.clone(),
-                }),
-        )
         .collect()
 }
 

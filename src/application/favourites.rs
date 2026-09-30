@@ -171,9 +171,9 @@ pub const WHICH_FOLDER: &str = "Choose a folder in the folder tree first. Pin Fo
                                 and Unpin Folder act on the folder the cursor is on.";
 
 /// What is said when the reorder gesture is used on a row it cannot move.
-pub const WHICH_ROW: &str = "Move Up and Move Down rearrange accounts and pinned \
-                             folders. Choose an account branch, or a folder under \
-                             Favourites.";
+pub const WHICH_ROW: &str = "Move Up and Move Down rearrange accounts, pinned \
+                             folders and saved searches. Choose an account branch, \
+                             a folder under Favourites, or a saved search.";
 
 /// What is said when a folder somebody has just pinned goes into the group.
 ///
