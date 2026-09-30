@@ -19,8 +19,10 @@ use crate::application::acting_on_a_set::{WhatWasDone, said};
 use crate::application::choosing_messages::{Chosen, SetCommand, reach_for};
 use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
 use crate::application::filters::{FilterAction, FilterEngine, Outcome, SAY_FIRST_LIMIT};
+use crate::application::mail_sync::the_folder_a_rule_names;
 use crate::application::saved_searches::tidied;
-use crate::application::tagging::MenuLine;
+use crate::application::tagging::{MenuLine, the_label_a_rule_names};
+use crate::data::message_cache::{CachedFolder, Tag};
 
 pub use crate::application::reordering::{Move, Moved};
 
@@ -363,6 +365,82 @@ pub fn nothing_there(position: usize, how_many: usize) -> String {
 pub fn what_a_step_did(name: &str, chosen: &Chosen, done: &WhatWasDone) -> String {
     format!("{name}: {}", said(chosen, done))
 }
+
+/// Something a step names that its account no longer has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Missing {
+    /// The folder the step moves messages to, as the step names it.
+    Folder(String),
+    /// A label the step puts on, as the step names it.
+    Label(String),
+}
+
+/// The first folder or label `does` names that the account has none of,
+/// found the way a rule finds them, or `None` when it has every one.
+///
+/// Asked before anything runs, so a step whose folder was renamed or whose
+/// label was removed stops whole rather than marking the messages and then
+/// finding nowhere to move them.
+pub fn what_the_account_lacks(
+    does: &Outcome,
+    folders: &[CachedFolder],
+    labels: &[Tag],
+) -> Option<Missing> {
+    let lost_folder = does
+        .move_to
+        .as_ref()
+        .filter(|named| the_folder_a_rule_names(folders, named).is_none())
+        .map(|named| Missing::Folder(named.clone()));
+    lost_folder.or_else(|| {
+        does.tags
+            .iter()
+            .find(|named| the_label_a_rule_names(labels, named).is_none())
+            .map(|named| Missing::Label(named.clone()))
+    })
+}
+
+/// What is said when a step names a folder or a label its account no longer
+/// has: the step, what it names, that nothing changed, and where to mend it.
+pub fn what_is_gone(step: &str, missing: &Missing) -> String {
+    let what_it_does = match missing {
+        Missing::Folder(path) => format!("moves mail to {path}"),
+        Missing::Label(name) => format!("labels mail with {name}"),
+    };
+    format!(
+        "{step} {what_it_does}, which this account no longer has. {NOTHING_WAS_CHANGED} Edit \
+         the step in Manage Quick Steps."
+    )
+}
+
+/// What is said when some of the chosen messages are in another account
+/// than the step's: how many, that nothing changed, and which account's
+/// messages to choose.
+///
+/// Refused whole rather than narrowed to the step's own messages, because a
+/// step that quietly did half of what was chosen is the half-done run a
+/// Quick Step must never be.
+pub fn not_this_accounts(step: &str, account: &str, elsewhere: usize) -> String {
+    let are = match elsewhere {
+        1 => "is",
+        _ => "are",
+    };
+    format!(
+        "{step} belongs to {account}, and {elsewhere} of the chosen messages {are} in another \
+         account. {NOTHING_WAS_CHANGED} Choose messages in {account}."
+    )
+}
+
+/// What is said when the step at a place was written by a newer version of
+/// Wixen Mail: it was not run, and where it can be moved or removed.
+pub fn written_by_a_newer_version(step: &str) -> String {
+    format!(
+        "{step} was written by a newer version of Wixen Mail, so it was not run and nothing \
+         was changed. It can be moved or removed in Manage Quick Steps."
+    )
+}
+
+/// The middle of every refusal a step says before it runs.
+const NOTHING_WAS_CHANGED: &str = "Nothing was changed.";
 
 /// What Quick Steps say about themselves where one is chosen.
 ///
@@ -776,6 +854,105 @@ mod tests {
             what_a_step_did("Bin it", &chosen_of(2), &WhatWasDone::default()),
             "Bin it: Nothing needed changing on the 2 messages"
         );
+    }
+
+    fn a_folder(name: &str, path: &str) -> CachedFolder {
+        CachedFolder {
+            id: 1,
+            account_id: "work".to_string(),
+            name: name.to_string(),
+            path: path.to_string(),
+            folder_type: "custom".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        }
+    }
+
+    fn a_label(id: &str, name: &str) -> Tag {
+        Tag {
+            id: id.to_string(),
+            account_id: "work".to_string(),
+            name: name.to_string(),
+            color: "#000000".to_string(),
+            created_at: String::new(),
+            keyword: None,
+        }
+    }
+
+    #[test]
+    fn test_a_folder_the_account_no_longer_has_is_named_and_nothing_is_changed() {
+        assert_eq!(
+            what_is_gone("Archive and read", &Missing::Folder("Archive".to_string())),
+            "Archive and read moves mail to Archive, which this account no longer has. \
+             Nothing was changed. Edit the step in Manage Quick Steps."
+        );
+    }
+
+    #[test]
+    fn test_a_label_the_account_no_longer_has_is_named_and_nothing_is_changed() {
+        assert_eq!(
+            what_is_gone("Money", &Missing::Label("Bills".to_string())),
+            "Money labels mail with Bills, which this account no longer has. \
+             Nothing was changed. Edit the step in Manage Quick Steps."
+        );
+    }
+
+    #[test]
+    fn test_messages_of_another_account_are_counted_and_nothing_is_changed() {
+        assert_eq!(
+            not_this_accounts("Archive and read", "Work", 2),
+            "Archive and read belongs to Work, and 2 of the chosen messages are in another \
+             account. Nothing was changed. Choose messages in Work."
+        );
+        assert_eq!(
+            not_this_accounts("Archive and read", "Work", 1),
+            "Archive and read belongs to Work, and 1 of the chosen messages is in another \
+             account. Nothing was changed. Choose messages in Work."
+        );
+    }
+
+    #[test]
+    fn test_a_step_a_newer_version_wrote_is_not_run_and_says_where_to_mend_it() {
+        assert_eq!(
+            written_by_a_newer_version("Sort it"),
+            "Sort it was written by a newer version of Wixen Mail, so it was not run and \
+             nothing was changed. It can be moved or removed in Manage Quick Steps."
+        );
+    }
+
+    #[test]
+    fn test_what_the_account_lacks_is_found_the_way_a_rule_finds_it() {
+        let folders = [a_folder("Archive", "INBOX/Archive")];
+        let labels = [a_label("work:$label1", "Money")];
+        let files_and_labels = |folder: &str, label: &str| Outcome {
+            move_to: Some(folder.to_string()),
+            tags: vec![label.to_string()],
+            ..Outcome::default()
+        };
+
+        // By name in other capitals, or by path, as a rule finds them.
+        assert_eq!(
+            what_the_account_lacks(&files_and_labels("archive", "money"), &folders, &labels),
+            None
+        );
+        assert_eq!(
+            what_the_account_lacks(
+                &files_and_labels("INBOX/Archive", "Money"),
+                &folders,
+                &labels
+            ),
+            None
+        );
+        assert_eq!(
+            what_the_account_lacks(&files_and_labels("Receipts", "Money"), &folders, &labels),
+            Some(Missing::Folder("Receipts".to_string()))
+        );
+        assert_eq!(
+            what_the_account_lacks(&files_and_labels("Archive", "Bills"), &folders, &labels),
+            Some(Missing::Label("Bills".to_string()))
+        );
+        // A step that names neither lacks nothing, whatever the account has.
+        assert_eq!(what_the_account_lacks(&marks_read(), &[], &[]), None);
     }
 
     #[test]

@@ -8,9 +8,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
-- **Quick Steps can be made, changed and put in order, and running them is not built yet
-  (#60, GAP-11).** #60 asked for "a manager beside the Filter Manager" where a Quick Step,
-  several actions under one name, is made. Action, Quick Steps, Manage Quick Steps
+- **Quick Steps: several actions under one name, run over the selected messages by a key or
+  from the menu (#60, GAP-11).** #60 asked for steps "run on demand over the selected
+  messages", with "a bound key from a small reserved range" and "the announcement naming the
+  step and how many messages it touched". Action, Quick Steps (`Alt+A`, `Q`) lists the
+  steps of the account you are in, in the manager's order, the first three with
+  `Ctrl+Shift+7` to `Ctrl+Shift+9`; choosing one or pressing its key runs it over every
+  selected message, through the same paths and the same Allow Changes answer as marking,
+  labelling, moving or deleting by hand, and one sentence says what it did, "Archive and
+  read: 3 messages marked read and moved to Archive". A step refuses, changing nothing and
+  saying why, when nothing is selected, when more than 5,000 messages are, when a selected
+  message belongs to another account, when the account no longer has the folder or label
+  the step names, and when a newer version wrote the step. A key past the account's last
+  step says how many steps there are. When a step marks messages and moves them, the marks
+  go to the server first and then the move, on one connection, so the marks are not lost
+  where the messages land. Edit, Undo takes back the last thing a step did, the move for a
+  step that marks and moves, and not the whole step. #60 also asked for "a manager beside
+  the Filter Manager" where a step is made. Action, Quick Steps, Manage Quick Steps
   (`Alt+A`, `Q`, `M`) opens the Quick Step Manager for the account you are in: a list of
   its steps with the name, the key its place gives it (`Ctrl+Shift+7` to `Ctrl+Shift+9`
   for the first three) and what it does, "Mark read, move to Archive". Add and Edit open
@@ -21,11 +35,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   refused when OK is pressed, with the window left open. Steps move with Move Up and Move
   Down or `Alt+Shift+Up` and `Alt+Shift+Down`, and the order is saved when the manager
   closes. A step written by a newer version is listed and can be moved or removed, and is
-  not opened. Nothing a step does can run yet: running a step from the menu or by its key
-  arrives with the next change. Quick Steps are experimental, and the menu item says so.
+  not opened. Quick Steps are experimental, and every item on the submenu says so.
   The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
-  limitations: nobody has heard the submenu, the manager's rows and Key column, the
-  editor's seven questions in order, or a refusal with a screen reader. A step given the
+  limitations: no step has run against a real mail server, so what a provider does with
+  several changes at once, and whether the marks survive a move on Gmail, where a move is a
+  change of label, has not been seen. Nobody has heard the submenu with its keys, a step
+  run as one act with its one sentence, a refusal, the manager's rows and Key column, or
+  the editor's seven questions in order with a screen reader. Undo takes back a step's
+  last write only. A step given the
   name another step had when the manager opened may fail to save, and the close says which
   one failed; rename the other step first, close the manager, and open it again for the
   second rename.

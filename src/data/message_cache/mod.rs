@@ -2341,6 +2341,12 @@ impl MessageCache {
         // table had shipped that morning.
         self.ensure_column_exists("moves_waiting", "to_account_id", "TEXT")?;
         self.ensure_column_exists("moves_waiting", "to_account_name", "TEXT")?;
+        // The marks a move sends before itself (13-42, ledger 688): read or
+        // unread and flagged or not, each nothing when not asked for, so a
+        // Quick Step's mark reaches the server on the move's own session and
+        // before it.
+        self.ensure_column_exists("moves_waiting", "read_first", "INTEGER")?;
+        self.ensure_column_exists("moves_waiting", "starred_first", "INTEGER")?;
 
         self.conn
             .execute(

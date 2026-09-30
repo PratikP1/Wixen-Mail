@@ -33,8 +33,10 @@ use crate::application::choosing_messages::{Chosen, MessageRef};
 use crate::application::filters::Outcome;
 use crate::application::mail_sync::the_folder_a_rule_names;
 use crate::application::tagging::the_label_a_rule_names;
+use crate::data::message_cache::moves_waiting::MarksFirst;
 use crate::data::message_cache::{CachedFolder, Tag};
 use crate::service::caldav::how_many;
+use std::collections::BTreeMap;
 
 /// One chosen message, as much of it as deciding what it needs takes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,6 +188,32 @@ impl TheWork {
         self == &Self::default()
     }
 
+    /// The marks each moving message's move sends first, by the message's
+    /// row: its read state and its flag, where the run changes them.
+    ///
+    /// A message that is marked and moved has its marks carried by the move,
+    /// so one push sends the marks and then the move on one session (ledger
+    /// 688). Sent on their own they could arrive after the move, at a number
+    /// the folder no longer holds, and the next check would put the old
+    /// marks back. A message the run marks and does not move is not here:
+    /// no move of its carries anything.
+    pub fn the_marks_that_go_with_the_move(&self) -> BTreeMap<i64, MarksFirst> {
+        let Some((Then::MoveTo { .. }, moving)) = &self.then else {
+            return BTreeMap::new();
+        };
+        moving
+            .messages
+            .iter()
+            .filter_map(|message| {
+                let marks = MarksFirst {
+                    read: the_mark_on(&self.read, message.row_id),
+                    starred: the_mark_on(&self.starred, message.row_id),
+                };
+                (!marks.is_nothing()).then_some((message.row_id, marks))
+            })
+            .collect()
+    }
+
     /// Whether any write is one the server is told about, which is when the
     /// account's gate has to be met. The phrase said first is kept on this
     /// computer and nowhere else.
@@ -241,6 +269,18 @@ pub fn the_work(each: &[(MessageRef, Needs)]) -> TheWork {
         }
     }
     work
+}
+
+/// What a mark step sets on this message, when the step takes it.
+fn the_mark_on(step: &Option<(bool, Chosen)>, row_id: i64) -> Option<bool> {
+    step.as_ref()
+        .filter(|(_, those)| {
+            those
+                .messages
+                .iter()
+                .any(|message| message.row_id == row_id)
+        })
+        .map(|(to, _)| *to)
 }
 
 /// Add a message to a step, the step starting with the first message that
@@ -500,6 +540,50 @@ mod tests {
     }
 
     // ── What each message needs ────────────────────────────────────────────
+
+    #[test]
+    fn test_the_marks_of_a_message_that_moves_go_with_its_move() {
+        // Read, flagged and filed into Archive. The first message needs all
+        // three; the second is read and flagged already and only moves; the
+        // third is in Archive already, so it is marked and stays, and its
+        // marks go on their own, since no move of its is there to carry them.
+        let outcome = Outcome {
+            read: Some(true),
+            starred: Some(true),
+            move_to: Some("Archive".to_string()),
+            ..Outcome::default()
+        };
+        let in_archive = HeldMessage {
+            folder_path: "INBOX/Archive".to_string(),
+            ..a_message()
+        };
+        let read_and_flagged = HeldMessage {
+            read: true,
+            starred: true,
+            ..a_message()
+        };
+        let each: Vec<(MessageRef, Needs)> = [
+            (a_ref(1, false, false), a_message()),
+            (a_ref(2, true, true), read_and_flagged),
+            (a_ref(3, false, false), in_archive),
+        ]
+        .into_iter()
+        .map(|(message, held)| (message, needs(&outcome, &held).expect("the needs")))
+        .collect();
+
+        let marks = the_work(&each).the_marks_that_go_with_the_move();
+
+        assert_eq!(
+            marks,
+            BTreeMap::from([(
+                1,
+                MarksFirst {
+                    read: Some(true),
+                    starred: Some(true),
+                }
+            )])
+        );
+    }
 
     #[test]
     fn test_a_message_already_read_is_not_marked_read_again_and_an_unread_one_is() {

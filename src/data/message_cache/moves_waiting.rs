@@ -161,6 +161,27 @@ pub struct AWaitingMove {
     pub asked_at: String,
 }
 
+/// The marks a waiting move sends before the move itself: read or unread,
+/// flagged or not, each only when it was asked for.
+///
+/// Kept on the waiting row so the one push that sends the move sends these
+/// first, on the same session, from the folder the server still has the
+/// message in. Sent by a worker of their own, a mark could arrive after the
+/// move and name a number the folder no longer holds, and the next check
+/// would put the old mark back (ledger 688).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarksFirst {
+    pub read: Option<bool>,
+    pub starred: Option<bool>,
+}
+
+impl MarksFirst {
+    /// Whether there is nothing to send first.
+    pub fn is_nothing(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
 impl AWaitingMove {
     /// The account the destination folder is in: the other account for a
     /// crossing, this row's own otherwise.
@@ -180,26 +201,42 @@ impl MessageCache {
     pub fn keep_a_move_waiting(&self, waiting: &AWaitingMove) -> Result<()> {
         let (kind, into, to_account) = waiting.what.as_stored();
         // Where the server still has it: the earlier row's answer when
-        // there is one, this ask's otherwise.
-        let already: Option<(String, i64)> = self
+        // there is one, this ask's otherwise. The marks the earlier move was
+        // to send first stay too, since the server has heard of neither.
+        let already: Option<(String, i64, MarksFirst)> = self
             .conn
             .query_row(
-                "SELECT from_folder_path, uid FROM moves_waiting WHERE message_row_id = ?1",
+                "SELECT from_folder_path, uid, read_first, starred_first
+                 FROM moves_waiting WHERE message_row_id = ?1",
                 params![waiting.message_row_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        MarksFirst {
+                            read: row.get(2)?,
+                            starred: row.get(3)?,
+                        },
+                    ))
+                },
             )
             .optional()
             .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
-        let (from, uid) = match already {
-            Some((from, uid)) => (from, uid),
-            None => (waiting.from_folder_path.clone(), i64::from(waiting.uid)),
+        let (from, uid, marks) = match already {
+            Some(already) => already,
+            None => (
+                waiting.from_folder_path.clone(),
+                i64::from(waiting.uid),
+                MarksFirst::default(),
+            ),
         };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO moves_waiting
                  (message_row_id, account_id, from_folder_path, uid, kind,
-                  into_folder_path, asked_at, to_account_id, to_account_name)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                  into_folder_path, asked_at, to_account_id, to_account_name,
+                  read_first, starred_first)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     waiting.message_row_id,
                     waiting.account_id,
@@ -210,6 +247,8 @@ impl MessageCache {
                     waiting.asked_at,
                     to_account.map(|other| other.id.as_str()),
                     to_account.map(|other| other.name.as_str()),
+                    marks.read,
+                    marks.starred,
                 ],
             )
             .map_err(|e| Error::Other(format!("A move could not be kept waiting: {e}")))?;
@@ -333,6 +372,47 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
         let mut rows = read_waiting_rows(statement.query_map(params![message_row_id], read_a_row))?;
         Ok(rows.pop())
+    }
+
+    /// Send these marks before the waiting move of this row, when it has one.
+    ///
+    /// Written onto the waiting row itself, so they go when the move goes,
+    /// whichever push or check replays it, and are let go with it.
+    pub fn send_these_marks_before_the_move(
+        &self,
+        message_row_id: i64,
+        marks: MarksFirst,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE moves_waiting SET read_first = ?1, starred_first = ?2
+                 WHERE message_row_id = ?3",
+                params![marks.read, marks.starred, message_row_id],
+            )
+            .map_err(|e| Error::Other(format!("The marks could not be kept with the move: {e}")))?;
+        Ok(())
+    }
+
+    /// The marks the waiting move of this row sends first; nothing when the
+    /// row has no waiting move or its move sends none.
+    pub fn the_marks_before_the_move(&self, message_row_id: i64) -> Result<MarksFirst> {
+        let marks = self
+            .conn
+            .query_row(
+                "SELECT read_first, starred_first FROM moves_waiting WHERE message_row_id = ?1",
+                params![message_row_id],
+                |row| {
+                    Ok(MarksFirst {
+                        read: row.get(0)?,
+                        starred: row.get(1)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| {
+                Error::Other(format!("The marks kept with a move could not be read: {e}"))
+            })?;
+        Ok(marks.unwrap_or_default())
     }
 
     /// Let one waiting move go, because it went or because it was put back.
@@ -568,6 +648,41 @@ mod tests {
             message.deleted,
             cache.was_filed_here(row).expect("the marker"),
         )
+    }
+
+    #[test]
+    fn test_the_marks_before_a_move_stay_with_it_through_a_second_move_and_go_with_it() {
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let read_and_flagged = MarksFirst {
+            read: Some(true),
+            starred: Some(true),
+        };
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        home.send_these_marks_before_the_move(row, read_and_flagged)
+            .expect("the marks kept");
+        assert_eq!(
+            home.the_marks_before_the_move(row).expect("the marks"),
+            read_and_flagged
+        );
+
+        // Moved again before the server heard of the first: the ask changes,
+        // the marks still go first.
+        home.keep_a_move_waiting(&a_move_of(row, 42, "Archive", "Trash"))
+            .expect("a second move kept");
+        assert_eq!(
+            home.the_marks_before_the_move(row).expect("the marks"),
+            read_and_flagged
+        );
+
+        // The move went, and its marks with it.
+        home.stop_waiting_for_a_move(row).expect("let go");
+        assert!(
+            home.the_marks_before_the_move(row)
+                .expect("the marks")
+                .is_nothing()
+        );
     }
 
     #[test]

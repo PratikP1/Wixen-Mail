@@ -855,7 +855,7 @@ Eight submenus hold the rest:
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
 | Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then New Saved Search, which makes one from nothing: a name, where it looks, and its conditions. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
-| Quick Steps | `Q` on the Action menu. Manage Quick Steps (`M` on the submenu) opens the Quick Step Manager for the account you are in, where a Quick Step is named, made, changed, put in order and removed. Running a step from this submenu or by its key is not built yet and arrives with the next change. Experimental (#60) |
+| Quick Steps | `Q` on the Action menu. The Quick Steps of the account you are in, in the order the Quick Step Manager keeps them, the first three with their keys (`Ctrl+Shift+7` to `Ctrl+Shift+9`); choosing one runs it over every selected message. Then Manage Quick Steps (`M` on the submenu), which opens the Quick Step Manager, where a Quick Step is named, made, changed, put in order and removed. See Quick Steps, below. Experimental (#60) |
 | Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
 
 ### Account Management
@@ -1028,6 +1028,31 @@ Thunderbird uses the bare number keys for this. Wixen Mail uses Ctrl and the
 number for a reason rather than a preference: a bare digit in a list is also a
 character, and a list that jumps to what you type cannot tell "label this work"
 from somebody spelling their way to a message about invoice 4021.
+
+### Quick Steps
+
+A Quick Step does several things to the selected messages at once: marks them
+read or unread, flags them, puts a label on, sets a phrase your screen reader
+says first, and moves them, or sends them to the trash. You make your steps in
+the Quick Step Manager (Action, Quick Steps, Manage Quick Steps). Each account
+has its own.
+
+The keys follow the order the Quick Step Manager keeps. The first step in its
+list runs on `Ctrl+Shift+7`, the second on `Ctrl+Shift+8` and the third on
+`Ctrl+Shift+9`, so moving a step in the manager moves its key with it. Every
+step, with a key or without, is on the Quick Steps submenu of the Action menu,
+with its key beside it.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| The first Quick Step | `Ctrl+Shift+7` | Runs the first step in the account's order over every selected message |
+| The second and third Quick Steps | `Ctrl+Shift+8`, `Ctrl+Shift+9` | Run the steps at those places. A key past the account's last step says how many steps the account has, and runs nothing |
+
+When a step has run, one sentence says what it did, such as "Archive and
+read: 3 messages marked read and moved to Archive". A step runs over the
+messages of the account you are in only: a selection that holds a message of
+another account, which All Inboxes can, is refused, and nothing changes.
+Quick Steps are experimental.
 
 ### Message Navigation
 
@@ -1452,8 +1477,7 @@ Manage Quick Steps, on the Quick Steps submenu of the Action menu (`Alt+A`,
 `Q`, `M`), opens the Quick Step Manager for the account you are in. It opens
 on the list of steps, which has three columns: the name, the key the step's
 place gives it, and what the step does. The Key column shows the key each of
-the first three steps is to run on. Running a step by its key arrives with
-the next change, and this page lists those keys when it does.
+the first three steps runs on, listed under Quick Steps, above.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|

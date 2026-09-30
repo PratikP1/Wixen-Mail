@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 663
+open_count: 665
 waived_count: 0
-fixed_count: 81
-total_count: 744
-last_updated: 2026-09-30T23:45:00.000Z
+fixed_count: 83
+total_count: 748
+last_updated: 2026-09-30T23:55:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -702,7 +702,7 @@ last_updated: 2026-09-30T23:45:00.000Z
 | 685 | 13 | todo | src/presentation/wx_app.rs | 24303 | 13-24.1, for 13-25: run_these_actions_over has no caller, so it carries #[expect(dead_code)] with that reason, which fails the build the day a caller arrives and is taken off with it. 13-25's block is its first caller and its premise 1 names this; 13-42 (Quick Steps) and 13-44 (a rule over a folder) call it after. It closes when 13-25 calls it. Fixed 2026-09-28 by 13-25: answer_what_a_block_caught calls it for the block's move of the mail already here, the expectation came off with it, and tests/several_actions_reach_the_server_in_order.rs holds that something outside the runner calls it | fixed |  | 2026-09-28T10:41:21.000Z | 2026-09-28T11:59:28.000Z |
 | 686 | 13 | unrun-verify | src/presentation/wx_app.rs | 24303 | 13-24.1, for phase 14: a run of several actions over a set has not reached a real mail server. A check on an IMAP account with a set marked read, labelled and moved in one run: the server's own record of the commands, the flags on the messages in the folder they reached, and whether the next check keeps them (ledger 688); every test here reads the source or a pure function | open |  | 2026-09-28T10:41:21.000Z |  |
 | 687 | 13 | todo | src/presentation/wx_app.rs | 25901 | 13-24.1: no behavioural case proves a message's flag reaches the server before its move. The flag goes through spawn_server_change's worker, which opens its own store at AppPaths and signs in through the_session_at, and the move through complete_here_then_tell_the_server's push, which does the same; neither is reachable from a target or from the library's own tests, so no scripted server from common::answering can be put under both. A harness would need both workers to take the store and the session they use as parameters, so a test can hand them a temporary store and one scripted session and read the server's record of commands. The readings in tests/several_actions_reach_the_server_in_order.rs hold the order of asking and the folder a flag names, not the order at the server | open |  | 2026-09-28T10:41:21.000Z |  |
-| 688 | 13 | todo | src/presentation/wx_app.rs | 25901 | 13-24.1, found and left: a message's mark and its move still reach the server in whichever order their two workers get the account's session. Carrying the folder means a late mark names the folder the message was in and the number it had there, so it can no longer land on another message; but if the move arrives first, that number is gone from the folder, the server answers the STORE without changing anything, the mark is said as done, and the next check puts the old mark back here from the folder the message reached. Quick Steps that mark and move (13-42) meet this on every run. Recommendation, a question for Pratik: the runner hands each message's marks to the move's push, so one worker on the account's session sends the marks and then the move; small beside 13-42, and no plan carries it yet | open |  | 2026-09-28T10:41:21.000Z |  |
+| 688 | 13 | todo | src/presentation/wx_app.rs | 25901 | 13-24.1, found and left: a message's mark and its move still reach the server in whichever order their two workers get the account's session. Carrying the folder means a late mark names the folder the message was in and the number it had there, so it can no longer land on another message; but if the move arrives first, that number is gone from the folder, the server answers the STORE without changing anything, the mark is said as done, and the next check puts the old mark back here from the folder the message reached. Quick Steps that mark and move (13-42) meet this on every run. Recommendation, a question for Pratik: the runner hands each message's marks to the move's push, so one worker on the account's session sends the marks and then the move; small beside 13-42, and no plan carries it yet. Fixed 2026-09-30 by 13-42, taken as the recommendation on 2026-09-29: a run's move carries the read and flag marks of each message it moves on its waiting row (moves_waiting.read_first and starred_first, added columns), Mark as Read's and Star's do-halves hand such a mark to the move instead of sending it on a worker of their own, and the replay of a waiting move sends the marks it carries and then the move on one session, whether the push right after the key or a later check replays it. application::moves_waiting's test_a_quick_step_that_marks_read_and_moves_sends_the_mark_before_the_move reads the STORE before the MOVE in a scripted server's record. A label beside a move in a run, and a mark made by hand just before a move by hand, still travel on their own worker: ledger 748 | fixed |  | 2026-09-28T10:41:21.000Z | 2026-09-30T23:55:00.000Z |
 | 689 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, for phase 14: a block's move of the mail already here has not reached a real mail server. A check on an IMAP account and on Gmail: block a sender with several messages in the inbox and one in a folder of their own, answer Yes, and read from another client that the messages reached the junk folder and that the next check keeps them there; every test here reads the source or a pure function | open |  | 2026-09-28T11:59:28.000Z |  |
 | 690 | 13 | unrun-verify | src/presentation/wx_app.rs | 35000 | 13-25, the tester's ear: nobody has heard the block's question or its answer. Whether the question is read on open with its count, sender and folder; whether Enter answers Yes and Escape closes it (decision 4 says Escape answers No, and a Yes and No box with no Cancel may not answer Escape on Windows; closing it by any means leaves the mail, which the code treats as No); whether the sentence said before the block at High, then the question, then the sentence after it are one clear sequence; and whether block_the_sender's told, which both announces and sends a status line that is itself spoken, is heard twice | open |  | 2026-09-28T11:59:28.000Z |  |
 | 691 | 13 | todo | src/presentation/wx_app.rs | 34776 | 13-25, premise 2, still true on 2026-09-28: block_the_sender writes the block to the open account, held.active_account_id, not to the account the selected message is in. In All Inboxes the two differ, so a block on a message from a second account is written to the first account's rules and counts that account's mail. A question for Pratik, left unfixed because it is a decision about blocking and not about the move. Recommendation: block on the message's own account, as Report as Junk already does per message | open |  | 2026-09-28T11:59:28.000Z |  |
@@ -756,9 +756,13 @@ last_updated: 2026-09-30T23:45:00.000Z
 | 739 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-38, the tester's ear: nobody has heard the Saved Searches submenu's items with their keys beside them ("Invoices, Alt+4"), heard the answer to a key past the last search ("Alt+7 runs saved search 4, and this account has 3."), or heard the cursor land on the row a key or an item ran and the search's result after it, with a screen reader | open |  | 2026-09-30T18:00:00.000Z |  |
 | 740 | 13 | unrun-verify | src/presentation/wx_new_saved_search.rs |  | 13-39, the tester's ear: nobody has gone through New Saved Search and then the conditions window in order with a screen reader (the name box and Look in heard by their names, Look in offering "Everywhere in" the account and then its folders, the conditions window opening empty with "Find messages that match" after the list), heard the refusal of a search with no conditions ("A saved search has to ask at least one thing about a message. Add a condition before closing this window."), heard the created sentence ("Invoices saved. It is in the folder tree under Saved Searches."), or changed an existing search from any condition to every condition with Edit Conditions | open |  | 2026-09-30T23:00:00.000Z |  |
 | 741 | 13 | todo | src/application/saved_searches.rs | 904 | 13-39, decision 2 of 2026-09-24: a saved search's list still shows the newest 500 messages it finds (MOST_RESULTS_SHOWN, read at src/presentation/wx_app.rs:8257 and :8285); #24's closing did not lift it and this plan left it as it is. No issue was opened, since a public post is Pratik's to make; his to file if he wants the cap changed | open |  | 2026-09-30T23:00:00.000Z |  |
-| 742 | 13 | stub | src/application/quick_steps.rs |  | 13-40: Quick Steps are stored and named per account (application::quick_steps, data::message_cache::quick_steps) and nothing in the running program makes, shows or runs one. 13-41 gives them a manager on the Action menu, and 13-42 puts the steps on the Action menu with Ctrl+Shift+7 to Ctrl+Shift+9, runs them over the selection through 13-24.1's runner, and closes this entry | open |  | 2026-09-30T23:30:00.000Z |  |
+| 742 | 13 | stub | src/application/quick_steps.rs |  | 13-40: Quick Steps are stored and named per account (application::quick_steps, data::message_cache::quick_steps) and nothing in the running program makes, shows or runs one. 13-41 gives them a manager on the Action menu, and 13-42 puts the steps on the Action menu with Ctrl+Shift+7 to Ctrl+Shift+9, runs them over the selection through 13-24.1's runner, and closes this entry. Fixed 2026-09-30 by 13-42: Action, Quick Steps lists the active account's steps with Ctrl+Shift+7 to Ctrl+Shift+9 on the first three, and a step's item or key runs run_the_quick_step_at, which checks the selection, the bound, the account and what the step names, calls the runner once and says one sentence; tests/a_quick_step_runs_over_the_selection.rs reads the menu on a built menu bar, the key on a built list, and the run in source | fixed |  | 2026-09-30T23:30:00.000Z | 2026-09-30T23:55:00.000Z |
 | 743 | 13 | unrun-verify | src/presentation/wx_managers.rs |  | 13-41, the tester's ear: nobody has opened Action, Quick Steps (Q) and heard Manage Quick Steps (M) with the experimental sentence as its description, heard the Quick Step Manager's rows with their Name, Key and What it does columns (Ctrl+Shift+7 to Ctrl+Shift+9 on the first three, nothing on the fourth, and a newer version's step saying it can be moved or removed here), gone through the step editor's seven questions in order (Name, Mark as read or unread, Flag, Label, Move to, Delete it, Phrase to say first), or heard a refusal when OK is pressed on a step that cannot be kept ("A Quick Step that deletes does nothing else ...") with the window left open. The names were read over MSAA in tests/the_quick_step_manager_says_what_each_step_does.rs and the two windows are the quick-steps and quick-step-editor scan targets | open |  | 2026-09-30T23:45:00.000Z |  |
 | 744 | 13 | todo | src/presentation/managers.rs |  | 13-41: save_what_the_quick_step_manager_returned writes each step over itself in the list's order, one transaction a step, and the store keeps one name per account whatever its case, so a step given the name another step had when the manager opened fails to save when it is written before that other step is renamed, and a swap of two names always leaves one unsaved. The close names the step that failed and the guide and changelog say to rename across two openings. Writing every rename in one transaction, the renames that free a name first, would close it | open |  | 2026-09-30T23:45:00.000Z |  |
+| 745 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-42, for phase 14: no Quick Step has reached a real IMAP server. A check on an account whose mail changes are allowed, with a step that marks read, flags, labels and moves run over a few messages: the server's own record of the commands in that order (the marks first and then the move), the flags and the label on the messages in the folder they reached, and whether the next check keeps them; once on Gmail, where a move is a change of label, and once on a server with ordinary folders. Every test here reads the source, a pure function or a scripted server | open |  | 2026-09-30T23:55:00.000Z |  |
+| 746 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-42, the tester's ear: nobody has opened Action, Quick Steps and heard each step with its key ("Archive and read, Ctrl+Shift+7") and Manage Quick Steps after them, run a step by its key or its item and heard it as one act with one sentence ("Archive and read: 3 messages marked read and moved to Archive") and one Confirmed, heard a key past the last step ("Ctrl+Shift+9 runs Quick Step 3, and this account has 2."), or heard each refusal: another account's message, a folder or label the account lost, a step a newer version wrote, nothing selected, more than 5,000 selected | open |  | 2026-09-30T23:55:00.000Z |  |
+| 747 | 13 | todo | src/presentation/wx_app.rs |  | 13-42, read in source for whoever builds Undo next: a Quick Step is not one undo. run_these_actions_over remembers no action of its own and each do-half it calls remembers its own, so Edit, Undo after a step takes back its last write (the move of a step that marks and moves) and leaves the marks; tests/a_quick_step_runs_over_the_selection.rs's test_undo_takes_back_the_last_write_of_a_step_not_the_step holds that reading, and the guide and changelog say so | open |  | 2026-09-30T23:55:00.000Z |  |
+| 748 | 13 | todo | src/presentation/wx_app.rs |  | 13-42, found and left beside 688: two changes still reach the server on a worker of their own and so in either order with a move. A label a run puts on a message it also moves (label_these through spawn_server_change's Labelled change; on a server that keeps labels as keywords the keyword can arrive after the move and miss the message, and the next check takes the label off here), and a mark made by hand just before a move by hand (M, then Ctrl+Shift+V quickly). Recommendation, a question for Pratik: the waiting move carries the keywords as it now carries the read and flag marks, and a mark by hand on a row whose move is waiting joins that move's marks; the first is small, the second touches every mark key | open |  | 2026-09-30T23:55:00.000Z |  |
 
 ````json
 [
@@ -9012,11 +9016,11 @@ last_updated: 2026-09-30T23:45:00.000Z
     "phase": "13",
     "file": "src/presentation/wx_app.rs",
     "line": 25901,
-    "description": "13-24.1, found and left: a message's mark and its move still reach the server in whichever order their two workers get the account's session. Carrying the folder means a late mark names the folder the message was in and the number it had there, so it can no longer land on another message; but if the move arrives first, that number is gone from the folder, the server answers the STORE without changing anything, the mark is said as done, and the next check puts the old mark back here from the folder the message reached. Quick Steps that mark and move (13-42) meet this on every run. Recommendation, a question for Pratik: the runner hands each message's marks to the move's push, so one worker on the account's session sends the marks and then the move; small beside 13-42, and no plan carries it yet",
-    "status": "open",
+    "description": "13-24.1, found and left: a message's mark and its move still reach the server in whichever order their two workers get the account's session. Carrying the folder means a late mark names the folder the message was in and the number it had there, so it can no longer land on another message; but if the move arrives first, that number is gone from the folder, the server answers the STORE without changing anything, the mark is said as done, and the next check puts the old mark back here from the folder the message reached. Quick Steps that mark and move (13-42) meet this on every run. Recommendation, a question for Pratik: the runner hands each message's marks to the move's push, so one worker on the account's session sends the marks and then the move; small beside 13-42, and no plan carries it yet. Fixed 2026-09-30 by 13-42, taken as the recommendation on 2026-09-29: a run's move carries the read and flag marks of each message it moves on its waiting row (moves_waiting.read_first and starred_first, added columns), Mark as Read's and Star's do-halves hand such a mark to the move instead of sending it on a worker of their own, and the replay of a waiting move sends the marks it carries and then the move on one session, whether the push right after the key or a later check replays it. application::moves_waiting's test_a_quick_step_that_marks_read_and_moves_sends_the_mark_before_the_move reads the STORE before the MOVE in a scripted server's record. A label beside a move in a run, and a mark made by hand just before a move by hand, still travel on their own worker: ledger 748",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-28T10:41:21.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-30T23:55:00.000Z"
   },
   {
     "id": 689,
@@ -9660,11 +9664,11 @@ last_updated: 2026-09-30T23:45:00.000Z
     "phase": "13",
     "file": "src/application/quick_steps.rs",
     "line": null,
-    "description": "13-40: Quick Steps are stored and named per account (application::quick_steps, data::message_cache::quick_steps) and nothing in the running program makes, shows or runs one. 13-41 gives them a manager on the Action menu, and 13-42 puts the steps on the Action menu with Ctrl+Shift+7 to Ctrl+Shift+9, runs them over the selection through 13-24.1's runner, and closes this entry",
-    "status": "open",
+    "description": "13-40: Quick Steps are stored and named per account (application::quick_steps, data::message_cache::quick_steps) and nothing in the running program makes, shows or runs one. 13-41 gives them a manager on the Action menu, and 13-42 puts the steps on the Action menu with Ctrl+Shift+7 to Ctrl+Shift+9, runs them over the selection through 13-24.1's runner, and closes this entry. Fixed 2026-09-30 by 13-42: Action, Quick Steps lists the active account's steps with Ctrl+Shift+7 to Ctrl+Shift+9 on the first three, and a step's item or key runs run_the_quick_step_at, which checks the selection, the bound, the account and what the step names, calls the runner once and says one sentence; tests/a_quick_step_runs_over_the_selection.rs reads the menu on a built menu bar, the key on a built list, and the run in source",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-30T23:30:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-30T23:55:00.000Z"
   },
   {
     "id": 743,
@@ -9688,6 +9692,54 @@ last_updated: 2026-09-30T23:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T23:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 745,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-42, for phase 14: no Quick Step has reached a real IMAP server. A check on an account whose mail changes are allowed, with a step that marks read, flags, labels and moves run over a few messages: the server's own record of the commands in that order (the marks first and then the move), the flags and the label on the messages in the folder they reached, and whether the next check keeps them; once on Gmail, where a move is a change of label, and once on a server with ordinary folders. Every test here reads the source, a pure function or a scripted server",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T23:55:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 746,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-42, the tester's ear: nobody has opened Action, Quick Steps and heard each step with its key (\"Archive and read, Ctrl+Shift+7\") and Manage Quick Steps after them, run a step by its key or its item and heard it as one act with one sentence (\"Archive and read: 3 messages marked read and moved to Archive\") and one Confirmed, heard a key past the last step (\"Ctrl+Shift+9 runs Quick Step 3, and this account has 2.\"), or heard each refusal: another account's message, a folder or label the account lost, a step a newer version wrote, nothing selected, more than 5,000 selected",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T23:55:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 747,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-42, read in source for whoever builds Undo next: a Quick Step is not one undo. run_these_actions_over remembers no action of its own and each do-half it calls remembers its own, so Edit, Undo after a step takes back its last write (the move of a step that marks and moves) and leaves the marks; tests/a_quick_step_runs_over_the_selection.rs's test_undo_takes_back_the_last_write_of_a_step_not_the_step holds that reading, and the guide and changelog say so",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T23:55:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 748,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-42, found and left beside 688: two changes still reach the server on a worker of their own and so in either order with a move. A label a run puts on a message it also moves (label_these through spawn_server_change's Labelled change; on a server that keeps labels as keywords the keyword can arrive after the move and miss the message, and the next check takes the label off here), and a mark made by hand just before a move by hand (M, then Ctrl+Shift+V quickly). Recommendation, a question for Pratik: the waiting move carries the keywords as it now carries the read and flag marks, and a mark by hand on a row whose move is waiting joins that move's marks; the first is small, the second touches every mark key",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T23:55:00.000Z",
     "resolved_at": null
   }
 ]

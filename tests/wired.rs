@@ -1017,6 +1017,12 @@ fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
             stated.push_str(&format!("\n{key}"));
         }
     }
+    // The Quick Steps' keys, counted from each step's place the same way.
+    for position in 1..=wixen_mail::application::quick_steps::REACHABLE_BY_KEY {
+        if let Some(key) = wixen_mail::application::quick_steps::key_for(position) {
+            stated.push_str(&format!("\n{key}"));
+        }
+    }
 
     let mut invented = Vec::new();
     for key in documented_combinations(&doc) {

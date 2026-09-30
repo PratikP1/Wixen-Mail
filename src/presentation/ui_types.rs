@@ -739,6 +739,13 @@ pub enum UIUpdate {
             >,
         >,
     ),
+    /// The Quick Steps of the account being worked in, in their order,
+    /// readable or not (13-42).
+    ///
+    /// Sent with the labels whenever the sidebar is read, so a step made,
+    /// renamed or moved in the Quick Step Manager reaches Action, Quick
+    /// Steps on the read that follows the manager's close.
+    QuickStepsLoaded(Vec<crate::application::quick_steps::StoredStep>),
     /// What a saved search came to.
     ///
     /// The rows and the sentence together rather than as two updates. A list

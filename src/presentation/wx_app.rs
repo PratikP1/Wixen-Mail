@@ -124,6 +124,12 @@ const HELP_TOPICS_ON_THE_MENU: i32 = crate::application::help::TOPICS.len() as i
 /// saying so.
 const SAVED_SEARCHES_ON_THE_MENU: i32 = 50;
 
+/// How many Quick Steps Action, Quick Steps offers, each with an id of its
+/// own, the first three with a key. A step past the fiftieth is still a row
+/// in the Quick Step Manager, and is left off the menu with a line in the
+/// log saying so.
+const QUICK_STEPS_ON_THE_MENU: i32 = 50;
+
 menu_ids!(
     ID_MUTE_CONTENT,
     ID_NEW_FOLDER,
@@ -321,6 +327,10 @@ menu_ids!(
     ID_SAVED_SEARCH_FIRST[SAVED_SEARCHES_ON_THE_MENU],
     // Action, Quick Steps, Manage Quick Steps (#60, 13-41).
     ID_QUICK_STEP_MGR,
+    // One id per Quick Step on Action, Quick Steps, by its place in the
+    // account's order: the first three carry Ctrl+Shift+7 to Ctrl+Shift+9
+    // (13-42).
+    ID_QUICK_STEP_FIRST[QUICK_STEPS_ON_THE_MENU],
 );
 
 // Sort menu IDs
@@ -550,6 +560,26 @@ pub struct WxUIState {
         String,
         crate::data::message_cache::saved_searches::SavedSearchesRead,
     >,
+    /// The Quick Steps of the account being worked in, in the order the
+    /// Quick Step Manager keeps them (13-42).
+    ///
+    /// One list for the menu's items, for the key that runs a step by its
+    /// place, and for the answer to a key past the last, so the step heard
+    /// beside a key is the step the key runs.
+    pub quick_steps: Vec<crate::application::quick_steps::StoredStep>,
+    /// The marks the move a run is about to make carries to the server, by
+    /// row, while 13-24.1's runner is carrying one account's work out
+    /// (ledger 688).
+    ///
+    /// The runner names the rows whose move will carry their marks; Mark as
+    /// Read's and Star's do-halves, meeting such a row, mark it here and hand
+    /// the mark over rather than telling the server on a worker of its own;
+    /// the move, once made here, keeps the marks on its waiting row, so the
+    /// one push sends them and then the move. What no move took is told to
+    /// the server on its own by the runner before it returns, so nothing is
+    /// left here between runs.
+    pub the_next_move_carries:
+        std::collections::BTreeMap<i64, crate::data::message_cache::moves_waiting::MarksFirst>,
     /// The search last run from the search box while Mail was showing.
     ///
     /// What Save This Search saves. Kept because the box is a modal dialog
@@ -751,6 +781,8 @@ impl Default for WxUIState {
             events: Vec::new(),
             labels: Vec::new(),
             saved_searches: std::collections::HashMap::new(),
+            quick_steps: Vec::new(),
+            the_next_move_carries: std::collections::BTreeMap::new(),
             mail_search_that_was_run: None,
             calendars: Vec::new(),
             selected_note_id: None,
@@ -3921,6 +3953,22 @@ impl WxMailApp {
                 say_there_is_no_saved_search_there,
             );
 
+            // Ctrl+Shift and a digit past the account's last Quick Step,
+            // answered where the chosen messages are.
+            answer_the_quick_step_keys_the_menu_cannot(&msg_list, frame, {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |position| {
+                    let how_many = lock_state(&state).quick_steps.len();
+                    send_status(
+                        &ui_tx,
+                        &runtime,
+                        &crate::application::quick_steps::nothing_there(position, how_many),
+                    );
+                }
+            });
+
             wire_read_aloud(
                 &msg_list,
                 &a11y,
@@ -6015,6 +6063,13 @@ impl WxMailApp {
                                 }
                             }
                         }
+                        // A Quick Step on Action, Quick Steps, by its item or
+                        // its key, over the messages chosen at that moment.
+                        _ if quick_step_position_of(id).is_some() => {
+                            if let Some(place) = quick_step_position_of(id) {
+                                run_the_quick_step_at(app, &message_cache, &msg_list, &a11y, place);
+                            }
+                        }
                         _ if id == ID_CHECK_FOR_UPDATES => {
                             // Whatever the setting says, per D-16. This is the
                             // deliberate path SHIP-02 asks for and it must not
@@ -7317,17 +7372,12 @@ impl WxMailApp {
         let saved_search_menu = Menu::builder().build();
         rebuild_the_saved_search_menu(&saved_search_menu, &[]);
 
-        // Quick Steps (#60): the manager where a step is named and made, and
-        // the steps themselves above it once they run. Its help is the
-        // experimental sentence, where the item is chosen, because no step
-        // has run against a real account.
-        let quick_steps_menu = Menu::builder()
-            .append_item(
-                ID_QUICK_STEP_MGR,
-                "&Manage Quick Steps...",
-                crate::application::quick_steps::QUICK_STEPS_ARE_EXPERIMENTAL,
-            )
-            .build();
+        // Quick Steps (#60): the steps of the account being worked in, and
+        // the manager where a step is named and made. Its items are written
+        // in one place, the rebuild, which the steps loading calls again with
+        // the account's own.
+        let quick_steps_menu = Menu::builder().build();
+        rebuild_the_quick_steps_menu(&quick_steps_menu, &[]);
 
         let folder_menu = Menu::builder()
             .append_item(
@@ -11231,6 +11281,275 @@ pub fn a_saved_search_key_the_menu_does_not_answer(menu_bar: &MenuBar, position:
         && saved_search_id_at(position).is_some_and(|id| menu_bar.find_item(id).is_none())
 }
 
+/// The menu id of the Quick Step at this place in the account's order,
+/// counted from one. `None` past the block reserved for them.
+fn quick_step_id_at(position: usize) -> Option<Id> {
+    let past_the_first = i32::try_from(position.checked_sub(1)?).ok()?;
+    (past_the_first < QUICK_STEPS_ON_THE_MENU).then_some(ID_QUICK_STEP_FIRST + past_the_first)
+}
+
+/// The place in the account's order a Quick Step's menu id stands for: the
+/// inverse of [`quick_step_id_at`], asked of it rather than written twice.
+fn quick_step_position_of(id: Id) -> Option<usize> {
+    (1..=QUICK_STEPS_ON_THE_MENU as usize).find(|position| quick_step_id_at(*position) == Some(id))
+}
+
+/// Fill Action, Quick Steps from an account's steps, by name in their order.
+///
+/// One item per step as `quick_steps::what_the_menu_says` words it,
+/// Ctrl+Shift+7 to Ctrl+Shift+9 on the first three, then Manage Quick Steps.
+/// Everything on the menu goes first, so a step renamed or moved, or one that
+/// went, leaves nothing behind. The builder calls this with no steps, so
+/// Manage Quick Steps is written here and nowhere else. Its help, and every
+/// step's, is the experimental sentence, where the item is chosen, because
+/// no step has run against a real account.
+///
+/// The parameter keeps the builder's name, `quick_steps_menu`, because the
+/// check that no two items on a menu claim one letter finds a menu's items
+/// by that name.
+pub fn rebuild_the_quick_steps_menu(quick_steps_menu: &Menu, names: &[String]) {
+    use crate::application::quick_steps::{QUICK_STEPS_ARE_EXPERIMENTAL, what_the_menu_says};
+    // Counted rather than asked until nothing is left: asking for the first
+    // item of an empty menu is an assertion in wxWidgets.
+    for item in quick_steps_menu.get_menu_items() {
+        quick_steps_menu.delete_item(&item);
+    }
+    let steps = what_the_menu_says(names);
+    for step in &steps {
+        let Some(id) = quick_step_id_at(step.position) else {
+            tracing::warn!(
+                "The Quick Steps menu shows {} steps; the {} after them are in the Quick Step \
+                 Manager",
+                step.position - 1,
+                names.len() + 1 - step.position
+            );
+            break;
+        };
+        quick_steps_menu.append(
+            id,
+            &step.text,
+            QUICK_STEPS_ARE_EXPERIMENTAL,
+            wxdragon::menus::ItemKind::Normal,
+        );
+    }
+    if !steps.is_empty() {
+        quick_steps_menu.append_separator();
+    }
+    quick_steps_menu.append(
+        ID_QUICK_STEP_MGR,
+        "&Manage Quick Steps...",
+        QUICK_STEPS_ARE_EXPERIMENTAL,
+        wxdragon::menus::ItemKind::Normal,
+    );
+}
+
+/// Run the Quick Step at this place in the account's order over the
+/// messages chosen now, from its item on Action, Quick Steps or its key
+/// (13-42, #60).
+///
+/// A line of checks, each ending in a sentence that says nothing changed:
+/// the step is one this build can read; the selection, read with the step's
+/// reach, holds something and no more than Select All may; every chosen
+/// message is the step's account's, since a step's folder and label are
+/// that account's and a folder of the same path elsewhere is somebody
+/// else's mail; and the account still has what the step names. Then 13-24.1's
+/// runner, once, which meets each account's gate before anything changes and
+/// carries every write through the paths the set commands use, and one
+/// sentence naming the step and what it did, with one Confirmed. The runner
+/// says nothing of its own, so that sentence is the only one.
+fn run_the_quick_step_at(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    list: &ListCtrl,
+    a11y: &Accessibility,
+    place: usize,
+) {
+    use crate::application::choosing_messages::too_many;
+    use crate::application::quick_steps::{
+        StoredStep, not_this_accounts, nothing_there, what_a_step_did, what_is_gone,
+        what_the_account_lacks, written_by_a_newer_version,
+    };
+    let AppHandles { state, tx, rt } = app;
+    let (stored, account, how_many) = {
+        let s = lock_state(state);
+        let account = s
+            .active_account_id
+            .as_deref()
+            .and_then(|id| s.accounts.iter().find(|account| account.id == id))
+            .cloned();
+        let stored = place
+            .checked_sub(1)
+            .and_then(|at| s.quick_steps.get(at))
+            .cloned();
+        (stored, account, s.quick_steps.len())
+    };
+    let step = match stored {
+        Some(StoredStep::Readable(step)) => step,
+        Some(StoredStep::WrittenByANewerVersion { name, .. }) => {
+            return send_refusal(tx, rt, &written_by_a_newer_version(&name));
+        }
+        None => return send_status(tx, rt, &nothing_there(place, how_many)),
+    };
+    let (Some(account), Some(held)) = (account, cache.as_ref()) else {
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
+    };
+    let reach =
+        crate::application::quick_steps::reach(&step.does, how_a_conversation_delete_is_set());
+    let chosen = match chosen_messages(state, cache, list, reach) {
+        Ok(chosen) => chosen,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    if chosen.is_empty() {
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
+    }
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+    let elsewhere = {
+        let s = lock_state(state);
+        chosen
+            .messages
+            .iter()
+            .filter(|message| {
+                owner_of(
+                    &s.messages,
+                    &s.accounts,
+                    message.row_id,
+                    s.active_account_id.as_deref(),
+                )
+                .is_none_or(|owner| owner.id != account.id)
+            })
+            .count()
+    };
+    if elsewhere > 0 {
+        return send_refusal(
+            tx,
+            rt,
+            &not_this_accounts(&step.name, &account.name, elsewhere),
+        );
+    }
+    let what_the_account_has = labels_for(held, &account.id).and_then(|labels| {
+        held.get_folders_for_account(&account.id)
+            .map(|folders| (folders, labels))
+    });
+    let (folders, labels) = match what_the_account_has {
+        Ok(has) => has,
+        Err(e) => {
+            return send_refusal(
+                tx,
+                rt,
+                &format!("The folders and labels could not be read, so nothing was changed: {e}."),
+            );
+        }
+    };
+    if let Some(missing) = what_the_account_lacks(&step.does, &folders, &labels) {
+        return send_refusal(tx, rt, &what_is_gone(&step.name, &missing));
+    }
+    let done = match run_these_actions_over(app, list, held, &chosen, &step.does) {
+        Ok(done) => done,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    let said = what_a_step_did(&step.name, &chosen, &done);
+    let _ = a11y.announce(
+        &said,
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+    send_shown(tx, rt, &said);
+    let _ = a11y.signal(FeedbackEvent::Confirmed, &step.name);
+}
+
+/// Put the account's Quick Steps, by name in their order, on Action, Quick
+/// Steps.
+///
+/// Called when the steps load, which is whenever the sidebar is read again:
+/// on start, on a change of account, after the Quick Step Manager closes,
+/// and on a timer among other times. Steps the menu already says are left as
+/// they are, so a menu somebody has open is not emptied and filled under
+/// them.
+pub fn put_the_quick_steps_on_the_menu(frame: &Frame, names: &[String]) {
+    let Some((_, quick_steps_menu)) = frame
+        .get_menu_bar()
+        .and_then(|bar| bar.find_item_and_menu(ID_QUICK_STEP_MGR))
+    else {
+        return;
+    };
+    let steps_it_should_say: Vec<String> =
+        crate::application::quick_steps::what_the_menu_says(names)
+            .into_iter()
+            .take(QUICK_STEPS_ON_THE_MENU as usize)
+            .map(|step| step.text)
+            .collect();
+    // The step items, told from Manage Quick Steps by their ids rather than
+    // by a separator, because an account with no steps has no separator.
+    let steps_it_says: Vec<String> = quick_steps_menu
+        .get_menu_items()
+        .iter()
+        .filter(|item| quick_step_position_of(item.get_item_id()).is_some())
+        .map(|item| item.get_label())
+        .collect();
+    if steps_it_says != steps_it_should_say {
+        rebuild_the_quick_steps_menu(&quick_steps_menu, names);
+    }
+}
+
+/// Whether the Quick Step key at this place has no item on the menu to
+/// answer it.
+///
+/// A key past the account's last step has no item to carry it, so the menu
+/// never sees it, and the message list answers it with which step it would
+/// run and how many there are.
+pub fn a_quick_step_key_the_menu_does_not_answer(menu_bar: &MenuBar, position: usize) -> bool {
+    (1..=crate::application::quick_steps::REACHABLE_BY_KEY).contains(&position)
+        && quick_step_id_at(position).is_some_and(|id| menu_bar.find_item(id).is_none())
+}
+
+/// Answer Ctrl+Shift and a digit past the account's last Quick Step from the
+/// message list.
+///
+/// A step's key is the accelerator of its item on Action, Quick Steps, and a
+/// key past the last step has no item, so the menu never sees it; left alone
+/// it would do nothing and say nothing, which cannot be told from a key that
+/// is broken. The list, where the chosen messages are, answers it instead
+/// with the place it stands for. Every other key is left to the list.
+///
+/// Measured on 2026-09-30 in `tests/a_quick_step_runs_over_the_selection.rs`:
+/// with Ctrl and Shift held, a digit posted to a built list reaches its key
+/// event with both read and the digit as the key, once the menu has no item
+/// to take it first.
+pub fn answer_the_quick_step_keys_the_menu_cannot(
+    list: &ListCtrl,
+    frame: Frame,
+    answer: impl Fn(usize) + 'static,
+) {
+    use crate::application::quick_steps::{REACHABLE_BY_KEY, key_for};
+    list.bind_internal(EventType::KEY_DOWN, move |event| {
+        event.skip(true);
+        if !event.control_down() || !event.shift_down() || event.alt_down() {
+            return;
+        }
+        let Some(pressed) = event
+            .get_key_code()
+            .and_then(|key| u8::try_from(key).ok())
+            .filter(u8::is_ascii_digit)
+            .map(|digit| format!("Ctrl+Shift+{}", char::from(digit)))
+        else {
+            return;
+        };
+        let Some(position) = (1..=REACHABLE_BY_KEY)
+            .find(|position| key_for(*position).as_deref() == Some(pressed.as_str()))
+        else {
+            return;
+        };
+        let the_menu_cannot = frame
+            .get_menu_bar()
+            .is_some_and(|bar| a_quick_step_key_the_menu_does_not_answer(&bar, position));
+        if the_menu_cannot {
+            event.skip(false);
+            answer(position);
+        }
+    });
+}
+
 /// The saved searches of the account being worked in, in the order the
 /// folder tree and the Saved Searches menu show them.
 ///
@@ -11527,17 +11846,23 @@ fn chosen_messages(
 /// the command runs so the count and the delete agree.
 fn how_far_a_conversation_delete_reaches() -> crate::application::conversations::AConversationReaches
 {
-    let setting = crate::data::config::ConfigManager::load_stored()
+    crate::application::choosing_messages::reach_for(
+        crate::application::choosing_messages::SetCommand::Delete,
+        how_a_conversation_delete_is_set(),
+    )
+}
+
+/// The D-07 setting, read where the command runs: what deleting a
+/// conversation row takes. A Quick Step that deletes reaches as Delete does.
+fn how_a_conversation_delete_is_set() -> crate::application::conversations::DeletingAConversationRow
+{
+    crate::data::config::ConfigManager::load_stored()
         .map(|stored| {
             crate::application::conversations::DeletingAConversationRow::from_stored(
                 &stored.app_config().deleting_a_conversation_row,
             )
         })
-        .unwrap_or_default();
-    crate::application::choosing_messages::reach_for(
-        crate::application::choosing_messages::SetCommand::Delete,
-        setting,
-    )
+        .unwrap_or_default()
 }
 
 /// Toggle the selected messages between read and unread, say so once, and
@@ -11653,14 +11978,17 @@ fn mark_these_read(
             list.refresh(true, None);
             return Err(StoppedAtARefusedWrite);
         }
-        spawn_server_change(
-            app,
-            message.row_id,
-            message.uid,
-            message.subject.clone(),
-            the_folder_it_is_in(cache.as_deref(), message.row_id),
-            ServerChange::Flag(FlagChange::Read(read)),
-        );
+        let change = FlagChange::Read(read);
+        if !handed_to_the_move(state, message.row_id, &change) {
+            spawn_server_change(
+                app,
+                message.row_id,
+                message.uid,
+                message.subject.clone(),
+                the_folder_it_is_in(cache.as_deref(), message.row_id),
+                ServerChange::Flag(change),
+            );
+        }
     }
     remember_the_last_action(
         state,
@@ -11722,14 +12050,17 @@ fn star_these(
             list.refresh(true, None);
             return Err(StoppedAtARefusedWrite);
         }
-        spawn_server_change(
-            app,
-            message.row_id,
-            message.uid,
-            message.subject.clone(),
-            the_folder_it_is_in(cache.as_deref(), message.row_id),
-            ServerChange::Flag(FlagChange::Flagged(starred)),
-        );
+        let change = FlagChange::Flagged(starred);
+        if !handed_to_the_move(state, message.row_id, &change) {
+            spawn_server_change(
+                app,
+                message.row_id,
+                message.uid,
+                message.subject.clone(),
+                the_folder_it_is_in(cache.as_deref(), message.row_id),
+                ServerChange::Flag(change),
+            );
+        }
     }
     remember_the_last_action(
         state,
@@ -11743,6 +12074,98 @@ fn star_these(
         true => Outcome::Starred,
         false => Outcome::Unstarred,
     })
+}
+
+/// Hand a mark made here to the move this row is about to make, when a run
+/// has named the row as one whose move carries its marks, and say whether it
+/// was handed over (ledger 688). A mark not handed over is the do-half's to
+/// tell the server about, as it always was; a label is never handed over,
+/// since the waiting move carries the two flags alone.
+fn handed_to_the_move(state: &Arc<StdMutex<WxUIState>>, row_id: i64, change: &FlagChange) -> bool {
+    let mut s = lock_state(state);
+    let Some(marks) = s.the_next_move_carries.get_mut(&row_id) else {
+        return false;
+    };
+    match change {
+        FlagChange::Read(read) => marks.read = Some(*read),
+        FlagChange::Flagged(starred) => marks.starred = Some(*starred),
+        FlagChange::Labelled { .. } => return false,
+    }
+    true
+}
+
+/// Keep the marks handed to this move on its waiting row, so the push that
+/// sends the move sends them first (ledger 688). A row whose marks the store
+/// would not keep has them handed back, and the runner tells the server
+/// about them on their own.
+fn the_move_takes_its_marks(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    moved: &crate::data::message_cache::moves_waiting::AWaitingMove,
+) {
+    let Some(marks) = lock_state(state)
+        .the_next_move_carries
+        .remove(&moved.message_row_id)
+    else {
+        return;
+    };
+    if marks.is_nothing() {
+        return;
+    }
+    if let Err(why) = cache.send_these_marks_before_the_move(moved.message_row_id, marks) {
+        tracing::warn!(
+            "The marks of message {} go on their own: {why}",
+            moved.message_row_id
+        );
+        lock_state(state)
+            .the_next_move_carries
+            .insert(moved.message_row_id, marks);
+    }
+}
+
+/// Tell the server about every mark handed to a move that did not take it,
+/// each on its own as a do-half would have, and leave nothing handed over
+/// for the next run.
+fn send_the_marks_no_move_took(app: AppHandles<'_>, cache: &MessageCache) {
+    let left = std::mem::take(&mut lock_state(app.state).the_next_move_carries);
+    for (row_id, marks) in left {
+        send_the_marks_on_their_own(app, cache, row_id, marks);
+    }
+}
+
+/// A run stopping part way: the marks already made here and handed to a
+/// move that will not be made go on their own, and the reason passes
+/// through.
+fn stopped_with_its_marks_sent(app: AppHandles<'_>, cache: &MessageCache, why: String) -> String {
+    send_the_marks_no_move_took(app, cache);
+    why
+}
+
+/// Tell the server about one row's marks on their own, each on the worker a
+/// do-half uses, from the folder the row is in now.
+fn send_the_marks_on_their_own(
+    app: AppHandles<'_>,
+    cache: &MessageCache,
+    row_id: i64,
+    marks: crate::data::message_cache::moves_waiting::MarksFirst,
+) {
+    let Ok(Some(message)) = cache.get_message(row_id) else {
+        return;
+    };
+    let changes = [
+        marks.read.map(FlagChange::Read),
+        marks.starred.map(FlagChange::Flagged),
+    ];
+    for change in changes.into_iter().flatten() {
+        spawn_server_change(
+            app,
+            row_id,
+            message.uid,
+            message.subject.clone(),
+            the_folder_it_is_in(Some(cache), row_id),
+            ServerChange::Flag(change),
+        );
+    }
 }
 
 /// Whether any selected row is unread: a message row's own flag, or on a
@@ -13457,6 +13880,15 @@ fn folder_tree_updates(
     // take somebody's mail off the screen. The failure is logged rather than
     // swallowed silently, and it costs that account its branch rather than
     // everybody's.
+    // The Quick Steps of the account being worked in, on the labels' terms:
+    // a step that cannot be read costs the menu its steps, never the folder
+    // list, and the failure is logged.
+    let quick_steps = cache
+        .get_quick_steps_for_account(account_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("The Quick Steps could not be read: {e}");
+            Vec::new()
+        });
     let mut saved: std::collections::HashMap<
         String,
         crate::data::message_cache::saved_searches::SavedSearchesRead,
@@ -13527,6 +13959,7 @@ fn folder_tree_updates(
                 .map(|tag| (tag.id.clone(), tag.name.clone()))
                 .collect(),
         ),
+        UIUpdate::QuickStepsLoaded(quick_steps),
         UIUpdate::SavedSearchesLoaded(Box::new(saved)),
         // Keyed on the identity rather than on the label. Keyed on the label,
         // two folders whose leaf is the same word collapse into one entry of
@@ -21543,6 +21976,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             lock_state(state).labels = labels.clone();
             put_the_labels_on_the_menu(frame, labels);
         }
+        UIUpdate::QuickStepsLoaded(steps) => {
+            lock_state(state).quick_steps = steps.clone();
+            let names: Vec<String> = steps.iter().map(|step| step.name().to_string()).collect();
+            put_the_quick_steps_on_the_menu(frame, &names);
+        }
         UIUpdate::SavedSearchesLoaded(searches) => {
             let names = {
                 let mut s = lock_state(state);
@@ -24275,6 +24713,7 @@ fn complete_here_then_tell_the_server(
             match what_happens_here(cache, &ask.asked, &ask.subject) {
                 Ok(made) => {
                     made_here_for_this_account += 1;
+                    the_move_takes_its_marks(state, cache, &made.kept);
                     if made.kept.what.is_a_copy() {
                         if a_set {
                             send_shown(tx, rt, &made.shown);
@@ -24297,6 +24736,14 @@ fn complete_here_then_tell_the_server(
                          asked first: {why}",
                         ask.asked.message_row_id
                     );
+                    // Its marks go on their own, asked for before the move,
+                    // since no waiting row is there to carry them.
+                    let handed = lock_state(state)
+                        .the_next_move_carries
+                        .remove(&ask.asked.message_row_id);
+                    if let Some(marks) = handed {
+                        send_the_marks_on_their_own(app, cache, ask.asked.message_row_id, marks);
+                    }
                     server_first(ask);
                 }
             }
@@ -25077,12 +25524,24 @@ fn run_these_actions_over(
         work,
     } in accounts
     {
+        // A message this account's run marks and moves has its marks carried
+        // by the move, so one push sends them and then the move (ledger 688).
+        // The do-halves hand each such mark over as they make it here; what
+        // no move takes goes on its own, whether the run finishes or stops.
+        lock_state(app.state).the_next_move_carries = work
+            .the_marks_that_go_with_the_move()
+            .into_keys()
+            .map(|row_id| (row_id, Default::default()))
+            .collect();
+        let stopped = |why: String| stopped_with_its_marks_sent(app, cache, why);
         if let Some((read, those)) = &work.read {
-            mark_these_read(app, &held, list, those, *read).map_err(|_| STOPPED.to_string())?;
+            mark_these_read(app, &held, list, those, *read)
+                .map_err(|_| stopped(STOPPED.to_string()))?;
             done.marked(*read, those.messages.len());
         }
         if let Some((starred, those)) = &work.starred {
-            star_these(app, &held, list, those, *starred).map_err(|_| STOPPED.to_string())?;
+            star_these(app, &held, list, those, *starred)
+                .map_err(|_| stopped(STOPPED.to_string()))?;
             done.starred(*starred, those.messages.len());
         }
         for (label_id, those) in &work.labels {
@@ -25090,19 +25549,19 @@ fn run_these_actions_over(
                 continue;
             };
             let on_them = TheLabelsOnTheSet::read(cache, &account.id, those)
-                .map_err(|e| format!("The labels could not be read: {e}."))?;
+                .map_err(|e| stopped(format!("The labels could not be read: {e}.")))?;
             let change = LabelChange::One {
                 label: label.clone(),
                 on: true,
             };
-            label_these(app, cache, those, &on_them, change)?;
+            label_these(app, cache, those, &on_them, change).map_err(stopped)?;
             done.labelled(&label.name, those.messages.len());
         }
         if let Some((phrase, those)) = &work.say_first {
             for message in &those.messages {
                 cache
                     .set_says_first(message.row_id, Some(phrase))
-                    .map_err(|e| format!("{STOPPED} {e}."))?;
+                    .map_err(|e| stopped(format!("{STOPPED} {e}.")))?;
             }
             done.said_first(phrase, those.messages.len());
         }
@@ -25132,6 +25591,7 @@ fn run_these_actions_over(
             }
             Some((Then::Stay, _)) | None => {}
         }
+        send_the_marks_no_move_took(app, cache);
     }
     Ok(done)
 }
