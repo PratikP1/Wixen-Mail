@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 513 records have arrived since and have not been through it.
+# 514 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -14575,7 +14575,7 @@ red = [
     "data::message_cache::saved_searches::tests::test_a_search_saved_from_a_narrowed_search_box_comes_back_narrowed",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 80 },
+    { file = "src/application/saved_searches.rs", tests = 84 },
     { file = "src/data/message_cache/saved_searches.rs", tests = 30 },
 ]
 
@@ -14619,7 +14619,7 @@ red = [
     "application::saved_searches::tests::test_an_all_join_with_no_questions_takes_nothing_rather_than_everything",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 80 },
+    { file = "src/application/saved_searches.rs", tests = 84 },
 ]
 
 # ── One group in the tree, however a saved search was made ──────────────────
@@ -14822,7 +14822,7 @@ red = [
     "application::saved_searches::tests::test_one_place_builds_the_coverage_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 80 },
+    { file = "src/application/saved_searches.rs", tests = 84 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -35265,7 +35265,7 @@ red = [
     "application::saved_searches::tests::test_the_first_six_searches_have_keys_and_the_rest_do_not",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 80 },
+    { file = "src/application/saved_searches.rs", tests = 84 },
 ]
 
 # The searches loading and the menu left as it was built, so the Saved
@@ -35288,6 +35288,25 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_saved_searches_menu_says_the_searches_an_account_has.rs", tests = 16 },
+]
+
+# The refusal taken out of a search made from nothing, so one that asks
+# nothing is handed to the store and, joined with Any, would take the whole
+# mailbox. Written 2026-09-30 by 13-39, measured through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a saved search made from nothing that asks nothing is refused before the store"
+file = "src/application/saved_searches.rs"
+before = '''    let EditedConditions { join, questions } = edited;
+    if questions.is_empty() {
+        return Err(ASKS_NOTHING);
+    }'''
+after = '''    let EditedConditions { join, questions } = edited;'''
+red = [
+    "application::saved_searches::tests::test_a_search_from_nothing_that_asks_nothing_is_refused_in_the_one_wording",
+]
+tests_last_seen = [
+    { file = "src/application/saved_searches.rs", tests = 84 },
 ]
 
 # The comparison that decides whether the Saved Searches menu is rebuilt made

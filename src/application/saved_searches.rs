@@ -162,12 +162,18 @@ impl Join {
         }
     }
 
-    /// Both answers, in the order the conditions window offers them.
-    pub const CHOICES: [Join; 2] = [Join::Any, Join::All];
+    /// Both answers, in the order the conditions window offers them: every
+    /// first, the narrower answer and the one a search made from nothing
+    /// starts on.
+    pub const CHOICES: [Join; 2] = [Join::All, Join::Any];
 
-    /// What the conditions window's choice says for this answer.
+    /// What the conditions window's choice says for this answer, after "Find
+    /// messages that match".
     pub fn in_the_window(self) -> &'static str {
-        ""
+        match self {
+            Join::All => "every condition",
+            Join::Any => "any condition",
+        }
     }
 }
 
@@ -962,7 +968,17 @@ pub fn created(name: &str) -> String {
 }
 
 /// What refuses a saved search that asks nothing about a message.
-pub const ASKS_NOTHING: &str = "";
+///
+/// A search that asks nothing takes the whole mailbox when its questions are
+/// joined with Any and nothing at all when they are joined with All, and
+/// neither is a search anybody wrote. The conditions window says this when
+/// its Close is pressed over an empty list, the write-back after Edit
+/// Conditions says it for a list left empty by the close box, and
+/// [`a_search_from_nothing`] says it before a new one reaches the store. One
+/// wording, here, because somebody meeting two hears two reasons for one
+/// thing.
+pub const ASKS_NOTHING: &str = "A saved search has to ask at least one thing about a message. Add a \
+                                condition before closing this window.";
 
 /// The most a saved search's name may run to.
 ///
@@ -1262,31 +1278,60 @@ impl SavedSearch {
     }
 }
 
-/// What the conditions window gives back when anything in it changed.
+/// What the conditions window gives back when anything in it changed: the
+/// answer to every or any, and the questions.
+///
+/// The two together, because the window asks both and a caller that took
+/// only the questions would keep a join the window had just changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditedConditions {
     pub join: Join,
     pub questions: Vec<Question>,
 }
 
-/// A saved search made from nothing, from a name, a place and the conditions
-/// window's answer.
+/// A saved search made from nothing: a name and a place from the New Saved
+/// Search window, and the conditions window's answer.
+///
+/// Refused in [`ASKS_NOTHING`]'s words when it asks nothing, before the store
+/// is reached, so the store's own refusal is a net under a caller that forgot
+/// rather than the sentence somebody hears.
 pub fn a_search_from_nothing(
-    _id: String,
-    _name: String,
-    _folder: Option<String>,
-    _edited: EditedConditions,
+    id: String,
+    name: String,
+    folder: Option<String>,
+    edited: EditedConditions,
 ) -> Result<SavedSearch, &'static str> {
-    Err(ASKS_NOTHING)
+    let EditedConditions { join, questions } = edited;
+    if questions.is_empty() {
+        return Err(ASKS_NOTHING);
+    }
+    Ok(SavedSearch {
+        id,
+        name,
+        join,
+        questions,
+        folder,
+    })
 }
 
-/// The places a new saved search can look in, as the window shows them and
-/// the folder each one names.
+/// The places a new saved search can look in: what the window's Look in
+/// choice says for each, and the folder it stores.
+///
+/// Everywhere in the account first, which stores no folder, then the
+/// account's folders by path in the order given, which is the tree's. Only
+/// the one account's, because a search runs inside the account it is saved
+/// under and a folder path is not unique across accounts.
 pub fn where_a_search_can_look(
-    _account_name: &str,
-    _folder_paths: &[String],
+    account_name: &str,
+    folder_paths: &[String],
 ) -> Vec<(String, Option<String>)> {
-    Vec::new()
+    std::iter::once((format!("Everywhere in {account_name}"), None))
+        .chain(
+            folder_paths
+                .iter()
+                .map(|path| (path.clone(), Some(path.clone()))),
+        )
+        .collect()
 }
 
 #[cfg(test)]

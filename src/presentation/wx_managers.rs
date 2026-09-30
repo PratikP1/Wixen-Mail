@@ -17,7 +17,7 @@ use crate::application::filters::{
 };
 use crate::application::phone_numbers::{self, Reading, Region};
 use crate::application::reordering::{Move, Moved};
-use crate::application::saved_searches::Question;
+use crate::application::saved_searches::{self, Question};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
@@ -3693,9 +3693,8 @@ fn a_condition_in_words(question: &Question) -> String {
 /// What a saved search's condition list still needs before its window can
 /// close, if anything.
 ///
-/// At least one condition. A search that asks nothing takes the whole mailbox
-/// when its questions are joined with Any and nothing at all when they are
-/// joined with All, and neither is a search anybody wrote.
+/// At least one condition, refused in [`saved_searches::ASKS_NOTHING`]'s
+/// words, which say why.
 ///
 /// The store refuses the same thing (`MessageCache::replace_saved_search`),
 /// and two refusals is deliberate rather than a duplicate: a window is where
@@ -3704,13 +3703,10 @@ fn a_condition_in_words(question: &Question) -> String {
 ///
 /// Public because the Close button is not the only way out of a window. The
 /// caller reads this too, for a list somebody emptied and then left by the
-/// close box or Escape, so there is one wording of the refusal rather than a
-/// second one written where the write happens.
+/// close box or Escape. The wording lives in the application layer since
+/// 13-39, where a search made from nothing is refused in it as well.
 pub fn what_a_condition_list_still_needs(questions: &[Question]) -> Option<&'static str> {
-    questions.is_empty().then_some(
-        "A saved search has to ask at least one thing about a message. Add a condition \
-         before closing this window.",
-    )
+    questions.is_empty().then_some(saved_searches::ASKS_NOTHING)
 }
 
 /// The rows of a saved search's condition list, repainted from the working
