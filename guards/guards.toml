@@ -35405,7 +35405,7 @@ red = [
     "application::quick_steps::tests::test_a_step_that_deletes_and_moves_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/application/quick_steps.rs", tests = 22 },
+    { file = "src/application/quick_steps.rs", tests = 27 },
 ]
 
 # Removing an account no longer clearing its Quick Steps, so their names and

@@ -19,8 +19,9 @@ use crate::application::acting_on_a_set::{WhatWasDone, said};
 use crate::application::choosing_messages::{Chosen, SetCommand, reach_for};
 use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
 use crate::application::filters::{FilterAction, FilterEngine, Outcome, SAY_FIRST_LIMIT};
+use crate::application::mail_sync::the_folder_a_rule_names;
 use crate::application::saved_searches::tidied;
-use crate::application::tagging::MenuLine;
+use crate::application::tagging::{MenuLine, the_label_a_rule_names};
 use crate::data::message_cache::{CachedFolder, Tag};
 
 pub use crate::application::reordering::{Move, Moved};
@@ -376,36 +377,70 @@ pub enum Missing {
 
 /// The first folder or label `does` names that the account has none of,
 /// found the way a rule finds them, or `None` when it has every one.
+///
+/// Asked before anything runs, so a step whose folder was renamed or whose
+/// label was removed stops whole rather than marking the messages and then
+/// finding nowhere to move them.
 pub fn what_the_account_lacks(
     does: &Outcome,
     folders: &[CachedFolder],
     labels: &[Tag],
 ) -> Option<Missing> {
-    let _ = (does, folders, labels);
-    None
+    let lost_folder = does
+        .move_to
+        .as_ref()
+        .filter(|named| the_folder_a_rule_names(folders, named).is_none())
+        .map(|named| Missing::Folder(named.clone()));
+    lost_folder.or_else(|| {
+        does.tags
+            .iter()
+            .find(|named| the_label_a_rule_names(labels, named).is_none())
+            .map(|named| Missing::Label(named.clone()))
+    })
 }
 
 /// What is said when a step names a folder or a label its account no longer
 /// has: the step, what it names, that nothing changed, and where to mend it.
 pub fn what_is_gone(step: &str, missing: &Missing) -> String {
-    let _ = (step, missing);
-    String::new()
+    let what_it_does = match missing {
+        Missing::Folder(path) => format!("moves mail to {path}"),
+        Missing::Label(name) => format!("labels mail with {name}"),
+    };
+    format!(
+        "{step} {what_it_does}, which this account no longer has. {NOTHING_WAS_CHANGED} Edit \
+         the step in Manage Quick Steps."
+    )
 }
 
 /// What is said when some of the chosen messages are in another account
 /// than the step's: how many, that nothing changed, and which account's
 /// messages to choose.
+///
+/// Refused whole rather than narrowed to the step's own messages, because a
+/// step that quietly did half of what was chosen is the half-done run a
+/// Quick Step must never be.
 pub fn not_this_accounts(step: &str, account: &str, elsewhere: usize) -> String {
-    let _ = (step, account, elsewhere);
-    String::new()
+    let are = match elsewhere {
+        1 => "is",
+        _ => "are",
+    };
+    format!(
+        "{step} belongs to {account}, and {elsewhere} of the chosen messages {are} in another \
+         account. {NOTHING_WAS_CHANGED} Choose messages in {account}."
+    )
 }
 
 /// What is said when the step at a place was written by a newer version of
 /// Wixen Mail: it was not run, and where it can be moved or removed.
 pub fn written_by_a_newer_version(step: &str) -> String {
-    let _ = step;
-    String::new()
+    format!(
+        "{step} was written by a newer version of Wixen Mail, so it was not run and nothing \
+         was changed. It can be moved or removed in Manage Quick Steps."
+    )
 }
+
+/// The middle of every refusal a step says before it runs.
+const NOTHING_WAS_CHANGED: &str = "Nothing was changed.";
 
 /// What Quick Steps say about themselves where one is chosen.
 ///
