@@ -11231,6 +11231,29 @@ pub fn a_saved_search_key_the_menu_does_not_answer(menu_bar: &MenuBar, position:
         && saved_search_id_at(position).is_some_and(|id| menu_bar.find_item(id).is_none())
 }
 
+/// Put the account's Quick Steps, by name in their order, on Action, Quick
+/// Steps.
+pub fn put_the_quick_steps_on_the_menu(frame: &Frame, names: &[String]) {
+    let _ = (frame, names);
+}
+
+/// Whether the Quick Step key at this place has no item on the menu to
+/// answer it.
+pub fn a_quick_step_key_the_menu_does_not_answer(menu_bar: &MenuBar, position: usize) -> bool {
+    let _ = (menu_bar, position);
+    false
+}
+
+/// Answer Ctrl+Shift and a digit past the account's last Quick Step from the
+/// message list.
+pub fn answer_the_quick_step_keys_the_menu_cannot(
+    list: &ListCtrl,
+    frame: Frame,
+    answer: impl Fn(usize) + 'static,
+) {
+    let _ = (list, frame, answer);
+}
+
 /// The saved searches of the account being worked in, in the order the
 /// folder tree and the Saved Searches menu show them.
 ///
