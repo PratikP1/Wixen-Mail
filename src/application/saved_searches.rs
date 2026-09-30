@@ -1052,23 +1052,64 @@ fn tidied_lowercase(name: &str) -> String {
 /// last digit; the rest are reached from the Saved Searches menu.
 pub const REACHABLE_BY_KEY: usize = 6;
 
+/// The digit the first saved search's key carries: Alt+4.
+const FIRST_DIGIT: usize = 4;
+
 /// The key that runs the saved search at this place in the account's order,
-/// if it has one.
+/// counted from one, if it has one.
+///
+/// The menu writes it beside the name, the key handler names it when there
+/// is no search to run, and the shortcuts check states it, all from this one
+/// answer, so the six keys cannot drift from the number that bounds them.
 pub fn key_for(position: usize) -> Option<String> {
-    let _ = position;
-    None
+    (1..=REACHABLE_BY_KEY)
+        .contains(&position)
+        .then(|| alt_and_the_digit_for(position))
+}
+
+/// Alt and the digit a place in the order is counted to, key or not.
+fn alt_and_the_digit_for(position: usize) -> String {
+    format!("Alt+{}", position + FIRST_DIGIT - 1)
 }
 
 /// What the Saved Searches submenu says, one line per search in the order
-/// given.
+/// given, which is the order the folder tree shows them in.
+///
+/// The name with a lone ampersand doubled, since a menu reads one as the mark
+/// before an access letter, and the key after a tab on the first six. No
+/// searches is no lines: unlike labels, which offer the five an account
+/// starts with because the first key makes them, a saved search is only
+/// ever made on purpose.
 pub fn what_the_menu_says(names: &[String]) -> Vec<MenuLine> {
-    crate::application::tagging::what_the_menu_says(names)
+    names
+        .iter()
+        .enumerate()
+        .map(|(at, name)| {
+            let position = at + 1;
+            let shown = name.replace('&', "&&");
+            let text = match key_for(position) {
+                Some(key) => format!("{shown}\t{key}"),
+                None => shown,
+            };
+            MenuLine { position, text }
+        })
+        .collect()
 }
 
 /// What is said when a saved search key has no search to run.
+///
+/// It names the key and how many searches the account has, because a key
+/// that says nothing cannot be told from a key that is broken, and with none
+/// at all it says where one is made.
 pub fn nothing_there(position: usize, how_many: usize) -> String {
-    let _ = (position, how_many);
-    String::new()
+    let key = alt_and_the_digit_for(position);
+    match how_many {
+        0 => format!(
+            "{key} runs saved search {position}, and this account has none yet. Save This \
+             Search on the Edit menu makes one."
+        ),
+        _ => format!("{key} runs saved search {position}, and this account has {how_many}."),
+    }
 }
 
 /// A search kept under a name.

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 510 records have arrived since and have not been through it.
+# 511 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -14575,7 +14575,7 @@ red = [
     "data::message_cache::saved_searches::tests::test_a_search_saved_from_a_narrowed_search_box_comes_back_narrowed",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 76 },
+    { file = "src/application/saved_searches.rs", tests = 80 },
     { file = "src/data/message_cache/saved_searches.rs", tests = 30 },
 ]
 
@@ -14619,7 +14619,7 @@ red = [
     "application::saved_searches::tests::test_an_all_join_with_no_questions_takes_nothing_rather_than_everything",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 76 },
+    { file = "src/application/saved_searches.rs", tests = 80 },
 ]
 
 # ── One group in the tree, however a saved search was made ──────────────────
@@ -14822,7 +14822,7 @@ red = [
     "application::saved_searches::tests::test_one_place_builds_the_coverage_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 76 },
+    { file = "src/application/saved_searches.rs", tests = 80 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -35247,4 +35247,23 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/folder_tree.rs", tests = 97 },
+]
+
+# A seventh saved search given a key, Alt and a tenth digit that does not
+# exist, so the menu would write a key beside it that nothing binds. Written
+# 2026-09-30 by 13-38, measured through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the Saved Searches menu gives a key to the first six searches and to no seventh"
+file = "src/application/saved_searches.rs"
+before = '''    (1..=REACHABLE_BY_KEY)
+        .contains(&position)
+        .then(|| alt_and_the_digit_for(position))'''
+after = '''    (1..=REACHABLE_BY_KEY + 1)
+        .contains(&position)
+        .then(|| alt_and_the_digit_for(position))'''
+red = [
+    "application::saved_searches::tests::test_the_first_six_searches_have_keys_and_the_rest_do_not",
+]
+tests_last_seen = [
+    { file = "src/application/saved_searches.rs", tests = 80 },
 ]
