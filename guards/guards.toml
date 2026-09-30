@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 529 records have arrived since and have not been through it.
+# 530 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35645,4 +35645,23 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+]
+
+# A rule run by hand that hands the runner's answer every message as
+# unread, so a read message under a rule that marks read is counted as one
+# the run would change, and the count said before the run is more than the
+# run does (T-13-43-01). Written 2026-09-30 by 13-43, measured through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a rule run by hand does not count a read message it would mark read"
+file = "src/application/running_a_rule_now.rs"
+before = '''    HeldMessage {
+        read: message.read,'''
+after = '''    HeldMessage {
+        read: false,'''
+red = [
+    "application::running_a_rule_now::tests::test_a_read_message_under_a_mark_read_rule_is_not_counted_and_an_unread_one_is",
+]
+tests_last_seen = [
+    { file = "src/application/running_a_rule_now.rs", tests = 12 },
 ]

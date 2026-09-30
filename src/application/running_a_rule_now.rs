@@ -6,7 +6,7 @@
 //! nothing here decides for itself what a rule matches or what a message
 //! needs: the match is the arrival check's own, [`FilterEngine::matches`],
 //! and what each match would get is the runner's own answer,
-//! [`acting_on_a_set::what_each_message_needs`], with every write that
+//! [`what_each_message_needs`] (13-24.1), with every write that
 //! would change nothing already dropped. What this module adds is the count
 //! and the set the run is handed.
 //!
@@ -21,9 +21,10 @@
 
 use std::collections::HashMap;
 
-use crate::application::acting_on_a_set::WhyNot;
+use crate::application::acting_on_a_set::{HeldMessage, WhyNot, the_work, what_each_message_needs};
 use crate::application::choosing_messages::{Chosen, MessageRef};
-use crate::application::filters::{FilterAction, FilterRule};
+use crate::application::editing::MOST_ROWS_WORTH_SELECTING;
+use crate::application::filters::{FilterAction, FilterEngine, FilterRule, settle};
 use crate::data::message_cache::{CachedFolder, CachedMessage, Tag};
 
 /// The folder a rule is run over, as the worker read it, and what its
@@ -57,23 +58,69 @@ pub struct WouldChange {
 }
 
 /// What `rule` would change among the messages of `here`, or why it cannot
-/// run at all.
+/// run at all: a folder or a label it names that the account does not have,
+/// which the runner would refuse too.
+///
+/// A match is kept only when the runner's own answer for it holds a write,
+/// so a read message under a rule that marks read, a message already in the
+/// folder a rule files into and a label already on are matched and not
+/// counted as changing.
 pub fn what_a_rule_would_change(
     rule: &FilterRule,
-    _here: &TheFolderRead<'_>,
+    here: &TheFolderRead<'_>,
 ) -> Result<WouldChange, WhyNot> {
+    let outcome = settle(std::slice::from_ref(&rule.action));
+    let mut matched = 0;
+    let mut each = Vec::new();
+    for message in here
+        .messages
+        .iter()
+        .filter(|message| FilterEngine::matches(rule, message))
+    {
+        matched += 1;
+        let needs =
+            what_each_message_needs(&outcome, &held(message, here), here.folders, here.labels)?;
+        if !needs.is_nothing() {
+            each.push((MessageRef::from(message), needs));
+        }
+    }
     Ok(WouldChange {
-        matched: 0,
-        changing: Vec::new(),
+        matched,
+        reaches_the_server: the_work(&each).reaches_the_server(),
+        changing: each.into_iter().map(|(message, _)| message).collect(),
         action: rule.action.clone(),
-        reaches_the_server: false,
     })
 }
 
+/// A message as the runner's answer reads it: its flags, the ids of the
+/// labels on it, and the folder it was read in.
+fn held(message: &CachedMessage, here: &TheFolderRead<'_>) -> HeldMessage {
+    HeldMessage {
+        read: message.read,
+        starred: message.starred,
+        label_ids: here
+            .labels_on
+            .get(&message.id)
+            .map(|labels| labels.iter().map(|label| label.id.clone()).collect())
+            .unwrap_or_default(),
+        folder_path: here.path.to_string(),
+    }
+}
+
 /// The messages a run takes: the changing ones, in the order read, at most
-/// the Select All bound of them.
-pub fn the_set_to_run(_would: &WouldChange) -> Chosen {
-    Chosen::default()
+/// the Select All bound of them. A run over more takes the first
+/// [`MOST_ROWS_WORTH_SELECTING`], and running it again takes the next,
+/// because the ones already changed are no longer counted.
+pub fn the_set_to_run(would: &WouldChange) -> Chosen {
+    Chosen {
+        messages: would
+            .changing
+            .iter()
+            .take(MOST_ROWS_WORTH_SELECTING)
+            .cloned()
+            .collect(),
+        ..Chosen::default()
+    }
 }
 
 #[cfg(test)]
