@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 519 records have arrived since and have not been through it.
+# 521 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35424,4 +35424,46 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 23 },
     { file = "src/data/message_cache/quick_steps.rs", tests = 10 },
+]
+
+# The Quick Step Manager's Key column giving a step past the third a key, so
+# the window promises a key the menu and the key handler never answer.
+# Written 2026-09-30 by 13-41, measured through `scripts/guards.sh
+# --remeasure` against the target.
+[[guard]]
+name = "the Quick Step Manager's Key column gives a key to the first three steps only"
+file = "src/presentation/wx_managers.rs"
+suite = "the_quick_step_manager_says_what_each_step_does"
+before = '''        // promise a key the step does not have.
+        let key = quick_steps::key_for(at + 1).unwrap_or_default();'''
+after = '''        // promise a key the step does not have.
+        let key = quick_steps::key_for(at + 1).unwrap_or_else(|| "Ctrl+Shift+0".to_string());'''
+red = [
+    "test_the_key_column_gives_the_first_three_steps_their_keys_and_the_fourth_none",
+    "test_the_manager_lists_the_steps_in_their_order_with_their_keys_and_what_each_does",
+    "test_a_move_in_the_manager_moves_the_row_and_its_key_and_says_where_it_went",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 8 },
+]
+
+# The Quick Step Manager's save left without the order, so a step moved in
+# the window keeps its old place and its old key once the window closes.
+# Written 2026-09-30 by 13-41, measured through `scripts/guards.sh
+# --remeasure` against the target.
+[[guard]]
+name = "the Quick Step Manager's close writes the order its rows came back in"
+file = "src/presentation/managers.rs"
+suite = "the_quick_step_manager_says_what_each_step_does"
+before = '''    if let Err(e) = cache.put_quick_steps_in_order(account, &order) {
+        failures.push(format!("the order: {}", e));
+    }'''
+after = '''    let _ = &order;'''
+red = [
+    "test_the_order_the_manager_hands_back_is_the_order_stored_when_it_closes",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 8 },
 ]

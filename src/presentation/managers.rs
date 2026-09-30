@@ -14,6 +14,7 @@ use crate::application::collection_sync;
 // The one wording for a refusal when nothing was chosen (#75), so the four
 // places this layer refuses for that reason say what every other window says.
 use crate::application::new_item::LOCAL_ACCOUNT_ID;
+use crate::application::quick_steps::StoredStep;
 use crate::application::status_sentences::{Thing, nothing_chosen, nothing_chosen_named};
 use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
@@ -217,13 +218,64 @@ fn write_the_labels(
 
 /// Write back what the Quick Step Manager returned, and name anything that
 /// would not save.
+///
+/// A step gone from the list is deleted, every step this build can read is
+/// written over itself or made, and then the order the rows came back in,
+/// the whole of it, which is the order the keys follow. A step a newer
+/// version wrote is never written: this build cannot write back the action
+/// it cannot read, so it keeps the row the store has and only its place
+/// moves.
 pub fn save_what_the_quick_step_manager_returned(
-    _cache: &MessageCache,
-    _account: &str,
-    _stored: &[crate::application::quick_steps::StoredStep],
-    _updated: Vec<wx_managers::QuickStepEntry>,
+    cache: &MessageCache,
+    account: &str,
+    stored: &[StoredStep],
+    updated: Vec<wx_managers::QuickStepEntry>,
 ) -> Vec<String> {
-    Vec::new()
+    let order: Vec<String> = updated.iter().map(|row| row.id.clone()).collect();
+    let mut failures = write_the_quick_steps(cache, account, stored, updated);
+    if let Err(e) = cache.put_quick_steps_in_order(account, &order) {
+        failures.push(format!("the order: {}", e));
+    }
+    failures
+}
+
+/// Delete, write over and make the manager's steps, and name any that
+/// failed.
+fn write_the_quick_steps(
+    cache: &MessageCache,
+    account: &str,
+    stored: &[StoredStep],
+    updated: Vec<wx_managers::QuickStepEntry>,
+) -> Vec<String> {
+    let changes = collection_sync::changes_between(
+        stored,
+        updated,
+        |step| step.id().to_string(),
+        |row| row.id.clone(),
+    );
+    let mut failures = Vec::new();
+    for id in &changes.removed {
+        if let Err(e) = cache.delete_quick_step(id) {
+            failures.push(format!("delete {}: {}", id, e));
+        }
+    }
+    let readable = changes
+        .written
+        .into_iter()
+        .filter_map(wx_managers::QuickStepEntry::into_step);
+    for step in readable {
+        // Written over itself, then made if there was nothing to write over,
+        // on the answer rather than an error, for the reason the labels give.
+        let saved = match cache.replace_quick_step(&step) {
+            Ok(true) => Ok(()),
+            Ok(false) => cache.create_quick_step(account, &step),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = saved {
+            failures.push(format!("{}: {}", step.name, e));
+        }
+    }
+    failures
 }
 
 /// Signatures: one set for every account (#43), with who uses each.

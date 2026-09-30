@@ -16,7 +16,7 @@ use crate::application::filters::{
     the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
 use crate::application::phone_numbers::{self, Reading, Region};
-use crate::application::quick_steps::StoredStep;
+use crate::application::quick_steps::{self, StoredStep};
 use crate::application::reordering::{Move, Moved};
 use crate::application::saved_searches::{self, EditedConditions, Join, Question};
 use crate::presentation::accessibility::Accessibility;
@@ -4617,7 +4617,36 @@ impl From<&StoredStep> for QuickStepEntry {
     }
 }
 
-impl ManagedRow for QuickStepEntry {}
+impl QuickStepEntry {
+    /// The step to write, or `None` for one a newer version wrote, which this
+    /// build has nothing to write for.
+    pub fn into_step(self) -> Option<quick_steps::QuickStep> {
+        let QuickStepEntry { id, name, does } = self;
+        does.map(|does| quick_steps::QuickStep { id, name, does })
+    }
+}
+
+impl ManagedRow for QuickStepEntry {
+    /// A step's place is the key it carries, so the person decides it, with
+    /// the gesture labels, accounts and pinned folders use.
+    fn moved(rows: &[(String, String)], which: &str, direction: Move) -> Option<Moved> {
+        Some(quick_steps::moved(rows, which, direction))
+    }
+}
+
+/// What the Quick Step Manager's column says of a step a newer version of
+/// Wixen Mail wrote: what it is, and the two things that can be done with it
+/// here.
+pub const WRITTEN_BY_A_NEWER_VERSION: &str =
+    "Written by a newer version of Wixen Mail; it can be moved or removed here";
+
+/// What a row's What it does column says.
+fn what_the_row_does(step: &QuickStepEntry) -> String {
+    match &step.does {
+        Some(does) => quick_steps::what_it_does_in_words(does),
+        None => WRITTEN_BY_A_NEWER_VERSION.to_string(),
+    }
+}
 
 /// The Quick Step Manager's window, built and filled without being shown.
 pub struct QuickStepManagerWidgets {
@@ -4627,13 +4656,29 @@ pub struct QuickStepManagerWidgets {
     pub status: StaticText,
 }
 
-/// Build the Quick Step Manager over an account's steps, in their order.
+/// Build the Quick Step Manager over an account's steps, in their order, and
+/// fill its list. Split out of the showing so a test can read the rows a live
+/// list holds.
 pub fn build_quick_step_manager(
     parent: &Frame,
-    _steps: &[QuickStepEntry],
+    steps: &[QuickStepEntry],
     palette: Option<theme::Palette>,
 ) -> QuickStepManagerWidgets {
-    let (dialog, sizer, list, status) = make_shell(parent, "", "", 640, 400, palette);
+    let (dialog, sizer, list, status) = make_shell(
+        parent,
+        "Quick Step Manager",
+        "Quick Steps",
+        640,
+        400,
+        palette,
+    );
+
+    list.insert_column(0, "Name", ListColumnFormat::Left, 180);
+    list.insert_column(1, "Key", ListColumnFormat::Left, 100);
+    list.insert_column(2, "What it does", ListColumnFormat::Left, 320);
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    populate_quick_steps(&list, steps);
+
     QuickStepManagerWidgets {
         dialog,
         sizer,
@@ -4642,8 +4687,20 @@ pub fn build_quick_step_manager(
     }
 }
 
-/// Fill the Quick Step Manager's list.
-pub fn populate_quick_steps(_list: &ListCtrl, _steps: &[QuickStepEntry]) {}
+/// Fill the Quick Step Manager's list, one row per step in its order: the
+/// name, the key its place gives it, empty past the third, and what it does.
+pub fn populate_quick_steps(list: &ListCtrl, steps: &[QuickStepEntry]) {
+    list.delete_all_items();
+    for (at, step) in steps.iter().enumerate() {
+        let row = at as i64;
+        list.insert_item(row, &step.name, None);
+        // The same answer the menu and the keys read, so the column cannot
+        // promise a key the step does not have.
+        let key = quick_steps::key_for(at + 1).unwrap_or_default();
+        list.set_item_text_by_column(row, 1, &key);
+        list.set_item_text_by_column(row, 2, &what_the_row_does(step));
+    }
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Signature Manager
