@@ -9,14 +9,17 @@
 //! is stored in, and settled by [`settle`] the way a message's matching rules
 //! are.
 //!
+//! [`settle`]: crate::application::filters::settle
+//!
 //! This module holds what a step is, what stops one being saved, its keys,
 //! and the words every later surface says about one. Nothing here reads a
 //! window, a cache or a clock.
 
-use crate::application::acting_on_a_set::WhatWasDone;
-use crate::application::choosing_messages::Chosen;
+use crate::application::acting_on_a_set::{WhatWasDone, said};
+use crate::application::choosing_messages::{Chosen, SetCommand, reach_for};
 use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
-use crate::application::filters::{FilterAction, Outcome};
+use crate::application::filters::{FilterAction, FilterEngine, Outcome, SAY_FIRST_LIMIT};
+use crate::application::saved_searches::tidied;
 use crate::application::tagging::MenuLine;
 
 pub use crate::application::reordering::{Move, Moved};
@@ -36,74 +39,343 @@ pub enum StoredStep {
     WrittenByANewerVersion { id: String, name: String },
 }
 
-/// The actions a step's outcome is made of.
-pub fn actions_of(_does: &Outcome) -> Vec<FilterAction> {
-    Vec::new()
+impl StoredStep {
+    /// The step's identifier, readable or not.
+    pub fn id(&self) -> &str {
+        match self {
+            StoredStep::Readable(step) => &step.id,
+            StoredStep::WrittenByANewerVersion { id, .. } => id,
+        }
+    }
+
+    /// What the step is called, readable or not.
+    pub fn name(&self) -> &str {
+        match self {
+            StoredStep::Readable(step) => &step.name,
+            StoredStep::WrittenByANewerVersion { name, .. } => name,
+        }
+    }
+}
+
+/// The rule actions a step's outcome is made of, in the order they are done:
+/// read, flag, label, the phrase said first, the move, the delete.
+///
+/// What the store writes, one row per action, and what [`settle`] turns back
+/// into the same outcome for every step [`what_stops_a_step_being_saved`]
+/// lets through.
+pub fn actions_of(does: &Outcome) -> Vec<FilterAction> {
+    let read = does.read.map(|read| match read {
+        true => FilterAction::MarkAsRead,
+        false => FilterAction::MarkAsUnread,
+    });
+    let starred = does.starred.map(|starred| match starred {
+        true => FilterAction::Star,
+        false => FilterAction::Unstar,
+    });
+    let labels = does.tags.iter().cloned().map(FilterAction::AddTag);
+    let phrase = does.say_first.clone().map(FilterAction::SayFirst);
+    let moved = does.move_to.clone().map(FilterAction::MoveToFolder);
+    let deleted = does.delete.then_some(FilterAction::Delete);
+    read.into_iter()
+        .chain(starred)
+        .chain(labels)
+        .chain(phrase)
+        .chain(moved)
+        .chain(deleted)
+        .collect()
 }
 
 /// The most characters a step's name may hold.
+///
+/// Sixty rather than a saved search's hundred, because the name opens every
+/// sentence a step says when it has run ("Archive and read: 3 messages
+/// marked read and moved to Archive"), and a name that long is heard before
+/// the part somebody is listening for.
 pub const LONGEST_NAME: usize = 60;
 
 /// What came of naming a Quick Step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StepNaming {
+    /// Good. This is the name to keep, tidied.
     Accepted(String),
+    /// Nothing was typed.
     Nothing,
+    /// Another step in this account is already called that.
     Taken,
+    /// Longer than [`LONGEST_NAME`].
     TooLong,
 }
 
 impl StepNaming {
+    /// Why the name was refused and what to do instead, `None` when it was
+    /// accepted.
     pub fn why_not(&self) -> Option<String> {
-        None
+        match self {
+            StepNaming::Accepted(_) => None,
+            StepNaming::Nothing => {
+                Some("A Quick Step needs a name. Type one and try again.".to_string())
+            }
+            StepNaming::Taken => Some(
+                "You already have a Quick Step with that name. Pick a different one.".to_string(),
+            ),
+            StepNaming::TooLong => Some(format!(
+                "That name is too long. Use {LONGEST_NAME} characters or fewer."
+            )),
+        }
     }
 }
 
-pub fn name_for(_asked: &str, _already_used: &[String]) -> StepNaming {
-    StepNaming::Nothing
+/// Whether a typed name can be kept, and the name to keep if it can.
+///
+/// `already_used` is the names of the account's other steps. Two may not
+/// share a name whatever its case, because a screen reader says "Archive"
+/// and "archive" the same way and the menu would hold two items nobody can
+/// tell apart. Tidied the way a saved search's name is.
+pub fn name_for(asked: &str, already_used: &[String]) -> StepNaming {
+    let name = tidied(asked);
+    if name.is_empty() {
+        return StepNaming::Nothing;
+    }
+    if name.chars().count() > LONGEST_NAME {
+        return StepNaming::TooLong;
+    }
+    let said_the_same_way = name.to_lowercase();
+    if already_used
+        .iter()
+        .any(|held| tidied(held).to_lowercase() == said_the_same_way)
+    {
+        return StepNaming::Taken;
+    }
+    StepNaming::Accepted(name)
 }
 
-pub fn what_stops_a_step_being_saved(_does: &Outcome) -> Option<String> {
+/// Why a step cannot be kept as it is, in a sentence saying what to change,
+/// or `None` when it can.
+///
+/// Four things are refused. A step that does nothing. A delete beside
+/// anything else, because [`settle`] keeps the delete and drops the rest in
+/// silence, so a step that says it moves and deletes would only delete. A
+/// phrase the rule reader would refuse, empty or past [`SAY_FIRST_LIMIT`],
+/// because a stored step whose words the reader refuses reads back as one
+/// written by a newer version and never runs. And a folder or a label with
+/// no name, for the same reason.
+pub fn what_stops_a_step_being_saved(does: &Outcome) -> Option<String> {
+    if does.is_nothing() {
+        return Some(
+            "This Quick Step does nothing yet. Choose at least one thing for it to do.".to_string(),
+        );
+    }
+    if does.delete && does != &deletes_and_nothing_else() {
+        return Some(
+            "A Quick Step that deletes does nothing else, because a message is not marked, \
+             flagged or moved on its way to the trash. Clear Delete, or clear everything else."
+                .to_string(),
+        );
+    }
+    if let Some(why) = does
+        .say_first
+        .as_deref()
+        .and_then(what_is_wrong_with_the_phrase)
+    {
+        return Some(why);
+    }
+    if does.move_to.as_deref().is_some_and(has_no_name) {
+        return Some(
+            "Choose the folder this Quick Step moves messages to, or clear Move.".to_string(),
+        );
+    }
+    if does.tags.iter().any(|label| has_no_name(label)) {
+        return Some("Choose the label this Quick Step puts on, or clear Label.".to_string());
+    }
     None
 }
 
-pub fn what_it_does_in_words(_does: &Outcome) -> String {
-    String::new()
-}
-
-pub fn reach(_does: &Outcome, _setting: DeletingAConversationRow) -> AConversationReaches {
-    AConversationReaches::default()
-}
-
-pub const WHICH_STEP: &str = "";
-
-pub fn moved(steps: &[(String, String)], _which: &str, _direction: Move) -> Moved {
-    Moved {
-        order: steps.iter().map(|(id, _)| id.clone()).collect(),
-        say: String::new(),
-        moved: false,
+/// The one outcome a step that deletes may be.
+fn deletes_and_nothing_else() -> Outcome {
+    Outcome {
+        delete: true,
+        ..Outcome::default()
     }
 }
 
-pub const REACHABLE_BY_KEY: usize = 0;
-
-pub fn key_for(_position: usize) -> Option<String> {
-    None
+/// Why the rule reader would refuse a phrase said first, if it would, with
+/// its length and the limit.
+fn what_is_wrong_with_the_phrase(phrase: &str) -> Option<String> {
+    let kept = FilterEngine::validated_phrase(Some(&phrase.to_string()));
+    if kept.is_some() {
+        return None;
+    }
+    let trimmed = phrase.trim();
+    if trimmed.is_empty() {
+        return Some(
+            "The phrase to say first is empty. Type a word or two, or clear Say first.".to_string(),
+        );
+    }
+    Some(format!(
+        "The phrase to say first is {} characters long. Use {SAY_FIRST_LIMIT} characters or \
+         fewer, because it is said before every message it is on.",
+        trimmed.chars().count()
+    ))
 }
 
-pub fn what_the_menu_says(_names: &[String]) -> Vec<MenuLine> {
-    Vec::new()
+/// Whether a folder or a label would be read back as no name at all.
+fn has_no_name(named: &str) -> bool {
+    named.trim().is_empty()
 }
 
-pub fn nothing_there(_position: usize, _how_many: usize) -> String {
-    String::new()
+/// What a step does, in words, for the Quick Step Manager's column: "Mark
+/// read, flag, label Work, move to Archive", "Delete", "Say Urgent first".
+///
+/// In the order the actions are done, read from [`actions_of`] so the words
+/// and the actions cannot disagree about which comes first.
+pub fn what_it_does_in_words(does: &Outcome) -> String {
+    let words: Vec<String> = actions_of(does).iter().map(said_as_a_step).collect();
+    match words.is_empty() {
+        true => "Nothing".to_string(),
+        false => with_a_capital(&words.join(", ")),
+    }
 }
 
-pub fn what_a_step_did(_name: &str, _chosen: &Chosen, _done: &WhatWasDone) -> String {
-    String::new()
+/// One action as a step's column says it, in lower case.
+fn said_as_a_step(action: &FilterAction) -> String {
+    match action {
+        FilterAction::MarkAsRead => "mark read".to_string(),
+        FilterAction::MarkAsUnread => "mark unread".to_string(),
+        FilterAction::Star => "flag".to_string(),
+        FilterAction::Unstar => "unflag".to_string(),
+        FilterAction::AddTag(label) => format!("label {label}"),
+        FilterAction::SayFirst(phrase) => format!("say {phrase} first"),
+        FilterAction::MoveToFolder(folder) => format!("move to {folder}"),
+        FilterAction::Delete => "delete".to_string(),
+    }
 }
 
-pub const QUICK_STEPS_ARE_EXPERIMENTAL: &str = "";
+/// The text with its first letter in capitals.
+fn with_a_capital(text: &str) -> String {
+    let mut letters = text.chars();
+    match letters.next() {
+        Some(first) => first.to_uppercase().chain(letters).collect(),
+        None => String::new(),
+    }
+}
+
+/// How far a conversation row reaches when a step runs over it: the
+/// narrowest reach of the commands the step is made of.
+///
+/// Each action reaches as its own command does, by
+/// [`reach_for`]: a delete follows the setting D-07 gave it, a move takes the
+/// folder being read, and marking, flagging and labelling take the whole
+/// conversation. A step that moves and marks read takes the narrower of the
+/// two, because marking messages in folders the step then does not move
+/// from is half a step. The phrase said first is kept on this computer and
+/// is no command over the set, so it narrows nothing.
+pub fn reach(does: &Outcome, setting: DeletingAConversationRow) -> AConversationReaches {
+    let commands = [
+        (does.read.is_some(), SetCommand::MarkRead),
+        (does.starred.is_some(), SetCommand::Star),
+        (!does.tags.is_empty(), SetCommand::Label),
+        (does.move_to.is_some(), SetCommand::Move),
+        (does.delete, SetCommand::Delete),
+    ];
+    let reaches_one_folder = commands
+        .iter()
+        .filter(|(used, _)| *used)
+        .any(|(_, command)| reach_for(*command, setting) == AConversationReaches::ThisFolderOnly);
+    match reaches_one_folder {
+        true => AConversationReaches::ThisFolderOnly,
+        false => AConversationReaches::TheWholeAccount,
+    }
+}
+
+/// What is said when the cursor is on no step in the Quick Step Manager.
+pub const WHICH_STEP: &str = "Choose a Quick Step first. Move Up and Move Down act on the row \
+                              the cursor is on.";
+
+/// Move one step up or down the account's order, in the words every list
+/// arranged by hand uses. `steps` is every step as `(id, name)` in the order
+/// they sit in now.
+pub fn moved(steps: &[(String, String)], which: &str, direction: Move) -> Moved {
+    crate::application::reordering::moved(steps, which, direction, WHICH_STEP)
+}
+
+/// How many steps have a key: Ctrl+Shift+7 to Ctrl+Shift+9.
+///
+/// Three, the digits Ctrl+Shift has free on the message list; the rest are
+/// run from the menu.
+pub const REACHABLE_BY_KEY: usize = 3;
+
+/// The digit the first step's key carries: Ctrl+Shift+7.
+const FIRST_DIGIT: usize = 7;
+
+/// The key that runs the step at this place in the account's order, counted
+/// from one, if it has one. The menu, the manager's Key column and the key
+/// handler all read this one answer.
+pub fn key_for(position: usize) -> Option<String> {
+    (1..=REACHABLE_BY_KEY)
+        .contains(&position)
+        .then(|| ctrl_shift_and_the_digit_for(position))
+}
+
+/// Ctrl+Shift and the digit a place in the order is counted to, key or not.
+fn ctrl_shift_and_the_digit_for(position: usize) -> String {
+    format!("Ctrl+Shift+{}", position + FIRST_DIGIT - 1)
+}
+
+/// What the Quick Steps submenu says, one line per step in the account's
+/// order: the name with a lone ampersand doubled, since a menu reads one as
+/// the mark before an access letter, and the key after a tab on the first
+/// three. No steps is no lines.
+pub fn what_the_menu_says(names: &[String]) -> Vec<MenuLine> {
+    names
+        .iter()
+        .enumerate()
+        .map(|(at, name)| {
+            let position = at + 1;
+            let shown = name.replace('&', "&&");
+            let text = match key_for(position) {
+                Some(key) => format!("{shown}\t{key}"),
+                None => shown,
+            };
+            MenuLine { position, text }
+        })
+        .collect()
+}
+
+/// What is said when a Quick Step key has no step to run: the key, and how
+/// many steps the account has, or where one is made when it has none.
+pub fn nothing_there(position: usize, how_many: usize) -> String {
+    let key = ctrl_shift_and_the_digit_for(position);
+    match how_many {
+        0 => format!(
+            "{key} runs Quick Step {position}, and this account has none yet. Manage Quick \
+             Steps, under Quick Steps on the Action menu, makes one."
+        ),
+        _ => format!("{key} runs Quick Step {position}, and this account has {how_many}."),
+    }
+}
+
+/// The one sentence said when a step has run: its name, then what the
+/// runner's writes did to the chosen messages, in
+/// [`crate::application::acting_on_a_set::said`]'s words.
+///
+/// "Archive and read: 3 messages marked read and moved to Archive". The
+/// runner says nothing itself, so this is the only sentence a run says.
+pub fn what_a_step_did(name: &str, chosen: &Chosen, done: &WhatWasDone) -> String {
+    format!("{name}: {}", said(chosen, done))
+}
+
+/// What Quick Steps say about themselves where one is chosen.
+///
+/// Experimental because no step has run against a real account, and it says
+/// what could go wrong rather than only that it is new: a step is several
+/// changes to the chosen mail at once, sent to the provider when the account
+/// may be changed, and what a provider does with many changes arriving
+/// together has not been seen.
+pub const QUICK_STEPS_ARE_EXPERIMENTAL: &str = "Quick Steps are experimental: none has been \
+     run against a real mail server yet. A step that marks, flags, labels, moves or deletes \
+     messages changes them at your provider when Allowed Changes lets Wixen Mail change your \
+     mail, and what a provider does with many changes at once has not been seen. Each step \
+     says what it did when it finishes.";
 
 #[cfg(test)]
 mod tests {
