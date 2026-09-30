@@ -19282,6 +19282,35 @@ fn open_for_scanning(
             );
             OnReturn::WindowClosed
         }
+        ScanTarget::QuickSteps => {
+            // The Quick Step Manager over one made-up step, so the scan walks
+            // a row as well as the buttons (#60, 13-41). What it hands back is
+            // thrown away, so nothing reaches the store.
+            let _ = crate::presentation::wx_managers::show_quick_step_manager_dialog(
+                frame,
+                &[scan_fixtures::quick_step()],
+                &scan_fixtures::quick_step_labels(),
+                &scan_fixtures::folders_a_search_can_look_in(),
+                a11y,
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::QuickStepEditor => {
+            // The step editor over the made-up step, built and shown without
+            // the manager's OK handler, so nothing is checked and nothing
+            // reaches the store (#60, 13-41).
+            let editor = crate::presentation::wx_managers::build_quick_step_edit_dialog(
+                frame,
+                Some(&scan_fixtures::quick_step()),
+                &scan_fixtures::quick_step_labels(),
+                &scan_fixtures::folders_a_search_can_look_in(),
+                theme::current_from_stored_config(),
+            );
+            editor.name.set_focus();
+            editor.dialog.show_modal();
+            editor.dialog.destroy();
+            OnReturn::WindowClosed
+        }
         // The main window with a module showing and nothing over it. `main`
         // is the frame with the first-run question on top, because that
         // question opens whenever no target is given, so the bare window and
