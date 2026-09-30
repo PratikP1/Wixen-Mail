@@ -1491,6 +1491,14 @@ impl MessageCache {
             tracing::warn!("Could not number the labels: {}", e);
         }
 
+        // Saved searches written before 2026-09-30 have no place either, and
+        // take the order the tree showed them in, the order they were made
+        // (#58). Not fatal: an unnumbered search sorts ahead of the numbered
+        // ones in the order it was made, and the next open tries again.
+        if let Err(e) = cache.number_the_unnumbered_saved_searches() {
+            tracing::warn!("Could not number the saved searches: {}", e);
+        }
+
         // Databases written before the five local folders were shared have one
         // set per account. Bring them together on open (D-18, D-19). Not fatal
         // for the same reason as above: every message is still readable where
@@ -2937,6 +2945,11 @@ impl MessageCache {
         // is the number its key carries (#48). Rows written before it existed
         // are numbered on open by `number_the_unnumbered_labels`.
         self.ensure_column_exists("tags", "position", "INTEGER")?;
+        // Where a saved search sits in its account's searches, counted from
+        // one, the order the folder tree shows them in (#58). Rows written
+        // before it existed are numbered on open by
+        // `number_the_unnumbered_saved_searches`.
+        self.ensure_column_exists("saved_searches", "position", "INTEGER")?;
         self.ensure_column_exists("messages", "snippet", "TEXT")?;
         self.ensure_column_exists("messages", "size_bytes", "INTEGER")?;
         // Whether the message's own Content-Type said it was S/MIME encrypted.

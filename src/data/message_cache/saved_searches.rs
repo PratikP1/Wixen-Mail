@@ -61,13 +61,20 @@ pub struct TextStoredHere {
 /// search that is still there.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SavedSearchesRead {
-    /// The searches, in the order they were made.
+    /// The searches this build can run, in the order kept for them.
     pub searches: Vec<SavedSearch>,
     /// The ones written by a newer version of this program.
     ///
     /// Enough to put a row in the tree that says it could not run, in the
     /// words of [`crate::application::saved_searches::SAVED_BY_ANOTHER_VERSION`].
     pub saved_by_another_version: Vec<SearchSavedByAnotherVersion>,
+    /// Every search's identifier, readable or not, in the order kept for them.
+    ///
+    /// The two lists above split that order, so this is what the folder tree
+    /// walks and what a move rearranges. Walking the lists one after the
+    /// other would show every readable search first, and a move across that
+    /// split would be written and never shown.
+    pub order: Vec<String>,
 }
 
 /// A stored search whose questions this build cannot be sure it understands.
@@ -92,6 +99,9 @@ impl MessageCache {
     ///
     /// A name another search in this account already has, whatever the case it
     /// is written in, is refused by the table itself.
+    ///
+    /// It goes after every search its account already has, so the rows
+    /// somebody arranged stay where they put them.
     pub fn create_saved_search(&self, account_id: &str, search: &SavedSearch) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         let saving = self
@@ -102,8 +112,9 @@ impl MessageCache {
         saving
             .execute(
                 "INSERT INTO saved_searches
-                 (id, account_id, name, all_or_any, folder, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+                 (id, account_id, name, all_or_any, folder, created_at, updated_at, position)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6,
+                         (SELECT COALESCE(MAX(position), 0) + 1 FROM saved_searches WHERE account_id = ?2))",
                 params![
                     &search.id,
                     account_id,
@@ -248,10 +259,10 @@ impl MessageCache {
         // stop wearing a smaller coat. `rename_saved_search` stays for the
         // tree's own Rename command, which has no question list to hand over.
         //
-        // `created_at` is left alone: the folder tree lists these oldest
-        // first, and a search that jumped to the bottom of the list every time
-        // it was edited is a row somebody knows by position and can no longer
-        // find.
+        // `position` is left alone: the folder tree lists these in the order
+        // kept for them, and a search that jumped to the bottom of the list
+        // every time it was edited is a row somebody knows by position and
+        // can no longer find.
         saving
             .execute(
                 "UPDATE saved_searches
@@ -327,12 +338,73 @@ impl MessageCache {
         Ok(())
     }
 
-    /// One account's saved searches, oldest first.
+    /// Write an account's searches in the order given, the first at one.
     ///
-    /// The order they were made rather than the order of their names, because
-    /// these are rows in the folder tree and somebody works down that tree by
-    /// ear. A list that reshuffles itself when a search is renamed is a list
-    /// where the row somebody knows by position is no longer there.
+    /// The whole order rather than the two that swapped, for the reason
+    /// `reordering::Moved::order` gives. Only this account's rows, so an
+    /// identifier from another account in the list moves nothing there. One
+    /// transaction, so a write that fails part way leaves the order it found.
+    pub fn put_saved_searches_in_order(&self, account_id: &str, ids: &[String]) -> Result<()> {
+        let failed =
+            |e: rusqlite::Error| Error::Other(format!("Failed to order the saved searches: {}", e));
+        let writing = self.conn.unchecked_transaction().map_err(failed)?;
+        for (at, id) in ids.iter().enumerate() {
+            writing
+                .execute(
+                    "UPDATE saved_searches SET position = ?1 WHERE id = ?2 AND account_id = ?3",
+                    params![at as i64 + 1, id, account_id],
+                )
+                .map_err(failed)?;
+        }
+        writing.commit().map_err(failed)
+    }
+
+    /// Give every search with no place in its account's order one, after the
+    /// searches that have one, in the order they were made.
+    ///
+    /// Run on every open rather than once under a marker, for the reason
+    /// `number_the_unnumbered_labels` gives: a search written by a build
+    /// before 2026-09-30 has no place, whichever database it was written to,
+    /// and the answer is the same either way. The order they were made in
+    /// because that is the order those builds showed them in, so nobody's
+    /// rows move when they upgrade. One transaction.
+    pub fn number_the_unnumbered_saved_searches(&self) -> Result<()> {
+        let failed = |e: rusqlite::Error| {
+            Error::Other(format!("Failed to number the saved searches: {}", e))
+        };
+        let numbering = self.conn.unchecked_transaction().map_err(failed)?;
+        let unnumbered: Vec<(String, String)> = numbering
+            .prepare(
+                "SELECT id, account_id FROM saved_searches WHERE position IS NULL
+                 ORDER BY account_id, created_at, id",
+            )
+            .map_err(failed)?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(failed)?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(failed)?;
+        for (id, account_id) in unnumbered {
+            numbering
+                .execute(
+                    "UPDATE saved_searches SET position =
+                         (SELECT COALESCE(MAX(position), 0) + 1 FROM saved_searches WHERE account_id = ?1)
+                     WHERE id = ?2",
+                    params![account_id, id],
+                )
+                .map_err(failed)?;
+        }
+        numbering.commit().map_err(failed)
+    }
+
+    /// One account's saved searches, in the order kept for them.
+    ///
+    /// These are rows in the folder tree and somebody works down that tree by
+    /// ear, so the order is the one they chose with Move Up and Move Down, and
+    /// a new search goes last. A list that reshuffled itself when a search was
+    /// renamed would be a list where the row somebody knows by position is no
+    /// longer there. A search with no place yet, which an older build writing
+    /// to this database leaves until the next open numbers it, sorts ahead of
+    /// the rest in the order it was made.
     pub fn get_saved_searches_for_account(&self, account_id: &str) -> Result<SavedSearchesRead> {
         let questions = self.questions_of_each_search(account_id)?;
 
@@ -342,7 +414,7 @@ impl MessageCache {
                 "SELECT id, name, all_or_any, folder
                  FROM saved_searches
                  WHERE account_id = ?1
-                 ORDER BY created_at, id",
+                 ORDER BY position, created_at, id",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare the search query: {}", e)))?;
 
@@ -653,6 +725,7 @@ fn put_back_together(
 ) -> SavedSearchesRead {
     let mut read = SavedSearchesRead::default();
     for row in stored {
+        read.order.push(row.id.clone());
         match Join::read(&row.all_or_any) {
             Some(join) => read.searches.push(SavedSearch {
                 questions: questions.remove(&row.id).unwrap_or_default(),
@@ -1076,6 +1149,147 @@ mod tests {
             names_in(&cache, "acc-1"),
             ["Aardvark", "Alpha", "Middle"],
             "renaming a search moved its row in the tree"
+        );
+    }
+
+    /// Three searches in `acc-1`, made Zebra, Alpha, Middle, and two in
+    /// `acc-2`, made B then A.
+    fn searches_in_two_accounts(what_for: &str) -> TempHome<MessageCache> {
+        let cache = a_cache(what_for);
+        for (account, id, name) in [
+            ("acc-1", "s1", "Zebra"),
+            ("acc-1", "s2", "Alpha"),
+            ("acc-1", "s3", "Middle"),
+            ("acc-2", "t1", "B"),
+            ("acc-2", "t2", "A"),
+        ] {
+            cache
+                .create_saved_search(account, &a_search(id, name))
+                .expect("the search to be stored");
+        }
+        cache
+    }
+
+    fn ids(written: &[&str]) -> Vec<String> {
+        written.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn test_the_order_written_is_the_order_read_back() {
+        // The order somebody chose is the order the tree shows, and the read
+        // carries it whole. `t2` is another account's search handed to this
+        // account's write, which has to leave it where its own account keeps
+        // it rather than moving it to the top of `acc-2`.
+        let cache = searches_in_two_accounts("saved_search_order_written");
+
+        cache
+            .put_saved_searches_in_order("acc-1", &ids(&["t2", "s3", "s1", "s2"]))
+            .expect("the order to be written");
+
+        let read = cache
+            .get_saved_searches_for_account("acc-1")
+            .expect("the searches to be read");
+        assert_eq!(names_in(&cache, "acc-1"), ["Middle", "Zebra", "Alpha"]);
+        assert_eq!(read.order, ids(&["s3", "s1", "s2"]));
+        assert_eq!(
+            names_in(&cache, "acc-2"),
+            ["B", "A"],
+            "writing one account's order moved another account's search"
+        );
+    }
+
+    #[test]
+    fn test_a_new_search_goes_last_in_its_accounts_order() {
+        // Last rather than first: a search with no place would sort ahead of
+        // every search that has one, and the row somebody just made would
+        // push every row they had arranged down by one.
+        let cache = searches_in_two_accounts("saved_search_new_goes_last");
+        cache
+            .put_saved_searches_in_order("acc-1", &ids(&["s3", "s1", "s2"]))
+            .expect("the order to be written");
+
+        cache
+            .create_saved_search("acc-1", &a_search("s4", "Aardvark"))
+            .expect("the fourth search to be stored");
+
+        assert_eq!(
+            names_in(&cache, "acc-1"),
+            ["Middle", "Zebra", "Alpha", "Aardvark"]
+        );
+    }
+
+    #[test]
+    fn test_searches_from_before_the_order_keep_the_order_they_were_made() {
+        // A database from before 2026-09-30 holds searches with no place.
+        // They take the order the tree showed them in then, which is the
+        // order they were made in, readable and unreadable alike, and come
+        // after any search already given a place by this build. Each account
+        // is counted on its own.
+        //
+        // The days are set against the identifiers on purpose, so an order
+        // by identifier would come out differently and the test would say so.
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let older =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            for (account, id, name, made) in [
+                ("acc-1", "a", "Work", "2026-01-02"),
+                ("acc-1", "b", "Invoices", "2026-01-04"),
+                ("acc-1", "c", "Payslips", "2026-01-01"),
+                ("acc-1", "d", "Receipts", "2026-01-03"),
+                ("acc-1", "e", "Already placed", "2026-01-05"),
+                ("acc-2", "f", "Elsewhere", "2026-01-01"),
+            ] {
+                older
+                    .create_saved_search(account, &a_search(id, name))
+                    .expect("the search to be stored");
+                older
+                    .conn
+                    .execute(
+                        "UPDATE saved_searches SET created_at = ?1, position = NULL WHERE id = ?2",
+                        params![made, id],
+                    )
+                    .expect("a search written before the order existed");
+            }
+            older
+                .conn
+                .execute(
+                    "UPDATE saved_searches SET all_or_any = 'either' WHERE id IN ('b', 'c')",
+                    [],
+                )
+                .expect("two searches a newer version wrote");
+            older
+                .conn
+                .execute("UPDATE saved_searches SET position = 1 WHERE id = 'e'", [])
+                .expect("one search already given a place");
+        }
+
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
+
+        let read = reopened
+            .get_saved_searches_for_account("acc-1")
+            .expect("the searches to be read");
+        assert_eq!(read.order, ids(&["e", "c", "a", "d", "b"]));
+        let placed: Vec<(String, Option<i64>)> = reopened
+            .conn
+            .prepare("SELECT id, position FROM saved_searches ORDER BY id")
+            .expect("the places to be asked for")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("the places to be read")
+            .collect::<std::result::Result<_, _>>()
+            .expect("the places to be collected");
+        assert_eq!(
+            placed,
+            [
+                ("a".to_string(), Some(3)),
+                ("b".to_string(), Some(5)),
+                ("c".to_string(), Some(2)),
+                ("d".to_string(), Some(4)),
+                ("e".to_string(), Some(1)),
+                ("f".to_string(), Some(1)),
+            ],
+            "the searches from before were not each given a place on open"
         );
     }
 

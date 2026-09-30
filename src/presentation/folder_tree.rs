@@ -704,9 +704,9 @@ pub fn rows(
 ///
 /// Ordered by the same function Favourites is ordered by, so somebody arrowing
 /// down the tree meets their accounts in one order. Within one account the
-/// searches keep the order they were read in, which is the readable ones and
-/// then the rest, so a row does not move because a newer version wrote one of
-/// them.
+/// searches keep the order they were read in, which is the order kept for
+/// them, readable or not (#58), so a row sits where Move Up and Move Down put
+/// it and does not move because a newer version wrote one of them.
 ///
 /// No counts anywhere in here. A saved search holds no mail of its own: what it
 /// lists lives in real folders that have their own rows and their own numbers,
@@ -756,7 +756,8 @@ fn saved_search_rows(searches: &[SearchInTheTree], accounts: &[AccountInTheTree]
 /// on.
 ///
 /// D-31: one gesture for rearranging anything in this tree, rather than a
-/// second chord for pinned folders. Which of the two it means is a question
+/// second chord for pinned folders, and since #58 for saved searches as well.
+/// Which of them it means is a question
 /// about the row, so it is answered here where a row's identity lives and can
 /// be asked without a window, rather than by a chain of `if`s inside an event
 /// handler that only a running application can reach.
@@ -767,17 +768,24 @@ pub enum WhatMoves {
     /// The pinned folder the cursor is on, and the account whose part of the
     /// group it sits in.
     Pin { account: String, path: String },
+    /// The saved search the cursor is on, and the account whose searches it
+    /// sits among.
+    SavedSearch { account: String, id: String },
     /// Nothing this gesture rearranges.
     Nothing,
 }
 
-/// Which of the two the gesture means, or neither.
+/// Which of the three the gesture means, or none of them.
 pub fn what_the_gesture_moves(row: Option<&WhichRow>) -> WhatMoves {
     match row {
         Some(WhichRow::Account(id)) => WhatMoves::Account(id.clone()),
         Some(WhichRow::Pinned { account, path }) => WhatMoves::Pin {
             account: account.clone(),
             path: path.clone(),
+        },
+        Some(WhichRow::SavedSearch { account, id }) => WhatMoves::SavedSearch {
+            account: account.clone(),
+            id: id.clone(),
         },
         // A folder's own row is deliberately not a pin, even when that folder
         // is pinned. Inside an account branch the order is `tree_position`,
@@ -1555,6 +1563,17 @@ mod tests {
                 path: "Receipts".to_string(),
             }
         );
+        // A saved search moves within its own account's searches (#58).
+        assert_eq!(
+            what_the_gesture_moves(Some(&WhichRow::SavedSearch {
+                account: "a".to_string(),
+                id: "s1".to_string(),
+            })),
+            WhatMoves::SavedSearch {
+                account: "a".to_string(),
+                id: "s1".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -1575,10 +1594,6 @@ mod tests {
             WhichRow::Label("t1".to_string()),
             WhichRow::SavedSearches,
             WhichRow::SavedSearchesIn("a".to_string()),
-            WhichRow::SavedSearch {
-                account: "a".to_string(),
-                id: "s1".to_string(),
-            },
         ] {
             assert_eq!(
                 what_the_gesture_moves(Some(&row)),

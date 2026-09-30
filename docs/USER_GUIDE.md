@@ -1582,6 +1582,16 @@ everyone.
   needs no connection
 - Use specific terms for better results
 
+### Arranging Saved Searches
+
+Saved searches sit in the folder tree under **Saved Searches**, in a branch for
+each account. To move one, put the cursor on it and press `Alt+Shift+Up` or
+`Alt+Shift+Down`, or choose Move this search up or Move this search down from
+its menu; it moves among its own account's searches and Wixen Mail says where
+it now is, such as "Invoices, 2 of 4." Searches saved before this version keep
+the order they were made in until you move them, and a new search goes at the
+end of its account's list.
+
 ## Thread View
 
 Related messages are grouped into a conversation using the `References` and

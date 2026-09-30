@@ -171,9 +171,9 @@ pub const WHICH_FOLDER: &str = "Choose a folder in the folder tree first. Pin Fo
                                 and Unpin Folder act on the folder the cursor is on.";
 
 /// What is said when the reorder gesture is used on a row it cannot move.
-pub const WHICH_ROW: &str = "Move Up and Move Down rearrange accounts and pinned \
-                             folders. Choose an account branch, or a folder under \
-                             Favourites.";
+pub const WHICH_ROW: &str = "Move Up and Move Down rearrange accounts, pinned \
+                             folders and saved searches. Choose an account branch, \
+                             a folder under Favourites, or a saved search.";
 
 /// What is said when a folder somebody has just pinned goes into the group.
 ///
@@ -515,10 +515,11 @@ mod nothing_here_reaches_a_server {
     /// Named rather than read whole, and each name is checked to still be there
     /// below: a renamed function would make the reading find nothing and report
     /// a clean result over a file it never looked into.
-    const THE_COMMANDS: [&str; 3] = [
+    const THE_COMMANDS: [&str; 4] = [
         "fn pin_or_unpin_the_chosen_folder",
         "fn move_the_chosen_pin",
         "fn move_the_chosen_row",
+        "fn move_the_chosen_search",
     ];
 
     /// The body of one function, from its signature to the margin brace that

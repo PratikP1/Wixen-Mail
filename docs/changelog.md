@@ -8,6 +8,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Saved searches can be moved (#58 point 1, GAP-09).** Saved searches used to
+  keep the order they were made in and could not be moved: `Alt+Shift+Up` and
+  `Alt+Shift+Down` rearranged accounts and pinned folders only, and on a saved
+  search's row they said to choose something else. Now they move the saved
+  search you are on one place up or down among its own account's searches and
+  say where it now is, "Invoices, 2 of 4.", or "Invoices is already first of
+  4." when it cannot go further, in the same words accounts and pinned folders
+  use. The folder tree shows the new order straight away, with a search saved
+  by a newer version at its own place among the rest. Move Up and Move Down on
+  the Action menu under This Folder do the same, and a saved search's own menu
+  offers Move this search up and Move this search down. A new search goes at
+  the end of its account's list, and searches saved before this keep the order
+  they were made in. The order is kept on this computer and nothing is sent to
+  any server. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: nobody has heard a saved search moved with
+  a screen reader, or checked that the cursor stays on the moved row.
 - **One day of a repeating meeting can be answered, and the answer names that day (GAP-04,
   ledger 638).** An invitation for one Thursday of a weekly meeting used to say it could not
   be answered here, because an answer that names no day reaches the organiser as an answer
@@ -6278,7 +6294,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
     asked for Subject Only or From Only. Those two narrow a live search
     correctly; a saved one re-runs across the subject, the sender and the
     recipients. Saving a From Only search and getting subject matches back is
-    the case to watch.
+    the case to watch. Fixed since by the entry "Saving a search now keeps
+    what you chose in the In list"; this limit was left in place and dated on
+    2026-09-30 rather than deleted (#58 point 5).
 
 - **A saved search says when it cannot run, instead of saying it found nothing.**
   A search written by a newer version of Wixen Mail, or one naming a part of a
