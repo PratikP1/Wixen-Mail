@@ -1592,6 +1592,11 @@ it now is, such as "Invoices, 2 of 4." Searches saved before this version keep
 the order they were made in until you move them, and a new search goes at the
 end of its account's list.
 
+`Alt+4` to `Alt+9` run the first six saved searches of the account you are in,
+in that order, and put the cursor on the search's row, as `Enter` on the row
+does. The account's searches, up to fifty, are also on the Saved Searches
+submenu of the Action menu, each of the first six with its key beside it.
+
 ## Thread View
 
 Related messages are grouped into a conversation using the `References` and

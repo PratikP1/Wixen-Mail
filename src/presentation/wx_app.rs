@@ -118,6 +118,12 @@ const LABELS_PAST_NINE_ON_THE_MENU: i32 = 41;
 /// How many help pages the Help menu offers, each with an id of its own.
 const HELP_TOPICS_ON_THE_MENU: i32 = crate::application::help::TOPICS.len() as i32;
 
+/// How many saved searches the Saved Searches menu offers, each with an id of
+/// its own, the first six with a key. A search past the fiftieth is still a
+/// row in the folder tree, and is left off the menu with a line in the log
+/// saying so.
+const SAVED_SEARCHES_ON_THE_MENU: i32 = 50;
+
 menu_ids!(
     ID_MUTE_CONTENT,
     ID_NEW_FOLDER,
@@ -309,6 +315,9 @@ menu_ids!(
     // The row under the cursor read column by column with its headings, on
     // request (#26): the tester's chord, Ctrl, Shift and the semicolon.
     ID_READ_ROW_COLUMNS,
+    // One id per saved search on the Saved Searches menu, by its place in
+    // the account's order: the first six carry Alt+4 to Alt+9.
+    ID_SAVED_SEARCH_FIRST[SAVED_SEARCHES_ON_THE_MENU],
 );
 
 // Sort menu IDs
@@ -3071,6 +3080,14 @@ impl WxMailApp {
                         let Some(which) = which_row(&state, &folder_tree, &item) else {
                             return;
                         };
+                        // Arriving in an account's branch is arriving in its
+                        // saved searches: the menu and their keys follow, so
+                        // the search heard beside a key is the one it runs.
+                        // Nothing is rebuilt while the account stays the same.
+                        if let Some(whose) = folder_tree::the_account_a_row_belongs_to(&which) {
+                            let names = names_of(the_saved_searches_of(&lock_state(&state), &whose));
+                            put_the_saved_searches_on_the_menu(&frame, &names);
+                        }
                         // The folder this row opens, which for a pinned copy is
                         // the folder it copies rather than the copy. The two
                         // identities are deliberately different, so a lookup by
@@ -3874,6 +3891,32 @@ impl WxMailApp {
                     label_the_message(app, &message_cache, &a11y, &msg_list, Some(number));
                 }
             });
+
+            // Alt and a digit past the account's last saved search, answered
+            // where the searches are and where their results land.
+            let say_there_is_no_saved_search_there = {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |position| {
+                    let how_many = the_saved_searches_on_the_menu(&lock_state(&state)).len();
+                    send_status(
+                        &ui_tx,
+                        &runtime,
+                        &crate::application::saved_searches::nothing_there(position, how_many),
+                    );
+                }
+            };
+            answer_the_saved_search_keys_the_menu_cannot(
+                &folder_tree,
+                frame,
+                say_there_is_no_saved_search_there.clone(),
+            );
+            answer_the_saved_search_keys_the_menu_cannot(
+                &msg_list,
+                frame,
+                say_there_is_no_saved_search_there,
+            );
 
             wire_read_aloud(
                 &msg_list,
@@ -5919,6 +5962,40 @@ impl WxMailApp {
                                 open_help(topic, &ui_tx, &runtime);
                             }
                         }
+                        // A saved search on the Saved Searches menu, by its
+                        // item or its key: what Enter on its row does, with
+                        // the tree's cursor put on the row first so the tree
+                        // and the list agree about what is open. Mail first,
+                        // because the key reaches here from every module and
+                        // results loaded behind another module are unseen.
+                        _ if saved_search_position_of(id).is_some() => {
+                            do_switch(PimModule::Mail);
+                            let row = saved_search_position_of(id).and_then(|position| {
+                                the_saved_searches_on_the_menu(&lock_state(&state))
+                                    .into_iter()
+                                    .nth(position - 1)
+                            });
+                            if let Some(search) = row {
+                                let row = folder_tree::WhichRow::SavedSearch {
+                                    account: search.account,
+                                    id: search.id,
+                                };
+                                // Held as chosen before the cursor lands, so
+                                // landing is not taken for arriving by arrow
+                                // and does not say to press Enter over the
+                                // search this key is already running.
+                                let rows = {
+                                    let mut s = lock_state(&state);
+                                    s.selected_folder = Some(row.clone());
+                                    s.tree_rows.clone()
+                                };
+                                select_row(&folder_tree, &rows, &row.stored());
+                                let chosen = the_search_a_row_names(&lock_state(&state), &row);
+                                if let Some(chosen) = chosen {
+                                    run_a_saved_search(&ui_tx, &runtime, chosen);
+                                }
+                            }
+                        }
                         _ if id == ID_CHECK_FOR_UPDATES => {
                             // Whatever the setting says, per D-16. This is the
                             // deliberate path SHIP-02 asks for and it must not
@@ -7216,25 +7293,10 @@ impl WxMailApp {
             .build();
 
         // A saved search is not a folder, so it does not go on This Folder.
-        // Delete here can never reach mail: it removes the question, and the
-        // messages a search listed stay where they really live.
-        let saved_search_menu = Menu::builder()
-            .append_item(
-                ID_EDIT_SEARCH_CONDITIONS,
-                "Edit &Conditions...",
-                "Change what the chosen saved search asks about a message",
-            )
-            .append_item(
-                ID_RENAME_SEARCH,
-                "&Rename...",
-                "Give the chosen saved search a different name",
-            )
-            .append_item(
-                ID_DELETE_SEARCH,
-                "&Delete",
-                "Remove the chosen saved search. The mail it listed is not touched",
-            )
-            .build();
+        // Its items and its commands are written in one place, the rebuild,
+        // which the searches loading calls again with the account's own.
+        let saved_search_menu = Menu::builder().build();
+        rebuild_the_saved_search_menu(&saved_search_menu, &[]);
 
         let folder_menu = Menu::builder()
             .append_item(
@@ -10860,6 +10922,197 @@ pub fn put_the_labels_on_the_menu(frame: &Frame, labels: &[(String, String)]) {
 pub fn a_label_key_the_menu_does_not_answer(menu_bar: &MenuBar, number: usize) -> bool {
     (1..=crate::application::tagging::REACHABLE_BY_KEY).contains(&number)
         && label_id_at(number).is_some_and(|id| menu_bar.find_item(id).is_none())
+}
+
+/// The menu id of the saved search at this place in the account's order,
+/// counted from one. `None` past the block reserved for them.
+fn saved_search_id_at(position: usize) -> Option<Id> {
+    let past_the_first = i32::try_from(position.checked_sub(1)?).ok()?;
+    (past_the_first < SAVED_SEARCHES_ON_THE_MENU).then_some(ID_SAVED_SEARCH_FIRST + past_the_first)
+}
+
+/// The place in the account's order a saved search's menu id stands for:
+/// the inverse of [`saved_search_id_at`], asked of it rather than written
+/// twice.
+fn saved_search_position_of(id: Id) -> Option<usize> {
+    (1..=SAVED_SEARCHES_ON_THE_MENU as usize)
+        .find(|position| saved_search_id_at(*position) == Some(id))
+}
+
+/// Fill the Saved Searches submenu from an account's searches, by name in
+/// the order the folder tree shows them.
+///
+/// One item per search as `saved_searches::what_the_menu_says` words it,
+/// Alt+4 to Alt+9 on the first six, then Edit Conditions, Rename and Delete,
+/// which act on the search the tree's cursor is on. Everything on the menu
+/// goes first, so a search renamed or moved, or one that went, leaves
+/// nothing behind. The builder calls this with no searches, so the three
+/// commands are written here and nowhere else.
+///
+/// The parameter keeps the builder's name, `saved_search_menu`, because the
+/// check that no two items on a menu claim one letter finds a menu's items
+/// by that name.
+pub fn rebuild_the_saved_search_menu(saved_search_menu: &Menu, names: &[String]) {
+    // Counted rather than asked until nothing is left: asking for the first
+    // item of an empty menu is an assertion in wxWidgets.
+    for item in saved_search_menu.get_menu_items() {
+        saved_search_menu.delete_item(&item);
+    }
+    let searches = crate::application::saved_searches::what_the_menu_says(names);
+    for search in &searches {
+        let Some(id) = saved_search_id_at(search.position) else {
+            tracing::warn!(
+                "The Saved Searches menu shows {} searches; the {} after them are in the folder tree",
+                search.position - 1,
+                names.len() + 1 - search.position
+            );
+            break;
+        };
+        saved_search_menu.append(
+            id,
+            &search.text,
+            "Run this saved search, as Enter on its row in the folder tree does",
+            wxdragon::menus::ItemKind::Normal,
+        );
+    }
+    if !searches.is_empty() {
+        saved_search_menu.append_separator();
+    }
+    // Delete here can never reach mail: it removes the question, and the
+    // messages a search listed stay where they really live.
+    saved_search_menu.append(
+        ID_EDIT_SEARCH_CONDITIONS,
+        "Edit &Conditions...",
+        "Change what the chosen saved search asks about a message",
+        wxdragon::menus::ItemKind::Normal,
+    );
+    saved_search_menu.append(
+        ID_RENAME_SEARCH,
+        "&Rename...",
+        "Give the chosen saved search a different name",
+        wxdragon::menus::ItemKind::Normal,
+    );
+    saved_search_menu.append(
+        ID_DELETE_SEARCH,
+        "&Delete",
+        "Remove the chosen saved search. The mail it listed is not touched",
+        wxdragon::menus::ItemKind::Normal,
+    );
+}
+
+/// Put an account's saved searches, by name in the tree's order, on the
+/// window's Saved Searches submenu.
+///
+/// Called when the searches load, which is whenever the sidebar is read
+/// again, and when the tree's cursor arrives in another account's branch.
+/// Searches the menu already says are left as they are, so a menu somebody
+/// has open is not emptied and filled under them.
+pub fn put_the_saved_searches_on_the_menu(frame: &Frame, names: &[String]) {
+    let Some((_, saved_search_menu)) = frame
+        .get_menu_bar()
+        .and_then(|bar| bar.find_item_and_menu(ID_EDIT_SEARCH_CONDITIONS))
+    else {
+        return;
+    };
+    let lines_it_should_say: Vec<String> =
+        crate::application::saved_searches::what_the_menu_says(names)
+            .into_iter()
+            .take(SAVED_SEARCHES_ON_THE_MENU as usize)
+            .map(|search| search.text)
+            .collect();
+    // The search items, told from the commands by their ids rather than by
+    // a separator, because an account with no searches has no separator.
+    let lines_it_says: Vec<String> = saved_search_menu
+        .get_menu_items()
+        .iter()
+        .filter(|item| saved_search_position_of(item.get_item_id()).is_some())
+        .map(|item| item.get_label())
+        .collect();
+    if lines_it_says != lines_it_should_say {
+        rebuild_the_saved_search_menu(&saved_search_menu, names);
+    }
+}
+
+/// Answer Alt and a digit past the account's last saved search from a
+/// control.
+///
+/// A saved search key is the accelerator of its item on the Saved Searches
+/// menu, and a key past the last search has no item, so the menu never sees
+/// it; left alone it would do nothing and say nothing, which cannot be told
+/// from a key that is broken. The folder tree, where the searches are, and
+/// the message list, where their results land, answer it instead with the
+/// place it stands for. Every other key is left to the control.
+pub fn answer_the_saved_search_keys_the_menu_cannot(
+    control: &impl WxEvtHandler,
+    frame: Frame,
+    answer: impl Fn(usize) + 'static,
+) {
+    use crate::application::saved_searches::{REACHABLE_BY_KEY, key_for};
+    control.bind_internal(EventType::KEY_DOWN, move |event| {
+        event.skip(true);
+        if !event.alt_down() || event.control_down() || event.shift_down() {
+            return;
+        }
+        let Some(pressed) = event
+            .get_key_code()
+            .and_then(|key| u8::try_from(key).ok())
+            .filter(u8::is_ascii_digit)
+            .map(|digit| format!("Alt+{}", char::from(digit)))
+        else {
+            return;
+        };
+        let Some(position) = (1..=REACHABLE_BY_KEY)
+            .find(|position| key_for(*position).as_deref() == Some(pressed.as_str()))
+        else {
+            return;
+        };
+        let the_menu_cannot = frame
+            .get_menu_bar()
+            .is_some_and(|bar| a_saved_search_key_the_menu_does_not_answer(&bar, position));
+        if the_menu_cannot {
+            event.skip(false);
+            answer(position);
+        }
+    });
+}
+
+/// Whether the saved search key at this place has no item on the menu to
+/// answer it.
+///
+/// A key past the account's last search has no item to carry it, so the
+/// menu never sees it, and the folder tree and the message list answer it
+/// with which search it would run and how many there are.
+pub fn a_saved_search_key_the_menu_does_not_answer(menu_bar: &MenuBar, position: usize) -> bool {
+    (1..=crate::application::saved_searches::REACHABLE_BY_KEY).contains(&position)
+        && saved_search_id_at(position).is_some_and(|id| menu_bar.find_item(id).is_none())
+}
+
+/// The saved searches of the account being worked in, in the order the
+/// folder tree and the Saved Searches menu show them.
+///
+/// One list for the menu's items, for the key that runs a search by its
+/// place, and for the answer to a key past the last, so the item heard
+/// beside a key is the search the key runs.
+fn the_saved_searches_on_the_menu(state: &WxUIState) -> Vec<folder_tree::SearchInTheTree> {
+    state
+        .active_account_id
+        .as_deref()
+        .map(|account| the_saved_searches_of(state, account))
+        .unwrap_or_default()
+}
+
+/// One account's saved searches, in the order the folder tree shows them.
+fn the_saved_searches_of(state: &WxUIState, account: &str) -> Vec<folder_tree::SearchInTheTree> {
+    state
+        .saved_searches
+        .get(account)
+        .map(|read| every_saved_search(account, read))
+        .unwrap_or_default()
+}
+
+/// The names the Saved Searches menu says for one account.
+fn names_of(searches: Vec<folder_tree::SearchInTheTree>) -> Vec<String> {
+    searches.into_iter().map(|search| search.name).collect()
 }
 
 /// Rebuild the list's columns from a layout.
@@ -21087,7 +21340,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             put_the_labels_on_the_menu(frame, labels);
         }
         UIUpdate::SavedSearchesLoaded(searches) => {
-            lock_state(state).saved_searches = (**searches).clone();
+            let names = {
+                let mut s = lock_state(state);
+                s.saved_searches = (**searches).clone();
+                names_of(the_saved_searches_on_the_menu(&s))
+            };
+            put_the_saved_searches_on_the_menu(frame, &names);
         }
         UIUpdate::SavedSearchRan { messages, said } => {
             {

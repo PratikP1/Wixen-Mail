@@ -6482,6 +6482,14 @@ stays at 122.
     `tests/a_saved_search_moves_with_the_gesture.rs`; the shortcuts page's "one row per saved
     search" and the older changelog limit were dated the same day. The box and the
     traceability row wait for 13-39.
+    Its second clause closed 2026-09-30 by 13-38: Alt+4 to Alt+9 run the first six saved
+    searches of the account being worked in, and the Saved Searches submenu lists that
+    account's searches in the tree's order with their keys, held by
+    `test_the_first_six_searches_have_keys_and_the_rest_do_not` in
+    `src/application/saved_searches.rs` and by
+    `tests/the_saved_searches_menu_says_the_searches_an_account_has.rs`; the Action menu's
+    Saved Searches row, which said rename or delete while Edit Conditions was there too, was
+    dated the same day. The box waits for 13-39.
   - [S] The order and the key heard are the tester's ear.
 
 - [x] **GAP-10**: Several identities per account, the first step to shared mailboxes and
