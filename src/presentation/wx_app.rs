@@ -331,6 +331,9 @@ menu_ids!(
     // account's order: the first three carry Ctrl+Shift+7 to Ctrl+Shift+9
     // (13-42).
     ID_QUICK_STEP_FIRST[QUICK_STEPS_ON_THE_MENU],
+    // Action, This Folder, Run a Rule on This Folder (#61, 13-44). Last, so
+    // no id above it moves.
+    ID_RUN_A_RULE_HERE,
 );
 
 // Sort menu IDs
@@ -4589,6 +4592,17 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
+                        _ if id == ID_RUN_A_RULE_HERE => {
+                            run_a_rule_on_this_folder(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &frame,
+                            );
+                        }
                         _ if id == ID_MOVE_FOLDER => {
                             move_the_chosen_folder(
                                 AppHandles {
@@ -7379,6 +7393,13 @@ impl WxMailApp {
         let quick_steps_menu = Menu::builder().build();
         rebuild_the_quick_steps_menu(&quick_steps_menu, &[]);
 
+        // Where the item is chosen, the experimental sentence the question
+        // says as well, because no rule run has met a real account.
+        let running_a_rule_here = format!(
+            "Run one of this account's rules over this folder, hearing first what it would \
+             change. {}",
+            crate::application::running_a_rule_now::RUNNING_A_RULE_NOW_IS_EXPERIMENTAL
+        );
         let folder_menu = Menu::builder()
             .append_item(
                 ID_REFRESH_FOLDER,
@@ -7458,6 +7479,15 @@ impl WxMailApp {
                 ID_MARK_FOLDER_READ,
                 "Mar&k Folder Read",
                 "Mark every message in the chosen folder as read",
+            )
+            // #61: a rule run by hand over the folder on screen, counted and
+            // asked about before anything changes. L, the one letter this
+            // submenu had free; the Filter Manager's own door is Run on a
+            // Folder.
+            .append_item(
+                ID_RUN_A_RULE_HERE,
+                "Run a Ru&le on This Folder...",
+                &running_a_rule_here,
             )
             .append_separator()
             // D-14, and both need a menu item rather than only a chord: on
@@ -10271,6 +10301,283 @@ fn mark_the_chosen_folder_read(
     read_the_tree_back(&Some(cache.clone()), state, tx);
     send_status(tx, rt, &said);
     let _ = a11y.announce(&said, Priority::High);
+}
+
+/// Run one of the account's rules over the folder on screen, from Action,
+/// This Folder (#61, 13-44).
+///
+/// The folder and its account are the ones Empty and Mark Folder Read act
+/// on, refused in the same sentences; a saved search is not a folder and is
+/// refused in its own words. The rules offered are the account's, a
+/// switched-off one marked so nobody runs it thinking it is on, and choosing
+/// none changes nothing and says nothing. Then the count, on a worker.
+/// Nothing here writes: the question and the run come when the count does.
+fn run_a_rule_on_this_folder(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+) {
+    let AppHandles { state, tx, .. } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    if matches!(
+        lock_state(state).selected_folder,
+        Some(folder_tree::WhichRow::SavedSearch { .. })
+    ) {
+        return refuse_a_command(tx, NOT_A_FOLDER);
+    }
+    let TheChosenFolder {
+        account, folder, ..
+    } = match the_chosen_folder(state, cache) {
+        Ok(chosen) => chosen,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+    let stored = match cache.get_filter_rules_for_account(&account.id) {
+        Ok(stored) => stored,
+        Err(e) => {
+            return refuse_a_command(
+                tx,
+                &format!(
+                    "{}'s rules could not be read, so nothing was run: {e}.",
+                    account.name
+                ),
+            );
+        }
+    };
+    if stored.is_empty() {
+        return refuse_a_command(
+            tx,
+            &format!(
+                "{} has no rules yet. Message Filters on the Tools menu makes one.",
+                account.name
+            ),
+        );
+    }
+    let names: Vec<String> = stored.iter().map(a_rule_as_the_chooser_names_it).collect();
+    let Some(at) = crate::presentation::wx_managers::choose_from_list(
+        frame,
+        "Run a Rule on This Folder",
+        &format!("&Rules in {}:", account.name.replace('&', "&&")),
+        "&Count",
+        &names,
+        crate::presentation::theme::current_from_stored_config(),
+    ) else {
+        return;
+    };
+    let Some(rule) = stored
+        .get(at)
+        .and_then(crate::application::filters::FilterEngine::from_persisted_rule)
+    else {
+        return refuse_a_command(tx, &a_rule_this_version_cannot_run(&names[at]));
+    };
+    count_what_a_rule_would_change(app, &account, &folder, rule);
+}
+
+/// A rule as the chooser lists it: its name, and whether it is switched off,
+/// since a rule chosen by hand runs either way (13-44's decision 1).
+fn a_rule_as_the_chooser_names_it(rule: &crate::data::message_cache::MessageFilterRule) -> String {
+    match rule.enabled {
+        true => rule.name.clone(),
+        false => format!("{} (switched off)", rule.name),
+    }
+}
+
+/// Said of a stored rule whose action this build does not know, which a
+/// newer version may have written.
+fn a_rule_this_version_cannot_run(name: &str) -> String {
+    format!("{name} has an action this version cannot carry out, so it was not run.")
+}
+
+/// Count what `rule` would change in `folder` of `account`, on a worker, and
+/// send what was found back to the window as `UIUpdate::ARuleWasCounted`
+/// (13-44).
+///
+/// The step is said once, before the worker starts. The worker opens its own
+/// store, reads the folder's messages with their text only when the rule
+/// reads it, their labels and the account's folders and labels, and asks
+/// 13-43's count. A read that fails, or a rule naming a folder or label the
+/// account lacks, is refused in a sentence and nothing is asked. It writes
+/// nothing: the arm decides and the runner writes.
+fn count_what_a_rule_would_change(
+    app: AppHandles<'_>,
+    account: &Account,
+    folder: &crate::data::message_cache::CachedFolder,
+    rule: crate::application::filters::FilterRule,
+) {
+    use crate::application::filters::a_rule_reads_the_message_text;
+    use crate::application::running_a_rule_now::{
+        TheFolderRead, nothing_to_change, the_question, the_set_to_run, what_a_rule_would_change,
+    };
+    use crate::data::message_cache::saved_searches::TheMessageText;
+
+    let AppHandles { tx, rt, .. } = app;
+    send_status(
+        tx,
+        rt,
+        &format!(
+            "Counting what {} would change in {}...",
+            rule.name, folder.name
+        ),
+    );
+    let account_id = account.id.clone();
+    let folder = folder.clone();
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let could_not_read = |why: String| {
+            tracing::error!("A folder could not be read for a rule's count: {why}");
+            say(UIUpdate::CommandRefused(format!(
+                "{} could not be read, so {} was not counted.",
+                folder.name, rule.name
+            )));
+        };
+        // Its own connection: a `MessageCache` wraps a rusqlite connection,
+        // which cannot be shared across threads.
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            return could_not_read("the data folder could not be found".to_string());
+        };
+        let cache = match MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(e) => return could_not_read(e.to_string()),
+        };
+        let text = match a_rule_reads_the_message_text(&rule.field) {
+            true => TheMessageText::Read,
+            false => TheMessageText::LeftAlone,
+        };
+        let read = cache
+            .messages_a_saved_search_reads(&account_id, Some(folder.id), text)
+            .and_then(|messages| {
+                Ok((
+                    messages,
+                    cache.tags_by_message_in_folder(folder.id)?,
+                    cache.get_folders_for_account(&account_id)?,
+                    labels_for(&cache, &account_id)?,
+                ))
+            });
+        let (messages, labels_on, folders, labels) = match read {
+            Ok(read) => read,
+            Err(e) => return could_not_read(e.to_string()),
+        };
+        let here = TheFolderRead {
+            path: &folder.path,
+            messages: &messages,
+            labels_on: &labels_on,
+            folders: &folders,
+            labels: &labels,
+        };
+        let would = match what_a_rule_would_change(&rule, &here) {
+            Ok(would) => would,
+            Err(why) => return say(UIUpdate::CommandRefused(why.to_string())),
+        };
+        let found = match would.changing.is_empty() {
+            true => WhatTheCountFound::NothingToChange(nothing_to_change(
+                &rule.name,
+                &folder.name,
+                would.matched,
+            )),
+            false => WhatTheCountFound::Ask {
+                question: the_question(&rule.name, &folder.name, &would),
+                set: the_set_to_run(&would),
+                outcome: would.outcome(),
+                reaches_the_server: would.reaches_the_server,
+            },
+        };
+        say(UIUpdate::ARuleWasCounted(Box::new(ARuleCounted {
+            account_id,
+            rule_name: rule.name.clone(),
+            found,
+        })));
+    });
+}
+
+/// Say what a counted rule found, or ask about it and run it (13-44).
+///
+/// Nothing to change is said at Normal and nothing is asked. Otherwise a
+/// count that arrives after somebody opened another account is refused,
+/// because the runner reads a message's account off the one open. Then the
+/// account's gate, when the run reaches the server, so a refusal is said in
+/// place of a question whose Yes would be refused; then the question, with
+/// Enter answering no before a rule that deletes. Yes hands the counted set
+/// to 13-24.1's runner once, which meets the gate again and writes through
+/// the set commands' own paths, and one sentence and one Confirmed say what
+/// it did. No, or closing the question, changes nothing and says nothing.
+fn ask_then_run_the_counted_rule(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    list: &ListCtrl,
+    frame: &Frame,
+    a11y: &Accessibility,
+    counted: &ARuleCounted,
+) {
+    use crate::application::running_a_rule_now::what_the_rule_did;
+    use crate::presentation::accessibility::announcements::Priority;
+    use crate::presentation::asking::{
+        Answered, which_of_the_two, yes_no_where_enter_answers_no, yes_no_where_enter_answers_yes,
+    };
+
+    let AppHandles { state, tx, rt } = app;
+    let (question, set, outcome, reaches_the_server) = match &counted.found {
+        WhatTheCountFound::NothingToChange(said) => {
+            let _ = a11y.announce(said, Priority::Normal);
+            return send_shown(tx, rt, said);
+        }
+        WhatTheCountFound::Ask {
+            question,
+            set,
+            outcome,
+            reaches_the_server,
+        } => (question, set, outcome, *reaches_the_server),
+    };
+    let still_open =
+        lock_state(state).active_account_id.as_deref() == Some(counted.account_id.as_str());
+    if !still_open {
+        return send_refusal(
+            tx,
+            rt,
+            &format!(
+                "{} was not run, because a different account is open now.",
+                counted.rule_name
+            ),
+        );
+    }
+    let Some(held) = cache.as_ref() else {
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
+    };
+    if reaches_the_server
+        && let Err(why) = crate::service::outward::permitted(
+            crate::application::allowed::allowed_for(&counted.account_id).mail,
+            "change these messages",
+        )
+    {
+        return send_refusal(tx, rt, &why.to_string());
+    }
+    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")
+        .with_style(match question.enter_answers_yes {
+            true => yes_no_where_enter_answers_yes(),
+            false => yes_no_where_enter_answers_no(),
+        })
+        .build()
+        .show_modal();
+    if which_of_the_two(answered) != Answered::Yes {
+        return;
+    }
+    let done = match run_these_actions_over(app, list, held, set, outcome) {
+        Ok(done) => done,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    let said = what_the_rule_did(
+        &counted.rule_name,
+        &crate::application::acting_on_a_set::said(set, &done),
+    );
+    let _ = a11y.announce(&said, Priority::Normal);
+    send_shown(tx, rt, &said);
+    let _ = a11y.signal(FeedbackEvent::Confirmed, &counted.rule_name);
 }
 
 /// One move, and everything needed to work out the path it lands on.
@@ -22010,6 +22317,18 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // answer to a key somebody just pressed, and it is the one
             // sentence that can say a search could not run at all.
             let _ = a11y.announce(said, Priority::High);
+        }
+        // A rule chosen by hand has been counted: said when nothing would
+        // change, otherwise asked about and run (#61, 13-44).
+        UIUpdate::ARuleWasCounted(counted) => {
+            ask_then_run_the_counted_rule(
+                AppHandles { state, tx, rt },
+                message_cache,
+                msg_list,
+                frame,
+                a11y,
+                counted,
+            );
         }
         UIUpdate::MessagesLoaded(messages) => {
             // The cursor's message and its row, remembered before the rows

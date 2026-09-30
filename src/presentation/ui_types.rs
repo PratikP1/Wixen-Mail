@@ -376,6 +376,36 @@ pub struct WatchedFolder {
     pub path: String,
 }
 
+/// What a rule would change in a folder, counted on a worker and handed to
+/// the window to ask about (13-44, #61).
+///
+/// The account travels with the count because the runner reads a message's
+/// account off the one being worked in, so a count that arrives after
+/// somebody moved to another account is refused rather than run there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ARuleCounted {
+    pub account_id: String,
+    pub rule_name: String,
+    pub found: WhatTheCountFound,
+}
+
+/// What a rule's count came to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WhatTheCountFound {
+    /// Nothing the rule matches would change: the sentence saying so, and
+    /// nothing is asked.
+    NothingToChange(String),
+    /// Something would change: the question, the messages a Yes runs over,
+    /// the rule's action settled as a check settles it, and whether any of
+    /// it reaches the server, which is when the account's gate is met.
+    Ask {
+        question: crate::application::running_a_rule_now::Question,
+        set: crate::application::choosing_messages::Chosen,
+        outcome: crate::application::filters::Outcome,
+        reaches_the_server: bool,
+    },
+}
+
 /// UI update messages sent from async tasks to the UI thread
 #[derive(Clone, Debug)]
 pub enum UIUpdate {
@@ -759,6 +789,10 @@ pub enum UIUpdate {
         /// What is said out loud and written on the status bar.
         said: String,
     },
+    /// What a rule chosen by hand would change in a folder, counted on a
+    /// worker, for the window to say or to ask about before anything runs
+    /// (13-44). Boxed, so every other update stays the size it was.
+    ARuleWasCounted(Box<ARuleCounted>),
     /// Reminders loaded
     RemindersLoaded(Vec<ReminderItem>),
     /// Task lists loaded

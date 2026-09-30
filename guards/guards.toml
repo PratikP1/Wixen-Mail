@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 531 records have arrived since and have not been through it.
+# 533 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35682,4 +35682,48 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/running_a_rule_now.rs", tests = 27 },
+]
+
+# A rule run by hand that calls the runner before the question is built, so
+# a folder's mail changes before anybody answered (T-13-44-02). Written
+# 2026-09-30 by 13-44, measured through `scripts/guards.sh --remeasure`
+# against the target.
+[[guard]]
+name = "a rule run by hand is asked about before the runner runs"
+file = "src/presentation/wx_app.rs"
+suite = "a_rule_runs_over_a_folder_when_asked"
+before = '''    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")'''
+after = '''    let _ = run_these_actions_over(app, list, held, set, outcome);
+    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")'''
+red = [
+    "test_the_question_is_answered_before_the_one_runner_runs_once",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 15 },
+]
+
+# A rule run by hand whose question is asked without the account's gate, so
+# somebody whose Allowed Changes answer is off is asked a question whose Yes
+# the runner then refuses (T-13-44-01). Written 2026-09-30 by 13-44, measured
+# through `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "a rule run by hand meets the account's gate before it asks"
+file = "src/presentation/wx_app.rs"
+suite = "a_rule_runs_over_a_folder_when_asked"
+before = '''    if reaches_the_server
+        && let Err(why) = crate::service::outward::permitted(
+            crate::application::allowed::allowed_for(&counted.account_id).mail,
+            "change these messages",
+        )
+    {
+        return send_refusal(tx, rt, &why.to_string());
+    }'''
+after = '''    let _ = reaches_the_server;'''
+red = [
+    "test_the_gate_is_met_before_the_question_is_built",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 15 },
 ]
