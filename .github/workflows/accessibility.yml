@@ -197,6 +197,12 @@ jobs:
         # passes through: New Saved Search, over the scan-only account's
         # places, and the conditions window with its every-or-any choice, over
         # a made-up search of two conditions. Neither saves anything.
+        #
+        # The quick-steps and quick-step-editor targets, added 2026-09-30
+        # (#60, 13-41), are the Quick Step Manager on Action, Quick Steps,
+        # over one made-up step, and the step editor its Add and Edit open,
+        # over the same step with two labels and two folders offered. Neither
+        # saves anything.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
@@ -205,7 +211,8 @@ jobs:
           'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor',
           'account-details', 'phone-number', 'page', 'page-window', 'pgp-keys', 'unlock-a-pgp-key',
           'directory-sign-in', 'identities',
-          'new-saved-search', 'search-conditions'
+          'new-saved-search', 'search-conditions',
+          'quick-steps', 'quick-step-editor'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

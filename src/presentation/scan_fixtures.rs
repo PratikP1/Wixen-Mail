@@ -18,12 +18,14 @@ use crate::application::calendar::{WhatTheCalendarAllows, WhereAChangeGoes};
 use crate::application::conflict_choice::{AField, BothCopies, TheOtherCopy};
 use crate::application::destinations::{Branch, Destination};
 use crate::application::due::Due;
+use crate::application::filters::Outcome;
 use crate::application::saved_searches::Question;
 use crate::common::types::MessageBody;
 use crate::presentation::ui_types::MessageItem;
 use crate::presentation::wx_folder_choice::FolderRow;
 use crate::presentation::wx_managers::{
-    AddressItem, ContactEntry, CustomFieldItem, EmailItem, FilterRule, PhoneItem, SignatureEntry,
+    AddressItem, ContactEntry, CustomFieldItem, EmailItem, FilterRule, PhoneItem, QuickStepEntry,
+    SignatureEntry,
 };
 use crate::presentation::wx_thread_view::ThreadNode;
 
@@ -341,6 +343,28 @@ pub fn search_conditions() -> Vec<Question> {
 /// than the whole account.
 pub fn folders_a_search_can_look_in() -> Vec<String> {
     vec!["INBOX".to_string(), "INBOX/Receipts".to_string()]
+}
+
+/// A Quick Step that marks read and moves, which the Quick Step Manager
+/// lists and the step editor opens on (#60, 13-41). Its folder is one of
+/// [`folders_a_search_can_look_in`], so the editor opens on it chosen rather
+/// than on a folder said as gone.
+pub fn quick_step() -> QuickStepEntry {
+    QuickStepEntry {
+        id: "scan-quick-step".to_string(),
+        name: "Scan target".to_string(),
+        does: Some(Outcome {
+            read: Some(true),
+            move_to: Some("INBOX/Receipts".to_string()),
+            ..Outcome::default()
+        }),
+    }
+}
+
+/// The labels a Quick Step can put on in the scan: a fresh profile's account
+/// has none until the first label key makes the five it starts with.
+pub fn quick_step_labels() -> Vec<String> {
+    vec!["Work".to_string(), "Later".to_string()]
 }
 
 /// A stored filter rule the filter editor can be opened on, with the same

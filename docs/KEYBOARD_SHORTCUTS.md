@@ -845,7 +845,7 @@ anything.
 | Report as Junk | `Ctrl+Shift+J` | Mail. Every selected message goes to its account's junk folder, and one sentence per account says what the provider was told: on a server that keeps a junk mark the mark is set first, on Gmail the move into Spam is the report, and Microsoft is not told, because it offers a mail program no way to. A POP account, an account with no junk folder, and one whose mail changes are off each say why nothing was reported. A conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, and a junk mark already set stays. Experimental |
 | Block This Sender | `Ctrl+Shift+B` | Mail. On the Block submenu. Mail from the sender of the message the cursor is on goes to the account's junk folder from now on. When messages from them are already here, it asks once, with the count, whether to move those to the junk folder too: Enter answers Yes, and No leaves them where they are. More than 5,000 are never moved; it says how many there are and to search for the sender and use Move to. Messages in Junk, Trash, Sent, Drafts and the Outbox are left alone. Blocking tells the mail provider nothing; Report as Junk does that. Experimental |
 
-Seven submenus hold the rest:
+Eight submenus hold the rest:
 
 | Submenu | What is on it |
 |--------|----------|
@@ -855,6 +855,7 @@ Seven submenus hold the rest:
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
 | Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then New Saved Search, which makes one from nothing: a name, where it looks, and its conditions. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
+| Quick Steps | `Q` on the Action menu. Manage Quick Steps (`M` on the submenu) opens the Quick Step Manager for the account you are in, where a Quick Step is named, made, changed, put in order and removed. Running a step from this submenu or by its key is not built yet and arrives with the next change. Experimental (#60) |
 | Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
 
 ### Account Management
@@ -1444,6 +1445,38 @@ letter is used once.
 | Delete | `Alt+D` | Remove the condition you are on |
 | Close | `Alt+C` | Save and close. With no conditions it refuses and says why |
 | Leave without saving a new search | `Esc` | For a new search with no conditions, closes and makes nothing |
+
+### Quick Step Manager and Editor Accelerators
+
+Manage Quick Steps, on the Quick Steps submenu of the Action menu (`Alt+A`,
+`Q`, `M`), opens the Quick Step Manager for the account you are in. It opens
+on the list of steps, which has three columns: the name, the key the step's
+place gives it, and what the step does. The Key column shows the key each of
+the first three steps is to run on. Running a step by its key arrives with
+the next change, and this page lists those keys when it does.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Add | `Alt+A` | Make a new Quick Step |
+| Edit | `Alt+E` | Change the step you are on. A step written by a newer version of Wixen Mail is not opened, and a message says why |
+| Delete | `Alt+D` | Remove the step you are on |
+| Move Up, Move Down | `Alt+U`, `Alt+W`, or `Alt+Shift+Up` and `Alt+Shift+Down` in the list | Move the step you are on one place, which moves its key with it |
+| Close | `Alt+C` | Save what changed, and the order, and close |
+
+The step editor, which Add and Edit open, asks one question per control, in
+this order. Each letter is used once.
+
+| Question | Shortcut | Description |
+|--------|----------|-------------|
+| Name | `Alt+N` | What the step is called. A name another step in this account has, in any mix of capitals, is refused |
+| Mark as read or unread | `Alt+R` | Leave as it is, Mark read, or Mark unread |
+| Flag | `Alt+F` | Leave as it is, Flag it, or Take the flag off |
+| Label | `Alt+L` | No label, or one of the account's labels. A step puts on one label at most |
+| Move to | `Alt+M` | Leave it where it is, or one of the account's folders, by its path |
+| Delete it | `Alt+D` | Send the messages to the trash. A step that deletes does nothing else |
+| Phrase to say first | `Alt+H` | A few words, up to 40 characters, that each message the step is run on keeps and your screen reader says first on its row, as a rule's Say this first does |
+| OK | `Enter` | Keep the step. What stops it being kept is said in a message box, and the window stays open with what you chose |
+| Cancel | `Esc` | Close without keeping anything |
 
 ### Contact Edit Dialog Accelerators
 

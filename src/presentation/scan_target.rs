@@ -249,12 +249,20 @@ pub enum ScanTarget {
     /// 13-39). Opened on a made-up search of two conditions joined by any.
     /// Nothing is saved.
     SearchConditions,
+    /// The Quick Step Manager, Action, Quick Steps, Manage Quick Steps (#60,
+    /// 13-41), over a made-up step, with the made-up labels and folders a
+    /// step can name. What it hands back is thrown away. Nothing is saved.
+    QuickSteps,
+    /// The step editor the Quick Step Manager's Add and Edit open (#60,
+    /// 13-41), over a made-up step that marks read and moves, with two
+    /// labels and two folders offered. Nothing is saved.
+    QuickStepEditor,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 46] = [
+    pub const ALL: [ScanTarget; 48] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -301,6 +309,8 @@ impl ScanTarget {
         ScanTarget::Identities,
         ScanTarget::NewSavedSearch,
         ScanTarget::SearchConditions,
+        ScanTarget::QuickSteps,
+        ScanTarget::QuickStepEditor,
     ];
 
     /// The name used on the command line.
@@ -352,6 +362,8 @@ impl ScanTarget {
             Self::Identities => "identities",
             Self::NewSavedSearch => "new-saved-search",
             Self::SearchConditions => "search-conditions",
+            Self::QuickSteps => "quick-steps",
+            Self::QuickStepEditor => "quick-step-editor",
         }
     }
 
@@ -490,6 +502,9 @@ mod tests {
         //
         // New Saved Search and the conditions window arrived on 2026-09-30
         // (#58), with a saved search made from nothing.
+        //
+        // The Quick Step Manager and its step editor arrived on 2026-09-30
+        // (#60), with the windows.
         for name in [
             "columns",
             "which-copy",
@@ -524,6 +539,8 @@ mod tests {
             "identities",
             "new-saved-search",
             "search-conditions",
+            "quick-steps",
+            "quick-step-editor",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));
