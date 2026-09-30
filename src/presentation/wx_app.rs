@@ -11330,8 +11330,19 @@ pub fn rebuild_the_quick_steps_menu(quick_steps_menu: &Menu, names: &[String]) {
 }
 
 /// Run the Quick Step at this place in the account's order over the
-/// messages chosen now. Built by task 3 of 13-42; until then it answers
-/// nothing.
+/// messages chosen now, from its item on Action, Quick Steps or its key
+/// (13-42, #60).
+///
+/// A line of checks, each ending in a sentence that says nothing changed:
+/// the step is one this build can read; the selection, read with the step's
+/// reach, holds something and no more than Select All may; every chosen
+/// message is the step's account's, since a step's folder and label are
+/// that account's and a folder of the same path elsewhere is somebody
+/// else's mail; and the account still has what the step names. Then 13-24.1's
+/// runner, once, which meets each account's gate before anything changes and
+/// carries every write through the paths the set commands use, and one
+/// sentence naming the step and what it did, with one Confirmed. The runner
+/// says nothing of its own, so that sentence is the only one.
 fn run_the_quick_step_at(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
@@ -11339,7 +11350,98 @@ fn run_the_quick_step_at(
     a11y: &Accessibility,
     place: usize,
 ) {
-    let _ = (app, cache, list, a11y, place);
+    use crate::application::choosing_messages::too_many;
+    use crate::application::quick_steps::{
+        StoredStep, not_this_accounts, nothing_there, what_a_step_did, what_is_gone,
+        what_the_account_lacks, written_by_a_newer_version,
+    };
+    let AppHandles { state, tx, rt } = app;
+    let (stored, account, how_many) = {
+        let s = lock_state(state);
+        let account = s
+            .active_account_id
+            .as_deref()
+            .and_then(|id| s.accounts.iter().find(|account| account.id == id))
+            .cloned();
+        let stored = place
+            .checked_sub(1)
+            .and_then(|at| s.quick_steps.get(at))
+            .cloned();
+        (stored, account, s.quick_steps.len())
+    };
+    let step = match stored {
+        Some(StoredStep::Readable(step)) => step,
+        Some(StoredStep::WrittenByANewerVersion { name, .. }) => {
+            return send_refusal(tx, rt, &written_by_a_newer_version(&name));
+        }
+        None => return send_status(tx, rt, &nothing_there(place, how_many)),
+    };
+    let (Some(account), Some(held)) = (account, cache.as_ref()) else {
+        return send_refusal(tx, rt, "The mail on this computer is not open.");
+    };
+    let reach =
+        crate::application::quick_steps::reach(&step.does, how_a_conversation_delete_is_set());
+    let chosen = match chosen_messages(state, cache, list, reach) {
+        Ok(chosen) => chosen,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    if chosen.is_empty() {
+        return send_refusal(tx, rt, &at_least_one_chosen(Thing::MESSAGE));
+    }
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+    let elsewhere = {
+        let s = lock_state(state);
+        chosen
+            .messages
+            .iter()
+            .filter(|message| {
+                owner_of(
+                    &s.messages,
+                    &s.accounts,
+                    message.row_id,
+                    s.active_account_id.as_deref(),
+                )
+                .is_none_or(|owner| owner.id != account.id)
+            })
+            .count()
+    };
+    if elsewhere > 0 {
+        return send_refusal(
+            tx,
+            rt,
+            &not_this_accounts(&step.name, &account.name, elsewhere),
+        );
+    }
+    let what_the_account_has = labels_for(held, &account.id).and_then(|labels| {
+        held.get_folders_for_account(&account.id)
+            .map(|folders| (folders, labels))
+    });
+    let (folders, labels) = match what_the_account_has {
+        Ok(has) => has,
+        Err(e) => {
+            return send_refusal(
+                tx,
+                rt,
+                &format!("The folders and labels could not be read, so nothing was changed: {e}."),
+            );
+        }
+    };
+    if let Some(missing) = what_the_account_lacks(&step.does, &folders, &labels) {
+        return send_refusal(tx, rt, &what_is_gone(&step.name, &missing));
+    }
+    let done = match run_these_actions_over(app, list, held, &chosen, &step.does) {
+        Ok(done) => done,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    let said = what_a_step_did(&step.name, &chosen, &done);
+    let _ = a11y.announce(
+        &said,
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+    send_shown(tx, rt, &said);
+    let _ = a11y.signal(FeedbackEvent::Confirmed, &step.name);
 }
 
 /// Put the account's Quick Steps, by name in their order, on Action, Quick
@@ -11730,17 +11832,23 @@ fn chosen_messages(
 /// the command runs so the count and the delete agree.
 fn how_far_a_conversation_delete_reaches() -> crate::application::conversations::AConversationReaches
 {
-    let setting = crate::data::config::ConfigManager::load_stored()
+    crate::application::choosing_messages::reach_for(
+        crate::application::choosing_messages::SetCommand::Delete,
+        how_a_conversation_delete_is_set(),
+    )
+}
+
+/// The D-07 setting, read where the command runs: what deleting a
+/// conversation row takes. A Quick Step that deletes reaches as Delete does.
+fn how_a_conversation_delete_is_set() -> crate::application::conversations::DeletingAConversationRow
+{
+    crate::data::config::ConfigManager::load_stored()
         .map(|stored| {
             crate::application::conversations::DeletingAConversationRow::from_stored(
                 &stored.app_config().deleting_a_conversation_row,
             )
         })
-        .unwrap_or_default();
-    crate::application::choosing_messages::reach_for(
-        crate::application::choosing_messages::SetCommand::Delete,
-        setting,
-    )
+        .unwrap_or_default()
 }
 
 /// Toggle the selected messages between read and unread, say so once, and

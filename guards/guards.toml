@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 525 records have arrived since and have not been through it.
+# 527 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35533,7 +35533,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 13 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
 ]
 
 # The key handler past the last Quick Step asking for Alt where the keys are
@@ -35557,5 +35557,57 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 13 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
+]
+
+# A Quick Step run over more messages than Select All may take, one key
+# changing as many as are chosen at a provider. Written 2026-09-30 by 13-42,
+# measured through `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "a Quick Step meets the Select All bound before it runs"
+file = "src/presentation/wx_app.rs"
+suite = "a_quick_step_runs_over_the_selection"
+before = '''    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+    let elsewhere = {'''
+after = '''    let elsewhere = {'''
+red = [
+    "test_a_run_checks_the_selection_the_bound_and_the_account_before_the_runner",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
+]
+
+# A Quick Step run over messages of another account, into a folder of the
+# same path there, which is somebody else's mail. Written 2026-09-30 by
+# 13-42, measured through `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "a Quick Step refuses messages of another account"
+file = "src/presentation/wx_app.rs"
+suite = "a_quick_step_runs_over_the_selection"
+before = '''    let elsewhere = {
+        let s = lock_state(state);
+        chosen
+            .messages
+            .iter()
+            .filter(|message| {
+                owner_of(
+                    &s.messages,
+                    &s.accounts,
+                    message.row_id,
+                    s.active_account_id.as_deref(),
+                )
+                .is_none_or(|owner| owner.id != account.id)
+            })
+            .count()
+    };'''
+after = '''    let elsewhere = 0;'''
+red = [
+    "test_a_run_checks_the_selection_the_bound_and_the_account_before_the_runner",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
 ]
