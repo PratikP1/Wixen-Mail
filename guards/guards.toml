@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 517 records have arrived since and have not been through it.
+# 519 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35390,4 +35390,38 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_saved_searches_menu_says_the_searches_an_account_has.rs", tests = 16 },
+]
+
+# A delete beside a move let through the Quick Step's refusal, so the step is
+# kept saying it moves and deletes, and `settle` keeps the delete and drops
+# the move in silence when it runs. Written 2026-09-30 by 13-40, measured
+# through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a Quick Step that deletes and moves is refused before it is saved"
+file = "src/application/quick_steps.rs"
+before = '''    if does.delete && does != &deletes_and_nothing_else() {'''
+after = '''    if does.delete && does.move_to.is_none() && does != &deletes_and_nothing_else() {'''
+red = [
+    "application::quick_steps::tests::test_a_step_that_deletes_and_moves_is_refused",
+]
+tests_last_seen = [
+    { file = "src/application/quick_steps.rs", tests = 22 },
+]
+
+# Removing an account no longer clearing its Quick Steps, so their names and
+# the folders they name stay in a database that is copied and backed up, under
+# an account nothing can reach. Written 2026-09-30 by 13-40, measured through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "removing an account takes its Quick Steps with it"
+file = "src/data/message_cache/accounts.rs"
+before = '''        // And its Quick Steps, whose names and folders are the account's.
+        self.clear_quick_steps(account_id)?;'''
+after = '''        // And its Quick Steps, whose names and folders are the account's.'''
+red = [
+    "data::message_cache::quick_steps::tests::test_removing_an_account_takes_its_steps_and_leaves_another_accounts",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/accounts.rs", tests = 23 },
+    { file = "src/data/message_cache/quick_steps.rs", tests = 10 },
 ]

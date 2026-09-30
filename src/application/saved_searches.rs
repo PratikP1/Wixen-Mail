@@ -1059,7 +1059,10 @@ pub fn name_for(asked: &str, already_used: &[String]) -> Naming {
 /// purpose, they are read out as nothing, and one of them is the character
 /// that marks a row in the tree as a saved search rather than a folder. Spaces
 /// at either end go too, because those are typing rather than naming.
-fn tidied(asked: &str) -> String {
+///
+/// A Quick Step's name is tidied by this too (`quick_steps::name_for`), so
+/// the two kinds of name somebody types are cleaned the same way.
+pub(crate) fn tidied(asked: &str) -> String {
     asked
         .chars()
         .filter(|c| !c.is_control())

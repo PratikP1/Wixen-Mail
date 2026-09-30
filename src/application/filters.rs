@@ -448,23 +448,7 @@ impl FilterEngine {
     }
 
     pub fn from_persisted_rule(rule: &MessageFilterRule) -> Option<FilterRule> {
-        let action = match rule.action_type.as_str() {
-            "move_to_folder" => FilterAction::MoveToFolder(Self::validated_action_value(
-                rule.action_value.as_ref(),
-            )?),
-            "add_tag" => {
-                FilterAction::AddTag(Self::validated_action_value(rule.action_value.as_ref())?)
-            }
-            "mark_as_read" => FilterAction::MarkAsRead,
-            "mark_as_unread" => FilterAction::MarkAsUnread,
-            "star" => FilterAction::Star,
-            "unstar" => FilterAction::Unstar,
-            "delete" => FilterAction::Delete,
-            "say_first" => {
-                FilterAction::SayFirst(Self::validated_phrase(rule.action_value.as_ref())?)
-            }
-            _ => return None,
-        };
+        let action = Self::action_from_stored(&rule.action_type, rule.action_value.as_ref())?;
 
         Some(FilterRule {
             id: rule.id.clone(),
@@ -476,6 +460,31 @@ impl FilterEngine {
             action,
             enabled: rule.enabled,
             plays_a_sound: rule.plays_a_sound,
+        })
+    }
+
+    /// The action a stored word and value mean, or `None` for a word this
+    /// build does not know or a value the word may not carry.
+    ///
+    /// The one reading of an action's stored words, for a rule's single
+    /// action and a Quick Step's several (13-40), so the two cannot come to
+    /// mean different things by the same word.
+    pub fn action_from_stored(
+        action_type: &str,
+        action_value: Option<&String>,
+    ) -> Option<FilterAction> {
+        Some(match action_type {
+            "move_to_folder" => {
+                FilterAction::MoveToFolder(Self::validated_action_value(action_value)?)
+            }
+            "add_tag" => FilterAction::AddTag(Self::validated_action_value(action_value)?),
+            "mark_as_read" => FilterAction::MarkAsRead,
+            "mark_as_unread" => FilterAction::MarkAsUnread,
+            "star" => FilterAction::Star,
+            "unstar" => FilterAction::Unstar,
+            "delete" => FilterAction::Delete,
+            "say_first" => FilterAction::SayFirst(Self::validated_phrase(action_value)?),
+            _ => return None,
         })
     }
 
@@ -498,6 +507,24 @@ impl FilterEngine {
     pub fn validated_phrase(value: Option<&String>) -> Option<String> {
         Self::validated_action_value(value)
             .filter(|phrase| phrase.chars().count() <= SAY_FIRST_LIMIT)
+    }
+}
+
+impl FilterAction {
+    /// The word and the value this action is stored as, the inverse of
+    /// [`FilterEngine::action_from_stored`], so what is written is what the
+    /// one reader reads.
+    pub fn stored(&self) -> (&'static str, Option<String>) {
+        match self {
+            FilterAction::MoveToFolder(folder) => ("move_to_folder", Some(folder.clone())),
+            FilterAction::AddTag(label) => ("add_tag", Some(label.clone())),
+            FilterAction::MarkAsRead => ("mark_as_read", None),
+            FilterAction::MarkAsUnread => ("mark_as_unread", None),
+            FilterAction::Star => ("star", None),
+            FilterAction::Unstar => ("unstar", None),
+            FilterAction::Delete => ("delete", None),
+            FilterAction::SayFirst(phrase) => ("say_first", Some(phrase.clone())),
+        }
     }
 }
 
