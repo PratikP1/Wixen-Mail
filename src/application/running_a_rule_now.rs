@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 
 use crate::application::acting_on_a_set::{HeldMessage, WhyNot, the_work, what_each_message_needs};
-use crate::application::choosing_messages::{Chosen, MessageRef};
+use crate::application::choosing_messages::{Chosen, MessageRef, with_commas};
 use crate::application::editing::MOST_ROWS_WORTH_SELECTING;
 use crate::application::filters::{FilterAction, FilterEngine, FilterRule, Outcome, settle};
 use crate::data::message_cache::{CachedFolder, CachedMessage, Tag};
@@ -127,7 +127,7 @@ impl WouldChange {
     /// What the runner is handed to carry out: the rule's one action,
     /// settled the way a check settles it.
     pub fn outcome(&self) -> Outcome {
-        Outcome::default()
+        settle(std::slice::from_ref(&self.action))
     }
 }
 
@@ -146,22 +146,130 @@ pub struct Question {
 
 /// The question asked before `rule_name` is run over `folder_name`, when
 /// it would change something.
-pub fn the_question(_rule_name: &str, _folder_name: &str, _would: &WouldChange) -> Question {
+///
+/// What the rule would do, to how many and where, then the bound when the
+/// count passes it, then whether a run like it has met a real server, then
+/// "Run it?". The count comes straight after the rule's name, because it is
+/// what somebody deciding is listening for. When some matches are already
+/// the way the rule would leave them, both counts are said, so the number
+/// heard is never more than the run changes.
+pub fn the_question(rule_name: &str, folder_name: &str, would: &WouldChange) -> Question {
+    let changing = would.changing.len();
+    let left_alone = would.matched.saturating_sub(changing);
+    let mut sentences = vec![match already(&would.action, changing, left_alone) {
+        Some(both) => format!(
+            "The rule {rule_name} matches {} in {folder_name}; {both}.",
+            messages(would.matched)
+        ),
+        None => format!(
+            "The rule {rule_name} would {}.",
+            what_it_would_do(&would.action, &messages(changing), folder_name)
+        ),
+    }];
+    if changing > MOST_ROWS_WORTH_SELECTING {
+        let verb = the_verb(&would.action);
+        let most = with_commas(MOST_ROWS_WORTH_SELECTING);
+        sentences.push(format!(
+            "One run changes {most} at most, so this run would {verb} the first {most} \
+             and running it again would {verb} the rest."
+        ));
+    }
+    if would.reaches_the_server {
+        sentences.push(RUNNING_A_RULE_NOW_IS_EXPERIMENTAL.to_string());
+    }
+    sentences.push("Run it?".to_string());
     Question {
-        text: String::new(),
-        enter_answers_yes: false,
+        text: sentences.join(" "),
+        enter_answers_yes: !would.outcome().delete,
     }
 }
 
-/// What is said instead of a question when a rule would change nothing.
-pub fn nothing_to_change(_rule_name: &str, _folder_name: &str, _matched: usize) -> String {
-    String::new()
+/// What the rule would do, as said after "would": "move 214 messages in
+/// Inbox to Archive".
+fn what_it_would_do(action: &FilterAction, messages: &str, folder: &str) -> String {
+    match action {
+        FilterAction::MoveToFolder(into) => format!("move {messages} in {folder} to {into}"),
+        FilterAction::AddTag(label) => format!("label {messages} in {folder} with {label}"),
+        FilterAction::MarkAsRead => format!("mark {messages} in {folder} as read"),
+        FilterAction::MarkAsUnread => format!("mark {messages} in {folder} as unread"),
+        FilterAction::Star => format!("flag {messages} in {folder}"),
+        FilterAction::Unstar => format!("take the flag off {messages} in {folder}"),
+        FilterAction::Delete => format!("delete {messages} in {folder}"),
+        FilterAction::SayFirst(phrase) => {
+            format!("say \"{phrase}\" first on {messages} in {folder}")
+        }
+    }
 }
 
-/// The one sentence after a run, `done` being what the runner's answer
-/// was worded as.
-pub fn what_the_rule_did(_rule_name: &str, _done: &str) -> String {
-    String::new()
+/// "12 would be marked read and 218 are read already", when `left_alone`
+/// of the matches are already the way the rule would leave them. A delete
+/// and a phrase said first change every match, so they never say this.
+fn already(action: &FilterAction, changing: usize, left_alone: usize) -> Option<String> {
+    if left_alone == 0 {
+        return None;
+    }
+    let is = if left_alone == 1 { "is" } else { "are" };
+    let has = if left_alone == 1 { "has" } else { "have" };
+    let (would_be, as_they_are) = match action {
+        FilterAction::MoveToFolder(into) => {
+            (format!("be moved to {into}"), format!("{is} in {into}"))
+        }
+        FilterAction::AddTag(label) => (format!("be labelled {label}"), format!("{has} it")),
+        FilterAction::MarkAsRead => ("be marked read".to_string(), format!("{is} read")),
+        FilterAction::MarkAsUnread => ("be marked unread".to_string(), format!("{is} unread")),
+        FilterAction::Star => ("be flagged".to_string(), format!("{is} flagged")),
+        FilterAction::Unstar => (
+            "have the flag taken off".to_string(),
+            format!("{has} no flag"),
+        ),
+        FilterAction::Delete | FilterAction::SayFirst(_) => return None,
+    };
+    Some(format!(
+        "{} would {would_be} and {} {as_they_are} already",
+        with_commas(changing),
+        with_commas(left_alone)
+    ))
+}
+
+/// The verb the bound's sentence uses for what a run does to the first
+/// 5,000 and a second run to the rest.
+fn the_verb(action: &FilterAction) -> &'static str {
+    match action {
+        FilterAction::MoveToFolder(_) => "move",
+        FilterAction::Delete => "delete",
+        _ => "change",
+    }
+}
+
+/// "1 message", "214 messages", "5,001 messages".
+fn messages(count: usize) -> String {
+    match count {
+        1 => "1 message".to_string(),
+        many => format!("{} messages", with_commas(many)),
+    }
+}
+
+/// What is said instead of a question when a rule would change nothing:
+/// that it matches nothing here, or that everything it matches is already
+/// the way it would leave it. Nothing is asked either way.
+pub fn nothing_to_change(rule_name: &str, folder_name: &str, matched: usize) -> String {
+    match matched {
+        0 => format!("The rule {rule_name} would change nothing in {folder_name}."),
+        1 => format!(
+            "The rule {rule_name} matches 1 message in {folder_name}, and it is already that way."
+        ),
+        many => format!(
+            "The rule {rule_name} matches {} in {folder_name}, and every one is already that way.",
+            messages(many)
+        ),
+    }
+}
+
+/// The one sentence after a run: the rule's name, then `done`, what the
+/// runner's answer was worded as, "Newsletters: 214 messages moved to
+/// Archive".
+pub fn what_the_rule_did(rule_name: &str, done: &str) -> String {
+    format!("{rule_name}: {done}")
 }
 
 #[cfg(test)]

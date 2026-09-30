@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 530 records have arrived since and have not been through it.
+# 531 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35661,7 +35661,25 @@ after = '''    HeldMessage {
         read: false,'''
 red = [
     "application::running_a_rule_now::tests::test_a_read_message_under_a_mark_read_rule_is_not_counted_and_an_unread_one_is",
+    "application::running_a_rule_now::tests::test_the_question_for_marking_read_and_unread",
+    "application::running_a_rule_now::tests::test_when_some_are_already_that_way_the_question_says_both_counts",
 ]
 tests_last_seen = [
-    { file = "src/application/running_a_rule_now.rs", tests = 12 },
+    { file = "src/application/running_a_rule_now.rs", tests = 27 },
+]
+
+# Enter answering yes to the question before a rule that deletes, so a
+# finger already on its way deletes a folder's matches before the question
+# has been heard to the end (T-13-43-03). Written 2026-09-30 by 13-43,
+# measured through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "Enter answers no to the question before a rule run that deletes"
+file = "src/application/running_a_rule_now.rs"
+before = '''        enter_answers_yes: !would.outcome().delete,'''
+after = '''        enter_answers_yes: true,'''
+red = [
+    "application::running_a_rule_now::tests::test_the_question_for_a_delete_and_enter_answers_no",
+]
+tests_last_seen = [
+    { file = "src/application/running_a_rule_now.rs", tests = 27 },
 ]
