@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 503 records have arrived since and have not been through it.
+# 505 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2505,12 +2505,18 @@ red = [
     "application::one_day_of_a_series::tests::test_a_day_still_on_the_series_is_that_day_as_the_series_holds_it",
     "application::one_day_of_a_series::tests::test_a_day_the_series_calls_off_is_off_it",
     "application::one_day_of_a_series::tests::test_a_meeting_held_once_is_one_appointment",
+    # Added 2026-09-29 by 13-36.4, found by --remeasure: a day named on a
+    # clock face is read before an answer to it is built or worded, so the
+    # reply and the two sentences for one day read a moment with a T too.
+    "application::invitations::tests::test_the_answer_to_one_day_names_that_day_as_the_invitation_did",
+    "application::invitations::tests::test_the_buttons_for_one_day_say_one_day",
+    "application::invitations::tests::test_what_answering_one_day_did_says_one_day",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
     { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
@@ -24587,7 +24593,7 @@ red = [
     "application::answering::tests::test_an_answer_queued_while_offline_says_it_waits_for_a_network",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 39 },
+    { file = "src/application/answering.rs", tests = 41 },
 ]
 
 # A queued meeting answer left off the calendar, which is what the filing
@@ -31597,7 +31603,7 @@ red = [
     "application::invitations::tests::test_a_cancellation_of_one_day_says_which_day",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
 ]
 
 # The finder back to `text/calendar` alone, which is #50 point 5: an
@@ -31611,9 +31617,15 @@ before = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "appli
 after = '''const AN_INVITATION_ARRIVES_AS: [&str; 2] = ["text/calendar", "text/calendar"];'''
 red = [
     "application::answering::finding_the_invitation::test_an_invitation_sent_as_application_ics_is_found_as_one_sent_as_text_calendar",
+    # Added 2026-09-29 by 13-36.4, found by --remeasure and not caused by it:
+    # 13-21.3's report of what a fetch kept asks the same finder whether a
+    # part is a meeting, and its fixture's meeting is sent as application/ics.
+    # The record had been short since 13-21.3 in a file it never named.
+    "application::parts_left_behind::tests::test_a_kept_calendar_part_is_reported",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 39 },
+    { file = "src/application/answering.rs", tests = 41 },
+    { file = "src/application/parts_left_behind.rs", tests = 8 },
 ]
 
 # The meeting folded in after the signature: it is in the bar, below "More
@@ -31767,7 +31779,7 @@ red = [
     "application::answering::tests::test_the_answer_goes_out_threaded_under_the_invitation",
 ]
 tests_last_seen = [
-    { file = "src/application/answering.rs", tests = 39 },
+    { file = "src/application/answering.rs", tests = 41 },
 ]
 
 # Why a meeting cannot be answered folded in after the signature: in the bar,
@@ -33038,7 +33050,7 @@ red = [
     "presentation::event_times::tests::test_the_out_of_hours_note_judges_the_hour_on_this_computer",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
     { file = "src/application/meeting_changes.rs", tests = 34 },
     { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/common/moment.rs", tests = 20 },
@@ -33083,7 +33095,7 @@ red = [
     "application::invitations::tests::test_an_invitation_written_in_another_zone_is_worded_at_this_computers_hour",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
 ]
 
 # An organiser's move saved with the copy's zone beside the update's clock
@@ -33138,7 +33150,7 @@ red = [
     "application::invitations::tests::test_one_meeting_written_in_two_zones_is_already_on_the_calendar",
 ]
 tests_last_seen = [
-    { file = "src/application/invitations.rs", tests = 65 },
+    { file = "src/application/invitations.rs", tests = 70 },
 ]
 
 # An organiser's update compared with the calendar's copy by the stored text:
@@ -35085,4 +35097,46 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
+]
+
+# The reply to one day of a repeating meeting written without the day's
+# RECURRENCE-ID, so the organiser reads an answer to one Thursday as an answer
+# to every Thursday (RFC 5546 section 3.2.3, T-13-36.4-02). Written 2026-09-29
+# by 13-36.4, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "the answer to one day names that day"
+file = "src/application/invitations.rs"
+before = '''    lines.extend(invitation.the_day.as_ref().map(the_day_answered));'''
+after = '''    let _ = the_day_answered;'''
+red = [
+    "application::invitations::tests::test_the_answer_to_one_day_names_that_day_as_the_invitation_did",
+    "application::invitations::tests::test_a_day_named_in_universal_time_is_answered_in_universal_time",
+    "application::invitations::tests::test_a_whole_day_is_answered_as_a_date",
+]
+tests_last_seen = [
+    { file = "src/application/invitations.rs", tests = 70 },
+]
+
+# The question whether an invitation is for one day asked of the whole
+# document again, so a series sent with a changed day after it, the way
+# Outlook sends one, is refused instead of answered as the series. Written
+# 2026-09-29 by 13-36.4, measured through `scripts/guards.sh --remeasure`,
+# `cargo test --lib`.
+[[guard]]
+name = "a series sent with a changed day is answered as the series"
+file = "src/application/answering.rs"
+before = '''    // it names no day for the series, and is answered as the series.
+    if invitation.the_day.is_some() {'''
+after = '''    // it names no day for the series, and is answered as the series.
+    if crate::service::caldav::unfolded(document)
+        .iter()
+        .any(|line| crate::service::caldav::value_named_on(line, "RECURRENCE-ID").is_some())
+    {'''
+red = [
+    "application::answering::tests::test_a_series_sent_with_a_changed_day_is_answered_as_the_series",
+    "application::answering::tests::test_the_answer_to_a_series_names_no_day",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 41 },
 ]

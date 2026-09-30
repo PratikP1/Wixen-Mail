@@ -176,7 +176,9 @@ pub fn whether_it_can_be_answered(
         read_the_invitation(document).map_err(|refused| CannotAnswer::TheInvitationDidNotRead {
             because: refused.to_string(),
         })?;
-    if names_one_day_of_a_series(document) {
+    // The meeting's own lines, as read: a series sent with a changed day after
+    // it names no day for the series, and is answered as the series.
+    if invitation.the_day.is_some() {
         return Err(CannotAnswer::ItIsOneDayOfARepeatingMeeting);
     }
     let answering = the_guest_answering(&invitation, answering_as)?;
@@ -743,29 +745,6 @@ const fn what_a_subject_calls(answer: Answer) -> &'static str {
         Answer::Tentative => "Tentative",
         Answer::Declined => "Declined",
     }
-}
-
-/// Whether the document says it is about one day of a meeting that repeats.
-///
-/// `RECURRENCE-ID` is what says so, and it names the day. A reply about one
-/// occurrence has to carry the same line back; nothing here builds one, so an
-/// answer to one day would reach the organiser as an answer to every day.
-///
-/// The whole document is read rather than one meeting's own lines, because
-/// `RECURRENCE-ID` belongs to a meeting and to nothing else: no alarm and no
-/// time zone block carries one. That leaves this with no view of its own about
-/// where a meeting ends, so it cannot come to disagree with the reader about
-/// which lines belong to which. A document holding a series and one changed
-/// day of it says so here too, and that is right: an answer built from it
-/// would carry the series and say nothing about the day.
-///
-/// The lines are put back together first, and the property is matched through
-/// the same reader the calendar uses, so a folded document and a document
-/// written in small letters both read the same way here as everywhere else.
-fn names_one_day_of_a_series(document: &str) -> bool {
-    crate::service::caldav::unfolded(document)
-        .iter()
-        .any(|line| crate::service::caldav::value_named_on(line, "RECURRENCE-ID").is_some())
 }
 
 /// Whether mail can reach the person a calendar document names.

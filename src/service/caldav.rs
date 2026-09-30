@@ -1775,7 +1775,7 @@ pub(crate) fn unquoted(value: &str) -> &str {
 ///
 /// A value holding none of the three characters goes out exactly as it
 /// always has, so nothing that already round-trips correctly changes shape.
-fn quoted_if_it_must_be(value: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn quoted_if_it_must_be(value: &str) -> std::borrow::Cow<'_, str> {
     if value.contains([':', ';', ',']) {
         std::borrow::Cow::Owned(format!("\"{value}\""))
     } else {

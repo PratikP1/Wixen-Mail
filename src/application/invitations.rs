@@ -33,11 +33,12 @@
 //! argument, and so is the wording of the meeting's time, because how a date
 //! is said depends on settings this layer cannot see.
 //!
-//! Answering one day of a repeating meeting is not handled. Such a reply
-//! carries a `RECURRENCE-ID` naming the day, and without one an answer to a
-//! single occurrence would be read by the organiser as an answer to the whole
-//! series. Nothing here builds that line, so nothing here should be offered
-//! for one day of a series.
+//! An invitation for one day of a repeating meeting is answered for that day.
+//! The reply carries a `RECURRENCE-ID` naming the day, rebuilt from the value
+//! and the zone the invitation wrote, because without one the organiser reads
+//! an answer to a single occurrence as an answer to the whole series (RFC 5546
+//! section 3.2.3). The sentences before and after answering say "one day of"
+//! the meeting for the same reason.
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
@@ -200,23 +201,44 @@ fn the_day_named_on(its_own: &[String], read: Option<&str>) -> Result<Option<One
     let Some(line) = its_own.iter().find(|line| names_the_day(line)) else {
         return Ok(None);
     };
+    let unreadable = || {
+        Error::Protocol(
+            "That message names a day of a repeating meeting that cannot be read, so \
+             nothing about the meeting is changed or answered from it."
+                .to_string(),
+        )
+    };
     let at = read
         .map(str::trim)
         .filter(|at| crate::common::moment::read(at).is_some())
-        .ok_or_else(|| {
-            Error::Protocol(
-                "That message names a day of a repeating meeting that cannot be read, so \
-                 nothing about the meeting is changed or answered from it."
-                    .to_string(),
-            )
-        })?;
+        .ok_or_else(unreadable)?;
+    // An answer to the day writes this back to a stranger's organiser, so only
+    // a value in the calendar format's own shape is kept: nothing a stranger
+    // added after it reaches the reply.
+    let as_written = value_named_on(line, "RECURRENCE-ID")
+        .map(str::trim)
+        .filter(|written| written_as_a_calendar_moment(written))
+        .ok_or_else(unreadable)?;
     Ok(Some(OneDay {
         at: at.to_string(),
         zone: parameter_named_on(line, "TZID"),
         from_then_on: parameter_named_on(line, "RANGE")
             .is_some_and(|range| range.trim().eq_ignore_ascii_case("THISANDFUTURE")),
-        as_written: String::new(),
+        as_written: as_written.to_string(),
     }))
+}
+
+/// Whether a value is a moment as a calendar document writes one: a date of
+/// eight digits, or that, a `T` and six more, with a `Z` for universal time.
+fn written_as_a_calendar_moment(written: &str) -> bool {
+    let all_digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
+    match written.split_once('T') {
+        None => written.len() == 8 && all_digits(written),
+        Some((date, time)) => {
+            let time = time.strip_suffix('Z').unwrap_or(time);
+            date.len() == 8 && all_digits(date) && time.len() == 6 && all_digits(time)
+        }
+    }
 }
 
 /// Whether a line is a `RECURRENCE-ID`, whatever case it is written in and
@@ -347,13 +369,19 @@ pub fn a_reply_to(
     })?;
     let answering = reachable_by_mail(answering, "the person answering")?;
     let organiser = reachable_by_mail(organiser, "whoever called the meeting")?;
-    Ok(written_out(&[
+    let mut lines = vec![
         "BEGIN:VCALENDAR".to_string(),
         "VERSION:2.0".to_string(),
         format!("PRODID:{WHAT_WROTE_IT}"),
         "METHOD:REPLY".to_string(),
         "BEGIN:VEVENT".to_string(),
         format!("UID:{}", invitation.uid),
+    ];
+    // The day answered, when the invitation was for one day of a repeating
+    // meeting (RFC 5546 section 3.2.3). Without it the organiser reads the
+    // answer for every day of the series.
+    lines.extend(invitation.the_day.as_ref().map(the_day_answered));
+    lines.extend([
         // The version answered, so the organiser can tell an answer to the
         // meeting they moved from an answer to the one before it.
         format!("SEQUENCE:{}", invitation.version),
@@ -366,7 +394,36 @@ pub fn a_reply_to(
         ),
         "END:VEVENT".to_string(),
         "END:VCALENDAR".to_string(),
-    ]))
+    ]);
+    Ok(written_out(&lines))
+}
+
+/// The `RECURRENCE-ID` line naming the day answered, rebuilt from the value
+/// and the zone the invitation wrote rather than copied.
+///
+/// Rebuilt because the line is a stranger's: anything else they put on it
+/// would go out in mail from this account. The zone is quoted the way the
+/// calendar writer quotes a parameter, and a quote mark in it is dropped,
+/// since the standard gives no way to write one inside a quoted value.
+fn the_day_answered(day: &OneDay) -> String {
+    let as_a_date = matches!(
+        crate::common::moment::read(&day.at),
+        Some(crate::common::moment::Moment::WholeDay(_))
+    );
+    let date = if as_a_date { ";VALUE=DATE" } else { "" };
+    let zone = day
+        .zone
+        .as_deref()
+        .map(|zone| zone.replace('"', ""))
+        .filter(|zone| !zone.trim().is_empty())
+        .map(|zone| {
+            format!(
+                ";TZID={}",
+                crate::service::caldav::quoted_if_it_must_be(&zone)
+            )
+        })
+        .unwrap_or_default();
+    format!("RECURRENCE-ID{date}{zone}:{}", day.as_written)
 }
 
 /// How this program names itself in a document it writes.
@@ -479,7 +536,7 @@ pub fn what_will_happen(invitation: &Invitation, answer: Answer, when_in_words: 
     format!(
         "{} {}{}. {}",
         answer.what_it_does(),
-        what_the_meeting_is_called(invitation),
+        what_is_answered(invitation),
         when_it_is(when_in_words),
         who_will_be_told(invitation)
     )
@@ -500,11 +557,20 @@ pub fn what_will_happen(invitation: &Invitation, answer: Answer, when_in_words: 
 /// "<organiser> has been told", said at once for an answer that sat in the
 /// outbox for ten seconds like everything else (#56).
 pub fn what_was_done(invitation: &Invitation, answer: Answer) -> String {
-    format!(
-        "{} {}.",
-        answer.what_it_did(),
-        what_the_meeting_is_called(invitation),
-    )
+    format!("{} {}.", answer.what_it_did(), what_is_answered(invitation))
+}
+
+/// What an answer is about, said after the answer's own word: the meeting, or
+/// one day of it when the invitation was for one day of a repeating meeting.
+///
+/// Said before pressing and after, because accepting one Thursday and
+/// accepting every Thursday sound the same without it.
+fn what_is_answered(invitation: &Invitation) -> String {
+    let called = what_the_meeting_is_called(invitation);
+    match invitation.the_day {
+        Some(_) => format!("one day of {called}"),
+        None => called.to_string(),
+    }
 }
 
 /// What the meeting is called, or a stand-in when the organiser named it
