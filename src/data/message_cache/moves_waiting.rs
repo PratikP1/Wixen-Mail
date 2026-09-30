@@ -201,26 +201,42 @@ impl MessageCache {
     pub fn keep_a_move_waiting(&self, waiting: &AWaitingMove) -> Result<()> {
         let (kind, into, to_account) = waiting.what.as_stored();
         // Where the server still has it: the earlier row's answer when
-        // there is one, this ask's otherwise.
-        let already: Option<(String, i64)> = self
+        // there is one, this ask's otherwise. The marks the earlier move was
+        // to send first stay too, since the server has heard of neither.
+        let already: Option<(String, i64, MarksFirst)> = self
             .conn
             .query_row(
-                "SELECT from_folder_path, uid FROM moves_waiting WHERE message_row_id = ?1",
+                "SELECT from_folder_path, uid, read_first, starred_first
+                 FROM moves_waiting WHERE message_row_id = ?1",
                 params![waiting.message_row_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        MarksFirst {
+                            read: row.get(2)?,
+                            starred: row.get(3)?,
+                        },
+                    ))
+                },
             )
             .optional()
             .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
-        let (from, uid) = match already {
-            Some((from, uid)) => (from, uid),
-            None => (waiting.from_folder_path.clone(), i64::from(waiting.uid)),
+        let (from, uid, marks) = match already {
+            Some(already) => already,
+            None => (
+                waiting.from_folder_path.clone(),
+                i64::from(waiting.uid),
+                MarksFirst::default(),
+            ),
         };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO moves_waiting
                  (message_row_id, account_id, from_folder_path, uid, kind,
-                  into_folder_path, asked_at, to_account_id, to_account_name)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                  into_folder_path, asked_at, to_account_id, to_account_name,
+                  read_first, starred_first)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     waiting.message_row_id,
                     waiting.account_id,
@@ -231,6 +247,8 @@ impl MessageCache {
                     waiting.asked_at,
                     to_account.map(|other| other.id.as_str()),
                     to_account.map(|other| other.name.as_str()),
+                    marks.read,
+                    marks.starred,
                 ],
             )
             .map_err(|e| Error::Other(format!("A move could not be kept waiting: {e}")))?;
@@ -357,20 +375,44 @@ impl MessageCache {
     }
 
     /// Send these marks before the waiting move of this row, when it has one.
+    ///
+    /// Written onto the waiting row itself, so they go when the move goes,
+    /// whichever push or check replays it, and are let go with it.
     pub fn send_these_marks_before_the_move(
         &self,
         message_row_id: i64,
         marks: MarksFirst,
     ) -> Result<()> {
-        let _ = (message_row_id, marks);
+        self.conn
+            .execute(
+                "UPDATE moves_waiting SET read_first = ?1, starred_first = ?2
+                 WHERE message_row_id = ?3",
+                params![marks.read, marks.starred, message_row_id],
+            )
+            .map_err(|e| Error::Other(format!("The marks could not be kept with the move: {e}")))?;
         Ok(())
     }
 
     /// The marks the waiting move of this row sends first; nothing when the
     /// row has no waiting move or its move sends none.
     pub fn the_marks_before_the_move(&self, message_row_id: i64) -> Result<MarksFirst> {
-        let _ = message_row_id;
-        Ok(MarksFirst::default())
+        let marks = self
+            .conn
+            .query_row(
+                "SELECT read_first, starred_first FROM moves_waiting WHERE message_row_id = ?1",
+                params![message_row_id],
+                |row| {
+                    Ok(MarksFirst {
+                        read: row.get(0)?,
+                        starred: row.get(1)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| {
+                Error::Other(format!("The marks kept with a move could not be read: {e}"))
+            })?;
+        Ok(marks.unwrap_or_default())
     }
 
     /// Let one waiting move go, because it went or because it was put back.

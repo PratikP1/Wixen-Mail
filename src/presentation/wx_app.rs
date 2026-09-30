@@ -567,6 +567,19 @@ pub struct WxUIState {
     /// place, and for the answer to a key past the last, so the step heard
     /// beside a key is the step the key runs.
     pub quick_steps: Vec<crate::application::quick_steps::StoredStep>,
+    /// The marks the move a run is about to make carries to the server, by
+    /// row, while 13-24.1's runner is carrying one account's work out
+    /// (ledger 688).
+    ///
+    /// The runner names the rows whose move will carry their marks; Mark as
+    /// Read's and Star's do-halves, meeting such a row, mark it here and hand
+    /// the mark over rather than telling the server on a worker of its own;
+    /// the move, once made here, keeps the marks on its waiting row, so the
+    /// one push sends them and then the move. What no move took is told to
+    /// the server on its own by the runner before it returns, so nothing is
+    /// left here between runs.
+    pub the_next_move_carries:
+        std::collections::BTreeMap<i64, crate::data::message_cache::moves_waiting::MarksFirst>,
     /// The search last run from the search box while Mail was showing.
     ///
     /// What Save This Search saves. Kept because the box is a modal dialog
@@ -769,6 +782,7 @@ impl Default for WxUIState {
             labels: Vec::new(),
             saved_searches: std::collections::HashMap::new(),
             quick_steps: Vec::new(),
+            the_next_move_carries: std::collections::BTreeMap::new(),
             mail_search_that_was_run: None,
             calendars: Vec::new(),
             selected_note_id: None,
@@ -11964,14 +11978,17 @@ fn mark_these_read(
             list.refresh(true, None);
             return Err(StoppedAtARefusedWrite);
         }
-        spawn_server_change(
-            app,
-            message.row_id,
-            message.uid,
-            message.subject.clone(),
-            the_folder_it_is_in(cache.as_deref(), message.row_id),
-            ServerChange::Flag(FlagChange::Read(read)),
-        );
+        let change = FlagChange::Read(read);
+        if !handed_to_the_move(state, message.row_id, &change) {
+            spawn_server_change(
+                app,
+                message.row_id,
+                message.uid,
+                message.subject.clone(),
+                the_folder_it_is_in(cache.as_deref(), message.row_id),
+                ServerChange::Flag(change),
+            );
+        }
     }
     remember_the_last_action(
         state,
@@ -12033,14 +12050,17 @@ fn star_these(
             list.refresh(true, None);
             return Err(StoppedAtARefusedWrite);
         }
-        spawn_server_change(
-            app,
-            message.row_id,
-            message.uid,
-            message.subject.clone(),
-            the_folder_it_is_in(cache.as_deref(), message.row_id),
-            ServerChange::Flag(FlagChange::Flagged(starred)),
-        );
+        let change = FlagChange::Flagged(starred);
+        if !handed_to_the_move(state, message.row_id, &change) {
+            spawn_server_change(
+                app,
+                message.row_id,
+                message.uid,
+                message.subject.clone(),
+                the_folder_it_is_in(cache.as_deref(), message.row_id),
+                ServerChange::Flag(change),
+            );
+        }
     }
     remember_the_last_action(
         state,
@@ -12054,6 +12074,98 @@ fn star_these(
         true => Outcome::Starred,
         false => Outcome::Unstarred,
     })
+}
+
+/// Hand a mark made here to the move this row is about to make, when a run
+/// has named the row as one whose move carries its marks, and say whether it
+/// was handed over (ledger 688). A mark not handed over is the do-half's to
+/// tell the server about, as it always was; a label is never handed over,
+/// since the waiting move carries the two flags alone.
+fn handed_to_the_move(state: &Arc<StdMutex<WxUIState>>, row_id: i64, change: &FlagChange) -> bool {
+    let mut s = lock_state(state);
+    let Some(marks) = s.the_next_move_carries.get_mut(&row_id) else {
+        return false;
+    };
+    match change {
+        FlagChange::Read(read) => marks.read = Some(*read),
+        FlagChange::Flagged(starred) => marks.starred = Some(*starred),
+        FlagChange::Labelled { .. } => return false,
+    }
+    true
+}
+
+/// Keep the marks handed to this move on its waiting row, so the push that
+/// sends the move sends them first (ledger 688). A row whose marks the store
+/// would not keep has them handed back, and the runner tells the server
+/// about them on their own.
+fn the_move_takes_its_marks(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    moved: &crate::data::message_cache::moves_waiting::AWaitingMove,
+) {
+    let Some(marks) = lock_state(state)
+        .the_next_move_carries
+        .remove(&moved.message_row_id)
+    else {
+        return;
+    };
+    if marks.is_nothing() {
+        return;
+    }
+    if let Err(why) = cache.send_these_marks_before_the_move(moved.message_row_id, marks) {
+        tracing::warn!(
+            "The marks of message {} go on their own: {why}",
+            moved.message_row_id
+        );
+        lock_state(state)
+            .the_next_move_carries
+            .insert(moved.message_row_id, marks);
+    }
+}
+
+/// Tell the server about every mark handed to a move that did not take it,
+/// each on its own as a do-half would have, and leave nothing handed over
+/// for the next run.
+fn send_the_marks_no_move_took(app: AppHandles<'_>, cache: &MessageCache) {
+    let left = std::mem::take(&mut lock_state(app.state).the_next_move_carries);
+    for (row_id, marks) in left {
+        send_the_marks_on_their_own(app, cache, row_id, marks);
+    }
+}
+
+/// A run stopping part way: the marks already made here and handed to a
+/// move that will not be made go on their own, and the reason passes
+/// through.
+fn stopped_with_its_marks_sent(app: AppHandles<'_>, cache: &MessageCache, why: String) -> String {
+    send_the_marks_no_move_took(app, cache);
+    why
+}
+
+/// Tell the server about one row's marks on their own, each on the worker a
+/// do-half uses, from the folder the row is in now.
+fn send_the_marks_on_their_own(
+    app: AppHandles<'_>,
+    cache: &MessageCache,
+    row_id: i64,
+    marks: crate::data::message_cache::moves_waiting::MarksFirst,
+) {
+    let Ok(Some(message)) = cache.get_message(row_id) else {
+        return;
+    };
+    let changes = [
+        marks.read.map(FlagChange::Read),
+        marks.starred.map(FlagChange::Flagged),
+    ];
+    for change in changes.into_iter().flatten() {
+        spawn_server_change(
+            app,
+            row_id,
+            message.uid,
+            message.subject.clone(),
+            the_folder_it_is_in(Some(cache), row_id),
+            ServerChange::Flag(change),
+        );
+    }
 }
 
 /// Whether any selected row is unread: a message row's own flag, or on a
@@ -24601,6 +24713,7 @@ fn complete_here_then_tell_the_server(
             match what_happens_here(cache, &ask.asked, &ask.subject) {
                 Ok(made) => {
                     made_here_for_this_account += 1;
+                    the_move_takes_its_marks(state, cache, &made.kept);
                     if made.kept.what.is_a_copy() {
                         if a_set {
                             send_shown(tx, rt, &made.shown);
@@ -24623,6 +24736,14 @@ fn complete_here_then_tell_the_server(
                          asked first: {why}",
                         ask.asked.message_row_id
                     );
+                    // Its marks go on their own, asked for before the move,
+                    // since no waiting row is there to carry them.
+                    let handed = lock_state(state)
+                        .the_next_move_carries
+                        .remove(&ask.asked.message_row_id);
+                    if let Some(marks) = handed {
+                        send_the_marks_on_their_own(app, cache, ask.asked.message_row_id, marks);
+                    }
                     server_first(ask);
                 }
             }
@@ -25403,12 +25524,24 @@ fn run_these_actions_over(
         work,
     } in accounts
     {
+        // A message this account's run marks and moves has its marks carried
+        // by the move, so one push sends them and then the move (ledger 688).
+        // The do-halves hand each such mark over as they make it here; what
+        // no move takes goes on its own, whether the run finishes or stops.
+        lock_state(app.state).the_next_move_carries = work
+            .the_marks_that_go_with_the_move()
+            .into_keys()
+            .map(|row_id| (row_id, Default::default()))
+            .collect();
+        let stopped = |why: String| stopped_with_its_marks_sent(app, cache, why);
         if let Some((read, those)) = &work.read {
-            mark_these_read(app, &held, list, those, *read).map_err(|_| STOPPED.to_string())?;
+            mark_these_read(app, &held, list, those, *read)
+                .map_err(|_| stopped(STOPPED.to_string()))?;
             done.marked(*read, those.messages.len());
         }
         if let Some((starred, those)) = &work.starred {
-            star_these(app, &held, list, those, *starred).map_err(|_| STOPPED.to_string())?;
+            star_these(app, &held, list, those, *starred)
+                .map_err(|_| stopped(STOPPED.to_string()))?;
             done.starred(*starred, those.messages.len());
         }
         for (label_id, those) in &work.labels {
@@ -25416,19 +25549,19 @@ fn run_these_actions_over(
                 continue;
             };
             let on_them = TheLabelsOnTheSet::read(cache, &account.id, those)
-                .map_err(|e| format!("The labels could not be read: {e}."))?;
+                .map_err(|e| stopped(format!("The labels could not be read: {e}.")))?;
             let change = LabelChange::One {
                 label: label.clone(),
                 on: true,
             };
-            label_these(app, cache, those, &on_them, change)?;
+            label_these(app, cache, those, &on_them, change).map_err(stopped)?;
             done.labelled(&label.name, those.messages.len());
         }
         if let Some((phrase, those)) = &work.say_first {
             for message in &those.messages {
                 cache
                     .set_says_first(message.row_id, Some(phrase))
-                    .map_err(|e| format!("{STOPPED} {e}."))?;
+                    .map_err(|e| stopped(format!("{STOPPED} {e}.")))?;
             }
             done.said_first(phrase, those.messages.len());
         }
@@ -25458,6 +25591,7 @@ fn run_these_actions_over(
             }
             Some((Then::Stay, _)) | None => {}
         }
+        send_the_marks_no_move_took(app, cache);
     }
     Ok(done)
 }

@@ -190,8 +190,28 @@ impl TheWork {
 
     /// The marks each moving message's move sends first, by the message's
     /// row: its read state and its flag, where the run changes them.
+    ///
+    /// A message that is marked and moved has its marks carried by the move,
+    /// so one push sends the marks and then the move on one session (ledger
+    /// 688). Sent on their own they could arrive after the move, at a number
+    /// the folder no longer holds, and the next check would put the old
+    /// marks back. A message the run marks and does not move is not here:
+    /// no move of its carries anything.
     pub fn the_marks_that_go_with_the_move(&self) -> BTreeMap<i64, MarksFirst> {
-        BTreeMap::new()
+        let Some((Then::MoveTo { .. }, moving)) = &self.then else {
+            return BTreeMap::new();
+        };
+        moving
+            .messages
+            .iter()
+            .filter_map(|message| {
+                let marks = MarksFirst {
+                    read: the_mark_on(&self.read, message.row_id),
+                    starred: the_mark_on(&self.starred, message.row_id),
+                };
+                (!marks.is_nothing()).then_some((message.row_id, marks))
+            })
+            .collect()
     }
 
     /// Whether any write is one the server is told about, which is when the
@@ -249,6 +269,18 @@ pub fn the_work(each: &[(MessageRef, Needs)]) -> TheWork {
         }
     }
     work
+}
+
+/// What a mark step sets on this message, when the step takes it.
+fn the_mark_on(step: &Option<(bool, Chosen)>, row_id: i64) -> Option<bool> {
+    step.as_ref()
+        .filter(|(_, those)| {
+            those
+                .messages
+                .iter()
+                .any(|message| message.row_id == row_id)
+        })
+        .map(|(to, _)| *to)
 }
 
 /// Add a message to a step, the step starting with the first message that

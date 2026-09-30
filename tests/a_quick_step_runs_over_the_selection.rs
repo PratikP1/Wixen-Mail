@@ -541,6 +541,67 @@ fn the_runner_leaves_undo_to_the_do_halves(app: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether `first` is called in `code` before `second` is, or why not.
+fn called_before(code: &str, first: &str, second: &str, whose: &str) -> Result<(), String> {
+    match (
+        calls_of(code, first).first(),
+        calls_of(code, second).first(),
+    ) {
+        (Some(a), Some(b)) if a < b => Ok(()),
+        (Some(_), Some(_)) => Err(format!("{whose} calls {first}( after {second}(")),
+        (None, _) => Err(format!("{whose} never calls {first}(")),
+        (_, None) => Err(format!("{whose} never calls {second}(")),
+    }
+}
+
+/// The runner names the rows whose move carries their marks before the
+/// first mark is made, and sends on their own whatever no move took once
+/// the move has been asked for (ledger 688).
+fn the_runner_hands_the_marks_to_the_move(app: &str) -> Result<(), String> {
+    let runner = body_of(app, &format!("fn {THE_RUNNER}("))?;
+    let named = runner.find("the_next_move_carries =").ok_or(format!(
+        "{THE_RUNNER} never names the rows a move carries marks for"
+    ))?;
+    let first_mark = calls_of(&runner, "mark_these_read")
+        .first()
+        .copied()
+        .ok_or(format!("{THE_RUNNER} never calls mark_these_read("))?;
+    if named > first_mark {
+        return Err(format!(
+            "{THE_RUNNER} names the rows a move carries marks for after the first mark is made"
+        ));
+    }
+    called_before(
+        &runner,
+        "move_these",
+        "send_the_marks_no_move_took",
+        THE_RUNNER,
+    )
+}
+
+/// Mark as Read's and Star's do-halves hand a mark over before they would
+/// send it on a worker of its own.
+fn the_do_halves_hand_their_marks_over(app: &str) -> Result<(), String> {
+    for do_half in ["fn mark_these_read(", "fn star_these("] {
+        let body = body_of(app, do_half)?;
+        called_before(&body, "handed_to_the_move", "spawn_server_change", do_half)?;
+    }
+    Ok(())
+}
+
+/// A move made here keeps the marks handed to it before the push that sends
+/// it is started.
+fn the_move_takes_the_marks_before_the_push(app: &str) -> Result<(), String> {
+    let made_here = "fn complete_here_then_tell_the_server(";
+    let body = body_of(app, made_here)?;
+    called_before(
+        &body,
+        "the_move_takes_its_marks",
+        "spawn_blocking",
+        made_here,
+    )
+}
+
 // ── The window session ────────────────────────────────────────────────────
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -834,7 +895,125 @@ fn test_undo_takes_back_the_last_write_of_a_step_not_the_step() {
         .unwrap_or_else(|why| panic!("{why}"));
 }
 
+#[test]
+fn test_the_runner_hands_each_moving_messages_marks_to_its_move() {
+    the_runner_hands_the_marks_to_the_move(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_mark_and_star_hand_a_carried_mark_over_rather_than_send_it() {
+    the_do_halves_hand_their_marks_over(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_move_made_here_keeps_its_marks_before_the_push_starts() {
+    the_move_takes_the_marks_before_the_push(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
 // ── Companions ────────────────────────────────────────────────────────────
+
+/// The window's half of carrying a mark with its move, shaped as it should
+/// be and cut down to what the readings read.
+const MARKS_WITH_THE_MOVE: &str = r#"fn run_these_actions_over(
+    app: AppHandles<'_>,
+) {
+    lock_state(app.state).the_next_move_carries = work.the_marks_that_go_with_the_move();
+    mark_these_read(app, &held, list, those, *read);
+    move_these(app, list, cache, moving, into, false);
+    send_the_marks_no_move_took(app, cache);
+}
+fn mark_these_read(
+    app: AppHandles<'_>,
+) {
+    if !handed_to_the_move(state, message.row_id, &change) {
+        spawn_server_change(app, row, uid, subject, folder, change);
+    }
+}
+fn star_these(
+    app: AppHandles<'_>,
+) {
+    if !handed_to_the_move(state, message.row_id, &change) {
+        spawn_server_change(app, row, uid, subject, folder, change);
+    }
+}
+fn complete_here_then_tell_the_server(
+    app: AppHandles<'_>,
+) {
+    the_move_takes_its_marks(state, cache, &made.kept);
+    rt.spawn_blocking(move || {});
+}
+"#;
+
+fn the_marks_with(from: &str, to: &str) -> String {
+    let planted = MARKS_WITH_THE_MOVE.replacen(from, to, 1);
+    assert_ne!(
+        planted, MARKS_WITH_THE_MOVE,
+        "the companion lost its anchor: {from}"
+    );
+    planted
+}
+
+#[test]
+fn test_the_marks_readings_pass_a_window_shaped_as_it_should_be() {
+    the_runner_hands_the_marks_to_the_move(MARKS_WITH_THE_MOVE)
+        .unwrap_or_else(|why| panic!("{why}"));
+    the_do_halves_hand_their_marks_over(MARKS_WITH_THE_MOVE).unwrap_or_else(|why| panic!("{why}"));
+    the_move_takes_the_marks_before_the_push(MARKS_WITH_THE_MOVE)
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_companion_a_runner_that_hands_nothing_to_the_move_is_refused() {
+    let unnamed = the_marks_with(
+        "    lock_state(app.state).the_next_move_carries = work.the_marks_that_go_with_the_move();\n",
+        "",
+    );
+
+    let said = the_runner_hands_the_marks_to_the_move(&unnamed).expect_err("nothing handed");
+
+    assert!(said.contains("never names the rows"), "{said}");
+}
+
+#[test]
+fn test_companion_a_runner_that_leaves_marks_nobody_sends_is_refused() {
+    let left = the_marks_with("    send_the_marks_no_move_took(app, cache);\n", "");
+
+    let said = the_runner_hands_the_marks_to_the_move(&left).expect_err("left behind");
+
+    assert!(
+        said.contains("never calls send_the_marks_no_move_took("),
+        "{said}"
+    );
+}
+
+#[test]
+fn test_companion_a_star_that_sends_its_own_mark_is_refused() {
+    let own = the_marks_with(
+        "fn star_these(\n    app: AppHandles<'_>,\n) {\n    if !handed_to_the_move(state, message.row_id, &change) {\n",
+        "fn star_these(\n    app: AppHandles<'_>,\n) {\n    {\n",
+    );
+
+    let said = the_do_halves_hand_their_marks_over(&own).expect_err("sent on its own");
+
+    assert!(
+        said.contains("fn star_these( never calls handed_to_the_move("),
+        "{said}"
+    );
+}
+
+#[test]
+fn test_companion_a_move_that_keeps_its_marks_after_the_push_is_refused() {
+    let late = the_marks_with(
+        "    the_move_takes_its_marks(state, cache, &made.kept);\n    rt.spawn_blocking(move || {});\n",
+        "    rt.spawn_blocking(move || {});\n    the_move_takes_its_marks(state, cache, &made.kept);\n",
+    );
+
+    let said = the_move_takes_the_marks_before_the_push(&late).expect_err("after the push");
+
+    assert!(said.contains("after spawn_blocking("), "{said}");
+}
 
 /// A run shaped as it should be, cut down to what the readings read, with
 /// the runner and two do-halves beside it.

@@ -77,7 +77,7 @@ use crate::application::mail_across_accounts::{
 use crate::application::server_delete::after_a_move_across_accounts;
 use crate::common::{Error, Result};
 use crate::data::message_cache::MessageCache;
-use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
+use crate::data::message_cache::moves_waiting::{AWaitingMove, MarksFirst, WhatAWaitingMoveDoes};
 
 /// What a replay of a waiting move answered.
 ///
@@ -529,9 +529,27 @@ pub(crate) trait ReplaysAMove {
     async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()>;
     /// The numbers the folder holds a message with this identifier under.
     async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>>;
+    /// Mark the message read or unread, flagged or not, where the marks say.
+    async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()>;
 }
 
 impl ReplaysAMove for crate::application::mail_controller::MailController {
+    async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {
+        if let Some(read) = marks.read {
+            self.set_flag(
+                folder,
+                uid,
+                crate::service::protocols::imap::flag::SEEN,
+                read,
+            )
+            .await?;
+        }
+        if let Some(starred) = marks.starred {
+            self.set_starred(folder, uid, starred).await?;
+        }
+        Ok(())
+    }
+
     async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
         let moved = self.move_message(from, uid, into).await?;
         tracing::info!("A waiting move was replayed: {}", moved.spoken(into));
@@ -570,21 +588,33 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
     let mut replayed = Vec::new();
     for waiting in cache.moves_waiting_for(account_id)? {
         let from = waiting.from_folder_path.as_str();
-        let answer = match &waiting.what {
-            WhatAWaitingMoveDoes::Move { into_folder_path } => {
+        // The marks the move carries go first, on this session, while the
+        // folder still holds the message under this number (ledger 688). A
+        // mark that could not be sent for any reason but the server saying no
+        // is the answer for the move as well, so the two wait, or are put
+        // back, together.
+        let marked = send_the_marks_first(server, cache, &waiting).await;
+        let answer = match (marked, &waiting.what) {
+            (Err(not_sent), _) => Err(not_sent),
+            (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
                 server.move_it(from, waiting.uid, into_folder_path).await
             }
-            WhatAWaitingMoveDoes::DeleteToTrash { trash_path } => {
+            (Ok(()), WhatAWaitingMoveDoes::DeleteToTrash { trash_path }) => {
                 server.delete_it(from, waiting.uid, Some(trash_path)).await
             }
-            WhatAWaitingMoveDoes::DeleteOutright => server.delete_it(from, waiting.uid, None).await,
-            WhatAWaitingMoveDoes::Copy { into_folder_path } => {
+            (Ok(()), WhatAWaitingMoveDoes::DeleteOutright) => {
+                server.delete_it(from, waiting.uid, None).await
+            }
+            (Ok(()), WhatAWaitingMoveDoes::Copy { into_folder_path }) => {
                 server.copy_it(from, waiting.uid, into_folder_path).await
             }
             // Two servers' work, which the read above leaves out and
             // [`replay_the_crossings_waiting_for`] does; a row here would be
             // a command at the wrong server.
-            WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. } => {
+            (
+                Ok(()),
+                WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. },
+            ) => {
                 continue;
             }
         };
@@ -619,6 +649,38 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
         replayed.push((waiting, what_it_means));
     }
     Ok(replayed)
+}
+
+/// Send the marks a waiting move carries, if it carries any, from the
+/// folder and under the number the server still has the message at.
+///
+/// A server that answered and said no to a mark is logged and the move goes
+/// on: the message still belongs where the move files it, and a mark the
+/// server refused is the next check's to put right here, as a refused mark
+/// sent on its own always was. Any other failure is handed back, so the move
+/// is not sent without the marks it was to follow.
+async fn send_the_marks_first<S: ReplaysAMove>(
+    server: &S,
+    cache: &MessageCache,
+    waiting: &AWaitingMove,
+) -> Result<()> {
+    let marks = cache.the_marks_before_the_move(waiting.message_row_id)?;
+    if marks.is_nothing() {
+        return Ok(());
+    }
+    match server
+        .mark_it(&waiting.from_folder_path, waiting.uid, marks)
+        .await
+    {
+        Err(why) if why_the_push_failed(&why) == WhyThePushFailed::TheServerSaidNo => {
+            tracing::warn!(
+                "The server would not mark message {} before moving it: {why}",
+                waiting.message_row_id
+            );
+            Ok(())
+        }
+        sent => sent,
+    }
 }
 
 /// Where the message is, asked of the server once it has refused a replay.
@@ -1113,6 +1175,19 @@ mod tests {
             let mut session = self.0.lock().await;
             session.select_folder(folder).await?;
             session.uids_with_message_id(message_id).await
+        }
+
+        async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {
+            use crate::service::protocols::imap::flag::{FLAGGED, SEEN};
+            let mut session = self.0.lock().await;
+            session.select_folder(folder).await?;
+            if let Some(read) = marks.read {
+                session.set_flag(uid, SEEN, read).await?;
+            }
+            if let Some(starred) = marks.starred {
+                session.set_flag(uid, FLAGGED, starred).await?;
+            }
+            Ok(())
         }
     }
 

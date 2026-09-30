@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 527 records have arrived since and have not been through it.
+# 529 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -5244,7 +5244,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -13616,9 +13616,9 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
+    { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
 # Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
@@ -16003,10 +16003,10 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
+    { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
 # Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
 # test added to `messages.rs`: six short, none of them that plan's, all
@@ -16486,7 +16486,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 16 },
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
 ]
 
 [[guard]]
@@ -19042,7 +19042,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -27399,7 +27399,7 @@ red = [
     "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -27561,7 +27561,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -27582,7 +27582,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -27605,7 +27605,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 49 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -27681,8 +27681,8 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 49 },
-    { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
+    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
 
 # The one ordering every expression about the row message reads, put back
@@ -33700,9 +33700,10 @@ before = '''        read: outcome.read.filter(|read| *read != message.read),'''
 after = '''        read: outcome.read,'''
 red = [
     "application::acting_on_a_set::tests::test_a_message_already_read_is_not_marked_read_again_and_an_unread_one_is",
+    "application::acting_on_a_set::tests::test_the_marks_of_a_message_that_moves_go_with_its_move",
 ]
 tests_last_seen = [
-    { file = "src/application/acting_on_a_set.rs", tests = 23 },
+    { file = "src/application/acting_on_a_set.rs", tests = 24 },
 ]
 
 # A run whose actions name a folder the account does not have goes on past
@@ -33721,7 +33722,7 @@ red = [
     "application::acting_on_a_set::tests::test_a_folder_the_account_does_not_have_refuses_the_run",
 ]
 tests_last_seen = [
-    { file = "src/application/acting_on_a_set.rs", tests = 23 },
+    { file = "src/application/acting_on_a_set.rs", tests = 24 },
 ]
 
 # The runner asks for a move before a message's flags: the flag's worker is
@@ -35533,7 +35534,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
 ]
 
 # The key handler past the last Quick Step asking for Alt where the keys are
@@ -35557,7 +35558,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
 ]
 
 # A Quick Step run over more messages than Select All may take, one key
@@ -35577,7 +35578,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
 ]
 
 # A Quick Step run over messages of another account, into a folder of the
@@ -35609,5 +35610,39 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 25 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+]
+
+# A waiting move replayed without the marks it carries, so a Quick Step
+# that marks and moves sends the move alone and the mark is lost at the
+# server (ledger 688). Written 2026-09-30 by 13-42, measured through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a waiting move sends the marks it carries before the move"
+file = "src/application/moves_waiting.rs"
+before = '''        let marked = send_the_marks_first(server, cache, &waiting).await;'''
+after = '''        let marked: Result<()> = Ok(());'''
+red = [
+    "application::moves_waiting::tests::test_a_quick_step_that_marks_read_and_moves_sends_the_mark_before_the_move",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 51 },
+]
+
+# A move made here that never keeps the marks handed to it, so the marks a
+# run made here reach the server by nobody (ledger 688). Written 2026-09-30
+# by 13-42, measured through `scripts/guards.sh --remeasure` against the
+# target.
+[[guard]]
+name = "a move made here keeps the marks handed to it"
+file = "src/presentation/wx_app.rs"
+suite = "a_quick_step_runs_over_the_selection"
+before = '''                    the_move_takes_its_marks(state, cache, &made.kept);'''
+after = '''                    let _ = &made.kept;'''
+red = [
+    "test_a_move_made_here_keeps_its_marks_before_the_push_starts",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
 ]
