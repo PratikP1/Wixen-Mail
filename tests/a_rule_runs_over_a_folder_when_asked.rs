@@ -32,12 +32,17 @@
 
 #![cfg(windows)]
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::ffi::c_void;
 use std::fs;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::running_a_rule_now::RUNNING_A_RULE_NOW_IS_EXPERIMENTAL;
 use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::presentation::wx_app::WxMailApp;
+use wixen_mail::presentation::wx_managers::{
+    FilterRule, TagEntry, build_filter_manager, build_tag_manager,
+};
 use wxdragon::prelude::*;
 
 type Harvest = BTreeMap<&'static str, String>;
@@ -227,7 +232,12 @@ fn the_question_comes_before_the_run(app: &str) -> Result<(), String> {
 /// Nothing on the way to the runner writes mail of its own, and only the
 /// question calls the runner.
 fn nothing_writes_round_the_runner(app: &str) -> Result<(), String> {
-    for (signature, may_run) in [(THE_DOOR, false), (THE_COUNT, false), (THE_QUESTION, true)] {
+    for (signature, may_run) in [
+        (THE_DOOR, false),
+        (THE_SECOND_DOOR, false),
+        (THE_COUNT, false),
+        (THE_QUESTION, true),
+    ] {
         let body = body_of(app, signature)?;
         let written: Vec<&str> = THE_WRITES
             .into_iter()
@@ -266,6 +276,253 @@ fn the_run_says_one_sentence(app: &str) -> Result<(), String> {
              times and speaks on the status line {spoken_on_the_status_line} times; a rule run \
              is one sentence and one Confirmed"
         )),
+    }
+}
+
+// ── The Filter Manager's door, in the source ──────────────────────────────
+
+const THE_MANAGERS: &str = "src/presentation/managers.rs";
+
+/// Where Tools, Message Filters is answered.
+const THE_FILTER_MANAGER_ARM: &str = "_ if id == ID_FILTER_MGR =>";
+
+/// The Filter Manager's door: a folder of the rule's account chosen, then
+/// the count.
+const THE_SECOND_DOOR: &str = "fn run_a_rule_on_a_chosen_folder(";
+
+/// Where the Filter Manager is opened, its rows saved, and a rule to run
+/// answered.
+const THE_MANAGER: &str = "pub fn manage_filters(";
+
+fn the_managers() -> String {
+    let whole = fs::read_to_string(THE_MANAGERS)
+        .unwrap_or_else(|why| panic!("{THE_MANAGERS}: {why}"))
+        .replace("\r\n", "\n");
+    what_ships(&whole)
+}
+
+/// The manager saves its rows before it answers a rule to run, so the rule
+/// run is the rule as saved.
+fn the_manager_saves_before_it_answers(managers: &str) -> Result<(), String> {
+    let manager = body_of(managers, THE_MANAGER)?;
+    let saved = calls_of(&manager, "save_what_the_filter_manager_returned")
+        .first()
+        .copied()
+        .ok_or(format!(
+            "{THE_MANAGER} never calls save_what_the_filter_manager_returned("
+        ))?;
+    let answered = manager.find("RunARuleNow {").ok_or(format!(
+        "{THE_MANAGER} never answers a RunARuleNow, so its Run on a Folder runs nothing"
+    ))?;
+    match saved < answered {
+        true => Ok(()),
+        false => Err(format!(
+            "{THE_MANAGER} answers a rule to run before it saves, so the rule run may not be \
+             the rule as saved"
+        )),
+    }
+}
+
+/// Tools, Message Filters hands the rule the manager answers to the second
+/// door.
+fn the_filter_manager_arm_runs_what_it_answers(app: &str) -> Result<(), String> {
+    let arm = arm_of(app, THE_FILTER_MANAGER_ARM, "_ if id")?;
+    called_before(
+        &arm,
+        "manage_filters",
+        "run_a_rule_on_a_chosen_folder",
+        THE_FILTER_MANAGER_ARM,
+    )
+}
+
+/// The second door has a folder chosen before anything is counted.
+fn the_second_door_chooses_a_folder_before_it_counts(app: &str) -> Result<(), String> {
+    let door = body_of(app, THE_SECOND_DOOR)?;
+    called_before(
+        &door,
+        "choose_from_list",
+        "count_what_a_rule_would_change",
+        THE_SECOND_DOOR,
+    )?;
+    called_once(&door, "count_what_a_rule_would_change", THE_SECOND_DOOR)
+}
+
+// ── A built window's buttons over MSAA ────────────────────────────────────
+
+const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
+const VT_I4: u16 = 3;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Guid {
+    data1: u32,
+    data2: u16,
+    data3: u16,
+    data4: [u8; 8],
+}
+
+/// {618736E0-3C3D-11CF-810C-00AA00389B71}
+const IID_IACCESSIBLE: Guid = Guid {
+    data1: 0x618736E0,
+    data2: 0x3C3D,
+    data3: 0x11CF,
+    data4: [0x81, 0x0C, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
+};
+
+/// A VARIANT as the 64-bit ABI lays it out: 24 bytes, the type at offset 0
+/// and the payload at offset 8.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Variant {
+    vt: u16,
+    reserved1: u16,
+    reserved2: u16,
+    reserved3: u16,
+    val: i64,
+    extra: u64,
+}
+
+type Hresult = i32;
+type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
+type GetBstrFn = unsafe extern "system" fn(*mut c_void, Variant, *mut *mut u16) -> Hresult;
+
+// IAccessible's vtable: IUnknown (3), IDispatch (4), then get_accParent (7),
+// get_accChildCount (8), get_accChild (9), get_accName (10).
+const VTBL_RELEASE: usize = 2;
+const VTBL_GET_ACC_NAME: usize = 10;
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn EnumChildWindows(
+        parent: isize,
+        callback: extern "system" fn(isize, isize) -> i32,
+        lparam: isize,
+    ) -> i32;
+    fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+}
+
+#[link(name = "oleacc")]
+unsafe extern "system" {
+    fn AccessibleObjectFromWindow(
+        hwnd: isize,
+        id_object: u32,
+        riid: *const Guid,
+        out: *mut *mut c_void,
+    ) -> Hresult;
+}
+
+#[link(name = "oleaut32")]
+unsafe extern "system" {
+    fn SysStringLen(s: *mut u16) -> u32;
+    fn SysFreeString(s: *mut u16);
+}
+
+thread_local! {
+    static FOUND: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
+}
+
+extern "system" fn collect(hwnd: isize, _lparam: isize) -> i32 {
+    FOUND.with(|found| found.borrow_mut().push(hwnd));
+    1
+}
+
+/// Every descendant window of `parent`, in the order Windows holds them.
+fn descendants_of(parent: isize) -> Vec<isize> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumChildWindows(parent, collect, 0) };
+    FOUND.with(|found| found.borrow().clone())
+}
+
+fn class_name(hwnd: isize) -> String {
+    let mut buffer = [0u16; 256];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+fn window_text(hwnd: isize) -> String {
+    let mut buffer = [0u16; 1024];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+unsafe fn vtable_entry(object: *mut c_void, index: usize) -> *const c_void {
+    // SAFETY: a COM object is a pointer to its vtable.
+    unsafe {
+        let vtable = *(object as *const *const *const c_void);
+        *vtable.add(index)
+    }
+}
+
+/// What a window's own object names it over MSAA, which for a button is the
+/// name NVDA speaks.
+fn own_name_of(hwnd: isize) -> String {
+    let mut object: *mut c_void = std::ptr::null_mut();
+    // SAFETY: a live window handle; the object is released before returning.
+    let hr =
+        unsafe { AccessibleObjectFromWindow(hwnd, OBJID_CLIENT, &IID_IACCESSIBLE, &mut object) };
+    if hr < 0 || object.is_null() {
+        return format!("no MSAA object, 0x{hr:x}");
+    }
+    // SAFETY: `object` is a live IAccessible; the slots are IAccessible's.
+    unsafe {
+        let get_name: GetBstrFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_NAME));
+        let mut name: *mut u16 = std::ptr::null_mut();
+        let own = Variant {
+            vt: VT_I4,
+            reserved1: 0,
+            reserved2: 0,
+            reserved3: 0,
+            val: 0,
+            extra: 0,
+        };
+        let hr_name = get_name(object, own, &mut name);
+        let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));
+        release(object);
+        if hr_name < 0 || name.is_null() {
+            return String::new();
+        }
+        let len = SysStringLen(name) as usize;
+        let text = String::from_utf16_lossy(std::slice::from_raw_parts(name, len));
+        SysFreeString(name);
+        text
+    }
+}
+
+/// A built window's buttons, each as its window text and the name MSAA
+/// gives it at its own handle, one a line.
+fn the_buttons_of(dialog: &Dialog) -> String {
+    descendants_of(dialog.get_handle() as isize)
+        .into_iter()
+        .filter(|&hwnd| class_name(hwnd) == "Button")
+        .map(|hwnd| format!("{}\t{}", window_text(hwnd), own_name_of(hwnd)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn a_rule() -> FilterRule {
+    FilterRule {
+        id: "rule-newsletters".to_string(),
+        name: "Newsletters".to_string(),
+        field: "from".to_string(),
+        match_type: "contains".to_string(),
+        pattern: "news@".to_string(),
+        case_sensitive: false,
+        action_type: "move_to_folder".to_string(),
+        action_value: "Archive".to_string(),
+        enabled: true,
+        plays_a_sound: false,
+    }
+}
+
+fn a_label() -> TagEntry {
+    TagEntry {
+        id: "label-work".to_string(),
+        name: "Work".to_string(),
+        color: "#1E88E5".to_string(),
     }
 }
 
@@ -329,6 +586,18 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     .map(|bar| this_folders_items(&bar))
                     .unwrap_or_else(|| "no menu bar".to_string()),
             );
+            let filters = build_filter_manager(&frame, &[a_rule()], None);
+            harvest.insert(
+                "the Filter Manager's buttons",
+                the_buttons_of(&filters.dialog),
+            );
+            filters.dialog.destroy();
+            let labels = build_tag_manager(&frame, &[a_label()], None);
+            harvest.insert(
+                "the Label Manager's buttons",
+                the_buttons_of(&labels.dialog),
+            );
+            labels.dialog.destroy();
             frame.destroy();
             if let Ok(mut slot) = outcome.lock() {
                 *slot = Some(Ok(harvest));
@@ -370,6 +639,52 @@ fn test_this_folder_offers_the_item_saying_no_rule_run_has_met_a_real_server() {
         line.ends_with(RUNNING_A_RULE_NOW_IS_EXPERIMENTAL),
         "the item's help does not end with the experimental sentence: {line}"
     );
+}
+
+/// The Filter Manager's button, as its window text holds it and as MSAA
+/// names it at its own handle. R, free among Add, Edit, Delete and Close.
+const RUN_ON_A_FOLDER: &str = "&Run on a Folder...\tRun on a Folder...";
+
+#[test]
+fn test_the_filter_manager_offers_run_on_a_folder_named_at_its_own_handle() {
+    let buttons = reading("the Filter Manager's buttons");
+
+    assert!(
+        buttons.lines().any(|line| line == RUN_ON_A_FOLDER),
+        "the built Filter Manager holds no {RUN_ON_A_FOLDER:?}:\n{buttons}"
+    );
+}
+
+#[test]
+fn test_the_label_manager_offers_no_run_on_a_folder() {
+    let buttons = reading("the Label Manager's buttons");
+
+    // Its Delete is read first, so an empty reading cannot pass.
+    assert!(
+        buttons.lines().any(|line| line.starts_with("&Delete\t")),
+        "the built Label Manager's buttons were not read:\n{buttons}"
+    );
+    assert!(
+        !buttons.contains("Run on a Folder"),
+        "the Label Manager offers to run a label over a folder:\n{buttons}"
+    );
+}
+
+#[test]
+fn test_the_manager_saves_the_rules_before_it_answers_one_to_run() {
+    the_manager_saves_before_it_answers(&the_managers()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_message_filters_hands_the_rule_it_answers_to_the_folder_door() {
+    the_filter_manager_arm_runs_what_it_answers(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_folder_door_has_a_folder_chosen_before_it_counts() {
+    the_second_door_chooses_a_folder_before_it_counts(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
 }
 
 #[test]
@@ -416,6 +731,11 @@ fn test_a_rule_run_says_one_sentence_with_one_confirmed() {
 const SHAPED: &str = r#"                        _ if id == ID_RUN_A_RULE_HERE => {
                             run_a_rule_on_this_folder(app, &message_cache, &frame);
                         }
+                        _ if id == ID_FILTER_MGR => {
+                            if let Some(run) = managers::manage_filters(&state, &message_cache, &frame, &ui_tx, &runtime, &a11y) {
+                                run_a_rule_on_a_chosen_folder(app, &message_cache, &frame, &run);
+                            }
+                        }
                         _ if id == ID_CHECK_FOR_UPDATES => {}
 fn run_a_rule_on_this_folder(
     app: AppHandles<'_>,
@@ -424,6 +744,14 @@ fn run_a_rule_on_this_folder(
         return;
     };
     count_what_a_rule_would_change(app, &account, &folder, rule);
+}
+fn run_a_rule_on_a_chosen_folder(
+    app: AppHandles<'_>,
+) {
+    let Some(at) = wx_managers::choose_from_list(frame, title, &label, "&Count", &paths, palette) else {
+        return;
+    };
+    count_what_a_rule_would_change(app, &account, &folders[at], rule);
 }
 fn count_what_a_rule_would_change(
     app: AppHandles<'_>,
@@ -478,9 +806,62 @@ fn test_the_readings_pass_a_window_shaped_as_it_should_be() {
         the_question_comes_before_the_run,
         nothing_writes_round_the_runner,
         the_run_says_one_sentence,
+        the_filter_manager_arm_runs_what_it_answers,
+        the_second_door_chooses_a_folder_before_it_counts,
     ] {
         reading(SHAPED).unwrap_or_else(|why| panic!("{why}"));
     }
+    the_manager_saves_before_it_answers(A_MANAGER).unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// A Filter Manager shaped as it should be, cut down to what the reading
+/// reads.
+const A_MANAGER: &str = r#"pub fn manage_filters(
+    state: &Arc<StdMutex<WxUIState>>,
+) -> Option<RunARuleNow> {
+    let (updated, run_on) = match wx_managers::show_filter_manager_dialog(frame, &rows, a11y) {
+        wx_managers::FilterManagerAction::None => return None,
+        wx_managers::FilterManagerAction::Updated(updated) => (updated, None),
+        wx_managers::FilterManagerAction::RunOnAFolder { rules, which } => (rules, Some(which)),
+    };
+    let failures = save_what_the_filter_manager_returned(&cache, &account, &stored, updated);
+    Some(RunARuleNow { account, rule_id })
+}
+"#;
+
+#[test]
+fn test_companion_a_manager_that_answers_before_it_saves_is_refused() {
+    let unsaved = A_MANAGER
+        .replacen(
+            "    let failures = save_what_the_filter_manager_returned(&cache, &account, &stored, updated);\n",
+            "",
+            1,
+        )
+        .replacen(
+            "    Some(RunARuleNow { account, rule_id })\n",
+            "    Some(RunARuleNow { account, rule_id })\n    let failures = save_what_the_filter_manager_returned(&cache, &account, &stored, updated);\n",
+            1,
+        );
+    assert_ne!(unsaved, A_MANAGER, "the companion lost its anchor");
+
+    let said = the_manager_saves_before_it_answers(&unsaved).expect_err("answered first");
+
+    assert!(
+        said.contains("answers a rule to run before it saves"),
+        "{said}"
+    );
+}
+
+#[test]
+fn test_companion_a_folder_door_that_counts_before_choosing_is_refused() {
+    let unchosen = planted(
+        "    let Some(at) = wx_managers::choose_from_list(frame, title, &label, \"&Count\", &paths, palette) else {\n        return;\n    };\n",
+        "",
+    );
+
+    let said = the_second_door_chooses_a_folder_before_it_counts(&unchosen).expect_err("no folder");
+
+    assert!(said.contains("never calls choose_from_list("), "{said}");
 }
 
 #[test]
