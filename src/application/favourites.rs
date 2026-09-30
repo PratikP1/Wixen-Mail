@@ -515,10 +515,11 @@ mod nothing_here_reaches_a_server {
     /// Named rather than read whole, and each name is checked to still be there
     /// below: a renamed function would make the reading find nothing and report
     /// a clean result over a file it never looked into.
-    const THE_COMMANDS: [&str; 3] = [
+    const THE_COMMANDS: [&str; 4] = [
         "fn pin_or_unpin_the_chosen_folder",
         "fn move_the_chosen_pin",
         "fn move_the_chosen_row",
+        "fn move_the_chosen_search",
     ];
 
     /// The body of one function, from its signature to the margin brace that

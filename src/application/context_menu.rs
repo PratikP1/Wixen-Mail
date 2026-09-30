@@ -827,6 +827,10 @@ mod tests {
         assert!(offered.contains(&Action::RefreshFolder), "{offered:?}");
         assert!(offered.contains(&Action::RenameSavedSearch), "{offered:?}");
         assert!(offered.contains(&Action::DeleteSavedSearch), "{offered:?}");
+        // And it moves within its account's searches, as the gesture does
+        // (#58), so the menu offers the move the keys make.
+        assert!(offered.contains(&Action::MoveUp), "{offered:?}");
+        assert!(offered.contains(&Action::MoveDown), "{offered:?}");
         assert!(!offered.contains(&Action::GetOlder), "{offered:?}");
         assert!(!offered.contains(&Action::ChooseFolders), "{offered:?}");
     }

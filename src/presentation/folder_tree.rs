@@ -767,6 +767,9 @@ pub enum WhatMoves {
     /// The pinned folder the cursor is on, and the account whose part of the
     /// group it sits in.
     Pin { account: String, path: String },
+    /// The saved search the cursor is on, and the account whose searches it
+    /// sits among.
+    SavedSearch { account: String, id: String },
     /// Nothing this gesture rearranges.
     Nothing,
 }
@@ -1555,6 +1558,17 @@ mod tests {
                 path: "Receipts".to_string(),
             }
         );
+        // A saved search moves within its own account's searches (#58).
+        assert_eq!(
+            what_the_gesture_moves(Some(&WhichRow::SavedSearch {
+                account: "a".to_string(),
+                id: "s1".to_string(),
+            })),
+            WhatMoves::SavedSearch {
+                account: "a".to_string(),
+                id: "s1".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -1575,10 +1589,6 @@ mod tests {
             WhichRow::Label("t1".to_string()),
             WhichRow::SavedSearches,
             WhichRow::SavedSearchesIn("a".to_string()),
-            WhichRow::SavedSearch {
-                account: "a".to_string(),
-                id: "s1".to_string(),
-            },
         ] {
             assert_eq!(
                 what_the_gesture_moves(Some(&row)),

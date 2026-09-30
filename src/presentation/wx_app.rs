@@ -10336,7 +10336,7 @@ fn move_the_chosen_row(
         WhatMoves::Pin { account, path } => {
             move_the_chosen_pin(app, cache, a11y, &account, &path, direction);
         }
-        WhatMoves::Nothing => {
+        WhatMoves::SavedSearch { .. } | WhatMoves::Nothing => {
             refuse_a_command(app.tx, crate::application::favourites::WHICH_ROW);
         }
     }
@@ -31332,13 +31332,17 @@ mod tests {
         // A search written by a newer version is still a row in somebody's
         // tree. Leaving it out would take it off the tree with nothing said,
         // and somebody would go looking for a search that is still there.
+        //
+        // And it sits where the kept order puts it, first here, ahead of the
+        // search this build can run (#58). Readable ones first would be a
+        // second order, and a move across it would be written and not shown.
         let state = state_with_saved_searches();
         let rows = super::every_saved_search("acc", &state.saved_searches["acc"]);
         assert_eq!(
             rows.iter()
                 .map(|search| search.name.clone())
                 .collect::<Vec<_>>(),
-            ["Unread from Ann", "Invoices"]
+            ["Invoices", "Unread from Ann"]
         );
         // And every row carries the account it was read for, which is the
         // branch it goes under and what a command asks for whose it is.
