@@ -33,12 +33,15 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::filters::Outcome;
 use wixen_mail::application::quick_steps::{
-    QuickStep, StoredStep, key_for, name_for, what_stops_a_step_being_saved,
+    QUICK_STEPS_ARE_EXPERIMENTAL, QuickStep, StoredStep, key_for, name_for,
+    what_stops_a_step_being_saved,
 };
 use wixen_mail::application::reordering::Move;
+use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::message_cache::MessageCache;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::managers::save_what_the_quick_step_manager_returned;
+use wixen_mail::presentation::wx_app::WxMailApp;
 use wixen_mail::presentation::wx_managers::{
     ManagerState, QuickStepEditor, QuickStepEntry, StepRefused, build_quick_step_edit_dialog,
     build_quick_step_manager, move_the_chosen_row, populate_quick_steps, what_the_editor_holds,
@@ -567,6 +570,44 @@ struct Harvest {
     what_the_save_failed_on: Vec<String>,
     the_newer_step_after_the_close: String,
     editor: EditorReading,
+    menu: MenuReading,
+}
+
+/// The Action menu of the real menu bar the window is given.
+#[derive(Debug, Default, Clone)]
+struct MenuReading {
+    /// Every item on Action, by its label.
+    action_items: Vec<String>,
+    /// What the Quick Steps item on Action says where it is chosen.
+    quick_steps_help: String,
+    /// The Quick Steps submenu's items as label and help, `None` when
+    /// Action has no such submenu.
+    quick_steps_items: Option<Vec<(String, String)>>,
+}
+
+fn read_the_menu(frame: &Frame) -> MenuReading {
+    frame.set_menu_bar(WxMailApp::build_menu_bar());
+    let Some(action) = frame.get_menu_bar().and_then(|bar| {
+        usize::try_from(bar.find_menu("Action"))
+            .ok()
+            .and_then(|at| bar.get_menu(at))
+    }) else {
+        return MenuReading::default();
+    };
+    let items = action.get_menu_items();
+    let quick_steps = items.iter().find(|item| item.get_label() == "&Quick Steps");
+    MenuReading {
+        action_items: items.iter().map(|item| item.get_label()).collect(),
+        quick_steps_help: quick_steps
+            .map(|item| action.get_help_string(item.get_item_id()))
+            .unwrap_or_default(),
+        quick_steps_items: quick_steps.and_then(|item| item.get_sub_menu()).map(|sub| {
+            sub.get_menu_items()
+                .iter()
+                .map(|item| (item.get_label(), sub.get_help_string(item.get_item_id())))
+                .collect()
+        }),
+    }
 }
 
 /// What the step editor's controls hold, as plain values.
@@ -790,6 +831,7 @@ fn read_the_manager(
         what_the_save_failed_on,
         the_newer_step_after_the_close,
         editor: EditorReading::default(),
+        menu: MenuReading::default(),
     })
 }
 
@@ -818,6 +860,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 let cache = a_store(&store_at)?;
                 let mut harvest = read_the_manager(&frame, &a11y, &cache)?;
                 harvest.editor = read_the_editor(&frame)?;
+                harvest.menu = read_the_menu(&frame);
                 frame.destroy();
                 Ok(harvest)
             })();
@@ -1331,6 +1374,122 @@ fn test_a_step_that_deletes_and_moves_is_refused_before_it_is_kept() {
         Err(StepRefused::WhatItDoes(
             what_stops_a_step_being_saved(&does).unwrap_or_default()
         ))
+    );
+}
+
+// ── Action, Quick Steps, Manage Quick Steps ───────────────────────────────
+
+/// What the item on Action says where Quick Steps is chosen.
+const WHAT_QUICK_STEPS_ARE: &str =
+    "Commands you make that do several things to the selected messages at once";
+
+/// What is wrong with Action's Quick Steps submenu, in the order a keyboard
+/// meets it: where it sits, what it says, and what it holds.
+fn what_is_wrong_with_the_menu(menu: &MenuReading) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let after_saved_searches = menu
+        .action_items
+        .iter()
+        .position(|label| label == "Saved Searc&hes")
+        .and_then(|at| menu.action_items.get(at + 1));
+    if after_saved_searches.map(String::as_str) != Some("&Quick Steps") {
+        wrong.push("Action has no Quick Steps submenu after Saved Searches".to_string());
+    }
+    if menu.quick_steps_help != WHAT_QUICK_STEPS_ARE {
+        wrong.push(format!(
+            "Quick Steps says {:?} where it is chosen",
+            menu.quick_steps_help
+        ));
+    }
+    let wanted = vec![(
+        "&Manage Quick Steps...".to_string(),
+        QUICK_STEPS_ARE_EXPERIMENTAL.to_string(),
+    )];
+    if menu.quick_steps_items.as_ref() != Some(&wanted) {
+        wrong.push(format!(
+            "the submenu holds {:?} rather than Manage Quick Steps with the experimental \
+             sentence",
+            menu.quick_steps_items
+        ));
+    }
+    wrong
+}
+
+#[test]
+fn test_action_holds_quick_steps_after_saved_searches_with_manage_quick_steps_in_it() {
+    let found = what_is_wrong_with_the_menu(&the_harvest().menu);
+
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn test_the_menu_reading_sees_quick_steps_left_off_action() {
+    // The companion: Action as it stood before this plan.
+    let mut planted = the_harvest().menu.clone();
+    planted.action_items.retain(|label| label != "&Quick Steps");
+    planted.quick_steps_help = String::new();
+    planted.quick_steps_items = None;
+
+    assert_eq!(what_is_wrong_with_the_menu(&planted).len(), 3);
+}
+
+const THE_WINDOW: &str = "src/presentation/wx_app.rs";
+
+fn the_shipping_window() -> String {
+    let whole = std::fs::read_to_string(THE_WINDOW)
+        .unwrap_or_else(|why| panic!("{THE_WINDOW}: {why}"))
+        .replace("\r\n", "\n");
+    what_ships(&whole)
+}
+
+/// One arm of the command dispatch, from its guard to the next arm's.
+fn arm_of<'a>(source: &'a str, guard: &str) -> Option<&'a str> {
+    let start = source.find(guard)?;
+    let rest = &source[start + guard.len()..];
+    let end = rest.find("_ if id == ").unwrap_or(rest.len());
+    Some(&rest[..end])
+}
+
+const THE_ARM: &str = "_ if id == ID_QUICK_STEP_MGR =>";
+
+/// What is wrong with what Manage Quick Steps runs.
+fn what_is_wrong_with_the_arm(source: &str) -> Vec<String> {
+    let Some(arm) = arm_of(source, THE_ARM) else {
+        return vec!["nothing answers Manage Quick Steps".to_string()];
+    };
+    let mut wrong = Vec::new();
+    if !arm.contains("managers::manage_quick_steps(") {
+        wrong.push("Manage Quick Steps never opens the manager".to_string());
+    }
+    if !arm.contains("read_the_tree_back(") {
+        wrong.push("the tree is not read back after the manager closes".to_string());
+    }
+    wrong
+}
+
+#[test]
+fn test_manage_quick_steps_opens_the_manager_and_reads_the_tree_back() {
+    let found = what_is_wrong_with_the_arm(&the_shipping_window());
+
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn test_the_arm_reading_sees_an_arm_that_reaches_nothing() {
+    let source = the_shipping_window();
+    let arm = arm_of(&source, THE_ARM).unwrap_or_default();
+    let planted = match arm.is_empty() {
+        true => source.clone(),
+        false => source.replacen(
+            arm,
+            &arm.replacen("managers::manage_quick_steps(", "nothing_at_all(", 1),
+            1,
+        ),
+    };
+
+    assert_eq!(
+        what_is_wrong_with_the_arm(&planted),
+        ["Manage Quick Steps never opens the manager"]
     );
 }
 
