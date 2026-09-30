@@ -14,9 +14,19 @@
 //! hands back are saved the way the manager's close saves them, and the
 //! store's order is read back.
 //!
+//! The step editor is built over a step and read the way a screen reader
+//! reads native controls: its children in the order Windows holds them, which
+//! is the order Tab walks, each over MSAA at its own handle, and its letters
+//! off the showing labels. Its controls are set and read back into a step,
+//! and the decision that keeps or refuses a step is asked. The real menu
+//! bar's Action menu is read for Quick Steps, and the main window's source
+//! for the arm Manage Quick Steps runs.
+//!
 //! **Companions.** Each check is handed a wrong state, a Key column that
-//! gives a fourth step a key and a store whose order was never written, and
-//! refuses it, so a check that passes is one that could have failed.
+//! gives a fourth step a key, a store whose order was never written, a
+//! question with no name, a second N, Mark unread read as read, Action
+//! without Quick Steps and an arm that reaches nothing, and refuses it, so a
+//! check that passes is one that could have failed.
 //!
 //! **Nothing here reaches the settings of whoever runs it, or their screen.**
 //! The profile is pointed at a directory of its own before anything is built,

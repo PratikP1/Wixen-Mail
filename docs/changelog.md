@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Quick Steps can be made, changed and put in order, and running them is not built yet
+  (#60, GAP-11).** #60 asked for "a manager beside the Filter Manager" where a Quick Step,
+  several actions under one name, is made. Action, Quick Steps, Manage Quick Steps
+  (`Alt+A`, `Q`, `M`) opens the Quick Step Manager for the account you are in: a list of
+  its steps with the name, the key its place gives it (`Ctrl+Shift+7` to `Ctrl+Shift+9`
+  for the first three) and what it does, "Mark read, move to Archive". Add and Edit open
+  the step editor, which asks one question per control: Name (`Alt+N`), Mark as read or
+  unread (`Alt+R`), Flag (`Alt+F`), Label (`Alt+L`), Move to (`Alt+M`), Delete it
+  (`Alt+D`) and Phrase to say first (`Alt+H`). A step puts on one label at most and moves
+  to one of the account's own folders, chosen by path. A step that cannot be kept is
+  refused when OK is pressed, with the window left open. Steps move with Move Up and Move
+  Down or `Alt+Shift+Up` and `Alt+Shift+Down`, and the order is saved when the manager
+  closes. A step written by a newer version is listed and can be moved or removed, and is
+  not opened. Nothing a step does can run yet: running a step from the menu or by its key
+  arrives with the next change. Quick Steps are experimental, and the menu item says so.
+  The version does not move for this: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: nobody has heard the submenu, the manager's rows and Key column, the
+  editor's seven questions in order, or a refusal with a screen reader. A step given the
+  name another step had when the manager opened may fail to save, and the close says which
+  one failed; rename the other step first, close the manager, and open it again for the
+  second rename.
 - **A saved search can be made from nothing, and every or any changed later (#58 point
   3, GAP-09).** A search could not be saved from scratch: Save This Search refused unless
   a search had just run, and Edit Conditions edited only one that existed. Now New Saved

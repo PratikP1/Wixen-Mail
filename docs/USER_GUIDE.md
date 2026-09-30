@@ -1226,6 +1226,68 @@ are off for the account. `Ctrl+Z` in the message list moves the messages back.
 A block uses the account you have open. In All Inboxes that may not be the
 account the message came to.
 
+### Quick Steps
+
+A Quick Step is a command you make yourself that does several things to the
+selected messages at once, such as marking them read and moving them to
+Archive. Each account has its own. Quick Steps are experimental: none has
+been run against a real mail server, and the menu item's description says
+so.
+
+Running a step, from the Quick Steps submenu or by its key, is not built
+yet and arrives with the next change. What you can do now is make your steps
+and put them in order.
+
+To make a Quick Step:
+
+1. Choose Action, Quick Steps, Manage Quick Steps (`Alt+A`, `Q`, `M`). The
+   Quick Step Manager opens for the account you are in, on the list of its
+   steps.
+2. Press Add (`Alt+A`). The step editor opens.
+3. Type a name in Name (`Alt+N`).
+4. Answer the questions you want the step to do, and leave the rest as they
+   are.
+5. Press `Enter` for OK. The step is added to the end of the list.
+6. Press Close (`Alt+C`) when you are done. Nothing is saved until you close
+   the manager.
+
+The editor asks one question per control, in this order:
+
+| Question | What the step does |
+|---|---|
+| Name | What the step is called. Two steps in one account cannot share a name, in any mix of capitals |
+| Mark as read or unread | Leaves the messages as they are, marks them read, or marks them unread |
+| Flag | Leaves the flag as it is, flags the messages, or takes the flag off |
+| Label | Puts on one of the account's labels, or none. A step puts on one label at most |
+| Move to | Moves the messages to one of the account's folders, chosen from the folders the folder tree shows, by path, or leaves them where they are |
+| Delete it | Sends the messages to the trash. A step that deletes does nothing else, because a message is not marked, flagged or moved on its way to the trash |
+| Phrase to say first | A few words, up to 40 characters, that each message keeps and your screen reader says first on its row, as a rule's Say this first does |
+
+If a step cannot be kept, pressing OK says why in a message box and leaves
+the editor open with what you chose: a step with no name, a name another
+step has, a step that does nothing, a delete beside anything else, or a
+phrase that is too long.
+
+If you open a step whose label or folder the account no longer has, the
+editor shows it chosen with "(not in this account any more)" after its name,
+so keeping it is a choice you see.
+
+The manager's list has three columns: the name, the key, and what the step
+does, "Mark read, move to Archive". The first three steps have a key,
+`Ctrl+Shift+7` to `Ctrl+Shift+9`, in the order of the list. Move Up
+(`Alt+U`) and Move Down (`Alt+W`), or `Alt+Shift+Up` and `Alt+Shift+Down` in
+the list, move a step and its key. Edit (`Alt+E`) changes the step you are
+on, and Delete (`Alt+D`) removes it.
+
+A step written by a newer version of Wixen Mail says so in the list. You can
+move it or delete it, and Edit does not open it, because this version cannot
+read everything it does and saving it would lose that part.
+
+One thing does not work yet. A step given the name another step had when
+the manager opened may fail to save, and closing the manager says which one
+failed. To pass a name from one step to another, rename the first step,
+close the manager, then open it again and rename the second.
+
 ### Printing
 
 Press `Ctrl+P`, or choose File, Print, to print what you are on. Windows' own
