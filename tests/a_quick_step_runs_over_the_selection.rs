@@ -28,9 +28,19 @@
 //!
 //! **Source readings** over `what_ships` of `src/presentation/wx_app.rs`,
 //! comment lines left out: `folder_tree_updates` sends the steps, and their
-//! arm puts them on the menu. Each has a companion that plants the fault into
-//! a snippet shaped as the window should be, so a reading that stopped
-//! finding its anchor cannot pass by finding nothing.
+//! arm puts them on the menu. A step's item runs `run_the_quick_step_at`,
+//! which reads the selection with the step's reach, meets the Select All
+//! bound, checks every chosen message's account and what the step names,
+//! then calls 13-24.1's runner once and says one sentence; it writes no mail
+//! of its own, since every write is the runner's and goes through the gated
+//! paths. Each has a companion that plants the fault into a snippet shaped
+//! as the window should be, so a reading that stopped finding its anchor
+//! cannot pass by finding nothing.
+//!
+//! **Undo, read in source.** The runner remembers no action of its own; each
+//! of the set commands' do-halves it calls remembers its own for Edit, Undo,
+//! so after a step the last write it made is what Undo takes back, and the
+//! step as a whole is not one undo.
 //!
 //! **What is not read.** Whether a screen reader says each item's key when
 //! the submenu is open, and whether a step is heard as one act with one
@@ -401,6 +411,136 @@ fn the_loaded_arm_puts_them_on_the_menu(app: &str) -> Result<(), String> {
     }
 }
 
+/// Where a step is run.
+const THE_RUN: &str = "fn run_the_quick_step_at(";
+
+/// Where a step's item on the menu is answered.
+const THE_ITEM_ARM: &str = "_ if quick_step_position_of(id).is_some() =>";
+
+/// The one runner a step is carried out through (13-24.1).
+const THE_RUNNER: &str = "run_these_actions_over";
+
+/// What a run asks, in the order it must ask it: the step's reach, the
+/// selection read with it, the Select All bound, every chosen message's
+/// account, what the step names in that account, the runner, and the one
+/// sentence.
+const THE_CHECKS_IN_ORDER: [&str; 7] = [
+    "quick_steps::reach",
+    "chosen_messages",
+    "too_many",
+    "owner_of",
+    "what_the_account_lacks",
+    THE_RUNNER,
+    "what_a_step_did",
+];
+
+/// Every path that writes mail, each the runner's to call and never a run's.
+const THE_WRITES: [&str; 8] = [
+    "spawn_server_change",
+    "move_or_copy_here_first",
+    "set_says_first",
+    "mark_these_read",
+    "star_these",
+    "label_these",
+    "move_these",
+    "delete_these",
+];
+
+/// A step's item runs the step at the item's place.
+fn the_item_runs_the_step(app: &str) -> Result<(), String> {
+    let arm = arm_of(app, THE_ITEM_ARM, "_ if id")?;
+    match calls_of(&arm, "run_the_quick_step_at").len() {
+        1 => Ok(()),
+        n => Err(format!(
+            "the arm at {THE_ITEM_ARM} calls run_the_quick_step_at( {n} times; it should call \
+             it once"
+        )),
+    }
+}
+
+/// A run asks each of its checks, in order, the runner exactly once and the
+/// sentence exactly once.
+fn the_run_checks_in_order_then_runs_once(app: &str) -> Result<(), String> {
+    let run = body_of(app, THE_RUN)?;
+    let mut last = 0;
+    for check in THE_CHECKS_IN_ORDER {
+        let calls = calls_of(&run, check);
+        let Some(&first) = calls.first() else {
+            return Err(format!("{THE_RUN} never calls {check}("));
+        };
+        if first < last {
+            return Err(format!(
+                "{THE_RUN} calls {check}( before a check that should come first"
+            ));
+        }
+        last = first;
+    }
+    for once in [THE_RUNNER, "what_a_step_did"] {
+        let n = calls_of(&run, once).len();
+        if n != 1 {
+            return Err(format!("{THE_RUN} calls {once}( {n} times; once is a step"));
+        }
+    }
+    Ok(())
+}
+
+/// A run writes no mail of its own: every write is the runner's.
+fn the_run_writes_nothing_of_its_own(app: &str) -> Result<(), String> {
+    let run = body_of(app, THE_RUN)?;
+    let written: Vec<&str> = THE_WRITES
+        .into_iter()
+        .filter(|write| !calls_of(&run, write).is_empty())
+        .collect();
+    match written.as_slice() {
+        [] => Ok(()),
+        some => Err(format!(
+            "{THE_RUN} calls {some:?} itself, which go round the runner and its gate"
+        )),
+    }
+}
+
+/// After the runner a run says one sentence, at Normal, with one Confirmed
+/// signal, whatever the count.
+fn the_run_says_one_sentence(app: &str) -> Result<(), String> {
+    let run = body_of(app, THE_RUN)?;
+    let at = calls_of(&run, THE_RUNNER)
+        .first()
+        .copied()
+        .ok_or(format!("{THE_RUN} never calls {THE_RUNNER}("))?;
+    let after = &run[at..];
+    let announced = calls_of(after, "announce").len();
+    let signalled = calls_of(after, "signal").len();
+    let spoken_on_the_status_line = calls_of(after, "send_status").len();
+    match (announced, signalled, spoken_on_the_status_line) {
+        (1, 1, 0) => Ok(()),
+        _ => Err(format!(
+            "after the runner, {THE_RUN} announces {announced} times, signals {signalled} times \
+             and speaks on the status line {spoken_on_the_status_line} times; a step is one \
+             sentence and one Confirmed"
+        )),
+    }
+}
+
+/// The runner remembers nothing for Edit, Undo itself; the do-halves it
+/// calls each remember their own, so the last write of a step is what Undo
+/// takes back.
+fn the_runner_leaves_undo_to_the_do_halves(app: &str) -> Result<(), String> {
+    let runner = body_of(app, &format!("fn {THE_RUNNER}("))?;
+    if !calls_of(&runner, "remember_the_last_action").is_empty() {
+        return Err(format!(
+            "{THE_RUNNER} remembers an action of its own, so a step may be one undo now; the \
+             pages say it is not"
+        ));
+    }
+    for do_half in ["fn mark_these_read(", "fn move_these("] {
+        let body = body_of(app, do_half)?;
+        if calls_of(&body, "remember_the_last_action").is_empty() {
+            return Err(format!("{do_half} no longer remembers its action for Undo"));
+        }
+    }
+    Ok(())
+}
+
 // ── The window session ────────────────────────────────────────────────────
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -667,7 +807,171 @@ fn test_the_loaded_arm_puts_the_steps_on_the_menu() {
     the_loaded_arm_puts_them_on_the_menu(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
 }
 
+#[test]
+fn test_a_steps_item_runs_the_step_at_its_place() {
+    the_item_runs_the_step(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_run_checks_the_selection_the_bound_and_the_account_before_the_runner() {
+    the_run_checks_in_order_then_runs_once(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_run_writes_no_mail_of_its_own() {
+    the_run_writes_nothing_of_its_own(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_run_says_one_sentence_with_one_confirmed() {
+    the_run_says_one_sentence(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_undo_takes_back_the_last_write_of_a_step_not_the_step() {
+    the_runner_leaves_undo_to_the_do_halves(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
 // ── Companions ────────────────────────────────────────────────────────────
+
+/// A run shaped as it should be, cut down to what the readings read, with
+/// the runner and two do-halves beside it.
+const A_RUN: &str = r#"                        _ if quick_step_position_of(id).is_some() => {
+                            if let Some(place) = quick_step_position_of(id) {
+                                run_the_quick_step_at(app, &message_cache, &msg_list, &a11y, place);
+                            }
+                        }
+                        _ if id == ID_CHECK_FOR_UPDATES => {}
+fn run_the_quick_step_at(
+    app: AppHandles<'_>,
+) {
+    let reach = crate::application::quick_steps::reach(&step.does, setting);
+    let chosen = match chosen_messages(state, cache, list, reach) {
+        Ok(chosen) => chosen,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    if let Some(why) = too_many(chosen.messages.len()) {
+        return send_refusal(tx, rt, &why);
+    }
+    let elsewhere = chosen.messages.iter().filter(|m| owner_of(&s.messages, &s.accounts, m.row_id, open).is_none()).count();
+    if let Some(missing) = what_the_account_lacks(&step.does, &folders, &labels) {
+        return send_refusal(tx, rt, &what_is_gone(&step.name, &missing));
+    }
+    let done = match run_these_actions_over(app, list, cache, &chosen, &step.does) {
+        Ok(done) => done,
+        Err(why) => return send_refusal(tx, rt, &why),
+    };
+    let said = what_a_step_did(&step.name, &chosen, &done);
+    let _ = a11y.announce(&said, Priority::Normal);
+    send_shown(tx, rt, &said);
+    let _ = a11y.signal(FeedbackEvent::Confirmed, &step.name);
+}
+fn run_these_actions_over(
+    app: AppHandles<'_>,
+) {
+    mark_these_read(app, &held, list, those, *read);
+    move_these(app, list, cache, moving, into, false);
+}
+fn mark_these_read(
+    app: AppHandles<'_>,
+) {
+    remember_the_last_action(state, marked);
+}
+fn move_these(
+    app: AppHandles<'_>,
+) {
+    remember_the_last_action(state, moved);
+}
+"#;
+
+fn a_run_with(from: &str, to: &str) -> String {
+    let planted = A_RUN.replacen(from, to, 1);
+    assert_ne!(planted, A_RUN, "the companion lost its anchor: {from}");
+    planted
+}
+
+#[test]
+fn test_the_run_readings_pass_a_run_shaped_as_it_should_be() {
+    the_item_runs_the_step(A_RUN).unwrap_or_else(|why| panic!("{why}"));
+    the_run_checks_in_order_then_runs_once(A_RUN).unwrap_or_else(|why| panic!("{why}"));
+    the_run_writes_nothing_of_its_own(A_RUN).unwrap_or_else(|why| panic!("{why}"));
+    the_run_says_one_sentence(A_RUN).unwrap_or_else(|why| panic!("{why}"));
+    the_runner_leaves_undo_to_the_do_halves(A_RUN).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_companion_a_run_that_skips_the_bound_is_refused() {
+    let unbounded = a_run_with(
+        "    if let Some(why) = too_many(chosen.messages.len()) {\n        return send_refusal(tx, rt, &why);\n    }\n",
+        "",
+    );
+
+    let said = the_run_checks_in_order_then_runs_once(&unbounded).expect_err("no bound");
+
+    assert!(said.contains("never calls too_many("), "{said}");
+}
+
+#[test]
+fn test_companion_a_run_that_skips_the_account_check_is_refused() {
+    let any_account = a_run_with(
+        "    let elsewhere = chosen.messages.iter().filter(|m| owner_of(&s.messages, &s.accounts, m.row_id, open).is_none()).count();\n",
+        "",
+    );
+
+    let said = the_run_checks_in_order_then_runs_once(&any_account).expect_err("no account check");
+
+    assert!(said.contains("never calls owner_of("), "{said}");
+}
+
+#[test]
+fn test_companion_a_run_that_calls_the_runner_twice_is_refused() {
+    let twice = a_run_with(
+        "    let said = what_a_step_did(",
+        "    let _ = run_these_actions_over(app, list, cache, &chosen, &step.does);\n    let said = what_a_step_did(",
+    );
+
+    let said = the_run_checks_in_order_then_runs_once(&twice).expect_err("runner twice");
+
+    assert!(said.contains("run_these_actions_over( 2 times"), "{said}");
+}
+
+#[test]
+fn test_companion_a_run_that_says_a_second_sentence_is_refused() {
+    let twice = a_run_with(
+        "    send_shown(tx, rt, &said);\n",
+        "    send_shown(tx, rt, &said);\n    let _ = a11y.announce(\"Done\", Priority::Normal);\n",
+    );
+
+    let said = the_run_says_one_sentence(&twice).expect_err("second sentence");
+
+    assert!(said.contains("announces 2 times"), "{said}");
+}
+
+#[test]
+fn test_companion_a_run_that_writes_round_the_runner_is_refused() {
+    let round = a_run_with(
+        "    let said = what_a_step_did(",
+        "    spawn_server_change(app, row, uid, subject, None, change);\n    let said = what_a_step_did(",
+    );
+
+    let said = the_run_writes_nothing_of_its_own(&round).expect_err("a write of its own");
+
+    assert!(said.contains("spawn_server_change"), "{said}");
+}
+
+#[test]
+fn test_companion_a_runner_that_remembers_the_step_is_refused() {
+    let one_undo = a_run_with(
+        "    move_these(app, list, cache, moving, into, false);\n",
+        "    move_these(app, list, cache, moving, into, false);\n    remember_the_last_action(state, the_step);\n",
+    );
+
+    let said = the_runner_leaves_undo_to_the_do_halves(&one_undo).expect_err("one undo");
+
+    assert!(said.contains("remembers an action of its own"), "{said}");
+}
 
 /// A window shaped as it should be, cut down to what the readings read.
 const SHAPED: &str = r#"fn folder_tree_updates(
