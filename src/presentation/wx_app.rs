@@ -8561,9 +8561,10 @@ enum WhatToWriteBack {
 /// `SavedSearch` built from scratch here is how one of them would go missing.
 fn the_search_to_write_back(
     search: &crate::application::saved_searches::SavedSearch,
-    edited: Option<Vec<crate::application::saved_searches::Question>>,
+    edited: Option<crate::application::saved_searches::EditedConditions>,
 ) -> WhatToWriteBack {
-    let Some(questions) = edited else {
+    let Some(crate::application::saved_searches::EditedConditions { questions, .. }) = edited
+    else {
         return WhatToWriteBack::NothingChanged;
     };
     if let Some(needed) =
@@ -8614,6 +8615,12 @@ fn edit_the_chosen_searchs_conditions(
         &search.name,
         &search.questions,
         a11y,
+    )
+    .map(
+        |questions| crate::application::saved_searches::EditedConditions {
+            join: search.join,
+            questions,
+        },
     );
     let asking_now = match the_search_to_write_back(&search, edited) {
         WhatToWriteBack::NothingChanged => return,
@@ -37660,8 +37667,17 @@ mod editing_the_conditions_of_a_saved_search {
         the_search_to_write_back,
     };
     use crate::application::saved_searches::{
-        Join, Question, SAVED_BY_ANOTHER_VERSION, SavedSearch,
+        ASKS_NOTHING, EditedConditions, Join, Question, SAVED_BY_ANOTHER_VERSION, SavedSearch,
     };
+
+    /// What the conditions window gives back for these questions, answered
+    /// with the join the stored search already has unless a case changes it.
+    fn edited(questions: Vec<Question>) -> EditedConditions {
+        EditedConditions {
+            join: Join::All,
+            questions,
+        }
+    }
 
     fn asking(field: &str, match_type: &str, pattern: &str) -> Question {
         Question {
@@ -37700,27 +37716,32 @@ mod editing_the_conditions_of_a_saved_search {
 
     #[test]
     fn test_a_changed_condition_list_is_written_back_under_the_same_search() {
-        // Everything but the questions comes from the search as it was stored.
-        // The window was never asked about the name, the join, the folder or
-        // the identifier, so none of them may move; an identifier that moved
-        // would leave the tree row, and anything holding its path, pointing at
-        // a search that is not there.
+        // The questions and the join come from the window, which asks both,
+        // so a search made as "every" can become "any" (RESEARCH-4 question
+        // 3). The name, the folder and the identifier come from the search as
+        // it was stored: the window was never asked about them, and an
+        // identifier that moved would leave the tree row, and anything holding
+        // its path, pointing at a search that is not there.
         let stored = a_stored_search();
         let now = vec![
             asking("body_plain", "contains", "overdue"),
             asking("from", "contains", "billing"),
         ];
 
-        let WhatToWriteBack::ThisSearch(writing) =
-            the_search_to_write_back(&stored, Some(now.clone()))
-        else {
+        let WhatToWriteBack::ThisSearch(writing) = the_search_to_write_back(
+            &stored,
+            Some(EditedConditions {
+                join: Join::Any,
+                questions: now.clone(),
+            }),
+        ) else {
             panic!("a changed condition list was not written back");
         };
 
         assert_eq!(writing.questions, now);
+        assert_eq!(writing.join, Join::Any, "the window's answer was not kept");
         assert_eq!(writing.id, stored.id);
         assert_eq!(writing.name, stored.name);
-        assert_eq!(writing.join, stored.join);
         assert_eq!(writing.folder, stored.folder);
     }
 
@@ -37730,7 +37751,7 @@ mod editing_the_conditions_of_a_saved_search {
         // go through the Close button. A search that asks nothing takes the
         // whole mailbox when its questions are joined with Any and nothing at
         // all when they are joined with All.
-        let decided = the_search_to_write_back(&a_stored_search(), Some(Vec::new()));
+        let decided = the_search_to_write_back(&a_stored_search(), Some(edited(Vec::new())));
 
         let WhatToWriteBack::Refused(why) = decided else {
             panic!("a search asking nothing was written: {decided:?}");
@@ -37740,16 +37761,16 @@ mod editing_the_conditions_of_a_saved_search {
 
     #[test]
     fn test_one_wording_refuses_an_empty_condition_list() {
-        // The window's own sentence, read here rather than written again. Two
-        // wordings for one refusal is two things to keep true, and somebody
-        // meeting one and then the other hears two different reasons for the
-        // same thing.
+        // The one sentence, read here rather than written again. Two wordings
+        // for one refusal is two things to keep true, and somebody meeting one
+        // and then the other hears two different reasons for the same thing.
         let WhatToWriteBack::Refused(why) =
-            the_search_to_write_back(&a_stored_search(), Some(Vec::new()))
+            the_search_to_write_back(&a_stored_search(), Some(edited(Vec::new())))
         else {
             panic!("a search asking nothing was written");
         };
 
+        assert_eq!(why, ASKS_NOTHING);
         assert_eq!(
             Some(why),
             crate::presentation::wx_managers::what_a_condition_list_still_needs(&[])
