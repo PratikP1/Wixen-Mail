@@ -408,6 +408,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_a_workspace_account_on_its_own_domain_is_reported_the_way_gmail_is() {
+        // Its address and its saved name say nothing; its server is Google's.
+        let mut workspace = an_account("imap", None);
+        workspace.imap_server = "imap.gmail.com".to_string();
+        let kind = AccountKind::of(&workspace);
+
+        assert_eq!(kind, AccountKind::Gmail);
+        assert_eq!(
+            what_a_report_does(
+                kind,
+                BlockedMailGoesTo::TheJunkFolder("[Gmail]/Spam"),
+                Ok(())
+            ),
+            Report::MarkThenMove {
+                junk: "[Gmail]/Spam".to_string(),
+                mark: false
+            },
+            "Google learns from the move, so no keyword is sent"
+        );
+        assert_eq!(
+            what_reporting_did(kind, 3, "Spam", 0, &Marked::NotAsked),
+            "3 messages moved to Spam, which tells Google they are junk."
+        );
+    }
+
+    #[test]
+    fn test_a_microsoft_365_account_on_its_own_domain_says_microsoft_was_not_told() {
+        let mut work = an_account("imap", None);
+        work.imap_server = "outlook.office365.com".to_string();
+        let kind = AccountKind::of(&work);
+
+        assert_eq!(kind, AccountKind::Microsoft);
+        let said = what_reporting_did(kind, 3, "Junk Email", 0, &Marked::Kept);
+        assert!(said.contains("Microsoft has not been told"), "{said}");
+        assert!(!said.contains("reported as junk"), "{said}");
+    }
+
     // ── What a report does ────────────────────────────────────────────────
 
     #[test]
