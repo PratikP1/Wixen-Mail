@@ -209,6 +209,22 @@ impl LastAction {
             all => how_many(all.len(), "message"),
         }
     }
+
+    /// A move into the junk folder remembered as the report it was, carrying
+    /// the server's latest answer about the mark, so Undo knows whether to ask
+    /// the server to take it off (13-44.1). Anything else comes back as it was.
+    pub fn as_a_report(self, marked: Marked) -> LastAction {
+        match self {
+            LastAction::Moved {
+                moving: Moving::Move { to } | Moving::Reported { to, .. },
+                went,
+            } => LastAction::Moved {
+                moving: Moving::Reported { to, marked },
+                went,
+            },
+            other => other,
+        }
+    }
 }
 
 /// What a move, a delete or a copy did to the set, which is what names it.
@@ -324,21 +340,23 @@ impl Moving {
             Moving::Delete => "Delete".to_string(),
             Moving::DeletePermanently => "Delete Permanently".to_string(),
             Moving::Copy { to } => format!("Copy to {to}"),
-            Moving::Reported { to, .. } => format!("Move to {to}"),
+            Moving::Reported { .. } => "Report as Junk".to_string(),
         }
     }
 }
 
-impl LastAction {
-    /// The action remembered as a report carrying this answer about the mark.
-    pub fn as_a_report(self, _marked: Marked) -> LastAction {
-        self
+/// Where the server holds the message now, by folder and number, which is
+/// where a change to its marks has to be sent: where it still is while a
+/// move waits, since the server has heard nothing, and where the row says
+/// once nothing waits. Nothing when the store cannot place it.
+pub fn where_the_server_has_it(store: &WhatTheStoreSays) -> Option<(String, u32)> {
+    match store {
+        WhatTheStoreSays::StillWaiting { waiting, .. } => {
+            Some((waiting.from_folder_path.clone(), waiting.uid))
+        }
+        WhatTheStoreSays::Settled(here) => Some((here.folder_path.clone(), here.uid)),
+        WhatTheStoreSays::Gone | WhatTheStoreSays::BeingToldNow => None,
     }
-}
-
-/// Where the server holds the message now, by folder and number.
-pub fn where_the_server_has_it(_store: &WhatTheStoreSays) -> Option<(String, u32)> {
-    None
 }
 
 /// The row an undo or a redo reads for one message: the copy's own for the
@@ -446,7 +464,13 @@ pub fn what_redo_does_to(
             from: here,
             to: to.clone(),
         },
-        Moving::Reported { .. } => OneChange::Refused(String::new()),
+        Moving::Reported { to, .. } if here.folder_path == *to => {
+            OneChange::Refused(already_in(who, to))
+        }
+        Moving::Reported { to, .. } => OneChange::Move {
+            from: here,
+            to: to.clone(),
+        },
     }
 }
 
