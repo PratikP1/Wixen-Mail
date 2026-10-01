@@ -29,8 +29,10 @@
 //! # What this cannot see
 //!
 //! Whether the label is heard on the row after a check: the tester's ear.
-//! And what the server makes of it: a rule's label is put on here and not
-//! sent anywhere, which `docs/changelog.md` says under Known limitations.
+//! And what a real server makes of it. Since 2026-10-01 (13-44.3) a rule's
+//! label with a keyword goes to the mail server in the check that brought the
+//! message, and `src/application/what_rules_tell_the_server.rs` holds that
+//! against a server double; no real server has seen it (ledger 680).
 
 use wixen_mail::application::filters::FilterEngine;
 use wixen_mail::application::mail_sync::{Filtered, Filtering, apply_rules};

@@ -106,7 +106,7 @@ amounts.
 
 | | What it covers | Default |
 |---|---|---|
-| Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, sending read receipts, changing subscriptions | **Off** |
+| Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, sending read receipts, changing subscriptions, and what your rules do to arriving mail: marking, flagging, labelling, and moving a message to the Trash | **Off** |
 | Tasks, contacts and calendar | Sending your changes back to Google or Microsoft | On |
 
 A message that has been sent cannot be recalled, and a message deleted from a
@@ -270,9 +270,9 @@ Written down so you do not spend time reporting things already on the list.
   labels, moves or deletes every selected message at once, and changes them
   at your provider when Allowed Changes lets Wixen Mail change your mail. Its
   menu items say it is experimental. What a provider does with many changes
-  arriving together has not been seen. A step that marks and moves sends the
-  marks first and then the move; whether the messages keep their marks where
-  they land is the thing to watch, on Gmail, where a move is a change of
+  arriving together has not been seen. A step that marks or labels and moves
+  sends the marks and the labels first and then the move; whether the
+  messages keep their marks and labels where they land is the thing to watch, on Gmail, where a move is a change of
   label, and on a server with ordinary folders. If you try one, tell us the
   sentence you heard and whether the messages look the same in another mail
   program or on your phone.
@@ -288,6 +288,16 @@ Written down so you do not spend time reporting things already on the list.
   count on a very large folder taking long enough to seem stuck. If you try
   one, tell us the question you heard, the sentence after it, and whether
   the messages look the same in another mail program or on your phone.
+- **No rule on arriving mail has changed a real mail server.** Since
+  2026-10-01 a rule's Mark as read, Mark as unread, Flag, Unflag and Add a
+  label are sent to your mail server in the check that brought the message,
+  and a rule's Delete moves the message to the Trash there, the way Delete
+  does. None of it has been tried on a real account. With mail changes off,
+  a rule's mark waits here and goes at the first check after you allow
+  changes. What to watch: whether the mark, the flag, the label or the move
+  to the Trash is still there after the next check, on Gmail, where a label
+  is a folder, and on a server with ordinary folders. If you try it, tell us
+  the line the check said and what another mail program or your phone shows.
 - **Looking people up in your organisation's directory has never met a real
   directory, and a directory sign-in never has either.** Look People Up at
   Work, on the Account Manager (`Alt+L`), takes the directory's address, where
