@@ -166,6 +166,17 @@ pub fn is_too_deep_to_follow(folders: &[Placed], target: i64) -> bool {
     true
 }
 
+/// Every folder, named the way the folder tree names it, for a list that
+/// cannot show the tree's shape, with its id, in the order a list reads.
+pub fn as_the_tree_names_them(folders: &[Placed]) -> Vec<(String, i64)> {
+    let mut named: Vec<(String, i64)> = folders
+        .iter()
+        .map(|folder| (folder.path.clone(), folder.id))
+        .collect();
+    named.sort();
+    named
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +346,80 @@ mod tests {
                 "folder {id} was called malformed"
             );
         }
+    }
+
+    // ── A list of folders for a chooser with no tree (ledger 752) ──────────
+
+    /// A folder whose name the server spells in modified UTF-7, as RFC 3501
+    /// section 5.1.3 has it, under one named in plain letters.
+    fn a_tree_with_a_name_the_server_encodes() -> Vec<Placed> {
+        vec![
+            Placed {
+                id: 1,
+                path: "Work".to_string(),
+                name: "Work".to_string(),
+                parent: None,
+            },
+            Placed {
+                id: 2,
+                path: "Work/&ZeVnLIqe-".to_string(),
+                name: "日本語".to_string(),
+                parent: Some(1),
+            },
+            Placed {
+                id: 3,
+                path: "INBOX".to_string(),
+                name: "Inbox".to_string(),
+                parent: None,
+            },
+            Placed {
+                id: 4,
+                path: "archive".to_string(),
+                name: "archive".to_string(),
+                parent: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_run_on_a_folder_lists_each_folder_by_the_names_the_tree_shows() {
+        let shown = as_the_tree_names_them(&a_tree_with_a_name_the_server_encodes());
+
+        assert_eq!(
+            shown,
+            vec![
+                ("archive".to_string(), 4),
+                ("Inbox".to_string(), 3),
+                ("Work".to_string(), 1),
+                ("Work / 日本語".to_string(), 2),
+            ]
+        );
+        assert!(
+            shown.iter().all(|(name, _)| !name.contains("&ZeVnLIqe-")),
+            "a folder was listed in the server's encoding: {shown:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_whose_stored_parents_loop_is_listed_by_its_own_name() {
+        let looping = vec![
+            Placed {
+                id: 1,
+                path: "Loop.A".to_string(),
+                name: "A".to_string(),
+                parent: Some(2),
+            },
+            Placed {
+                id: 2,
+                path: "Loop.B".to_string(),
+                name: "B".to_string(),
+                parent: Some(1),
+            },
+        ];
+
+        assert_eq!(
+            as_the_tree_names_them(&looping),
+            vec![("A".to_string(), 1), ("B".to_string(), 2)]
+        );
     }
 }
