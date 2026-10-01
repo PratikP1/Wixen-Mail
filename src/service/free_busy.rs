@@ -44,8 +44,12 @@
 //! no location and no note: only who is asking, who is being asked about, and
 //! the window. The reply carries stretches of time and never what anybody is
 //! doing in them, and nothing here asks for more, which is why this does not
-//! read colleagues' calendars directly even where an account could. Nobody is
-//! asked about unless the person arranging the meeting named them. Nothing
+//! read colleagues' calendars directly even where an account could. Microsoft's
+//! reply also gives each colleague's working hours, the days, the hours and the
+//! zone they keep them in, set in their own Outlook. Those are read so a time
+//! is judged against that person's own day, for this one search, and nothing
+//! here keeps them. Nobody is asked about unless the person arranging the
+//! meeting named them. Nothing
 //! reaches the log but the fact that a server did not answer, and a provider's
 //! own words go through the redaction every other client here uses first.
 //!
@@ -529,15 +533,30 @@ struct OneDiary {
     working_hours: Option<TheirWorkingHours>,
 }
 
-/// A person's working hours in a reply from Microsoft, read only for the zone.
+/// A person's working hours in a reply from Microsoft: the days, the hours
+/// and the zone they keep them in, as set in their own Outlook.
 ///
-/// The hours themselves are not read: the working day a time is judged against
-/// is the one set here, in each person's own zone.
+/// Read as text and judged by [`OneDiary::their_working_week`], so hours in a
+/// shape this does not know cost that person their week and nobody their
+/// diary.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TheirWorkingHours {
+    /// Lower case English day names, "monday".
+    #[serde(default)]
+    days_of_week: Option<Vec<String>>,
+    /// A time of day, "08:00:00.0000000".
+    #[serde(default)]
+    start_time: Option<String>,
+    #[serde(default)]
+    end_time: Option<String>,
     #[serde(default)]
     time_zone: Option<ANamedZone>,
+}
+
+/// A time of day as Microsoft writes one, "08:30:00.0000000".
+fn a_time_of_day(written: &str) -> Option<chrono::NaiveTime> {
+    chrono::NaiveTime::parse_from_str(written, "%H:%M:%S%.f").ok()
 }
 
 /// A zone as Microsoft writes one: a Windows name, "Pacific Standard Time", or
@@ -558,6 +577,29 @@ impl OneDiary {
     fn where_they_are(&self) -> Option<Tz> {
         let named = self.working_hours.as_ref()?.time_zone.as_ref()?;
         crate::common::zones::the_zone_called(&named.name)
+    }
+
+    /// The days and hours this person works, on the clock they keep them on.
+    ///
+    /// Whole or not at all. A day word that is not a day, an empty list of
+    /// days, a start or end that is not a time of day, or a zone nobody can
+    /// place each give no week, because a week shortened by what could not
+    /// be read turns a day they work into one they do not. With no week they
+    /// are judged by the working day set here, as everybody was before.
+    fn their_working_week(&self) -> Option<TheirWorkingWeek> {
+        let hours = self.working_hours.as_ref()?;
+        let days: chrono::WeekdaySet = hours
+            .days_of_week
+            .as_ref()?
+            .iter()
+            .map(|day| day.parse::<chrono::Weekday>().ok())
+            .collect::<Option<_>>()?;
+        Some(TheirWorkingWeek {
+            zone: self.where_they_are()?,
+            days: (!days.is_empty()).then_some(days)?,
+            starts: a_time_of_day(hours.start_time.as_deref()?)?,
+            ends: a_time_of_day(hours.end_time.as_deref()?)?,
+        })
     }
 }
 
@@ -604,7 +646,7 @@ fn what_microsoft_said(reply: &str, about: Span) -> Result<WhatTheySaid> {
                 Heard {
                     calendar: what_this_diary_said(&diary, about),
                     zone: diary.where_they_are(),
-                    working_week: None,
+                    working_week: diary.their_working_week(),
                 },
             )
         })
@@ -957,7 +999,8 @@ fn everybody_in<'a>(
 ///
 /// Where they are is the zone the person was asked about with, and only where
 /// they came with none, the first zone any place gave: a zone somebody already
-/// had is never replaced by one a place happened to say.
+/// had is never replaced by one a place happened to say. When they work is the
+/// first week any place gave, and only Microsoft gives one.
 fn one_answer_each<'a, Said: Into<Heard>>(
     heard: impl IntoIterator<Item = (&'a AskAbout, Said)>,
 ) -> Vec<Invited> {

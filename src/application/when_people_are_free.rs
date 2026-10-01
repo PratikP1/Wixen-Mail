@@ -333,7 +333,9 @@ pub struct Asking {
     pub for_how_long: chrono::Duration,
     /// The window to look inside.
     pub inside: Span,
-    /// The hours of the day worth offering, judged in each person's own zone.
+    /// The hours of the day worth offering anybody who gave no working week of
+    /// their own: the person arranging the meeting, and every guest whose own
+    /// hours nobody said. Judged on each one's own clock, every day of the week.
     pub working_day: WorkingDay,
     /// Where the person arranging the meeting is. Times are spaced to land on
     /// the hour and the half hour here, and anybody whose own zone nobody
@@ -930,8 +932,24 @@ fn the_suggestion_at(from: DateTime<Utc>, people: &[Invited], asking: Asking) ->
         span,
         pencilled_in_for: those_who(people, |person| has_something_pencilled_in(person, span)),
         outside_the_working_day_for: those_who(people, |person| {
-            !falls_inside_the_working_day(span, asking.working_day, where_they_are(person, asking))
+            !the_hours_they_keep(person, asking).hold_the_whole_of(span)
         }),
+    }
+}
+
+/// The working hours a person is judged by.
+///
+/// Their own week where they said what it is, on the clock it is written on,
+/// as Outlook greys each attendee's own hours. Where nobody said, the working
+/// day set here on their own clock: the person arranging the meeting, a guest
+/// only a calendar server or Google answered about, and a colleague whose
+/// hours could not be read.
+fn the_hours_they_keep(person: &Invited, asking: Asking) -> HoursKept {
+    match person.working_week {
+        Some(week) => week.into(),
+        None => asking
+            .working_day
+            .on_the_clock_of(where_they_are(person, asking)),
     }
 }
 
@@ -946,7 +964,8 @@ fn those_who(people: &[Invited], question: impl Fn(&Invited) -> bool) -> Vec<Str
         .collect()
 }
 
-/// Which zone a person's working day is judged in.
+/// Which zone the working day set here is judged in for somebody who gave no
+/// working week of their own.
 ///
 /// Their own where it is known. Where it is not, the zone of the person
 /// arranging the meeting, which is a guess and is named as one in the answer
@@ -1070,47 +1089,112 @@ impl WorkingDay {
         )
     }
 
-    /// How many minutes are left of the working day at a minute of the day, or
-    /// nothing when that minute is outside it.
-    ///
-    /// A day whose end is at or before its start runs through midnight, which
-    /// is a night shift and a real way to work.
-    fn minutes_left_at(self, minute_of_the_day: i64) -> Option<i64> {
+    /// The working day set here, on every day of the week, read on one
+    /// person's clock.
+    fn on_the_clock_of(self, zone: Tz) -> HoursKept {
         let (opens, closes) = self.opens_and_closes();
-        if opens < closes {
-            return (opens..closes)
-                .contains(&minute_of_the_day)
-                .then_some(closes - minute_of_the_day);
+        HoursKept {
+            days: chrono::WeekdaySet::ALL,
+            opens,
+            closes,
+            zone,
         }
-        if minute_of_the_day >= opens {
-            return Some(MINUTES_IN_A_DAY - minute_of_the_day + closes);
-        }
-        (minute_of_the_day < closes).then_some(closes - minute_of_the_day)
     }
 }
 
 const MINUTES_IN_AN_HOUR: i64 = 60;
 const MINUTES_IN_A_DAY: i64 = 24 * MINUTES_IN_AN_HOUR;
 
-/// Whether a time falls wholly inside the working day, where somebody is
-/// standing.
-///
-/// Both ends, and the whole of what is between them. A meeting from half past
-/// four to half past five is not inside a day that ends at five, and a meeting
-/// that starts before the day opens is not made acceptable by ending inside
-/// it.
-///
-/// Measured on the clock face there rather than in elapsed time, because a
-/// working day is a thing of clock faces: on the day the clocks go forward an
-/// hour of the morning does not happen, and the day still ends at five.
-fn falls_inside_the_working_day(when: Span, working_day: WorkingDay, zone: Tz) -> bool {
-    let opens_at = when.from.with_timezone(&zone).naive_local();
-    let closes_at = when.until.with_timezone(&zone).naive_local();
-    let wall_minutes = (closes_at - opens_at).num_minutes();
-    let minute_of_the_day = i64::from(chrono::Timelike::num_seconds_from_midnight(&opens_at)) / 60;
-    working_day
-        .minutes_left_at(minute_of_the_day)
-        .is_some_and(|left| (0..=left).contains(&wall_minutes))
+/// Working hours as a time is judged against them, whoever set them: the days
+/// a working day opens on, the minute of the day it opens and the minute it
+/// closes, and the clock those are read on.
+#[derive(Debug, Clone, Copy)]
+struct HoursKept {
+    days: chrono::WeekdaySet,
+    opens: i64,
+    closes: i64,
+    zone: Tz,
+}
+
+/// Somebody's own week, kept to the minute.
+impl From<TheirWorkingWeek> for HoursKept {
+    fn from(week: TheirWorkingWeek) -> Self {
+        Self {
+            days: week.days,
+            opens: the_minute_of_the_day(week.starts),
+            closes: the_minute_of_the_day(week.ends),
+            zone: week.zone,
+        }
+    }
+}
+
+/// The working day a minute of the day falls in.
+struct InADay {
+    /// How many minutes of it are left.
+    minutes_left: i64,
+    /// Whether it opened the day before, which only a night shift does.
+    opened_the_day_before: bool,
+}
+
+impl HoursKept {
+    /// The working day a minute of the day falls in, or nothing when that
+    /// minute is outside every one.
+    ///
+    /// A day whose end is at or before its start runs through midnight, which
+    /// is a night shift and a real way to work, and it belongs to the day it
+    /// opened on.
+    fn the_day_at(self, minute_of_the_day: i64) -> Option<InADay> {
+        let (opens, closes) = (self.opens, self.closes);
+        let in_a_day = |minutes_left, opened_the_day_before| InADay {
+            minutes_left,
+            opened_the_day_before,
+        };
+        if opens < closes {
+            return (opens..closes)
+                .contains(&minute_of_the_day)
+                .then(|| in_a_day(closes - minute_of_the_day, false));
+        }
+        if minute_of_the_day >= opens {
+            return Some(in_a_day(
+                MINUTES_IN_A_DAY - minute_of_the_day + closes,
+                false,
+            ));
+        }
+        (minute_of_the_day < closes).then(|| in_a_day(closes - minute_of_the_day, true))
+    }
+
+    /// Whether a time falls wholly inside a working day.
+    ///
+    /// Both ends, and the whole of what is between them. A meeting from half
+    /// past four to half past five is not inside a day that ends at five, and a
+    /// meeting that starts before the day opens is not made acceptable by
+    /// ending inside it. And on a day the working day opens on: a Saturday is
+    /// outside the day of somebody who works Monday to Friday, whatever the
+    /// hour.
+    ///
+    /// Measured on the clock face of the zone the hours are kept in rather
+    /// than in elapsed time, because a working day is a thing of clock faces:
+    /// on the day the clocks go forward an hour of the morning does not
+    /// happen, and the day still ends at five.
+    fn hold_the_whole_of(self, when: Span) -> bool {
+        let opens_at = when.from.with_timezone(&self.zone).naive_local();
+        let closes_at = when.until.with_timezone(&self.zone).naive_local();
+        let wall_minutes = (closes_at - opens_at).num_minutes();
+        let Some(day) = self.the_day_at(the_minute_of_the_day(opens_at.time())) else {
+            return false;
+        };
+        let opened_on = match day.opened_the_day_before {
+            true => opens_at.date().pred_opt(),
+            false => Some(opens_at.date()),
+        };
+        (0..=day.minutes_left).contains(&wall_minutes)
+            && opened_on.is_some_and(|date| self.days.contains(chrono::Datelike::weekday(&date)))
+    }
+}
+
+/// How many whole minutes past midnight a time of day is.
+fn the_minute_of_the_day(time: chrono::NaiveTime) -> i64 {
+    i64::from(chrono::Timelike::num_seconds_from_midnight(&time)) / 60
 }
 
 /// The stretches one of this program's own calendar events blocks out.

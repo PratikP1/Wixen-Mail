@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 555 records have arrived since and have not been through it.
+# 559 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2530,7 +2530,7 @@ tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
-    { file = "src/application/when_people_are_free.rs", tests = 55 },
+    { file = "src/application/when_people_are_free.rs", tests = 60 },
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/event_times.rs", tests = 23 },
@@ -34135,7 +34135,7 @@ red = [
     "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 56 },
+    { file = "src/service/free_busy.rs", tests = 61 },
 ]
 
 # Google's free/busy question sent with no sign-in on it, so every answer is a
@@ -34156,7 +34156,7 @@ red = [
     "service::free_busy::tests::test_google_is_asked_about_everybody_at_its_free_busy_endpoint",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 56 },
+    { file = "src/service/free_busy.rs", tests = 61 },
 ]
 
 # An account whose calendar is at Google passed over, so every guest on it
@@ -34228,7 +34228,7 @@ red = [
     "service::free_busy::tests::test_every_place_is_asked_and_each_person_comes_back_once_from_all_of_them",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 56 },
+    { file = "src/service/free_busy.rs", tests = 61 },
 ]
 
 # The event form's worker cuts every place down to the first before asking, so
@@ -34282,9 +34282,10 @@ after = '''                    calendar: what_this_diary_said(&diary, about),
 red = [
     "service::free_busy::tests::test_a_guest_whose_working_hours_are_in_a_windows_zone_is_placed_in_it",
     "service::free_busy::tests::test_a_colleague_microsoft_places_comes_back_in_their_own_zone",
+    "service::free_busy::tests::test_working_hours_this_cannot_read_give_no_working_week",
 ]
 tests_last_seen = [
-    { file = "src/service/free_busy.rs", tests = 56 },
+    { file = "src/service/free_busy.rs", tests = 61 },
 ]
 
 # Every guest's clock said beside every time, so a meeting of twenty carries
@@ -34299,7 +34300,7 @@ red = [
     "application::when_people_are_free::tests::test_no_more_than_three_guests_clocks_are_said_beside_a_time",
 ]
 tests_last_seen = [
-    { file = "src/application/when_people_are_free.rs", tests = 55 },
+    { file = "src/application/when_people_are_free.rs", tests = 60 },
 ]
 
 # The pages of the item form cannot scroll, so on a small screen, or at twice
@@ -36235,4 +36236,77 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
+]
+
+# Microsoft's workingHours days and hours never read, so a colleague who
+# works seven to three in New York is judged by the working day set here
+# (ledger 711). Written 2026-10-01 by 13-44.4.
+[[guard]]
+name = "a colleague's working week is read from microsoft's answer"
+file = "src/service/free_busy.rs"
+before = '''                    zone: diary.where_they_are(),
+                    working_week: diary.their_working_week(),'''
+after = '''                    zone: diary.where_they_are(),
+                    working_week: None,'''
+red = [
+    "service::free_busy::tests::test_a_colleagues_own_working_week_is_read_from_microsofts_answer",
+    "service::free_busy::tests::test_a_colleague_microsoft_places_comes_back_with_their_own_working_week",
+]
+tests_last_seen = [
+    { file = "src/service/free_busy.rs", tests = 61 },
+]
+
+# A day word this cannot read dropped rather than refusing the week, so a
+# day the colleague works becomes one they do not (T-13-44.4-02). Written
+# 2026-10-01 by 13-44.4.
+[[guard]]
+name = "a working week with a day this cannot read is refused whole"
+file = "src/service/free_busy.rs"
+before = '''            .map(|day| day.parse::<chrono::Weekday>().ok())
+            .collect::<Option<_>>()?;'''
+after = '''            .filter_map(|day| day.parse::<chrono::Weekday>().ok())
+            .collect();'''
+red = [
+    "service::free_busy::tests::test_working_hours_this_cannot_read_give_no_working_week",
+]
+tests_last_seen = [
+    { file = "src/service/free_busy.rs", tests = 61 },
+]
+
+# Everybody judged by the working day set here, so a colleague's own hours
+# are carried and never applied (T-13-44.4-03). Written 2026-10-01 by
+# 13-44.4.
+[[guard]]
+name = "a colleague is judged by their own working week"
+file = "src/application/when_people_are_free.rs"
+before = '''    match person.working_week {
+        Some(week) => week.into(),'''
+after = '''    match person.working_week {
+        Some(_) => asking.working_day.on_the_clock_of(where_they_are(person, asking)),'''
+red = [
+    "application::when_people_are_free::tests::test_a_colleague_is_judged_by_their_own_working_hours_rather_than_the_ones_set_here",
+    "application::when_people_are_free::tests::test_a_day_a_colleague_does_not_work_is_outside_their_day_and_nobody_elses",
+    "application::when_people_are_free::tests::test_a_colleagues_hours_are_judged_on_the_clock_they_are_written_on",
+    "application::when_people_are_free::tests::test_a_colleagues_hours_are_kept_to_the_minute",
+    "application::when_people_are_free::tests::test_a_colleagues_night_shift_belongs_to_the_day_it_opens",
+]
+tests_last_seen = [
+    { file = "src/application/when_people_are_free.rs", tests = 60 },
+]
+
+# The days of a working week ignored, so a Saturday is inside the day of a
+# colleague who works Monday to Friday. Written 2026-10-01 by 13-44.4.
+[[guard]]
+name = "a day somebody does not work is outside their working day"
+file = "src/application/when_people_are_free.rs"
+before = '''        (0..=day.minutes_left).contains(&wall_minutes)
+            && opened_on.is_some_and(|date| self.days.contains(chrono::Datelike::weekday(&date)))'''
+after = '''        (0..=day.minutes_left).contains(&wall_minutes)
+            && opened_on.is_some()'''
+red = [
+    "application::when_people_are_free::tests::test_a_day_a_colleague_does_not_work_is_outside_their_day_and_nobody_elses",
+    "application::when_people_are_free::tests::test_a_colleagues_night_shift_belongs_to_the_day_it_opens",
+]
+tests_last_seen = [
+    { file = "src/application/when_people_are_free.rs", tests = 60 },
 ]
