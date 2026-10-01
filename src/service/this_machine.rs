@@ -505,10 +505,29 @@ mod tests {
             id: "b".to_string(),
             ..gmail.clone()
         };
+        // Named by the one check, so an account on its own domain is named by
+        // who runs its mail and a saved "Outlook" is Microsoft.
+        let mut workspace = Account::new("Work".to_string(), "dana@mycompany.com".to_string());
+        workspace.imap_server = "imap.gmail.com".to_string();
+        let mut microsoft_365 = Account::new("Work".to_string(), "dana@contoso.com".to_string());
+        microsoft_365.imap_server = "outlook.office365.com".to_string();
+        let mut outlook = Account::new("Home".to_string(), "dana@outlook.com".to_string());
+        outlook.provider = Some("Outlook".to_string());
+        let mut yahoo = Account::new("Old".to_string(), "dana@yahoo.com".to_string());
+        yahoo.imap_server = "imap.mail.yahoo.com".to_string();
+        yahoo.provider = Some("Yahoo".to_string());
 
-        let named = providers(&[gmail, pop, second_gmail]);
+        let named = providers(&[
+            gmail,
+            pop,
+            second_gmail,
+            workspace,
+            microsoft_365,
+            outlook,
+            yahoo,
+        ]);
 
-        assert_eq!(named, names(&["Gmail", "POP3"]));
+        assert_eq!(named, names(&["Gmail", "POP3", "Microsoft", "Yahoo"]));
         assert!(
             !named.iter().any(|n| n.contains('@') || n.contains("Work")),
             "{named:?}"

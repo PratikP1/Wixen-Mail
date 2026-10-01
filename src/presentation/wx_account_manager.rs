@@ -43,6 +43,18 @@ use crate::service::directory::{self, Directory};
 const APP_PASSWORD_HINT: &str = "Password: use an app password, not your ordinary one. \
 Turn on two-step verification with your provider first, then generate one for mail. \
 See Setting up a provider in Help.";
+
+/// What to say in place of the app password advice when Microsoft runs the
+/// mail: Microsoft's own pages say no password reaches its mailboxes over
+/// IMAP or POP, app passwords included. The box is named the way this
+/// editor labels it.
+pub const MICROSOFT_ASKS_FOR_THE_BROWSER: &str = "Microsoft does not let mail programs sign in \
+     with a password, not even an app password. Turn on Sign in with the provider in a \
+     browser. See Setting up a provider in Help.";
+
+/// What Get App Password says when there is no page to open.
+const ASK_YOUR_PROVIDER: &str =
+    "Enter your email address first, or ask your provider where it hands out app passwords.";
 use crate::presentation::status_line::{said_and_shown, shown_and_signalled};
 use crate::presentation::wx_identities::show_identity_manager;
 use crate::presentation::wx_managers::get_selected;
@@ -834,8 +846,17 @@ const PASSWORD_BOX_NAME: &str = "Password";
 /// Asks [`offers_app_passwords`] rather than listing the domains again. Four
 /// lists of the same provider domains already exist in this file and the
 /// module it calls into; a fifth is how they come apart.
-fn password_box_description(email: &str) -> Option<&'static str> {
-    offers_app_passwords(email).then_some(APP_PASSWORD_HINT)
+fn password_box_description(address: &str, _incoming_server: &str) -> Option<&'static str> {
+    offers_app_passwords(address).then_some(APP_PASSWORD_HINT)
+}
+
+/// Where Get App Password sends somebody: the page to open, or the sentence
+/// to say when there is none.
+fn where_to_get_an_app_password(
+    address: &str,
+    _incoming_server: &str,
+) -> std::result::Result<&'static str, &'static str> {
+    app_password_url(address).ok_or(ASK_YOUR_PROVIDER)
 }
 
 /// Give the password box a name, and this address's app-password advice as
@@ -846,7 +867,7 @@ fn password_box_description(email: &str) -> Option<&'static str> {
 /// leave only the description and the box would announce with no name at
 /// all.
 fn describe_password_box(field: &TextCtrl, email: &str) {
-    match password_box_description(email) {
+    match password_box_description(email, "") {
         Some(hint) => set_accessible_name_and_description(field, PASSWORD_BOX_NAME, hint),
         None => set_accessible_name(field, PASSWORD_BOX_NAME),
     }
@@ -2117,8 +2138,8 @@ pub fn build_account_edit_dialog(
 
     get_app_password.on_click({
         let a11y = Arc::clone(a11y);
-        move |_| match app_password_url(&email_f.get_value()) {
-            Some(url) => {
+        move |_| match where_to_get_an_app_password(&email_f.get_value(), "") {
+            Ok(url) => {
                 if open::that(url).is_err() {
                     // Saying the address rather than only that it failed, so
                     // the page is still reachable by typing it.
@@ -2130,12 +2151,7 @@ pub fn build_account_edit_dialog(
                     );
                 }
             }
-            None => said_and_shown(
-                &auth_hint,
-                &a11y,
-                "Enter your email address first, or ask your provider where it hands out app passwords.",
-                Priority::High,
-            ),
+            Err(sentence) => said_and_shown(&auth_hint, &a11y, sentence, Priority::High),
         }
     });
 
@@ -2956,42 +2972,107 @@ mod tests {
         // would read a paragraph over somebody typing. That left the advice
         // reaching nobody working by ear. A description read once, when the
         // password box takes focus, is the fix.
-        assert_eq!(
-            password_box_description("me@gmail.com"),
-            Some(APP_PASSWORD_HINT),
-            "Gmail offers app passwords, so the box should carry the advice"
-        );
-        assert_eq!(
-            password_box_description("me@outlook.com"),
-            Some(APP_PASSWORD_HINT),
-            "Outlook offers app passwords, so the box should carry the advice"
-        );
-        assert_eq!(
-            password_box_description("me@example.com"),
-            None,
-            "an ordinary address gets no app-password advice"
-        );
-        assert_eq!(
-            password_box_description(""),
-            None,
-            "no address typed yet is not an address that offers app passwords"
-        );
+        //
+        // The one check decides, by the incoming server once one is typed and
+        // by the address until then, and an account Microsoft runs is told to
+        // use the browser sign-in, since no password reaches it.
+        let googles_page = Ok("https://myaccount.google.com/apppasswords");
+        for (row, address, server, advice, button) in [
+            (
+                "a Gmail address, no server yet",
+                "me@gmail.com",
+                "",
+                Some(APP_PASSWORD_HINT),
+                googles_page,
+            ),
+            (
+                "a Workspace account on Gmail's server",
+                "me@mycompany.com",
+                "imap.gmail.com",
+                Some(APP_PASSWORD_HINT),
+                googles_page,
+            ),
+            (
+                "a Gmail address on a server that names nobody",
+                "me@gmail.com",
+                "imap.example.com",
+                Some(APP_PASSWORD_HINT),
+                googles_page,
+            ),
+            (
+                "an Outlook.com address, no server yet",
+                "me@outlook.com",
+                "",
+                Some(MICROSOFT_ASKS_FOR_THE_BROWSER),
+                Err(MICROSOFT_ASKS_FOR_THE_BROWSER),
+            ),
+            (
+                "a Microsoft 365 account on its own domain",
+                "me@contoso.com",
+                "outlook.office365.com",
+                Some(MICROSOFT_ASKS_FOR_THE_BROWSER),
+                Err(MICROSOFT_ASKS_FOR_THE_BROWSER),
+            ),
+            (
+                "an ordinary server",
+                "me@example.com",
+                "imap.example.com",
+                None,
+                Err(ASK_YOUR_PROVIDER),
+            ),
+            (
+                "an ordinary address, no server yet",
+                "me@example.com",
+                "",
+                None,
+                Err(ASK_YOUR_PROVIDER),
+            ),
+            ("nothing typed", "", "", None, Err(ASK_YOUR_PROVIDER)),
+        ] {
+            assert_eq!(
+                password_box_description(address, server),
+                advice,
+                "{row}: the password box's advice"
+            );
+            assert_eq!(
+                where_to_get_an_app_password(address, server),
+                button,
+                "{row}: Get App Password"
+            );
+        }
     }
 
     #[test]
-    fn test_the_password_box_description_is_attached_in_both_places_the_hint_is_shown() {
-        // The visible hint under the email box is written in two places: once
-        // for an account already on file, once as somebody types a new
-        // address. The password box's description has to be attached in the
-        // same two places, or opening an existing account would show the
-        // visible hint and describe the password box to nobody until the
-        // address was retyped.
+    fn test_the_password_advice_is_written_wherever_what_it_reads_can_change() {
+        // The advice reads the address, the server box of the protocol
+        // chosen and the browser sign-in box, so it is written when an
+        // account on file opens and whenever any of those changes. One
+        // function writes both the hint and the password box's description,
+        // so the two cannot disagree, and an account opened from the list is
+        // described before the address is retyped.
         let screen = the_account_manager();
-        let calls = screen.matches("describe_password_box(&pass_f").count();
+        let calls = screen.matches("describe_password_box(").count()
+            - screen.matches("fn describe_password_box(").count();
         assert_eq!(
-            calls, 2,
-            "expected two calls attaching the password box's description, \
-             found {calls}"
+            calls, 1,
+            "expected one call attaching the password box's description, found {calls}"
+        );
+        let advice = screen
+            .split("fn show_the_password_advice(")
+            .nth(1)
+            .and_then(|after| after.split("\n}\n").next())
+            .unwrap_or_default();
+        assert!(
+            advice.contains("describe_password_box("),
+            "the description is not attached where the hint is written"
+        );
+        let writers = screen.matches("show_the_password_advice(").count()
+            - screen.matches("fn show_the_password_advice(").count();
+        assert_eq!(
+            writers, 6,
+            "expected the advice written when an account opens and from the address box, \
+             both server boxes, the protocol choice and the browser sign-in box, found \
+             {writers}"
         );
     }
 

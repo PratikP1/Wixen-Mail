@@ -8650,11 +8650,11 @@ tests_last_seen = [
 [[guard]]
 name = "the password box's description carries the app password advice for the right addresses"
 file = "src/presentation/wx_account_manager.rs"
-before = """fn password_box_description(email: &str) -> Option<&'static str> {
-    offers_app_passwords(email).then_some(APP_PASSWORD_HINT)
+before = """fn password_box_description(address: &str, _incoming_server: &str) -> Option<&'static str> {
+    offers_app_passwords(address).then_some(APP_PASSWORD_HINT)
 }"""
-after = """fn password_box_description(email: &str) -> Option<&'static str> {
-    let _ = email;
+after = """fn password_box_description(address: &str, _incoming_server: &str) -> Option<&'static str> {
+    let _ = address;
     None
 }"""
 red = [

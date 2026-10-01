@@ -103,6 +103,11 @@ impl WhoRunsTheMail {
             WhoRunsTheMail::SomebodyElse => None,
         }
     }
+
+    /// Where an app password for this mail is handed out, or nothing.
+    pub fn app_password_url(self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// By the incoming server's host, trimmed, ignoring case and the root's dot.
@@ -436,6 +441,41 @@ mod tests {
                 Microsoft,
             ),
         ]);
+    }
+
+    #[test]
+    fn test_only_googles_page_is_offered_for_an_app_password() {
+        let googles = Some("https://myaccount.google.com/apppasswords");
+        for (row, facts, expected) in [
+            ("a Gmail address", known("", "me@gmail.com", None), googles),
+            (
+                "a Workspace account on Gmail's server",
+                known("imap.gmail.com", "me@mycompany.com", None),
+                googles,
+            ),
+            (
+                "an Outlook.com address, which no password reaches",
+                known("", "me@outlook.com", None),
+                None,
+            ),
+            (
+                "a Microsoft 365 account on its own domain",
+                known("outlook.office365.com", "me@contoso.com", None),
+                None,
+            ),
+            (
+                "an ordinary server",
+                known("imap.example.com", "me@example.com", None),
+                None,
+            ),
+            ("nothing typed", known("", "", None), None),
+        ] {
+            assert_eq!(
+                WhoRunsTheMail::from_what_is_known(facts).app_password_url(),
+                expected,
+                "{row}"
+            );
+        }
     }
 
     #[test]

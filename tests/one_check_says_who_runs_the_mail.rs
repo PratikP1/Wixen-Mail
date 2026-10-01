@@ -74,6 +74,23 @@ const THE_CALLERS: &[Caller] = &[
         signature: Some("fn report_the_chosen_as_junk("),
         names: "AccountKind::of(",
     },
+    // The account editor's app password advice and its button, by Pratik's
+    // answer of 2026-09-30, and the feedback report's account kinds.
+    Caller {
+        file: "src/presentation/wx_account_manager.rs",
+        signature: Some("fn password_box_description("),
+        names: "WhoRunsTheMail::from_what_is_known(",
+    },
+    Caller {
+        file: "src/presentation/wx_account_manager.rs",
+        signature: Some("fn where_to_get_an_app_password("),
+        names: "WhoRunsTheMail::from_what_is_known(",
+    },
+    Caller {
+        file: "src/service/this_machine.rs",
+        signature: Some("pub fn providers("),
+        names: "WhoRunsTheMail::of(",
+    },
     // The three followers name the function rather than call it in one
     // shape: the notes backend hands it to `and_then`.
     Caller {
@@ -333,6 +350,18 @@ fn test_the_reading_refuses_a_place_that_decides_for_itself() {
                 &alone(the_caller("pub fn provider_of(")),
             ),
             "pub fn provider_of( decides Gmail or Microsoft without naming WhoRunsTheMail::of(",
+        ),
+        (
+            "a feedback report naming accounts by the saved name alone",
+            complaints_over(
+                &planted(
+                    "src/service/this_machine.rs",
+                    "pub fn providers(accounts: &[Account]) -> Vec<String> {\n    \
+                     accounts.iter().filter_map(|account| account.provider.clone()).collect()\n}\n",
+                ),
+                &alone(the_caller("pub fn providers(")),
+            ),
+            "pub fn providers( decides Gmail or Microsoft without naming WhoRunsTheMail::of(",
         ),
         (
             "a file comparing a provider with outlook",
