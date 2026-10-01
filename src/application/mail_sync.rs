@@ -335,6 +335,15 @@ pub struct Filtered {
     /// message and never per folder, which is what keeps a folder of matches
     /// from flooding (guardrail 5).
     pub matches_with_a_sound: usize,
+    /// What the rules changed here that the mail server is to be told, one
+    /// entry per message with a change.
+    ///
+    /// Named here and sent by the check, which is the half with a session,
+    /// before the rule's move and before the flags are read back. A POP check
+    /// leaves it unread, since a POP server keeps no flags or labels.
+    pub to_tell_the_server: Vec<crate::application::what_rules_tell_the_server::Telling>,
+    /// What became of what the server was told.
+    pub told: crate::application::what_rules_tell_the_server::Told,
 }
 
 /// One message a rule says belongs somewhere else.
@@ -6486,6 +6495,8 @@ pub(crate) mod tests {
                 to_move: Vec::new(),
                 could_not_be_filed: Vec::new(),
                 matches_with_a_sound: 0,
+                to_tell_the_server: Vec::new(),
+                told: crate::application::what_rules_tell_the_server::Told::default(),
             },
             ..FolderSync::default()
         });

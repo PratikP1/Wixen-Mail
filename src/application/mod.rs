@@ -153,6 +153,7 @@ pub mod trying_again;
 pub mod undoing;
 pub mod what_a_rule_catches_here;
 pub mod what_is_said_while_fetching;
+pub mod what_rules_tell_the_server;
 pub mod when_people_are_free;
 pub mod who_is_coming;
 pub mod words;
