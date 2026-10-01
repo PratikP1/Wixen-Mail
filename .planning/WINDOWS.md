@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 675
 waived_count: 0
-fixed_count: 91
-total_count: 766
-last_updated: 2026-10-01T23:00:00.000Z
+fixed_count: 92
+total_count: 767
+last_updated: 2026-10-01T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -723,9 +723,9 @@ last_updated: 2026-10-01T23:00:00.000Z
 | 706 | 13 | todo | src/service/free_busy.rs | 1141 | 13-30, decision 2: now that every place is asked, a personal Microsoft account (outlook.com, hotmail.com) is asked getSchedule like any other. RESEARCH-3 pitfall 6 says getSchedule does not serve personal accounts, and what Microsoft answers such an account, its status and error code, is not known here. Until it is read, such an account's guests come back unknown from Microsoft for whatever reason that status maps to, and are answered by any other place the account has. Phase 14 reads the real reply on a personal account; a later plan words a sentence keyed on it, rather than on a guessed error | open |  | 2026-09-28T23:30:00.000Z |  |
 | 707 | 13 | unrun-verify | src/application/asking_when_free.rs | 176 | 13-30, for phase 14: no account with calendars in two places has been asked for real. On an account with a calendar server and a Google calendar, or a Microsoft sign-in and a Google calendar: whether every place is asked; whether a guest one place knows is answered and a guest no place knows is said once as not checked; whether busy time from both places shows as busy; whether two calendars on one server are asked once; and whether one slow place costs only its own answers within the twenty seconds each is given | open |  | 2026-09-28T23:30:00.000Z |  |
 | 708 | 13 | todo | src/application/asking_when_free.rs | 276 | 13-31, decision 1: a time zone kept on a contact, so a guest on a calendar server or at Google, whom no answer places, is judged on their own clock and hears it. people_to_ask_about gives every guest no zone. A contact field touches the editor and its three syncs (12-07 measured about seventeen files for one), so it is its own later plan rather than part of 13-31 | open |  | 2026-09-29T00:15:00.000Z |  |
-| 709 | 13 | unrun-verify | src/service/free_busy.rs | 553 | 13-31, for phase 14: no real colleague's getSchedule answer has been read. On an Outlook or Office 365 work account, invite a colleague whose mailbox keeps another time zone: whether workingHours.timeZone.name arrives as a Windows name this computer places, whether the colleague leaves the sentence saying nobody said where they are, whether their clock is said beside each time at the right hour, and what arrives for a colleague whose mailbox keeps a zone built by hand | open |  | 2026-09-29T00:15:00.000Z |  |
+| 709 | 13 | unrun-verify | src/service/free_busy.rs | 553 | 13-31, for phase 14: no real colleague's getSchedule answer has been read. On an Outlook or Office 365 work account, invite a colleague whose mailbox keeps another time zone: whether workingHours.timeZone.name arrives as a Windows name this computer places, whether the colleague leaves the sentence saying nobody said where they are, whether their clock is said beside each time at the right hour, and what arrives for a colleague whose mailbox keeps a zone built by hand. Widened 2026-10-01 by 13-44.4, which reads the days and hours too: whether daysOfWeek arrives as lower case English day names and startTime and endTime as 08:00:00.0000000, whether a time outside a colleague's Outlook hours is said as outside their working day, and what arrives for a colleague whose Outlook sets no hours | open |  | 2026-09-29T00:15:00.000Z |  |
 | 710 | 13 | unrun-verify | src/application/when_people_are_free.rs | 536 | 13-31, the tester's ear: nobody has heard an offered time with a guest's clock beside it, "03/03/2026 at 10:00, which is 15:00 for Ada; or 03/03/2026 at 10:30, which is 15:30 for Ada", read as the first sentence of the answer and in What came back. Whether three clocks on each of three times is too long to hold, and whether the semicolons are heard as the break between times | open |  | 2026-09-29T00:15:00.000Z |  |
-| 711 | 13 | todo | src/service/free_busy.rs | 553 | 13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it. Planned 2026-09-29 on Pratik's answer of that day, item 6, which accepted this recommendation: 13-44.4 judges a colleague Microsoft places by their own days and hours and closes this entry | open |  | 2026-09-29T00:15:00.000Z |  |
+| 711 | 13 | todo | src/service/free_busy.rs | 553 | 13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it. Planned 2026-09-29 on Pratik's answer of that day, item 6, which accepted this recommendation: 13-44.4 judges a colleague Microsoft places by their own days and hours and closes this entry. Fixed 2026-10-01 by 13-44.4: a colleague Microsoft places is judged by the days and hours in their getSchedule answer, on the clock they keep them on, and everybody else by the working day set here, held by service::free_busy's test_a_colleagues_own_working_week_is_read_from_microsofts_answer, test_working_hours_this_cannot_read_give_no_working_week, test_working_hours_kept_in_a_zone_built_by_hand_give_no_working_week, test_the_working_week_a_place_gave_is_kept_when_another_gave_none and test_a_colleague_microsoft_places_comes_back_with_their_own_working_week, and application::when_people_are_free's five cases from test_a_colleague_is_judged_by_their_own_working_hours_rather_than_the_ones_set_here to test_a_colleagues_night_shift_belongs_to_the_day_it_opens | fixed |  | 2026-09-29T00:15:00.000Z | 2026-10-01T23:30:00.000Z |
 | 712 | 13 | unrun-verify | src/presentation/wx_item_form.rs | 941 | 13-32, the tester's ear and eye: nobody has opened Edit Event at 200 percent text or on a small screen since it scrolls. With Windows' text size at 200 percent, open File, New, Event, Tab to Show as, Category, Description and Times offered: whether each is scrolled into sight as focus reaches it, whether Save and Cancel stay on screen, whether the window opens wholly on the screen, and whether the screen reader says anything new as focus moves into the scrolled page. The test reads the smallest size in place of twice the text, which it cannot set | open |  | 2026-09-29T02:00:00.000Z |  |
 | 713 | 13 | todo | src/application/identities.rs | 172 | 13-33: other addresses are kept per account and managed from the Account Manager, and nothing offers them yet. Compose's From list still lists each account's own address alone, so the_from_list and who_it_goes_out_from have no caller outside tests. 13-34 keeps the chosen address on the outbox and drafts, and 13-35 builds the From list from the_from_list and closes this. 13-35 on 2026-09-29: open_compose builds the list with the_from_list over the accounts and the store's other addresses, read in a built window by tests/the_from_list_chooses_who_sends.rs, and who_it_goes_out_from is reached from sending and filing through 13-34's rows | fixed |  | 2026-09-29T06:45:00.000Z | 2026-09-29T10:32:21.000Z |
 | 714 | 13 | todo | src/application/identities.rs |  | 13-33, phase 13 decision 34 (RESEARCH-3 question 11): Gmail's own Send mail as list could be read with the permission the account already has and offered without typing. Typed addresses came first; reading Gmail's list is later work with no plan yet | open |  | 2026-09-29T06:45:00.000Z |  |
@@ -781,6 +781,7 @@ last_updated: 2026-10-01T23:00:00.000Z
 | 764 | 13 | todo | src/presentation/wx_app.rs |  | 13-44.3, premise 11 (a), read and not run: spawn_server_change's refusal for a label sends LabelsChanged, whose arm reads the cache again, while the label label_these wrote stays in the database, so "has been undone here" is said over a label still on the row until the next check takes it off. Recommendation: the refusal takes the label off here before it says so, as a refused mark is put back; small, and no plan carries it yet | open |  | 2026-10-01T22:00:00.000Z |  |
 | 765 | 13 | todo | src/presentation/wx_app.rs |  | 13-44.3, premise 11 (b), read and not run: the check replays waiting moves before waiting flag changes, so a Mark as Read made while mail changes were off, kept in waiting_flag_changes, beside a move waiting for the same message is sent after the move, to the folder and number the message has left, 688's shape in the replay. Recommendation: the waiting move takes the row's waiting marks when it is replayed, as it takes a run's; small, and no plan carries it yet | open |  | 2026-10-01T22:00:00.000Z |  |
 | 766 | 13 | todo | scripts/check.sh |  | 13-44.3, found by CI: tests/flag_names.rs reads every source file for an IMAP flag name spelled outside src/service/protocols/imap/flag.rs, and it is not among guards_that_read_the_whole_tree in scripts/check.sh, so the branch's commits that spelled the seen and flagged names in flag_changes_waiting.rs's tests passed the hook and the pull request's Test Suite refused them. Recommendation: add flag_names to that list, or give it a guard record coupling it to the files it reads; small, and no plan carries it yet | open |  | 2026-10-01T23:00:00.000Z |  |
+| 767 | 13 | unrun-verify | src/application/when_people_are_free.rs | 475 | 13-44.4, the tester's ear: nobody has heard "Saturday at 10 is outside Ada's working day" said for a time inside the working day set in Settings, because it is outside the days and hours Ada set in her own Outlook. Whether it is understood as Ada's own day without the guide, and whether a colleague's own hours putting a time last is noticed at all | open |  | 2026-10-01T23:30:00.000Z |  |
 
 ````json
 [
@@ -9286,7 +9287,7 @@ last_updated: 2026-10-01T23:00:00.000Z
     "phase": "13",
     "file": "src/service/free_busy.rs",
     "line": 553,
-    "description": "13-31, for phase 14: no real colleague's getSchedule answer has been read. On an Outlook or Office 365 work account, invite a colleague whose mailbox keeps another time zone: whether workingHours.timeZone.name arrives as a Windows name this computer places, whether the colleague leaves the sentence saying nobody said where they are, whether their clock is said beside each time at the right hour, and what arrives for a colleague whose mailbox keeps a zone built by hand",
+    "description": "13-31, for phase 14: no real colleague's getSchedule answer has been read. On an Outlook or Office 365 work account, invite a colleague whose mailbox keeps another time zone: whether workingHours.timeZone.name arrives as a Windows name this computer places, whether the colleague leaves the sentence saying nobody said where they are, whether their clock is said beside each time at the right hour, and what arrives for a colleague whose mailbox keeps a zone built by hand. Widened 2026-10-01 by 13-44.4, which reads the days and hours too: whether daysOfWeek arrives as lower case English day names and startTime and endTime as 08:00:00.0000000, whether a time outside a colleague's Outlook hours is said as outside their working day, and what arrives for a colleague whose Outlook sets no hours",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T00:15:00.000Z",
@@ -9310,11 +9311,11 @@ last_updated: 2026-10-01T23:00:00.000Z
     "phase": "13",
     "file": "src/service/free_busy.rs",
     "line": 553,
-    "description": "13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it. Planned 2026-09-29 on Pratik's answer of that day, item 6, which accepted this recommendation: 13-44.4 judges a colleague Microsoft places by their own days and hours and closes this entry",
-    "status": "open",
+    "description": "13-31, a question for Pratik: Microsoft's answer also gives each colleague's own working hours, the days and the start and end, and 13-31 reads only the zone, so a colleague's day is judged against the working day set here, in their zone. Recommended: a later plan judges a colleague Microsoft places by their own hours, which is what Outlook does, and keeps the hours set here for everybody else. Not blocking; nothing later depends on it. Planned 2026-09-29 on Pratik's answer of that day, item 6, which accepted this recommendation: 13-44.4 judges a colleague Microsoft places by their own days and hours and closes this entry. Fixed 2026-10-01 by 13-44.4: a colleague Microsoft places is judged by the days and hours in their getSchedule answer, on the clock they keep them on, and everybody else by the working day set here, held by service::free_busy's test_a_colleagues_own_working_week_is_read_from_microsofts_answer, test_working_hours_this_cannot_read_give_no_working_week, test_working_hours_kept_in_a_zone_built_by_hand_give_no_working_week, test_the_working_week_a_place_gave_is_kept_when_another_gave_none and test_a_colleague_microsoft_places_comes_back_with_their_own_working_week, and application::when_people_are_free's five cases from test_a_colleague_is_judged_by_their_own_working_hours_rather_than_the_ones_set_here to test_a_colleagues_night_shift_belongs_to_the_day_it_opens",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-29T00:15:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-01T23:30:00.000Z"
   },
   {
     "id": 712,
@@ -9974,6 +9975,18 @@ last_updated: 2026-10-01T23:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-01T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 767,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/when_people_are_free.rs",
+    "line": 475,
+    "description": "13-44.4, the tester's ear: nobody has heard \"Saturday at 10 is outside Ada's working day\" said for a time inside the working day set in Settings, because it is outside the days and hours Ada set in her own Outlook. Whether it is understood as Ada's own day without the guide, and whether a colleague's own hours putting a time last is noticed at all",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T23:30:00.000Z",
     "resolved_at": null
   }
 ]

@@ -657,6 +657,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Find when everyone is free judges a colleague by their own working hours, experimental
+  (#57, ledger 711).** Microsoft's answer gives the days and hours each colleague set in
+  their own Outlook, and the time zone they keep them in. Until now only the zone was read,
+  so a colleague was judged against the working day set in Settings, on their clock, on
+  every day of the week. A colleague Microsoft places is now judged by their own days and
+  hours, to the minute, on the clock they keep them on. A day they do not work, Saturday
+  and Sunday for most people, now counts as outside their working day, so its times come
+  after the weekday times, and the sentence after a time says whose working day it is
+  outside, as before. Everybody else, you included, is judged by the Settings day as
+  before, and so is a colleague whose hours cannot be read or whose time zone was built by
+  hand. The hours are used for that one search and kept nowhere. The version does not move
+  for this: no build has been cut since 1.0.0-alpha.1. Known limitation: no real
+  colleague's answer from Microsoft has been read (ledger 709).
 - **Look People Up at Work refuses a sign-in for an `ldap://` address when you press OK
   (#55, GAP-07, ledger 699).** Until now the window kept a sign-in name and password for an
   address beginning `ldap://`, and every lookup then refused to send the password, because

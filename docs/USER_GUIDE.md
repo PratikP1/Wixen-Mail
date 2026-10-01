@@ -2215,13 +2215,26 @@ and gives the reason, which is one of these:
 | the reply could not be read | An answer came back that Wixen Mail could not make sense of |
 | their calendar is not shared with you | Google could not find this guest's calendar for you, usually because they are outside your organisation |
 
-**Where each guest is.** A time is judged against each guest's working day in
-their own time zone. The working day is the one set in the Working Day section
-of the Calendar and PIM tab in Settings. Microsoft says which time zone a
-colleague keeps their working hours in, so a colleague on Outlook or Office 365
-is judged on their own clock. For anybody else nobody said where they are, so
-their day is judged on your clock and the answer says so: "Nobody said where Bo
-is, so the times were judged against the working hours set here."
+**Where each guest is, and when they work.** A colleague on Outlook or Office
+365 is judged by their own working hours: the days and hours set in their own
+Outlook, on the clock they keep them on, which Microsoft sends with its answer.
+A time on a day they do not work, or outside their hours, is still offered,
+after the times inside everybody's working day, and a sentence after it says
+it is outside their working day. Everybody else, and you, are judged by the
+working day set in the Working Day section of the Calendar and PIM tab in
+Settings, on every day of the week, each on their own clock. Nobody said where
+a guest only a calendar server or Google answered about is, so their day is
+judged on your clock and the answer says so: "Nobody said where Bo is, so the
+times were judged against the working hours set here." A colleague whose hours
+Microsoft sent in a shape Wixen Mail cannot read is judged by the Settings day
+on their own clock, with no sentence saying so.
+
+For example, Ada in New York works Monday to Friday, 07:00 to 15:00. Asked
+about a Saturday, a time at 10:00 on her clock is said as "outside Ada's
+working day", because Saturday is not one of her days, even though 10:00 is
+inside the working day set here. A time at 16:00 on her clock on a Tuesday is
+said the same way, because her day ends at 15:00. Her hours are used for that
+one search and kept nowhere.
 
 **Each time on their clock.** Where a guest's clock says a different hour from
 yours, each time says theirs too, for up to three guests in the order they were
@@ -2233,7 +2246,9 @@ another day there, the date is said too: "03/03/2026 at 23:00, which is
 nothing. Once times carry a clock they are kept apart by semicolons.
 
 A time zone an organiser built by hand in Outlook cannot be placed, so that
-guest is treated as one nobody said the place of.
+guest is treated as one nobody said the place of, and their own hours are not
+used either: hours on a clock nobody can place cannot be judged, so the
+Settings day is used instead.
 
 ## Keyboard Shortcuts
 

@@ -393,7 +393,10 @@ What is avoidable is left out. The question carries no title, no description, no
 and no note: only who is asking, who is being asked about, and the window of dates. Nobody
 is asked about unless you put them on the guest list. The reply carries stretches of time
 and never what anybody is doing in them, and nothing here asks for more, which is why this
-does not read colleagues' calendars directly even where an account could.
+does not read colleagues' calendars directly even where an account could. Microsoft's reply
+also gives the days and hours each colleague works and the time zone they keep them in.
+Those are used for this one search, to judge each time against that colleague's own day,
+and are kept nowhere.
 
 Your own calendar is read from this computer and goes nowhere.
 
