@@ -58,6 +58,10 @@ pub fn no_sign_in_credentials(provider: &str) -> String {
     )
 }
 
+/// What the Account Manager says after "Signing in failed: " when the one
+/// check finds no provider a browser can sign in to.
+pub const NO_BROWSER_SIGN_IN_HERE: &str = "";
+
 /// The credential this account signs in with, fetching a token if it needs one.
 pub async fn for_account(account: &Account) -> Result<MailAuth> {
     if !account.use_oauth {
@@ -239,15 +243,62 @@ mod tests {
     async fn test_an_oauth_account_with_no_provider_says_so_in_words() {
         // "Authentication failed" would send somebody looking for a wrong
         // password. This one names the thing to go and fix.
+        // Neither its server nor its address names Google or Microsoft.
         let mut orphan = account();
         orphan.use_oauth = true;
-        orphan.email = "me@example.com".into(); // no provider detectable
+        orphan.email = "me@example.com".into();
+        orphan.imap_server = "imap.example.com".into();
+        orphan.smtp_server = "smtp.example.com".into();
         let error = for_account(&orphan)
             .await
             .expect_err("should refuse")
             .to_string();
-        assert!(error.contains("no provider is recorded"), "got {error}");
         assert!(error.contains("Work"), "the account is not named: {error}");
+        assert!(
+            error.contains("IMAP or POP server"),
+            "the thing to check is not named: {error}"
+        );
+        assert!(
+            error.contains("Account Manager"),
+            "no way there is named: {error}"
+        );
+        assert!(!error.contains("OAuth"), "jargon survives: {error}");
+    }
+
+    #[test]
+    fn test_a_workspace_account_on_its_own_domain_signs_in_with_google_by_its_server() {
+        let mut workspace = account();
+        workspace.email = "me@mycompany.com".into();
+        workspace.imap_server = "imap.gmail.com".into();
+        assert_eq!(provider_of(&workspace).as_deref(), Some("gmail"));
+    }
+
+    #[test]
+    fn test_a_microsoft_365_account_on_its_own_domain_signs_in_with_microsoft_by_its_server() {
+        let mut work = account();
+        work.email = "me@contoso.com".into();
+        work.imap_server = "outlook.office365.com".into();
+        assert_eq!(provider_of(&work).as_deref(), Some("outlook"));
+    }
+
+    #[test]
+    fn test_the_account_managers_sentence_for_an_account_no_browser_can_sign_in_to_names_the_server_and_the_way_out()
+     {
+        use crate::application::status_sentences::{Voice, reads_as_a_persons_sentence};
+        let said = NO_BROWSER_SIGN_IN_HERE;
+        assert_eq!(reads_as_a_persons_sentence(said, Voice::Answer), Ok(()));
+        assert!(
+            said.contains("IMAP or POP server"),
+            "the thing to check is not named: {said}"
+        );
+        assert!(
+            said.contains("Setting up a provider in Help"),
+            "no remedy is named: {said}"
+        );
+        assert!(
+            !said.to_lowercase().contains("oauth"),
+            "jargon survives: {said}"
+        );
     }
 
     #[test]
@@ -267,6 +318,9 @@ mod tests {
         // signal there is.
         let mut workspace = account();
         workspace.email = "me@mycompany.com".into();
+        // The server, when there is one, is asked first; the rows are in
+        // application::who_runs_the_mail.
+        workspace.imap_server = String::new();
         workspace.provider = Some("Gmail".into());
         assert_eq!(provider_of(&workspace).as_deref(), Some("gmail"));
     }
@@ -277,19 +331,25 @@ mod tests {
         // credentials for it would report the wrong problem.
         let mut yahoo = account();
         yahoo.email = "me@yahoo.com".into();
+        yahoo.imap_server = "imap.mail.yahoo.com".into();
         yahoo.provider = Some("Yahoo".into());
         assert_eq!(provider_of(&yahoo), None);
     }
 
     #[test]
     fn test_the_provider_falls_back_to_the_address() {
-        assert_eq!(provider_of(&account()).as_deref(), Some("gmail"));
+        let mut by_address = account();
+        // The server, when there is one, is asked first; the rows are in
+        // application::who_runs_the_mail.
+        by_address.imap_server = String::new();
+        assert_eq!(provider_of(&by_address).as_deref(), Some("gmail"));
     }
 
     #[test]
     fn test_an_ordinary_address_belongs_to_no_provider() {
         let mut other = account();
         other.email = "me@example.com".into();
+        other.imap_server = "imap.example.com".into();
         assert_eq!(provider_of(&other), None);
     }
 }

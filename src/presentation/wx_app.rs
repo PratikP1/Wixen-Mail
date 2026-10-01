@@ -31800,7 +31800,7 @@ mod scan_only_account_tests {
             "\"Sign In Again\" only acts on an account with OAuth turned on"
         );
         assert!(
-            crate::service::oauth::OAuthService::detect_provider(&account.email).is_none(),
+            crate::application::mail_auth::provider_of(&account).is_none(),
             "a recognised provider would try a real network connection instead of \
              failing at once"
         );
