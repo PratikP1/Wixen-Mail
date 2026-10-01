@@ -154,6 +154,8 @@ const SAYS: [&str; 2] = ["say_what_the_undo_did(", ".announce("];
 const THE_DELETE: &str = "fn delete_these(";
 const THE_MOVE_PATH: &str = "fn move_these(";
 const MOVED_BACK: &str = "fn move_back_or_again(";
+/// The moved branch of the carrying out, since 13-44.1.
+const THE_MOVED_STEP: &str = "fn carry_out_the_moved_step(";
 const MADE_HERE_FIRST: &str = "complete_here_then_tell_the_server(";
 const ENDED_HERE: &str = "undo_here(";
 const THE_ITEM_COMMAND: &str = "pub fn pim_command(";
@@ -324,10 +326,19 @@ fn ends_a_waiting_change_here(body: &str) -> Result<(), String> {
 /// Undo and Redo over a move, a delete or a copy reach the carrying out,
 /// which asks the store and the decision for each message and goes the ways
 /// the action went, saying nothing inside its loop.
+///
+/// Rewritten in place by 13-44.1: the moved branch of `take_back_or_do_again`
+/// became `carry_out_the_moved_step`, which the answer to the junk mark worker
+/// calls too, so the reading follows the call one step further rather than
+/// requiring `move_back_or_again(` in the body it left.
 fn moves_back_the_way_the_action_went(app: &str) -> Result<(), String> {
     let carrying = body_of(app, THE_CARRYING_OUT)?;
-    if !carrying.contains("move_back_or_again(") {
-        return Err("Undo in a list never reaches the undo of a move".to_string());
+    if !carrying.contains("carry_out_the_moved_step(") {
+        return Err("Undo in a list never reaches the moved step".to_string());
+    }
+    let step = body_of(app, THE_MOVED_STEP)?;
+    if !step.contains("move_back_or_again(") {
+        return Err("the moved step never reaches the undo of a move".to_string());
     }
     let moved = body_of(app, MOVED_BACK)?;
     for asked in [
