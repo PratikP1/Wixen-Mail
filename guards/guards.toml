@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 542 records have arrived since and have not been through it.
+# 543 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12798,7 +12798,7 @@ red = [
     "data::message_cache::accounts::tests::test_one_account_that_will_not_go_does_not_throw_away_the_other_edits",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 23 },
+    { file = "src/data/message_cache/accounts.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -12869,7 +12869,7 @@ red = [
     "data::message_cache::accounts::tests::test_an_old_copy_left_in_the_database_is_cleared_the_next_time_too",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 23 },
+    { file = "src/data/message_cache/accounts.rs", tests = 24 },
 ]
 
 # Rewritten 2026-09-19 by 11-07: the line after the refusal reads the
@@ -12907,7 +12907,7 @@ red = [
     "service::secret_store::tests::test_only_the_seam_and_the_uninstall_open_a_credential_entry_of_their_own",
 ]
 tests_last_seen = [
-    { file = "src/service/credentials.rs", tests = 10 },
+    { file = "src/service/credentials.rs", tests = 13 },
     { file = "src/service/secret_store.rs", tests = 7 },
 ]
 
@@ -33956,7 +33956,7 @@ red = [
     "data::message_cache::accounts::tests::test_deleting_an_account_takes_its_directory_password_with_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 23 },
+    { file = "src/data/message_cache/accounts.rs", tests = 24 },
 ]
 
 # Clearing the sign-in name in Look People Up at Work and saving leaves the
@@ -35437,7 +35437,7 @@ red = [
     "data::message_cache::quick_steps::tests::test_removing_an_account_takes_its_steps_and_leaves_another_accounts",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 23 },
+    { file = "src/data/message_cache/accounts.rs", tests = 24 },
     { file = "src/data/message_cache/quick_steps.rs", tests = 10 },
 ]
 
@@ -35936,4 +35936,21 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
+]
+
+# A password the credential store will not save, said on the accounts' save
+# line with the account's id, a long internal code read aloud a character at
+# a time, rather than the name the person gave it (ledger 696). Written
+# 2026-10-01 by 13-44.2, measured through `scripts/guards.sh --remeasure`
+# against the library.
+[[guard]]
+name = "a password the store will not keep is named by its account, not its id"
+file = "src/data/message_cache/accounts.rs"
+before = '''        credentials::store(&account.id, &account.name, &account.password)?;'''
+after = '''        credentials::store(&account.id, &account.id, &account.password)?;'''
+red = [
+    "data::message_cache::accounts::tests::test_a_password_the_store_will_not_keep_is_said_with_the_accounts_name",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/accounts.rs", tests = 24 },
 ]

@@ -47,11 +47,12 @@ pub fn stored_password(from_store: Option<String>, from_database: &str) -> Store
 /// An empty password is a request to forget, not a password to store. Accounts
 /// signing in with OAuth have no password, and an empty entry would be
 /// indistinguishable from one somebody meant to save.
-pub fn store(account_id: &str, _called: &str, password: &str) -> Result<()> {
+pub fn store(account_id: &str, called: &str, password: &str) -> Result<()> {
+    let whose = whose_password(called);
     if password.is_empty() {
-        return forget(account_id);
+        return remove_secret(account_id).map_err(|e| saving_failed("remove", &whose, &e));
     }
-    write_secret(account_id, password)
+    write_secret(account_id, password).map_err(|e| saving_failed("save", &whose, &e))
 }
 
 /// The stored password, or `None` when there is not one.
@@ -61,12 +62,12 @@ pub fn store(account_id: &str, _called: &str, password: &str) -> Result<()> {
 /// means a password that exists and cannot be got at, which somebody has to be
 /// told about rather than shown as a blank box.
 pub fn load(account_id: &str) -> Result<Option<String>> {
-    read_secret(account_id)
+    read_secret(account_id).map_err(|e| saving_failed("read back", THIS_ACCOUNTS, &e))
 }
 
 /// Forget an account's password.
 pub fn forget(account_id: &str) -> Result<()> {
-    remove_secret(account_id)
+    remove_secret(account_id).map_err(|e| saving_failed("remove", THIS_ACCOUNTS, &e))
 }
 
 // ── The credential store itself ─────────────────────────────────────────────
@@ -80,27 +81,34 @@ use crate::service::secret_store;
 
 fn write_secret(account_id: &str, password: &str) -> Result<()> {
     secret_store::write(KEYRING_SERVICE, account_id, password)
-        .map_err(|e| saving_failed("save", account_id, &e))
 }
 
 fn read_secret(account_id: &str) -> Result<Option<String>> {
     secret_store::read(KEYRING_SERVICE, account_id)
-        .map_err(|e| saving_failed("read back", account_id, &e))
 }
 
 fn remove_secret(account_id: &str) -> Result<()> {
     secret_store::remove(KEYRING_SERVICE, account_id)
-        .map_err(|e| saving_failed("remove", account_id, &e))
 }
 
-/// What went wrong, saying which password and never what it was.
-fn saving_failed(
-    what: &str,
-    account_id: &str,
-    cause: &crate::common::Error,
-) -> crate::common::Error {
+/// Whose password a sentence names when the code saying it holds the
+/// account's id alone.
+const THIS_ACCOUNTS: &str = "this account's password";
+
+/// Whose password a sentence names: the account by the name it was given,
+/// or as this account's when the name is blank. Never the id, a long
+/// internal code that the accounts' save would read aloud.
+fn whose_password(called: &str) -> String {
+    match called.trim() {
+        "" => THIS_ACCOUNTS.to_string(),
+        name => format!("the password for {name}"),
+    }
+}
+
+/// What went wrong, saying whose password and never what it was.
+fn saving_failed(what: &str, whose: &str, cause: &crate::common::Error) -> crate::common::Error {
     crate::common::Error::Security(format!(
-        "Could not {what} the password for {account_id} in the Windows credential store: {cause}"
+        "Could not {what} {whose} in the Windows credential store: {cause}"
     ))
 }
 
