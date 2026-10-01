@@ -22,6 +22,7 @@
 
 use crate::application::filters::Outcome;
 use crate::data::message_cache::{CachedMessage, Tag};
+use crate::service::protocols::imap::flag::{FLAGGED, SEEN};
 
 /// One change a rule made here that the mail server is to be told about.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,16 +39,47 @@ pub enum AChange {
     },
 }
 
+impl AChange {
+    /// The flag the server is asked to set or clear, and which.
+    pub fn as_sent(&self) -> (&str, bool) {
+        match self {
+            AChange::Read(read) => (SEEN, *read),
+            AChange::Flagged(flagged) => (FLAGGED, *flagged),
+            AChange::Label { keyword, .. } => (keyword, true),
+        }
+    }
+}
+
 /// What the server is told about one arriving message, from what it arrived
 /// as, what its rules settled on and the labels they put on here.
 ///
-/// Only what changed: a mark the message arrived with is not sent again.
+/// Only what changed: a mark the message arrived with is not sent again, and
+/// a label with no keyword has nothing it could travel as. A delete carries
+/// nothing else, as [`crate::application::filters::settle`] decides.
 pub fn what_the_server_is_told(
-    _arrived: &CachedMessage,
-    _outcome: &Outcome,
-    _labels_put_on: &[Tag],
+    arrived: &CachedMessage,
+    outcome: &Outcome,
+    labels_put_on: &[Tag],
 ) -> Vec<AChange> {
-    Vec::new()
+    if outcome.delete {
+        return Vec::new();
+    }
+    let read = outcome
+        .read
+        .filter(|read| *read != arrived.read)
+        .map(AChange::Read);
+    let flagged = outcome
+        .starred
+        .filter(|flagged| *flagged != arrived.starred)
+        .map(AChange::Flagged);
+    let labels = labels_put_on.iter().filter_map(|label| {
+        Some(AChange::Label {
+            keyword: label.keyword.clone()?,
+            tag_id: label.id.clone(),
+            name: label.name.clone(),
+        })
+    });
+    read.into_iter().chain(flagged).chain(labels).collect()
 }
 
 /// One message's changes waiting to be told to the server by the check.
@@ -78,7 +110,6 @@ mod tests {
     use crate::common::types::FolderType;
     use crate::data::message_cache::{CachedFolder, MessageCache, MessageFilterRule};
     use crate::service::protocols::imap::abilities::Abilities;
-    use crate::service::protocols::imap::flag::{FLAGGED, SEEN};
     use crate::service::protocols::imap::{
         FolderCounts, ImapFolder, ImapMessage, MailboxStatus, Moved,
     };
@@ -256,6 +287,24 @@ mod tests {
 
         async fn fetch_message_body(&self, _folder: &str, _uid: u32) -> Result<Vec<u8>> {
             Ok(Vec::new())
+        }
+
+        async fn set_flag(&self, folder: &str, uid: u32, flag: &str, on: bool) -> Result<()> {
+            let sign = if on { '+' } else { '-' };
+            self.log
+                .borrow_mut()
+                .push(format!("STORE {sign}{flag} on {uid} in {folder}"));
+            let mut folders = self.folders.borrow_mut();
+            if let Some(message) = folders
+                .get_mut(folder)
+                .and_then(|held| held.iter_mut().find(|message| message.uid == uid))
+            {
+                message.flags.retain(|held| held != flag);
+                if on {
+                    message.flags.push(flag.to_string());
+                }
+            }
+            Ok(())
         }
     }
 

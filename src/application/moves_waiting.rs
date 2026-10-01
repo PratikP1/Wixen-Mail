@@ -3114,6 +3114,10 @@ mod tests {
         async fn fetch_message_body(&self, _folder: &str, _uid: u32) -> Result<Vec<u8>> {
             Ok(Vec::new())
         }
+
+        async fn set_flag(&self, _folder: &str, _uid: u32, _flag: &str, _on: bool) -> Result<()> {
+            Ok(())
+        }
     }
 
     fn a_folder_read(path: &str) -> crate::service::protocols::imap::ImapFolder {

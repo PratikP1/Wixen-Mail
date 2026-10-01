@@ -966,9 +966,22 @@ pub(crate) trait Mailbox {
     /// reading turned off while a backfill runs stops it at the next message
     /// rather than at the next run.
     async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<Vec<u8>>;
+
+    /// Set or clear one flag on one message at the server: `\Seen`,
+    /// `\Flagged`, or a label's keyword.
+    ///
+    /// On the trait because a rule's mark on arriving mail reaches the server
+    /// in the check that brought the message (ledger 678), and that check is
+    /// held against servers that keep flags from this module's tests and
+    /// [`crate::application::what_rules_tell_the_server`]'s.
+    async fn set_flag(&self, folder: &str, uid: u32, flag: &str, on: bool) -> Result<()>;
 }
 
 impl Mailbox for MailController {
+    async fn set_flag(&self, folder: &str, uid: u32, flag: &str, on: bool) -> Result<()> {
+        MailController::set_flag(self, folder, uid, flag, on).await
+    }
+
     async fn folder_counts(
         &self,
         folder: &str,
@@ -1075,6 +1088,10 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
                 into,
             });
         }
+        // Read before the writes, so the labels the rules put on are the ones
+        // the message did not carry already: only those are news to the server.
+        let labels_before = the_labels_on_it(cache, &message, &outcome);
+        let sorted_before = done.changed;
         match carry_out(cache, &message, &outcome) {
             Ok(Carried::Everything) => done.changed += 1,
             // Counted by `carry_out_the_moves` when the move has really
@@ -1091,10 +1108,70 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
                 }
                 done.could_not_be_filed.extend(said);
             }
-            Err(e) => tracing::warn!("A rule could not be carried out: {}", e),
+            Err(e) => {
+                tracing::warn!("A rule could not be carried out: {}", e);
+                continue;
+            }
+        }
+        let put_on = the_labels_put_on(cache, &message, &outcome, &labels_before);
+        let changes = crate::application::what_rules_tell_the_server::what_the_server_is_told(
+            &message, &outcome, &put_on,
+        );
+        if !changes.is_empty() {
+            done.to_tell_the_server
+                .push(crate::application::what_rules_tell_the_server::Telling {
+                    message_row: message.id,
+                    uid: message.uid,
+                    changes,
+                    counted: done.changed > sorted_before,
+                });
         }
     }
     done
+}
+
+/// The ids of the labels a message carries, read only when its rules put
+/// labels on, so a check with no label rules reads nothing.
+fn the_labels_on_it(
+    cache: &MessageCache,
+    message: &CachedMessage,
+    outcome: &crate::application::filters::Outcome,
+) -> Vec<String> {
+    if outcome.tags.is_empty() {
+        return Vec::new();
+    }
+    match cache.get_tags_for_message(message.id) {
+        Ok(labels) => labels.into_iter().map(|label| label.id).collect(),
+        Err(why) => {
+            tracing::warn!("A message's labels could not be read before its rules ran: {why}");
+            Vec::new()
+        }
+    }
+}
+
+/// The labels on a message now that it did not carry before its rules ran.
+///
+/// A read that fails is logged and sends no label, which leaves the label
+/// here for the next check to take off, as every label was before 13-44.3.
+fn the_labels_put_on(
+    cache: &MessageCache,
+    message: &CachedMessage,
+    outcome: &crate::application::filters::Outcome,
+    before: &[String],
+) -> Vec<crate::data::message_cache::Tag> {
+    if outcome.tags.is_empty() {
+        return Vec::new();
+    }
+    match cache.get_tags_for_message(message.id) {
+        Ok(labels) => labels
+            .into_iter()
+            .filter(|label| !before.contains(&label.id))
+            .collect(),
+        Err(why) => {
+            tracing::warn!("The labels a rule put on could not be read back: {why}");
+            Vec::new()
+        }
+    }
 }
 
 /// Do to one message what its rules settled on.
@@ -1264,6 +1341,36 @@ async fn carry_out_the_moves<M: Mailbox>(
         done += 1;
     }
     (done, could_not)
+}
+
+/// Tell the server what the rules changed here, on the check's own session.
+///
+/// Before the rule's move, so each change names the folder and the number the
+/// server still has the message under, and before the flag read, so the read
+/// finds the server holding what the rule did (ledger 678). With mail changes
+/// off nothing is dialled.
+async fn tell_the_server_what_the_rules_changed<M: Mailbox>(
+    controller: &M,
+    from: &ImapFolder,
+    changes_allowed: bool,
+    telling: &[crate::application::what_rules_tell_the_server::Telling],
+) -> crate::application::what_rules_tell_the_server::Told {
+    let told = crate::application::what_rules_tell_the_server::Told::default();
+    if !changes_allowed {
+        return told;
+    }
+    for message in telling {
+        for change in &message.changes {
+            let (flag, on) = change.as_sent();
+            if let Err(why) = controller.set_flag(&from.path, message.uid, flag, on).await {
+                tracing::warn!(
+                    "A change a rule made in {} could not be told to the server: {why}",
+                    from.name
+                );
+            }
+        }
+    }
+    told
 }
 
 /// What to say when the account's folder list could not be read at all.
@@ -1513,6 +1620,18 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         Some(rules) => apply_rules(cache, rules, &arrived),
         None => Filtered::default(),
     };
+    // What the rules changed here, told to the server before the rule's move
+    // and before the flag read below, on this check's own session. A check
+    // with no rules has nothing to tell.
+    if let Some(rules) = filtering {
+        filtered.told = tell_the_server_what_the_rules_changed(
+            controller,
+            folder,
+            rules.allowed.mail,
+            &filtered.to_tell_the_server,
+        )
+        .await;
+    }
     // What the rules said belongs elsewhere, done here because this is the
     // half with a server. Each one reaches the server first and the cache
     // second, so a move the server refuses leaves the message where it is
@@ -2821,6 +2940,10 @@ pub(crate) mod tests {
     }
 
     impl Mailbox for Scripted {
+        async fn set_flag(&self, _folder: &str, _uid: u32, _flag: &str, _on: bool) -> Result<()> {
+            Ok(())
+        }
+
         async fn move_message(
             &self,
             from: &str,

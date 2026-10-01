@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 543 records have arrived since and have not been through it.
+# 545 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16551,7 +16551,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 3 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 5 },
 ]
 
 # ── What the sender said an attachment is ───────────────────────────────────
@@ -35953,4 +35953,67 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 24 },
+]
+
+# A rule's mark told to the server after the rule's move rather than before
+# it, so the STORE names a number the folder no longer holds and the next
+# check puts the old mark back (ledger 678, 688's shape on arrival). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+# The census reading in tests/nothing_sends_a_flag_change_unasked.rs goes
+# red under the same break; it is a suite of its own, so it is not named.
+[[guard]]
+name = "a rule's mark reaches the server before its move"
+file = "src/application/mail_sync.rs"
+before = '''    if let Some(rules) = filtering {
+        filtered.told = tell_the_server_what_the_rules_changed(
+            controller,
+            folder,
+            rules.allowed.mail,
+            &filtered.to_tell_the_server,
+        )
+        .await;
+    }
+    // What the rules said belongs elsewhere, done here because this is the
+    // half with a server. Each one reaches the server first and the cache
+    // second, so a move the server refuses leaves the message where it is
+    // rather than showing it somewhere it is not.
+    let (filed, could_not) =
+        carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;'''
+after = '''    let (filed, could_not) =
+        carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;
+    if let Some(rules) = filtering {
+        filtered.told = tell_the_server_what_the_rules_changed(
+            controller,
+            folder,
+            rules.allowed.mail,
+            &filtered.to_tell_the_server,
+        )
+        .await;
+    }'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rule_that_marks_read_and_files_tells_the_server_the_mark_before_the_move",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 7 },
+]
+
+# A rule's mark sent whether or not the message arrived with it, so every
+# check with a rule that marks read sends a STORE for mail the server already
+# holds read. Written 2026-10-01 by 13-44.3, taken by hand against the whole
+# library first.
+[[guard]]
+name = "a mark the message arrived with is not sent again"
+file = "src/application/what_rules_tell_the_server.rs"
+before = '''    let read = outcome
+        .read
+        .filter(|read| *read != arrived.read)
+        .map(AChange::Read);'''
+after = '''    let read = outcome.read.map(AChange::Read);'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_message_arrived_with_is_not_sent_again",
+    "application::what_rules_tell_the_server::tests::test_what_the_server_is_told_is_only_what_the_rules_changed",
+]
+tests_last_seen = [
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 7 },
 ]
