@@ -22,6 +22,7 @@
 //! its own.
 
 use crate::application::blocking::BlockedMailGoesTo;
+use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::service::caldav::how_many;
@@ -40,17 +41,19 @@ pub enum AccountKind {
 }
 
 impl AccountKind {
-    /// Which kind this account is: POP first, whatever its provider, since a
-    /// Gmail account collecting over POP has no Spam folder here to move into;
-    /// then the provider the account was set up with.
+    /// Which kind this account is: POP first, whatever runs it, since a Gmail
+    /// account collecting over POP has no Spam folder here to move into; then
+    /// whoever the one check says runs its mail, so a Workspace or Microsoft
+    /// 365 account on its own domain is reported the way Gmail or Microsoft
+    /// is.
     pub fn of(account: &Account) -> Self {
         if account.protocol() == crate::common::types::Protocol::Pop3 {
             return AccountKind::Pop;
         }
-        match account.provider.as_deref() {
-            Some(provider) if provider.eq_ignore_ascii_case("gmail") => AccountKind::Gmail,
-            Some(provider) if provider.eq_ignore_ascii_case("outlook") => AccountKind::Microsoft,
-            _ => AccountKind::OtherImap,
+        match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => AccountKind::Gmail,
+            WhoRunsTheMail::Microsoft => AccountKind::Microsoft,
+            WhoRunsTheMail::SomebodyElse => AccountKind::OtherImap,
         }
     }
 }

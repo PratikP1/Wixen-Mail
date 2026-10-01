@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 559 records have arrived since and have not been through it.
+# 563 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -681,6 +681,18 @@ red = [
     # by 13-24.1 and 13-42.
     "application::acting_on_a_set::tests::test_one_message_is_said_in_the_singular",
     "application::quick_steps::tests::test_what_a_step_did_is_its_name_and_what_was_done",
+    # Added 2026-10-01 by 13-44.5, found by --remeasure rather than predicted:
+    # 13-44.3's clauses for what a rule told the server count through
+    # `how_many`, in a file this record had never named.
+    "application::what_rules_tell_the_server::tests::test_a_label_the_server_could_not_be_asked_about_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_refuses_is_put_back_here",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+    "application::what_rules_tell_the_server::tests::test_the_clauses_say_each_count_and_reason_once_and_the_singular_right",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
@@ -693,9 +705,10 @@ tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/quick_steps.rs", tests = 27 },
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/application/undoing.rs", tests = 35 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 170 },
@@ -3955,7 +3968,7 @@ tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -33536,7 +33549,7 @@ red = [
     "application::reporting_junk::tests::test_a_server_that_keeps_keywords_has_not_junk_taken_off_before_junk_goes_on",
 ]
 tests_last_seen = [
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
 ]
 
 # The mark goes to the message in the folder its number belongs to, so the
@@ -35817,7 +35830,7 @@ red = [
     "application::reporting_junk::tests::test_taking_the_mark_off_takes_junk_off_before_not_junk_goes_on",
 ]
 tests_last_seen = [
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
 ]
 
 # An undo asking the server about the mark after a report that never set
@@ -35833,7 +35846,7 @@ red = [
     "application::reporting_junk::tests::test_the_server_is_asked_about_the_mark_only_where_the_report_may_have_left_one",
 ]
 tests_last_seen = [
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
 ]
 
 # Undo of a report moved back at the key, with no mark worker before it, so
@@ -36309,4 +36322,81 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/when_people_are_free.rs", tests = 60 },
+]
+
+# The address asked before the server, so a Hotmail address on Gmail's
+# server is Microsoft and a Workspace account's mailbox is judged by the
+# name on its address rather than where the mail is. Written 2026-10-01 by
+# 13-44.5.
+[[guard]]
+name = "the server decides who runs the mail before the address does"
+file = "src/application/who_runs_the_mail.rs"
+before = '''        by_the_server(known.incoming_server)
+            .or_else(|| by_the_address(known.address))'''
+after = '''        by_the_address(known.address)
+            .or_else(|| by_the_server(known.incoming_server))'''
+red = [
+    "application::who_runs_the_mail::tests::test_the_server_says_who_runs_the_mail_whatever_the_address",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+]
+
+# A host matched by `contains`, so `imap.gmail.com.example.net` and
+# `notgmail.com` are read as Google's and a sign-in token could be sent to
+# them (T-13-PK-01). Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "a server is Google's or Microsoft's only under their own domains"
+file = "src/application/who_runs_the_mail.rs"
+before = '''        host == *domain
+            || host
+                .strip_suffix(domain)
+                .is_some_and(|rest| rest.ends_with('.'))'''
+after = '''        host.contains(domain)'''
+red = [
+    "application::who_runs_the_mail::tests::test_a_server_named_like_google_or_microsoft_but_not_under_their_domains_is_nobodys",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+]
+
+# The saved name compared exactly, so the editor's "Gmail" and "Outlook",
+# which every account made through it carries, name nobody. Written
+# 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the recorded name is read ignoring case and space"
+file = "src/application/who_runs_the_mail.rs"
+before = '''    let name = name.trim();
+    if name.eq_ignore_ascii_case("gmail") {
+        Some(WhoRunsTheMail::Gmail)
+    } else if name.eq_ignore_ascii_case("outlook") {'''
+after = '''    if name == "gmail" {
+        Some(WhoRunsTheMail::Gmail)
+    } else if name == "outlook" {'''
+red = [
+    "application::who_runs_the_mail::tests::test_every_account_an_old_reading_called_gmail_or_microsoft_is_still_called_so",
+    "application::who_runs_the_mail::tests::test_with_neither_the_recorded_name_decides_ignoring_case_and_space",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+]
+
+# The outgoing server read when no incoming one is typed, so a mailbox kept
+# elsewhere that sends through Microsoft is called Microsoft. Written
+# 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the outgoing server is not read"
+file = "src/application/who_runs_the_mail.rs"
+before = '''            Protocol::Pop3 => &account.pop_server,
+            Protocol::Imap => &account.imap_server,
+        };'''
+after = '''            Protocol::Pop3 => &account.pop_server,
+            Protocol::Imap if account.imap_server.is_empty() => &account.smtp_server,
+            Protocol::Imap => &account.imap_server,
+        };'''
+red = [
+    "application::who_runs_the_mail::tests::test_the_outgoing_server_says_nothing_about_who_runs_the_mail",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
 ]

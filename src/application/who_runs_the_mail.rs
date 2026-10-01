@@ -33,7 +33,9 @@
 //! network; national clouds under other domains; and anything a server says
 //! only once a session is open, such as Gmail's `X-GM-EXT-1`.
 
+use crate::common::types::Protocol;
 use crate::data::account::Account;
+use crate::service::oauth::OAuthService;
 
 /// Who runs an account's mail, for the places that treat Gmail and Microsoft
 /// differently from every other server.
@@ -58,22 +60,90 @@ pub struct WhatIsKnown<'a> {
     pub recorded_provider: Option<&'a str>,
 }
 
+/// Google's domains. Every host Google names for IMAP, POP and SMTP sits under
+/// `gmail.com`; `googlemail.com` is Google's too.
+const GOOGLES_DOMAINS: &[&str] = &["gmail.com", "googlemail.com"];
+
+/// Microsoft's: `outlook.office365.com` for Microsoft 365 and Outlook.com, and
+/// `imap-mail.outlook.com` before it.
+const MICROSOFTS_DOMAINS: &[&str] = &["outlook.com", "office365.com"];
+
 impl WhoRunsTheMail {
     /// Who runs this account's mail, by the server its protocol reads from,
-    /// then its address, then the name it was saved with.
-    pub fn of(_account: &Account) -> Self {
-        WhoRunsTheMail::SomebodyElse
+    /// then its address, then the name it was saved with. The server box of
+    /// the protocol not chosen is left alone: somebody who moved from POP to
+    /// IMAP may still have Gmail's POP server typed there.
+    pub fn of(account: &Account) -> Self {
+        let incoming_server = match account.protocol() {
+            Protocol::Pop3 => &account.pop_server,
+            Protocol::Imap => &account.imap_server,
+        };
+        Self::from_what_is_known(WhatIsKnown {
+            incoming_server,
+            address: &account.email,
+            recorded_provider: account.provider.as_deref(),
+        })
     }
 
     /// Who runs the mail these facts describe; the first fact that names
     /// Google or Microsoft decides.
-    pub fn from_what_is_known(_known: WhatIsKnown<'_>) -> Self {
-        WhoRunsTheMail::SomebodyElse
+    pub fn from_what_is_known(known: WhatIsKnown<'_>) -> Self {
+        by_the_server(known.incoming_server)
+            .or_else(|| by_the_address(known.address))
+            .or_else(|| known.recorded_provider.and_then(by_the_name))
+            .unwrap_or(WhoRunsTheMail::SomebodyElse)
     }
 
     /// The name a browser sign-in's token is filed under in the keychain, and
     /// read back under, or nothing where no browser sign-in is offered.
     pub fn oauth_provider(self) -> Option<&'static str> {
+        match self {
+            WhoRunsTheMail::Gmail => Some("gmail"),
+            WhoRunsTheMail::Microsoft => Some("outlook"),
+            WhoRunsTheMail::SomebodyElse => None,
+        }
+    }
+}
+
+/// By the incoming server's host, trimmed, ignoring case and the root's dot.
+fn by_the_server(server: &str) -> Option<WhoRunsTheMail> {
+    let host = server.trim().to_ascii_lowercase();
+    let host = host.strip_suffix('.').unwrap_or(&host);
+    if is_under(host, GOOGLES_DOMAINS) {
+        Some(WhoRunsTheMail::Gmail)
+    } else if is_under(host, MICROSOFTS_DOMAINS) {
+        Some(WhoRunsTheMail::Microsoft)
+    } else {
+        None
+    }
+}
+
+/// Whether a host is one of these domains or sits under one at a dot, so
+/// `notgmail.com` and `imap.gmail.com.example.net` are under neither.
+fn is_under(host: &str, domains: &[&str]) -> bool {
+    domains.iter().any(|domain| {
+        host == *domain
+            || host
+                .strip_suffix(domain)
+                .is_some_and(|rest| rest.ends_with('.'))
+    })
+}
+
+/// By the address, through the domains the browser sign-in knows, so the two
+/// never hold different lists.
+fn by_the_address(address: &str) -> Option<WhoRunsTheMail> {
+    by_the_name(&OAuthService::detect_provider(address)?)
+}
+
+/// By a provider's name: the keychain's `gmail` and `outlook`, and the
+/// editor's `Gmail` and `Outlook`, ignoring case and space.
+fn by_the_name(name: &str) -> Option<WhoRunsTheMail> {
+    let name = name.trim();
+    if name.eq_ignore_ascii_case("gmail") {
+        Some(WhoRunsTheMail::Gmail)
+    } else if name.eq_ignore_ascii_case("outlook") {
+        Some(WhoRunsTheMail::Microsoft)
+    } else {
         None
     }
 }
@@ -81,8 +151,6 @@ impl WhoRunsTheMail {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::types::Protocol;
-    use crate::service::oauth::OAuthService;
 
     fn known<'a>(
         incoming_server: &'a str,
