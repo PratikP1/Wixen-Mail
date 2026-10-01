@@ -203,7 +203,29 @@ pub struct Invited {
     /// rather than somebody else's. Nothing when nobody said where they are,
     /// which is said out loud rather than guessed at.
     pub zone: Option<Tz>,
+    /// The days and hours they said they work, and the clock those are
+    /// written on. Nothing where nobody said, and then the working day set
+    /// here is theirs.
+    pub working_week: Option<TheirWorkingWeek>,
     pub calendar: TheirCalendar,
+}
+
+/// The days and hours somebody works, as they set them in their own calendar.
+///
+/// Judged on the clock the hours are written on, which can be another zone
+/// from the one they are said to be in: nine to five in New York is nine to
+/// five in New York wherever the person happens to be standing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TheirWorkingWeek {
+    /// The clock the hours are written on.
+    pub zone: Tz,
+    /// The days a working day opens on.
+    pub days: chrono::WeekdaySet,
+    /// When it opens, on that clock.
+    pub starts: chrono::NaiveTime,
+    /// When it closes. At or before `starts`, the day runs through midnight
+    /// and belongs to the day it opened on.
+    pub ends: chrono::NaiveTime,
 }
 
 /// When everybody is free, over the window somebody asked about.
@@ -311,7 +333,9 @@ pub struct Asking {
     pub for_how_long: chrono::Duration,
     /// The window to look inside.
     pub inside: Span,
-    /// The hours of the day worth offering, judged in each person's own zone.
+    /// The hours of the day worth offering anybody who gave no working week of
+    /// their own: the person arranging the meeting, and every guest whose own
+    /// hours nobody said. Judged on each one's own clock, every day of the week.
     pub working_day: WorkingDay,
     /// Where the person arranging the meeting is. Times are spaced to land on
     /// the hour and the half hour here, and anybody whose own zone nobody
@@ -908,8 +932,24 @@ fn the_suggestion_at(from: DateTime<Utc>, people: &[Invited], asking: Asking) ->
         span,
         pencilled_in_for: those_who(people, |person| has_something_pencilled_in(person, span)),
         outside_the_working_day_for: those_who(people, |person| {
-            !falls_inside_the_working_day(span, asking.working_day, where_they_are(person, asking))
+            !the_hours_they_keep(person, asking).hold_the_whole_of(span)
         }),
+    }
+}
+
+/// The working hours a person is judged by.
+///
+/// Their own week where they said what it is, on the clock it is written on,
+/// as Outlook greys each attendee's own hours. Where nobody said, the working
+/// day set here on their own clock: the person arranging the meeting, a guest
+/// only a calendar server or Google answered about, and a colleague whose
+/// hours could not be read.
+fn the_hours_they_keep(person: &Invited, asking: Asking) -> HoursKept {
+    match person.working_week {
+        Some(week) => week.into(),
+        None => asking
+            .working_day
+            .on_the_clock_of(where_they_are(person, asking)),
     }
 }
 
@@ -924,7 +964,8 @@ fn those_who(people: &[Invited], question: impl Fn(&Invited) -> bool) -> Vec<Str
         .collect()
 }
 
-/// Which zone a person's working day is judged in.
+/// Which zone the working day set here is judged in for somebody who gave no
+/// working week of their own.
 ///
 /// Their own where it is known. Where it is not, the zone of the person
 /// arranging the meeting, which is a guess and is named as one in the answer
@@ -1048,47 +1089,112 @@ impl WorkingDay {
         )
     }
 
-    /// How many minutes are left of the working day at a minute of the day, or
-    /// nothing when that minute is outside it.
-    ///
-    /// A day whose end is at or before its start runs through midnight, which
-    /// is a night shift and a real way to work.
-    fn minutes_left_at(self, minute_of_the_day: i64) -> Option<i64> {
+    /// The working day set here, on every day of the week, read on one
+    /// person's clock.
+    fn on_the_clock_of(self, zone: Tz) -> HoursKept {
         let (opens, closes) = self.opens_and_closes();
-        if opens < closes {
-            return (opens..closes)
-                .contains(&minute_of_the_day)
-                .then_some(closes - minute_of_the_day);
+        HoursKept {
+            days: chrono::WeekdaySet::ALL,
+            opens,
+            closes,
+            zone,
         }
-        if minute_of_the_day >= opens {
-            return Some(MINUTES_IN_A_DAY - minute_of_the_day + closes);
-        }
-        (minute_of_the_day < closes).then_some(closes - minute_of_the_day)
     }
 }
 
 const MINUTES_IN_AN_HOUR: i64 = 60;
 const MINUTES_IN_A_DAY: i64 = 24 * MINUTES_IN_AN_HOUR;
 
-/// Whether a time falls wholly inside the working day, where somebody is
-/// standing.
-///
-/// Both ends, and the whole of what is between them. A meeting from half past
-/// four to half past five is not inside a day that ends at five, and a meeting
-/// that starts before the day opens is not made acceptable by ending inside
-/// it.
-///
-/// Measured on the clock face there rather than in elapsed time, because a
-/// working day is a thing of clock faces: on the day the clocks go forward an
-/// hour of the morning does not happen, and the day still ends at five.
-fn falls_inside_the_working_day(when: Span, working_day: WorkingDay, zone: Tz) -> bool {
-    let opens_at = when.from.with_timezone(&zone).naive_local();
-    let closes_at = when.until.with_timezone(&zone).naive_local();
-    let wall_minutes = (closes_at - opens_at).num_minutes();
-    let minute_of_the_day = i64::from(chrono::Timelike::num_seconds_from_midnight(&opens_at)) / 60;
-    working_day
-        .minutes_left_at(minute_of_the_day)
-        .is_some_and(|left| (0..=left).contains(&wall_minutes))
+/// Working hours as a time is judged against them, whoever set them: the days
+/// a working day opens on, the minute of the day it opens and the minute it
+/// closes, and the clock those are read on.
+#[derive(Debug, Clone, Copy)]
+struct HoursKept {
+    days: chrono::WeekdaySet,
+    opens: i64,
+    closes: i64,
+    zone: Tz,
+}
+
+/// Somebody's own week, kept to the minute.
+impl From<TheirWorkingWeek> for HoursKept {
+    fn from(week: TheirWorkingWeek) -> Self {
+        Self {
+            days: week.days,
+            opens: the_minute_of_the_day(week.starts),
+            closes: the_minute_of_the_day(week.ends),
+            zone: week.zone,
+        }
+    }
+}
+
+/// The working day a minute of the day falls in.
+struct InADay {
+    /// How many minutes of it are left.
+    minutes_left: i64,
+    /// Whether it opened the day before, which only a night shift does.
+    opened_the_day_before: bool,
+}
+
+impl HoursKept {
+    /// The working day a minute of the day falls in, or nothing when that
+    /// minute is outside every one.
+    ///
+    /// A day whose end is at or before its start runs through midnight, which
+    /// is a night shift and a real way to work, and it belongs to the day it
+    /// opened on.
+    fn the_day_at(self, minute_of_the_day: i64) -> Option<InADay> {
+        let (opens, closes) = (self.opens, self.closes);
+        let in_a_day = |minutes_left, opened_the_day_before| InADay {
+            minutes_left,
+            opened_the_day_before,
+        };
+        if opens < closes {
+            return (opens..closes)
+                .contains(&minute_of_the_day)
+                .then(|| in_a_day(closes - minute_of_the_day, false));
+        }
+        if minute_of_the_day >= opens {
+            return Some(in_a_day(
+                MINUTES_IN_A_DAY - minute_of_the_day + closes,
+                false,
+            ));
+        }
+        (minute_of_the_day < closes).then(|| in_a_day(closes - minute_of_the_day, true))
+    }
+
+    /// Whether a time falls wholly inside a working day.
+    ///
+    /// Both ends, and the whole of what is between them. A meeting from half
+    /// past four to half past five is not inside a day that ends at five, and a
+    /// meeting that starts before the day opens is not made acceptable by
+    /// ending inside it. And on a day the working day opens on: a Saturday is
+    /// outside the day of somebody who works Monday to Friday, whatever the
+    /// hour.
+    ///
+    /// Measured on the clock face of the zone the hours are kept in rather
+    /// than in elapsed time, because a working day is a thing of clock faces:
+    /// on the day the clocks go forward an hour of the morning does not
+    /// happen, and the day still ends at five.
+    fn hold_the_whole_of(self, when: Span) -> bool {
+        let opens_at = when.from.with_timezone(&self.zone).naive_local();
+        let closes_at = when.until.with_timezone(&self.zone).naive_local();
+        let wall_minutes = (closes_at - opens_at).num_minutes();
+        let Some(day) = self.the_day_at(the_minute_of_the_day(opens_at.time())) else {
+            return false;
+        };
+        let opened_on = match day.opened_the_day_before {
+            true => opens_at.date().pred_opt(),
+            false => Some(opens_at.date()),
+        };
+        (0..=day.minutes_left).contains(&wall_minutes)
+            && opened_on.is_some_and(|date| self.days.contains(chrono::Datelike::weekday(&date)))
+    }
+}
+
+/// How many whole minutes past midnight a time of day is.
+fn the_minute_of_the_day(time: chrono::NaiveTime) -> i64 {
+    i64::from(chrono::Timelike::num_seconds_from_midnight(&time)) / 60
 }
 
 /// The stretches one of this program's own calendar events blocks out.
@@ -1445,6 +1551,7 @@ mod tests {
         Invited {
             called: called.to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: TheirCalendar::Answered {
                 // Wide enough that no test measures the edge of it by
                 // accident. The tests that are about a partial answer build
@@ -1763,6 +1870,7 @@ mod tests {
         let ada = Invited {
             called: "Ada".to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: what_their_calendar_said(
                 &a_reply(&["FREEBUSY:20260302T090000Z/20260302T100000Z"]),
                 window,
@@ -1771,6 +1879,7 @@ mod tests {
         let grace = Invited {
             called: "Grace".to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: TheirCalendar::Answered {
                 covering: window,
                 stretches: when_this_event_blocks(
@@ -1963,6 +2072,142 @@ mod tests {
              which is 04:30 for Grace; or Monday at 10, which is 05:00 for Grace. \
              Monday at 9, Monday at 9:30, and Monday at 10 are outside \
              Grace's working day."
+        );
+    }
+
+    const MONDAY_TO_FRIDAY: [chrono::Weekday; 5] = [
+        chrono::Weekday::Mon,
+        chrono::Weekday::Tue,
+        chrono::Weekday::Wed,
+        chrono::Weekday::Thu,
+        chrono::Weekday::Fri,
+    ];
+
+    /// A time of day, hours and minutes.
+    fn o_clock(hour: u32, minute: u32) -> chrono::NaiveTime {
+        chrono::NaiveTime::from_hms_opt(hour, minute, 0).expect("a time of day")
+    }
+
+    /// Somebody free all year who works these days and hours on this clock.
+    fn working(
+        called: &str,
+        days: &[chrono::Weekday],
+        hours: (chrono::NaiveTime, chrono::NaiveTime),
+        zone: Tz,
+    ) -> Invited {
+        Invited {
+            working_week: Some(TheirWorkingWeek {
+                zone,
+                days: days.iter().copied().collect(),
+                starts: hours.0,
+                ends: hours.1,
+            }),
+            ..busy(called, &[])
+        }
+    }
+
+    /// Who the one hour-long time a window of exactly an hour holds is
+    /// outside the working day of, asked with nine to five set here.
+    fn outside_whose_day(from: &str, until: &str, people: &[Invited]) -> Vec<String> {
+        let found = when_we_could_meet(people, an_hour_inside(span(from, until)));
+        assert_eq!(found.times.len(), 1, "{:?}", times_offered(&found));
+        found.times[0].outside_the_working_day_for.clone()
+    }
+
+    #[test]
+    fn test_a_colleague_is_judged_by_their_own_working_hours_rather_than_the_ones_set_here() {
+        // Ada starts at seven and is gone by three. Judged by nine to five set
+        // here, her first hours are offered last and her evening first.
+        let ada = [working(
+            "Ada",
+            &MONDAY_TO_FRIDAY,
+            (o_clock(7, 0), o_clock(15, 0)),
+            Tz::UTC,
+        )];
+
+        assert!(outside_whose_day("2026-03-02T07:00:00Z", "2026-03-02T08:00:00Z", &ada).is_empty());
+        assert_eq!(
+            outside_whose_day("2026-03-02T14:30:00Z", "2026-03-02T15:30:00Z", &ada),
+            ["Ada"]
+        );
+    }
+
+    #[test]
+    fn test_a_day_a_colleague_does_not_work_is_outside_their_day_and_nobody_elses() {
+        // Saturday is inside the working day set here, which has no days, and
+        // outside Ada's, who works Monday to Friday. Bo said nothing, so he is
+        // judged as before and not named.
+        let people = [
+            working(
+                "Ada",
+                &MONDAY_TO_FRIDAY,
+                (o_clock(9, 0), o_clock(17, 0)),
+                Tz::UTC,
+            ),
+            busy("Bo", &[]),
+        ];
+
+        assert_eq!(
+            the_hour_from("2026-03-07T10:00:00Z", "2026-03-07T11:00:00Z", &people),
+            "Everyone is free Saturday at 10. Saturday at 10 is outside Ada's working day."
+        );
+    }
+
+    #[test]
+    fn test_a_colleagues_hours_are_judged_on_the_clock_they_are_written_on() {
+        // Ada is in London this week and keeps New York hours. Nine in the
+        // morning in London is four in the morning on the clock her hours are
+        // written on, and two in the afternoon is the first hour of her day.
+        let ada = [Invited {
+            zone: Some(chrono_tz::Europe::London),
+            ..working(
+                "Ada",
+                &MONDAY_TO_FRIDAY,
+                (o_clock(9, 0), o_clock(17, 0)),
+                chrono_tz::America::New_York,
+            )
+        }];
+
+        assert_eq!(
+            outside_whose_day("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z", &ada),
+            ["Ada"]
+        );
+        assert!(outside_whose_day("2026-03-02T14:00:00Z", "2026-03-02T15:00:00Z", &ada).is_empty());
+    }
+
+    #[test]
+    fn test_a_colleagues_hours_are_kept_to_the_minute() {
+        // Half past eight is when Ada's day starts, not eight and not nine.
+        let ada = [working(
+            "Ada",
+            &MONDAY_TO_FRIDAY,
+            (o_clock(8, 30), o_clock(17, 0)),
+            Tz::UTC,
+        )];
+
+        assert!(outside_whose_day("2026-03-02T08:30:00Z", "2026-03-02T09:30:00Z", &ada).is_empty());
+        assert_eq!(
+            outside_whose_day("2026-03-02T08:00:00Z", "2026-03-02T09:00:00Z", &ada),
+            ["Ada"]
+        );
+    }
+
+    #[test]
+    fn test_a_colleagues_night_shift_belongs_to_the_day_it_opens() {
+        // Ada works one night a week, Monday ten at night to Tuesday six in
+        // the morning. One in the morning on Tuesday is that shift; eleven on
+        // Tuesday night would be a Tuesday shift, which she does not work.
+        let ada = [working(
+            "Ada",
+            &[chrono::Weekday::Mon],
+            (o_clock(22, 0), o_clock(6, 0)),
+            Tz::UTC,
+        )];
+
+        assert!(outside_whose_day("2026-03-03T01:00:00Z", "2026-03-03T02:00:00Z", &ada).is_empty());
+        assert_eq!(
+            outside_whose_day("2026-03-03T23:00:00Z", "2026-03-04T00:00:00Z", &ada),
+            ["Ada"]
         );
     }
 
@@ -2246,6 +2491,7 @@ mod tests {
             Invited {
                 called: "Charles".to_string(),
                 zone: Some(Tz::UTC),
+                working_week: None,
                 calendar: TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay),
             },
         ];
@@ -2347,6 +2593,7 @@ mod tests {
         let ada = Invited {
             called: "Ada".to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: TheirCalendar::Answered {
                 covering: span("2026-03-02T00:00:00Z", "2026-03-03T00:00:00Z"),
                 stretches: Vec::new(),
