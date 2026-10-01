@@ -587,68 +587,89 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
 ) -> Result<Vec<(AWaitingMove, Replayed)>> {
     let mut replayed = Vec::new();
     for waiting in cache.moves_waiting_for(account_id)? {
-        let from = waiting.from_folder_path.as_str();
-        // The marks the move carries go first, on this session, while the
-        // folder still holds the message under this number (ledger 688). A
-        // mark that could not be sent for any reason but the server saying no
-        // is the answer for the move as well, so the two wait, or are put
-        // back, together.
-        let marked = send_the_marks_first(server, cache, &waiting).await;
-        let answer = match (marked, &waiting.what) {
-            (Err(not_sent), _) => Err(not_sent),
-            (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
-                server.move_it(from, waiting.uid, into_folder_path).await
-            }
-            (Ok(()), WhatAWaitingMoveDoes::DeleteToTrash { trash_path }) => {
-                server.delete_it(from, waiting.uid, Some(trash_path)).await
-            }
-            (Ok(()), WhatAWaitingMoveDoes::DeleteOutright) => {
-                server.delete_it(from, waiting.uid, None).await
-            }
-            (Ok(()), WhatAWaitingMoveDoes::Copy { into_folder_path }) => {
-                server.copy_it(from, waiting.uid, into_folder_path).await
-            }
-            // Two servers' work, which the read above leaves out and
-            // [`replay_the_crossings_waiting_for`] does; a row here would be
-            // a command at the wrong server.
-            (
-                Ok(()),
-                WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. },
-            ) => {
-                continue;
-            }
-        };
-        // Where the message is, asked only of a server that answered no: a
-        // server that hung up cannot be asked, and asking would turn the
-        // question into a second failure. A question that fails is read the
-        // way the answer would have been.
-        let what_it_means = match &answer {
-            Err(why) if why_the_push_failed(why) == WhyThePushFailed::TheServerSaidNo => {
-                match where_it_is_now(server, cache, &waiting).await {
-                    Ok(now) => what_a_replay_answered(&answer, now),
-                    Err(asking) => what_a_replay_answered(&Err(asking), WhereItIsNow::NotThere),
-                }
-            }
-            _ => what_a_replay_answered(&answer, WhereItIsNow::NotThere),
-        };
-        match &what_it_means {
-            Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
-                settle_the_row(server, cache, &waiting).await?;
-                cache.stop_waiting_for_a_move(waiting.message_row_id)?;
-            }
-            // The undo is the window's, so the sentence is said beside it,
-            // and the row stops waiting there too: a refusal met with the
-            // program gone before the undo ran is met again at the next
-            // check, which undoes it then.
-            Replayed::Refused(_) => {}
-            Replayed::NotReached => {
-                replayed.push((waiting, what_it_means));
-                break;
-            }
+        // Two servers' work, which the read above leaves out and
+        // [`replay_the_crossings_waiting_for`] does; a row here would be a
+        // command at the wrong server.
+        if waiting.what.crosses_to().is_some() {
+            continue;
         }
+        let what_it_means = replay_one(server, cache, &waiting).await?;
+        let reached = what_it_means != Replayed::NotReached;
         replayed.push((waiting, what_it_means));
+        if !reached {
+            break;
+        }
     }
     Ok(replayed)
+}
+
+/// Replay one waiting move within one account and settle its row by what the
+/// server answered.
+///
+/// A move the server carried out, or had already, leaves its row where the
+/// server holds the message now and ends the wait; a refusal is handed back
+/// with its reason and the undo is the caller's; a server that could not be
+/// reached leaves the row waiting.
+pub(crate) async fn replay_one<S: ReplaysAMove>(
+    server: &S,
+    cache: &MessageCache,
+    waiting: &AWaitingMove,
+) -> Result<Replayed> {
+    let from = waiting.from_folder_path.as_str();
+    // The marks the move carries go first, on this session, while the
+    // folder still holds the message under this number (ledger 688). A
+    // mark that could not be sent for any reason but the server saying no
+    // is the answer for the move as well, so the two wait, or are put
+    // back, together.
+    let marked = send_the_marks_first(server, cache, waiting).await;
+    let answer = match (marked, &waiting.what) {
+        (Err(not_sent), _) => Err(not_sent),
+        (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
+            server.move_it(from, waiting.uid, into_folder_path).await
+        }
+        (Ok(()), WhatAWaitingMoveDoes::DeleteToTrash { trash_path }) => {
+            server.delete_it(from, waiting.uid, Some(trash_path)).await
+        }
+        (Ok(()), WhatAWaitingMoveDoes::DeleteOutright) => {
+            server.delete_it(from, waiting.uid, None).await
+        }
+        (Ok(()), WhatAWaitingMoveDoes::Copy { into_folder_path }) => {
+            server.copy_it(from, waiting.uid, into_folder_path).await
+        }
+        (
+            Ok(()),
+            WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. },
+        ) => {
+            return Err(Error::Other(
+                "A move to another account is replayed with both accounts, not here".into(),
+            ));
+        }
+    };
+    // Where the message is, asked only of a server that answered no: a
+    // server that hung up cannot be asked, and asking would turn the
+    // question into a second failure. A question that fails is read the
+    // way the answer would have been.
+    let what_it_means = match &answer {
+        Err(why) if why_the_push_failed(why) == WhyThePushFailed::TheServerSaidNo => {
+            match where_it_is_now(server, cache, waiting).await {
+                Ok(now) => what_a_replay_answered(&answer, now),
+                Err(asking) => what_a_replay_answered(&Err(asking), WhereItIsNow::NotThere),
+            }
+        }
+        _ => what_a_replay_answered(&answer, WhereItIsNow::NotThere),
+    };
+    match &what_it_means {
+        Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
+            settle_the_row(server, cache, waiting).await?;
+            cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+        }
+        // The undo is the caller's, so the sentence is said beside it, and
+        // the row stops waiting there too: a refusal met with the program
+        // gone before the undo ran is met again at the next check, which
+        // undoes it then.
+        Replayed::Refused(_) | Replayed::NotReached => {}
+    }
+    Ok(what_it_means)
 }
 
 /// Send the marks a waiting move carries, if it carries any, from the

@@ -35643,12 +35643,13 @@ tests_last_seen = [
 # A waiting move replayed without the marks it carries, so a Quick Step
 # that marks and moves sends the move alone and the mark is lost at the
 # server (ledger 688). Written 2026-09-30 by 13-42, measured through
-# `scripts/guards.sh --remeasure`.
+# `scripts/guards.sh --remeasure`. Rewritten 2026-10-01 by 13-44.3 on the
+# line as it stands in `replay_one`, the replay's loop body moved out.
 [[guard]]
 name = "a waiting move sends the marks it carries before the move"
 file = "src/application/moves_waiting.rs"
-before = '''        let marked = send_the_marks_first(server, cache, &waiting).await;'''
-after = '''        let marked: Result<()> = Ok(());'''
+before = '''    let marked = send_the_marks_first(server, cache, waiting).await;'''
+after = '''    let marked: Result<()> = Ok(());'''
 red = [
     "application::moves_waiting::tests::test_a_quick_step_that_marks_read_and_moves_sends_the_mark_before_the_move",
 ]
