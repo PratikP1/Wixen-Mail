@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 537 records have arrived since and have not been through it.
+# 539 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -33541,7 +33541,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 22 },
 ]
 
 # A report's sentence says what the provider was told; dropped, the move
@@ -33567,7 +33567,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 22 },
 ]
 
 # A rule stores its label by name and a message's labels are keyed on the
@@ -33859,7 +33859,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 17 },
 ]
 
 # A block reads every message the account holds on the window's thread, so
@@ -33883,7 +33883,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 17 },
 ]
 
 # A continuation reference kept among the entries, so `construct` panics on
@@ -35810,4 +35810,74 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reporting_junk.rs", tests = 29 },
+]
+
+# Undo of a report moved back at the key, with no mark worker before it, so
+# $Junk stays on the messages at the server, or reaches it in either order
+# against the move (ledger 677, D3, T-13-44.1-02). The break takes the
+# report's branch out as text, since a condition made false would leave the
+# text a reading reads unchanged. Written 2026-10-01 by 13-44.1, measured
+# through `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "an undo of a report whose mark may be on goes to the mark worker before anything moves back"
+file = "src/presentation/wx_app.rs"
+suite = "report_as_junk_is_on_the_action_menu"
+before = '''        if let Moving::Reported { marked, .. } = &moving
+            && a_mark_may_be_on(marked)
+            && let Some((account, places)) =
+                where_a_reports_mark_is_changed(app.state, cache, direction, &went)
+        {
+            say_the_one_word(
+                a11y,
+                match direction {
+                    Direction::Undo => "Undo",
+                    Direction::Redo => "Redo",
+                },
+            );
+            spawn_the_junk_mark_change(
+                app,
+                account,
+                direction,
+                LastAction::Moved { moving, went },
+                places,
+            );
+            return;
+        }
+'''
+after = ''''''
+red = [
+    "test_an_undo_of_a_report_goes_to_the_mark_worker_before_anything_moves_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 22 },
+]
+
+# A block written to the account that is open rather than the one the
+# message is in, so in All Inboxes the rule, the junk folder and the mail
+# it moves belong to another account (ledger 691, D2, T-13-44.1-06).
+# Written 2026-10-01 by 13-44.1, measured through `scripts/guards.sh
+# --remeasure` against the target.
+[[guard]]
+name = "a block is written to the account the message is in"
+file = "src/presentation/wx_app.rs"
+suite = "a_block_moves_the_mail_already_here"
+before = '''        let account = message.as_ref().and_then(|message| {
+            owner_of(
+                &held.messages,
+                &held.accounts,
+                message.message_id,
+                held.active_account_id.as_deref(),
+            )
+        });'''
+after = '''        let account = held
+            .active_account_id
+            .clone()
+            .and_then(|open| held.accounts.iter().find(|held| held.id == open).cloned());'''
+red = [
+    "test_a_block_is_written_to_the_account_the_message_is_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 17 },
 ]

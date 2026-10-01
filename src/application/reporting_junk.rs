@@ -86,6 +86,9 @@ pub struct ReadyToMove {
     pub junk_name: String,
     pub messages: Vec<AReportedMessage>,
     pub sentence: String,
+    /// What became of the junk mark, kept with the report's undo step so
+    /// Undo asks the server to take it off only where it may be on (13-44.1).
+    pub marked: Marked,
 }
 
 /// What a POP account's report says.
