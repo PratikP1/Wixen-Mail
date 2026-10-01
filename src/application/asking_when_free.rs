@@ -415,6 +415,8 @@ pub fn your_own_diary(
     Invited {
         called: called.to_string(),
         zone: Some(here),
+        // The organiser's own day is the one set here.
+        working_week: None,
         calendar: TheirCalendar::Answered {
             covering: window,
             stretches: events
@@ -913,6 +915,7 @@ mod tests {
             Invited {
                 called: "Ada".to_string(),
                 zone: Some(Tz::UTC),
+                working_week: None,
                 calendar: TheirCalendar::Answered {
                     covering: the_fortnight(),
                     stretches: Vec::new(),
@@ -921,6 +924,7 @@ mod tests {
             Invited {
                 called: "Bob".to_string(),
                 zone: Some(Tz::UTC),
+                working_week: None,
                 calendar: TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay),
             },
         ];

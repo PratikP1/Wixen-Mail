@@ -203,7 +203,29 @@ pub struct Invited {
     /// rather than somebody else's. Nothing when nobody said where they are,
     /// which is said out loud rather than guessed at.
     pub zone: Option<Tz>,
+    /// The days and hours they said they work, and the clock those are
+    /// written on. Nothing where nobody said, and then the working day set
+    /// here is theirs.
+    pub working_week: Option<TheirWorkingWeek>,
     pub calendar: TheirCalendar,
+}
+
+/// The days and hours somebody works, as they set them in their own calendar.
+///
+/// Judged on the clock the hours are written on, which can be another zone
+/// from the one they are said to be in: nine to five in New York is nine to
+/// five in New York wherever the person happens to be standing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TheirWorkingWeek {
+    /// The clock the hours are written on.
+    pub zone: Tz,
+    /// The days a working day opens on.
+    pub days: chrono::WeekdaySet,
+    /// When it opens, on that clock.
+    pub starts: chrono::NaiveTime,
+    /// When it closes. At or before `starts`, the day runs through midnight
+    /// and belongs to the day it opened on.
+    pub ends: chrono::NaiveTime,
 }
 
 /// When everybody is free, over the window somebody asked about.
@@ -1445,6 +1467,7 @@ mod tests {
         Invited {
             called: called.to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: TheirCalendar::Answered {
                 // Wide enough that no test measures the edge of it by
                 // accident. The tests that are about a partial answer build
@@ -1763,6 +1786,7 @@ mod tests {
         let ada = Invited {
             called: "Ada".to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: what_their_calendar_said(
                 &a_reply(&["FREEBUSY:20260302T090000Z/20260302T100000Z"]),
                 window,
@@ -1771,6 +1795,7 @@ mod tests {
         let grace = Invited {
             called: "Grace".to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: TheirCalendar::Answered {
                 covering: window,
                 stretches: when_this_event_blocks(
@@ -1963,6 +1988,142 @@ mod tests {
              which is 04:30 for Grace; or Monday at 10, which is 05:00 for Grace. \
              Monday at 9, Monday at 9:30, and Monday at 10 are outside \
              Grace's working day."
+        );
+    }
+
+    const MONDAY_TO_FRIDAY: [chrono::Weekday; 5] = [
+        chrono::Weekday::Mon,
+        chrono::Weekday::Tue,
+        chrono::Weekday::Wed,
+        chrono::Weekday::Thu,
+        chrono::Weekday::Fri,
+    ];
+
+    /// A time of day, hours and minutes.
+    fn o_clock(hour: u32, minute: u32) -> chrono::NaiveTime {
+        chrono::NaiveTime::from_hms_opt(hour, minute, 0).expect("a time of day")
+    }
+
+    /// Somebody free all year who works these days and hours on this clock.
+    fn working(
+        called: &str,
+        days: &[chrono::Weekday],
+        hours: (chrono::NaiveTime, chrono::NaiveTime),
+        zone: Tz,
+    ) -> Invited {
+        Invited {
+            working_week: Some(TheirWorkingWeek {
+                zone,
+                days: days.iter().copied().collect(),
+                starts: hours.0,
+                ends: hours.1,
+            }),
+            ..busy(called, &[])
+        }
+    }
+
+    /// Who the one hour-long time a window of exactly an hour holds is
+    /// outside the working day of, asked with nine to five set here.
+    fn outside_whose_day(from: &str, until: &str, people: &[Invited]) -> Vec<String> {
+        let found = when_we_could_meet(people, an_hour_inside(span(from, until)));
+        assert_eq!(found.times.len(), 1, "{:?}", times_offered(&found));
+        found.times[0].outside_the_working_day_for.clone()
+    }
+
+    #[test]
+    fn test_a_colleague_is_judged_by_their_own_working_hours_rather_than_the_ones_set_here() {
+        // Ada starts at seven and is gone by three. Judged by nine to five set
+        // here, her first hours are offered last and her evening first.
+        let ada = [working(
+            "Ada",
+            &MONDAY_TO_FRIDAY,
+            (o_clock(7, 0), o_clock(15, 0)),
+            Tz::UTC,
+        )];
+
+        assert!(outside_whose_day("2026-03-02T07:00:00Z", "2026-03-02T08:00:00Z", &ada).is_empty());
+        assert_eq!(
+            outside_whose_day("2026-03-02T14:30:00Z", "2026-03-02T15:30:00Z", &ada),
+            ["Ada"]
+        );
+    }
+
+    #[test]
+    fn test_a_day_a_colleague_does_not_work_is_outside_their_day_and_nobody_elses() {
+        // Saturday is inside the working day set here, which has no days, and
+        // outside Ada's, who works Monday to Friday. Bo said nothing, so he is
+        // judged as before and not named.
+        let people = [
+            working(
+                "Ada",
+                &MONDAY_TO_FRIDAY,
+                (o_clock(9, 0), o_clock(17, 0)),
+                Tz::UTC,
+            ),
+            busy("Bo", &[]),
+        ];
+
+        assert_eq!(
+            the_hour_from("2026-03-07T10:00:00Z", "2026-03-07T11:00:00Z", &people),
+            "Everyone is free Saturday at 10. Saturday at 10 is outside Ada's working day."
+        );
+    }
+
+    #[test]
+    fn test_a_colleagues_hours_are_judged_on_the_clock_they_are_written_on() {
+        // Ada is in London this week and keeps New York hours. Nine in the
+        // morning in London is four in the morning on the clock her hours are
+        // written on, and two in the afternoon is the first hour of her day.
+        let ada = [Invited {
+            zone: Some(chrono_tz::Europe::London),
+            ..working(
+                "Ada",
+                &MONDAY_TO_FRIDAY,
+                (o_clock(9, 0), o_clock(17, 0)),
+                chrono_tz::America::New_York,
+            )
+        }];
+
+        assert_eq!(
+            outside_whose_day("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z", &ada),
+            ["Ada"]
+        );
+        assert!(outside_whose_day("2026-03-02T14:00:00Z", "2026-03-02T15:00:00Z", &ada).is_empty());
+    }
+
+    #[test]
+    fn test_a_colleagues_hours_are_kept_to_the_minute() {
+        // Half past eight is when Ada's day starts, not eight and not nine.
+        let ada = [working(
+            "Ada",
+            &MONDAY_TO_FRIDAY,
+            (o_clock(8, 30), o_clock(17, 0)),
+            Tz::UTC,
+        )];
+
+        assert!(outside_whose_day("2026-03-02T08:30:00Z", "2026-03-02T09:30:00Z", &ada).is_empty());
+        assert_eq!(
+            outside_whose_day("2026-03-02T08:00:00Z", "2026-03-02T09:00:00Z", &ada),
+            ["Ada"]
+        );
+    }
+
+    #[test]
+    fn test_a_colleagues_night_shift_belongs_to_the_day_it_opens() {
+        // Ada works one night a week, Monday ten at night to Tuesday six in
+        // the morning. One in the morning on Tuesday is that shift; eleven on
+        // Tuesday night would be a Tuesday shift, which she does not work.
+        let ada = [working(
+            "Ada",
+            &[chrono::Weekday::Mon],
+            (o_clock(22, 0), o_clock(6, 0)),
+            Tz::UTC,
+        )];
+
+        assert!(outside_whose_day("2026-03-03T01:00:00Z", "2026-03-03T02:00:00Z", &ada).is_empty());
+        assert_eq!(
+            outside_whose_day("2026-03-03T23:00:00Z", "2026-03-04T00:00:00Z", &ada),
+            ["Ada"]
         );
     }
 
@@ -2246,6 +2407,7 @@ mod tests {
             Invited {
                 called: "Charles".to_string(),
                 zone: Some(Tz::UTC),
+                working_week: None,
                 calendar: TheirCalendar::NotKnown(WhyNot::TheServerWouldNotSay),
             },
         ];
@@ -2347,6 +2509,7 @@ mod tests {
         let ada = Invited {
             called: "Ada".to_string(),
             zone: Some(Tz::UTC),
+            working_week: None,
             calendar: TheirCalendar::Answered {
                 covering: span("2026-03-02T00:00:00Z", "2026-03-03T00:00:00Z"),
                 stretches: Vec::new(),

@@ -80,7 +80,7 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 
 use crate::application::when_people_are_free::{
-    HowBusy, Invited, Span, Stretch, TheirCalendar, WhyNot,
+    HowBusy, Invited, Span, Stretch, TheirCalendar, TheirWorkingWeek, WhyNot,
 };
 use crate::common::{Error, Result};
 use crate::service::caldav::CALENDAR_SERVER;
@@ -160,21 +160,26 @@ const WHAT_WROTE_IT: &str = "-//Wixen Mail//NONSGML v1.0//EN";
 /// server did answer about as never checked.
 type WhatTheySaid = HashMap<String, Heard>;
 
-/// What one place said about one person: their diary, and where they are
-/// when the place said so.
+/// What one place said about one person: their diary, and where they are and
+/// when they work when the place said so.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Heard {
     calendar: TheirCalendar,
     /// Only Microsoft says, through the zone it gives their working hours in.
     zone: Option<Tz>,
+    /// Only Microsoft says this too: the days and hours set in their own
+    /// Outlook, on the clock they are kept on.
+    working_week: Option<TheirWorkingWeek>,
 }
 
-/// A diary from a place that says nothing about where anybody is.
+/// A diary from a place that says nothing about where anybody is or when they
+/// work.
 impl From<TheirCalendar> for Heard {
     fn from(calendar: TheirCalendar) -> Self {
         Self {
             calendar,
             zone: None,
+            working_week: None,
         }
     }
 }
@@ -599,6 +604,7 @@ fn what_microsoft_said(reply: &str, about: Span) -> Result<WhatTheySaid> {
                 Heard {
                     calendar: what_this_diary_said(&diary, about),
                     zone: diary.where_they_are(),
+                    working_week: None,
                 },
             )
         })
@@ -970,6 +976,7 @@ fn one_answer_each<'a, Said: Into<Heard>>(
             zone: person
                 .zone
                 .or_else(|| answers.iter().find_map(|heard| heard.zone)),
+            working_week: answers.iter().find_map(|heard| heard.working_week),
             calendar: what_every_place_said(
                 answers.into_iter().map(|heard| heard.calendar).collect(),
             ),
@@ -1824,6 +1831,110 @@ mod tests {
 
         assert_eq!(where_said(&said, "ada@example.com"), None);
         assert_eq!(about(&said, "ada@example.com"), busy_at(&[]));
+    }
+
+    /// A reply from Microsoft about Ada with nothing on, whose working hours
+    /// are written as given.
+    fn microsoft_said_her_hours_are(working_hours: &str) -> String {
+        format!(
+            "{{\"value\":[{{\"scheduleId\":\"ada@example.com\",\
+             \"scheduleItems\":[],\"workingHours\":{working_hours}}}]}}"
+        )
+    }
+
+    /// The working week one reply said one person keeps.
+    fn week_said(said: &WhatTheySaid, address: &str) -> Option<TheirWorkingWeek> {
+        heard_about(said, address).working_week
+    }
+
+    /// Monday to Friday, half past eight to five, on New York's clock.
+    fn a_new_york_week() -> TheirWorkingWeek {
+        use chrono::Weekday::{Fri, Mon, Thu, Tue, Wed};
+        TheirWorkingWeek {
+            zone: chrono_tz::America::New_York,
+            days: [Mon, Tue, Wed, Thu, Fri].into_iter().collect(),
+            starts: chrono::NaiveTime::from_hms_opt(8, 30, 0).expect("a time of day"),
+            ends: chrono::NaiveTime::from_hms_opt(17, 0, 0).expect("a time of day"),
+        }
+    }
+
+    /// Ada's New York week as Microsoft writes it, the days out of order.
+    const HER_NEW_YORK_HOURS: &str = "{\"daysOfWeek\":[\"friday\",\"monday\",\
+        \"wednesday\",\"tuesday\",\"thursday\"],\
+        \"startTime\":\"08:30:00.0000000\",\"endTime\":\"17:00:00.0000000\",\
+        \"timeZone\":{\"name\":\"America/New_York\"}}";
+
+    #[test]
+    fn test_a_colleagues_own_working_week_is_read_from_microsofts_answer() {
+        // Outlook greys each attendee's own hours. Read for the zone alone,
+        // somebody who starts at half past eight in New York is judged by the
+        // working day set here, and on every day of the week.
+        let said = what_microsoft_said(
+            &microsoft_said_her_hours_are(HER_NEW_YORK_HOURS),
+            the_week(),
+        )
+        .expect("a reply");
+
+        assert_eq!(week_said(&said, "ada@example.com"), Some(a_new_york_week()));
+    }
+
+    #[test]
+    fn test_working_hours_this_cannot_read_give_no_working_week() {
+        // A week shortened by the words it could not read would make a day she
+        // works a day she does not. No week at all leaves her judged as before,
+        // by the working day set here on her own clock.
+        let rows = [
+            (
+                "an empty list of days",
+                "\"daysOfWeek\":[],\"startTime\":\"08:30:00.0000000\",\"endTime\":\"17:00:00.0000000\"",
+            ),
+            (
+                "no list of days",
+                "\"daysOfWeek\":null,\"startTime\":\"08:30:00.0000000\",\"endTime\":\"17:00:00.0000000\"",
+            ),
+            (
+                "a day that is not a day",
+                "\"daysOfWeek\":[\"monday\",\"someday\"],\"startTime\":\"08:30:00.0000000\",\"endTime\":\"17:00:00.0000000\"",
+            ),
+            (
+                "a start that is not a time",
+                "\"daysOfWeek\":[\"monday\"],\"startTime\":\"eight\",\"endTime\":\"17:00:00.0000000\"",
+            ),
+            (
+                "no end",
+                "\"daysOfWeek\":[\"monday\"],\"startTime\":\"08:30:00.0000000\"",
+            ),
+        ];
+        for (row, hours) in rows {
+            let reply = microsoft_said_her_hours_are(&format!(
+                "{{{hours},\"timeZone\":{{\"name\":\"America/New_York\"}}}}"
+            ));
+
+            let said = what_microsoft_said(&reply, the_week()).expect("a reply");
+
+            assert_eq!(week_said(&said, "ada@example.com"), None, "{row}");
+            assert_eq!(
+                where_said(&said, "ada@example.com"),
+                Some(chrono_tz::America::New_York),
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_working_hours_kept_in_a_zone_built_by_hand_give_no_working_week() {
+        // Hours on a clock nobody can place cannot be judged. Judged on the
+        // organiser's clock instead they would be a guess said as a fact.
+        let reply = microsoft_said_her_hours_are(
+            "{\"daysOfWeek\":[\"monday\",\"tuesday\"],\
+             \"startTime\":\"08:30:00.0000000\",\"endTime\":\"17:00:00.0000000\",\
+             \"timeZone\":{\"@odata.type\":\"#microsoft.graph.customTimeZone\",\
+             \"bias\":-200,\"name\":\"Customized Time Zone\"}}",
+        );
+
+        let said = what_microsoft_said(&reply, the_week()).expect("a reply");
+
+        assert_eq!(week_said(&said, "ada@example.com"), None);
     }
 
     #[test]
@@ -2717,6 +2828,7 @@ mod tests {
             [Invited {
                 called: "Ada".to_string(),
                 zone: Some(Tz::UTC),
+                working_week: None,
                 calendar: busy_at(&[
                     ("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z"),
                     ("2026-03-02T09:30:00Z", "2026-03-02T10:30:00Z"),
@@ -2857,8 +2969,8 @@ mod tests {
         };
         let placed_already = somebody("Bob", "bob@example.com");
         let placed_by_microsoft = Heard {
-            calendar: busy_at(&[]),
             zone: Some(pacific),
+            ..Heard::from(busy_at(&[]))
         };
 
         let found = one_answer_each([
@@ -2869,6 +2981,57 @@ mod tests {
 
         assert_eq!(found[0].zone, Some(pacific));
         assert_eq!(found[1].zone, Some(Tz::UTC));
+    }
+
+    #[test]
+    fn test_the_working_week_a_place_gave_is_kept_when_another_gave_none() {
+        // Only Microsoft says when anybody works, so a calendar server's
+        // silence about it is not a week of its own and must not erase one.
+        // Where two places gave one, the first is kept, as the zone is.
+        let ada = somebody("Ada", "ada@example.com");
+        let a_later_week = TheirWorkingWeek {
+            days: chrono::WeekdaySet::ALL,
+            ..a_new_york_week()
+        };
+        let with_a_week = |week| Heard {
+            working_week: Some(week),
+            ..Heard::from(busy_at(&[]))
+        };
+
+        let found = one_answer_each([
+            (&ada, Heard::from(busy_at(&[]))),
+            (&ada, with_a_week(a_new_york_week())),
+            (&ada, with_a_week(a_later_week)),
+        ]);
+
+        assert_eq!(found[0].working_week, Some(a_new_york_week()));
+    }
+
+    #[tokio::test]
+    async fn test_a_colleague_microsoft_places_comes_back_with_their_own_working_week() {
+        // The whole way through: Microsoft's answer gives Ada's days and hours,
+        // and she comes back carrying them to the search.
+        let (address, _listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![microsoft_said_her_hours_are(HER_NEW_YORK_HOURS)],
+        )
+        .await;
+
+        let found = when_they_are_free(
+            &a_client(),
+            &[AskHere {
+                server: WhereToAsk::Microsoft {
+                    base: format!("http://{address}"),
+                    token: "a-fake-token".to_string(),
+                },
+                people: vec![somebody("Ada", "ada@example.com")],
+            }],
+            the_week(),
+        )
+        .await;
+
+        assert_eq!(found[0].working_week, Some(a_new_york_week()));
     }
 
     #[cfg(target_os = "windows")]
