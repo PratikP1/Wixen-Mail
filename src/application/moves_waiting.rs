@@ -3141,6 +3141,30 @@ mod tests {
         }
     }
 
+    /// What a check asks to carry out a rule's Delete. These cases hold no
+    /// rule, so nothing here is asked.
+    impl ReplaysAMove for AServerThatLists {
+        async fn move_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete_it(&self, _folder: &str, _uid: u32, _trash: Option<&str>) -> Result<()> {
+            Ok(())
+        }
+
+        async fn copy_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
+            Ok(Vec::new())
+        }
+
+        async fn mark_it(&self, _folder: &str, _uid: u32, _marks: MarksFirst) -> Result<()> {
+            Ok(())
+        }
+    }
+
     fn a_folder_read(path: &str) -> crate::service::protocols::imap::ImapFolder {
         crate::service::protocols::imap::ImapFolder {
             name: path.to_string(),

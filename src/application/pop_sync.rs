@@ -913,6 +913,34 @@ Subject: Weekly roundup",
     }
 
     #[test]
+    fn test_a_pop_rule_that_deletes_still_marks_the_message_deleted_here() {
+        // A POP server keeps no Trash and nothing brings the message back, so
+        // a rule's Delete stays what it always was here (D13), now that the
+        // rule itself writes nothing and each check carries its deletes out.
+        let (cache, inbox) = a_cache();
+        let raw = raw_message("From: news@example.com\r\nSubject: Weekly roundup", "Body");
+
+        let done = run_with_rules(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            inbox,
+            &[a_rule("Unwanted", "news@example.com", "delete", None)],
+        )
+        .expect("the check runs");
+
+        let row = done.written.first().copied().expect("the message written");
+        assert!(
+            cache
+                .get_message(row)
+                .expect("the row read")
+                .expect("the row is there")
+                .deleted,
+            "the rule's Delete did not mark the message deleted here"
+        );
+        assert_eq!(done.filtered.changed, 1, "the delete was not counted");
+    }
+
+    #[test]
     fn test_a_rule_that_could_not_file_mail_says_so_once_however_many_it_matched() {
         // A rule naming a folder somebody has since renamed fails the same way
         // on every message it matches, so a check that brought down three of

@@ -237,6 +237,90 @@ fn test_the_reading_refuses_a_rules_changes_sent_after_the_move() {
     );
 }
 
+/// What the check sends a rule's deletes with, and where it must sit.
+const THE_RULES_DELETES: &str = "carry_out_the_deletes";
+const AFTER_THE_MOVE: [&str; 1] = ["carry_out_the_moves("];
+const BEFORE_THE_FLAG_READ: [&str; 1] = [".fetch_flags("];
+
+/// The function each line of `source` calling `called` sits in, by name.
+///
+/// A function is found by its first line, which starts at the left margin and
+/// names `fn`; a call is a line holding the name and its parenthesis, which a
+/// definition, `name<S: ...>(`, does not.
+fn the_functions_calling(source: &str, called: &str) -> Vec<String> {
+    let call = format!("{called}(");
+    let mut within = String::new();
+    let mut found = Vec::new();
+    for line in the_shipping_lines(source) {
+        let at_the_margin = !line.starts_with(char::is_whitespace);
+        if at_the_margin && line.starts_with("impl") {
+            within = line.to_string();
+        }
+        if let Some(after) = line.split("fn ").nth(1).filter(|_| at_the_margin) {
+            within = after
+                .split(['<', '('])
+                .next()
+                .unwrap_or_default()
+                .to_string();
+        }
+        if line.contains(&call) {
+            found.push(within.clone());
+        }
+    }
+    found
+}
+
+#[test]
+fn test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail() {
+    // Guardrail 7 for a rule's Delete (13-44.3, D10 and D11): the check that
+    // brought the message sends it to the Trash on its own session, after the
+    // rule's moves and before the flags are read back, through the replay's
+    // own steps; nothing else sends a rule's delete, and the replay's steps
+    // are called by the replay and by that check alone.
+    let check = fs::read_to_string("src/application/mail_sync.rs").expect("the check");
+    let replay = fs::read_to_string("src/application/moves_waiting.rs").expect("the waiting moves");
+    assert_eq!(
+        the_one_call_in_the_check(
+            &check,
+            THE_RULES_DELETES,
+            &AFTER_THE_MOVE,
+            &BEFORE_THE_FLAG_READ
+        ),
+        Ok(())
+    );
+    let mut callers = the_functions_calling(&replay, "replay_one");
+    callers.extend(the_functions_calling(&check, "replay_one"));
+    callers.sort();
+    assert_eq!(
+        callers,
+        ["carry_out_the_deletes", "replay_the_moves_waiting_for"],
+        "the replay's own steps are called from somewhere new; read this test's comment"
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_rules_deletes_sent_after_the_flag_read() {
+    // The reading above has to be able to say no.
+    let planted = "pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(\n\
+                   \x20   carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;\n\
+                   \x20   controller.fetch_flags(&folder.path, &held, since).await?;\n\
+                   \x20   carry_out_the_deletes(controller, cache, folder, folder_id, &filtered.to_delete).await;\n\
+                   }\n\
+                   async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(\n\
+                   }\n\
+                   #[cfg(test)]\n";
+    assert!(
+        the_one_call_in_the_check(
+            planted,
+            THE_RULES_DELETES,
+            &AFTER_THE_MOVE,
+            &BEFORE_THE_FLAG_READ
+        )
+        .is_err(),
+        "a rule's deletes sent after the flag read were read as in their place"
+    );
+}
+
 #[test]
 fn test_the_module_that_decides_cannot_express_sending() {
     // Held by the shape of the type rather than by a comment. The decision

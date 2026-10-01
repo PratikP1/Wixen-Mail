@@ -26,6 +26,7 @@ use crate::application::filters::Outcome;
 use crate::application::flag_changes_waiting::{
     self, WhatAFailedPushCallsFor, WhichFlag, WhyThePushFailed,
 };
+use crate::application::moves_waiting::Replayed;
 use crate::common::Result;
 use crate::data::message_cache::waiting_flag_changes::AWaitingFlagChange;
 use crate::data::message_cache::{CachedMessage, MessageCache, Tag};
@@ -215,6 +216,15 @@ pub fn what_the_change_calls_for(change: &AChange, answer: Answered<'_>) -> ForT
     }
 }
 
+/// What a rule's Delete calls for, from what the menu's replay answered and
+/// how the failure was read when there was one.
+pub fn what_a_rules_delete_calls_for(
+    _replayed: &Replayed,
+    _failed: Option<WhyThePushFailed>,
+) -> ForTheChange {
+    ForTheChange::Done
+}
+
 /// Do here what one change calls for: keep it in the queue, or put it back
 /// as the message arrived.
 pub fn do_here_what_it_calls_for(
@@ -340,8 +350,10 @@ mod tests {
     use crate::application::mail_sync::{
         Filtering, FolderSync, Mailbox, WhatThisSyncIsFor, sync_folder,
     };
+    use crate::application::moves_waiting::ReplaysAMove;
     use crate::common::Result;
     use crate::common::types::FolderType;
+    use crate::data::message_cache::moves_waiting::{MarksFirst, WhatAWaitingMoveDoes};
     use crate::data::message_cache::{CachedFolder, MessageCache, MessageFilterRule};
     use crate::service::protocols::imap::abilities::Abilities;
     use crate::service::protocols::imap::{
@@ -376,6 +388,9 @@ mod tests {
         log: RefCell<Vec<String>>,
         /// How every STORE is answered, when it is not taken.
         refuses_a_store_with: Option<Refusal>,
+        /// How every DELETE is answered, when it is not taken; a cell, so a
+        /// case can let the next one through.
+        refuses_a_delete_with: std::cell::Cell<Option<Refusal>>,
     }
 
     /// The ways a change does not go.
@@ -385,6 +400,8 @@ mod tests {
         SaidNo,
         /// The connection went before anything came back.
         Dropped,
+        /// This computer's own gate refused it before anything was sent.
+        TheGate,
     }
 
     impl Refusal {
@@ -392,6 +409,7 @@ mod tests {
             match self {
                 Refusal::SaidNo => crate::common::Error::Protocol("NO not today".into()),
                 Refusal::Dropped => crate::common::Error::Network("the connection went".into()),
+                Refusal::TheGate => crate::common::Error::Security("Allow Changes is off".into()),
             }
         }
     }
@@ -401,6 +419,31 @@ mod tests {
             Self {
                 refuses_a_store_with: Some(refusal),
                 ..self
+            }
+        }
+
+        fn refusing_a_delete(self, refusal: Refusal) -> Self {
+            self.refuses_a_delete_with.set(Some(refusal));
+            self
+        }
+
+        /// The same server, taking every delete from now on.
+        fn answering_again(&self) {
+            self.refuses_a_delete_with.set(None);
+        }
+
+        /// Take a message out of one folder and into another under the next
+        /// number there, or out of the server when there is no other.
+        fn take_it(&self, from: &str, uid: u32, into: Option<&str>) {
+            let mut folders = self.folders.borrow_mut();
+            let leaving = folders.get_mut(from).and_then(|held| {
+                let at = held.iter().position(|message| message.uid == uid)?;
+                Some(held.remove(at))
+            });
+            if let (Some(mut message), Some(into)) = (leaving, into) {
+                let arriving = folders.entry(into.to_string()).or_default();
+                message.uid = arriving.iter().map(|held| held.uid).max().unwrap_or(0) + 1;
+                arriving.push(message);
             }
         }
 
@@ -419,6 +462,7 @@ mod tests {
                 highest_modseq: None,
                 log: RefCell::new(Vec::new()),
                 refuses_a_store_with: None,
+                refuses_a_delete_with: std::cell::Cell::new(None),
             }
         }
 
@@ -517,16 +561,7 @@ mod tests {
             self.log
                 .borrow_mut()
                 .push(format!("MOVE {uid} in {from} into {into}"));
-            let mut folders = self.folders.borrow_mut();
-            let leaving = folders.get_mut(from).and_then(|held| {
-                let at = held.iter().position(|message| message.uid == uid)?;
-                Some(held.remove(at))
-            });
-            if let Some(mut message) = leaving {
-                let arriving = folders.entry(into.to_string()).or_default();
-                message.uid = arriving.iter().map(|held| held.uid).max().unwrap_or(0) + 1;
-                arriving.push(message);
-            }
+            self.take_it(from, uid, Some(into));
             Ok(Moved::Moved)
         }
 
@@ -573,9 +608,64 @@ mod tests {
         }
     }
 
-    /// A cache holding the account's Inbox and a folder to file into, with
-    /// the label Money, sent as a keyword, and the label Local, which has none.
+    /// What the menu's replay asks, which a rule's Delete is sent through.
+    impl ReplaysAMove for AServerThatKeepsFlags {
+        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+            Mailbox::move_message(self, from, uid, into)
+                .await
+                .map(|_| ())
+        }
+
+        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()> {
+            self.log.borrow_mut().push(match trash {
+                Some(trash) => format!("DELETE {uid} in {folder} into {trash}"),
+                None => format!("DELETE {uid} in {folder}"),
+            });
+            if let Some(refusal) = self.refuses_a_delete_with.get() {
+                return Err(refusal.as_error());
+            }
+            self.take_it(folder, uid, trash);
+            Ok(())
+        }
+
+        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+            self.log
+                .borrow_mut()
+                .push(format!("COPY {uid} in {from} into {into}"));
+            Ok(())
+        }
+
+        async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
+            Ok(self
+                .in_folder(folder)
+                .into_iter()
+                .filter(|held| held.message_id == message_id)
+                .map(|held| held.uid)
+                .collect())
+        }
+
+        async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {
+            if let Some(read) = marks.read {
+                Mailbox::set_flag(self, folder, uid, SEEN, read).await?;
+            }
+            if let Some(starred) = marks.starred {
+                Mailbox::set_flag(self, folder, uid, FLAGGED, starred).await?;
+            }
+            Ok(())
+        }
+    }
+
+    /// A cache holding the account's Inbox, a folder to file into and its
+    /// Trash, with the label Money, sent as a keyword, and the label Local,
+    /// which has none.
     fn an_account() -> (tempfile::TempDir, MessageCache, i64) {
+        let (dir, cache, inbox) = an_account_without_a_trash();
+        a_folder(&cache, "Trash", "Trash", FolderType::Trash);
+        (dir, cache, inbox)
+    }
+
+    /// The same account, with no folder it keeps deleted mail in.
+    fn an_account_without_a_trash() -> (tempfile::TempDir, MessageCache, i64) {
         let dir = tempfile::tempdir().expect("a temporary folder");
         let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let inbox = a_folder(&cache, "Inbox", "INBOX", FolderType::Inbox);
@@ -614,11 +704,15 @@ mod tests {
 
     /// The folder as the server lists it.
     fn the_inbox() -> ImapFolder {
+        a_folder_listed("Inbox", "INBOX", FolderType::Inbox)
+    }
+
+    fn a_folder_listed(name: &str, path: &str, kind: FolderType) -> ImapFolder {
         ImapFolder {
-            name: "Inbox".into(),
-            display_path: "INBOX".into(),
-            path: "INBOX".into(),
-            folder_type: FolderType::Inbox,
+            name: name.into(),
+            display_path: path.into(),
+            path: path.into(),
+            folder_type: kind,
             selectable: true,
             holds_all_mail: false,
             subscribed: true,
@@ -661,6 +755,17 @@ mod tests {
         engine: &FilterEngine,
         allowed: crate::application::allowed::Allowed,
     ) -> FolderSync {
+        a_check_of(server, cache, (&the_inbox(), inbox), engine, allowed)
+    }
+
+    /// One check of any folder, as the server lists it and as its row here.
+    fn a_check_of(
+        server: &AServerThatKeepsFlags,
+        cache: &MessageCache,
+        (folder, folder_id): (&ImapFolder, i64),
+        engine: &FilterEngine,
+        allowed: crate::application::allowed::Allowed,
+    ) -> FolderSync {
         let filtering = Filtering {
             rules: engine,
             allowed,
@@ -671,8 +776,8 @@ mod tests {
             .block_on(sync_folder(
                 server,
                 cache,
-                &the_inbox(),
-                inbox,
+                folder,
+                folder_id,
                 50,
                 Some(&filtering),
                 WhatThisSyncIsFor::WhateverHasChanged,
@@ -1242,5 +1347,285 @@ mod tests {
 
         assert!(told.clauses().is_empty(), "{:?}", told.clauses());
         assert_eq!(told, Told::default(), "a change that went was written down");
+    }
+
+    // ── A rule's Delete, through the menu's delete path ─────────────────────
+
+    /// The row here of the folder at `path`.
+    fn the_folder_here(cache: &MessageCache, path: &str) -> i64 {
+        cache
+            .get_folder(THE_ACCOUNT, path)
+            .expect("the folder read")
+            .expect("the folder is here")
+            .id
+    }
+
+    /// Every delete waiting in the menu's store for the account.
+    fn deletes_waiting(cache: &MessageCache) -> Vec<(String, u32, WhatAWaitingMoveDoes)> {
+        cache
+            .moves_waiting_for(THE_ACCOUNT)
+            .expect("the waiting moves read")
+            .into_iter()
+            .map(|waiting| (waiting.from_folder_path, waiting.uid, waiting.what))
+            .collect()
+    }
+
+    fn a_rule_that_deletes() -> FilterEngine {
+        rules(&[("delete", None)])
+    }
+
+    #[test]
+    fn test_a_rule_that_deletes_on_arrival_sends_the_message_to_the_trash_at_the_server() {
+        // Until 2026-10-01 a rule's Delete marked the message deleted on this
+        // computer and told the server nothing, so on a server that cannot
+        // say only what changed the next check brought it back (D10).
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])]);
+
+        let done = a_check(&server, &cache, inbox, &a_rule_that_deletes(), allowed());
+
+        assert_eq!(server.the_log(), ["DELETE 7 in INBOX into Trash"]);
+        assert!(
+            server.in_folder("INBOX").is_empty(),
+            "the server's Inbox still holds it"
+        );
+        let at_the_server = server.in_folder("Trash");
+        assert_eq!(
+            at_the_server.len(),
+            1,
+            "the server's Trash does not hold it"
+        );
+        let row = the_row(
+            &cache,
+            the_folder_here(&cache, "Trash"),
+            at_the_server[0].uid,
+        );
+        assert!(
+            !row.deleted,
+            "the row is marked deleted rather than in the Trash"
+        );
+        assert!(deletes_waiting(&cache).is_empty(), "the delete still waits");
+        assert_eq!(
+            done.filtered.changed, 1,
+            "the deleted message is not counted as sorted"
+        );
+    }
+
+    #[test]
+    fn test_the_next_check_does_not_bring_back_a_message_a_rule_deleted() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])]);
+        a_check(&server, &cache, inbox, &a_rule_that_deletes(), allowed());
+
+        a_check(&server, &cache, inbox, &a_rule_that_deletes(), allowed());
+
+        assert_eq!(
+            cache.message_row_for_uid(inbox, 7).expect("the lookup"),
+            None,
+            "the next check brought the deleted message back to the Inbox"
+        );
+        assert_eq!(
+            cache
+                .stored_uids(the_folder_here(&cache, "Trash"))
+                .expect("the Trash read")
+                .len(),
+            1,
+            "the message is no longer in the Trash here"
+        );
+    }
+
+    #[test]
+    fn test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])])
+            .refusing_a_delete(Refusal::SaidNo);
+
+        let done = a_check(&server, &cache, inbox, &a_rule_that_deletes(), allowed());
+
+        let row = the_row(&cache, inbox, 7);
+        assert!(!row.deleted, "a refused delete left the row marked deleted");
+        assert!(
+            deletes_waiting(&cache).is_empty(),
+            "a refused delete still waits"
+        );
+        let line = said(&done);
+        assert!(
+            line.contains("1 change from your rules put back because the mail server said no"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])])
+            .refusing_a_delete(Refusal::Dropped);
+
+        let done = a_check(&server, &cache, inbox, &a_rule_that_deletes(), allowed());
+
+        assert_eq!(
+            deletes_waiting(&cache),
+            [(
+                "INBOX".to_string(),
+                7,
+                WhatAWaitingMoveDoes::DeleteToTrash {
+                    trash_path: "Trash".to_string()
+                }
+            )]
+        );
+        assert_eq!(
+            cache.message_row_for_uid(inbox, 7).expect("the lookup"),
+            None,
+            "the row stayed in the Inbox here while its delete waits"
+        );
+        let line = said(&done);
+        assert!(
+            line.contains(
+                "1 change from your rules kept here until the mail server can be reached"
+            ),
+            "{line}"
+        );
+
+        // The next check's own path: the replay before any folder is read.
+        server.answering_again();
+        let replayed = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(
+                crate::application::moves_waiting::replay_the_moves_waiting_for(
+                    &server,
+                    &cache,
+                    THE_ACCOUNT,
+                ),
+            )
+            .expect("the replay");
+        assert_eq!(
+            replayed
+                .into_iter()
+                .map(|(_, answer)| answer)
+                .collect::<Vec<_>>(),
+            [Replayed::Done]
+        );
+        assert!(deletes_waiting(&cache).is_empty(), "the delete still waits");
+        assert_eq!(server.in_folder("Trash").len(), 1);
+    }
+
+    #[test]
+    fn test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])])
+            .refusing_a_delete(Refusal::TheGate);
+
+        let done = a_check(&server, &cache, inbox, &a_rule_that_deletes(), allowed());
+
+        let row = the_row(&cache, inbox, 7);
+        assert!(!row.deleted);
+        assert!(deletes_waiting(&cache).is_empty());
+        let line = said(&done);
+        assert!(
+            line.contains("1 change from your rules put back because changing mail is not allowed"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn test_a_rules_delete_on_an_account_with_no_trash_deletes_nothing_and_says_why() {
+        let (_dir, cache, inbox) = an_account_without_a_trash();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])]);
+
+        let done = a_check(&server, &cache, inbox, &a_rule_that_deletes(), allowed());
+
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+        assert!(!the_row(&cache, inbox, 7).deleted);
+        assert_eq!(
+            said(&done)
+                .matches(crate::application::destinations::NO_TRASH_FOLDER_FOUND)
+                .count(),
+            1,
+            "{}",
+            said(&done)
+        );
+    }
+
+    #[test]
+    fn test_a_rules_delete_of_a_message_already_in_the_trash_leaves_it_there() {
+        // A rule never takes a message off the server: in the Trash, where the
+        // menu's Delete would delete outright, it is left alone (D12).
+        let (_dir, cache, _inbox) = an_account();
+        let trash = the_folder_here(&cache, "Trash");
+        let server = AServerThatKeepsFlags::holding("Trash", &[(7, "Invoice 4021", &[])]);
+
+        a_check_of(
+            &server,
+            &cache,
+            (&a_folder_listed("Trash", "Trash", FolderType::Trash), trash),
+            &a_rule_that_deletes(),
+            allowed(),
+        );
+
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+        assert!(!the_row(&cache, trash, 7).deleted);
+    }
+
+    #[test]
+    fn test_with_changing_mail_off_a_rules_delete_is_held_back_and_nothing_is_dialled() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])]);
+
+        let done = a_check(
+            &server,
+            &cache,
+            inbox,
+            &a_rule_that_deletes(),
+            not_allowed(),
+        );
+
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+        assert!(!the_row(&cache, inbox, 7).deleted);
+        assert_eq!(done.filtered.held_back, 1);
+    }
+
+    #[test]
+    fn test_what_a_rules_delete_calls_for() {
+        let rows = [
+            (Replayed::Done, None, ForTheChange::Done),
+            (
+                Replayed::AlreadyDone,
+                Some(WhyThePushFailed::TheServerSaidNo),
+                ForTheChange::Done,
+            ),
+            (
+                Replayed::DoneWithSomethingToSay("it is in both places".into()),
+                None,
+                ForTheChange::Done,
+            ),
+            (
+                Replayed::NotReached,
+                Some(WhyThePushFailed::TheServerWasNeverAsked),
+                ForTheChange::KeptWaiting(Until::TheServerCanBeReached),
+            ),
+            (
+                Replayed::Refused("Allow Changes is off".into()),
+                Some(WhyThePushFailed::ThisComputerRefusedIt),
+                ForTheChange::PutBack(Because::ChangingMailIsNotAllowed),
+            ),
+            (
+                Replayed::Refused("NO".into()),
+                Some(WhyThePushFailed::TheServerSaidNo),
+                ForTheChange::PutBack(Because::TheServerSaidNo),
+            ),
+            (
+                Replayed::Refused("NO".into()),
+                None,
+                ForTheChange::PutBack(Because::TheServerSaidNo),
+            ),
+        ];
+        for (replayed, failed, calls_for) in rows {
+            assert_eq!(
+                what_a_rules_delete_calls_for(&replayed, failed),
+                calls_for,
+                "{replayed:?} read as {failed:?}"
+            );
+        }
     }
 }

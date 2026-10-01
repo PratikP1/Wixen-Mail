@@ -352,6 +352,21 @@ pub struct Filtered {
     pub to_tell_the_server: Vec<crate::application::what_rules_tell_the_server::Telling>,
     /// What became of what the server was told.
     pub told: crate::application::what_rules_tell_the_server::Told,
+    /// Messages a rule deletes.
+    ///
+    /// Named here and carried out by the check through the gated delete the
+    /// menu's Delete uses, to the account's Trash (D10, D11); a POP check
+    /// marks each one deleted here, since a POP server keeps no Trash (D13).
+    pub to_delete: Vec<ToBeDeleted>,
+}
+
+/// One message a rule deletes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToBeDeleted {
+    /// The row here.
+    pub message_row: i64,
+    /// What the server calls it in the folder it arrived in.
+    pub uid: u32,
 }
 
 /// One message a rule says belongs somewhere else.
@@ -3058,6 +3073,36 @@ pub(crate) mod tests {
                 refuse_thread_ids: true,
                 ..self
             }
+        }
+    }
+
+    /// What a check asks of a server to carry out a rule's Delete, through
+    /// the replay's own steps. These scripts hold no rule that deletes, so
+    /// nothing here is asked.
+    impl crate::application::moves_waiting::ReplaysAMove for Scripted {
+        async fn move_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete_it(&self, _folder: &str, _uid: u32, _trash: Option<&str>) -> Result<()> {
+            Ok(())
+        }
+
+        async fn copy_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
+            Ok(Vec::new())
+        }
+
+        async fn mark_it(
+            &self,
+            _folder: &str,
+            _uid: u32,
+            _marks: crate::data::message_cache::moves_waiting::MarksFirst,
+        ) -> Result<()> {
+            Ok(())
         }
     }
 
@@ -6742,6 +6787,7 @@ pub(crate) mod tests {
                 matches_with_a_sound: 0,
                 to_tell_the_server: Vec::new(),
                 told: crate::application::what_rules_tell_the_server::Told::default(),
+                to_delete: Vec::new(),
             },
             ..FolderSync::default()
         });
