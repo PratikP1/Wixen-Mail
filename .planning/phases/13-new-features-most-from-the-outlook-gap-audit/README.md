@@ -26,7 +26,7 @@ carry:
 
 - The waves collided across ranges: 13-35 and 13-37 both sat at wave 37,
   13-36 and 13-38 at 38, and 13-37 sat below its own dependency. Every plan
-  from 13-37 on moved two waves later, so the waves run 1 to 60 with no
+  from 13-37 on moved two waves later, so the waves run 1 to 69 with no
   two plans on one.
 - The 13-24 split had not reached the plans that call the runner. 13-40,
   13-42, 13-43 and 13-44 now depend on 13-24.1, load its summary, and say
@@ -64,11 +64,16 @@ LDAP; free/busy from every source an account has; saved searches ordered,
 keyed and made from nothing; several addresses per account; Quick Steps; a
 rule run over a folder on demand; and the rest of mail import and export.
 
-**Requirements:** GAP-01 to GAP-13 in `.planning/REQUIREMENTS.md`, one per
-issue, written 2026-09-20. No requirement was added when the phase was
-planned.
+**Requirements:** GAP-01 to GAP-14 in `.planning/REQUIREMENTS.md`. GAP-01 to
+GAP-13 are one per issue, written 2026-09-20, and none was added when the
+phase was planned. GAP-14 was added on 2026-10-01 for 13-44.6 and 13-44.7,
+from Pratik's request of 2026-09-29 rather than from an issue (decisions 109
+to 130), and 13-44.8 and 13-44.9 add dated lines under it on his answers of
+2026-09-30 (decisions 132, 142 to 149 and 151 to 156); until then this
+paragraph named thirteen and said no requirement was added.
 
-**Roadmap success criteria this phase owns:** all thirteen.
+**Roadmap success criteria this phase owns:** all fourteen, the fourteenth
+added with GAP-14.
 
 ## Pratik's order, and which part of it this is
 
@@ -153,16 +158,25 @@ ledger entry a plan carries for one of the four answers.
 | 13-42 | 51 | Quick Steps on the menu with Ctrl+Shift+7 to Ctrl+Shift+9, run over the selection through the runner; GAP-11 ticked, #60 closed | GAP-11 | yes | nothing |
 | 13-43 | 52 | What a rule would change in a folder, counted and worded before anything runs | GAP-12 | no | nothing |
 | 13-44 | 53 | Run a rule over a folder from This Folder and the Filter Manager; GAP-12 ticked, #61 closed | GAP-12 | yes | nothing |
-| 13-45 | 54 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
-| 13-46 | 55 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
-| 13-47 | 56 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
-| 13-48 | 57 | `.msg` through both import commands | GAP-13 | yes | nothing |
-| 13-49 | 58 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
-| 13-50 | 59 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
-| 13-51 | 60 | The pages, the listening lines, the closing read of GAP-01 to GAP-13, and `scripts/check.sh all` once by hand before its merge | all thirteen | yes | reports where (a) to (d) stand |
+| 13-44.1 | 54 | Undo after Report as Junk takes `$Junk` off and puts `$NotJunk` on at the server where the report may have set a mark, then moves the messages back; a block is written to the account the message is in; ledgers 677 and 691 | GAP-06 | yes | nothing |
+| 13-44.2 | 55 | Look People Up at Work refuses a sign-in over `ldap://` at OK with the lookup's own sentence, focus on the address; a credential store failure names the account by its name, never its id or the password; ledgers 696 and 699; and, added when it landed on 2026-10-01, step 8c of the marker reading made to hold on every run, its cause found first (ledger 754) | GAP-07 | yes | nothing |
+| 13-44.3 | 56 | A rule's marks, flags and labels on arriving mail reach the mail server in the check that brought the message, through the gate and waiting queue the menu commands use, and a rule's Delete goes to the Trash there through the gated delete path the menu's Delete uses (decision 107); the next check keeps them and does not bring a deleted message back; ledger 678 closed | GAP-12 | yes | nothing |
+| 13-44.4 | 57 | A colleague Microsoft places is judged by their own working days and hours from getSchedule, everybody else by the working day set here; ledger 711 closed | GAP-08 | yes | nothing |
+| 13-44.5 | 58 | One check says whether an account is Gmail or Microsoft, by its incoming server, then its address, then the name it was saved with; Report as Junk, the folder chooser and sign-in ask it, so Workspace and Microsoft 365 accounts on their own domains are recognised and can sign in through the browser; on Pratik's answer to decision 140, the account editor's app password advice and Get App Password button ask it once a server is typed, an account it calls Microsoft is told to use the browser sign-in (decision 150), and Send Feedback's list of account kinds asks it | GAP-06 | yes | nothing |
+| 13-44.6 | 59 | Empty the Trash, per account on Alt+Y in the account editor and marked experimental: an IMAP account the one check of 13-44.5 does not call Gmail or Microsoft, set to After 15 days or After 30 days, has what went into its Trash here that long ago taken off the server through the menu's Delete path at its first check of the day, at most 500, with one sentence; Gmail and Microsoft accounts are told their provider empties it; the mail database records when a message went into a Trash | GAP-14 | yes | nothing |
+| 13-44.7 | 60 | When Wixen Mail closes, with the window gone first and five seconds for every account, nothing lost; POP accounts emptied on this computer only, of their own messages; a POP message moved to the Trash no longer downloaded again (ledger 753 closed); GAP-14 ticked | GAP-14 | yes | nothing |
+| 13-44.8 | 61 | Emptying a POP Trash, Empty Folder on the Trash, Delete in the Trash and Delete Permanently take a message kept on this computer alone off it with its words, keeping only its POP identifier, when it was downloaded, whose it was and where; the freed space is overwritten and the search index lets go at the next check | GAP-14 | no, unless its premise 9 finds 13-44.7's description saying the text stays | nothing |
+| 13-44.9 | 62 | Measures, at 12,872 and 200,000 messages, what taking mail off still leaves in the mail database file and its write log, and what secure delete on every write (off, fast and on) and a compacting command (VACUUM, and incremental vacuum) cost in time, temporary disk and waiting; the figures on the measurements page, a recommendation by a rule written beforehand, and a ledger entry asking Pratik to choose; builds neither | GAP-14 | no | nothing |
+| 13-45 | 63 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
+| 13-46 | 64 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
+| 13-47 | 65 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
+| 13-48 | 66 | `.msg` through both import commands | GAP-13 | yes | nothing |
+| 13-49 | 67 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
+| 13-50 | 68 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
+| 13-51 | 69 | The pages, the listening lines, the closing read of GAP-01 to GAP-14, and `scripts/check.sh all` once by hand before its merge | all fourteen | yes | reports where (a) to (d) stand |
 
-Fifty plans push and ten do not (13-02, 13-12, 13-16, 13-19, 13-20, 13-34,
-13-36.2, 13-40, 13-43, 13-47). Four carry a checkpoint (13-03, 13-20, 13-28,
+Fifty-seven plans push and twelve do not (13-02, 13-12, 13-16, 13-19,
+13-20, 13-34, 13-36.2, 13-40, 13-43, 13-44.8, 13-44.9, 13-47). Four carry a checkpoint (13-03, 13-20, 13-28,
 13-47, each `autonomous: false`), and each stops only when its executor's
 brief does not carry Pratik's answer.
 
@@ -176,14 +190,23 @@ answered before its calendar check (ledger 154), and 13-36.3 and 13-36.4 for
 one day of a repeating meeting (ledger 638); GAP-05 by 13-14, 13-15 and 13-18
 to 13-21 (ticked by 13-21), and 13-36.1 for a PGP/MIME message holding only
 files and the stored-before reason (ledgers 643 and 653); GAP-06 by 13-22,
-13-24, 13-24.1 and 13-25 (ticked by
-13-25); GAP-07 by 13-26 to 13-28 (ticked by 13-28); GAP-08 by 13-29 to 13-32
-(ticked by 13-31, 13-32 after it); GAP-09 by 13-37 to 13-39 (ticked by
-13-39); GAP-10 by 13-33 to 13-36 (ticked by 13-36); GAP-11 by 13-23, 13-24,
-13-24.1 and 13-40 to 13-42 (ticked by 13-42); GAP-12 by 13-23, 13-24,
-13-24.1, 13-43 and 13-44 (ticked by 13-44); GAP-13 by 13-45 to 13-50 (ticked
-by 13-49, 13-50 after it). 13-51 reads all thirteen clause by clause and
-stands or corrects each tick.
+13-24, 13-24.1 and 13-25 (ticked by 13-25), 13-44.1 for Undo of a report
+and the block's account (ledgers 677 and 691), and 13-44.5 for the one
+check of whether an account is Gmail or Microsoft; GAP-07 by 13-26 to 13-28
+(ticked by 13-28), and 13-44.2 for a sign-in over `ldap://` refused at OK and
+the account's name in the credential store's sentences (ledgers 699 and
+696); GAP-08 by 13-29 to 13-32 (ticked by 13-31, 13-32 after it), and
+13-44.4 for a colleague's own working hours (ledger 711); GAP-09 by 13-37 to
+13-39 (ticked by 13-39); GAP-10 by 13-33 to 13-36 (ticked by 13-36); GAP-11
+by 13-23, 13-24, 13-24.1 and 13-40 to 13-42 (ticked by 13-42); GAP-12 by
+13-23, 13-24, 13-24.1, 13-43 and 13-44 (ticked by 13-44), and 13-44.3 for a
+rule's marks, flags and labels on arriving mail reaching the server (ledger
+678) and a rule's Delete going to the Trash there (decision 107); GAP-13 by
+13-45 to 13-50 (ticked by 13-49, 13-50 after it); GAP-14, added on
+2026-10-01, by 13-44.6 and 13-44.7 (ticked by 13-44.7), 13-44.8 after
+the tick for emptied mail's words taken off this computer, and 13-44.9
+after it for measuring what that leaves and what reaching it would cost.
+13-51 reads all fourteen clause by clause and stands or corrects each tick.
 
 **The issues.** Closed from the merge commit: #45 (13-04), #47 (13-09), #58
 (13-39), #60 (13-42), #61 (13-44), #53 (13-49). Commented on from the merge
@@ -202,7 +225,7 @@ lists on 2026-09-24. A wave is a set of plans sharing no file, and with the
 files the project writes by rule added to every list (`CLAUDE.md`, "Add the
 files this project writes by rule to every plan's `files_modified`") no two
 plans are disjoint. So the phase is a chain: each plan depends on the one
-before it, and the waves run 1 to 60 in plan order.
+before it, and the waves run 1 to 69 in plan order.
 
 - **Keyboard basics first** (13-01 to 13-09). Undo and Print are small,
   touch every surface, and every later plan that adds a text box or a
@@ -341,7 +364,9 @@ is a change to the named plan before it runs, or a plan of its own after.
 **Automation** (RESEARCH-4, section 8):
 
 37. A missing label is said, not created; arrival rules' read and flag
-    staying on this computer is ledgered, not fixed (13-23).
+    staying on this computer is ledgered, not fixed (13-23). The second
+    half is superseded by Pratik's answer of 2026-09-29, item 3 (decision
+    88): 13-44.3 sends them to the mail server in the check.
 38. The runner goes through the set commands' gated server paths, resolves
     folders and labels in the actions' own account, and carries the folder
     a flag change was asked in rather than waiting (question 12;
@@ -593,6 +618,447 @@ overrule is a change to the named plan before it runs:
     updated when these plans landed, and 13-36.3 and 13-36.4 find that
     file's anchors by script.
 
+**Pratik's answer of 2026-09-29**, to six questions the ledger carried from
+13-22 to 13-36, each asked with a recommendation in brackets. His word:
+"yes. But explain 5. Why should a password be spoken?" The answer to his
+question: no password is spoken, before 13-44.2 or after it. The sentence
+at `credentials.rs:102` says whose password Windows would not save, read
+back or remove, and it named the account by its internal id, a UUID a
+screen reader reads out a character at a time. 13-44.2 names the account
+by the name it was given, or says "this account's password" where the code
+holding the failure has only the id, and its cases hold that neither the
+password nor the id is ever in the sentence. The six items are carried by
+13-44.1 to 13-44.4, written that day and added on 2026-10-01. A seventh
+question, found by 13-44.3's planner, he answered "yes." the same day;
+decision 107 records it.
+
+86. Item 1, ledger 677: Undo after Report as Junk also takes the junk mark
+    off and puts the not-junk mark on at the server, through the gated flag
+    write the report used, and then moves the messages back (13-44.1).
+87. Item 2, ledger 691: a block is written to the account the selected
+    message is in, found the way Report as Junk finds a message's account,
+    not the account that is open; in All Inboxes the two differ (13-44.1).
+88. Item 3, ledger 678: a rule's Mark as read, Mark as unread, Flag, Unflag
+    and Add a label on arriving mail reach the mail server through the gate
+    and the waiting queue the menu commands use, in the check that brought
+    the message, and the next check keeps them. This reverses decision 37's
+    second half (13-44.3).
+89. Item 4, ledger 699: Look People Up at Work refuses a password for an
+    address beginning `ldap://` when OK is pressed, with the sentence the
+    lookup says, and saves nothing (13-44.2).
+90. Item 5, ledger 696: a credential store failure names the account by its
+    name, or says "this account's password"; never its id, and never the
+    password, which no sentence has carried (13-44.2).
+91. Item 6, ledger 711: a colleague Microsoft places is judged by the days
+    and hours set in their own Outlook, read from the getSchedule answer
+    already asked for; everybody else, the organiser included, by the
+    working day set in Settings (13-44.4).
+
+The planners' choices under that answer, each for him to overrule; an
+overrule is a change to the named plan before it runs:
+
+92. Undo of a report waits for one round trip to the server: the mark comes
+    off first and the messages move back when the server answers, the
+    reverse of the report's own order, so the two never reach the server in
+    the wrong order, the race ledger 688 names (13-44.1, D3).
+93. The server is asked about the mark only where the report may have left
+    one, after the report's own answer said the mark was kept or failed part
+    way. After a report on Gmail, on a folder that keeps no mark, or where
+    the report never asked, Undo moves the messages back and sends nothing,
+    so `$NotJunk` never goes on a message the report never marked (13-44.1,
+    D4).
+94. The Edit menu names the step "Undo Report as Junk" with the message; at
+    the key the one word "Undo" is said, and once the messages are back one
+    sentence: "Undid Report as Junk on Quarterly report. The server was told
+    it is not junk.", or the server's reason when the mark could not be
+    taken off. Redo reports the messages again, mark included (13-44.1, D5
+    and D6).
+95. A block on a message no account holds is refused in the report's words
+    and writes nothing; a second Undo while the first is on its way is not
+    blocked, because it finds the messages back and says so; the account's
+    permission to change mail is asked at the key, before any worker starts
+    (13-44.1, D7 to D9).
+96. Past the literal item: any sign-in name for an `ldap://` address is
+    refused at OK, even with the password box empty and nothing saved,
+    because a sign-in over `ldap://` can never be used. Overruling this
+    refuses only a typed or saved password (13-44.2, D2).
+97. That refusal puts focus in the Directory address box, since the address
+    is what has to change, and writes nothing; a password already saved
+    stays until the sign-in name is cleared (13-44.2, D3 and D4).
+98. "the password for Work", the name as the person gave it; a blank name,
+    and the loads and the removal, which hold the id alone, say "this
+    account's password"; the log keeps the id, which is never spoken. The
+    "Security error:" in front stays, as 13-26 left it (13-44.2, D6 and D7).
+99. The check that brought the message sends a rule's changes on the session
+    it already holds, before the rule's move and before it reads flags back,
+    not through the window's per-message worker, which could reorder a mark
+    and a move (ledger 688) and would speak a line per message. Ledger 688
+    itself, the runner's mark and move reaching the server in either order,
+    is carried by no plan: a brief that said 13-42 fixes it was wrong, since
+    13-42's text never names it, and his answer of 2026-09-29 did not
+    include it (13-44.3, D2). 13-42's executor then fixed 688 from its brief
+    on 2026-09-30, a run's marks riding on its waiting move and sent before
+    it, and closed it in both halves; what still travels apart from a move
+    is ledger 748. Written when these plans landed on 2026-10-01; 13-44.3's
+    premise 7 says what that changes for it, which is nothing in its design.
+100. With mail changes off nothing is sent: a rule's read or flag is kept
+    here and waits, as a Mark as Read made with changes off does, and goes
+    at the first check after changes are allowed; a rule's label comes off
+    again, because the waiting queue holds read and flag only, and a queue
+    for labels is ledgered. The overrule for the first half is to hold a
+    mark back whole, as a move is held back (13-44.3, D3 and D4).
+101. A check never writes the server's flags over a mark or flag waiting to
+    go, which also stops a Mark as Read made with changes off from being
+    undone by the next check; a message whose mark waits because the server
+    could not be reached is left where it arrived for that check (13-44.3,
+    D5 and D6).
+102. Nothing is said per message: each outcome that is not a success is one
+    clause with a count in the folder's line; `Outcome::touches_the_server`
+    is renamed `moves_or_deletes`, because its old name was the old claim;
+    POP is unchanged (13-44.3, D7 to D9).
+103. Hours Microsoft sends in a shape this cannot read, or kept in a zone
+    built by hand, give no week, and that colleague is judged by the working
+    day set in Settings on their own clock, as every colleague is today.
+    Only the guide says so; nothing new is spoken. The alternative is a
+    spoken sentence like the one said for a guest nobody placed (13-44.4, D2
+    and D3).
+104. A colleague's week is judged on the clock its hours are written on, to
+    the minute, and a day their answer does not list is not a working day.
+    So a colleague's Saturday and Sunday now count as outside their working
+    day: weekend times are still offered, after weekday times, with "outside
+    Ada's working day" beside them, as Outlook does, and the changelog says
+    so (13-44.4, D4 and D5).
+105. The hours are read for the one search and stored nowhere, and the
+    privacy page says they are read; no sentence changes its words (13-44.4,
+    D6 and D7).
+106. Found while planning and ledgered, not fixed: a report over several
+    accounts keeps only the last account's move as the Undo step, and the
+    recommendation is one step for the whole report (13-44.1). When the
+    server refuses a label put on from the menu, the program says it was
+    undone while the label stays in the database; and the check sends
+    waiting moves before waiting marks, ledger 688's shape in the replay
+    (13-44.3).
+107. A question 13-44.3's planner found by reading, and Pratik's answer:
+    a rule's Delete marks the message deleted on this computer only, and on
+    a server that cannot report just what changed, the next check's flag
+    read clears that mark, so the message comes back. Item 3 did not name
+    Delete, so he was asked: "Should a rule's Delete go through the gated
+    delete the menu's Delete uses, to Trash at the server?" His word, on
+    2026-09-29: "yes." So a rule's Delete goes through the same gated
+    delete path the menu's Delete uses: to the Trash, honouring Allow
+    Changes, on the queue 13-44.3 already uses for the rule's other actions
+    (13-44.3, D10 and task 3).
+
+The planner's choices under that answer, each for him to overrule; an
+overrule is a change to 13-44.3 before it runs:
+
+108. The check uses the menu's own parts rather than the window's: where a
+    deleted message goes, the change made here and kept in the store of
+    waiting moves the menu's Delete waits in, the replay's own step to send
+    it on the check's session, and the replay's reading of the answer. A
+    refusal puts the message back where it arrived; a server that cannot be
+    reached leaves it waiting in the Trash here for the next check, which
+    sends it before reading any folder. "To Trash" is taken literally: a
+    rule never deletes for good, and a message already in the Trash is left
+    there, where the menu's Delete in the Trash deletes outright. An account
+    whose Trash is not recognised deletes nothing and says the menu's
+    sentence once. POP's rule Delete stays as it was, marked deleted on this
+    computer, since no server brings it back (13-44.3, D11 to D13).
+
+**Pratik's request of 2026-09-29**, in full: "That's fine. However there
+should be a setting to delete mail from local deleted mailbox/trash for
+pop/smtp accounts or other imap based accounts that are not Gmail or
+Microsoft. It's my understanding that they control trash. A setting to
+delete deleted mail upon the close of the app or 15 or 30 days should
+suffice." None of GAP-01 to GAP-13 is it, so GAP-14 was added for it, and
+13-44.6 and 13-44.7 carry it, written that day as 13-44.5 and 13-44.6,
+renumbered on 2026-09-30 when 13-44.5 was put before them, and added on
+2026-10-01. The brief that planned them took the defaults below for him,
+each his to overrule; an overrule is a change to 13-44.6 or 13-44.7 before
+it runs:
+
+109. Four answers per account: Never, When Wixen Mail closes, After 15 days
+    and After 30 days. Never is the default for every account, because
+    emptying the Trash cannot be undone. 13-44.6 offers Never and the two
+    day counts; 13-44.7 adds When Wixen Mail closes with the close that
+    makes it work (13-44.6, D1).
+110. Offered in the account editor, as "Empt&y the Trash (experimental):" on
+    Alt+Y, for POP accounts and for IMAP accounts that are not Gmail or
+    Microsoft by the one check (decision 119). A Gmail or Microsoft account
+    gets a line in its place saying its provider empties the Trash itself:
+    Gmail after 30 days, read from Google's help page 7401 on 2026-09-29;
+    Outlook.com after about 30 days, which could not be confirmed that day
+    because three Microsoft support addresses answered 404, so 13-44.6's
+    task 2 reads Microsoft's own page first and leaves the number out, with
+    a ledger `todo`, if it finds none; a work or school Microsoft 365
+    account as its organisation set it (13-44.6, D2).
+111. Days count from when a message went into the Trash on this computer,
+    not from when it arrived. Nothing stored that, so it is added; a
+    message already in a Trash when this build first opens the database
+    counts from that moment, and the changelog says so (13-44.6, D3).
+112. On an IMAP account emptying deletes at the server through the Allow
+    Changes gate and the waiting queue the menu's Delete uses inside the
+    Trash, sharing the step 13-44.3 wrote for a rule's Delete rather than
+    building a second path. With mail changes off nothing is emptied and
+    one sentence says why (13-44.6, D4).
+113. On a POP account, on this computer only, never at the POP server, whose
+    own removal setting decides. The brief said the stored row is removed;
+    13-44.7's planner found it must stay, because it is what stops the next
+    check downloading the message again and what the removal setting
+    counts from, so the row is marked deleted instead, through the delete
+    Empty Folder uses (13-44.7, D5). What the row keeps of the message's
+    words is decision 132's.
+114. When Wixen Mail closes is bounded, so closing never hangs, and nothing
+    is lost (13-44.7, D6).
+115. After 15 or 30 days is done at the account's first check of each day on
+    this computer's clock. The brief said "during the regular mail check";
+    once a day is the planner's, so a sentence is not said at every check
+    and a refusal is said at most once a day. The overrule is every check
+    (13-44.6, D7).
+116. One sentence per account per emptying, such as "Emptied 12 messages
+    from Trash in Work that had been there more than 30 days.", never one
+    per message, shown on the status bar and said at Normal priority on a
+    topic of its own; nothing said at close; the log keeps counts and the
+    account's name, never a subject (13-44.6, D8).
+117. The Trash is found the way Delete finds it, and an account with no
+    recognised Trash is left alone, said once a day at the check and in
+    the account editor. Everything that deletes for good is marked
+    experimental where it is seen, in the label and in a description beside
+    the other experimental ones (13-44.6, D9 and D10).
+
+The planners' choices under that request, each for him to overrule; an
+overrule is a change to the named plan before it runs:
+
+118. The answer is kept in the settings as a map from account to answer,
+    offered by the account editor, and a word this build does not know
+    reads as Never (13-44.6, D11).
+119. Whether an account is Gmail or Microsoft is the one check 13-44.5
+    builds on Pratik's answer of 2026-09-30 (decision 131):
+    `who_empties_the_trash` answers POP first, emptied here whatever its
+    provider, then takes `WhoRunsTheMail`'s answer and reads no fact
+    itself; the mail check and the close hand it `WhoRunsTheMail::of`, and
+    the account editor `WhoRunsTheMail::from_what_is_known` with its
+    address box, its IMAP server box and no recorded name, because OK
+    writes the recorded name from the address alone. Until 2026-09-30 this
+    decision was a fourth reading of the question, by the address, the
+    recorded provider or the preset server, beside Report as Junk's, the
+    folder chooser's and sign-in's, with a ledger `todo` naming the four
+    and recommending one function all four ask; his answer that day
+    accepted it, and the `todo` is not opened (13-44.6, D12).
+120. When a message went into a Trash is recorded by four triggers in the
+    mail database rather than by each writer, because the writers are
+    several and a later one would forget (13-44.6, D13).
+121. At most 500 a day, the oldest first; only messages stored here, so a
+    Trash not kept up to date keeps the rest at the server; a message whose
+    move is still waiting is left for a later day (13-44.6, D14 to D16).
+122. On a server that cannot remove one message at a time the message is
+    marked for removal and left, as the menu's Delete in the Trash leaves
+    it, and counted as emptied because the replay answers done for both.
+    Whether the replay should tell the two apart is a ledger `todo`
+    (13-44.6, D17).
+123. The account a POP message came from is recorded the first time it
+    moves into a folder every account shares, and the check counts it as
+    mail that account has had, which fixes decision 130's defect. Messages
+    already in the shared Trash before this build belong to no account and
+    are emptied only by Empty Folder; the overrule gives them an owner
+    where exactly one account's folders hold the same message (13-44.7,
+    D18).
+124. Only a real close empties, never a hide to the tray. The window goes
+    first, so a screen reader moves on; then five seconds for every account
+    together; then the sign-off as before (13-44.7, D19).
+125. At the five seconds the one delete under way waits in the queue and
+    goes at the next start's first check, before any folder is listed; the
+    rest stay in the Trash, untouched, for the next close (13-44.7, D20).
+126. Nothing is said at close and the log records the counts; a POP account
+    set to 15 or 30 days is emptied at the start of its check, before the
+    POP server is dialled, and POP goes first at close; an account set to
+    empty at close is not emptied at a check, nor the reverse (13-44.7, D21
+    to D23).
+127. A question the planner put to him, answered on 2026-09-30 (decision
+    132): emptied POP mail kept its text in the database file, as every POP
+    delete and Empty Folder do, and the question was whether emptying the
+    Trash, which nothing can undo, should drop the text too and keep only
+    what stops the message being downloaded again. The planner recommended
+    yes, in a plan of its own, and he said yes; 13-44.8 carries it, and
+    13-44.7 opens no ledger `todo` for it and writes no sentence saying the
+    text stays (13-44.7, D24).
+128. The experimental description says what emptying a POP account and
+    emptying at close cannot do: POP mail leaves this computer's Trash and
+    never the POP server, and a close empties what it can in a few seconds
+    and the rest next time. Until 2026-09-30 it also said the text stays in
+    the mail database, which decision 132 makes untrue one plan later
+    (13-44.7, D25).
+129. An account set to empty at close whose mail changes are off, whose Trash
+    is not recognised, or, on POP, whose deleting here is off, hears why
+    once a day at its first check, because nothing is said at close and
+    silence would read as working (13-44.7, D26).
+130. Found while planning and fixed in 13-44.7's second task: with "Leave
+    mail on the server" on, its default, a POP message moved to the Trash
+    is downloaded again by the next check, because the Trash every account
+    shares is stored under a reserved id and the query of what an account
+    has had reads only folders stored under the account. A probe on a copy
+    of `main` at `90a4662e` printed `held {}` and `fetched 1`. A ledger
+    `todo` opened when these plans landed, 753, carries it until
+    then. He may want the fix sooner than the wave order puts it.
+
+**Pratik's answer of 2026-09-30**, "Yes to both.", to two questions put to
+him that day, each with its recommendation. Two plans carry them, written
+that day and added on 2026-10-01: 13-44.5 before the Trash plans, because
+they ask it, and 13-44.8 after them, because it changes what their emptying
+keeps.
+
+131. Item 1, the answer to decision 119's `todo`: one shared check says
+    whether an account is Gmail or Microsoft, asked by Report as Junk, the
+    folder chooser, both halves of sign-in and the Trash plans, so a Google
+    Workspace or Microsoft 365 account on its own domain is recognised
+    everywhere the same way (13-44.5, D1).
+132. Item 2, the answer to decision 127: emptying a POP account's Trash
+    drops the message's text from the mail database too, keeping only what
+    stops the message being downloaded again, because emptying the Trash
+    cannot be undone (13-44.8, D27).
+
+The planners' choices under that answer, each for him to overrule; an
+overrule is a change to the named plan before it runs:
+
+133. The check reads three facts and the first that names Google or
+    Microsoft decides: the incoming server (IMAP's for IMAP, POP's for
+    POP), then the address, then the name recorded on the account. The
+    server first because it is where the mail is and the one fact that
+    says who runs a mailbox on its own domain; not the browser sign-in,
+    whose provider is a copy of this answer (13-44.5, D2).
+134. A server is Google's when its host is `gmail.com` or `googlemail.com`
+    or ends at a dot in one of them, and Microsoft's the same way for
+    `outlook.com` and `office365.com`, the domains every server the two
+    providers' own pages name sits under. Nothing is looked up on the
+    network, so a server name of an organisation's own that points at
+    either is not recognised, and the pages say so (13-44.5, D3).
+135. The outgoing server is not read, since mail can be sent through
+    Gmail's or Microsoft's server for a mailbox kept elsewhere (13-44.5,
+    D4).
+136. The address is read through the six consumer domains the sign-in
+    already knows and the recorded name ignoring case and space; where two
+    facts disagree the earlier wins. A probe over 936 rows for each old
+    reading found no answer lost except where another fact names the other
+    provider (13-44.5, D5).
+137. POP stays each caller's own first question, so a POP account on
+    `pop.gmail.com` signs in through Google (13-44.5, D6).
+138. Both halves of sign-in ask the check, so a token is filed and read
+    back under one name. Two sentences change: the Account Manager's
+    reason after "Signing in failed" names the server and the way out, and
+    the mail check's names the account and the Account Manager in place of
+    "no provider is recorded"; the NVDA case that waits for the first
+    changes its words in the same commit (13-44.5, D7).
+139. The folder chooser's own Gmail test goes, its rows joining the check's
+    cases, and its line keeps its name so the record anchored after it
+    stays (13-44.5, D8).
+140. Pratik's answer of 2026-09-30, "yes to shared checks", to the
+    question 13-44.5's planner put: whether the account editor's browser
+    sign-in default, app password hint and Get App Password link, and the
+    feedback report's list of account kinds, which go by the address or
+    the recorded name, should ask the one check too. He took the
+    recommendation. The app password hint and the Get App Password link
+    ask the check once a server is typed and go by the address until then;
+    the browser sign-in box's default stays with the address, so it never
+    moves under somebody who chose; Send Feedback's list of account kinds
+    asks the check. 13-44.5's task 3 carries it, and no `todo` is opened
+    (13-44.5, D9). Until that day this decision was the question, carried
+    by a ledger `todo` from 13-44.5.
+141. A census reads every file under `src` and refuses a place that decides
+    Gmail or Microsoft for itself, with a companion that plants each fault;
+    13-44.6 and 13-44.7 add their callers to it (13-44.5, D10).
+142. The words go wherever a message kept here alone is taken off this
+    computer, because every such way is one arm of one delete: the Trash
+    setting at a check and at close, Empty Folder on the Trash, Delete in
+    the Trash, Delete Permanently, and a redo of either. The overrule is
+    the setting and Empty Folder only (13-44.8, D28).
+143. Every kind of message kept here alone, not only POP mail: copies of
+    sent mail filed here and mail brought in from a file too. The overrule
+    is POP mail only (13-44.8, D29).
+144. What stays is the row under its own id, folder and number, marked
+    deleted, holding its POP identifier, when it was downloaded, whose it
+    was and whether this program filed it. It is done by removing the row,
+    so the cascades take its text, headers, attachments where no other
+    message carries the file, labels, identifiers and search entry, and
+    writing it back with only those, so a column or table added later is
+    covered without a list. No column is added or dropped (13-44.8, D30).
+145. The removal runs with SQLite's secure delete switched on, so the space
+    it frees is overwritten, and puts the setting back (13-44.8, D31).
+146. The search index lets go of the words at the next check for mail, in
+    short steps on the check's worker, because each pass rewrites the whole
+    index: about 10 seconds in steps of at most 0.07 seconds at 200,000
+    messages on the planner's machine. A record says the work is owed and
+    is settled only when no removal happened meanwhile. The overrule is
+    only after Empty Folder and the setting, or never, with the privacy
+    page saying the words stay in the index (13-44.8, D32).
+147. A rule's Delete on POP mail is unchanged: it marks the message deleted
+    and keeps its words, because nobody took it off this computer and a
+    rule can be written wrong. The overrule takes its words off too
+    (13-44.8, D33).
+148. Pratik's answer of 2026-09-30, "Yes to the measuring as well.", to
+    the question 13-44.8's planner put: the privacy page says what taking
+    a message off cannot reach, the copies earlier changes left in unused
+    space in the file, the disk's own copies of deleted files, Windows
+    Search's index, and replies that quote the message; should every
+    write in the mail database overwrite what it frees, or should a
+    command compact the database? It was asked with the recommendation to
+    measure both first in a plan of their own, and he took it. 13-44.9
+    measures both and opens the ledger entry that asks him to choose, and
+    13-44.8 opens no `todo` for it (13-44.8, D34; 13-44.9, D36). Until
+    that day this decision was the question, carried by a ledger `todo`
+    from 13-44.8.
+149. Nothing new is spoken or shown. Found and ledgered, not changed: Empty
+    Folder's question says "there is no other copy" of a POP Trash whose
+    mail may still be on the POP server under Leave mail on the server,
+    which overstates what is lost (13-44.8, D35).
+
+The planners' choices under his two answers of 2026-09-30, each for him to
+overrule; an overrule is a change to the named plan before it runs:
+
+150. An account the one check calls Microsoft is told to turn on the
+    browser sign-in rather than to use an app password, under the address
+    box, on the password box and by Get App Password, which opens no page
+    for it; only Google's page is opened. Microsoft's own pages say no
+    password reaches a Microsoft 365 mailbox over IMAP or POP, app
+    passwords included, and give 2024-09-16 as the day the same stopped
+    for Outlook.com. Without it, asking the check would tell a Microsoft
+    365 account on its own domain, which gets no advice today, to use an
+    app password and send it to the page for personal accounts. The
+    overrule keeps Microsoft's advice and page as they are, asked by the
+    check (13-44.5, D11).
+151. The measurement is a module of the mail store compiled only for
+    tests, because secure delete is a setting of the store's own private
+    connection; nothing is added to the program (13-44.9, D37).
+152. Two sizes, 12,872 and 200,000 messages, the two the measurements page
+    already uses; in each, 1,000 messages written and changed the way a
+    POP check writes and changes them, taken off through 13-44.8's path,
+    and the rest written the way an IMAP check writes them (13-44.9, D38).
+153. Secure delete measured at all three of SQLite's settings, off, fast
+    and on, because SQLite's page says fast clears pages in use and leaves
+    free pages. The overrule is off and on only (13-44.9, D39).
+154. The compacting command measured two ways, VACUUM and incremental
+    vacuum, each for its time, the temporary disk it needs, what it
+    leaves, and whether a second connection's read and write wait or fail
+    while it runs (13-44.9, D40).
+155. The plan ends with one ledger `todo` for him with the figures, a
+    recommendation reached by a rule written beforehand (what reaches every
+    copy found; of those, what never makes other work wait past the store's
+    five seconds; then what needs no temporary disk; then what costs
+    least) and the choices; it builds neither and does not change the
+    privacy page (13-44.9, D41).
+156. The file reading stays in the suite pinning today's finding, so
+    building either choice turns it red and whoever builds it turns it
+    round (13-44.9, D42).
+
+When these plans landed on 2026-10-01, the brief that landed them added one
+more, carried by a plan already written:
+
+157. Ledger 754, opened that day: `tests/a_marker_counts_at_the_start_of_any_line.rs`
+    fails about one run in two on `main` with nothing changed, at step 8c
+    (the line typed after **bold** and Enter comes out bold), found by
+    13-39 when it stopped that plan's merge. 13-44.2 carries its fix as a
+    task of its own, its cause found before anything changes and step 8c's
+    assertions never loosened (13-44.2, D8 and premise 9).
+
 ## Four things that wait on Pratik
 
 Each is a checkpoint that stops only when the executor's brief does not
@@ -615,8 +1081,12 @@ runs `cargo test` without `WIXEN_NO_AUDIO` (13-03 ledgers it and adds only
 Microsoft Print to PDF files (13-03 ledgers it); whether classic Outlook
 takes `.eml` files dragged into one of its folders (13-49 ledgers it); a
 real `.msg` saved from his Outlook (13-48 ledgers it); whether to open an
-issue about the saved-search 500 cap (13-39 ledgers it); and decision 39's
-reading of the 5,000 bound.
+issue about the saved-search 500 cap (13-39 ledgers it); decision 39's
+reading of the 5,000 bound; and, once 13-44.9 has measured them, which way
+of taking deleted text out of the mail database file he wants: secure
+delete on every write, a command that compacts the database, both or
+neither (13-44.9 ledgers it with its figures and a recommendation,
+decisions 148 and 155). The last was added on 2026-10-01.
 
 ## Collisions, and how the waves settle them
 
@@ -630,11 +1100,11 @@ stands:
 | Tools menu: the key manager and the Quick Step Manager both needing a letter, one free (Q), a blocker in the cross-check | Pratik's placements of 2026-09-24: the key manager on File (13-17) and the Quick Step Manager under Action, Quick Steps (13-41), so neither manager goes on Tools and its one free letter is left to nobody in this phase's plans |
 | Action menu: J, Q and Z free | Report as Junk takes J (13-22), Quick Steps Q (13-41, 13-42), Z stays free; the next new Action item goes on a submenu. Run a Rule on This Folder is on the This Folder submenu, on L (13-44) |
 | Keys: Ctrl+Shift+J, Ctrl+Shift+B, Ctrl+Shift+7 to 9, Alt+4 to 9 | 13-22, 13-25, 13-42 and 13-38; none was bound or documented on 2026-09-24, and each plan adds its keys to `tests/wired.rs`'s stated list where they are counted |
-| The shared runner | 13-23 (the label fix), 13-24 (the do-halves), 13-24.1 (the runner) before 13-25 (the block), 13-42 (Quick Steps) and 13-44 (a rule over a folder), which call it |
-| The schema, `message_cache/mod.rs` | Fourteen plans in sequence, each additive with `CREATE TABLE IF NOT EXISTS` or `ensure_column_exists`: 13-09, 13-11, 13-12, 13-15, 13-16, 13-18, 13-19, 13-21, 13-33, 13-34, 13-36.1, 13-36.3, 13-37, 13-40 |
-| The composer, the account editor and the item form | The composer by 13-06, 13-21, 13-35; the Account Manager by 13-06, 13-27, 13-33; the item form by 13-06 and 13-32; in wave order |
+| The shared runner | 13-23 (the label fix), 13-24 (the do-halves), 13-24.1 (the runner) before 13-25 (the block), 13-42 (Quick Steps) and 13-44 (a rule over a folder), which call it. Since Pratik's answer of 2026-09-29, 13-44.3 sends a rule's marks, flags and labels on arriving mail through the same gate and waiting queue the menu commands use, and a rule's Delete through the menu's delete path and its store of waiting moves, on the check's own session rather than through the runner (decisions 99, 107 and 108) |
+| The schema, `message_cache/mod.rs` | Seventeen plans in sequence, each additive with `CREATE TABLE IF NOT EXISTS` or `ensure_column_exists`: 13-09, 13-11, 13-12, 13-15, 13-16, 13-18, 13-19, 13-21, 13-33, 13-34, 13-36.1, 13-36.3, 13-37, 13-40, 13-42, 13-44.6, 13-44.8. All three were added on 2026-10-01, when this row said fourteen: 13-42 had added `read_first` and `starred_first` to `moves_waiting` with `ensure_column_exists` (`mod.rs:2348-2349`, ledger 688's fix) and its merge left this row as it was. 13-44.6 adds two tables, `in_the_trash_since` and `trash_last_emptied`, four triggers with `CREATE TRIGGER IF NOT EXISTS` that stamp a row entering a Trash folder and drop the stamp when it leaves or is deleted, and a first-run stamp with `INSERT OR IGNORE`. 13-44.8 adds one table, `search_index_owes_a_compaction`, and takes a message off this computer by removing its row and writing it back under the same id holding eight columns, a delete and an insert rather than a change to any table's shape; no column is added, dropped or renamed |
+| The composer, the account editor and the item form | The composer by 13-06, 13-21, 13-35; the Account Manager by 13-06, 13-27, 13-33, 13-44.2 (the directory sign-in refused over `ldap://`), 13-44.5 (the browser sign-in asks the one check and says why it cannot sign in, and the app password advice asks it from a change handler on the IMAP and POP server boxes, which 13-44.6 calls from rather than binding its own), 13-44.6 and 13-44.7 (Empty the Trash on the connection page, on Alt+Y), all four added 2026-10-01; the item form by 13-06 and 13-32; in wave order |
 | The credential store's 1,280-character limit | 13-16 splits keys into parts and makes the test store refuse what Windows refuses; a sign-in test it reddens is fixed there (decision 50); 13-26's directory password is short; the Microsoft token question is a ledger `todo` 13-16 opens |
-| Item undo built before junk moves, blocks, Quick Steps and rule runs | Open. 13-42 reads 13-24.1's and 13-08's summaries and says whether a step's writes join Edit, Undo; 13-22, 13-25 and 13-44 do not ask, and 13-51's closing read says which of the four are undoable |
+| Item undo built before junk moves, blocks, Quick Steps and rule runs | Open. 13-42 reads 13-24.1's and 13-08's summaries and says whether a step's writes join Edit, Undo; 13-22, 13-25 and 13-44 do not ask, and 13-51's closing read says which of the four are undoable. Undo of a report also takes the junk mark off at the server where the report may have set one (13-44.1, decisions 86 and 92), and 13-51's read says so. 13-42 said on 2026-09-30 that a Quick Step is not one undo, Edit, Undo taking back its last write alone (ledger 747); written here when 13-44.1 to 13-44.9 landed on 2026-10-01, since its merge left this row as it was |
 
 ## What the tree contradicted in the research
 
