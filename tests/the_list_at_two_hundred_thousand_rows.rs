@@ -858,7 +858,14 @@ fn test_the_lists_own_read_path_at_the_testers_size() {
 
 /// What kind of thing each row times; a row naming none of these is a row
 /// the page cannot be read from.
-const WHAT_A_ROW_TIMES: [&str; 5] = ["Listing", "Filter", "Sort", "Page paint", "Full pass"];
+const WHAT_A_ROW_TIMES: [&str; 6] = [
+    "Listing",
+    "Filter",
+    "Sort",
+    "Page paint",
+    "Full pass",
+    "a rule counted over the folder",
+];
 
 #[test]
 fn test_two_thousand_rows_written_read_back_two_thousand() {
