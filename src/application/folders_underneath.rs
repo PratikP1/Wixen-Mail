@@ -167,14 +167,41 @@ pub fn is_too_deep_to_follow(folders: &[Placed], target: i64) -> bool {
 }
 
 /// Every folder, named the way the folder tree names it, for a list that
-/// cannot show the tree's shape, with its id, in the order a list reads.
+/// cannot show the tree's shape, with its id (ledger 752).
+///
+/// Each is the stored names of the folders it sits in and its own, decoded,
+/// joined with " / ", and never the path the server spells, which for a name
+/// in another alphabet is modified UTF-7 and carries the server's own
+/// separator. Sorted as a person reads, without regard to case. A folder whose
+/// stored parents loop is named by its own name alone, since following them
+/// would not end.
 pub fn as_the_tree_names_them(folders: &[Placed]) -> Vec<(String, i64)> {
     let mut named: Vec<(String, i64)> = folders
         .iter()
-        .map(|folder| (folder.path.clone(), folder.id))
+        .map(|folder| (named_from_the_top(folders, folder), folder.id))
         .collect();
-    named.sort();
+    named.sort_by(|(one, _), (other, _)| {
+        one.to_lowercase()
+            .cmp(&other.to_lowercase())
+            .then_with(|| one.cmp(other))
+    });
     named
+}
+
+/// One folder's name after the names of the folders above it, outermost
+/// first.
+fn named_from_the_top(folders: &[Placed], folder: &Placed) -> String {
+    if is_too_deep_to_follow(folders, folder.id) {
+        return folder.name.clone();
+    }
+    let mut names = vec![folder.name.as_str()];
+    let mut above = folder.parent;
+    while let Some(parent) = above.and_then(|id| folders.iter().find(|placed| placed.id == id)) {
+        names.push(parent.name.as_str());
+        above = parent.parent;
+    }
+    names.reverse();
+    names.join(" / ")
 }
 
 #[cfg(test)]

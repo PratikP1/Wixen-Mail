@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 539 records have arrived since and have not been through it.
+# 540 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -13304,7 +13304,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying.rs", tests = 23 },
-    { file = "src/application/folders_underneath.rs", tests = 13 },
+    { file = "src/application/folders_underneath.rs", tests = 15 },
 ]
 
 [[guard]]
@@ -35880,4 +35880,20 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 17 },
+]
+
+# Run on a Folder listing a folder by the path the server spells, so a name
+# in another alphabet reads as modified UTF-7 and a nested one with the
+# server's separator (ledger 752). Written 2026-10-01 by 13-44.1, measured
+# through `scripts/guards.sh --remeasure` against the library.
+[[guard]]
+name = "Run on a Folder lists each folder by its names, never the server's path"
+file = "src/application/folders_underneath.rs"
+before = '''    let mut names = vec![folder.name.as_str()];'''
+after = '''    let mut names = vec![folder.path.as_str()];'''
+red = [
+    "application::folders_underneath::tests::test_run_on_a_folder_lists_each_folder_by_the_names_the_tree_shows",
+]
+tests_last_seen = [
+    { file = "src/application/folders_underneath.rs", tests = 15 },
 ]

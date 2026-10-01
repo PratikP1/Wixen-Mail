@@ -10392,8 +10392,9 @@ fn run_a_rule_on_this_folder(
 /// from a list, from the manager's Run on a Folder (#61, 13-44).
 ///
 /// The rule is read back as it was saved, and the folders offered are the
-/// ones the tree shows for the rule's own account, by path, so a folder of
-/// the same path in another account is never reached. Choosing none changes
+/// ones the tree shows for the rule's own account, so a folder of the same
+/// path in another account is never reached, each named as the tree names it
+/// rather than by its path at the server (ledger 752). Choosing none changes
 /// nothing and says nothing. From the count on, the flow is This Folder's.
 fn run_a_rule_on_a_chosen_folder(
     app: AppHandles<'_>,
@@ -10426,7 +10427,7 @@ fn run_a_rule_on_a_chosen_folder(
     let Some(rule) = crate::application::filters::FilterEngine::from_persisted_rule(&stored) else {
         return refuse_a_command(tx, &a_rule_this_version_cannot_run(&stored.name));
     };
-    let mut folders = match folders_in_the_tree(cache, &account.id) {
+    let folders = match folders_in_the_tree(cache, &account.id) {
         Ok(folders) => folders,
         Err(e) => {
             return refuse_a_command(
@@ -10444,20 +10445,53 @@ fn run_a_rule_on_a_chosen_folder(
             &format!("{} has no folders on this computer yet.", account.name),
         );
     }
-    folders.sort_by(|a, b| a.path.cmp(&b.path));
-    let paths: Vec<String> = folders.iter().map(|folder| folder.path.clone()).collect();
-    let Some(folder) = crate::presentation::wx_managers::choose_from_list(
+    let offered = the_folders_by_the_names_the_tree_shows(cache, &account.id, &folders);
+    let names: Vec<String> = offered.iter().map(|(name, _)| name.clone()).collect();
+    let Some((_, folder)) = crate::presentation::wx_managers::choose_from_list(
         frame,
         "Run on a Folder",
         &format!("&Folders in {}:", account.name.replace('&', "&&")),
         "&Count",
-        &paths,
+        &names,
         crate::presentation::theme::current_from_stored_config(),
     )
-    .and_then(|at| folders.get(at)) else {
+    .and_then(|at| offered.get(at)) else {
         return;
     };
     count_what_a_rule_would_change(app, &account, folder, rule);
+}
+
+/// The folders offered, each by the names the folder tree shows for it and
+/// the folders it sits in, decoded, rather than the path the server spells
+/// (ledger 752). Named from every folder the account holds, so a folder under
+/// one that is not downloaded still says where it sits.
+fn the_folders_by_the_names_the_tree_shows<'a>(
+    cache: &MessageCache,
+    account_id: &str,
+    offered: &'a [crate::data::message_cache::CachedFolder],
+) -> Vec<(String, &'a crate::data::message_cache::CachedFolder)> {
+    use crate::application::folders_underneath::{Placed, as_the_tree_names_them};
+    let parents = cache.folder_parents(account_id).unwrap_or_default();
+    let placed: Vec<Placed> = cache
+        .get_folders_for_account(account_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|folder| Placed {
+            parent: parents.get(&folder.path).copied().flatten(),
+            id: folder.id,
+            name: folder.name,
+            path: folder.path,
+        })
+        .collect();
+    as_the_tree_names_them(&placed)
+        .into_iter()
+        .filter_map(|(name, id)| {
+            offered
+                .iter()
+                .find(|folder| folder.id == id)
+                .map(|folder| (name, folder))
+        })
+        .collect()
 }
 
 /// A rule as the chooser lists it: its name, and whether it is switched off,
