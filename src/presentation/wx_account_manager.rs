@@ -9,7 +9,7 @@
 
 use crate::application::allowed::{Allowed, READING_SECTION, SETTINGS_SECTION};
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
-use crate::application::mail_auth::no_sign_in_credentials;
+use crate::application::mail_auth::{NO_BROWSER_SIGN_IN_HERE, no_sign_in_credentials, provider_of};
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
 // The one wording for a refusal when nothing was chosen (#75). This window
 // said it five ways, one per button, and the button is not what somebody
@@ -46,7 +46,7 @@ See Setting up a provider in Help.";
 use crate::presentation::status_line::{said_and_shown, shown_and_signalled};
 use crate::presentation::wx_identities::show_identity_manager;
 use crate::presentation::wx_managers::get_selected;
-use crate::service::oauth::{AuthManager, OAuthService};
+use crate::service::oauth::AuthManager;
 use crate::service::oauth_credentials;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -2619,19 +2619,15 @@ fn how_the_sign_in_failed(error: &crate::common::Error) -> OAuthFlowResult {
     }
 }
 
-/// Run the OAuth2 flow automatically: detect provider, load built-in
-/// credentials, open browser, capture redirect, exchange tokens.
+/// Run the OAuth2 flow automatically: ask the one check which provider the
+/// account signs in through, load built-in credentials, open browser,
+/// capture redirect, exchange tokens.
+///
+/// The provider comes from the same function the mail check reads the token
+/// back with, so the name a token is filed under is the name it is found by.
 fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
-    let provider = match OAuthService::detect_provider(&account.email) {
-        Some(p) => p,
-        None => {
-            return OAuthFlowResult::Failed(
-                "This address is not one Wixen Mail can sign in to through a browser. Turn \
-                 the browser sign-in off and enter a password, or see Setting up a provider \
-                 in Help."
-                    .into(),
-            );
-        }
+    let Some(provider) = provider_of(account) else {
+        return OAuthFlowResult::Failed(NO_BROWSER_SIGN_IN_HERE.into());
     };
 
     // Load app-level credentials (env vars / config file / compile-time defaults)

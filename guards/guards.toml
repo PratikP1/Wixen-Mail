@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 563 records have arrived since and have not been through it.
+# 564 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -8560,7 +8560,7 @@ red = [
     "application::mail_auth::tests::test_the_missing_credentials_sentence_is_worded_once_and_names_the_way_out",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_auth.rs", tests = 10 },
+    { file = "src/application/mail_auth.rs", tests = 13 },
 ]
 
 # Measured by hand on 2026-08-13. The account manager screen answers the same
@@ -36399,4 +36399,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+]
+
+# The scan account given Gmail's server, so the one check calls it Gmail and
+# "Sign In Again" in a scan or an NVDA run opens a browser and reaches a
+# network instead of failing at once. Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the scan account's sign-in stays on this computer"
+file = "src/presentation/wx_app.rs"
+before = '''        "scan-target@example.com".to_string(),
+    );
+    account.use_oauth = true;'''
+after = '''        "scan-target@example.com".to_string(),
+    );
+    account.imap_server = "imap.gmail.com".to_string();
+    account.use_oauth = true;'''
+red = [
+    "presentation::wx_app::scan_only_account_tests::test_the_scan_fixture_cannot_reach_a_real_provider",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
 ]

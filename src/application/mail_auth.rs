@@ -10,34 +10,24 @@
 //! Those are three different problems with three different answers, and
 //! "authentication failed" covers all of them and helps with none.
 
+use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
-use crate::service::oauth::{AuthManager, OAuthService};
+use crate::service::oauth::AuthManager;
 use crate::service::oauth_credentials;
 use crate::service::protocols::MailAuth;
 
-/// Work out which OAuth provider an account belongs to.
+/// Which OAuth provider an account signs in through, by the name the keychain
+/// files its token under.
 ///
-/// The address first, because that is what the sign-in flow used when it put
-/// the tokens in the keychain, and the keychain entry is named after it. The
-/// account's own `provider` field holds a display name chosen for the settings
-/// window, so it is spelled "Gmail" where the keychain says "gmail", and it
-/// also holds names such as "Yahoo" that are not OAuth providers at all.
-/// Trusting it first looked up an entry that does not exist and reported every
-/// account as needing to be authorised again.
-///
-/// It is still the fallback, lowercased and checked against the providers we
-/// know, because a Google Workspace account is on its own domain and its
-/// address says nothing about who runs the mailbox.
+/// The one check decides, so the browser sign-in that files a token and the
+/// mail check that reads it back ask the same question and get the same name.
+/// A Workspace or Microsoft 365 account on its own domain is found by its
+/// server; see [`WhoRunsTheMail`] for the order and why.
 pub fn provider_of(account: &Account) -> Option<String> {
-    OAuthService::detect_provider(&account.email).or_else(|| {
-        account
-            .provider
-            .as_deref()
-            .map(str::trim)
-            .map(str::to_lowercase)
-            .filter(|provider| OAuthService::provider_by_name(provider).is_some())
-    })
+    WhoRunsTheMail::of(account)
+        .oauth_provider()
+        .map(str::to_string)
 }
 
 /// What to say when this build has no sign-in credentials for a provider.
@@ -60,7 +50,29 @@ pub fn no_sign_in_credentials(provider: &str) -> String {
 
 /// What the Account Manager says after "Signing in failed: " when the one
 /// check finds no provider a browser can sign in to.
-pub const NO_BROWSER_SIGN_IN_HERE: &str = "";
+///
+/// Beside [`no_sign_in_credentials`] for the same reason: the condition is
+/// the one [`for_account`] meets deep in the mail path, and the window and
+/// the mail check word it from one place. The control is named the way the
+/// account editor labels it.
+pub const NO_BROWSER_SIGN_IN_HERE: &str = "Wixen Mail can sign in through a browser only to a \
+     Gmail or Microsoft account, and neither this account's server nor its address belongs to \
+     Google or Microsoft. Check the IMAP or POP server, or turn the browser sign-in off and \
+     enter a password. See Setting up a provider in Help.";
+
+/// What a mail check says for an account set to sign in through a browser
+/// that the one check cannot place with Google or Microsoft.
+///
+/// It replaced "is set to sign in with OAuth, but no provider is recorded",
+/// which named a field nobody sees and a word the person did not choose.
+pub fn no_browser_sign_in_for(name: &str) -> String {
+    format!(
+        "{name} is set to sign in through a browser, but neither its server nor its address \
+         belongs to Google or Microsoft. Open the Account Manager with Ctrl+Shift+A, edit it, \
+         and check the IMAP or POP server, or turn the browser sign-in off and enter a \
+         password."
+    )
+}
 
 /// The credential this account signs in with, fetching a token if it needs one.
 pub async fn for_account(account: &Account) -> Result<MailAuth> {
@@ -80,10 +92,7 @@ pub async fn for_account(account: &Account) -> Result<MailAuth> {
     }
 
     let Some(provider) = provider_of(account) else {
-        return Err(Error::Authentication(format!(
-            "{} is set to sign in with OAuth, but no provider is recorded for it. Open the Account Manager with Ctrl+Shift+A and set it up again.",
-            account.name
-        )));
+        return Err(Error::Authentication(no_browser_sign_in_for(&account.name)));
     };
     let Some(credentials) = oauth_credentials::credentials_for(&provider) else {
         return Err(Error::Authentication(no_sign_in_credentials(&provider)));

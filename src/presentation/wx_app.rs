@@ -20245,9 +20245,11 @@ fn open_for_scanning(
 }
 
 /// One account that exists only for the scan and for a screen-reader-driven
-/// test: OAuth turned on, addressed at a domain nothing in `service::oauth`
-/// recognises as a provider, so "Sign In Again" fails locally and at once
-/// rather than reaching a network or opening a browser.
+/// test: OAuth turned on, with no server and an address at a domain, neither
+/// of which names Google or Microsoft, so the one check in
+/// `application::who_runs_the_mail` answers somebody else and "Sign In Again"
+/// fails locally and at once rather than reaching a network or opening a
+/// browser.
 ///
 /// A separate function rather than built inline where `open_for_scanning`
 /// uses it, so the one property that matters, that signing in to it cannot
