@@ -589,6 +589,25 @@ fn the_do_halves_hand_their_marks_over(app: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Labelling's do-half hands a label it puts on over before it would send it
+/// on a worker of its own, so a run's label goes with its move (ledger 748).
+/// Read from where one label is put on, since taking every label off is a
+/// command of its own that no run makes.
+fn the_label_do_half_hands_its_label_over(app: &str) -> Result<(), String> {
+    let do_half = "fn label_these(";
+    let body = body_of(app, do_half)?;
+    let putting_one_on = body
+        .find("LabelChange::One")
+        .map(|at| &body[at..])
+        .ok_or(format!("{do_half} no longer puts one label on"))?;
+    called_before(
+        putting_one_on,
+        "handed_to_the_move",
+        "spawn_server_change",
+        do_half,
+    )
+}
+
 /// A move made here keeps the marks handed to it before the push that sends
 /// it is started.
 fn the_move_takes_the_marks_before_the_push(app: &str) -> Result<(), String> {
@@ -912,6 +931,12 @@ fn test_a_move_made_here_keeps_its_marks_before_the_push_starts() {
         .unwrap_or_else(|why| panic!("{why}"));
 }
 
+#[test]
+fn test_a_label_a_run_puts_on_is_handed_to_the_move_rather_than_sent() {
+    the_label_do_half_hands_its_label_over(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
 // ── Companions ────────────────────────────────────────────────────────────
 
 /// The window's half of carrying a mark with its move, shaped as it should
@@ -944,6 +969,18 @@ fn complete_here_then_tell_the_server(
     the_move_takes_its_marks(state, cache, &made.kept);
     rt.spawn_blocking(move || {});
 }
+fn label_these(
+    app: AppHandles<'_>,
+) {
+    match change {
+        LabelChange::AllOff => spawn_server_change(app, row, uid, subject, folder, change),
+        LabelChange::One { label, on } => {
+            if !handed_to_the_move(app.state, message.row_id, &change) {
+                spawn_server_change(app, row, uid, subject, folder, change);
+            }
+        }
+    }
+}
 "#;
 
 fn the_marks_with(from: &str, to: &str) -> String {
@@ -962,6 +999,23 @@ fn test_the_marks_readings_pass_a_window_shaped_as_it_should_be() {
     the_do_halves_hand_their_marks_over(MARKS_WITH_THE_MOVE).unwrap_or_else(|why| panic!("{why}"));
     the_move_takes_the_marks_before_the_push(MARKS_WITH_THE_MOVE)
         .unwrap_or_else(|why| panic!("{why}"));
+    the_label_do_half_hands_its_label_over(MARKS_WITH_THE_MOVE)
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_companion_a_label_that_goes_on_its_own_beside_a_move_is_refused() {
+    let own = the_marks_with(
+        "            if !handed_to_the_move(app.state, message.row_id, &change) {\n",
+        "            {\n",
+    );
+
+    let said = the_label_do_half_hands_its_label_over(&own).expect_err("sent on its own");
+
+    assert!(
+        said.contains("fn label_these( never calls handed_to_the_move("),
+        "{said}"
+    );
 }
 
 #[test]

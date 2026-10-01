@@ -12539,7 +12539,7 @@ fn the_move_takes_its_marks(
     if marks.is_nothing() {
         return;
     }
-    if let Err(why) = cache.send_these_marks_before_the_move(moved.message_row_id, marks) {
+    if let Err(why) = cache.send_these_marks_before_the_move(moved.message_row_id, &marks) {
         tracing::warn!(
             "The marks of message {} go on their own: {why}",
             moved.message_row_id
@@ -26211,11 +26211,12 @@ fn run_these_actions_over(
     } in accounts
     {
         // A message this account's run marks and moves has its marks carried
-        // by the move, so one push sends them and then the move (ledger 688).
+        // by the move, so one push sends them and then the move (ledger 688),
+        // and so are the labels it puts on, by their keywords (ledger 748).
         // The do-halves hand each such mark over as they make it here; what
         // no move takes goes on its own, whether the run finishes or stops.
         lock_state(app.state).the_next_move_carries = work
-            .the_marks_that_go_with_the_move()
+            .the_marks_that_go_with_the_move(&labels)
             .into_keys()
             .map(|row_id| (row_id, Default::default()))
             .collect();

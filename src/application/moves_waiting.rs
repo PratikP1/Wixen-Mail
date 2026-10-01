@@ -2702,12 +2702,60 @@ mod tests {
             read: false,
             starred: false,
         };
-        let marks = the_work(&[(chosen, needs)]).the_marks_that_go_with_the_move();
+        let marks = the_work(&[(chosen, needs)]).the_marks_that_go_with_the_move(&[]);
         let made = what_happens_here(home, &a_move_of(row, 42, into_the_archive()), "Lunch")
             .expect("made here");
         home.send_these_marks_before_the_move(
             made.kept.message_row_id,
-            marks.get(&row).copied().unwrap_or_default(),
+            &marks.get(&row).cloned().unwrap_or_default(),
+        )
+        .expect("the marks kept");
+        row
+    }
+
+    /// A Quick Step that puts the label Travel on and files into Archive,
+    /// over the Inbox message, decided and made here as the one above is
+    /// (ledger 748): the label travels as its keyword, Travel.
+    fn a_step_that_labels_and_moves_made_here(home: &MessageCache) -> i64 {
+        use crate::application::acting_on_a_set::{HeldMessage, the_work, what_each_message_needs};
+        use crate::application::choosing_messages::MessageRef;
+        let row = a_message_in_the_inbox(home, 42);
+        let step = crate::application::filters::Outcome {
+            tags: vec!["Travel".to_string()],
+            move_to: Some("Archive".to_string()),
+            ..crate::application::filters::Outcome::default()
+        };
+        let folders = home
+            .get_folders_for_account("an account")
+            .expect("the folders");
+        let labels = [crate::data::message_cache::Tag {
+            id: "tag-travel".to_string(),
+            account_id: "an account".to_string(),
+            name: "Travel".to_string(),
+            color: "#000000".to_string(),
+            created_at: String::new(),
+            keyword: Some("Travel".to_string()),
+        }];
+        let held = HeldMessage {
+            read: false,
+            starred: false,
+            label_ids: Vec::new(),
+            folder_path: "INBOX".to_string(),
+        };
+        let needs = what_each_message_needs(&step, &held, &folders, &labels).expect("the needs");
+        let chosen = MessageRef {
+            row_id: row,
+            uid: 42,
+            subject: "Lunch".to_string(),
+            read: false,
+            starred: false,
+        };
+        let marks = the_work(&[(chosen, needs)]).the_marks_that_go_with_the_move(&labels);
+        let made = what_happens_here(home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+        home.send_these_marks_before_the_move(
+            made.kept.message_row_id,
+            &marks.get(&row).cloned().unwrap_or_default(),
         )
         .expect("the marks kept");
         row
@@ -2749,6 +2797,40 @@ mod tests {
                 "the mark reached the server after the move: {transcript:?}"
             ),
             _ => panic!("the server was not told both the mark and the move: {transcript:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move() {
+        // Ledger 748: a run's label went on a worker of its own beside the
+        // move, and on a server that keeps labels as keywords it could arrive
+        // after the move, miss the message, and be taken off here by the
+        // next check. The waiting move carries it as it carries a mark.
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        a_step_that_labels_and_moves_made_here(&home);
+
+        let replayed = replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            replayed
+                .iter()
+                .map(|(_, answer)| answer.clone())
+                .collect::<Vec<_>>(),
+            vec![Replayed::Done]
+        );
+        let transcript = server.transcript().await;
+        let labelled = the_line_saying(&transcript, &["UID STORE 42", "+FLAGS", "TRAVEL"]);
+        let moved = the_line_saying(&transcript, &["UID MOVE 42"]);
+        match (labelled, moved) {
+            (Some(labelled), Some(moved)) => assert!(
+                labelled < moved,
+                "the label reached the server after the move: {transcript:?}"
+            ),
+            _ => panic!("the server was not told both the label and the move: {transcript:?}"),
         }
     }
 

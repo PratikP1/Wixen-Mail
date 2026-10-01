@@ -169,10 +169,13 @@ pub struct AWaitingMove {
 /// message in. Sent by a worker of their own, a mark could arrive after the
 /// move and name a number the folder no longer holds, and the next check
 /// would put the old mark back (ledger 688).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MarksFirst {
     pub read: Option<bool>,
     pub starred: Option<bool>,
+    /// The keywords of the labels put on, which race a move the same way a
+    /// mark does (ledger 748).
+    pub keywords: Vec<String>,
 }
 
 impl MarksFirst {
@@ -216,6 +219,7 @@ impl MessageCache {
                         MarksFirst {
                             read: row.get(2)?,
                             starred: row.get(3)?,
+                            keywords: Vec::new(),
                         },
                     ))
                 },
@@ -381,7 +385,7 @@ impl MessageCache {
     pub fn send_these_marks_before_the_move(
         &self,
         message_row_id: i64,
-        marks: MarksFirst,
+        marks: &MarksFirst,
     ) -> Result<()> {
         self.conn
             .execute(
@@ -405,6 +409,7 @@ impl MessageCache {
                     Ok(MarksFirst {
                         read: row.get(0)?,
                         starred: row.get(1)?,
+                        keywords: Vec::new(),
                     })
                 },
             )
@@ -654,13 +659,16 @@ mod tests {
     fn test_the_marks_before_a_move_stay_with_it_through_a_second_move_and_go_with_it() {
         let home = a_cache();
         let row = a_message_in_the_inbox(&home, 42);
+        // A label's keyword as well since 2026-10-01 (ledger 748), two of
+        // them, so the way they are written down is held for more than one.
         let read_and_flagged = MarksFirst {
             read: Some(true),
             starred: Some(true),
+            keywords: vec!["Travel".to_string(), "Money".to_string()],
         };
         home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
             .expect("a move kept");
-        home.send_these_marks_before_the_move(row, read_and_flagged)
+        home.send_these_marks_before_the_move(row, &read_and_flagged)
             .expect("the marks kept");
         assert_eq!(
             home.the_marks_before_the_move(row).expect("the marks"),
