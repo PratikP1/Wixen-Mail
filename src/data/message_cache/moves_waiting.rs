@@ -169,10 +169,13 @@ pub struct AWaitingMove {
 /// message in. Sent by a worker of their own, a mark could arrive after the
 /// move and name a number the folder no longer holds, and the next check
 /// would put the old mark back (ledger 688).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MarksFirst {
     pub read: Option<bool>,
     pub starred: Option<bool>,
+    /// The keywords of the labels put on, which race a move the same way a
+    /// mark does (ledger 748).
+    pub keywords: Vec<String>,
 }
 
 impl MarksFirst {
@@ -180,6 +183,19 @@ impl MarksFirst {
     pub fn is_nothing(&self) -> bool {
         self == &Self::default()
     }
+}
+
+/// The keywords as the column holds them: separated by spaces, which an IMAP
+/// keyword cannot contain, and nothing at all when there are none.
+fn keywords_for_the_column(keywords: &[String]) -> Option<String> {
+    (!keywords.is_empty()).then(|| keywords.join(" "))
+}
+
+/// The keywords back from the column.
+fn keywords_from_the_column(stored: Option<String>) -> Vec<String> {
+    stored
+        .map(|stored| stored.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
 }
 
 impl AWaitingMove {
@@ -206,7 +222,7 @@ impl MessageCache {
         let already: Option<(String, i64, MarksFirst)> = self
             .conn
             .query_row(
-                "SELECT from_folder_path, uid, read_first, starred_first
+                "SELECT from_folder_path, uid, read_first, starred_first, keywords_first
                  FROM moves_waiting WHERE message_row_id = ?1",
                 params![waiting.message_row_id],
                 |row| {
@@ -216,6 +232,7 @@ impl MessageCache {
                         MarksFirst {
                             read: row.get(2)?,
                             starred: row.get(3)?,
+                            keywords: keywords_from_the_column(row.get(4)?),
                         },
                     ))
                 },
@@ -235,8 +252,8 @@ impl MessageCache {
                 "INSERT OR REPLACE INTO moves_waiting
                  (message_row_id, account_id, from_folder_path, uid, kind,
                   into_folder_path, asked_at, to_account_id, to_account_name,
-                  read_first, starred_first)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                  read_first, starred_first, keywords_first)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     waiting.message_row_id,
                     waiting.account_id,
@@ -249,6 +266,7 @@ impl MessageCache {
                     to_account.map(|other| other.name.as_str()),
                     marks.read,
                     marks.starred,
+                    keywords_for_the_column(&marks.keywords),
                 ],
             )
             .map_err(|e| Error::Other(format!("A move could not be kept waiting: {e}")))?;
@@ -381,13 +399,18 @@ impl MessageCache {
     pub fn send_these_marks_before_the_move(
         &self,
         message_row_id: i64,
-        marks: MarksFirst,
+        marks: &MarksFirst,
     ) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE moves_waiting SET read_first = ?1, starred_first = ?2
-                 WHERE message_row_id = ?3",
-                params![marks.read, marks.starred, message_row_id],
+                "UPDATE moves_waiting SET read_first = ?1, starred_first = ?2, keywords_first = ?3
+                 WHERE message_row_id = ?4",
+                params![
+                    marks.read,
+                    marks.starred,
+                    keywords_for_the_column(&marks.keywords),
+                    message_row_id
+                ],
             )
             .map_err(|e| Error::Other(format!("The marks could not be kept with the move: {e}")))?;
         Ok(())
@@ -399,12 +422,14 @@ impl MessageCache {
         let marks = self
             .conn
             .query_row(
-                "SELECT read_first, starred_first FROM moves_waiting WHERE message_row_id = ?1",
+                "SELECT read_first, starred_first, keywords_first
+                 FROM moves_waiting WHERE message_row_id = ?1",
                 params![message_row_id],
                 |row| {
                     Ok(MarksFirst {
                         read: row.get(0)?,
                         starred: row.get(1)?,
+                        keywords: keywords_from_the_column(row.get(2)?),
                     })
                 },
             )
@@ -654,13 +679,16 @@ mod tests {
     fn test_the_marks_before_a_move_stay_with_it_through_a_second_move_and_go_with_it() {
         let home = a_cache();
         let row = a_message_in_the_inbox(&home, 42);
+        // A label's keyword as well since 2026-10-01 (ledger 748), two of
+        // them, so the way they are written down is held for more than one.
         let read_and_flagged = MarksFirst {
             read: Some(true),
             starred: Some(true),
+            keywords: vec!["Travel".to_string(), "Money".to_string()],
         };
         home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
             .expect("a move kept");
-        home.send_these_marks_before_the_move(row, read_and_flagged)
+        home.send_these_marks_before_the_move(row, &read_and_flagged)
             .expect("the marks kept");
         assert_eq!(
             home.the_marks_before_the_move(row).expect("the marks"),

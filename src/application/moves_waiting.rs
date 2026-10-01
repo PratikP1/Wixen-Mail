@@ -547,6 +547,9 @@ impl ReplaysAMove for crate::application::mail_controller::MailController {
         if let Some(starred) = marks.starred {
             self.set_starred(folder, uid, starred).await?;
         }
+        for keyword in &marks.keywords {
+            self.set_flag(folder, uid, keyword, true).await?;
+        }
         Ok(())
     }
 
@@ -587,68 +590,95 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
 ) -> Result<Vec<(AWaitingMove, Replayed)>> {
     let mut replayed = Vec::new();
     for waiting in cache.moves_waiting_for(account_id)? {
-        let from = waiting.from_folder_path.as_str();
-        // The marks the move carries go first, on this session, while the
-        // folder still holds the message under this number (ledger 688). A
-        // mark that could not be sent for any reason but the server saying no
-        // is the answer for the move as well, so the two wait, or are put
-        // back, together.
-        let marked = send_the_marks_first(server, cache, &waiting).await;
-        let answer = match (marked, &waiting.what) {
-            (Err(not_sent), _) => Err(not_sent),
-            (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
-                server.move_it(from, waiting.uid, into_folder_path).await
-            }
-            (Ok(()), WhatAWaitingMoveDoes::DeleteToTrash { trash_path }) => {
-                server.delete_it(from, waiting.uid, Some(trash_path)).await
-            }
-            (Ok(()), WhatAWaitingMoveDoes::DeleteOutright) => {
-                server.delete_it(from, waiting.uid, None).await
-            }
-            (Ok(()), WhatAWaitingMoveDoes::Copy { into_folder_path }) => {
-                server.copy_it(from, waiting.uid, into_folder_path).await
-            }
-            // Two servers' work, which the read above leaves out and
-            // [`replay_the_crossings_waiting_for`] does; a row here would be
-            // a command at the wrong server.
-            (
-                Ok(()),
-                WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. },
-            ) => {
-                continue;
-            }
-        };
-        // Where the message is, asked only of a server that answered no: a
-        // server that hung up cannot be asked, and asking would turn the
-        // question into a second failure. A question that fails is read the
-        // way the answer would have been.
-        let what_it_means = match &answer {
-            Err(why) if why_the_push_failed(why) == WhyThePushFailed::TheServerSaidNo => {
-                match where_it_is_now(server, cache, &waiting).await {
-                    Ok(now) => what_a_replay_answered(&answer, now),
-                    Err(asking) => what_a_replay_answered(&Err(asking), WhereItIsNow::NotThere),
-                }
-            }
-            _ => what_a_replay_answered(&answer, WhereItIsNow::NotThere),
-        };
-        match &what_it_means {
-            Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
-                settle_the_row(server, cache, &waiting).await?;
-                cache.stop_waiting_for_a_move(waiting.message_row_id)?;
-            }
-            // The undo is the window's, so the sentence is said beside it,
-            // and the row stops waiting there too: a refusal met with the
-            // program gone before the undo ran is met again at the next
-            // check, which undoes it then.
-            Replayed::Refused(_) => {}
-            Replayed::NotReached => {
-                replayed.push((waiting, what_it_means));
-                break;
-            }
+        // Two servers' work, which the read above leaves out and
+        // [`replay_the_crossings_waiting_for`] does; a row here would be a
+        // command at the wrong server.
+        if waiting.what.crosses_to().is_some() {
+            continue;
         }
+        let (what_it_means, _) = replay_one(server, cache, &waiting).await?;
+        let reached = what_it_means != Replayed::NotReached;
         replayed.push((waiting, what_it_means));
+        if !reached {
+            break;
+        }
     }
     Ok(replayed)
+}
+
+/// Replay one waiting move within one account and settle its row by what the
+/// server answered.
+///
+/// A move the server carried out, or had already, leaves its row where the
+/// server holds the message now and ends the wait; a refusal is handed back
+/// with its reason and the undo is the caller's; a server that could not be
+/// reached leaves the row waiting.
+///
+/// Beside the answer, how [`why_the_push_failed`] read the failure when there
+/// was one, so a caller that says why a change came back can tell this
+/// computer's gate from the server's no: a rule's Delete on arriving mail
+/// (13-44.3, D11).
+pub(crate) async fn replay_one<S: ReplaysAMove>(
+    server: &S,
+    cache: &MessageCache,
+    waiting: &AWaitingMove,
+) -> Result<(Replayed, Option<WhyThePushFailed>)> {
+    let from = waiting.from_folder_path.as_str();
+    // The marks the move carries go first, on this session, while the
+    // folder still holds the message under this number (ledger 688). A
+    // mark that could not be sent for any reason but the server saying no
+    // is the answer for the move as well, so the two wait, or are put
+    // back, together.
+    let marked = send_the_marks_first(server, cache, waiting).await;
+    let answer = match (marked, &waiting.what) {
+        (Err(not_sent), _) => Err(not_sent),
+        (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
+            server.move_it(from, waiting.uid, into_folder_path).await
+        }
+        (Ok(()), WhatAWaitingMoveDoes::DeleteToTrash { trash_path }) => {
+            server.delete_it(from, waiting.uid, Some(trash_path)).await
+        }
+        (Ok(()), WhatAWaitingMoveDoes::DeleteOutright) => {
+            server.delete_it(from, waiting.uid, None).await
+        }
+        (Ok(()), WhatAWaitingMoveDoes::Copy { into_folder_path }) => {
+            server.copy_it(from, waiting.uid, into_folder_path).await
+        }
+        (
+            Ok(()),
+            WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. },
+        ) => {
+            return Err(Error::Other(
+                "A move to another account is replayed with both accounts, not here".into(),
+            ));
+        }
+    };
+    // Where the message is, asked only of a server that answered no: a
+    // server that hung up cannot be asked, and asking would turn the
+    // question into a second failure. A question that fails is read the
+    // way the answer would have been.
+    let what_it_means = match &answer {
+        Err(why) if why_the_push_failed(why) == WhyThePushFailed::TheServerSaidNo => {
+            match where_it_is_now(server, cache, waiting).await {
+                Ok(now) => what_a_replay_answered(&answer, now),
+                Err(asking) => what_a_replay_answered(&Err(asking), WhereItIsNow::NotThere),
+            }
+        }
+        _ => what_a_replay_answered(&answer, WhereItIsNow::NotThere),
+    };
+    match &what_it_means {
+        Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
+            settle_the_row(server, cache, waiting).await?;
+            cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+        }
+        // The undo is the caller's, so the sentence is said beside it, and
+        // the row stops waiting there too: a refusal met with the program
+        // gone before the undo ran is met again at the next check, which
+        // undoes it then.
+        Replayed::Refused(_) | Replayed::NotReached => {}
+    }
+    let failed = answer.as_ref().err().map(why_the_push_failed);
+    Ok((what_it_means, failed))
 }
 
 /// Send the marks a waiting move carries, if it carries any, from the
@@ -1186,6 +1216,9 @@ mod tests {
             }
             if let Some(starred) = marks.starred {
                 session.set_flag(uid, FLAGGED, starred).await?;
+            }
+            for keyword in &marks.keywords {
+                session.set_flag(uid, keyword, true).await?;
             }
             Ok(())
         }
@@ -2675,12 +2708,60 @@ mod tests {
             read: false,
             starred: false,
         };
-        let marks = the_work(&[(chosen, needs)]).the_marks_that_go_with_the_move();
+        let marks = the_work(&[(chosen, needs)]).the_marks_that_go_with_the_move(&[]);
         let made = what_happens_here(home, &a_move_of(row, 42, into_the_archive()), "Lunch")
             .expect("made here");
         home.send_these_marks_before_the_move(
             made.kept.message_row_id,
-            marks.get(&row).copied().unwrap_or_default(),
+            &marks.get(&row).cloned().unwrap_or_default(),
+        )
+        .expect("the marks kept");
+        row
+    }
+
+    /// A Quick Step that puts the label Travel on and files into Archive,
+    /// over the Inbox message, decided and made here as the one above is
+    /// (ledger 748): the label travels as its keyword, Travel.
+    fn a_step_that_labels_and_moves_made_here(home: &MessageCache) -> i64 {
+        use crate::application::acting_on_a_set::{HeldMessage, the_work, what_each_message_needs};
+        use crate::application::choosing_messages::MessageRef;
+        let row = a_message_in_the_inbox(home, 42);
+        let step = crate::application::filters::Outcome {
+            tags: vec!["Travel".to_string()],
+            move_to: Some("Archive".to_string()),
+            ..crate::application::filters::Outcome::default()
+        };
+        let folders = home
+            .get_folders_for_account("an account")
+            .expect("the folders");
+        let labels = [crate::data::message_cache::Tag {
+            id: "tag-travel".to_string(),
+            account_id: "an account".to_string(),
+            name: "Travel".to_string(),
+            color: "#000000".to_string(),
+            created_at: String::new(),
+            keyword: Some("Travel".to_string()),
+        }];
+        let held = HeldMessage {
+            read: false,
+            starred: false,
+            label_ids: Vec::new(),
+            folder_path: "INBOX".to_string(),
+        };
+        let needs = what_each_message_needs(&step, &held, &folders, &labels).expect("the needs");
+        let chosen = MessageRef {
+            row_id: row,
+            uid: 42,
+            subject: "Lunch".to_string(),
+            read: false,
+            starred: false,
+        };
+        let marks = the_work(&[(chosen, needs)]).the_marks_that_go_with_the_move(&labels);
+        let made = what_happens_here(home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+        home.send_these_marks_before_the_move(
+            made.kept.message_row_id,
+            &marks.get(&row).cloned().unwrap_or_default(),
         )
         .expect("the marks kept");
         row
@@ -2722,6 +2803,40 @@ mod tests {
                 "the mark reached the server after the move: {transcript:?}"
             ),
             _ => panic!("the server was not told both the mark and the move: {transcript:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move() {
+        // Ledger 748: a run's label went on a worker of its own beside the
+        // move, and on a server that keeps labels as keywords it could arrive
+        // after the move, miss the message, and be taken off here by the
+        // next check. The waiting move carries it as it carries a mark.
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        a_step_that_labels_and_moves_made_here(&home);
+
+        let replayed = replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            replayed
+                .iter()
+                .map(|(_, answer)| answer.clone())
+                .collect::<Vec<_>>(),
+            vec![Replayed::Done]
+        );
+        let transcript = server.transcript().await;
+        let labelled = the_line_saying(&transcript, &["UID STORE 42", "+FLAGS", "TRAVEL"]);
+        let moved = the_line_saying(&transcript, &["UID MOVE 42"]);
+        match (labelled, moved) {
+            (Some(labelled), Some(moved)) => assert!(
+                labelled < moved,
+                "the label reached the server after the move: {transcript:?}"
+            ),
+            _ => panic!("the server was not told both the label and the move: {transcript:?}"),
         }
     }
 
@@ -3113,6 +3228,34 @@ mod tests {
 
         async fn fetch_message_body(&self, _folder: &str, _uid: u32) -> Result<Vec<u8>> {
             Ok(Vec::new())
+        }
+
+        async fn set_flag(&self, _folder: &str, _uid: u32, _flag: &str, _on: bool) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    /// What a check asks to carry out a rule's Delete. These cases hold no
+    /// rule, so nothing here is asked.
+    impl ReplaysAMove for AServerThatLists {
+        async fn move_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete_it(&self, _folder: &str, _uid: u32, _trash: Option<&str>) -> Result<()> {
+            Ok(())
+        }
+
+        async fn copy_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
+            Ok(Vec::new())
+        }
+
+        async fn mark_it(&self, _folder: &str, _uid: u32, _marks: MarksFirst) -> Result<()> {
+            Ok(())
         }
     }
 

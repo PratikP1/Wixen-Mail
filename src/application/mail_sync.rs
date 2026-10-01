@@ -12,6 +12,7 @@
 
 use crate::application::finding_what_was_deleted;
 use crate::application::mail_controller::MailController;
+use crate::application::moves_waiting::ReplaysAMove;
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result, types::FolderType};
 use crate::data::message_cache::{
@@ -220,6 +221,12 @@ pub(crate) fn say_what_the_rules_did(filtered: &Filtered, said: &mut SummingUp) 
             filtered.held_back
         ));
     }
+    // One clause per outcome that was not done, each with its count, so a
+    // check of hundreds says it once (D7, guardrail 5). A change that went
+    // adds no words: it is in "sorted by your rules".
+    for clause in filtered.told.clauses() {
+        said.count(clause);
+    }
     if filtered.could_not_be_filed.is_empty() {
         return;
     }
@@ -280,9 +287,11 @@ fn the_different_reasons(sentences: &[String]) -> Vec<&str> {
 /// The rules to run on arriving mail, and what may be done as a result.
 pub struct Filtering<'a> {
     pub rules: &'a crate::application::filters::FilterEngine,
-    /// What this account is allowed to change. Moving and deleting reach the
-    /// server; marking read and flagging do not, and go out later through the
-    /// flag sync, which has its own gate.
+    /// What this account is allowed to change. With changing mail off, a rule
+    /// that moves or deletes is held back whole; a rule's mark or flag is made
+    /// here and kept waiting to go at the first check after changes are
+    /// allowed, and a rule's label is taken off again, since nothing holds a
+    /// label waiting (13-44.3, D3 and D4).
     pub allowed: crate::application::allowed::Allowed,
 }
 
@@ -335,6 +344,30 @@ pub struct Filtered {
     /// message and never per folder, which is what keeps a folder of matches
     /// from flooding (guardrail 5).
     pub matches_with_a_sound: usize,
+    /// What the rules changed here that the mail server is to be told, one
+    /// entry per message with a change.
+    ///
+    /// Named here and sent by the check, which is the half with a session,
+    /// before the rule's move and before the flags are read back. A POP check
+    /// leaves it unread, since a POP server keeps no flags or labels.
+    pub to_tell_the_server: Vec<crate::application::what_rules_tell_the_server::Telling>,
+    /// What became of what the server was told.
+    pub told: crate::application::what_rules_tell_the_server::Told,
+    /// Messages a rule deletes.
+    ///
+    /// Named here and carried out by the check through the gated delete the
+    /// menu's Delete uses, to the account's Trash (D10, D11); a POP check
+    /// marks each one deleted here, since a POP server keeps no Trash (D13).
+    pub to_delete: Vec<ToBeDeleted>,
+}
+
+/// One message a rule deletes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToBeDeleted {
+    /// The row here.
+    pub message_row: i64,
+    /// What the server calls it in the folder it arrived in.
+    pub uid: u32,
 }
 
 /// One message a rule says belongs somewhere else.
@@ -957,9 +990,22 @@ pub(crate) trait Mailbox {
     /// reading turned off while a backfill runs stops it at the next message
     /// rather than at the next run.
     async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<Vec<u8>>;
+
+    /// Set or clear one flag on one message at the server: `\Seen`,
+    /// `\Flagged`, or a label's keyword.
+    ///
+    /// On the trait because a rule's mark on arriving mail reaches the server
+    /// in the check that brought the message (ledger 678), and that check is
+    /// held against servers that keep flags from this module's tests and
+    /// [`crate::application::what_rules_tell_the_server`]'s.
+    async fn set_flag(&self, folder: &str, uid: u32, flag: &str, on: bool) -> Result<()>;
 }
 
 impl Mailbox for MailController {
+    async fn set_flag(&self, folder: &str, uid: u32, flag: &str, on: bool) -> Result<()> {
+        MailController::set_flag(self, folder, uid, flag, on).await
+    }
+
     async fn folder_counts(
         &self,
         folder: &str,
@@ -1047,7 +1093,7 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
         if outcome.is_nothing() {
             continue;
         }
-        if outcome.touches_the_server() && !filtering.allowed.mail {
+        if outcome.moves_or_deletes() && !filtering.allowed.mail {
             // Not done quietly. A rule that files invoices into a folder and
             // does not is a rule somebody believes is working.
             tracing::info!(
@@ -1066,6 +1112,19 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
                 into,
             });
         }
+        // A delete is named the same way and carried out by the check, which
+        // has the session, through the gated delete the menu's Delete uses
+        // (D10, D11), or by a POP check here (D13).
+        if outcome.delete {
+            done.to_delete.push(ToBeDeleted {
+                message_row: message.id,
+                uid: message.uid,
+            });
+        }
+        // Read before the writes, so the labels the rules put on are the ones
+        // the message did not carry already: only those are news to the server.
+        let labels_before = the_labels_on_it(cache, &message, &outcome);
+        let sorted_before = done.changed;
         match carry_out(cache, &message, &outcome) {
             Ok(Carried::Everything) => done.changed += 1,
             // Counted by `carry_out_the_moves` when the move has really
@@ -1074,6 +1133,9 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
             // it read and another filed it, and counting it here alone
             // reported a move the server went on to refuse as done.
             Ok(Carried::ExceptTheMove) => {}
+            // Counted by the check that carries the delete out, once it has
+            // happened, for the same reason as a move.
+            Ok(Carried::ExceptTheDelete) => {}
             // Said as well as logged, the way a folder a rule names and the
             // account lacks is. Label names and nothing from the message.
             Ok(Carried::NotTheLabels(said)) => {
@@ -1082,10 +1144,70 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
                 }
                 done.could_not_be_filed.extend(said);
             }
-            Err(e) => tracing::warn!("A rule could not be carried out: {}", e),
+            Err(e) => {
+                tracing::warn!("A rule could not be carried out: {}", e);
+                continue;
+            }
+        }
+        let put_on = the_labels_put_on(cache, &message, &outcome, &labels_before);
+        let changes = crate::application::what_rules_tell_the_server::what_the_server_is_told(
+            &message, &outcome, &put_on,
+        );
+        if !changes.is_empty() {
+            done.to_tell_the_server
+                .push(crate::application::what_rules_tell_the_server::Telling {
+                    message_row: message.id,
+                    uid: message.uid,
+                    changes,
+                    counted: done.changed > sorted_before,
+                });
         }
     }
     done
+}
+
+/// The ids of the labels a message carries, read only when its rules put
+/// labels on, so a check with no label rules reads nothing.
+fn the_labels_on_it(
+    cache: &MessageCache,
+    message: &CachedMessage,
+    outcome: &crate::application::filters::Outcome,
+) -> Vec<String> {
+    if outcome.tags.is_empty() {
+        return Vec::new();
+    }
+    match cache.get_tags_for_message(message.id) {
+        Ok(labels) => labels.into_iter().map(|label| label.id).collect(),
+        Err(why) => {
+            tracing::warn!("A message's labels could not be read before its rules ran: {why}");
+            Vec::new()
+        }
+    }
+}
+
+/// The labels on a message now that it did not carry before its rules ran.
+///
+/// A read that fails is logged and sends no label, which leaves the label
+/// here for the next check to take off, as every label was before 13-44.3.
+fn the_labels_put_on(
+    cache: &MessageCache,
+    message: &CachedMessage,
+    outcome: &crate::application::filters::Outcome,
+    before: &[String],
+) -> Vec<crate::data::message_cache::Tag> {
+    if outcome.tags.is_empty() {
+        return Vec::new();
+    }
+    match cache.get_tags_for_message(message.id) {
+        Ok(labels) => labels
+            .into_iter()
+            .filter(|label| !before.contains(&label.id))
+            .collect(),
+        Err(why) => {
+            tracing::warn!("The labels a rule put on could not be read back: {why}");
+            Vec::new()
+        }
+    }
 }
 
 /// Do to one message what its rules settled on.
@@ -1096,10 +1218,9 @@ fn carry_out(
 ) -> Result<Carried> {
     let id = message.id;
     if outcome.delete {
-        // Locally. Taking it off the server is the move-to-trash path, which
-        // is somebody's own deliberate action rather than a rule's.
-        cache.delete_message(id)?;
-        return Ok(Carried::Everything);
+        // Nothing here: a delete is carried out by the check that brought the
+        // message, to the Trash at the server, or by a POP check here.
+        return Ok(Carried::ExceptTheDelete);
     }
     if outcome.read.is_some() || outcome.starred.is_some() {
         cache.update_message_flags(
@@ -1156,6 +1277,10 @@ pub(crate) enum Carried {
     /// [`carry_out_the_moves`] and is counted there, once, when it has really
     /// happened.
     ExceptTheMove,
+    /// Nothing, because the rules delete the message, which the check that
+    /// brought it carries out and counts: [`carry_out_the_deletes`], or a POP
+    /// check here.
+    ExceptTheDelete,
     /// A label the rules named is not one the account has, one sentence each.
     ///
     /// Everything else was done, and the message is not counted here: the
@@ -1257,6 +1382,262 @@ async fn carry_out_the_moves<M: Mailbox>(
     (done, could_not)
 }
 
+/// Carry out the deletes the rules asked for, and say how many happened.
+///
+/// Through the gated delete the menu's Delete uses, part by part (D10, D11):
+/// where it goes from [`crate::application::destinations::where_a_deleted_message_goes`],
+/// the row into the Trash here and the delete kept in the store the menu's
+/// Delete waits in through [`crate::application::moves_waiting::what_happens_here`],
+/// the send on this check's own session through the replay's own step,
+/// [`crate::application::moves_waiting::replay_one`], and a refusal undone
+/// through [`crate::application::moves_waiting::undo_here`]. A server that
+/// could not be reached leaves the rest made here and waiting, unsent, for
+/// the next check's replay before any folder is read.
+///
+/// To the Trash and never off the server: a message already in the Trash is
+/// left where it is with nothing sent and nothing said, and an account whose
+/// Trash is not known deletes nothing and says the menu's own sentence (D12).
+/// Held as a push under way for the account while it runs, as the replay is,
+/// so an undo does not end a row this is about to settle.
+async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(
+    controller: &M,
+    cache: &MessageCache,
+    from: &ImapFolder,
+    from_id: i64,
+    deletes: &[ToBeDeleted],
+    told: &mut crate::application::what_rules_tell_the_server::Told,
+) -> (usize, Vec<String>) {
+    use crate::application::destinations::{
+        DeletedGoesTo, Deleting, NO_FOLDERS_KNOWN_YET, NO_TRASH_FOLDER_FOUND,
+        where_a_deleted_message_goes,
+    };
+    use crate::application::moves_waiting::{
+        APushUnderWay, NotMadeHere, replay_one, undo_here, what_happens_here,
+    };
+    use crate::application::what_rules_tell_the_server::{
+        ForTheChange, what_a_rules_delete_calls_for,
+    };
+    if deletes.is_empty() {
+        return (0, Vec::new());
+    }
+    let one_each = |sentence: String| vec![sentence; deletes.len()];
+    let account_id = match cache.account_of_folder(from_id) {
+        Ok(Some(account_id)) => account_id,
+        Ok(None) => {
+            return (
+                0,
+                one_each(nothing_deleted(&from.name, "it belongs to no account")),
+            );
+        }
+        Err(why) => return (0, one_each(nothing_deleted(&from.name, &why))),
+    };
+    let folders = match cache.get_folders_for_account(&account_id) {
+        Ok(folders) => folders,
+        Err(why) => return (0, one_each(nothing_deleted(&from.name, &why))),
+    };
+    let trash = match where_a_deleted_message_goes(
+        folders.iter().map(|folder| {
+            (
+                folder.path.as_str(),
+                FolderType::from_stored(&folder.folder_type),
+            )
+        }),
+        &from.path,
+        Deleting::ToTrash,
+    ) {
+        DeletedGoesTo::TheTrash(trash) => trash.to_string(),
+        DeletedGoesTo::OffTheServer => return (0, Vec::new()),
+        DeletedGoesTo::NoTrashFolderFound => return (0, one_each(NO_TRASH_FOLDER_FOUND.into())),
+        DeletedGoesTo::NoFoldersKnownYet => return (0, one_each(NO_FOLDERS_KNOWN_YET.into())),
+    };
+    let _under_way = APushUnderWay::begins(&account_id);
+    let mut done = 0;
+    let mut could_not = Vec::new();
+    let mut the_server_answers = true;
+    for deleting in deletes {
+        let asked = crate::data::message_cache::moves_waiting::AWaitingMove {
+            message_row_id: deleting.message_row,
+            account_id: account_id.clone(),
+            from_folder_path: from.path.clone(),
+            uid: deleting.uid,
+            what: crate::data::message_cache::moves_waiting::WhatAWaitingMoveDoes::DeleteToTrash {
+                trash_path: trash.clone(),
+            },
+            asked_at: chrono::Utc::now().to_rfc3339(),
+        };
+        // No subject: the line it shows is the menu's, for the eye at the
+        // key, and a check says nothing per message (D7).
+        let made = match what_happens_here(cache, &asked, "") {
+            Ok(made) => made,
+            Err(NotMadeHere::RefusedInWords(words)) => {
+                could_not.push(words);
+                continue;
+            }
+            // A change the store will not record is not sent: a rule runs
+            // with nobody at the key to ask the server first (D12).
+            Err(NotMadeHere::CouldNotBeRecorded(why)) => {
+                could_not.push(nothing_deleted(&from.name, &why));
+                continue;
+            }
+        };
+        if !the_server_answers {
+            told.count(ForTheChange::KeptWaiting(
+                crate::application::what_rules_tell_the_server::Until::TheServerCanBeReached,
+            ));
+            continue;
+        }
+        let became = match replay_one(controller, cache, &made.kept).await {
+            Ok((replayed, failed)) => what_a_rules_delete_calls_for(&replayed, failed),
+            Err(why) => {
+                could_not.push(format!(
+                    "A message a rule deleted went to {trash} at the server but not here yet: {why}"
+                ));
+                continue;
+            }
+        };
+        match became {
+            ForTheChange::Done => done += 1,
+            ForTheChange::KeptWaiting(_) => the_server_answers = false,
+            ForTheChange::PutBack(_) => {
+                if let Err(why) = undo_here(cache, &made.kept) {
+                    tracing::warn!("A rule's refused delete could not be put back here: {why}");
+                }
+            }
+        }
+        told.count(became);
+    }
+    (done, could_not)
+}
+
+/// What to say when a rule's delete was not even tried, naming the folder
+/// and the reason.
+fn nothing_deleted(folder: &str, why: &(impl std::fmt::Display + ?Sized)) -> String {
+    format!(
+        "A rule would have moved a message in {folder} to the Trash, and nothing was done: {why}"
+    )
+}
+
+/// Tell the server what the rules changed here, on the check's own session.
+///
+/// Before the rule's move, so each change names the folder and the number the
+/// server still has the message under, and before the flag read, so the read
+/// finds the server holding what the rule did (ledger 678). With mail changes
+/// off nothing is dialled.
+///
+/// What each answer calls for is decided in
+/// [`crate::application::what_rules_tell_the_server`], and done here: a mark
+/// or a flag kept in the queue a Mark as Read made with changes off waits in,
+/// which the next check sends before any folder is read, or the change put
+/// back as the message arrived (D3 to D6).
+async fn tell_the_server_what_the_rules_changed<M: Mailbox>(
+    controller: &M,
+    cache: &MessageCache,
+    from: &ImapFolder,
+    from_id: i64,
+    changes_allowed: bool,
+    telling: &[crate::application::what_rules_tell_the_server::Telling],
+) -> crate::application::what_rules_tell_the_server::Told {
+    use crate::application::what_rules_tell_the_server::{
+        AWaitingPlace, Answered, Told, do_here_what_it_calls_for, what_the_change_calls_for,
+    };
+    let mut told = Told::default();
+    let account_id = match cache.account_of_folder(from_id) {
+        Ok(Some(account_id)) => account_id,
+        _ => {
+            tracing::warn!("The account of {} could not be read", from.name);
+            String::new()
+        }
+    };
+    let waiting_in = AWaitingPlace {
+        account_id: &account_id,
+        folder_path: &from.path,
+    };
+    for message in telling {
+        for change in &message.changes {
+            let (flag, on) = change.as_sent();
+            let sent = match changes_allowed {
+                true => Some(controller.set_flag(&from.path, message.uid, flag, on).await),
+                false => None,
+            };
+            let answer = match &sent {
+                None => Answered::NotDialled,
+                Some(Ok(())) => Answered::Went,
+                Some(Err(why)) => {
+                    tracing::warn!(
+                        "A change a rule made in {} was not taken by the server: {why}",
+                        from.name
+                    );
+                    Answered::Failed(why)
+                }
+            };
+            let became = what_the_change_calls_for(change, answer);
+            if let Err(why) = do_here_what_it_calls_for(cache, &waiting_in, message, change, became)
+            {
+                tracing::warn!(
+                    "What a rule's change in {} called for could not be done here: {why}",
+                    from.name
+                );
+            }
+            told.record(message, became);
+        }
+    }
+    told
+}
+
+/// Leave where it arrived a message whose change waits, said once each, and
+/// take out of the count of those sorted a message whose change was put back
+/// (D6, D7).
+///
+/// A move made while its mark waits would leave the waiting mark naming a
+/// number the folder no longer holds, so the next check sent it to nothing
+/// and put the old mark back: 688's shape.
+fn hold_back_what_waits(filtered: &mut Filtered, from: &str) {
+    let (waiting, moving): (Vec<Moving>, Vec<Moving>) = std::mem::take(&mut filtered.to_move)
+        .into_iter()
+        .partition(|moving| filtered.told.waiting.contains(&moving.message_row));
+    filtered.to_move = moving;
+    filtered
+        .could_not_be_filed
+        .extend(waiting.iter().map(|moving| {
+            crate::application::what_rules_tell_the_server::left_where_it_arrived(
+                from,
+                &moving.into,
+            )
+        }));
+    filtered.changed = filtered
+        .changed
+        .saturating_sub(filtered.told.put_back_after_counting.len());
+}
+
+/// The changes waiting to go for a folder's account, by the row each is
+/// about, read once for the flag read.
+fn the_changes_waiting_by_row(
+    cache: &MessageCache,
+    folder_id: i64,
+) -> std::collections::HashMap<i64, Vec<(crate::application::flag_changes_waiting::WhichFlag, bool)>>
+{
+    let mut by_row: std::collections::HashMap<i64, Vec<_>> = std::collections::HashMap::new();
+    let waiting = match cache.folder_account(folder_id) {
+        Ok(Some(account)) => cache.flag_changes_waiting_for(&account),
+        Ok(None) => Ok(Vec::new()),
+        Err(why) => Err(why),
+    };
+    match waiting {
+        Ok(waiting) => {
+            for change in waiting {
+                by_row
+                    .entry(change.message_row_id)
+                    .or_default()
+                    .push((change.which_flag, change.changed_to));
+            }
+        }
+        // Said rather than swallowed: a check that cannot see what waits
+        // writes the server's flags over it, which is the defect D5 closes.
+        Err(why) => tracing::warn!("The changes waiting to go could not be read: {why}"),
+    }
+    by_row
+}
+
 /// What to say when the account's folder list could not be read at all.
 ///
 /// Nothing a rule files elsewhere can be filed without it, so this is every
@@ -1342,7 +1723,7 @@ fn copied_and_the_original_left(from: &str, into: &str, why: &str) -> String {
     )
 }
 
-pub(crate) async fn sync_folder<M: Mailbox>(
+pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(
     controller: &M,
     cache: &MessageCache,
     folder: &ImapFolder,
@@ -1504,6 +1885,21 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         Some(rules) => apply_rules(cache, rules, &arrived),
         None => Filtered::default(),
     };
+    // What the rules changed here, told to the server before the rule's move
+    // and before the flag read below, on this check's own session. A check
+    // with no rules has nothing to tell.
+    if let Some(rules) = filtering {
+        filtered.told = tell_the_server_what_the_rules_changed(
+            controller,
+            cache,
+            folder,
+            folder_id,
+            rules.allowed.mail,
+            &filtered.to_tell_the_server,
+        )
+        .await;
+        hold_back_what_waits(&mut filtered, &folder.name);
+    }
     // What the rules said belongs elsewhere, done here because this is the
     // half with a server. Each one reaches the server first and the cache
     // second, so a move the server refuses leaves the message where it is
@@ -1525,6 +1921,23 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // does not have is said by `apply_rules`, and an assignment here dropped
     // it before anybody heard it.
     filtered.could_not_be_filed.extend(could_not);
+    // What the rules deleted, to the account's Trash at the server through
+    // the menu's own delete path, after the moves and before the flag read
+    // (D10, D11), so the read finds the message already gone from here.
+    let (deleted, not_deleted) = carry_out_the_deletes(
+        controller,
+        cache,
+        folder,
+        folder_id,
+        &filtered.to_delete,
+        &mut filtered.told,
+    )
+    .await;
+    filtered.changed += deleted;
+    for reason in &not_deleted {
+        tracing::warn!("A rule could not delete a message: {reason}");
+    }
+    filtered.could_not_be_filed.extend(not_deleted);
 
     // Messages already held, whose flags may have changed elsewhere. The
     // header fetch above only asks about messages this cache does not have, so
@@ -1556,7 +1969,27 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // server that cannot answers about every message it was asked about
     // whether anything changed or not.
     let mut brought_up_to_date = 0usize;
-    for (uid, flags) in &changed {
+    // A change still waiting to go is written over what the server said, for
+    // its flag only: the server has not heard of it yet, and writing its
+    // answer as it came undid every waiting mark until the mark went (D5).
+    let waiting = if changed.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        the_changes_waiting_by_row(cache, folder_id)
+    };
+    for (uid, said) in &changed {
+        let waits = match cache.message_row_for_uid(folder_id, *uid) {
+            Ok(Some(row)) => waiting.get(&row),
+            _ => None,
+        };
+        let kept;
+        let flags = match waits {
+            Some(waits) => {
+                kept = crate::application::flag_changes_waiting::the_flags_to_keep(said, waits);
+                &kept
+            }
+            None => said,
+        };
         brought_up_to_date += cache.set_message_flags(folder_id, *uid, flags)?;
         // The keywords among those flags are labels, put on elsewhere or taken
         // off elsewhere. Without this a label set on a phone never arrived and
@@ -2811,7 +3244,41 @@ pub(crate) mod tests {
         }
     }
 
+    /// What a check asks of a server to carry out a rule's Delete, through
+    /// the replay's own steps. These scripts hold no rule that deletes, so
+    /// nothing here is asked.
+    impl crate::application::moves_waiting::ReplaysAMove for Scripted {
+        async fn move_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete_it(&self, _folder: &str, _uid: u32, _trash: Option<&str>) -> Result<()> {
+            Ok(())
+        }
+
+        async fn copy_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
+            Ok(Vec::new())
+        }
+
+        async fn mark_it(
+            &self,
+            _folder: &str,
+            _uid: u32,
+            _marks: crate::data::message_cache::moves_waiting::MarksFirst,
+        ) -> Result<()> {
+            Ok(())
+        }
+    }
+
     impl Mailbox for Scripted {
+        async fn set_flag(&self, _folder: &str, _uid: u32, _flag: &str, _on: bool) -> Result<()> {
+            Ok(())
+        }
+
         async fn move_message(
             &self,
             from: &str,
@@ -3599,7 +4066,7 @@ pub(crate) mod tests {
         (cache, folder_id, folder)
     }
 
-    fn run<M: Mailbox>(
+    fn run<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,
@@ -3610,7 +4077,7 @@ pub(crate) mod tests {
 
     /// The same sync with a smaller first look, so a test can put a message on
     /// the server that this round will not download.
-    fn run_limited<M: Mailbox>(
+    fn run_limited<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,
@@ -3625,7 +4092,7 @@ pub(crate) mod tests {
     /// What a test about a sync that should fail needs, and there was no way to
     /// write one before: every helper here unwrapped, so a sync that refused
     /// could only be asserted by a panic.
-    fn attempt<M: Mailbox>(
+    fn attempt<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,
@@ -3643,7 +4110,7 @@ pub(crate) mod tests {
     }
 
     /// The same sync, told what the caller is asking it for.
-    fn for_a_sync_that<M: Mailbox>(
+    fn for_a_sync_that<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,
@@ -6486,6 +6953,9 @@ pub(crate) mod tests {
                 to_move: Vec::new(),
                 could_not_be_filed: Vec::new(),
                 matches_with_a_sound: 0,
+                to_tell_the_server: Vec::new(),
+                told: crate::application::what_rules_tell_the_server::Told::default(),
+                to_delete: Vec::new(),
             },
             ..FolderSync::default()
         });

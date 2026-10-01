@@ -12506,8 +12506,9 @@ fn star_these(
 /// Hand a mark made here to the move this row is about to make, when a run
 /// has named the row as one whose move carries its marks, and say whether it
 /// was handed over (ledger 688). A mark not handed over is the do-half's to
-/// tell the server about, as it always was; a label is never handed over,
-/// since the waiting move carries the two flags alone.
+/// tell the server about, as it always was. A label put on is handed over by
+/// its keyword since 13-44.3 (ledger 748); one taken off never is, since no
+/// run takes a label off and the waiting move carries labels going on alone.
 fn handed_to_the_move(state: &Arc<StdMutex<WxUIState>>, row_id: i64, change: &FlagChange) -> bool {
     let mut s = lock_state(state);
     let Some(marks) = s.the_next_move_carries.get_mut(&row_id) else {
@@ -12516,7 +12517,10 @@ fn handed_to_the_move(state: &Arc<StdMutex<WxUIState>>, row_id: i64, change: &Fl
     match change {
         FlagChange::Read(read) => marks.read = Some(*read),
         FlagChange::Flagged(starred) => marks.starred = Some(*starred),
-        FlagChange::Labelled { .. } => return false,
+        FlagChange::Labelled {
+            keyword, on: true, ..
+        } => marks.keywords.push(keyword.clone()),
+        FlagChange::Labelled { on: false, .. } => return false,
     }
     true
 }
@@ -12539,7 +12543,7 @@ fn the_move_takes_its_marks(
     if marks.is_nothing() {
         return;
     }
-    if let Err(why) = cache.send_these_marks_before_the_move(moved.message_row_id, marks) {
+    if let Err(why) = cache.send_these_marks_before_the_move(moved.message_row_id, &marks) {
         tracing::warn!(
             "The marks of message {} go on their own: {why}",
             moved.message_row_id
@@ -12579,11 +12583,25 @@ fn send_the_marks_on_their_own(
     let Ok(Some(message)) = cache.get_message(row_id) else {
         return;
     };
+    // A label goes by its keyword and is named by the account's label that
+    // travels under it, for the line said when it lands.
+    let labels = match cache.account_of_folder(message.folder_id) {
+        Ok(Some(account)) => cache.get_tags_for_account(&account).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let labelled = marks.keywords.iter().map(|keyword| FlagChange::Labelled {
+        keyword: keyword.clone(),
+        on: true,
+        name: labels
+            .iter()
+            .find(|label| label.keyword.as_deref() == Some(keyword.as_str()))
+            .map_or_else(|| keyword.clone(), |label| label.name.clone()),
+    });
     let changes = [
         marks.read.map(FlagChange::Read),
         marks.starred.map(FlagChange::Flagged),
     ];
-    for change in changes.into_iter().flatten() {
+    for change in changes.into_iter().flatten().chain(labelled) {
         spawn_server_change(
             app,
             row_id,
@@ -13211,20 +13229,26 @@ fn label_these(
                 // and in whatever client somebody opens next. A label with
                 // no keyword has nothing that could be sent and stays here,
                 // which the settings screen says rather than leaving it to
-                // be noticed.
+                // be noticed. A run's label on a message it also moves is
+                // handed to that move, which sends it first (ledger 748).
                 match label.keyword.clone() {
-                    Some(keyword) => spawn_server_change(
-                        app,
-                        message.row_id,
-                        message.uid,
-                        message.subject.clone(),
-                        the_folder_it_is_in(Some(cache), message.row_id),
-                        ServerChange::Flag(FlagChange::Labelled {
+                    Some(keyword) => {
+                        let change = FlagChange::Labelled {
                             keyword,
                             on,
                             name: label.name.clone(),
-                        }),
-                    ),
+                        };
+                        if !handed_to_the_move(app.state, message.row_id, &change) {
+                            spawn_server_change(
+                                app,
+                                message.row_id,
+                                message.uid,
+                                message.subject.clone(),
+                                the_folder_it_is_in(Some(cache), message.row_id),
+                                ServerChange::Flag(change),
+                            );
+                        }
+                    }
                     None => tracing::info!(
                         "The label {} has no keyword, so it stays on this computer",
                         label.name
@@ -26211,11 +26235,12 @@ fn run_these_actions_over(
     } in accounts
     {
         // A message this account's run marks and moves has its marks carried
-        // by the move, so one push sends them and then the move (ledger 688).
+        // by the move, so one push sends them and then the move (ledger 688),
+        // and so are the labels it puts on, by their keywords (ledger 748).
         // The do-halves hand each such mark over as they make it here; what
         // no move takes goes on its own, whether the run finishes or stops.
         lock_state(app.state).the_next_move_carries = work
-            .the_marks_that_go_with_the_move()
+            .the_marks_that_go_with_the_move(&labels)
             .into_keys()
             .map(|row_id| (row_id, Default::default()))
             .collect();

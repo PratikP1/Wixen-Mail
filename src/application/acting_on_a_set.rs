@@ -189,15 +189,18 @@ impl TheWork {
     }
 
     /// The marks each moving message's move sends first, by the message's
-    /// row: its read state and its flag, where the run changes them.
+    /// row: its read state and its flag, where the run changes them, and the
+    /// keyword of each label the run puts on it.
     ///
     /// A message that is marked and moved has its marks carried by the move,
     /// so one push sends the marks and then the move on one session (ledger
     /// 688). Sent on their own they could arrive after the move, at a number
     /// the folder no longer holds, and the next check would put the old
-    /// marks back. A message the run marks and does not move is not here:
-    /// no move of its carries anything.
-    pub fn the_marks_that_go_with_the_move(&self) -> BTreeMap<i64, MarksFirst> {
+    /// marks back. A label is the same race (ledger 748). `labels` are the
+    /// account's, which say each label's keyword; a label with none is kept
+    /// on this computer and has nothing to carry. A message the run marks and
+    /// does not move is not here: no move of its carries anything.
+    pub fn the_marks_that_go_with_the_move(&self, labels: &[Tag]) -> BTreeMap<i64, MarksFirst> {
         let Some((Then::MoveTo { .. }, moving)) = &self.then else {
             return BTreeMap::new();
         };
@@ -208,8 +211,30 @@ impl TheWork {
                 let marks = MarksFirst {
                     read: the_mark_on(&self.read, message.row_id),
                     starred: the_mark_on(&self.starred, message.row_id),
+                    keywords: self.the_keywords_put_on(message.row_id, labels),
                 };
                 (!marks.is_nothing()).then_some((message.row_id, marks))
+            })
+            .collect()
+    }
+
+    /// The keywords of the labels this work puts on one message, in the
+    /// order the labels are put on.
+    fn the_keywords_put_on(&self, row_id: i64, labels: &[Tag]) -> Vec<String> {
+        self.labels
+            .iter()
+            .filter(|(_, those)| {
+                those
+                    .messages
+                    .iter()
+                    .any(|message| message.row_id == row_id)
+            })
+            .filter_map(|(label_id, _)| {
+                labels
+                    .iter()
+                    .find(|label| &label.id == label_id)?
+                    .keyword
+                    .clone()
             })
             .collect()
     }
@@ -543,16 +568,26 @@ mod tests {
 
     #[test]
     fn test_the_marks_of_a_message_that_moves_go_with_its_move() {
-        // Read, flagged and filed into Archive. The first message needs all
-        // three; the second is read and flagged already and only moves; the
-        // third is in Archive already, so it is marked and stays, and its
-        // marks go on their own, since no move of its is there to carry them.
+        // Read, flagged, labelled Money and filed into Archive. The first
+        // message needs all four; the second is read and flagged already, so
+        // its move carries the label alone; the third is in Archive already,
+        // so it is marked and stays, and its marks go on their own, since no
+        // move of its is there to carry them. A label travels by its keyword,
+        // and the move carries it as it carries a mark (ledger 748).
         let outcome = Outcome {
             read: Some(true),
             starred: Some(true),
             move_to: Some("Archive".to_string()),
+            tags: vec!["Money".to_string()],
             ..Outcome::default()
         };
+        let sent_as_keywords: Vec<Tag> = the_labels()
+            .into_iter()
+            .map(|label| Tag {
+                keyword: Some(label.name.clone()),
+                ..label
+            })
+            .collect();
         let in_archive = HeldMessage {
             folder_path: "INBOX/Archive".to_string(),
             ..a_message()
@@ -571,17 +606,28 @@ mod tests {
         .map(|(message, held)| (message, needs(&outcome, &held).expect("the needs")))
         .collect();
 
-        let marks = the_work(&each).the_marks_that_go_with_the_move();
+        let marks = the_work(&each).the_marks_that_go_with_the_move(&sent_as_keywords);
 
         assert_eq!(
             marks,
-            BTreeMap::from([(
-                1,
-                MarksFirst {
-                    read: Some(true),
-                    starred: Some(true),
-                }
-            )])
+            BTreeMap::from([
+                (
+                    1,
+                    MarksFirst {
+                        read: Some(true),
+                        starred: Some(true),
+                        keywords: vec!["Money".to_string()],
+                    }
+                ),
+                (
+                    2,
+                    MarksFirst {
+                        read: None,
+                        starred: None,
+                        keywords: vec!["Money".to_string()],
+                    }
+                ),
+            ])
         );
     }
 

@@ -1147,6 +1147,32 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **What a rule does to arriving mail reaches your mail server, and the next check keeps it
+  (ledger 678, GAP-12).** A rule's Mark as read, Mark as unread, Flag, Unflag and Add a label
+  were made on this computer only, so the next check read the message from the server and
+  undid them. They are now sent to the mail server in the check that brought the message,
+  before the rule files it, through the same permission and waiting list Mark as Read uses.
+  A rule's Delete now moves the message to the Trash at the mail server, the way Delete
+  does, where it used to mark the message deleted on this computer only, so the next check
+  could bring it back. A message already in the Trash stays there: a rule never deletes
+  anything for good. With mail changes off a rule's mark waits here and goes at the first
+  check after you allow changes, a rule's label comes off again, and a rule that deletes or
+  files leaves the message where it arrived, as before. When a change cannot reach the
+  server, or the server says no, the check's line says so once with a count, for example "2
+  changes from your rules kept here until changing mail is allowed". A Mark as Read made
+  while mail changes are off now stays read after a check, too. The version does not move
+  for this: no build has been cut since 1.0.0-alpha.1. Known limitations: no rule's change
+  and no rule's Delete has met a real mail server; nobody has heard the new parts of the
+  check's line with a screen reader; a label that cannot reach the server is taken off here
+  rather than kept, since only a mark or a flag can wait; a rule's Delete on an account whose
+  Trash Wixen Mail does not recognise deletes nothing; and each change is one command to the
+  server.
+- **A Quick Step that labels and moves sends the label before the move (ledger 748).** A
+  label a Quick Step or a rule run over a folder put on a message it also moved went to the
+  server on its own, so it could arrive after the move, miss the message, and be taken off
+  here by the next check. The move now carries the label and sends it first, as it already
+  did for marking read and flagging. A mark made by hand just before a move by hand can
+  still arrive second. Not yet tried on a real mail server.
 - **A password the Windows credential store will not keep is named by its account (ledger
   696).** When Windows would not save, read back or remove an account's password, the
   sentence named the account by its internal code, a long string of letters and digits read
@@ -1283,11 +1309,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   puts the label Travel on mail, and this account does not have that label, so no label was put
   on". The label is not made for you. A message counts as sorted by your rules only when its
   label really went on. The version does not move for this: no build has been cut since
-  1.0.0-alpha.1. Known limitations: a rule's label is put on here and is not sent to the mail
-  server, on Gmail or on any other IMAP account, and a later check can take it off again if the
-  server reports that message's flags; a rule's Mark as read and Flag also stay on this
-  computer; a message a rule both files and labels with a missing label is still counted as
-  sorted when the move happens; nobody has heard it with a screen reader; and it has not run
+  1.0.0-alpha.1. Known limitations: a rule's label, and its marks, were kept on this computer
+  until 2026-10-01, when the check began sending them to the mail server (see the entry above
+  on what a rule does to arriving mail); a message a rule both files and labels with a missing
+  label is still counted as sorted when the move happens; nobody has heard it with a screen reader; and it has not run
   against a real mail account.
 - **A message the download brought earlier lists its attachments and says its meeting (ledger
   633).** The download of everything used to keep a message's text and nothing about its

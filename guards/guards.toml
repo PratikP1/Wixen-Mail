@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 543 records have arrived since and have not been through it.
+# 555 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3945,11 +3945,17 @@ red = [
     "application::flag_changes_waiting::tests::test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked",
     "application::mail_across_accounts::tests::test_a_source_that_will_not_mark_the_message_leaves_it_in_both_places",
     "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
+    # Added 2026-10-01 by 13-44.3's remeasure: Report as Junk's two cases
+    # of a refused STORE, written by 13-44 and 13-44.1 in a file this record
+    # had never named, read a refused flag as a refusal too.
+    "application::reporting_junk::tests::test_a_refused_store_is_an_error_carrying_the_servers_words",
+    "application::reporting_junk::tests::test_a_store_refused_while_taking_the_mark_off_is_an_error_carrying_the_servers_words",
 ]
 tests_last_seen = [
-    { file = "src/application/flag_changes_waiting.rs", tests = 16 },
+    { file = "src/application/flag_changes_waiting.rs", tests = 19 },
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/reporting_junk.rs", tests = 29 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -5252,7 +5258,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -5322,7 +5328,7 @@ red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
 ]
 
 # ── A subscription change nothing had ever sent ─────────────────────────────
@@ -12708,7 +12714,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 15 },
@@ -13624,7 +13630,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
@@ -16011,7 +16017,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
@@ -16491,10 +16497,20 @@ red = [
     "application::moves_waiting::tests::test_a_server_never_reached_leaves_the_move_waiting",
     "application::moves_waiting::tests::test_a_server_that_hung_up_answers_not_reached_and_the_row_goes_on_waiting",
     "application::moves_waiting::tests::test_a_server_that_hung_up_on_the_copy_leaves_it_waiting",
+    # Added 2026-10-01 by 13-44.3: a rule's change on arriving mail reads
+    # its failure through the same answer, so a lost connection keeps a
+    # rule's mark waiting and takes a rule's label off as unreachable.
+    "application::what_rules_tell_the_server::tests::test_a_label_the_server_could_not_be_asked_about_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
+    "application::what_rules_tell_the_server::tests::test_what_each_change_calls_for",
+    # And task 3's: a rule's Delete is read through the waiting move's own
+    # answer, so a lost connection leaves it waiting in the menu's store.
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
 ]
 tests_last_seen = [
-    { file = "src/application/flag_changes_waiting.rs", tests = 16 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/flag_changes_waiting.rs", tests = 19 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -16551,7 +16567,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 3 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 7 },
 ]
 
 # ── What the sender said an attachment is ───────────────────────────────────
@@ -16789,7 +16805,7 @@ red = [
     "application::pop_sync::tests::test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
 ]
 
 # ── What a message says about its own form, and who is told ──────────────────
@@ -19050,7 +19066,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -27407,7 +27423,7 @@ red = [
     "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -27569,7 +27585,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -27590,7 +27606,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -27613,7 +27629,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -27689,7 +27705,7 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
 
@@ -33647,7 +33663,7 @@ red = [
     "application::pop_sync::tests::test_a_check_says_a_rule_named_a_label_the_account_does_not_have",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
 ]
 
 # A do-half that says something: Star's sentence said from inside the
@@ -35548,7 +35564,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # The key handler past the last Quick Step asking for Alt where the keys are
@@ -35572,7 +35588,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A Quick Step run over more messages than Select All may take, one key
@@ -35592,7 +35608,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A Quick Step run over messages of another account, into a folder of the
@@ -35624,23 +35640,27 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A waiting move replayed without the marks it carries, so a Quick Step
 # that marks and moves sends the move alone and the mark is lost at the
 # server (ledger 688). Written 2026-09-30 by 13-42, measured through
-# `scripts/guards.sh --remeasure`.
+# `scripts/guards.sh --remeasure`. Rewritten 2026-10-01 by 13-44.3 on the
+# line as it stands in `replay_one`, the replay's loop body moved out.
 [[guard]]
 name = "a waiting move sends the marks it carries before the move"
 file = "src/application/moves_waiting.rs"
-before = '''        let marked = send_the_marks_first(server, cache, &waiting).await;'''
-after = '''        let marked: Result<()> = Ok(());'''
+before = '''    let marked = send_the_marks_first(server, cache, waiting).await;'''
+after = '''    let marked: Result<()> = Ok(());'''
 red = [
     "application::moves_waiting::tests::test_a_quick_step_that_marks_read_and_moves_sends_the_mark_before_the_move",
+    # Added 2026-10-01 by 13-44.3: a label's keyword rides the same step
+    # since ledger 748, so a step that labels and moves loses its label too.
+    "application::moves_waiting::tests::test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # A move made here that never keeps the marks handed to it, so the marks a
@@ -35658,7 +35678,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A rule run by hand that hands the runner's answer every message as
@@ -35953,4 +35973,266 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 24 },
+]
+
+# A rule's mark told to the server after the rule's move rather than before
+# it, so the STORE names a number the folder no longer holds and the next
+# check puts the old mark back (ledger 678, 688's shape on arrival). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+# The census reading in tests/nothing_sends_a_flag_change_unasked.rs goes
+# red under the same break; it is a suite of its own, so it is not named.
+# Rewritten the same day by task 2, whose sender takes the cache and the
+# folder's row and whose move filter sits after it, both inside the anchor.
+[[guard]]
+name = "a rule's mark reaches the server before its move"
+file = "src/application/mail_sync.rs"
+before = '''    if let Some(rules) = filtering {
+        filtered.told = tell_the_server_what_the_rules_changed(
+            controller,
+            cache,
+            folder,
+            folder_id,
+            rules.allowed.mail,
+            &filtered.to_tell_the_server,
+        )
+        .await;
+        hold_back_what_waits(&mut filtered, &folder.name);
+    }
+    // What the rules said belongs elsewhere, done here because this is the
+    // half with a server. Each one reaches the server first and the cache
+    // second, so a move the server refuses leaves the message where it is
+    // rather than showing it somewhere it is not.
+    let (filed, could_not) =
+        carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;'''
+after = '''    let (filed, could_not) =
+        carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;
+    if let Some(rules) = filtering {
+        filtered.told = tell_the_server_what_the_rules_changed(
+            controller,
+            cache,
+            folder,
+            folder_id,
+            rules.allowed.mail,
+            &filtered.to_tell_the_server,
+        )
+        .await;
+        hold_back_what_waits(&mut filtered, &folder.name);
+    }'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rule_that_marks_read_and_files_tells_the_server_the_mark_before_the_move",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's mark sent whether or not the message arrived with it, so every
+# check with a rule that marks read sends a STORE for mail the server already
+# holds read. Written 2026-10-01 by 13-44.3, taken by hand against the whole
+# library first.
+[[guard]]
+name = "a mark the message arrived with is not sent again"
+file = "src/application/what_rules_tell_the_server.rs"
+before = '''    let read = outcome
+        .read
+        .filter(|read| *read != arrived.read)
+        .map(AChange::Read);'''
+after = '''    let read = outcome.read.map(AChange::Read);'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_message_arrived_with_is_not_sent_again",
+    "application::what_rules_tell_the_server::tests::test_what_the_server_is_told_is_only_what_the_rules_changed",
+]
+tests_last_seen = [
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's mark sent with mail changes off, so a rule writes at somebody's
+# server on every check whatever Allow Changes says (D3, T-13-44.3-01).
+# Written 2026-10-01 by 13-44.3, taken by hand against the whole library
+# first.
+[[guard]]
+name = "with mail changes off a rule's mark is not sent"
+file = "src/application/mail_sync.rs"
+before = '''            let sent = match changes_allowed {'''
+after = '''            let sent = match changes_allowed || true {'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A check writing the server's flags as they came over a mark still waiting
+# to go, so the next check undoes a rule's waiting mark and every Mark as Read
+# made while changes were off (D5). Written 2026-10-01 by 13-44.3, taken by
+# hand against the whole library first.
+[[guard]]
+name = "the check keeps a waiting mark over what the server says"
+file = "src/application/mail_sync.rs"
+before = '''                kept = crate::application::flag_changes_waiting::the_flags_to_keep(said, waits);'''
+after = '''                kept = said.to_vec();'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_server_that_answers_what_changed_since_keeps_a_waiting_mark_in_the_same_check",
+    "application::what_rules_tell_the_server::tests::test_the_check_keeps_a_waiting_mark_over_what_the_server_says",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A change the server refused, or a label nothing can hold waiting, left on
+# the row here as though it had gone, so the window shows a message in a
+# state the server does not hold until the next check (D4, D6). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+[[guard]]
+name = "a change the server refused is put back here"
+file = "src/application/what_rules_tell_the_server.rs"
+before = '''        ForTheChange::PutBack(_) => put_back_here(cache, message.message_row, change),'''
+after = '''        ForTheChange::PutBack(_) => Ok(()),'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_label_the_server_could_not_be_asked_about_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_refuses_is_put_back_here",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
+]
+tests_last_seen = [
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A message filed by its rule while its mark waits, so the waiting mark names
+# a number the folder no longer holds, 688's shape (D6, T-13-44.3-02).
+# Written 2026-10-01 by 13-44.3, taken by hand against the whole library
+# first.
+[[guard]]
+name = "a message whose mark waits is not filed in that check"
+file = "src/application/mail_sync.rs"
+before = '''        .partition(|moving| filtered.told.waiting.contains(&moving.message_row));'''
+after = '''        .partition(|_| false);'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's Delete on arriving mail that never reaches the server, so the
+# message is gone here and still in the Inbox at the server, and the next
+# check on a server that cannot say only what changed brings it back (D10,
+# premise 11 (c)). Written 2026-10-01 by 13-44.3, taken by hand against the
+# whole library first. The census reading in
+# tests/nothing_sends_a_flag_change_unasked.rs goes red under the same break;
+# it is a suite of its own, so it is not named.
+[[guard]]
+name = "a rule's delete reaches the server's trash in the check that brought the message"
+file = "src/application/mail_sync.rs"
+before = '''    let (deleted, not_deleted) = carry_out_the_deletes(
+        controller,
+        cache,
+        folder,
+        folder_id,
+        &filtered.to_delete,
+        &mut filtered.told,
+    )
+    .await;'''
+after = '''    let (deleted, not_deleted): (usize, Vec<String>) = (0, Vec::new());'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rule_that_deletes_on_arrival_sends_the_message_to_the_trash_at_the_server",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_on_an_account_with_no_trash_deletes_nothing_and_says_why",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+    "application::what_rules_tell_the_server::tests::test_the_next_check_does_not_bring_back_a_message_a_rule_deleted",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's Delete the server could not be asked about put back rather than
+# left waiting in the menu's store, so a message a rule deleted on a train
+# is back in the Inbox and the next check sends nothing (D11). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+[[guard]]
+name = "a rule's delete the server could not be asked about waits in the menu's queue"
+file = "src/application/what_rules_tell_the_server.rs"
+before = '''        (Replayed::NotReached, _) => ForTheChange::KeptWaiting(Until::TheServerCanBeReached),'''
+after = '''        (Replayed::NotReached, _) => ForTheChange::PutBack(Because::TheServerCouldNotBeReached),'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    "application::what_rules_tell_the_server::tests::test_what_a_rules_delete_calls_for",
+]
+tests_last_seen = [
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's Delete the server or this computer's gate refused, left in the
+# Trash here while the server still holds the message in the Inbox (D11,
+# T-13-44.3-07). Written 2026-10-01 by 13-44.3, taken by hand against the
+# whole library first.
+[[guard]]
+name = "a rule's delete the server refused is put back where it arrived"
+file = "src/application/mail_sync.rs"
+before = '''                if let Err(why) = undo_here(cache, &made.kept) {'''
+after = '''                if let Err(why) = Ok::<(), Error>(()) {'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A POP rule's Delete that does nothing at all, now that the rules write
+# nothing for a delete and each check carries its deletes out (D13). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+[[guard]]
+name = "a POP rule's delete still marks the message deleted here"
+file = "src/application/pop_sync.rs"
+before = '''        match cache.delete_message(deleting.message_row) {'''
+after = '''        match Ok::<(), crate::common::Error>(()) {'''
+red = [
+    "application::pop_sync::tests::test_a_pop_rule_that_deletes_still_marks_the_message_deleted_here",
+]
+tests_last_seen = [
+    { file = "src/application/pop_sync.rs", tests = 51 },
+]
+
+# A run's move that carries no keyword for the labels the run puts on, so
+# the label goes on a worker of its own beside the move and can miss the
+# message (ledger 748). Written 2026-10-01 by 13-44.3, taken by hand against
+# the whole library first.
+[[guard]]
+name = "a run's move carries the keywords of the labels it puts on"
+file = "src/application/acting_on_a_set.rs"
+before = '''                    keywords: self.the_keywords_put_on(message.row_id, labels),'''
+after = '''                    keywords: Vec::new(),'''
+red = [
+    "application::acting_on_a_set::tests::test_the_marks_of_a_message_that_moves_go_with_its_move",
+    "application::moves_waiting::tests::test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move",
+]
+tests_last_seen = [
+    { file = "src/application/acting_on_a_set.rs", tests = 24 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
+]
+
+# Labelling's do-half sending a run's label on its own worker rather than
+# handing it to the move, so the window never uses what the move can carry
+# (ledger 748). Written 2026-10-01 by 13-44.3, taken by hand against the
+# target first.
+[[guard]]
+name = "a run's label is handed to its move rather than sent on its own"
+file = "src/presentation/wx_app.rs"
+suite = "a_quick_step_runs_over_the_selection"
+before = '''                        if !handed_to_the_move(app.state, message.row_id, &change) {'''
+after = '''                        if true {'''
+red = [
+    "test_a_label_a_run_puts_on_is_handed_to_the_move_rather_than_sent",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]

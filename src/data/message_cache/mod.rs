@@ -2347,6 +2347,9 @@ impl MessageCache {
         // before it.
         self.ensure_column_exists("moves_waiting", "read_first", "INTEGER")?;
         self.ensure_column_exists("moves_waiting", "starred_first", "INTEGER")?;
+        // And the keywords of the labels a run puts on (13-44.3, ledger 748),
+        // separated by spaces, which no keyword can hold; nothing when none.
+        self.ensure_column_exists("moves_waiting", "keywords_first", "TEXT")?;
 
         self.conn
             .execute(

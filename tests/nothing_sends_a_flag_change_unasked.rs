@@ -22,6 +22,16 @@
 //! census and 03-08's outbox census were all in, and this follows them:
 //! `guards/guards.toml` couples it to the source it is about, so it runs on the
 //! commits that could break it rather than only on the ones that change it.
+//!
+//! # Why it reads `mail_sync.rs` as well
+//!
+//! Since 2026-10-01 (13-44.3, ledger 678) a rule's mark, flag and label on
+//! arriving mail reach the server too, sent by the check that brought the
+//! message rather than by anything in the window. The same question applies:
+//! a second caller of that sending is a write at somebody's server with
+//! nobody having asked, and one placed after the rule's move names a number
+//! the folder no longer holds. So the sending is read where it lives, in the
+//! check's own source, for how many places call it and where.
 
 use std::fs;
 
@@ -110,6 +120,204 @@ fn test_the_network_coming_back_starts_nothing_that_reaches_a_server() {
         reached.is_empty(),
         "the network coming back starts {reached:?}, and each of those ends at \
          a server. Nobody asked. What follows the arm:\n{body}"
+    );
+}
+
+/// The lines of a source file before its tests, comment lines left out.
+fn the_shipping_lines(source: &str) -> Vec<&str> {
+    source
+        .lines()
+        .take_while(|line| line.trim() != "#[cfg(test)]")
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect()
+}
+
+/// Whether `name` is defined once and called once, and the call lies in the
+/// check's body after every one of `after` and before every one of `before`.
+///
+/// The name is matched bare, without its parenthesis, because its definition
+/// reads `<M: Mailbox>(` after it.
+fn the_one_call_in_the_check(
+    source: &str,
+    name: &str,
+    after: &[&str],
+    before: &[&str],
+) -> Result<(), String> {
+    let lines = the_shipping_lines(source);
+    let naming: Vec<usize> = (0..lines.len())
+        .filter(|at| lines[*at].contains(name))
+        .collect();
+    let definition = format!("fn {name}<");
+    let [first, second] = naming.as_slice() else {
+        return Err(format!(
+            "{name} is on {} lines, where it should be on two: its definition and one call",
+            naming.len()
+        ));
+    };
+    let call = match (
+        lines[*first].contains(&definition),
+        lines[*second].contains(&definition),
+    ) {
+        (true, false) => *second,
+        (false, true) => *first,
+        _ => return Err(format!("{name} is not defined once and called once")),
+    };
+    let start = lines
+        .iter()
+        .position(|line| line.contains("async fn sync_folder<"))
+        .ok_or("the check, sync_folder, is gone")?;
+    let end = start
+        + lines[start..]
+            .iter()
+            .position(|line| *line == "}")
+            .ok_or("the check has no end")?;
+    if !(start < call && call < end) {
+        return Err(format!("{name} is called outside the check"));
+    }
+    let said_before_the_call =
+        |word: &str| lines[start..call].iter().any(|line| line.contains(word));
+    let said_after_the_call = |word: &str| lines[call..end].iter().any(|line| line.contains(word));
+    if let Some(missing) = after.iter().find(|word| !said_before_the_call(word)) {
+        return Err(format!("{name} is called before {missing}"));
+    }
+    if let Some(early) = before
+        .iter()
+        .find(|word| said_before_the_call(word) || !said_after_the_call(word))
+    {
+        return Err(format!("{name} is called after {early}"));
+    }
+    Ok(())
+}
+
+/// What the check sends a rule's changes with, and where it must sit.
+const THE_RULES_CHANGES: &str = "tell_the_server_what_the_rules_changed";
+const AFTER_THE_RULES: [&str; 1] = ["apply_rules("];
+const BEFORE_THE_MOVE_AND_THE_FLAG_READ: [&str; 2] = ["carry_out_the_moves(", ".fetch_flags("];
+
+#[test]
+fn test_a_rules_changes_are_sent_only_by_the_check_that_brought_the_mail() {
+    // Guardrail 7 for a rule's mark, flag and label (13-44.3): the check that
+    // brought the message sends them on the session it already holds, and
+    // nothing else does. Before the move, so a mark names the number the
+    // folder still holds the message under; before the flag read, so the read
+    // finds the server holding what the rule did.
+    let source = fs::read_to_string("src/application/mail_sync.rs").expect("the check");
+    assert_eq!(
+        the_one_call_in_the_check(
+            &source,
+            THE_RULES_CHANGES,
+            &AFTER_THE_RULES,
+            &BEFORE_THE_MOVE_AND_THE_FLAG_READ
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_rules_changes_sent_after_the_move() {
+    // The reading above has to be able to say no.
+    let planted = "pub(crate) async fn sync_folder<M: Mailbox>(\n\
+                   \x20   let mut filtered = apply_rules(cache, rules, &arrived);\n\
+                   \x20   carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;\n\
+                   \x20   tell_the_server_what_the_rules_changed(controller, cache, folder).await;\n\
+                   \x20   controller.fetch_flags(&folder.path, &held, since).await?;\n\
+                   }\n\
+                   async fn tell_the_server_what_the_rules_changed<M: Mailbox>(\n\
+                   }\n\
+                   #[cfg(test)]\n";
+    assert!(
+        the_one_call_in_the_check(
+            planted,
+            THE_RULES_CHANGES,
+            &AFTER_THE_RULES,
+            &BEFORE_THE_MOVE_AND_THE_FLAG_READ
+        )
+        .is_err(),
+        "a rule's changes sent after the move were read as in their place"
+    );
+}
+
+/// What the check sends a rule's deletes with, and where it must sit.
+const THE_RULES_DELETES: &str = "carry_out_the_deletes";
+const AFTER_THE_MOVE: [&str; 1] = ["carry_out_the_moves("];
+const BEFORE_THE_FLAG_READ: [&str; 1] = [".fetch_flags("];
+
+/// The function each line of `source` calling `called` sits in, by name.
+///
+/// A function is found by its first line, which starts at the left margin and
+/// names `fn`; a call is a line holding the name and its parenthesis, which a
+/// definition, `name<S: ...>(`, does not.
+fn the_functions_calling(source: &str, called: &str) -> Vec<String> {
+    let call = format!("{called}(");
+    let mut within = String::new();
+    let mut found = Vec::new();
+    for line in the_shipping_lines(source) {
+        let at_the_margin = !line.starts_with(char::is_whitespace);
+        if at_the_margin && line.starts_with("impl") {
+            within = line.to_string();
+        }
+        if let Some(after) = line.split("fn ").nth(1).filter(|_| at_the_margin) {
+            within = after
+                .split(['<', '('])
+                .next()
+                .unwrap_or_default()
+                .to_string();
+        }
+        if line.contains(&call) {
+            found.push(within.clone());
+        }
+    }
+    found
+}
+
+#[test]
+fn test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail() {
+    // Guardrail 7 for a rule's Delete (13-44.3, D10 and D11): the check that
+    // brought the message sends it to the Trash on its own session, after the
+    // rule's moves and before the flags are read back, through the replay's
+    // own steps; nothing else sends a rule's delete, and the replay's steps
+    // are called by the replay and by that check alone.
+    let check = fs::read_to_string("src/application/mail_sync.rs").expect("the check");
+    let replay = fs::read_to_string("src/application/moves_waiting.rs").expect("the waiting moves");
+    assert_eq!(
+        the_one_call_in_the_check(
+            &check,
+            THE_RULES_DELETES,
+            &AFTER_THE_MOVE,
+            &BEFORE_THE_FLAG_READ
+        ),
+        Ok(())
+    );
+    let mut callers = the_functions_calling(&replay, "replay_one");
+    callers.extend(the_functions_calling(&check, "replay_one"));
+    callers.sort();
+    assert_eq!(
+        callers,
+        ["carry_out_the_deletes", "replay_the_moves_waiting_for"],
+        "the replay's own steps are called from somewhere new; read this test's comment"
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_rules_deletes_sent_after_the_flag_read() {
+    // The reading above has to be able to say no.
+    let planted = "pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(\n\
+                   \x20   carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;\n\
+                   \x20   controller.fetch_flags(&folder.path, &held, since).await?;\n\
+                   \x20   carry_out_the_deletes(controller, cache, folder, folder_id, &filtered.to_delete).await;\n\
+                   }\n\
+                   async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(\n\
+                   }\n\
+                   #[cfg(test)]\n";
+    assert!(
+        the_one_call_in_the_check(
+            planted,
+            THE_RULES_DELETES,
+            &AFTER_THE_MOVE,
+            &BEFORE_THE_FLAG_READ
+        )
+        .is_err(),
+        "a rule's deletes sent after the flag read were read as in their place"
     );
 }
 

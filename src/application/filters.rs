@@ -562,11 +562,14 @@ impl Outcome {
         self == &Self::default()
     }
 
-    /// Whether carrying this out changes anything on the server.
+    /// Whether this moves the message or deletes it.
     ///
-    /// Moving and deleting do. Marking read and flagging are written back by
-    /// the flag sync, which has its own gate, so they are not counted here.
-    pub fn touches_the_server(&self) -> bool {
+    /// Those are what hold a message back whole when changing mail is not
+    /// allowed: a rule that files or deletes and cannot is said as left alone.
+    /// A mark, a flag and a label are not counted here, because they reach the
+    /// server through the check's own send, and wait or come back there when
+    /// changes are off (13-44.3).
+    pub fn moves_or_deletes(&self) -> bool {
         self.delete || self.move_to.is_some()
     }
 }
@@ -1164,13 +1167,14 @@ mod tests {
     }
 
     #[test]
-    fn test_only_moving_and_deleting_count_as_touching_the_server() {
-        // What the permission gate asks. Marking read and flagging go through
-        // the flag sync, which has its own.
-        assert!(settle(&[FilterAction::Delete]).touches_the_server());
-        assert!(settle(&[FilterAction::MoveToFolder("Receipts".into())]).touches_the_server());
-        assert!(!settle(&[FilterAction::MarkAsRead]).touches_the_server());
-        assert!(!settle(&[FilterAction::AddTag("work".into())]).touches_the_server());
+    fn test_only_moving_and_deleting_hold_a_message_back_whole() {
+        // What holds a rule back whole when changing mail is not allowed.
+        // Marking read, flagging and labelling reach the server through the
+        // check's own send, which keeps them waiting or puts them back.
+        assert!(settle(&[FilterAction::Delete]).moves_or_deletes());
+        assert!(settle(&[FilterAction::MoveToFolder("Receipts".into())]).moves_or_deletes());
+        assert!(!settle(&[FilterAction::MarkAsRead]).moves_or_deletes());
+        assert!(!settle(&[FilterAction::AddTag("work".into())]).moves_or_deletes());
     }
 
     #[test]
@@ -1188,7 +1192,7 @@ mod tests {
         assert_eq!(settled.say_first.as_deref(), Some("From the school"));
         assert_eq!(settled.read, Some(true));
         assert!(!settle(&[FilterAction::SayFirst("Urgent".into())]).is_nothing());
-        assert!(!settle(&[FilterAction::SayFirst("Urgent".into())]).touches_the_server());
+        assert!(!settle(&[FilterAction::SayFirst("Urgent".into())]).moves_or_deletes());
     }
 
     #[test]

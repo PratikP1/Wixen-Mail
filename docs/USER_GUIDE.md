@@ -574,9 +574,40 @@ nothing on at all. Now the name you type in the rule is matched against the
 account's labels, in any capitals, so a rule that adds "money" puts on your
 label Money. Make the label first, in the Label Manager: a rule naming a label
 the account does not have puts nothing on, and after the check you hear which
-label was missing, once however many messages the rule matched. A rule's label
-stays on this computer and is not sent to your mail server, and a later check
-can take it off again when the server reports that message.
+label was missing, once however many messages the rule matched. What becomes
+of the label at your mail server is in the next paragraph.
+
+**What a rule does at your mail server.** Since 2026-10-01, what a rule does
+to mail as it arrives is sent to your mail server in the same check, before
+the rule files the message: Mark as read, Mark as unread, Flag, Unflag and Add
+a label. So the message is read, flagged or labelled on your phone as well,
+and the next check keeps it that way. A label with no keyword stays on this
+computer, as it always has. A rule that deletes moves the message to your
+Trash at the mail server in the same check, the way Delete does, so it is gone
+from the inbox on your phone and the next check does not bring it back.
+
+When a change cannot reach the server, this is what happens:
+
+- With mail changes switched off under Allow Changes, a mark or a flag is
+  made here and kept until you allow changes, then sent at the first check
+  after that. A label a rule put on is taken off again, because nothing can
+  hold a label until later. A rule that deletes or files leaves the message
+  where it arrived, as before.
+- When the mail server cannot be reached, a mark or a flag is kept the same
+  way, and the message stays where it arrived for that check rather than
+  being filed. A message a rule deletes waits in your Trash here and goes at
+  the next check.
+- When the mail server says no, the change is taken back here.
+- A rule never deletes anything for good: a message already in the Trash
+  stays there. An account whose Trash Wixen Mail does not recognise keeps the
+  message, and the check says why.
+
+The check's line says each of these once, with a count, for example: "Inbox:
+40 of 40 messages downloaded, 3 sorted by your rules, 2 changes from your
+rules kept here until changing mail is allowed". Since the same day, a Mark as
+Read you make yourself while mail changes are off also stays read after a
+check, until it can be sent. This is experimental: nothing a rule does has
+met a real mail server yet.
 
 Nobody has heard a phrase at the start of a row or the sound after a check
 yet; the tester's copy is the first that will.

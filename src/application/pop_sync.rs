@@ -354,6 +354,16 @@ pub(crate) async fn sync<M: PopMailbox>(
     }
     // After what the rules said, not in place of it, as on the IMAP path.
     filtered.could_not_be_filed.extend(could_not);
+    // A rule's Delete, marked deleted here as it always was. A POP server
+    // keeps no Trash and nothing brings the message back, and the rules
+    // themselves write nothing for a delete since the IMAP check began
+    // sending it to the Trash at the server (13-44.3, D13).
+    for deleting in &filtered.to_delete {
+        match cache.delete_message(deleting.message_row) {
+            Ok(()) => filtered.changed += 1,
+            Err(why) => tracing::warn!("A rule could not delete a message here: {why}"),
+        }
+    }
 
     Ok(PopSync {
         fetched: written.len(),
@@ -910,6 +920,34 @@ Subject: Weekly roundup",
             "{:?}",
             done.filtered.could_not_be_filed
         );
+    }
+
+    #[test]
+    fn test_a_pop_rule_that_deletes_still_marks_the_message_deleted_here() {
+        // A POP server keeps no Trash and nothing brings the message back, so
+        // a rule's Delete stays what it always was here (D13), now that the
+        // rule itself writes nothing and each check carries its deletes out.
+        let (cache, inbox) = a_cache();
+        let raw = raw_message("From: news@example.com\r\nSubject: Weekly roundup", "Body");
+
+        let done = run_with_rules(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            inbox,
+            &[a_rule("Unwanted", "news@example.com", "delete", None)],
+        )
+        .expect("the check runs");
+
+        let row = done.written.first().copied().expect("the message written");
+        assert!(
+            cache
+                .get_message(row)
+                .expect("the row read")
+                .expect("the row is there")
+                .deleted,
+            "the rule's Delete did not mark the message deleted here"
+        );
+        assert_eq!(done.filtered.changed, 1, "the delete was not counted");
     }
 
     #[test]
