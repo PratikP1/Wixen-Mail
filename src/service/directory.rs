@@ -500,13 +500,32 @@ fn where_this_directory_is(directory: &Directory) -> Result<WhereItIs> {
         ))
     };
     let parsed = url::Url::parse(directory.url.trim()).map_err(|_| not_an_address())?;
-    let is_encrypted = match parsed.scheme() {
-        "ldaps" => true,
-        "ldap" => false,
-        _ => return Err(not_an_address()),
-    };
+    let is_encrypted = is_encrypted_by_its_scheme(&parsed).ok_or_else(not_an_address)?;
     let host = parsed.host_str().ok_or_else(not_an_address)?.to_string();
     Ok(WhereItIs { host, is_encrypted })
+}
+
+/// Whether an address is encrypted from its start, read off its scheme, or
+/// nothing for a scheme that is not a directory's. The one reading of the
+/// scheme, so a lookup and the window that saves a sign-in cannot disagree
+/// about which addresses are unencrypted.
+fn is_encrypted_by_its_scheme(parsed: &url::Url) -> Option<bool> {
+    match parsed.scheme() {
+        "ldaps" => Some(true),
+        "ldap" => Some(false),
+        _ => None,
+    }
+}
+
+/// Whether a password for this address would be refused for want of
+/// encryption: an `ldap://` address, in any case and with spaces round it.
+/// Anything that is not an address, an empty box included, is not, since
+/// the lookup says something else about it.
+pub fn is_reached_without_encryption(address: &str) -> bool {
+    url::Url::parse(address.trim())
+        .ok()
+        .and_then(|parsed| is_encrypted_by_its_scheme(&parsed))
+        == Some(false)
 }
 
 /// The password to sign in with, or nothing, or a refusal.
@@ -535,13 +554,25 @@ fn the_password_to_sign_in_with<'a>(
         None => Err(Error::Authentication(no_password_is_saved_for(
             named, sign_in_as,
         ))),
-        Some(_) if !place.is_encrypted => Err(Error::Config(format!(
-            "The directory at {named} is reached without encryption (its address begins \
-             ldap://), so the password for it is not sent. Change the address to one beginning \
-             ldaps://, which your organisation's directory administrator can give you."
-        ))),
+        Some(_) if !place.is_encrypted => {
+            Err(Error::Config(no_password_is_sent_unencrypted_to(named)))
+        }
         Some(_) => Ok(password),
     }
+}
+
+/// What to say when a directory that signs somebody in is reached without
+/// encryption.
+///
+/// One sentence for the two places that meet it: a lookup, which refuses to
+/// send the password, and the Look People Up at Work window, which refuses
+/// to save a sign-in that could never be used.
+pub fn no_password_is_sent_unencrypted_to(named: &str) -> String {
+    format!(
+        "The directory at {named} is reached without encryption (its address begins ldap://), \
+         so the password for it is not sent. Change the address to one beginning ldaps://, \
+         which your organisation's directory administrator can give you."
+    )
 }
 
 /// What to say when a directory signs somebody in and no password for it is
@@ -1718,6 +1749,11 @@ mod tests {
         assert!(said.contains("directory.example.com"), "{said}");
         assert!(said.contains("without encryption"), "{said}");
         assert!(said.contains("ldaps://"), "{said}");
+        // The window that saves a sign-in refuses with these words too.
+        assert_eq!(
+            said.strip_prefix("Configuration error: "),
+            Some(no_password_is_sent_unencrypted_to("directory.example.com").as_str())
+        );
         assert!(
             !said.contains("hunter2"),
             "the refusal quoted the password: {said}"

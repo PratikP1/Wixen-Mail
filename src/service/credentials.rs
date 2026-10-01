@@ -41,16 +41,18 @@ pub fn stored_password(from_store: Option<String>, from_database: &str) -> Store
     StoredPassword::NeedsMoving(from_database.to_string())
 }
 
-/// Remember an account's password.
+/// Remember an account's password. `called` is the account's name, the one
+/// a failure is said with.
 ///
 /// An empty password is a request to forget, not a password to store. Accounts
 /// signing in with OAuth have no password, and an empty entry would be
 /// indistinguishable from one somebody meant to save.
-pub fn store(account_id: &str, password: &str) -> Result<()> {
+pub fn store(account_id: &str, called: &str, password: &str) -> Result<()> {
+    let whose = whose_password(called);
     if password.is_empty() {
-        return forget(account_id);
+        return remove_secret(account_id).map_err(|e| saving_failed("remove", &whose, &e));
     }
-    write_secret(account_id, password)
+    write_secret(account_id, password).map_err(|e| saving_failed("save", &whose, &e))
 }
 
 /// The stored password, or `None` when there is not one.
@@ -60,12 +62,12 @@ pub fn store(account_id: &str, password: &str) -> Result<()> {
 /// means a password that exists and cannot be got at, which somebody has to be
 /// told about rather than shown as a blank box.
 pub fn load(account_id: &str) -> Result<Option<String>> {
-    read_secret(account_id)
+    read_secret(account_id).map_err(|e| saving_failed("read back", THIS_ACCOUNTS, &e))
 }
 
 /// Forget an account's password.
 pub fn forget(account_id: &str) -> Result<()> {
-    remove_secret(account_id)
+    remove_secret(account_id).map_err(|e| saving_failed("remove", THIS_ACCOUNTS, &e))
 }
 
 // ── The credential store itself ─────────────────────────────────────────────
@@ -79,27 +81,34 @@ use crate::service::secret_store;
 
 fn write_secret(account_id: &str, password: &str) -> Result<()> {
     secret_store::write(KEYRING_SERVICE, account_id, password)
-        .map_err(|e| saving_failed("save", account_id, &e))
 }
 
 fn read_secret(account_id: &str) -> Result<Option<String>> {
     secret_store::read(KEYRING_SERVICE, account_id)
-        .map_err(|e| saving_failed("read back", account_id, &e))
 }
 
 fn remove_secret(account_id: &str) -> Result<()> {
     secret_store::remove(KEYRING_SERVICE, account_id)
-        .map_err(|e| saving_failed("remove", account_id, &e))
 }
 
-/// What went wrong, saying which password and never what it was.
-fn saving_failed(
-    what: &str,
-    account_id: &str,
-    cause: &crate::common::Error,
-) -> crate::common::Error {
+/// Whose password a sentence names when the code saying it holds the
+/// account's id alone.
+const THIS_ACCOUNTS: &str = "this account's password";
+
+/// Whose password a sentence names: the account by the name it was given,
+/// or as this account's when the name is blank. Never the id, a long
+/// internal code that the accounts' save would read aloud.
+fn whose_password(called: &str) -> String {
+    match called.trim() {
+        "" => THIS_ACCOUNTS.to_string(),
+        name => format!("the password for {name}"),
+    }
+}
+
+/// What went wrong, saying whose password and never what it was.
+fn saving_failed(what: &str, whose: &str, cause: &crate::common::Error) -> crate::common::Error {
     crate::common::Error::Security(format!(
-        "Could not {what} the password for {account_id} in the Windows credential store: {cause}"
+        "Could not {what} {whose} in the Windows credential store: {cause}"
     ))
 }
 
@@ -150,9 +159,74 @@ mod tests {
         );
     }
 
+    /// What the store said when it would not do what it was asked, as the
+    /// person hears it.
+    fn said(refused: Result<impl std::fmt::Debug>) -> String {
+        refused.expect_err("the store to refuse").to_string()
+    }
+
+    #[test]
+    fn test_a_password_the_store_will_not_save_is_named_by_its_account_and_not_its_id() {
+        // The id is a long internal code, read aloud a character at a time.
+        secret_store::refuse("the credential store is not available");
+        let saving = said(store("acc-1", "Work", "hunter2"));
+        secret_store::refuse_removals("the entry is locked");
+        let clearing = said(store("acc-1", "Work", ""));
+        secret_store::allow();
+
+        assert!(
+            saving.contains("Could not save the password for Work in the Windows credential store"),
+            "{saving}"
+        );
+        assert!(
+            clearing.contains("Could not remove the password for Work"),
+            "{clearing}"
+        );
+        for sentence in [&saving, &clearing] {
+            assert!(!sentence.contains("acc-1"), "{sentence}");
+            assert!(!sentence.contains("hunter2"), "{sentence}");
+        }
+    }
+
+    #[test]
+    fn test_a_password_with_no_name_to_go_by_is_this_accounts() {
+        secret_store::refuse("the credential store is not available");
+        let saving = said(store("acc-1", "  ", "hunter2"));
+        secret_store::allow();
+
+        assert!(
+            saving.contains("Could not save this account's password in the Windows"),
+            "{saving}"
+        );
+        assert!(!saving.contains("acc-1"), "{saving}");
+    }
+
+    #[test]
+    fn test_a_password_the_store_will_not_give_back_or_let_go_is_this_accounts_and_never_an_id() {
+        // Reading back and forgetting hold the id alone, so they say whose
+        // password it is without naming anybody.
+        secret_store::refuse("the credential store is not available");
+        let reading = said(load("acc-1"));
+        secret_store::refuse_removals("the entry is locked");
+        let forgetting = said(forget("acc-1"));
+        secret_store::allow();
+
+        assert!(
+            reading.contains("Could not read back this account's password"),
+            "{reading}"
+        );
+        assert!(
+            forgetting.contains("Could not remove this account's password"),
+            "{forgetting}"
+        );
+        for sentence in [&reading, &forgetting] {
+            assert!(!sentence.contains("acc-1"), "{sentence}");
+        }
+    }
+
     #[test]
     fn test_a_password_comes_back_the_way_it_went_in() {
-        store("round-trip", "hunter2").unwrap();
+        store("round-trip", "Round trip", "hunter2").unwrap();
 
         assert_eq!(load("round-trip").unwrap().as_deref(), Some("hunter2"));
     }
@@ -167,9 +241,9 @@ mod tests {
         // Switching an account to OAuth clears the password box. Leaving the
         // old one in the store would keep a working credential for an account
         // that is no longer meant to use it.
-        store("switched", "old-password").unwrap();
+        store("switched", "Switched", "old-password").unwrap();
 
-        store("switched", "").unwrap();
+        store("switched", "Switched", "").unwrap();
 
         assert_eq!(load("switched").unwrap(), None);
     }

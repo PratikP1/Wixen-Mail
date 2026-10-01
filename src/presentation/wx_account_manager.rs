@@ -15,7 +15,7 @@ use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
 // said it five ways, one per button, and the button is not what somebody
 // needs to hear: the list is empty of a choice and that is the whole answer.
 use crate::application::directory_sign_in::{
-    A_PASSWORD_IS_SAVED, NOT_TRIED_YET, PasswordChange, what_the_window_keeps,
+    A_PASSWORD_IS_SAVED, NOT_TRIED_YET, PasswordChange, TheBox, what_the_window_keeps,
 };
 use crate::application::identities::{NOT_SAVED_YET, NOWHERE_TO_KEEP_THEM};
 use crate::application::status_sentences::{Thing, nothing_chosen};
@@ -2430,8 +2430,11 @@ fn keep_what_the_directory_window_holds(
         a_password_is_saved,
     )
     .map_err(|refused| Refused {
-        said: refused.to_string(),
-        at: w.password,
+        at: match refused.about {
+            TheBox::Address => w.address,
+            TheBox::Password => w.password,
+        },
+        said: refused.said,
     })?;
     if let Some(why) = remember_where_to_look_people_up(account_id, kept.directory) {
         return Err(Refused {

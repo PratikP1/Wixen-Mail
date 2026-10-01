@@ -259,9 +259,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   stays open, says why, and puts you in the password box. The sentences a lookup says when
   the directory is missing, wrongly set up, refuses the sign-in or does not answer now send
   you to this window rather than to "the account's settings". The version does not move for
-  this: no build has been cut since 1.0.0-alpha.1. Known limitations: no real directory has
-  been asked with a sign-in saved here; a password saved for an `ldap://` address is kept
-  and then refused at every lookup rather than refused when you press OK.
+  this: no build has been cut since 1.0.0-alpha.1. Known limitation: no real directory has
+  been asked with a sign-in saved here.
 - **A directory password is kept in the Windows credential store and sent over encrypted
   addresses only, with nothing on screen to set it yet (GAP-07's directory half, #55).** When
   an account's directory names somebody to sign in as, looking a name up reads that
@@ -658,6 +657,15 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Look People Up at Work refuses a sign-in for an `ldap://` address when you press OK
+  (#55, GAP-07, ledger 699).** Until now the window kept a sign-in name and password for an
+  address beginning `ldap://`, and every lookup then refused to send the password, because
+  over `ldap://` it would cross the network as typed. The window now refuses the sign-in
+  when you choose OK, whether a password was typed or one is already saved, says why in the
+  same words a lookup uses, and puts you in the Directory address box. Nothing is saved by
+  the refused OK; a password saved earlier stays until you clear the sign-in name. A
+  directory that answers anybody is still kept at an `ldap://` address. The version does
+  not move for this: no build has been cut since 1.0.0-alpha.1.
 - **Undo after Report as Junk takes the junk mark off at the server, experimental (#54,
   GAP-06, ledger 677).** Until now `Ctrl+Z` after a report moved the messages back out of the
   junk folder and left the junk mark on them at the server, so a server that learns from the
@@ -1139,6 +1147,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A password the Windows credential store will not keep is named by its account (ledger
+  696).** When Windows would not save, read back or remove an account's password, the
+  sentence named the account by its internal code, a long string of letters and digits read
+  aloud one at a time. It now names the account the way you named it, "Could not save the
+  password for Work in the Windows credential store", or says "this account's password"
+  where the name is blank or where only the code is at hand, as when an account is removed.
+  The password itself is not in the sentence, and never was.
 - **A block goes to the account the message is in (#54, GAP-06, ledger 691).** Block This
   Sender and Everyone at This Domain wrote the block, counted the mail already here and moved
   it in the account you had open, which in All Inboxes may not be the account the message came
