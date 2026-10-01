@@ -107,6 +107,73 @@ unsafe extern "system" {
     fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
 }
 
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn CreateMutexW(
+        attributes: *const std::ffi::c_void,
+        initial_owner: i32,
+        name: *const u16,
+    ) -> isize;
+    fn WaitForSingleObject(handle: isize, milliseconds: u32) -> u32;
+    fn ReleaseMutex(handle: isize) -> i32;
+    fn CloseHandle(handle: isize) -> i32;
+}
+
+const WAIT_TIMEOUT: u32 = 0x0000_0102;
+/// How long a run waits for another run of this executable to finish: five
+/// times the minute a run gives itself before it gives up.
+const WAIT_FOR_ANOTHER_RUN_MS: u32 = 5 * 60 * 1000;
+
+/// This run's turn at the browser, held until the run ends.
+///
+/// WebView2 runs one browser process per user data folder, and the folder the
+/// editor is given is named for the executable, so two runs of this target at
+/// once share one browser and, through it, one keyboard focus. Measured on
+/// 2026-10-01 with two runs started two seconds apart, five rounds: each page
+/// took in the other's letters ("bolHd", "ite#m"), step 8c came out as
+/// "<strong>bold</strong><div>-a item</div>", a timing probe typing the same
+/// keys came out as `<li><strong>item</strong></li>`, the shape ledger 754
+/// reported, and a run that started while the other held the browser never
+/// opened a page. Twenty runs one after another were all green. So a run
+/// waits for any other run of this executable to finish rather than typing
+/// into its page.
+struct OneRunAtATime(isize);
+
+impl OneRunAtATime {
+    fn take() -> Self {
+        let exe = std::env::current_exe().expect("the test's own path");
+        let stem = exe
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("the test's own name");
+        let name: Vec<u16> = format!("Local\\{stem}-one-run-at-a-time")
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: a null-terminated name and no security attributes.
+        let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        assert_ne!(handle, 0, "the run could not make its turn's mutex");
+        // SAFETY: a live mutex handle. An abandoned one, a run that crashed
+        // while holding it, is taken like a released one.
+        let waited = unsafe { WaitForSingleObject(handle, WAIT_FOR_ANOTHER_RUN_MS) };
+        assert_ne!(
+            waited, WAIT_TIMEOUT,
+            "another run of this target held the browser for five minutes"
+        );
+        OneRunAtATime(handle)
+    }
+}
+
+impl Drop for OneRunAtATime {
+    fn drop(&mut self) {
+        // SAFETY: the handle this run took and owns.
+        unsafe {
+            ReleaseMutex(self.0);
+            CloseHandle(self.0);
+        }
+    }
+}
+
 thread_local! {
     static FOUND: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
 }
@@ -598,6 +665,7 @@ fn say(line: &str) {
 
 #[test]
 fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
+    let _turn = OneRunAtATime::take();
     let data_dir = tempfile::tempdir().expect("a temporary data directory");
     // SAFETY: set before any thread is started and before anything reads it.
     unsafe {
