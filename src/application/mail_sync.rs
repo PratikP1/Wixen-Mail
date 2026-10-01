@@ -220,6 +220,12 @@ pub(crate) fn say_what_the_rules_did(filtered: &Filtered, said: &mut SummingUp) 
             filtered.held_back
         ));
     }
+    // One clause per outcome that was not done, each with its count, so a
+    // check of hundreds says it once (D7, guardrail 5). A change that went
+    // adds no words: it is in "sorted by your rules".
+    for clause in filtered.told.clauses() {
+        said.count(clause);
+    }
     if filtered.could_not_be_filed.is_empty() {
         return;
     }
@@ -1349,28 +1355,119 @@ async fn carry_out_the_moves<M: Mailbox>(
 /// server still has the message under, and before the flag read, so the read
 /// finds the server holding what the rule did (ledger 678). With mail changes
 /// off nothing is dialled.
+///
+/// What each answer calls for is decided in
+/// [`crate::application::what_rules_tell_the_server`], and done here: a mark
+/// or a flag kept in the queue a Mark as Read made with changes off waits in,
+/// which the next check sends before any folder is read, or the change put
+/// back as the message arrived (D3 to D6).
 async fn tell_the_server_what_the_rules_changed<M: Mailbox>(
     controller: &M,
+    cache: &MessageCache,
     from: &ImapFolder,
+    from_id: i64,
     changes_allowed: bool,
     telling: &[crate::application::what_rules_tell_the_server::Telling],
 ) -> crate::application::what_rules_tell_the_server::Told {
-    let told = crate::application::what_rules_tell_the_server::Told::default();
-    if !changes_allowed {
-        return told;
-    }
+    use crate::application::what_rules_tell_the_server::{
+        AWaitingPlace, Answered, Told, do_here_what_it_calls_for, what_the_change_calls_for,
+    };
+    let mut told = Told::default();
+    let account_id = match cache.account_of_folder(from_id) {
+        Ok(Some(account_id)) => account_id,
+        _ => {
+            tracing::warn!("The account of {} could not be read", from.name);
+            String::new()
+        }
+    };
+    let waiting_in = AWaitingPlace {
+        account_id: &account_id,
+        folder_path: &from.path,
+    };
     for message in telling {
         for change in &message.changes {
             let (flag, on) = change.as_sent();
-            if let Err(why) = controller.set_flag(&from.path, message.uid, flag, on).await {
+            let sent = match changes_allowed {
+                true => Some(controller.set_flag(&from.path, message.uid, flag, on).await),
+                false => None,
+            };
+            let answer = match &sent {
+                None => Answered::NotDialled,
+                Some(Ok(())) => Answered::Went,
+                Some(Err(why)) => {
+                    tracing::warn!(
+                        "A change a rule made in {} was not taken by the server: {why}",
+                        from.name
+                    );
+                    Answered::Failed(why)
+                }
+            };
+            let became = what_the_change_calls_for(change, answer);
+            if let Err(why) = do_here_what_it_calls_for(cache, &waiting_in, message, change, became)
+            {
                 tracing::warn!(
-                    "A change a rule made in {} could not be told to the server: {why}",
+                    "What a rule's change in {} called for could not be done here: {why}",
                     from.name
                 );
             }
+            told.record(message, became);
         }
     }
     told
+}
+
+/// Leave where it arrived a message whose change waits, said once each, and
+/// take out of the count of those sorted a message whose change was put back
+/// (D6, D7).
+///
+/// A move made while its mark waits would leave the waiting mark naming a
+/// number the folder no longer holds, so the next check sent it to nothing
+/// and put the old mark back: 688's shape.
+fn hold_back_what_waits(filtered: &mut Filtered, from: &str) {
+    let (waiting, moving): (Vec<Moving>, Vec<Moving>) = std::mem::take(&mut filtered.to_move)
+        .into_iter()
+        .partition(|moving| filtered.told.waiting.contains(&moving.message_row));
+    filtered.to_move = moving;
+    filtered
+        .could_not_be_filed
+        .extend(waiting.iter().map(|moving| {
+            crate::application::what_rules_tell_the_server::left_where_it_arrived(
+                from,
+                &moving.into,
+            )
+        }));
+    filtered.changed = filtered
+        .changed
+        .saturating_sub(filtered.told.put_back_after_counting.len());
+}
+
+/// The changes waiting to go for a folder's account, by the row each is
+/// about, read once for the flag read.
+fn the_changes_waiting_by_row(
+    cache: &MessageCache,
+    folder_id: i64,
+) -> std::collections::HashMap<i64, Vec<(crate::application::flag_changes_waiting::WhichFlag, bool)>>
+{
+    let mut by_row: std::collections::HashMap<i64, Vec<_>> = std::collections::HashMap::new();
+    let waiting = match cache.folder_account(folder_id) {
+        Ok(Some(account)) => cache.flag_changes_waiting_for(&account),
+        Ok(None) => Ok(Vec::new()),
+        Err(why) => Err(why),
+    };
+    match waiting {
+        Ok(waiting) => {
+            for change in waiting {
+                by_row
+                    .entry(change.message_row_id)
+                    .or_default()
+                    .push((change.which_flag, change.changed_to));
+            }
+        }
+        // Said rather than swallowed: a check that cannot see what waits
+        // writes the server's flags over it, which is the defect D5 closes.
+        Err(why) => tracing::warn!("The changes waiting to go could not be read: {why}"),
+    }
+    by_row
 }
 
 /// What to say when the account's folder list could not be read at all.
@@ -1626,11 +1723,14 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     if let Some(rules) = filtering {
         filtered.told = tell_the_server_what_the_rules_changed(
             controller,
+            cache,
             folder,
+            folder_id,
             rules.allowed.mail,
             &filtered.to_tell_the_server,
         )
         .await;
+        hold_back_what_waits(&mut filtered, &folder.name);
     }
     // What the rules said belongs elsewhere, done here because this is the
     // half with a server. Each one reaches the server first and the cache
@@ -1684,7 +1784,27 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // server that cannot answers about every message it was asked about
     // whether anything changed or not.
     let mut brought_up_to_date = 0usize;
-    for (uid, flags) in &changed {
+    // A change still waiting to go is written over what the server said, for
+    // its flag only: the server has not heard of it yet, and writing its
+    // answer as it came undid every waiting mark until the mark went (D5).
+    let waiting = if changed.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        the_changes_waiting_by_row(cache, folder_id)
+    };
+    for (uid, said) in &changed {
+        let waits = match cache.message_row_for_uid(folder_id, *uid) {
+            Ok(Some(row)) => waiting.get(&row),
+            _ => None,
+        };
+        let kept;
+        let flags = match waits {
+            Some(waits) => {
+                kept = crate::application::flag_changes_waiting::the_flags_to_keep(said, waits);
+                &kept
+            }
+            None => said,
+        };
         brought_up_to_date += cache.set_message_flags(folder_id, *uid, flags)?;
         // The keywords among those flags are labels, put on elsewhere or taken
         // off elsewhere. Without this a label set on a phone never arrived and

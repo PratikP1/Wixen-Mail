@@ -20,8 +20,16 @@
 //! This module decides; [`crate::application::mail_sync`] sends. Nothing here
 //! names a connection.
 
+use std::collections::BTreeMap;
+
 use crate::application::filters::Outcome;
-use crate::data::message_cache::{CachedMessage, Tag};
+use crate::application::flag_changes_waiting::{
+    self, WhatAFailedPushCallsFor, WhichFlag, WhyThePushFailed,
+};
+use crate::common::Result;
+use crate::data::message_cache::waiting_flag_changes::AWaitingFlagChange;
+use crate::data::message_cache::{CachedMessage, MessageCache, Tag};
+use crate::service::caldav::how_many;
 use crate::service::protocols::imap::flag::{FLAGGED, SEEN};
 
 /// One change a rule made here that the mail server is to be told about.
@@ -40,6 +48,15 @@ pub enum AChange {
 }
 
 impl AChange {
+    /// Which flag of the waiting queue this is, for the two it holds.
+    pub fn which_flag(&self) -> Option<WhichFlag> {
+        match self {
+            AChange::Read(_) => Some(WhichFlag::Read),
+            AChange::Flagged(_) => Some(WhichFlag::Starred),
+            AChange::Label { .. } => None,
+        }
+    }
+
     /// The flag the server is asked to set or clear, and which.
     pub fn as_sent(&self) -> (&str, bool) {
         match self {
@@ -113,12 +130,50 @@ pub enum Until {
     TheServerCanBeReached,
 }
 
+impl Until {
+    fn in_words(self) -> &'static str {
+        match self {
+            Until::ChangingMailIsAllowed => "changing mail is allowed",
+            Until::TheServerCanBeReached => "the mail server can be reached",
+        }
+    }
+}
+
 /// Why a change was put back here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Because {
     ChangingMailIsNotAllowed,
     TheServerCouldNotBeReached,
     TheServerSaidNo,
+}
+
+impl Because {
+    fn in_words(self) -> &'static str {
+        match self {
+            Because::ChangingMailIsNotAllowed => "changing mail is not allowed",
+            Because::TheServerCouldNotBeReached => "the mail server could not be reached",
+            Because::TheServerSaidNo => "the mail server said no",
+        }
+    }
+
+    /// What would let a change that failed this way go, when anything would.
+    fn waits_until(self) -> Option<Until> {
+        match self {
+            Because::ChangingMailIsNotAllowed => Some(Until::ChangingMailIsAllowed),
+            Because::TheServerCouldNotBeReached => Some(Until::TheServerCanBeReached),
+            Because::TheServerSaidNo => None,
+        }
+    }
+}
+
+impl From<WhyThePushFailed> for Because {
+    fn from(why: WhyThePushFailed) -> Self {
+        match why {
+            WhyThePushFailed::TheServerWasNeverAsked => Because::TheServerCouldNotBeReached,
+            WhyThePushFailed::ThisComputerRefusedIt => Because::ChangingMailIsNotAllowed,
+            WhyThePushFailed::TheServerSaidNo => Because::TheServerSaidNo,
+        }
+    }
 }
 
 /// What one change calls for once the server has answered, or was not asked.
@@ -133,29 +188,149 @@ pub enum ForTheChange {
 }
 
 /// What a change calls for, from how the server answered.
-pub fn what_the_change_calls_for(_change: &AChange, _answer: Answered<'_>) -> ForTheChange {
-    ForTheChange::Done
+///
+/// The three ways a send fails are told apart by
+/// [`flag_changes_waiting::why_the_push_failed`] and what each calls for by
+/// [`flag_changes_waiting::what_to_do_about_it`], as for a menu's mark; a gate
+/// that dialled nothing is this computer refusing it. A mark or a flag that is
+/// worth keeping waits in the queue the menu's marks wait in. A label has
+/// nowhere to wait, since that queue holds read and flag only, so it is put
+/// back for the same reason (D4).
+pub fn what_the_change_calls_for(change: &AChange, answer: Answered<'_>) -> ForTheChange {
+    let why = match answer {
+        Answered::Went => return ForTheChange::Done,
+        Answered::NotDialled => WhyThePushFailed::ThisComputerRefusedIt,
+        Answered::Failed(error) => flag_changes_waiting::why_the_push_failed(error),
+    };
+    let because = Because::from(why);
+    match (
+        flag_changes_waiting::what_to_do_about_it(why),
+        change.which_flag(),
+        because.waits_until(),
+    ) {
+        (WhatAFailedPushCallsFor::KeepItAndWait, Some(_), Some(until)) => {
+            ForTheChange::KeptWaiting(until)
+        }
+        _ => ForTheChange::PutBack(because),
+    }
+}
+
+/// Do here what one change calls for: keep it in the queue, or put it back
+/// as the message arrived.
+pub fn do_here_what_it_calls_for(
+    cache: &MessageCache,
+    waiting_in: &AWaitingPlace<'_>,
+    message: &Telling,
+    change: &AChange,
+    became: ForTheChange,
+) -> Result<()> {
+    match became {
+        ForTheChange::Done => Ok(()),
+        ForTheChange::KeptWaiting(_) => match change.which_flag() {
+            Some(which_flag) => cache.keep_a_flag_change_waiting(&AWaitingFlagChange {
+                message_row_id: message.message_row,
+                account_id: waiting_in.account_id.to_string(),
+                folder_path: waiting_in.folder_path.to_string(),
+                uid: message.uid,
+                which_flag,
+                changed_to: change.as_sent().1,
+                changed_at: chrono::Utc::now().to_rfc3339(),
+            }),
+            None => Ok(()),
+        },
+        ForTheChange::PutBack(_) => put_back_here(cache, message.message_row, change),
+    }
+}
+
+/// The account and folder a kept change names, which is where the server
+/// still has the message.
+#[derive(Debug, Clone, Copy)]
+pub struct AWaitingPlace<'a> {
+    pub account_id: &'a str,
+    pub folder_path: &'a str,
+}
+
+/// Take one change off the row again, back to how the message arrived.
+fn put_back_here(cache: &MessageCache, row: i64, change: &AChange) -> Result<()> {
+    if let AChange::Label { tag_id, .. } = change {
+        return cache.remove_tag_from_message(row, tag_id);
+    }
+    let Some(now) = cache.get_message(row)? else {
+        return Ok(());
+    };
+    match change {
+        AChange::Read(read) => cache.update_message_flags(row, !read, now.starred),
+        AChange::Flagged(flagged) => cache.update_message_flags(row, now.read, !flagged),
+        AChange::Label { .. } => Ok(()),
+    }
 }
 
 /// What became of the changes the check told the server about.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Told {}
+pub struct Told {
+    /// How many changes came to each outcome that was not done.
+    came_to: BTreeMap<ForTheChange, usize>,
+    /// The rows a change to which waits, which the check does not file in
+    /// that check (D6).
+    pub waiting: Vec<i64>,
+    /// The rows the rules counted as sorted whose change was put back.
+    pub put_back_after_counting: Vec<i64>,
+}
 
 impl Told {
     /// Write down what one change of one message came to.
-    pub fn record(&mut self, _message: &Telling, _became: ForTheChange) {}
+    pub fn record(&mut self, message: &Telling, became: ForTheChange) {
+        let rows = match became {
+            ForTheChange::Done => return,
+            ForTheChange::KeptWaiting(_) => Some(&mut self.waiting),
+            ForTheChange::PutBack(_) if message.counted => Some(&mut self.put_back_after_counting),
+            ForTheChange::PutBack(_) => None,
+        };
+        if let Some(rows) = rows
+            && !rows.contains(&message.message_row)
+        {
+            rows.push(message.message_row);
+        }
+        *self.came_to.entry(became).or_default() += 1;
+    }
 
     /// The clauses the folder's line says, one per kind of outcome that was
     /// not done, each with its count.
+    ///
+    /// The count first and the reason last, and no verb that has to agree
+    /// with the count, so "1 change" and "3 changes" need no second wording.
+    /// None opens as the held-back clause does, "left alone", which is about
+    /// a message a rule did not touch at all.
     pub fn clauses(&self) -> Vec<String> {
-        Vec::new()
+        self.came_to
+            .iter()
+            .filter_map(|(became, count)| {
+                let changes = how_many(*count, "change");
+                match became {
+                    ForTheChange::Done => None,
+                    ForTheChange::KeptWaiting(until) => Some(format!(
+                        "{changes} from your rules kept here until {}",
+                        until.in_words()
+                    )),
+                    ForTheChange::PutBack(because) => Some(format!(
+                        "{changes} from your rules put back because {}",
+                        because.in_words()
+                    )),
+                }
+            })
+            .collect()
     }
 }
 
 /// What the folder's line says of a message a rule would have filed and that
 /// stayed where it arrived, because a change to it waits.
-pub fn left_where_it_arrived(_from: &str, _into: &str) -> String {
-    String::new()
+///
+/// Folder names only, never a subject: these sentences go to the log too.
+pub fn left_where_it_arrived(from: &str, into: &str) -> String {
+    format!(
+        "A rule's change to a message has not reached the mail server yet, so the message \
+         stays in {from} rather than being filed into {into}"
+    )
 }
 
 #[cfg(test)]

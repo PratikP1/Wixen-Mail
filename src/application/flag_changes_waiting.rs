@@ -72,6 +72,14 @@ impl WhichFlag {
         }
     }
 
+    /// The flag the server keeps it as.
+    pub fn as_flag(self) -> &'static str {
+        match self {
+            WhichFlag::Read => crate::service::protocols::imap::flag::SEEN,
+            WhichFlag::Starred => crate::service::protocols::imap::flag::FLAGGED,
+        }
+    }
+
     /// Back from the column, where the word is one this version knows.
     pub fn from_stored(stored: &str) -> Option<Self> {
         match stored {
@@ -190,8 +198,21 @@ pub fn what_became_of_it(offered: &Result<(), Error>) -> WhatToDoWithAWaitingCha
 
 /// The flags to write here from what the server said, with each change still
 /// waiting to go written over it, for its flag only.
-pub fn the_flags_to_keep(server_said: &[String], _waiting: &[(WhichFlag, bool)]) -> Vec<String> {
-    server_said.to_vec()
+///
+/// A check reads flags back from a server that has not heard of a change
+/// still waiting, so writing what it said as it came undid the change until
+/// the change went: a Mark as Read made while changes were off, or a rule's
+/// mark that could not go yet (D5).
+pub fn the_flags_to_keep(server_said: &[String], waiting: &[(WhichFlag, bool)]) -> Vec<String> {
+    let mut kept = server_said.to_vec();
+    for (which, on) in waiting {
+        let flag = which.as_flag();
+        kept.retain(|said| !said.eq_ignore_ascii_case(flag));
+        if *on {
+            kept.push(flag.to_string());
+        }
+    }
+    kept
 }
 
 /// The topic the sentences below are announced on.

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 545 records have arrived since and have not been through it.
+# 549 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3945,11 +3945,17 @@ red = [
     "application::flag_changes_waiting::tests::test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked",
     "application::mail_across_accounts::tests::test_a_source_that_will_not_mark_the_message_leaves_it_in_both_places",
     "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
+    # Added 2026-10-01 by 13-44.3's remeasure: Report as Junk's two cases
+    # of a refused STORE, written by 13-44 and 13-44.1 in a file this record
+    # had never named, read a refused flag as a refusal too.
+    "application::reporting_junk::tests::test_a_refused_store_is_an_error_carrying_the_servers_words",
+    "application::reporting_junk::tests::test_a_store_refused_while_taking_the_mark_off_is_an_error_carrying_the_servers_words",
 ]
 tests_last_seen = [
-    { file = "src/application/flag_changes_waiting.rs", tests = 16 },
+    { file = "src/application/flag_changes_waiting.rs", tests = 19 },
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/reporting_junk.rs", tests = 29 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -16491,10 +16497,17 @@ red = [
     "application::moves_waiting::tests::test_a_server_never_reached_leaves_the_move_waiting",
     "application::moves_waiting::tests::test_a_server_that_hung_up_answers_not_reached_and_the_row_goes_on_waiting",
     "application::moves_waiting::tests::test_a_server_that_hung_up_on_the_copy_leaves_it_waiting",
+    # Added 2026-10-01 by 13-44.3: a rule's change on arriving mail reads
+    # its failure through the same answer, so a lost connection keeps a
+    # rule's mark waiting and takes a rule's label off as unreachable.
+    "application::what_rules_tell_the_server::tests::test_a_label_the_server_could_not_be_asked_about_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
+    "application::what_rules_tell_the_server::tests::test_what_each_change_calls_for",
 ]
 tests_last_seen = [
-    { file = "src/application/flag_changes_waiting.rs", tests = 16 },
+    { file = "src/application/flag_changes_waiting.rs", tests = 19 },
     { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
 ]
 
 [[guard]]
@@ -35961,17 +35974,22 @@ tests_last_seen = [
 # 2026-10-01 by 13-44.3, taken by hand against the whole library first.
 # The census reading in tests/nothing_sends_a_flag_change_unasked.rs goes
 # red under the same break; it is a suite of its own, so it is not named.
+# Rewritten the same day by task 2, whose sender takes the cache and the
+# folder's row and whose move filter sits after it, both inside the anchor.
 [[guard]]
 name = "a rule's mark reaches the server before its move"
 file = "src/application/mail_sync.rs"
 before = '''    if let Some(rules) = filtering {
         filtered.told = tell_the_server_what_the_rules_changed(
             controller,
+            cache,
             folder,
+            folder_id,
             rules.allowed.mail,
             &filtered.to_tell_the_server,
         )
         .await;
+        hold_back_what_waits(&mut filtered, &folder.name);
     }
     // What the rules said belongs elsewhere, done here because this is the
     // half with a server. Each one reaches the server first and the cache
@@ -35984,18 +36002,22 @@ after = '''    let (filed, could_not) =
     if let Some(rules) = filtering {
         filtered.told = tell_the_server_what_the_rules_changed(
             controller,
+            cache,
             folder,
+            folder_id,
             rules.allowed.mail,
             &filtered.to_tell_the_server,
         )
         .await;
+        hold_back_what_waits(&mut filtered, &folder.name);
     }'''
 red = [
     "application::what_rules_tell_the_server::tests::test_a_rule_that_marks_read_and_files_tells_the_server_the_mark_before_the_move",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 150 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 7 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
 ]
 
 # A rule's mark sent whether or not the message arrived with it, so every
@@ -36015,5 +36037,76 @@ red = [
     "application::what_rules_tell_the_server::tests::test_what_the_server_is_told_is_only_what_the_rules_changed",
 ]
 tests_last_seen = [
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 7 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+]
+
+# A rule's mark sent with mail changes off, so a rule writes at somebody's
+# server on every check whatever Allow Changes says (D3, T-13-44.3-01).
+# Written 2026-10-01 by 13-44.3, taken by hand against the whole library
+# first.
+[[guard]]
+name = "with mail changes off a rule's mark is not sent"
+file = "src/application/mail_sync.rs"
+before = '''            let sent = match changes_allowed {'''
+after = '''            let sent = match changes_allowed || true {'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+]
+
+# A check writing the server's flags as they came over a mark still waiting
+# to go, so the next check undoes a rule's waiting mark and every Mark as Read
+# made while changes were off (D5). Written 2026-10-01 by 13-44.3, taken by
+# hand against the whole library first.
+[[guard]]
+name = "the check keeps a waiting mark over what the server says"
+file = "src/application/mail_sync.rs"
+before = '''                kept = crate::application::flag_changes_waiting::the_flags_to_keep(said, waits);'''
+after = '''                kept = said.to_vec();'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_server_that_answers_what_changed_since_keeps_a_waiting_mark_in_the_same_check",
+    "application::what_rules_tell_the_server::tests::test_the_check_keeps_a_waiting_mark_over_what_the_server_says",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+]
+
+# A change the server refused, or a label nothing can hold waiting, left on
+# the row here as though it had gone, so the window shows a message in a
+# state the server does not hold until the next check (D4, D6). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+[[guard]]
+name = "a change the server refused is put back here"
+file = "src/application/what_rules_tell_the_server.rs"
+before = '''        ForTheChange::PutBack(_) => put_back_here(cache, message.message_row, change),'''
+after = '''        ForTheChange::PutBack(_) => Ok(()),'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_label_the_server_could_not_be_asked_about_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_refuses_is_put_back_here",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
+]
+tests_last_seen = [
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+]
+
+# A message filed by its rule while its mark waits, so the waiting mark names
+# a number the folder no longer holds, 688's shape (D6, T-13-44.3-02).
+# Written 2026-10-01 by 13-44.3, taken by hand against the whole library
+# first.
+[[guard]]
+name = "a message whose mark waits is not filed in that check"
+file = "src/application/mail_sync.rs"
+before = '''        .partition(|moving| filtered.told.waiting.contains(&moving.message_row));'''
+after = '''        .partition(|_| false);'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
 ]
