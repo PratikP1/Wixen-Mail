@@ -548,9 +548,13 @@ mod tests {
         );
     }
 
+    /// Flags as a server reports them. The names come from the one place
+    /// they are spelled, so a typo here cannot pass while the code is wrong.
     fn flags(said: &[&str]) -> Vec<String> {
         said.iter().map(|flag| (*flag).to_string()).collect()
     }
+
+    use crate::service::protocols::imap::flag::{FLAGGED, SEEN};
 
     #[test]
     fn test_a_waiting_mark_is_kept_over_what_the_server_said() {
@@ -558,8 +562,8 @@ mod tests {
         // of a change still waiting to go; written as it came, the row would
         // lose the mark until the change went.
         assert_eq!(
-            the_flags_to_keep(&flags(&["\\Flagged"]), &[(WhichFlag::Read, true)]),
-            flags(&["\\Flagged", "\\Seen"])
+            the_flags_to_keep(&flags(&[FLAGGED]), &[(WhichFlag::Read, true)]),
+            flags(&[FLAGGED, SEEN])
         );
     }
 
@@ -567,16 +571,16 @@ mod tests {
     fn test_a_waiting_unflag_takes_the_flag_out_of_what_the_server_said() {
         assert_eq!(
             the_flags_to_keep(
-                &flags(&["\\Seen", "\\Flagged", "Money"]),
+                &flags(&[SEEN, FLAGGED, "Money"]),
                 &[(WhichFlag::Starred, false)]
             ),
-            flags(&["\\Seen", "Money"])
+            flags(&[SEEN, "Money"])
         );
     }
 
     #[test]
     fn test_with_nothing_waiting_the_servers_flags_are_kept_as_they_came() {
-        let said = flags(&["\\Seen", "Money"]);
+        let said = flags(&[SEEN, "Money"]);
         assert_eq!(the_flags_to_keep(&said, &[]), said);
     }
 

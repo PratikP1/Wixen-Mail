@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 674
+open_count: 675
 waived_count: 0
 fixed_count: 91
-total_count: 765
-last_updated: 2026-10-01T22:00:00.000Z
+total_count: 766
+last_updated: 2026-10-01T23:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -780,6 +780,7 @@ last_updated: 2026-10-01T22:00:00.000Z
 | 763 | 13 | todo | src/application/flag_changes_waiting.rs |  | 13-44.3, D4: nothing holds a label waiting. waiting_flag_changes holds read and flag only (WhichFlag), so a label a rule puts on, or a label put on by hand, that cannot reach the server now is taken off again rather than kept until it can. Recommendation: a queue for labels that the menu's labels and a rule's share, a WhichFlag for a keyword with the keyword kept beside it; larger than ledger 678, and no plan carries it yet | open |  | 2026-10-01T22:00:00.000Z |  |
 | 764 | 13 | todo | src/presentation/wx_app.rs |  | 13-44.3, premise 11 (a), read and not run: spawn_server_change's refusal for a label sends LabelsChanged, whose arm reads the cache again, while the label label_these wrote stays in the database, so "has been undone here" is said over a label still on the row until the next check takes it off. Recommendation: the refusal takes the label off here before it says so, as a refused mark is put back; small, and no plan carries it yet | open |  | 2026-10-01T22:00:00.000Z |  |
 | 765 | 13 | todo | src/presentation/wx_app.rs |  | 13-44.3, premise 11 (b), read and not run: the check replays waiting moves before waiting flag changes, so a Mark as Read made while mail changes were off, kept in waiting_flag_changes, beside a move waiting for the same message is sent after the move, to the folder and number the message has left, 688's shape in the replay. Recommendation: the waiting move takes the row's waiting marks when it is replayed, as it takes a run's; small, and no plan carries it yet | open |  | 2026-10-01T22:00:00.000Z |  |
+| 766 | 13 | todo | scripts/check.sh |  | 13-44.3, found by CI: tests/flag_names.rs reads every source file for an IMAP flag name spelled outside src/service/protocols/imap/flag.rs, and it is not among guards_that_read_the_whole_tree in scripts/check.sh, so the branch's commits that spelled the seen and flagged names in flag_changes_waiting.rs's tests passed the hook and the pull request's Test Suite refused them. Recommendation: add flag_names to that list, or give it a guard record coupling it to the files it reads; small, and no plan carries it yet | open |  | 2026-10-01T23:00:00.000Z |  |
 
 ````json
 [
@@ -9961,6 +9962,18 @@ last_updated: 2026-10-01T22:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-01T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 766,
+    "kind": "todo",
+    "phase": "13",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "13-44.3, found by CI: tests/flag_names.rs reads every source file for an IMAP flag name spelled outside src/service/protocols/imap/flag.rs, and it is not among guards_that_read_the_whole_tree in scripts/check.sh, so the branch's commits that spelled the seen and flagged names in flag_changes_waiting.rs's tests passed the hook and the pull request's Test Suite refused them. Recommendation: add flag_names to that list, or give it a guard record coupling it to the files it reads; small, and no plan carries it yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T23:00:00.000Z",
     "resolved_at": null
   }
 ]
