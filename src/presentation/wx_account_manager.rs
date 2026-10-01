@@ -2430,7 +2430,7 @@ fn keep_what_the_directory_window_holds(
         a_password_is_saved,
     )
     .map_err(|refused| Refused {
-        said: refused.to_string(),
+        said: refused.said,
         at: w.password,
     })?;
     if let Some(why) = remember_where_to_look_people_up(account_id, kept.directory) {

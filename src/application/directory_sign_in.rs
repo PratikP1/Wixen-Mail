@@ -13,7 +13,6 @@
 //! keeps the one already saved. One rule, which the password box says in its
 //! description.
 
-use crate::common::{Error, Result};
 use crate::service::directory::{self, Directory};
 
 /// What the password box says, on the box and beside it, when a password is
@@ -58,6 +57,21 @@ pub struct WhatIsKept {
     pub password: PasswordChange,
 }
 
+/// The box a refused save is about, where focus goes so the person can
+/// change what was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheBox {
+    Address,
+    Password,
+}
+
+/// A save the window refuses: the sentence it says, and the box to change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotKept {
+    pub said: String,
+    pub about: TheBox,
+}
+
 /// What saving the window keeps, or the sentence refusing it.
 ///
 /// A refusal comes before anything is written, so a refused save changes
@@ -68,7 +82,7 @@ pub fn what_the_window_keeps(
     sign_in_as: &str,
     typed_password: &str,
     a_password_is_saved: bool,
-) -> Result<WhatIsKept> {
+) -> Result<WhatIsKept, NotKept> {
     let (address, look_in, sign_in_as) = (address.trim(), look_in.trim(), sign_in_as.trim());
     if address.is_empty() && look_in.is_empty() {
         return Ok(WhatIsKept {
@@ -84,10 +98,13 @@ pub fn what_the_window_keeps(
         (false, Some(typed), _) => PasswordChange::Replace(typed.to_string()),
         (false, None, true) => PasswordChange::Keep,
         (false, None, false) => {
-            return Err(Error::InPlainWords(directory::no_password_is_saved_for(
-                &the_name_it_goes_by(address),
-                sign_in_as,
-            )));
+            return Err(NotKept {
+                said: directory::no_password_is_saved_for(
+                    &the_name_it_goes_by(address),
+                    sign_in_as,
+                ),
+                about: TheBox::Password,
+            });
         }
     };
     Ok(WhatIsKept {
@@ -135,12 +152,23 @@ mod tests {
         what_the_window_keeps(address, look_in, sign_in_as, typed, saved).expect("kept")
     }
 
-    fn refusal(address: &str, sign_in_as: &str, typed: &str) -> String {
-        match what_the_window_keeps(address, LOOK_IN, sign_in_as, typed, false) {
+    /// An address a password is never sent to.
+    const PLAIN: &str = "ldap://directory.example.com";
+
+    fn refused(address: &str, sign_in_as: &str, typed: &str, saved: bool) -> NotKept {
+        match what_the_window_keeps(address, LOOK_IN, sign_in_as, typed, saved) {
             Ok(kept) => panic!("kept {kept:?} rather than refusing"),
-            Err(Error::InPlainWords(said)) => said,
-            Err(other) => panic!("refused with a layer's error, not a sentence: {other:?}"),
+            Err(not_kept) => not_kept,
         }
+    }
+
+    fn refusal(address: &str, sign_in_as: &str, typed: &str) -> String {
+        refused(address, sign_in_as, typed, false).said
+    }
+
+    /// What the lookup says of a password for `PLAIN`.
+    fn the_lookups_encryption_refusal() -> String {
+        directory::no_password_is_sent_unencrypted_to("directory.example.com")
     }
 
     #[test]
@@ -252,6 +280,73 @@ mod tests {
         let said = refusal(" directory ", NAME, "");
 
         assert_eq!(said, directory::no_password_is_saved_for("directory", NAME));
+    }
+
+    #[test]
+    fn test_a_typed_password_for_an_unencrypted_address_is_refused_as_the_lookup_refuses() {
+        // Kept, it would sit in the credential store and be refused at every
+        // lookup, since over ldap:// it would cross the network in clear.
+        let said = refusal(PLAIN, NAME, "hunter2");
+
+        assert_eq!(said, the_lookups_encryption_refusal());
+        assert!(!said.contains("hunter2"), "{said}");
+    }
+
+    #[test]
+    fn test_a_saved_password_kept_for_an_unencrypted_address_is_refused_too() {
+        // The window does not forget it on its own: the refused save writes
+        // nothing, and clearing the sign-in name is what forgets.
+        assert_eq!(
+            refused(PLAIN, NAME, "", true),
+            NotKept {
+                said: the_lookups_encryption_refusal(),
+                about: TheBox::Address,
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_sign_in_name_with_nothing_for_an_unencrypted_address_is_refused_for_the_encryption() {
+        // Saying no password is saved would send the person to type one that
+        // the next OK refuses; the address is what has to change.
+        assert_eq!(refusal(PLAIN, NAME, ""), the_lookups_encryption_refusal());
+    }
+
+    #[test]
+    fn test_an_unencrypted_directory_that_signs_nobody_in_is_kept() {
+        // Nothing secret crosses the network, so the plain address stays a
+        // directory the lookup asks.
+        assert_eq!(
+            kept(PLAIN, LOOK_IN, "", "", false),
+            WhatIsKept {
+                directory: Some(Directory {
+                    url: PLAIN.to_string(),
+                    search_under: LOOK_IN.to_string(),
+                    sign_in_as: None,
+                }),
+                password: PasswordChange::Forget,
+            }
+        );
+    }
+
+    #[test]
+    fn test_an_address_written_in_capitals_is_read_the_same() {
+        // The scheme in capitals: the lookup reads it as ldap, so the window
+        // has to as well.
+        let not_kept = refused(" LDAP://directory.example.com ", NAME, "hunter2", false);
+
+        assert_eq!(not_kept.said, the_lookups_encryption_refusal());
+        assert_eq!(not_kept.about, TheBox::Address);
+    }
+
+    #[test]
+    fn test_the_encryption_refusal_is_about_the_address_and_the_missing_password_about_the_password_box()
+     {
+        assert_eq!(
+            refused(PLAIN, NAME, "hunter2", false).about,
+            TheBox::Address
+        );
+        assert_eq!(refused(ADDRESS, NAME, "", false).about, TheBox::Password);
     }
 
     #[test]

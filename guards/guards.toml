@@ -33906,12 +33906,14 @@ tests_last_seen = [
 
 # A password sent to a directory whose address begins ldap://, where a
 # simple sign-in carries it in clear to anybody on the network path.
-# Written 2026-09-28 by 13-26.
+# Written 2026-09-28 by 13-26. The anchor moved on 2026-10-01 with 13-44.2,
+# when the sentence became `no_password_is_sent_unencrypted_to`, which the
+# Look People Up at Work window says as well; the break is the same arm.
 [[guard]]
 name = "a directory password is never sent over an unencrypted address"
 file = "src/service/directory.rs"
-before = '''        Some(_) if !place.is_encrypted => Err(Error::Config(format!('''
-after = '''        Some(_) if false => Err(Error::Config(format!('''
+before = '''        Some(_) if !place.is_encrypted => {'''
+after = '''        Some(_) if false => {'''
 red = [
     "service::directory::tests::test_a_password_is_never_sent_over_an_unencrypted_address",
 ]

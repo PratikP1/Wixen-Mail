@@ -13,8 +13,8 @@
 //!
 //! **Nothing here reaches the settings of whoever runs it, or their screen.**
 //! The profile is pointed at a directory of its own before anything is built,
-//! and the windows live on a desktop of this process's own. The only save
-//! pressed is one the window refuses, which writes nothing; what a save
+//! and the windows live on a desktop of this process's own. The only saves
+//! pressed are ones the window refuses, which write nothing; what a save
 //! writes is decided in `application::directory_sign_in` and measured there.
 //! Where the password goes once decided is read in the source, with a
 //! companion that plants the fault.
@@ -48,6 +48,8 @@ const ROLE_SYSTEM_PUSHBUTTON: i64 = 0x2b;
 const ROLE_SYSTEM_TEXT: i64 = 0x2a;
 
 const ADDRESS: &str = "ldaps://directory.example.com";
+/// The same directory reached without encryption, where no password goes.
+const PLAIN_ADDRESS: &str = "ldap://directory.example.com";
 const LOOK_IN: &str = "ou=people,dc=example,dc=com";
 const NAME: &str = "cn=reader,dc=example,dc=com";
 
@@ -360,6 +362,34 @@ struct Harvest {
     nothing_saved: Vec<Control>,
     window_with_a_second_d: Vec<Control>,
     refused: Refused,
+    refused_unencrypted: Refused,
+}
+
+/// Press OK on a window built with nothing saved, this address, the place and
+/// a sign-in name, and the password box empty, and read what the refusal
+/// left. A name with no password and nothing saved is always refused, so no
+/// save pressed here writes the settings or the credential store.
+fn refused_with(
+    parent: &Dialog,
+    account: &Account,
+    a11y: &Arc<Accessibility>,
+    address: &str,
+) -> Result<Refused, String> {
+    let refusing = build_directory_sign_in_dialog(parent, &account.name, None, false, None);
+    wire_the_directory_sign_in(&refusing, &account.id, false, a11y);
+    refusing.address.set_value(address);
+    refusing.look_in.set_value(LOOK_IN);
+    refusing.sign_in_as.set_value(NAME);
+    refusing.dialog.show(true);
+    // SAFETY: a live button on this thread; BM_CLICK takes no pointers.
+    unsafe { SendMessageW(refusing.ok.get_handle() as isize, BM_CLICK, 0, 0) };
+    let refused = Refused {
+        still_shown: refusing.dialog.is_shown(),
+        status: refusing.status.get_label(),
+        focused: the_focused_control()?,
+    };
+    refusing.dialog.destroy();
+    Ok(refused)
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -428,26 +458,13 @@ fn take_the_harvest() -> Result<Harvest, String> {
 
                 // A save the window refuses: a name, an empty password box and
                 // nothing saved. Refused before anything is written.
-                let refusing = build_directory_sign_in_dialog(
-                    &manager.dialog,
-                    &account.name,
-                    None,
-                    false,
-                    None,
-                );
-                wire_the_directory_sign_in(&refusing, &account.id, false, &a11y);
-                refusing.address.set_value(ADDRESS);
-                refusing.look_in.set_value(LOOK_IN);
-                refusing.sign_in_as.set_value(NAME);
-                refusing.dialog.show(true);
-                // SAFETY: a live button on this thread; BM_CLICK takes no pointers.
-                unsafe { SendMessageW(refusing.ok.get_handle() as isize, BM_CLICK, 0, 0) };
-                let refused = Refused {
-                    still_shown: refusing.dialog.is_shown(),
-                    status: refusing.status.get_label(),
-                    focused: the_focused_control()?,
-                };
-                refusing.dialog.destroy();
+                let refused = refused_with(&manager.dialog, &account, &a11y, ADDRESS)?;
+                // And the same over an unencrypted address, refused for the
+                // address. The password box stays empty even so: a window that
+                // kept a typed password would hand it to the credential store
+                // of whoever runs this, and an empty box is refused either way.
+                let refused_unencrypted =
+                    refused_with(&manager.dialog, &account, &a11y, PLAIN_ADDRESS)?;
 
                 Ok(Harvest {
                     manager: manager_controls,
@@ -458,6 +475,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     nothing_saved,
                     window_with_a_second_d,
                     refused,
+                    refused_unencrypted,
                 })
             })();
             if let Ok(mut slot) = outcome.lock() {
@@ -714,6 +732,27 @@ fn test_a_refused_save_keeps_the_window_open_says_why_and_puts_focus_on_the_pass
             .as_ref()
             .map(|control| (control.name.as_str(), control.password)),
         Some(("Password,", true)),
+        "{:?}",
+        refused.focused
+    );
+}
+
+#[test]
+fn test_a_sign_in_over_an_unencrypted_address_is_refused_at_ok_with_focus_on_the_address() {
+    let refused = &the_harvest().refused_unencrypted;
+
+    assert!(refused.still_shown, "the window closed on a refused save");
+    assert_eq!(
+        refused.status.replace("\r\n", " ").replace('\n', " "),
+        directory::no_password_is_sent_unencrypted_to("directory.example.com")
+    );
+    // The address is what has to change, so focus goes there.
+    assert_eq!(
+        refused
+            .focused
+            .as_ref()
+            .map(|control| (control.name.as_str(), control.password)),
+        Some(("Directory address,", false)),
         "{:?}",
         refused.focused
     );
