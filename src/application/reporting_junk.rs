@@ -290,6 +290,37 @@ async fn marking<S: MarksMessages>(server: &S, folder: &str, uids: &[u32]) -> Re
     Ok(Marked::Kept)
 }
 
+/// Whether a report may have left the junk mark on its messages, which is
+/// the only time an undo asks the server to take it off (13-44.1, D4).
+pub fn a_mark_may_be_on(_marked: &Marked) -> bool {
+    true
+}
+
+/// The words an undo of a report adds to its sentence about the mark.
+pub fn what_taking_the_mark_off_did(_how_many: usize, _marked: &Marked) -> Option<String> {
+    None
+}
+
+/// The words a redo of a report adds to its sentence about the mark.
+pub fn what_setting_the_mark_again_did(_marked: &Marked) -> Option<String> {
+    None
+}
+
+/// Take the junk mark off these messages in this folder at the account's
+/// server, and say they are not junk.
+pub async fn take_the_junk_mark_off_at_the_server(
+    controller: &crate::application::mail_controller::MailController,
+    folder: &str,
+    uids: &[u32],
+) -> Result<Marked> {
+    unmarking(controller, folder, uids).await
+}
+
+/// The unmarking over whatever answers as a server.
+async fn unmarking<S: MarksMessages>(_server: &S, _folder: &str, _uids: &[u32]) -> Result<Marked> {
+    Ok(Marked::Kept)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,6 +694,131 @@ mod tests {
         assert!(
             why.to_string().contains("this folder does not take that"),
             "the server's own words were lost: {why}"
+        );
+    }
+
+    // ── Taking the mark off again, for Undo (13-44.1) ─────────────────────
+
+    #[tokio::test]
+    async fn test_taking_the_mark_off_takes_junk_off_before_not_junk_goes_on() {
+        let server = a_server_keeping(Some("\\Seen \\Deleted \\*"), None).await;
+        let session = signed_in(&server).await;
+
+        let unmarked = unmarking(&session, "Junk", &[7, 9])
+            .await
+            .expect("the server took both");
+
+        assert_eq!(unmarked, Marked::Kept);
+        let transcript = server.transcript().await;
+        for uid in [7, 9] {
+            let off = server
+                .when_told(&format!("UID STORE {uid} -FLAGS ($Junk)"))
+                .await;
+            let on = server
+                .when_told(&format!("UID STORE {uid} +FLAGS ($NotJunk)"))
+                .await;
+            let (Some(off), Some(on)) = (off, on) else {
+                panic!("message {uid} was not told both: {transcript:?}");
+            };
+            assert!(
+                off < on,
+                "$NotJunk went on message {uid} before $Junk came off, so for a moment it \
+                 carried both, which RFC 9051 reads as neither: {transcript:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_taking_the_mark_off_a_folder_that_keeps_no_junk_keyword_sends_no_store() {
+        for permanent in [Some("\\Seen \\Deleted"), None] {
+            let server = a_server_keeping(permanent, None).await;
+            let session = signed_in(&server).await;
+
+            let unmarked = unmarking(&session, "Junk", &[7])
+                .await
+                .expect("nothing was asked that could fail");
+
+            assert_eq!(unmarked, Marked::NotKept, "{permanent:?}");
+            assert!(
+                server.was_told("SELECT").await,
+                "the folder was never opened, so nobody asked what it keeps"
+            );
+            assert!(
+                !server.was_told("STORE").await,
+                "a keyword was sent to a folder that says it keeps none ({permanent:?}): {:?}",
+                server.transcript().await
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_store_refused_while_taking_the_mark_off_is_an_error_carrying_the_servers_words()
+    {
+        let server = a_server_keeping(Some("\\*"), Some("+FLAGS ($NotJunk)")).await;
+        let session = signed_in(&server).await;
+
+        let why = unmarking(&session, "Junk", &[7])
+            .await
+            .expect_err("the server said no to the not-junk mark");
+
+        assert!(
+            why.to_string().contains("this folder does not take that"),
+            "the server's own words were lost: {why}"
+        );
+    }
+
+    #[test]
+    fn test_the_server_is_asked_about_the_mark_only_where_the_report_may_have_left_one() {
+        for (marked, asked) in [
+            (Marked::Kept, true),
+            // A failure part way may have left some messages marked.
+            (Marked::Failed("the server went quiet".to_string()), true),
+            (Marked::NotKept, false),
+            (Marked::NotAsked, false),
+        ] {
+            assert_eq!(a_mark_may_be_on(&marked), asked, "{marked:?}");
+        }
+    }
+
+    #[test]
+    fn test_a_mark_taken_off_is_said_in_the_singular_and_the_plural() {
+        assert_eq!(
+            what_taking_the_mark_off_did(1, &Marked::Kept).as_deref(),
+            Some("The server was told it is not junk.")
+        );
+        assert_eq!(
+            what_taking_the_mark_off_did(3, &Marked::Kept).as_deref(),
+            Some("The server was told they are not junk.")
+        );
+    }
+
+    #[test]
+    fn test_a_mark_that_could_not_be_taken_off_is_said_with_the_servers_reason() {
+        assert_eq!(
+            what_taking_the_mark_off_did(
+                2,
+                &Marked::Failed("the server would not do it.".to_string())
+            )
+            .as_deref(),
+            Some("The junk mark could not be taken off: the server would not do it.")
+        );
+    }
+
+    #[test]
+    fn test_nothing_is_said_of_a_mark_the_server_never_kept_or_was_never_asked_for() {
+        for marked in [Marked::NotKept, Marked::NotAsked] {
+            assert_eq!(what_taking_the_mark_off_did(2, &marked), None, "{marked:?}");
+            assert_eq!(what_setting_the_mark_again_did(&marked), None, "{marked:?}");
+        }
+    }
+
+    #[test]
+    fn test_setting_the_mark_again_says_only_that_it_failed() {
+        assert_eq!(what_setting_the_mark_again_did(&Marked::Kept), None);
+        assert_eq!(
+            what_setting_the_mark_again_did(&Marked::Failed("no such message.".to_string()))
+                .as_deref(),
+            Some("The junk mark could not be set: no such message.")
         );
     }
 }
