@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Run a rule over a folder when you ask, hearing first what it would change (#61,
+  GAP-12).** #61 asked for "a 'Run on this folder' command in the Filter Manager and on the
+  This Folder menu", "a dry run that counts matches and asks before acting", "the same
+  runner Quick Steps would use", and every action "through the existing gated write paths
+  so the Allowed Changes answer still governs it". Action, This Folder, Run a Rule on This
+  Folder (`L` on the submenu) asks which of the account's rules to run over the folder you
+  have open, a switched-off rule marked so, and the Filter Manager's Run on a Folder
+  (`Alt+R`) saves the rules and asks which of the account's folders. Either way the rule is
+  counted over the folder first, off the window, and a question says what it would do:
+  "The rule Newsletters would move 214 messages in Inbox to Archive. No rule run has met a
+  real mail server yet. Run it?" Yes runs it through the same runner Quick Steps use, and
+  one sentence says what it did. Nothing to change is said and nothing asked; an account
+  whose changes are off is told so instead of being asked. Enter answers Yes, except before
+  a rule that deletes, where it answers No. The buttons read Yes and No rather than Run and
+  Don't Run, because the toolkit cannot rename them, so the question ends "Run it?". One run
+  changes at most 5,000 messages and says so; running it again changes the rest. What the
+  count costs on a large folder is on the measurements page. The version does not move for
+  this: no build has been cut since 1.0.0-alpha.1. Known limitations: no rule run has met a
+  real mail server, nobody has yet heard the chooser, the question and the sentence after it
+  as one act, and the folder list in the Filter Manager names folders by the path the server
+  spells, so a name in another alphabet may read as the server encodes it.
 - **Quick Steps: several actions under one name, run over the selected messages by a key or
   from the menu (#60, GAP-11).** #60 asked for steps "run on demand over the selected
   messages", with "a bound key from a small reserved range" and "the announcement naming the

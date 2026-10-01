@@ -272,6 +272,18 @@ Written down so you do not spend time reporting things already on the list.
   label, and on a server with ordinary folders. If you try one, tell us the
   sentence you heard and whether the messages look the same in another mail
   program or on your phone.
+- **No rule run has met a real mail server.** Running a rule over a folder,
+  from Action, This Folder, Run a Rule on This Folder or from Run on a
+  Folder in the Filter Manager, counts what the rule would change, asks,
+  and then marks, flags, labels, moves or deletes up to 5,000 messages at
+  once, at your provider when Allowed Changes lets Wixen Mail change your
+  mail. The question says it is experimental. What could go wrong: a
+  provider slow or refusing under thousands of changes arriving together,
+  a move on Gmail, where a move is a change of label, and on a server with
+  ordinary folders landing differently from what the count said, and the
+  count on a very large folder taking long enough to seem stuck. If you try
+  one, tell us the question you heard, the sentence after it, and whether
+  the messages look the same in another mail program or on your phone.
 - **Looking people up in your organisation's directory has never met a real
   directory, and a directory sign-in never has either.** Look People Up at
   Work, on the Account Manager (`Alt+L`), takes the directory's address, where

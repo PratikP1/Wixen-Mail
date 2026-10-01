@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 666
+open_count: 668
 waived_count: 0
-fixed_count: 83
-total_count: 749
-last_updated: 2026-09-30T23:55:00.000Z
+fixed_count: 84
+total_count: 752
+last_updated: 2026-10-01T05:40:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -763,7 +763,10 @@ last_updated: 2026-09-30T23:55:00.000Z
 | 746 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-42, the tester's ear: nobody has opened Action, Quick Steps and heard each step with its key ("Archive and read, Ctrl+Shift+7") and Manage Quick Steps after them, run a step by its key or its item and heard it as one act with one sentence ("Archive and read: 3 messages marked read and moved to Archive") and one Confirmed, heard a key past the last step ("Ctrl+Shift+9 runs Quick Step 3, and this account has 2."), or heard each refusal: another account's message, a folder or label the account lost, a step a newer version wrote, nothing selected, more than 5,000 selected | open |  | 2026-09-30T23:55:00.000Z |  |
 | 747 | 13 | todo | src/presentation/wx_app.rs |  | 13-42, read in source for whoever builds Undo next: a Quick Step is not one undo. run_these_actions_over remembers no action of its own and each do-half it calls remembers its own, so Edit, Undo after a step takes back its last write (the move of a step that marks and moves) and leaves the marks; tests/a_quick_step_runs_over_the_selection.rs's test_undo_takes_back_the_last_write_of_a_step_not_the_step holds that reading, and the guide and changelog say so | open |  | 2026-09-30T23:55:00.000Z |  |
 | 748 | 13 | todo | src/presentation/wx_app.rs |  | 13-42, found and left beside 688: two changes still reach the server on a worker of their own and so in either order with a move. A label a run puts on a message it also moves (label_these through spawn_server_change's Labelled change; on a server that keeps labels as keywords the keyword can arrive after the move and miss the message, and the next check takes the label off here), and a mark made by hand just before a move by hand (M, then Ctrl+Shift+V quickly). Recommendation, a question for Pratik: the waiting move carries the keywords as it now carries the read and flag marks, and a mark by hand on a row whose move is waiting joins that move's marks; the first is small, the second touches every mark key | open |  | 2026-09-30T23:55:00.000Z |  |
-| 749 | 13 | stub | src/application/running_a_rule_now.rs |  | 13-43: what a rule would change in a folder is counted (what_a_rule_would_change, through FilterEngine::matches and the runner's own what_each_message_needs, the no-ops dropped), the set a run takes is bounded to 5,000 (the_set_to_run), and the question before a run, the sentence when there is nothing to change and the sentence after are worded (the_question, nothing_to_change, what_the_rule_did), all tested; nothing in the running program calls them, so no rule can yet be run over a folder by hand. 13-44 builds the two doors, This Folder's Run a Rule on This Folder and the Filter Manager's Run on a Folder, and closes this entry; its premise 1 names it | open |  | 2026-09-30T22:50:30.000Z |  |
+| 749 | 13 | stub | src/application/running_a_rule_now.rs |  | 13-43: what a rule would change in a folder is counted (what_a_rule_would_change, through FilterEngine::matches and the runner's own what_each_message_needs, the no-ops dropped), the set a run takes is bounded to 5,000 (the_set_to_run), and the question before a run, the sentence when there is nothing to change and the sentence after are worded (the_question, nothing_to_change, what_the_rule_did), all tested; nothing in the running program calls them, so no rule can yet be run over a folder by hand. 13-44 builds the two doors, This Folder's Run a Rule on This Folder and the Filter Manager's Run on a Folder, and closes this entry; its premise 1 names it. Fixed 2026-10-01 by 13-44: Action, This Folder, Run a Rule on This Folder (run_a_rule_on_this_folder) and the Filter Manager's Run on a Folder (manage_filters saving first, then run_a_rule_on_a_chosen_folder) choose a rule and a folder, count_what_a_rule_would_change counts on a worker and sends UIUpdate::ARuleWasCounted, and ask_then_run_the_counted_rule meets the gate, asks the_question in a native question and calls run_these_actions_over once, saying what_the_rule_did; tests/a_rule_runs_over_a_folder_when_asked.rs reads both doors, the order and the gate in source, the item on a built menu bar and the button over MSAA on a built Filter Manager | fixed |  | 2026-09-30T22:50:30.000Z | 2026-10-01T05:40:00.000Z |
+| 750 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-44, for phase 14: a rule run over a folder has never met a real mail server. Run a rule over a folder of thousands at a real provider's pace, a move and a delete, on Gmail, where a move is a change of label, and on a server with ordinary folders, and read from the server's side whether every message counted changed and nothing else did; the runner sends one server change per message, so a run of 5,000 marks is 5,000 workers, which no provider has been seen to take | open |  | 2026-10-01T05:40:00.000Z |  |
+| 751 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-44, the tester's ear: nobody has heard Run a Rule on This Folder and Run on a Folder end to end, the chooser and its list, the counting line, the question read when it opens with Enter answering No before a delete, and the sentence after a run, as one act, nor the refusals (no rules yet, a saved search, an account whose changes are off, another account opened while counting) | open |  | 2026-10-01T05:40:00.000Z |  |
+| 752 | 13 | todo | src/presentation/wx_app.rs |  | 13-44, found and left: the Filter Manager's Run on a Folder lists the account's folders by their path as the server spells it, as the plan decided, so a folder named in another alphabet reads in the server's modified UTF-7 and a nested one with its server separator. Recommendation: list each folder by the names of the folders it sits in and its own, decoded, the way the folder tree says it, from the stored names and folder_parents | open |  | 2026-10-01T05:40:00.000Z |  |
 
 ````json
 [
@@ -9749,10 +9752,46 @@ last_updated: 2026-09-30T23:55:00.000Z
     "phase": "13",
     "file": "src/application/running_a_rule_now.rs",
     "line": null,
-    "description": "13-43: what a rule would change in a folder is counted (what_a_rule_would_change, through FilterEngine::matches and the runner's own what_each_message_needs, the no-ops dropped), the set a run takes is bounded to 5,000 (the_set_to_run), and the question before a run, the sentence when there is nothing to change and the sentence after are worded (the_question, nothing_to_change, what_the_rule_did), all tested; nothing in the running program calls them, so no rule can yet be run over a folder by hand. 13-44 builds the two doors, This Folder's Run a Rule on This Folder and the Filter Manager's Run on a Folder, and closes this entry; its premise 1 names it",
-    "status": "open",
+    "description": "13-43: what a rule would change in a folder is counted (what_a_rule_would_change, through FilterEngine::matches and the runner's own what_each_message_needs, the no-ops dropped), the set a run takes is bounded to 5,000 (the_set_to_run), and the question before a run, the sentence when there is nothing to change and the sentence after are worded (the_question, nothing_to_change, what_the_rule_did), all tested; nothing in the running program calls them, so no rule can yet be run over a folder by hand. 13-44 builds the two doors, This Folder's Run a Rule on This Folder and the Filter Manager's Run on a Folder, and closes this entry; its premise 1 names it. Fixed 2026-10-01 by 13-44: Action, This Folder, Run a Rule on This Folder (run_a_rule_on_this_folder) and the Filter Manager's Run on a Folder (manage_filters saving first, then run_a_rule_on_a_chosen_folder) choose a rule and a folder, count_what_a_rule_would_change counts on a worker and sends UIUpdate::ARuleWasCounted, and ask_then_run_the_counted_rule meets the gate, asks the_question in a native question and calls run_these_actions_over once, saying what_the_rule_did; tests/a_rule_runs_over_a_folder_when_asked.rs reads both doors, the order and the gate in source, the item on a built menu bar and the button over MSAA on a built Filter Manager",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-30T22:50:30.000Z",
+    "resolved_at": "2026-10-01T05:40:00.000Z"
+  },
+  {
+    "id": 750,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-44, for phase 14: a rule run over a folder has never met a real mail server. Run a rule over a folder of thousands at a real provider's pace, a move and a delete, on Gmail, where a move is a change of label, and on a server with ordinary folders, and read from the server's side whether every message counted changed and nothing else did; the runner sends one server change per message, so a run of 5,000 marks is 5,000 workers, which no provider has been seen to take",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T05:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 751,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-44, the tester's ear: nobody has heard Run a Rule on This Folder and Run on a Folder end to end, the chooser and its list, the counting line, the question read when it opens with Enter answering No before a delete, and the sentence after a run, as one act, nor the refusals (no rules yet, a saved search, an account whose changes are off, another account opened while counting)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T05:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 752,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-44, found and left: the Filter Manager's Run on a Folder lists the account's folders by their path as the server spells it, as the plan decided, so a folder named in another alphabet reads in the server's modified UTF-7 and a nested one with its server separator. Recommendation: list each folder by the names of the folders it sits in and its own, decoded, the way the folder tree says it, from the stored names and folder_parents",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T05:40:00.000Z",
     "resolved_at": null
   }
 ]
