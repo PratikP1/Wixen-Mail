@@ -286,9 +286,11 @@ fn the_different_reasons(sentences: &[String]) -> Vec<&str> {
 /// The rules to run on arriving mail, and what may be done as a result.
 pub struct Filtering<'a> {
     pub rules: &'a crate::application::filters::FilterEngine,
-    /// What this account is allowed to change. Moving and deleting reach the
-    /// server; marking read and flagging do not, and go out later through the
-    /// flag sync, which has its own gate.
+    /// What this account is allowed to change. With changing mail off, a rule
+    /// that moves or deletes is held back whole; a rule's mark or flag is made
+    /// here and kept waiting to go at the first check after changes are
+    /// allowed, and a rule's label is taken off again, since nothing holds a
+    /// label waiting (13-44.3, D3 and D4).
     pub allowed: crate::application::allowed::Allowed,
 }
 
@@ -1075,7 +1077,7 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
         if outcome.is_nothing() {
             continue;
         }
-        if outcome.touches_the_server() && !filtering.allowed.mail {
+        if outcome.moves_or_deletes() && !filtering.allowed.mail {
             // Not done quietly. A rule that files invoices into a folder and
             // does not is a rule somebody believes is working.
             tracing::info!(
