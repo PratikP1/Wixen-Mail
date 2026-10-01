@@ -6578,8 +6578,8 @@ stays at 122.
     The real server is ledger 745 and the ear ledger 746. #60 is closed from the merge.
   - [S] Whether a step is worked by keyboard and heard as one act is the tester's ear.
 
-- [ ] **GAP-12**: A rule can be run over a folder on demand, saying first how many messages it
-  would touch.
+- [x] **GAP-12**: A rule can be run over a folder on demand, saying first how many messages it
+  would touch. Ticked 2026-10-01 by 13-44.
   - Evidence: `gh issue view 61 --json state` on 2026-09-20: open; rules run once when mail
     arrives (11-10's comment on #62).
   - Plans, 2026-09-24: 13-23 and 13-24 to 13-24.1 (the label fix and the runner), 13-43
@@ -6597,6 +6597,26 @@ stays at 122.
     and Enter answers no only before a rule that deletes; held by
     `application::running_a_rule_now`. Nothing asks it until 13-44 builds the two doors
     (ledger 749, which 13-44 closes). The box waits for 13-44.
+    Run over a folder on demand 2026-10-01 by 13-44, the `[D]` line part by part. "Run Rule
+    Now on the rule editor": rules are made in the Filter Manager, whose Run on a Folder
+    saves the rules and answers the rule to run, read by
+    `tests/a_rule_runs_over_a_folder_when_asked.rs`'s
+    `test_the_filter_manager_offers_run_on_a_folder_named_at_its_own_handle`,
+    `test_the_manager_saves_the_rules_before_it_answers_one_to_run` and
+    `test_the_folder_door_has_a_folder_chosen_before_it_counts`. "And the Action menu":
+    Action, This Folder, Run a Rule on This Folder, read by
+    `test_this_folder_offers_the_item_saying_no_rule_run_has_met_a_real_server` and
+    `test_the_door_has_a_rule_chosen_before_it_counts`. "The count said before the run":
+    13-43's `application::running_a_rule_now`, counted on a worker,
+    `test_the_count_is_taken_on_a_worker_and_sent_back`, and timed at 430.02 ms over
+    200,000 rows on `docs/development/measurements.md`. "With a way to stop": the native
+    question answered No, Enter answering No before a rule that deletes,
+    `test_the_question_is_answered_before_the_one_runner_runs_once`, with the account's
+    gate met before it is asked, `test_the_gate_is_met_before_the_question_is_built`. "The
+    run through the same arms a check uses": 13-24.1's `run_these_actions_over`, called
+    once, with no write of its own on the way,
+    `test_nothing_on_the_way_to_the_runner_writes_mail_of_its_own`. The real server is
+    ledger 750 and the ear ledger 751. #61 is closed from the merge.
   - [S] Whether the count and the result read as one act is the tester's ear.
 
 - [ ] **GAP-13**: Mail export as a bare mbox or loose eml files, msg read, and pst export, or
@@ -6801,7 +6821,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-09 | Phase 13 | Done 2026-09-30, 13-37 to 13-39: a saved search moved with the tree's gesture, `Alt+4` to `Alt+9` and a Saved Searches submenu listing the account's searches, and a saved search made from nothing through New Saved Search and the conditions window, which asks every or any for Edit Conditions too, held by `tests/a_saved_search_moves_with_the_gesture.rs`, `tests/the_saved_searches_menu_says_the_searches_an_account_has.rs`, `tests/a_saved_search_can_be_made_from_nothing.rs` and `application::saved_searches`' cases; the ear is ledger 738 to 740, the 500 cap ledger 741. Until 13-39 "Planned 2026-09-24: 13-37 to 13-39, 13-39 ticks it; not built", and before that "Not planned, 2026-09-20" |
 | GAP-10 | Phase 13 | Complete 2026-09-29: 13-36 done that day, a reply, a reply to all and a forward opening From on the account's other address the message was sent to (`reply::the_entry_a_reply_goes_out_from`, rows in `application::reply::tests` and a reading in `tests/the_from_list_chooses_who_sends.rs`), Reply All leaving every address you send from out (a reading), and the comparison page and the guide naming shared mailboxes, sending on behalf and delegation as later work with #59 left open (ledger 721). Until 13-36 this read "Planned 2026-09-24: 13-33 to 13-36, 13-36 ticks it. 13-33 done 2026-09-29, the first half of the `[D]` line: other addresses per account in an additive `identities` table, managed from the Account Manager's `Alt+O`, refused with a sentence when they cannot be used and cleared with their account, held by `data::message_cache::identities::tests`, `application::identities::tests` and `tests/other_addresses_are_managed_per_account.rs`; not yet offered in compose's From list (ledger 713, 13-35). 13-34 done 2026-09-29: the Outbox and drafts keep `from_address` and `from_name` in additive columns, and a message is sent and a draft filed from the row's address through `who_it_goes_out_from`, held by `tests/a_message_goes_out_from_the_address_it_was_written_from.rs`; nothing writes an address until 13-35 (ledger 717), so the `[D]` line waits for 13-35 and 13-36. 13-35 done 2026-09-29, the `[D]` line's "offered in compose's From list": the list holds every account's own address and then its other addresses and is named "From", and the message and the draft go out as the entry chosen, read in a built window and in the source by `tests/the_from_list_chooses_who_sends.rs` (the entries in order, the name on MSAA where focus lands, the preview's From line, the send and the draft reading the entry), by `application::identities::tests::test_the_entry_chosen_decides_the_account_and_an_other_address_is_kept_on_the_row` and by the reply test in `presentation::wx_app` that reads the row and the server's MAIL FROM; the line waits for 13-36's reply half and its "said". Until 13-33 this read "Planned 2026-09-24: 13-33 to 13-36, 13-36 ticks it; not built. Until then "Not planned, 2026-09-20""" |
 | GAP-11 | Phase 13 | Done 2026-09-30, 13-23, 13-24, 13-24.1 and 13-40 to 13-42: Quick Steps kept per account, made in the Quick Step Manager, listed on Action, Quick Steps with `Ctrl+Shift+7` to `Ctrl+Shift+9`, and run over the selection through the one runner with one sentence, held by `tests/a_quick_step_runs_over_the_selection.rs`, `tests/the_quick_step_manager_says_what_each_step_does.rs` and `application::quick_steps`' cases; the real server is ledger 745, the ear ledger 746. Until 13-42 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary Quick Steps reuse; 13-24 done 2026-09-28, the five set actions as quiet do-halves a Quick Step's runner calls; 13-24.1 done 2026-09-28, the runner a Quick Step's actions are carried out through, answering what it did for the step's own sentence; 13-40 done 2026-09-30, the steps stored and named per account in a rule's action words, with their refusals, keys and sentence, and nothing yet running one (ledger 742); 13-41 done 2026-09-30, the Quick Step Manager on Action, Quick Steps and the step editor, steps made, changed and put in order and none run yet; otherwise not built", and before that "Not planned, 2026-09-20" |
-| GAP-12 | Phase 13 | Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; 13-24 done 2026-09-28, the five set actions as quiet do-halves the runner over a folder calls; 13-24.1 done 2026-09-28, the runner a rule over a folder hands its matched messages to, through the gated write paths; 13-43 done 2026-09-30, what a rule would change in a folder counted and the question before a run worded, nothing yet asking it; otherwise not built. Until then "Not planned, 2026-09-20" |
+| GAP-12 | Phase 13 | Done 2026-10-01, 13-23, 13-24, 13-24.1, 13-43 and 13-44: a rule run over a folder on demand from Action, This Folder, Run a Rule on This Folder and from the Filter Manager's Run on a Folder, counted on a worker, asked about in a native question after the account's gate, and run through the one runner with one sentence, held by `tests/a_rule_runs_over_a_folder_when_asked.rs` and `application::running_a_rule_now`'s cases; the real server is ledger 750, the ear ledger 751. Until 13-44 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; 13-24 done 2026-09-28, the five set actions as quiet do-halves the runner over a folder calls; 13-24.1 done 2026-09-28, the runner a rule over a folder hands its matched messages to, through the gated write paths; 13-43 done 2026-09-30, what a rule would change in a folder counted and the question before a run worded, nothing yet asking it; otherwise not built", and before that "Not planned, 2026-09-20" |
 | GAP-13 | Phase 13 | Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20" |
 | REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
 | REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |

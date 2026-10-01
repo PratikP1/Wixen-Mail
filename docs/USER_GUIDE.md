@@ -548,6 +548,9 @@ The rules run once, when mail arrives. A message that arrived before you
 wrote the rule has no phrase, and a message keeps its phrase even if you
 change the rule later. When two rules both say a phrase first, the rule
 lower in the list wins, as it does for the other choices a rule makes.
+Since 2026-10-01 you can also run a rule over a folder yourself, which
+gives the messages already there the phrase; see Running a rule over a
+folder, below.
 
 **A sound when the rule matches.** Tick **Play a sound when this rule
 matches**, which any rule can carry whatever its action. The sound plays
@@ -577,6 +580,64 @@ can take it off again when the server reports that message.
 
 Nobody has heard a phrase at the start of a row or the sound after a check
 yet; the tester's copy is the first that will.
+
+### Running a rule over a folder
+
+A rule runs on its own when mail arrives. Since 2026-10-01 you can also
+run one over a folder whenever you choose, for example to file the
+newsletters that arrived before you wrote the rule. This is
+experimental: no rule run has yet met a real mail server.
+
+There are two ways in, and both end in the same question.
+
+From the folder you are reading:
+
+1. Open the folder in the folder tree.
+2. Press `Alt+A` for the Action menu, then This Folder, then **Run a Rule
+   on This Folder** (`L`).
+3. Choose a rule from the list and press **Count** (`Alt+C`). A rule that
+   is switched off is listed as "Newsletters (switched off)": you can run
+   it by hand, and the list tells you it does not run on its own.
+
+From the Filter Manager (Tools, then Message Filters):
+
+1. Move to the rule in the list.
+2. Press **Run on a Folder** (`Alt+R`). The manager saves the rules as you
+   left them and closes, so the rule that runs is the rule as saved.
+3. Choose a folder from the list of the account's folders and press
+   **Count** (`Alt+C`).
+
+Wixen Mail then counts what the rule would change in that folder, which
+on a large folder can take a moment, and asks before it changes anything,
+for example: "The rule Newsletters would move 214 messages in Inbox to
+Archive. No rule run has met a real mail server yet. Run it?" Messages
+the rule matches that are already the way it would leave them are not
+counted as changes, and the question says both numbers: "The rule Mark
+read matches 230 messages in Inbox; 12 would be marked read and 218 are
+read already."
+
+- **Yes** runs the rule, and one sentence says what it did:
+  "Newsletters: 214 messages moved to Archive".
+- **No** changes nothing.
+- **Enter** answers Yes, except before a rule that deletes, where Enter
+  answers No, so a key pressed before the question has finished cannot
+  delete a folder's mail.
+- When the rule would change nothing, you hear that instead, and nothing
+  is asked.
+
+The buttons read Yes and No, rather than Run and Don't Run, because the
+toolkit this program is built on cannot rename them; the question ends
+"Run it?" so that Yes and No answer it.
+
+One run changes at most 5,000 messages. When a rule would change more,
+the question says so, and running it again changes the next 5,000,
+because the ones already changed are no longer counted.
+
+A run goes through the same steps as marking, flagging, labelling, moving
+or deleting messages by hand. It changes your mail at your provider only
+when Allowed Changes lets Wixen Mail change your mail in that account; if
+it does not, you are told so instead of being asked. Edit, Undo takes back
+a run the way it takes back the same change made by hand.
 
 ### Meeting invitations
 

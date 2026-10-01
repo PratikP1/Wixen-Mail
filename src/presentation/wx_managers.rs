@@ -43,6 +43,7 @@ const ID_MGR_DELETE: Id = ID_HIGHEST + 302;
 const ID_MGR_SYNC: Id = ID_HIGHEST + 303;
 const ID_MGR_MOVE_UP: Id = ID_HIGHEST + 304;
 const ID_MGR_MOVE_DOWN: Id = ID_HIGHEST + 305;
+const ID_MGR_RUN_ON_A_FOLDER: Id = ID_HIGHEST + 306;
 
 /// wxWidgets' own numbers for the arrow keys, `WXK_UP` and `WXK_DOWN`: not the
 /// Windows virtual key codes, which wxWidgets renumbers.
@@ -249,6 +250,12 @@ pub trait ManagedRow: Clone + 'static {
     fn moved(_rows: &[(String, String)], _which: &str, _direction: Move) -> Option<Moved> {
         None
     }
+
+    /// Whether a row can be run over a folder by hand, which offers Run on
+    /// a Folder. Only a rule can (#61, 13-44).
+    fn runs_on_a_folder() -> bool {
+        false
+    }
 }
 
 /// Whether a window over these rows offers Move Up and Move Down.
@@ -256,7 +263,12 @@ fn is_kept_in_order<T: ManagedRow>() -> bool {
     T::moved(&[], "", Move::Up).is_some()
 }
 
-impl ManagedRow for FilterRule {}
+impl ManagedRow for FilterRule {
+    /// A rule runs when mail arrives, and over a folder when somebody asks.
+    fn runs_on_a_folder() -> bool {
+        true
+    }
+}
 impl ManagedRow for Question {}
 impl ManagedRow for TagEntry {
     /// A label's place is the number its key carries, so the person decides
@@ -308,15 +320,56 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
     name_fn: impl Fn(&T) -> String + Copy + 'static,
     what_it_still_needs: impl Fn(&[T]) -> Option<&'static str> + 'static,
 ) -> bool {
-    let ManagerChrome {
-        dialog,
-        main_sizer,
-        list,
-        status_text,
-        a11y,
-    } = chrome;
+    let buttons = put_the_buttons_on::<T>(chrome.dialog, chrome.main_sizer, chrome.status_text);
+    run_the_manager_loop(
+        LaidOut { chrome, buttons },
+        kind,
+        working,
+        populate,
+        open_one,
+        name_fn,
+        what_it_still_needs,
+    )
+    .changed
+}
 
-    // Create and attach buttons
+/// The buttons along the foot of a manager window.
+///
+/// Put on by the window's builder where it has one, since 13-44, so a test
+/// can read a built window's buttons the way a screen reader meets them
+/// without running its loop, which only a person can end.
+pub struct ManagerButtons {
+    add: Button,
+    edit: Button,
+    delete: Button,
+    moves: Option<(Button, Button)>,
+    run_on_a_folder: Option<Button>,
+    close: Button,
+}
+
+/// How a manager window's loop ended.
+pub(crate) struct ManagerClosed {
+    /// Whether a row was added, changed, deleted or moved.
+    pub(crate) changed: bool,
+    /// The row somebody asked to run over a folder, when that is what
+    /// closed the window.
+    pub(crate) run_on: Option<usize>,
+}
+
+/// A manager window with its buttons on, ready for its loop.
+pub(crate) struct LaidOut<'a> {
+    pub(crate) chrome: ManagerChrome<'a>,
+    pub(crate) buttons: ManagerButtons,
+}
+
+/// Put Add, Edit and Delete, Move Up and Move Down where the rows are kept
+/// in an order somebody chooses, and Close along the foot of a manager
+/// window, its status line under them, and lay the window out.
+pub(crate) fn put_the_buttons_on<T: ManagedRow>(
+    dialog: &Dialog,
+    main_sizer: &BoxSizer,
+    status_text: &StaticText,
+) -> ManagerButtons {
     let add_btn = Button::builder(dialog)
         .with_label("&Add...")
         .with_id(ID_MGR_ADD)
@@ -344,6 +397,14 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
                 .build(),
         )
     });
+    // Only where a row can be run by hand, which is a rule (#61). R, free
+    // among a, e, d and c.
+    let run_btn = T::runs_on_a_folder().then(|| {
+        Button::builder(dialog)
+            .with_label("&Run on a Folder...")
+            .with_id(ID_MGR_RUN_ON_A_FOLDER)
+            .build()
+    });
     let close_btn = Button::builder(dialog)
         .with_label("&Close")
         .with_id(ID_OK)
@@ -357,12 +418,57 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
         btn_sizer.add(up_btn, 0, SizerFlag::All, 4);
         btn_sizer.add(down_btn, 0, SizerFlag::All, 4);
     }
+    if let Some(run_btn) = &run_btn {
+        btn_sizer.add(run_btn, 0, SizerFlag::All, 4);
+    }
     btn_sizer.add_spacer(16);
     btn_sizer.add(&close_btn, 0, SizerFlag::All, 4);
 
     main_sizer.add_sizer(&btn_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
     main_sizer.add(status_text, 0, SizerFlag::Expand | SizerFlag::All, 4);
     dialog.set_sizer(*main_sizer, true);
+
+    ManagerButtons {
+        add: add_btn,
+        edit: edit_btn,
+        delete: del_btn,
+        moves: move_btns,
+        run_on_a_folder: run_btn,
+        close: close_btn,
+    }
+}
+
+/// [`run_manager_loop`] over a window whose buttons are already on it,
+/// answering whether anything changed and which row, if any, somebody asked
+/// to run over a folder.
+pub(crate) fn run_the_manager_loop<T: ManagedRow>(
+    laid: LaidOut<'_>,
+    kind: &str,
+    working: &mut Vec<T>,
+    populate: impl Fn(&ListCtrl, &[T]) + Copy + 'static,
+    open_one: impl Fn(&Dialog, Option<&T>, &[T]) -> Option<T>,
+    name_fn: impl Fn(&T) -> String + Copy + 'static,
+    what_it_still_needs: impl Fn(&[T]) -> Option<&'static str> + 'static,
+) -> ManagerClosed {
+    let LaidOut {
+        chrome:
+            ManagerChrome {
+                dialog,
+                list,
+                status_text,
+                a11y,
+                ..
+            },
+        buttons:
+            ManagerButtons {
+                add: add_btn,
+                edit: edit_btn,
+                delete: del_btn,
+                moves: move_btns,
+                run_on_a_folder: run_btn,
+                close: close_btn,
+            },
+    } = laid;
 
     // The working rows and the "did anything change" flag, shared between
     // this loop and Delete's own button click below. Delete mutates both
@@ -412,6 +518,26 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
             d.end_modal(ID_OK);
         }
     });
+    // Ends the window with the row chosen, for its caller to save and run;
+    // with no row chosen it says so and the window stays, as Delete does.
+    if let Some(run_btn) = &run_btn {
+        run_btn.on_click({
+            let d = *dialog;
+            let list = *list;
+            let status_text = *status_text;
+            let a11y = a11y.clone();
+            let kind = kind.to_string();
+            move |_| match get_selected(&list) {
+                Some(_) => d.end_modal(ID_MGR_RUN_ON_A_FOLDER),
+                None => said_and_shown(
+                    &status_text,
+                    &a11y,
+                    &manager_words::nothing_selected(&kind),
+                    Priority::High,
+                ),
+            }
+        });
+    }
     if let Some((up_btn, down_btn)) = move_btns {
         let move_it = {
             let list = *list;
@@ -456,8 +582,13 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
 
     populate(list, &state.borrow().working);
 
+    let mut run_on = None;
     loop {
         match dialog.show_modal() {
+            r if r == ID_MGR_RUN_ON_A_FOLDER => {
+                run_on = get_selected(list);
+                break;
+            }
             r if r == ID_MGR_ADD => {
                 let opened = open_one(dialog, None, &state.borrow().working);
                 if let Some(item) = opened {
@@ -518,7 +649,10 @@ pub(crate) fn run_manager_loop<T: ManagedRow>(
     // it fixed it. After the state is read, because the list belongs to the
     // dialog.
     dialog.destroy();
-    state.borrow().changed
+    ManagerClosed {
+        changed: state.borrow().changed,
+        run_on,
+    }
 }
 
 /// Create the standard manager dialog shell: dialog + sizer + list + status.
@@ -3063,6 +3197,12 @@ pub struct FilterRule {
 pub enum FilterManagerAction {
     None,
     Updated(Vec<FilterRule>),
+    /// Run on a Folder closed the window: every row as it was left, for the
+    /// caller to save before anything runs, and which of them to run.
+    RunOnAFolder {
+        rules: Vec<FilterRule>,
+        which: usize,
+    },
 }
 
 pub fn show_filter_manager_dialog(
@@ -3075,23 +3215,25 @@ pub fn show_filter_manager_dialog(
     // `theme::current_from_stored_config`'s own doc comment for why that
     // matters).
     let palette = theme::current_from_stored_config();
-    let (dialog, sizer, list, status) =
-        make_shell(parent, "Filter Manager", "Filters", 650, 450, palette);
-
-    list.insert_column(0, "Name", ListColumnFormat::Left, 130);
-    list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
-    list.insert_column(2, "Action", ListColumnFormat::Left, 150);
-    list.insert_column(3, "Status", ListColumnFormat::Centre, 70);
-    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    let FilterManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+        buttons,
+    } = build_filter_manager(parent, rules, palette);
 
     let mut working = rules.to_vec();
-    let changed = run_manager_loop(
-        ManagerChrome {
-            dialog: &dialog,
-            main_sizer: &sizer,
-            list: &list,
-            status_text: &status,
-            a11y: a11y.clone(),
+    let closed = run_the_manager_loop(
+        LaidOut {
+            chrome: ManagerChrome {
+                dialog: &dialog,
+                main_sizer: &sizer,
+                list: &list,
+                status_text: &status,
+                a11y: a11y.clone(),
+            },
+            buttons,
         },
         manager_words::FILTER,
         &mut working,
@@ -3101,10 +3243,53 @@ pub fn show_filter_manager_dialog(
         nothing_stops_this_closing,
     );
 
-    if changed {
-        FilterManagerAction::Updated(working)
-    } else {
-        FilterManagerAction::None
+    match closed {
+        ManagerClosed {
+            run_on: Some(which),
+            ..
+        } => FilterManagerAction::RunOnAFolder {
+            rules: working,
+            which,
+        },
+        ManagerClosed { changed: true, .. } => FilterManagerAction::Updated(working),
+        ManagerClosed { .. } => FilterManagerAction::None,
+    }
+}
+
+/// The Filter Manager's window, built and filled without being shown.
+pub struct FilterManagerWidgets {
+    pub dialog: Dialog,
+    pub sizer: BoxSizer,
+    pub list: ListCtrl,
+    pub status: StaticText,
+    pub buttons: ManagerButtons,
+}
+
+/// Build the Filter Manager over an account's rules, fill its list and put
+/// its buttons on. Split out of [`show_filter_manager_dialog`] in 13-44, as
+/// [`build_tag_manager`] was, so a test can read the built window.
+pub fn build_filter_manager(
+    parent: &Frame,
+    rules: &[FilterRule],
+    palette: Option<theme::Palette>,
+) -> FilterManagerWidgets {
+    let (dialog, sizer, list, status) =
+        make_shell(parent, "Filter Manager", "Filters", 650, 450, palette);
+
+    list.insert_column(0, "Name", ListColumnFormat::Left, 130);
+    list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
+    list.insert_column(2, "Action", ListColumnFormat::Left, 150);
+    list.insert_column(3, "Status", ListColumnFormat::Centre, 70);
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    populate_filters(&list, rules);
+    let buttons = put_the_buttons_on::<FilterRule>(&dialog, &sizer, &status);
+
+    FilterManagerWidgets {
+        dialog,
+        sizer,
+        list,
+        status,
+        buttons,
     }
 }
 
@@ -4317,16 +4502,20 @@ pub fn show_tag_manager_dialog(
         sizer,
         list,
         status,
+        buttons,
     } = build_tag_manager(parent, tags, palette);
 
     let mut working = tags.to_vec();
-    let changed = run_manager_loop(
-        ManagerChrome {
-            dialog: &dialog,
-            main_sizer: &sizer,
-            list: &list,
-            status_text: &status,
-            a11y: a11y.clone(),
+    let changed = run_the_manager_loop(
+        LaidOut {
+            chrome: ManagerChrome {
+                dialog: &dialog,
+                main_sizer: &sizer,
+                list: &list,
+                status_text: &status,
+                a11y: a11y.clone(),
+            },
+            buttons,
         },
         manager_words::LABEL,
         &mut working,
@@ -4334,7 +4523,8 @@ pub fn show_tag_manager_dialog(
         |d, existing, _| show_tag_edit(d, existing, palette),
         |t| t.name.clone(),
         nothing_stops_this_closing,
-    );
+    )
+    .changed;
 
     if changed {
         TagManagerAction::Updated(working)
@@ -4349,11 +4539,13 @@ pub struct TagManagerWidgets {
     pub sizer: BoxSizer,
     pub list: ListCtrl,
     pub status: StaticText,
+    pub buttons: ManagerButtons,
 }
 
-/// Build the Label Manager over an account's labels, in their order, and
-/// fill its list. Split out of [`show_tag_manager_dialog`] so a test can read
-/// the rows a live list holds.
+/// Build the Label Manager over an account's labels, in their order, fill
+/// its list and put its buttons on. Split out of [`show_tag_manager_dialog`]
+/// so a test can read the rows a live list holds, and since 13-44 the
+/// buttons it offers.
 pub fn build_tag_manager(
     parent: &Frame,
     tags: &[TagEntry],
@@ -4367,12 +4559,14 @@ pub fn build_tag_manager(
     list.insert_column(2, "Color", ListColumnFormat::Left, 100);
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
     populate_tags(&list, tags);
+    let buttons = put_the_buttons_on::<TagEntry>(&dialog, &sizer, &status);
 
     TagManagerWidgets {
         dialog,
         sizer,
         list,
         status,
+        buttons,
     }
 }
 
@@ -6115,8 +6309,9 @@ mod tests {
         // against real widgets; this proves each is actually wired to the
         // button that used to `end_modal` instead of calling it.
         let windows = the_manager_windows();
+        // The loop's own half since 13-44, where Delete's click is bound.
         for (function, extracted_fn) in [
-            ("fn run_manager_loop", "delete_selected("),
+            ("fn run_the_manager_loop", "delete_selected("),
             (
                 "fn build_contact_manager_dialog",
                 "delete_selected_contact(",
@@ -6130,7 +6325,7 @@ mod tests {
         // Step 4 of the fix: once end_modal is never called for Delete,
         // show_modal() can never return with its own ID, so the arm that
         // used to handle it is dead code, not defensive code worth keeping.
-        for function in ["fn run_manager_loop", "fn show_contact_manager_dialog"] {
+        for function in ["fn run_the_manager_loop", "fn show_contact_manager_dialog"] {
             let body = body_of(&windows, function);
             assert!(
                 !body.contains("r if r == ID_MGR_DELETE"),
@@ -6198,9 +6393,12 @@ mod tests {
         // real, unsabotaged wiring as sound.
         let windows = the_manager_windows();
         assert!(
-            appears_live(body_of(&windows, "fn run_manager_loop"), "delete_selected("),
-            "run_manager_loop no longer calls delete_selected live, so the check above is \
-             asleep on the real file"
+            appears_live(
+                body_of(&windows, "fn run_the_manager_loop"),
+                "delete_selected("
+            ),
+            "run_the_manager_loop no longer calls delete_selected live, so the check above \
+             is asleep on the real file"
         );
     }
 

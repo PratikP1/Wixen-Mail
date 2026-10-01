@@ -208,11 +208,11 @@ const THE_ONE_PLACE_A_SHARED_TEXT_MEANS: &[Tie] = &[
         case: "filter-manager-delete.test.js",
         text: "Delete",
         file: "src/presentation/wx_managers.rs",
-        function: "run_manager_loop",
+        function: "put_the_buttons_on",
         literal: "&Delete",
-        why: "The Delete button of the manager windows, which the filter manager is one of. \
-              The same label is written for the contact manager, the Account Manager and a \
-              dozen menu items.",
+        why: "The Delete button of the manager windows, which the filter manager is one of, \
+              put on by put_the_buttons_on since 13-44. The same label is written for the \
+              contact manager, the Account Manager and a dozen menu items.",
     },
     Tie {
         case: "settings-tabs-read-once.test.js",

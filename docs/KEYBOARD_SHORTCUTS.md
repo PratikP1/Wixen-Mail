@@ -853,7 +853,7 @@ Eight submenus hold the rest:
 | Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation. `Ctrl+Z` in the message list undoes the last label put on or taken off, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
-| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
+| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now. Run a Rule on This Folder (`L` on the submenu), since 2026-10-01, runs one of the account's rules over the folder you have open: it asks which rule, in a list headed with the account's name (`Alt+R` on the list, `Alt+C` for Count), says how many messages the rule would change, and asks before it changes anything. Enter answers Yes, except before a rule that deletes, where it answers No. See Running a rule over a folder in the user guide. Experimental (#61) |
 | Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then New Saved Search, which makes one from nothing: a name, where it looks, and its conditions. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
 | Quick Steps | `Q` on the Action menu. The Quick Steps of the account you are in, in the order the Quick Step Manager keeps them, the first three with their keys (`Ctrl+Shift+7` to `Ctrl+Shift+9`); choosing one runs it over every selected message. Then Manage Quick Steps (`M` on the submenu), which opens the Quick Step Manager, where a Quick Step is named, made, changed, put in order and removed. See Quick Steps, below. Experimental (#60) |
 | Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
@@ -910,7 +910,10 @@ group are being written to, so you can tell when somebody has been missed.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Open Rules Manager | (menu only) | Open message filter rules manager |
+| Run on a Folder | `Alt+R` in the Filter Manager | Saves the rules as they stand in the window, closes it, and runs the rule the cursor is on over a folder you choose from a list of the account's folders (`Alt+F` on the list, `Alt+C` for Count). Like Run a Rule on This Folder, it says how many messages would change and asks first. With no rule chosen it says so and the window stays open. Since 2026-10-01. Experimental (#61) |
 | Open Blocked Senders | (Tools menu) | Who you have blocked, and where their mail is being filed |
+
+The Filter Manager's buttons are `Alt+A` Add, `Alt+E` Edit, `Alt+D` Delete, `Alt+R` Run on a Folder and `Alt+C` Close.
 
 #### Inside the Add or Edit Filter Rule dialog
 

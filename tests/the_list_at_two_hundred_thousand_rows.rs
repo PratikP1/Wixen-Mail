@@ -87,9 +87,12 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use wixen_mail::application::filters::{FilterAction, FilterRule};
+use wixen_mail::application::running_a_rule_now::{TheFolderRead, what_a_rule_would_change};
 use wixen_mail::application::threading::{ThreadInput, thread_messages};
 use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
+use wixen_mail::data::message_cache::saved_searches::TheMessageText;
 use wixen_mail::data::message_cache::{
     CachedFolder, IncomingMessage, MessageCache, MessageListRow, Tag, WhereToSearch,
 };
@@ -432,7 +435,64 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
         ),
     ));
 
+    measured.push(a_rule_counted_over_the_folder(&cache, folder_id, count)?);
+
     Ok(measured)
+}
+
+/// What a rule run waits for before its question (13-44, #61): the read the
+/// count's worker makes of the folder, without message text, and the
+/// labels on its messages, then 13-43's count, for a rule that marks read
+/// every message with a word in one subject in five. The account's folders
+/// and labels are read once, outside the timing, as they are a small read
+/// beside the folder's.
+fn a_rule_counted_over_the_folder(
+    cache: &MessageCache,
+    folder_id: i64,
+    count: usize,
+) -> Result<Measured, String> {
+    let rule = FilterRule {
+        id: "scale-rule".to_string(),
+        name: "Quarterly".to_string(),
+        field: "subject".to_string(),
+        match_type: "contains".to_string(),
+        pattern: A_WORD_IN_ONE_SUBJECT_IN_FIVE.to_string(),
+        case_sensitive: false,
+        action: FilterAction::MarkAsRead,
+        enabled: true,
+        plays_a_sound: false,
+    };
+    let folders = cache
+        .get_folders_for_account(THE_ACCOUNT)
+        .map_err(|e| e.to_string())?;
+    let labels = cache
+        .get_tags_for_account(THE_ACCOUNT)
+        .map_err(|e| e.to_string())?;
+    let (takes, counted) = taken(|| -> Result<(usize, usize), String> {
+        let messages = cache
+            .messages_a_saved_search_reads(THE_ACCOUNT, Some(folder_id), TheMessageText::LeftAlone)
+            .map_err(|e| e.to_string())?;
+        let labels_on = cache
+            .tags_by_message_in_folder(folder_id)
+            .map_err(|e| e.to_string())?;
+        let here = TheFolderRead {
+            path: THE_FOLDER,
+            messages: &messages,
+            labels_on: &labels_on,
+            folders: &folders,
+            labels: &labels,
+        };
+        let would = what_a_rule_would_change(&rule, &here).map_err(|why| why.to_string())?;
+        Ok((would.matched, would.changing.len()))
+    });
+    let (matched, changing) = counted?;
+    Ok(Measured::timed(
+        format!("Count before a rule run: a rule counted over the folder of {count} rows"),
+        takes,
+        format!(
+            "The read the count's worker makes, `messages_a_saved_search_reads` without message text and `tags_by_message_in_folder`, then `what_a_rule_would_change` for a rule that marks read every message with `{A_WORD_IN_ONE_SUBJECT_IN_FIVE}` in its subject: {matched} matched and {changing} would change, each take. The account's folders and labels were read once outside the timing. The count only: the question, and the run a Yes starts, were not timed, and no window was open."
+        ),
+    ))
 }
 
 // ── The list's own read path ────────────────────────────────────────────────
@@ -858,7 +918,14 @@ fn test_the_lists_own_read_path_at_the_testers_size() {
 
 /// What kind of thing each row times; a row naming none of these is a row
 /// the page cannot be read from.
-const WHAT_A_ROW_TIMES: [&str; 5] = ["Listing", "Filter", "Sort", "Page paint", "Full pass"];
+const WHAT_A_ROW_TIMES: [&str; 6] = [
+    "Listing",
+    "Filter",
+    "Sort",
+    "Page paint",
+    "Full pass",
+    "a rule counted over the folder",
+];
 
 #[test]
 fn test_two_thousand_rows_written_read_back_two_thousand() {
