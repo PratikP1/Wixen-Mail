@@ -332,7 +332,9 @@ and which one you get is the address your organisation gives you.
 A directory that asks you to sign in is sent a name and a password, and the password goes
 only to an address beginning `ldaps://`. Over `ldap://` it would travel as you typed it,
 readable by anybody on the network between you and the directory, so Wixen Mail refuses to
-send it there and says to ask for an address beginning `ldaps://` instead. The password is
+send it there and says to ask for an address beginning `ldaps://` instead. Look People Up at
+Work will not save a sign-in name for an `ldap://` address either, so no password is kept
+for an address it could never be sent to. The password is
 kept in the Windows credential store, beside your account passwords, and nowhere else: not
 in the settings, not in the mail database, and never in the log. Removing the account
 erases it, and so does uninstalling. The sign-in name and the password are typed in Look

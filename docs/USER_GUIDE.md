@@ -1553,6 +1553,12 @@ encrypted. An address beginning `ldap://` is not, so a password is never
 sent there, and looking a name up says to ask for an `ldaps://` address
 instead.
 
+For the same reason the window will not save a sign-in name for an address
+beginning `ldap://`, whether or not you typed a password. When you choose OK
+it stays open, says why in the same words a lookup uses, and puts you in the
+Directory address box to change the address. A directory that answers
+anybody, with no sign-in name, is still kept at an `ldap://` address.
+
 When you open the window again, the password box is empty and never shows
 the saved password. The box, and a line under it, say that one is saved:
 
@@ -1560,8 +1566,9 @@ the saved password. The box, and a line under it, say that one is saved:
 - Type a new one to replace it.
 - Clear the sign-in name and choose OK to forget it.
 
-A sign-in name with an empty password box and no password saved is refused:
-the window stays open, says so, and puts you in the password box.
+A sign-in name for an `ldaps://` address with an empty password box and no
+password saved is refused: the window stays open, says so, and puts you in
+the password box.
 
 This is **experimental**. Looking people up in a directory has not been
 tried against a real directory yet, and the window says so first.
