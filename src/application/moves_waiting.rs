@@ -547,6 +547,9 @@ impl ReplaysAMove for crate::application::mail_controller::MailController {
         if let Some(starred) = marks.starred {
             self.set_starred(folder, uid, starred).await?;
         }
+        for keyword in &marks.keywords {
+            self.set_flag(folder, uid, keyword, true).await?;
+        }
         Ok(())
     }
 
@@ -1213,6 +1216,9 @@ mod tests {
             }
             if let Some(starred) = marks.starred {
                 session.set_flag(uid, FLAGGED, starred).await?;
+            }
+            for keyword in &marks.keywords {
+                session.set_flag(uid, keyword, true).await?;
             }
             Ok(())
         }

@@ -675,6 +675,9 @@ mod tests {
             if let Some(starred) = marks.starred {
                 Mailbox::set_flag(self, folder, uid, FLAGGED, starred).await?;
             }
+            for keyword in &marks.keywords {
+                Mailbox::set_flag(self, folder, uid, keyword, true).await?;
+            }
             Ok(())
         }
     }

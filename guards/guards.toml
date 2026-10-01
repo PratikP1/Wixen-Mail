@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 553 records have arrived since and have not been through it.
+# 555 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -5258,7 +5258,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -13630,7 +13630,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
@@ -16017,7 +16017,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
@@ -16509,7 +16509,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
@@ -19066,7 +19066,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -27423,7 +27423,7 @@ red = [
     "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -27585,7 +27585,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -27606,7 +27606,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -27629,7 +27629,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -27705,7 +27705,7 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
 
@@ -35564,7 +35564,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # The key handler past the last Quick Step asking for Alt where the keys are
@@ -35588,7 +35588,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A Quick Step run over more messages than Select All may take, one key
@@ -35608,7 +35608,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A Quick Step run over messages of another account, into a folder of the
@@ -35640,7 +35640,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A waiting move replayed without the marks it carries, so a Quick Step
@@ -35655,9 +35655,12 @@ before = '''    let marked = send_the_marks_first(server, cache, waiting).await;
 after = '''    let marked: Result<()> = Ok(());'''
 red = [
     "application::moves_waiting::tests::test_a_quick_step_that_marks_read_and_moves_sends_the_mark_before_the_move",
+    # Added 2026-10-01 by 13-44.3: a label's keyword rides the same step
+    # since ledger 748, so a step that labels and moves loses its label too.
+    "application::moves_waiting::tests::test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 51 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
 ]
 
 # A move made here that never keeps the marks handed to it, so the marks a
@@ -35675,7 +35678,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 33 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
 
 # A rule run by hand that hands the runner's answer every message as
@@ -36196,4 +36199,40 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 51 },
+]
+
+# A run's move that carries no keyword for the labels the run puts on, so
+# the label goes on a worker of its own beside the move and can miss the
+# message (ledger 748). Written 2026-10-01 by 13-44.3, taken by hand against
+# the whole library first.
+[[guard]]
+name = "a run's move carries the keywords of the labels it puts on"
+file = "src/application/acting_on_a_set.rs"
+before = '''                    keywords: self.the_keywords_put_on(message.row_id, labels),'''
+after = '''                    keywords: Vec::new(),'''
+red = [
+    "application::acting_on_a_set::tests::test_the_marks_of_a_message_that_moves_go_with_its_move",
+    "application::moves_waiting::tests::test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move",
+]
+tests_last_seen = [
+    { file = "src/application/acting_on_a_set.rs", tests = 24 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
+]
+
+# Labelling's do-half sending a run's label on its own worker rather than
+# handing it to the move, so the window never uses what the move can carry
+# (ledger 748). Written 2026-10-01 by 13-44.3, taken by hand against the
+# target first.
+[[guard]]
+name = "a run's label is handed to its move rather than sent on its own"
+file = "src/presentation/wx_app.rs"
+suite = "a_quick_step_runs_over_the_selection"
+before = '''                        if !handed_to_the_move(app.state, message.row_id, &change) {'''
+after = '''                        if true {'''
+red = [
+    "test_a_label_a_run_puts_on_is_handed_to_the_move_rather_than_sent",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_quick_step_runs_over_the_selection.rs", tests = 35 },
 ]
