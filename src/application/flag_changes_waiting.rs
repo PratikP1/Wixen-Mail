@@ -188,6 +188,12 @@ pub fn what_became_of_it(offered: &Result<(), Error>) -> WhatToDoWithAWaitingCha
     }
 }
 
+/// The flags to write here from what the server said, with each change still
+/// waiting to go written over it, for its flag only.
+pub fn the_flags_to_keep(server_said: &[String], _waiting: &[(WhichFlag, bool)]) -> Vec<String> {
+    server_said.to_vec()
+}
+
 /// The topic the sentences below are announced on.
 ///
 /// Its own topic rather than `"status"`, and the precedent is `"network"` and
@@ -519,6 +525,38 @@ mod tests {
              only: {:?}",
             server.transcript().await
         );
+    }
+
+    fn flags(said: &[&str]) -> Vec<String> {
+        said.iter().map(|flag| (*flag).to_string()).collect()
+    }
+
+    #[test]
+    fn test_a_waiting_mark_is_kept_over_what_the_server_said() {
+        // A check reads the server's flags back, and the server has not heard
+        // of a change still waiting to go; written as it came, the row would
+        // lose the mark until the change went.
+        assert_eq!(
+            the_flags_to_keep(&flags(&["\\Flagged"]), &[(WhichFlag::Read, true)]),
+            flags(&["\\Flagged", "\\Seen"])
+        );
+    }
+
+    #[test]
+    fn test_a_waiting_unflag_takes_the_flag_out_of_what_the_server_said() {
+        assert_eq!(
+            the_flags_to_keep(
+                &flags(&["\\Seen", "\\Flagged", "Money"]),
+                &[(WhichFlag::Starred, false)]
+            ),
+            flags(&["\\Seen", "Money"])
+        );
+    }
+
+    #[test]
+    fn test_with_nothing_waiting_the_servers_flags_are_kept_as_they_came() {
+        let said = flags(&["\\Seen", "Money"]);
+        assert_eq!(the_flags_to_keep(&said, &[]), said);
     }
 
     #[test]

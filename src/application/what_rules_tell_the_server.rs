@@ -95,9 +95,68 @@ pub struct Telling {
     pub counted: bool,
 }
 
+/// How the server answered one change, or that it was never asked.
+#[derive(Debug, Clone, Copy)]
+pub enum Answered<'a> {
+    /// The server took it.
+    Went,
+    /// Nothing was dialled, because changing mail is not allowed.
+    NotDialled,
+    /// The send failed, for the reason given.
+    Failed(&'a crate::common::Error),
+}
+
+/// What a change that did not go waits for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Until {
+    ChangingMailIsAllowed,
+    TheServerCanBeReached,
+}
+
+/// Why a change was put back here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Because {
+    ChangingMailIsNotAllowed,
+    TheServerCouldNotBeReached,
+    TheServerSaidNo,
+}
+
+/// What one change calls for once the server has answered, or was not asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ForTheChange {
+    /// It is at the server. Nothing to do and nothing to say.
+    Done,
+    /// Kept here in the queue a Mark as Read made with changes off waits in.
+    KeptWaiting(Until),
+    /// Taken off again here.
+    PutBack(Because),
+}
+
+/// What a change calls for, from how the server answered.
+pub fn what_the_change_calls_for(_change: &AChange, _answer: Answered<'_>) -> ForTheChange {
+    ForTheChange::Done
+}
+
 /// What became of the changes the check told the server about.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Told {}
+
+impl Told {
+    /// Write down what one change of one message came to.
+    pub fn record(&mut self, _message: &Telling, _became: ForTheChange) {}
+
+    /// The clauses the folder's line says, one per kind of outcome that was
+    /// not done, each with its count.
+    pub fn clauses(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// What the folder's line says of a message a rule would have filed and that
+/// stayed where it arrived, because a change to it waits.
+pub fn left_where_it_arrived(_from: &str, _into: &str) -> String {
+    String::new()
+}
 
 #[cfg(test)]
 mod tests {
@@ -140,9 +199,36 @@ mod tests {
         highest_modseq: Option<u64>,
         /// Every STORE and MOVE, in the order asked.
         log: RefCell<Vec<String>>,
+        /// How every STORE is answered, when it is not taken.
+        refuses_a_store_with: Option<Refusal>,
+    }
+
+    /// The ways a change does not go.
+    #[derive(Debug, Clone, Copy)]
+    enum Refusal {
+        /// The server answered, and the answer was no.
+        SaidNo,
+        /// The connection went before anything came back.
+        Dropped,
+    }
+
+    impl Refusal {
+        fn as_error(self) -> crate::common::Error {
+            match self {
+                Refusal::SaidNo => crate::common::Error::Protocol("NO not today".into()),
+                Refusal::Dropped => crate::common::Error::Network("the connection went".into()),
+            }
+        }
     }
 
     impl AServerThatKeepsFlags {
+        fn refusing_a_store(self, refusal: Refusal) -> Self {
+            Self {
+                refuses_a_store_with: Some(refusal),
+                ..self
+            }
+        }
+
         fn holding(folder: &str, messages: &[(u32, &str, &[&str])]) -> Self {
             let held = messages
                 .iter()
@@ -157,6 +243,7 @@ mod tests {
                 folders: RefCell::new(BTreeMap::from([(folder.to_string(), held)])),
                 highest_modseq: None,
                 log: RefCell::new(Vec::new()),
+                refuses_a_store_with: None,
             }
         }
 
@@ -294,6 +381,9 @@ mod tests {
             self.log
                 .borrow_mut()
                 .push(format!("STORE {sign}{flag} on {uid} in {folder}"));
+            if let Some(refusal) = self.refuses_a_store_with {
+                return Err(refusal.as_error());
+            }
             let mut folders = self.folders.borrow_mut();
             if let Some(message) = folders
                 .get_mut(folder)
@@ -653,5 +743,329 @@ mod tests {
                 message.starred
             );
         }
+    }
+
+    // ── What cannot go now waits here or comes back, and is said once ───────
+
+    fn not_allowed() -> crate::application::allowed::Allowed {
+        crate::application::allowed::Allowed::NOTHING
+    }
+
+    /// What the check's line says, as the status bar shows it.
+    fn said(done: &FolderSync) -> String {
+        crate::application::mail_sync::what_the_folder_sync_did(done)
+    }
+
+    /// The changes waiting to go for the account, as (row, which, to).
+    fn waiting(cache: &MessageCache) -> Vec<(i64, String, u32, bool)> {
+        cache
+            .flag_changes_waiting_for(THE_ACCOUNT)
+            .expect("the waiting changes read")
+            .into_iter()
+            .map(|change| {
+                (
+                    change.message_row_id,
+                    change.folder_path,
+                    change.uid,
+                    change.changed_to,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])]);
+        let engine = rules(&[("mark_as_read", None)]);
+
+        let done = a_check(&server, &cache, inbox, &engine, not_allowed());
+
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+        let row = the_row(&cache, inbox, 7);
+        assert!(row.read, "the rule's mark is not on the row here");
+        assert_eq!(waiting(&cache), [(row.id, "INBOX".to_string(), 7, true)]);
+        let line = said(&done);
+        assert!(
+            line.contains("1 change from your rules kept here until changing mail is allowed"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn test_with_changing_mail_off_a_rules_label_comes_off_again() {
+        // Nothing holds a label waiting, so a label the server cannot be told
+        // about now is taken off here and said, rather than left for the next
+        // check to take off unsaid.
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])]);
+        let engine = rules(&[("add_tag", Some("Money"))]);
+
+        let done = a_check(&server, &cache, inbox, &engine, not_allowed());
+
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+        let row = the_row(&cache, inbox, 7);
+        assert!(the_labels_on(&cache, row.id).is_empty());
+        let line = said(&done);
+        assert!(
+            line.contains("1 change from your rules put back because changing mail is not allowed"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn test_a_mark_the_server_refuses_is_put_back_here() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])])
+            .refusing_a_store(Refusal::SaidNo);
+        let engine = rules(&[("mark_as_read", None)]);
+
+        let done = a_check(&server, &cache, inbox, &engine, allowed());
+
+        assert!(
+            !the_row(&cache, inbox, 7).read,
+            "a refused mark stayed here"
+        );
+        assert!(
+            waiting(&cache).is_empty(),
+            "a refused mark was kept waiting"
+        );
+        let line = said(&done);
+        assert!(
+            line.contains("1 change from your rules put back because the mail server said no"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved() {
+        // A move made while its mark waits would leave the waiting mark naming
+        // a number the folder no longer holds, 688's shape (D6).
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])])
+            .refusing_a_store(Refusal::Dropped);
+        let engine = rules(&[("mark_as_read", None), ("move_to_folder", Some("Invoices"))]);
+
+        let done = a_check(&server, &cache, inbox, &engine, allowed());
+
+        assert_eq!(
+            server.the_log(),
+            [format!("STORE +{SEEN} on 7 in INBOX")],
+            "the message was moved while its mark waits"
+        );
+        let row = the_row(&cache, inbox, 7);
+        assert!(row.read);
+        assert_eq!(waiting(&cache), [(row.id, "INBOX".to_string(), 7, true)]);
+        assert_eq!(
+            done.filtered.could_not_be_filed,
+            [left_where_it_arrived("Inbox", "Invoices")]
+        );
+        let line = said(&done);
+        assert!(
+            line.contains(
+                "1 change from your rules kept here until the mail server can be reached"
+            ),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn test_a_label_the_server_could_not_be_asked_about_comes_off_again() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])])
+            .refusing_a_store(Refusal::Dropped);
+        let engine = rules(&[("add_tag", Some("Money"))]);
+
+        let done = a_check(&server, &cache, inbox, &engine, allowed());
+
+        let row = the_row(&cache, inbox, 7);
+        assert!(the_labels_on(&cache, row.id).is_empty());
+        assert!(
+            waiting(&cache).is_empty(),
+            "a label was kept in the flag queue"
+        );
+        let line = said(&done);
+        assert!(
+            line.contains(
+                "1 change from your rules put back because the mail server could not be reached"
+            ),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn test_the_check_keeps_a_waiting_mark_over_what_the_server_says() {
+        // The server has not heard of a mark still waiting to go, so a check
+        // that wrote the server's flags as they came undid it (D5), and with
+        // it every Mark as Read made while changes were off.
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])]);
+        let engine = rules(&[("mark_as_read", None)]);
+        a_check(&server, &cache, inbox, &engine, not_allowed());
+
+        let next = a_check(&server, &cache, inbox, &engine, not_allowed());
+
+        assert!(
+            the_row(&cache, inbox, 7).read,
+            "the next check undid a mark still waiting to go"
+        );
+        assert_eq!(next.flags_updated, 0);
+    }
+
+    #[test]
+    fn test_a_server_that_answers_what_changed_since_keeps_a_waiting_mark_in_the_same_check() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Lunch", &[])])
+            .answering_what_changed_since();
+        let engine = rules(&[("mark_as_read", None)]);
+        a_check(&server, &cache, inbox, &engine, not_allowed());
+        server.and_then_receiving("INBOX", 8, "Invoice 4021");
+
+        a_check(&server, &cache, inbox, &engine, not_allowed());
+
+        assert!(
+            the_row(&cache, inbox, 8).read,
+            "the check that made the waiting mark undid it"
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_change_was_put_back_is_not_counted_as_sorted() {
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Invoice 4021", &[])])
+            .refusing_a_store(Refusal::SaidNo);
+        let engine = rules(&[("add_tag", Some("Money"))]);
+
+        let done = a_check(&server, &cache, inbox, &engine, allowed());
+
+        assert_eq!(
+            done.filtered.changed, 0,
+            "a message whose label was taken off again is counted as sorted"
+        );
+        assert!(
+            !said(&done).contains("sorted by your rules"),
+            "{}",
+            said(&done)
+        );
+    }
+
+    #[test]
+    fn test_what_each_change_calls_for() {
+        let said_no = crate::common::Error::Protocol("NO".into());
+        let dropped = crate::common::Error::Network("gone".into());
+        let the_gate = crate::common::Error::Security("off".into());
+        let label = AChange::Label {
+            keyword: "Money".into(),
+            tag_id: "tag-money".into(),
+            name: "Money".into(),
+        };
+        let reached = ForTheChange::KeptWaiting(Until::TheServerCanBeReached);
+        let allowed = ForTheChange::KeptWaiting(Until::ChangingMailIsAllowed);
+        let rows: Vec<(AChange, Answered<'_>, ForTheChange)> = vec![
+            (AChange::Read(true), Answered::Went, ForTheChange::Done),
+            (AChange::Read(true), Answered::NotDialled, allowed),
+            (AChange::Read(false), Answered::Failed(&dropped), reached),
+            (AChange::Read(true), Answered::Failed(&the_gate), allowed),
+            (
+                AChange::Read(true),
+                Answered::Failed(&said_no),
+                ForTheChange::PutBack(Because::TheServerSaidNo),
+            ),
+            (AChange::Flagged(true), Answered::Went, ForTheChange::Done),
+            (AChange::Flagged(false), Answered::NotDialled, allowed),
+            (AChange::Flagged(true), Answered::Failed(&dropped), reached),
+            (AChange::Flagged(true), Answered::Failed(&the_gate), allowed),
+            (
+                AChange::Flagged(true),
+                Answered::Failed(&said_no),
+                ForTheChange::PutBack(Because::TheServerSaidNo),
+            ),
+            (label.clone(), Answered::Went, ForTheChange::Done),
+            (
+                label.clone(),
+                Answered::NotDialled,
+                ForTheChange::PutBack(Because::ChangingMailIsNotAllowed),
+            ),
+            (
+                label.clone(),
+                Answered::Failed(&dropped),
+                ForTheChange::PutBack(Because::TheServerCouldNotBeReached),
+            ),
+            (
+                label.clone(),
+                Answered::Failed(&the_gate),
+                ForTheChange::PutBack(Because::ChangingMailIsNotAllowed),
+            ),
+            (
+                label,
+                Answered::Failed(&said_no),
+                ForTheChange::PutBack(Because::TheServerSaidNo),
+            ),
+        ];
+        for (change, answer, calls_for) in rows {
+            assert_eq!(
+                what_the_change_calls_for(&change, answer),
+                calls_for,
+                "{change:?} answered {answer:?}"
+            );
+        }
+    }
+
+    fn a_message_told(counted: bool) -> Telling {
+        Telling {
+            message_row: 1,
+            uid: 7,
+            changes: vec![AChange::Read(true)],
+            counted,
+        }
+    }
+
+    #[test]
+    fn test_the_clauses_say_each_count_and_reason_once_and_the_singular_right() {
+        let mut told = Told::default();
+        let message = a_message_told(true);
+        for became in [
+            ForTheChange::KeptWaiting(Until::ChangingMailIsAllowed),
+            ForTheChange::KeptWaiting(Until::ChangingMailIsAllowed),
+            ForTheChange::KeptWaiting(Until::ChangingMailIsAllowed),
+            ForTheChange::KeptWaiting(Until::TheServerCanBeReached),
+            ForTheChange::PutBack(Because::ChangingMailIsNotAllowed),
+            ForTheChange::PutBack(Because::TheServerCouldNotBeReached),
+            ForTheChange::PutBack(Because::TheServerSaidNo),
+            ForTheChange::PutBack(Because::TheServerSaidNo),
+            ForTheChange::Done,
+        ] {
+            told.record(&message, became);
+        }
+
+        let clauses = told.clauses();
+
+        assert_eq!(
+            clauses,
+            [
+                "3 changes from your rules kept here until changing mail is allowed",
+                "1 change from your rules kept here until the mail server can be reached",
+                "1 change from your rules put back because changing mail is not allowed",
+                "1 change from your rules put back because the mail server could not be reached",
+                "2 changes from your rules put back because the mail server said no",
+            ]
+        );
+        for clause in &clauses {
+            assert!(
+                !clause.contains("left alone"),
+                "a clause opens as the held-back one does: {clause}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_check_that_told_the_server_everything_says_nothing_more() {
+        let mut told = Told::default();
+        for _ in 0..3 {
+            told.record(&a_message_told(true), ForTheChange::Done);
+        }
+
+        assert!(told.clauses().is_empty(), "{:?}", told.clauses());
+        assert_eq!(told, Told::default(), "a change that went was written down");
     }
 }
