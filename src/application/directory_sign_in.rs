@@ -12,6 +12,9 @@
 //! name and saving forgets the password; a name with an empty password box
 //! keeps the one already saved. One rule, which the password box says in its
 //! description.
+//!
+//! A sign-in name for an address beginning `ldap://` is refused, in the
+//! lookup's own sentence, since the lookup never sends a password there.
 
 use crate::service::directory::{self, Directory};
 
@@ -95,6 +98,15 @@ pub fn what_the_window_keeps(
     let typed = Some(typed_password).filter(|typed| !typed.trim().is_empty());
     let password = match (sign_in_as.is_empty(), typed, a_password_is_saved) {
         (true, _, _) => PasswordChange::Forget,
+        // Over ldap:// a sign-in can never be used: the lookup refuses to
+        // send any password there. So whatever the password box holds, and
+        // whether one is saved, the address is what has to change.
+        (false, _, _) if directory::is_reached_without_encryption(address) => {
+            return Err(NotKept {
+                said: directory::no_password_is_sent_unencrypted_to(&the_name_it_goes_by(address)),
+                about: TheBox::Address,
+            });
+        }
         (false, Some(typed), _) => PasswordChange::Replace(typed.to_string()),
         (false, None, true) => PasswordChange::Keep,
         (false, None, false) => {
