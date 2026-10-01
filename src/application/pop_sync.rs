@@ -354,6 +354,16 @@ pub(crate) async fn sync<M: PopMailbox>(
     }
     // After what the rules said, not in place of it, as on the IMAP path.
     filtered.could_not_be_filed.extend(could_not);
+    // A rule's Delete, marked deleted here as it always was. A POP server
+    // keeps no Trash and nothing brings the message back, and the rules
+    // themselves write nothing for a delete since the IMAP check began
+    // sending it to the Trash at the server (13-44.3, D13).
+    for deleting in &filtered.to_delete {
+        match cache.delete_message(deleting.message_row) {
+            Ok(()) => filtered.changed += 1,
+            Err(why) => tracing::warn!("A rule could not delete a message here: {why}"),
+        }
+    }
 
     Ok(PopSync {
         fetched: written.len(),

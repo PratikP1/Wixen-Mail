@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 549 records have arrived since and have not been through it.
+# 553 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -5328,7 +5328,7 @@ red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
 ]
 
 # ── A subscription change nothing had ever sent ─────────────────────────────
@@ -12714,7 +12714,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 15 },
@@ -16503,11 +16503,14 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_label_the_server_could_not_be_asked_about_comes_off_again",
     "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
     "application::what_rules_tell_the_server::tests::test_what_each_change_calls_for",
+    # And task 3's: a rule's Delete is read through the waiting move's own
+    # answer, so a lost connection leaves it waiting in the menu's store.
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
 ]
 tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
     { file = "src/application/moves_waiting.rs", tests = 51 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -16564,7 +16567,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 5 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 7 },
 ]
 
 # ── What the sender said an attachment is ───────────────────────────────────
@@ -16802,7 +16805,7 @@ red = [
     "application::pop_sync::tests::test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
 ]
 
 # ── What a message says about its own form, and who is told ──────────────────
@@ -33660,7 +33663,7 @@ red = [
     "application::pop_sync::tests::test_a_check_says_a_rule_named_a_label_the_account_does_not_have",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 50 },
+    { file = "src/application/pop_sync.rs", tests = 51 },
 ]
 
 # A do-half that says something: Star's sentence said from inside the
@@ -36018,7 +36021,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 150 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 # A rule's mark sent whether or not the message arrived with it, so every
@@ -36038,7 +36041,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_what_the_server_is_told_is_only_what_the_rules_changed",
 ]
 tests_last_seen = [
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 # A rule's mark sent with mail changes off, so a rule writes at somebody's
@@ -36056,7 +36059,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 150 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 # A check writing the server's flags as they came over a mark still waiting
@@ -36074,7 +36077,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 150 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 # A change the server refused, or a label nothing can hold waiting, left on
@@ -36092,7 +36095,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
 ]
 tests_last_seen = [
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 # A message filed by its rule while its mark waits, so the waiting mark names
@@ -36109,5 +36112,88 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 150 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 18 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's Delete on arriving mail that never reaches the server, so the
+# message is gone here and still in the Inbox at the server, and the next
+# check on a server that cannot say only what changed brings it back (D10,
+# premise 11 (c)). Written 2026-10-01 by 13-44.3, taken by hand against the
+# whole library first. The census reading in
+# tests/nothing_sends_a_flag_change_unasked.rs goes red under the same break;
+# it is a suite of its own, so it is not named.
+[[guard]]
+name = "a rule's delete reaches the server's trash in the check that brought the message"
+file = "src/application/mail_sync.rs"
+before = '''    let (deleted, not_deleted) = carry_out_the_deletes(
+        controller,
+        cache,
+        folder,
+        folder_id,
+        &filtered.to_delete,
+        &mut filtered.told,
+    )
+    .await;'''
+after = '''    let (deleted, not_deleted): (usize, Vec<String>) = (0, Vec::new());'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rule_that_deletes_on_arrival_sends_the_message_to_the_trash_at_the_server",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_on_an_account_with_no_trash_deletes_nothing_and_says_why",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+    "application::what_rules_tell_the_server::tests::test_the_next_check_does_not_bring_back_a_message_a_rule_deleted",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's Delete the server could not be asked about put back rather than
+# left waiting in the menu's store, so a message a rule deleted on a train
+# is back in the Inbox and the next check sends nothing (D11). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+[[guard]]
+name = "a rule's delete the server could not be asked about waits in the menu's queue"
+file = "src/application/what_rules_tell_the_server.rs"
+before = '''        (Replayed::NotReached, _) => ForTheChange::KeptWaiting(Until::TheServerCanBeReached),'''
+after = '''        (Replayed::NotReached, _) => ForTheChange::PutBack(Because::TheServerCouldNotBeReached),'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    "application::what_rules_tell_the_server::tests::test_what_a_rules_delete_calls_for",
+]
+tests_last_seen = [
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A rule's Delete the server or this computer's gate refused, left in the
+# Trash here while the server still holds the message in the Inbox (D11,
+# T-13-44.3-07). Written 2026-10-01 by 13-44.3, taken by hand against the
+# whole library first.
+[[guard]]
+name = "a rule's delete the server refused is put back where it arrived"
+file = "src/application/mail_sync.rs"
+before = '''                if let Err(why) = undo_here(cache, &made.kept) {'''
+after = '''                if let Err(why) = Ok::<(), Error>(()) {'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+]
+
+# A POP rule's Delete that does nothing at all, now that the rules write
+# nothing for a delete and each check carries its deletes out (D13). Written
+# 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+[[guard]]
+name = "a POP rule's delete still marks the message deleted here"
+file = "src/application/pop_sync.rs"
+before = '''        match cache.delete_message(deleting.message_row) {'''
+after = '''        match Ok::<(), crate::common::Error>(()) {'''
+red = [
+    "application::pop_sync::tests::test_a_pop_rule_that_deletes_still_marks_the_message_deleted_here",
+]
+tests_last_seen = [
+    { file = "src/application/pop_sync.rs", tests = 51 },
 ]

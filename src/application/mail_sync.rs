@@ -12,6 +12,7 @@
 
 use crate::application::finding_what_was_deleted;
 use crate::application::mail_controller::MailController;
+use crate::application::moves_waiting::ReplaysAMove;
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result, types::FolderType};
 use crate::data::message_cache::{
@@ -1111,6 +1112,15 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
                 into,
             });
         }
+        // A delete is named the same way and carried out by the check, which
+        // has the session, through the gated delete the menu's Delete uses
+        // (D10, D11), or by a POP check here (D13).
+        if outcome.delete {
+            done.to_delete.push(ToBeDeleted {
+                message_row: message.id,
+                uid: message.uid,
+            });
+        }
         // Read before the writes, so the labels the rules put on are the ones
         // the message did not carry already: only those are news to the server.
         let labels_before = the_labels_on_it(cache, &message, &outcome);
@@ -1123,6 +1133,9 @@ pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i
             // it read and another filed it, and counting it here alone
             // reported a move the server went on to refuse as done.
             Ok(Carried::ExceptTheMove) => {}
+            // Counted by the check that carries the delete out, once it has
+            // happened, for the same reason as a move.
+            Ok(Carried::ExceptTheDelete) => {}
             // Said as well as logged, the way a folder a rule names and the
             // account lacks is. Label names and nothing from the message.
             Ok(Carried::NotTheLabels(said)) => {
@@ -1205,10 +1218,9 @@ fn carry_out(
 ) -> Result<Carried> {
     let id = message.id;
     if outcome.delete {
-        // Locally. Taking it off the server is the move-to-trash path, which
-        // is somebody's own deliberate action rather than a rule's.
-        cache.delete_message(id)?;
-        return Ok(Carried::Everything);
+        // Nothing here: a delete is carried out by the check that brought the
+        // message, to the Trash at the server, or by a POP check here.
+        return Ok(Carried::ExceptTheDelete);
     }
     if outcome.read.is_some() || outcome.starred.is_some() {
         cache.update_message_flags(
@@ -1265,6 +1277,10 @@ pub(crate) enum Carried {
     /// [`carry_out_the_moves`] and is counted there, once, when it has really
     /// happened.
     ExceptTheMove,
+    /// Nothing, because the rules delete the message, which the check that
+    /// brought it carries out and counts: [`carry_out_the_deletes`], or a POP
+    /// check here.
+    ExceptTheDelete,
     /// A label the rules named is not one the account has, one sentence each.
     ///
     /// Everything else was done, and the message is not counted here: the
@@ -1364,6 +1380,141 @@ async fn carry_out_the_moves<M: Mailbox>(
         done += 1;
     }
     (done, could_not)
+}
+
+/// Carry out the deletes the rules asked for, and say how many happened.
+///
+/// Through the gated delete the menu's Delete uses, part by part (D10, D11):
+/// where it goes from [`crate::application::destinations::where_a_deleted_message_goes`],
+/// the row into the Trash here and the delete kept in the store the menu's
+/// Delete waits in through [`crate::application::moves_waiting::what_happens_here`],
+/// the send on this check's own session through the replay's own step,
+/// [`crate::application::moves_waiting::replay_one`], and a refusal undone
+/// through [`crate::application::moves_waiting::undo_here`]. A server that
+/// could not be reached leaves the rest made here and waiting, unsent, for
+/// the next check's replay before any folder is read.
+///
+/// To the Trash and never off the server: a message already in the Trash is
+/// left where it is with nothing sent and nothing said, and an account whose
+/// Trash is not known deletes nothing and says the menu's own sentence (D12).
+/// Held as a push under way for the account while it runs, as the replay is,
+/// so an undo does not end a row this is about to settle.
+async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(
+    controller: &M,
+    cache: &MessageCache,
+    from: &ImapFolder,
+    from_id: i64,
+    deletes: &[ToBeDeleted],
+    told: &mut crate::application::what_rules_tell_the_server::Told,
+) -> (usize, Vec<String>) {
+    use crate::application::destinations::{
+        DeletedGoesTo, Deleting, NO_FOLDERS_KNOWN_YET, NO_TRASH_FOLDER_FOUND,
+        where_a_deleted_message_goes,
+    };
+    use crate::application::moves_waiting::{
+        APushUnderWay, NotMadeHere, replay_one, undo_here, what_happens_here,
+    };
+    use crate::application::what_rules_tell_the_server::{
+        ForTheChange, what_a_rules_delete_calls_for,
+    };
+    if deletes.is_empty() {
+        return (0, Vec::new());
+    }
+    let one_each = |sentence: String| vec![sentence; deletes.len()];
+    let account_id = match cache.account_of_folder(from_id) {
+        Ok(Some(account_id)) => account_id,
+        Ok(None) => {
+            return (
+                0,
+                one_each(nothing_deleted(&from.name, "it belongs to no account")),
+            );
+        }
+        Err(why) => return (0, one_each(nothing_deleted(&from.name, &why))),
+    };
+    let folders = match cache.get_folders_for_account(&account_id) {
+        Ok(folders) => folders,
+        Err(why) => return (0, one_each(nothing_deleted(&from.name, &why))),
+    };
+    let trash = match where_a_deleted_message_goes(
+        folders.iter().map(|folder| {
+            (
+                folder.path.as_str(),
+                FolderType::from_stored(&folder.folder_type),
+            )
+        }),
+        &from.path,
+        Deleting::ToTrash,
+    ) {
+        DeletedGoesTo::TheTrash(trash) => trash.to_string(),
+        DeletedGoesTo::OffTheServer => return (0, Vec::new()),
+        DeletedGoesTo::NoTrashFolderFound => return (0, one_each(NO_TRASH_FOLDER_FOUND.into())),
+        DeletedGoesTo::NoFoldersKnownYet => return (0, one_each(NO_FOLDERS_KNOWN_YET.into())),
+    };
+    let _under_way = APushUnderWay::begins(&account_id);
+    let mut done = 0;
+    let mut could_not = Vec::new();
+    let mut the_server_answers = true;
+    for deleting in deletes {
+        let asked = crate::data::message_cache::moves_waiting::AWaitingMove {
+            message_row_id: deleting.message_row,
+            account_id: account_id.clone(),
+            from_folder_path: from.path.clone(),
+            uid: deleting.uid,
+            what: crate::data::message_cache::moves_waiting::WhatAWaitingMoveDoes::DeleteToTrash {
+                trash_path: trash.clone(),
+            },
+            asked_at: chrono::Utc::now().to_rfc3339(),
+        };
+        // No subject: the line it shows is the menu's, for the eye at the
+        // key, and a check says nothing per message (D7).
+        let made = match what_happens_here(cache, &asked, "") {
+            Ok(made) => made,
+            Err(NotMadeHere::RefusedInWords(words)) => {
+                could_not.push(words);
+                continue;
+            }
+            // A change the store will not record is not sent: a rule runs
+            // with nobody at the key to ask the server first (D12).
+            Err(NotMadeHere::CouldNotBeRecorded(why)) => {
+                could_not.push(nothing_deleted(&from.name, &why));
+                continue;
+            }
+        };
+        if !the_server_answers {
+            told.count(ForTheChange::KeptWaiting(
+                crate::application::what_rules_tell_the_server::Until::TheServerCanBeReached,
+            ));
+            continue;
+        }
+        let became = match replay_one(controller, cache, &made.kept).await {
+            Ok((replayed, failed)) => what_a_rules_delete_calls_for(&replayed, failed),
+            Err(why) => {
+                could_not.push(format!(
+                    "A message a rule deleted went to {trash} at the server but not here yet: {why}"
+                ));
+                continue;
+            }
+        };
+        match became {
+            ForTheChange::Done => done += 1,
+            ForTheChange::KeptWaiting(_) => the_server_answers = false,
+            ForTheChange::PutBack(_) => {
+                if let Err(why) = undo_here(cache, &made.kept) {
+                    tracing::warn!("A rule's refused delete could not be put back here: {why}");
+                }
+            }
+        }
+        told.count(became);
+    }
+    (done, could_not)
+}
+
+/// What to say when a rule's delete was not even tried, naming the folder
+/// and the reason.
+fn nothing_deleted(folder: &str, why: &(impl std::fmt::Display + ?Sized)) -> String {
+    format!(
+        "A rule would have moved a message in {folder} to the Trash, and nothing was done: {why}"
+    )
 }
 
 /// Tell the server what the rules changed here, on the check's own session.
@@ -1572,7 +1723,7 @@ fn copied_and_the_original_left(from: &str, into: &str, why: &str) -> String {
     )
 }
 
-pub(crate) async fn sync_folder<M: Mailbox>(
+pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(
     controller: &M,
     cache: &MessageCache,
     folder: &ImapFolder,
@@ -1770,6 +1921,23 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // does not have is said by `apply_rules`, and an assignment here dropped
     // it before anybody heard it.
     filtered.could_not_be_filed.extend(could_not);
+    // What the rules deleted, to the account's Trash at the server through
+    // the menu's own delete path, after the moves and before the flag read
+    // (D10, D11), so the read finds the message already gone from here.
+    let (deleted, not_deleted) = carry_out_the_deletes(
+        controller,
+        cache,
+        folder,
+        folder_id,
+        &filtered.to_delete,
+        &mut filtered.told,
+    )
+    .await;
+    filtered.changed += deleted;
+    for reason in &not_deleted {
+        tracing::warn!("A rule could not delete a message: {reason}");
+    }
+    filtered.could_not_be_filed.extend(not_deleted);
 
     // Messages already held, whose flags may have changed elsewhere. The
     // header fetch above only asks about messages this cache does not have, so
@@ -3898,7 +4066,7 @@ pub(crate) mod tests {
         (cache, folder_id, folder)
     }
 
-    fn run<M: Mailbox>(
+    fn run<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,
@@ -3909,7 +4077,7 @@ pub(crate) mod tests {
 
     /// The same sync with a smaller first look, so a test can put a message on
     /// the server that this round will not download.
-    fn run_limited<M: Mailbox>(
+    fn run_limited<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,
@@ -3924,7 +4092,7 @@ pub(crate) mod tests {
     /// What a test about a sync that should fail needs, and there was no way to
     /// write one before: every helper here unwrapped, so a sync that refused
     /// could only be asserted by a panic.
-    fn attempt<M: Mailbox>(
+    fn attempt<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,
@@ -3942,7 +4110,7 @@ pub(crate) mod tests {
     }
 
     /// The same sync, told what the caller is asking it for.
-    fn for_a_sync_that<M: Mailbox>(
+    fn for_a_sync_that<M: Mailbox + ReplaysAMove>(
         server: &M,
         cache: &MessageCache,
         id: i64,

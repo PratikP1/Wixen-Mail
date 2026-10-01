@@ -218,11 +218,27 @@ pub fn what_the_change_calls_for(change: &AChange, answer: Answered<'_>) -> ForT
 
 /// What a rule's Delete calls for, from what the menu's replay answered and
 /// how the failure was read when there was one.
+///
+/// The menu's replay already decides what its answer means, in
+/// [`crate::application::moves_waiting::what_a_replay_answered`]; this only
+/// says it in the words the folder's line uses. A server never reached leaves
+/// the delete waiting in the menu's store, for the next check's replay, and a
+/// refusal is put back, by this computer's gate or by the server, since a
+/// waiting delete would stop the account's check (D11).
 pub fn what_a_rules_delete_calls_for(
-    _replayed: &Replayed,
-    _failed: Option<WhyThePushFailed>,
+    replayed: &Replayed,
+    failed: Option<WhyThePushFailed>,
 ) -> ForTheChange {
-    ForTheChange::Done
+    match (replayed, failed) {
+        (Replayed::Done | Replayed::AlreadyDone | Replayed::DoneWithSomethingToSay(_), _) => {
+            ForTheChange::Done
+        }
+        (Replayed::NotReached, _) => ForTheChange::KeptWaiting(Until::TheServerCanBeReached),
+        (Replayed::Refused(_), Some(WhyThePushFailed::ThisComputerRefusedIt)) => {
+            ForTheChange::PutBack(Because::ChangingMailIsNotAllowed)
+        }
+        (Replayed::Refused(_), _) => ForTheChange::PutBack(Because::TheServerSaidNo),
+    }
 }
 
 /// Do here what one change calls for: keep it in the queue, or put it back
@@ -301,7 +317,15 @@ impl Told {
         {
             rows.push(message.message_row);
         }
-        *self.came_to.entry(became).or_default() += 1;
+        self.count(became);
+    }
+
+    /// Count one change's outcome for the folder's line, a rule's Delete
+    /// among them.
+    pub fn count(&mut self, became: ForTheChange) {
+        if became != ForTheChange::Done {
+            *self.came_to.entry(became).or_default() += 1;
+        }
     }
 
     /// The clauses the folder's line says, one per kind of outcome that was

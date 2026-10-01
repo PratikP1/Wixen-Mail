@@ -593,7 +593,7 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
         if waiting.what.crosses_to().is_some() {
             continue;
         }
-        let what_it_means = replay_one(server, cache, &waiting).await?;
+        let (what_it_means, _) = replay_one(server, cache, &waiting).await?;
         let reached = what_it_means != Replayed::NotReached;
         replayed.push((waiting, what_it_means));
         if !reached {
@@ -610,11 +610,16 @@ pub(crate) async fn replay_the_moves_waiting_for<S: ReplaysAMove>(
 /// server holds the message now and ends the wait; a refusal is handed back
 /// with its reason and the undo is the caller's; a server that could not be
 /// reached leaves the row waiting.
+///
+/// Beside the answer, how [`why_the_push_failed`] read the failure when there
+/// was one, so a caller that says why a change came back can tell this
+/// computer's gate from the server's no: a rule's Delete on arriving mail
+/// (13-44.3, D11).
 pub(crate) async fn replay_one<S: ReplaysAMove>(
     server: &S,
     cache: &MessageCache,
     waiting: &AWaitingMove,
-) -> Result<Replayed> {
+) -> Result<(Replayed, Option<WhyThePushFailed>)> {
     let from = waiting.from_folder_path.as_str();
     // The marks the move carries go first, on this session, while the
     // folder still holds the message under this number (ledger 688). A
@@ -669,7 +674,8 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
         // undoes it then.
         Replayed::Refused(_) | Replayed::NotReached => {}
     }
-    Ok(what_it_means)
+    let failed = answer.as_ref().err().map(why_the_push_failed);
+    Ok((what_it_means, failed))
 }
 
 /// Send the marks a waiting move carries, if it carries any, from the
