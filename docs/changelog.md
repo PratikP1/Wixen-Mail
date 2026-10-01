@@ -26,9 +26,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   changes at most 5,000 messages and says so; running it again changes the rest. What the
   count costs on a large folder is on the measurements page. The version does not move for
   this: no build has been cut since 1.0.0-alpha.1. Known limitations: no rule run has met a
-  real mail server, nobody has yet heard the chooser, the question and the sentence after it
-  as one act, and the folder list in the Filter Manager names folders by the path the server
-  spells, so a name in another alphabet may read as the server encodes it.
+  real mail server, and nobody has yet heard the chooser, the question and the sentence after
+  it as one act.
 - **Quick Steps: several actions under one name, run over the selected messages by a key or
   from the menu (#60, GAP-11).** #60 asked for steps "run on demand over the selected
   messages", with "a bound key from a small reserved range" and "the announcement naming the
@@ -291,9 +290,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   sentence gives the count and says to search for the sender and use Move to. With mail
   changes off nothing is asked and the sentence says the messages stay. Everyone at This
   Domain has no key. The version does not move for this: no build has been cut since
-  1.0.0-alpha.1. Known limitations: the move has never been run against a real mail server;
-  nobody has listened to the question by hand; and a block uses the account you have open,
-  which in All Inboxes may not be the account the message came to.
+  1.0.0-alpha.1. Known limitations: the move has never been run against a real mail server,
+  and nobody has listened to the question by hand.
 - **Report as Junk, experimental (#54's first point, GAP-06).** Action, Report as Junk, on
   `Ctrl+Shift+J` and `J` on the Action menu, moves every selected message to its account's
   junk folder and says one sentence per account about what the provider was told. On a mail
@@ -310,8 +308,7 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   preview interface it does not support in production and needs a permission to read and
   change all your mail, so the sentence says Microsoft has not been told; nothing here has
   met a real mail server, so whether a server keeps the mark and whether Gmail counts the move
-  are not known; and Undo takes the messages back out of the junk folder and leaves a junk
-  mark already set on them.
+  are not known.
 - **Sign and Encrypt in the composer, experimental (#52 points 4 and 5, GAP-05).** Two check
   boxes sit beside Send and Schedule, Sign (experimental) on `Alt+G` and Encrypt
   (experimental) on `Alt+Y`, and both keys work from inside the message, where the new state
@@ -661,6 +658,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Undo after Report as Junk takes the junk mark off at the server, experimental (#54,
+  GAP-06, ledger 677).** Until now `Ctrl+Z` after a report moved the messages back out of the
+  junk folder and left the junk mark on them at the server, so a server that learns from the
+  mark still counted them as junk. Where the report set the mark, Undo now takes it off and
+  puts the not-junk mark on, through the same permission-checked write the report used, and
+  only then moves the messages back, so the two cannot reach the server in the wrong order.
+  At the key you hear "Undo"; once the server has answered, one sentence says what happened,
+  for example "Undid Report as Junk on Quarterly report. The server was told it is not
+  junk.", or why the mark could not be taken off. The Edit menu names the step "Undo Report
+  as Junk". `Ctrl+Y` reports the messages again: the mark goes back on, then they return to
+  the junk folder. On Gmail, and on a server that keeps no junk mark, nothing is sent and
+  Undo only moves them back. The version does not move for this: no build has been cut since
+  1.0.0-alpha.1. Known limitations: nothing here has met a real mail server, and nobody has
+  listened to the menu, the word at the key or the sentence after it.
 - **The Outbox sends every account's waiting mail, not only the open account's.** Since the
   From list chooses the account a message goes out through, a message can wait in the Outbox
   of an account you do not have open. Send, Send Queued Mail, going back online and a hold
@@ -1128,6 +1139,17 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A block goes to the account the message is in (#54, GAP-06, ledger 691).** Block This
+  Sender and Everyone at This Domain wrote the block, counted the mail already here and moved
+  it in the account you had open, which in All Inboxes may not be the account the message came
+  to. They now use the message's own account, found the way Report as Junk finds it, and a
+  message in no account this program knows about is refused in a sentence. Not yet tried on
+  a real mail server.
+- **Run on a Folder lists folders by their names (ledger 752).** The Filter Manager's Run on a
+  Folder listed each folder by the path the server uses, so a folder named in another alphabet
+  could read as the server's encoding of it. Each folder is now listed by the name the folder
+  tree shows, after the folders it sits in, such as "Work / Projects", and the folder run is
+  still the one the server knows.
 - **A repeating meeting you answer stays a repeating meeting on your calendar (ledger
   723).** Answering a repeating meeting put one appointment on your calendar, and for a
   meeting your calendar server held, the next sync would have sent the server the meeting

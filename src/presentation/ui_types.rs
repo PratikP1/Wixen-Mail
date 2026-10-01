@@ -734,6 +734,22 @@ pub enum UIUpdate {
     /// arm moves them through Move's own path, which is gated and made here
     /// first, and says the report's one sentence in place of Move's.
     ReportedAsJunk(crate::application::reporting_junk::ReadyToMove),
+    /// The junk mark was taken off, for an undo of a report, or set again,
+    /// for a redo, at the account's server, and the moved step is ready to be
+    /// carried out (13-44.1).
+    ///
+    /// Sent by the worker once the server has answered, so the mark changes
+    /// before the messages move, as the report marks before it moves. The arm
+    /// carries the step out with the answer kept on it and words what the
+    /// server was told after the step's sentence.
+    TheJunkMarkChanged {
+        direction: crate::application::undoing::Direction,
+        action: crate::application::undoing::LastAction,
+        answer: crate::application::reporting_junk::Marked,
+        /// How many messages the server was asked about, which says whether
+        /// the sentence says "it" or "they".
+        how_many: usize,
+    },
     /// A block was made and the mail already here it catches was counted on
     /// a worker (13-25). The arm asks once whether to move it, moves it
     /// through the one runner when told to, and says what blocking did.

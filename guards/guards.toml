@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 535 records have arrived since and have not been through it.
+# 540 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -675,8 +675,15 @@ red = [
     # 13-22's sentence for one reported message counts through `how_many`,
     # in a file this record had never named.
     "application::reporting_junk::tests::test_one_message_is_said_in_the_singular",
+    # Added 2026-10-01 by 13-44.1, found by --remeasure rather than predicted:
+    # the runner's sentence for one message and a Quick Step's sentence both
+    # count through `how_many`, in files this record had never named, written
+    # by 13-24.1 and 13-42.
+    "application::acting_on_a_set::tests::test_one_message_is_said_in_the_singular",
+    "application::quick_steps::tests::test_what_a_step_did_is_its_name_and_what_was_done",
 ]
 tests_last_seen = [
+    { file = "src/application/acting_on_a_set.rs", tests = 24 },
     { file = "src/application/bringing_everything_down.rs", tests = 23 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/choosing_messages.rs", tests = 18 },
@@ -685,9 +692,10 @@ tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
-    { file = "src/application/reporting_junk.rs", tests = 21 },
+    { file = "src/application/quick_steps.rs", tests = 27 },
+    { file = "src/application/reporting_junk.rs", tests = 29 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 170 },
@@ -13296,7 +13304,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying.rs", tests = 23 },
-    { file = "src/application/folders_underneath.rs", tests = 13 },
+    { file = "src/application/folders_underneath.rs", tests = 15 },
 ]
 
 [[guard]]
@@ -31226,7 +31234,7 @@ red = [
     "application::undoing::tests::test_undoing_mark_as_read_over_a_mixed_set_puts_back_each_messages_own_state",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
 ]
 
 # A set named by its first message's subject, so "Undo Mark as Read" over four
@@ -31249,7 +31257,7 @@ red = [
     "application::undoing::tests::test_what_could_not_come_back_is_said_once_with_the_count",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
 ]
 
 # The undo of a move in the window letting a waiting change go without
@@ -31314,9 +31322,12 @@ red = [
     "application::undoing::tests::test_undoing_a_move_the_server_has_not_heard_ends_the_waiting_row_rather_than_moving_back",
     "application::undoing::tests::test_undoing_a_delete_to_the_trash_moves_it_back_from_the_trash",
     "application::undoing::tests::test_delete_permanently_still_waiting_comes_back",
+    # Added 2026-10-01 by 13-44.1: an undone report still waiting from its
+    # own folder is ended here the same way, and its case says so.
+    "application::undoing::tests::test_undoing_a_report_decides_each_message_as_a_move_does",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
 ]
 
 # An undone copy deleted off the server outright rather than sent to the
@@ -31332,7 +31343,7 @@ red = [
     "application::undoing::tests::test_undoing_a_copy_sends_the_copy_to_the_trash",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
 ]
 
 # A move to another account let through to an undo, which would send the
@@ -31357,7 +31368,7 @@ red = [
     "application::undoing::tests::test_what_could_not_come_back_is_said_once_with_the_count",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
 ]
 
 # Mark as Read remembering an action before its writes, so a write the cache
@@ -31455,7 +31466,7 @@ red = [
     "application::undoing::tests::test_undoing_a_deleted_task_puts_back_every_field_it_had",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
 ]
 
 # The undo of a copy aimed at the original, which would delete the item
@@ -31474,7 +31485,7 @@ red = [
     "application::undoing::tests::test_undoing_a_copy_removes_the_copy_only",
 ]
 tests_last_seen = [
-    { file = "src/application/undoing.rs", tests = 30 },
+    { file = "src/application/undoing.rs", tests = 35 },
 ]
 
 # A take-back that drops the deletion note before its transaction begins, so
@@ -33509,7 +33520,7 @@ red = [
     "application::reporting_junk::tests::test_a_server_that_keeps_keywords_has_not_junk_taken_off_before_junk_goes_on",
 ]
 tests_last_seen = [
-    { file = "src/application/reporting_junk.rs", tests = 21 },
+    { file = "src/application/reporting_junk.rs", tests = 29 },
 ]
 
 # The mark goes to the message in the folder its number belongs to, so the
@@ -33530,7 +33541,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 22 },
 ]
 
 # A report's sentence says what the provider was told; dropped, the move
@@ -33556,7 +33567,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 14 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 22 },
 ]
 
 # A rule stores its label by name and a message's labels are keyed on the
@@ -33848,7 +33859,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 17 },
 ]
 
 # A block reads every message the account holds on the window's thread, so
@@ -33872,7 +33883,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 15 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 17 },
 ]
 
 # A continuation reference kept among the entries, so `construct` panics on
@@ -35765,4 +35776,124 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 22 },
+]
+
+# Undo after Report as Junk takes $Junk off before $NotJunk goes on, the
+# marking's mirror, so no message carries both for a moment, or for good
+# if the second write fails (ledger 677). Written 2026-10-01 by 13-44.1,
+# measured through `scripts/guards.sh --remeasure` against the library.
+[[guard]]
+name = "undoing a report takes the junk mark off before it puts the not-junk mark on"
+file = "src/application/reporting_junk.rs"
+before = """        server.set_flag(folder, *uid, JUNK, false).await?;
+        server.set_flag(folder, *uid, NOT_JUNK, true).await?;"""
+after = """        server.set_flag(folder, *uid, NOT_JUNK, true).await?;
+        server.set_flag(folder, *uid, JUNK, false).await?;"""
+red = [
+    "application::reporting_junk::tests::test_taking_the_mark_off_takes_junk_off_before_not_junk_goes_on",
+]
+tests_last_seen = [
+    { file = "src/application/reporting_junk.rs", tests = 29 },
+]
+
+# An undo asking the server about the mark after a report that never set
+# one would put $NotJunk on a message the report never marked (D4,
+# T-13-44.1-04). Written 2026-10-01 by 13-44.1, measured through
+# `scripts/guards.sh --remeasure` against the library.
+[[guard]]
+name = "an undo asks the server about the mark only where the report may have left one"
+file = "src/application/reporting_junk.rs"
+before = """    matches!(marked, Marked::Kept | Marked::Failed(_))"""
+after = """    matches!(marked, Marked::Kept | Marked::Failed(_) | Marked::NotAsked)"""
+red = [
+    "application::reporting_junk::tests::test_the_server_is_asked_about_the_mark_only_where_the_report_may_have_left_one",
+]
+tests_last_seen = [
+    { file = "src/application/reporting_junk.rs", tests = 29 },
+]
+
+# Undo of a report moved back at the key, with no mark worker before it, so
+# $Junk stays on the messages at the server, or reaches it in either order
+# against the move (ledger 677, D3, T-13-44.1-02). The break takes the
+# report's branch out as text, since a condition made false would leave the
+# text a reading reads unchanged. Written 2026-10-01 by 13-44.1, measured
+# through `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "an undo of a report whose mark may be on goes to the mark worker before anything moves back"
+file = "src/presentation/wx_app.rs"
+suite = "report_as_junk_is_on_the_action_menu"
+before = '''        if let Moving::Reported { marked, .. } = &moving
+            && a_mark_may_be_on(marked)
+            && let Some((account, places)) =
+                where_a_reports_mark_is_changed(app.state, cache, direction, &went)
+        {
+            say_the_one_word(
+                a11y,
+                match direction {
+                    Direction::Undo => "Undo",
+                    Direction::Redo => "Redo",
+                },
+            );
+            spawn_the_junk_mark_change(
+                app,
+                account,
+                direction,
+                LastAction::Moved { moving, went },
+                places,
+            );
+            return;
+        }
+'''
+after = ''''''
+red = [
+    "test_an_undo_of_a_report_goes_to_the_mark_worker_before_anything_moves_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/report_as_junk_is_on_the_action_menu.rs", tests = 22 },
+]
+
+# A block written to the account that is open rather than the one the
+# message is in, so in All Inboxes the rule, the junk folder and the mail
+# it moves belong to another account (ledger 691, D2, T-13-44.1-06).
+# Written 2026-10-01 by 13-44.1, measured through `scripts/guards.sh
+# --remeasure` against the target.
+[[guard]]
+name = "a block is written to the account the message is in"
+file = "src/presentation/wx_app.rs"
+suite = "a_block_moves_the_mail_already_here"
+before = '''        let account = message.as_ref().and_then(|message| {
+            owner_of(
+                &held.messages,
+                &held.accounts,
+                message.message_id,
+                held.active_account_id.as_deref(),
+            )
+        });'''
+after = '''        let account = held
+            .active_account_id
+            .clone()
+            .and_then(|open| held.accounts.iter().find(|held| held.id == open).cloned());'''
+red = [
+    "test_a_block_is_written_to_the_account_the_message_is_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_block_moves_the_mail_already_here.rs", tests = 17 },
+]
+
+# Run on a Folder listing a folder by the path the server spells, so a name
+# in another alphabet reads as modified UTF-7 and a nested one with the
+# server's separator (ledger 752). Written 2026-10-01 by 13-44.1, measured
+# through `scripts/guards.sh --remeasure` against the library.
+[[guard]]
+name = "Run on a Folder lists each folder by its names, never the server's path"
+file = "src/application/folders_underneath.rs"
+before = '''    let mut names = vec![folder.name.as_str()];'''
+after = '''    let mut names = vec![folder.path.as_str()];'''
+red = [
+    "application::folders_underneath::tests::test_run_on_a_folder_lists_each_folder_by_the_names_the_tree_shows",
+]
+tests_last_seen = [
+    { file = "src/application/folders_underneath.rs", tests = 15 },
 ]

@@ -54,6 +54,7 @@
 //! comes back as a new item there, and says so.
 
 use crate::application::new_item::ItemKind;
+use crate::application::reporting_junk::Marked;
 use crate::common::types::PimModule;
 use crate::data::message_cache::moves_waiting::AWaitingMove;
 use crate::data::message_cache::taking_back::Record;
@@ -208,15 +209,42 @@ impl LastAction {
             all => how_many(all.len(), "message"),
         }
     }
+
+    /// A move into the junk folder remembered as the report it was, carrying
+    /// the server's latest answer about the mark, so Undo knows whether to ask
+    /// the server to take it off (13-44.1). Anything else comes back as it was.
+    pub fn as_a_report(self, marked: Marked) -> LastAction {
+        match self {
+            LastAction::Moved {
+                moving: Moving::Move { to } | Moving::Reported { to, .. },
+                went,
+            } => LastAction::Moved {
+                moving: Moving::Reported { to, marked },
+                went,
+            },
+            other => other,
+        }
+    }
 }
 
 /// What a move, a delete or a copy did to the set, which is what names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Moving {
-    Move { to: String },
+    Move {
+        to: String,
+    },
     Delete,
     DeletePermanently,
-    Copy { to: String },
+    Copy {
+        to: String,
+    },
+    /// Report as Junk: a move into the junk folder `to`, with what became of
+    /// the junk mark at the server, which says whether an undo asks the
+    /// server to take it off (13-44.1).
+    Reported {
+        to: String,
+        marked: Marked,
+    },
 }
 
 /// How one message went, which decides what its undo can do.
@@ -312,7 +340,22 @@ impl Moving {
             Moving::Delete => "Delete".to_string(),
             Moving::DeletePermanently => "Delete Permanently".to_string(),
             Moving::Copy { to } => format!("Copy to {to}"),
+            Moving::Reported { .. } => "Report as Junk".to_string(),
         }
+    }
+}
+
+/// Where the server holds the message now, by folder and number, which is
+/// where a change to its marks has to be sent: where it still is while a
+/// move waits, since the server has heard nothing, and where the row says
+/// once nothing waits. Nothing when the store cannot place it.
+pub fn where_the_server_has_it(store: &WhatTheStoreSays) -> Option<(String, u32)> {
+    match store {
+        WhatTheStoreSays::StillWaiting { waiting, .. } => {
+            Some((waiting.from_folder_path.clone(), waiting.uid))
+        }
+        WhatTheStoreSays::Settled(here) => Some((here.folder_path.clone(), here.uid)),
+        WhatTheStoreSays::Gone | WhatTheStoreSays::BeingToldNow => None,
     }
 }
 
@@ -418,6 +461,13 @@ pub fn what_redo_does_to(
             permanently: true,
         },
         Moving::Copy { to } => OneChange::Copy {
+            from: here,
+            to: to.clone(),
+        },
+        Moving::Reported { to, .. } if here.folder_path == *to => {
+            OneChange::Refused(already_in(who, to))
+        }
+        Moving::Reported { to, .. } => OneChange::Move {
             from: here,
             to: to.clone(),
         },
@@ -1707,6 +1757,159 @@ mod tests {
             reads_as_a_persons_sentence(&sentence, Voice::Answer)
                 .unwrap_or_else(|why| panic!("{sentence:?}: {why}"));
         }
+    }
+
+    // ── Report as Junk, kept as a report (13-44.1) ─────────────────────────
+
+    fn reported(marked: Marked) -> Moving {
+        Moving::Reported {
+            to: "Junk".to_string(),
+            marked,
+        }
+    }
+
+    fn into_junk() -> WhatAWaitingMoveDoes {
+        WhatAWaitingMoveDoes::Move {
+            into_folder_path: "Junk".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_a_report_is_named_report_as_junk_on_the_edit_menu() {
+        let one = LastAction::Moved {
+            moving: reported(Marked::Kept),
+            went: vec![quarterly_report(WentBy::ItsServer, Some("Junk"))],
+        };
+        assert_eq!(
+            menu_label(&one, Direction::Undo),
+            "&Undo Report as Junk: Quarterly report\tCtrl+Z"
+        );
+        assert_eq!(undone(&one), "Undid Report as Junk on Quarterly report.");
+    }
+
+    #[test]
+    fn test_a_move_remembered_as_a_report_keeps_its_messages_and_carries_the_mark() {
+        let went = vec![
+            quarterly_report(WentBy::ItsServer, Some("Junk")),
+            WhereItWas {
+                row_id: 8,
+                uid: 43,
+                subject: "Minutes".to_string(),
+                ..quarterly_report(WentBy::ItsServer, Some("Junk"))
+            },
+        ];
+        let moved = LastAction::Moved {
+            moving: Moving::Move {
+                to: "Junk".to_string(),
+            },
+            went: went.clone(),
+        };
+        assert_eq!(
+            moved.as_a_report(Marked::Kept),
+            LastAction::Moved {
+                moving: reported(Marked::Kept),
+                went: went.clone(),
+            }
+        );
+        // A report answered again keeps the server's latest answer.
+        let again = LastAction::Moved {
+            moving: reported(Marked::Kept),
+            went: went.clone(),
+        };
+        assert_eq!(
+            again.as_a_report(Marked::NotKept),
+            LastAction::Moved {
+                moving: reported(Marked::NotKept),
+                went: went.clone(),
+            }
+        );
+        // Anything else comes back as it was.
+        let deleted = LastAction::Moved {
+            moving: Moving::Delete,
+            went,
+        };
+        assert_eq!(deleted.clone().as_a_report(Marked::Kept), deleted);
+        let read = LastAction::Marked {
+            mark: Mark::Read(true),
+            before: vec![message(7, "Quarterly report", false, false)],
+        };
+        assert_eq!(read.clone().as_a_report(Marked::Kept), read);
+    }
+
+    #[test]
+    fn test_undoing_a_report_decides_each_message_as_a_move_does() {
+        let message = quarterly_report(WentBy::ItsServer, Some("Junk"));
+        // Still waiting from its own folder: the server never heard of the
+        // move, so the row is ended here.
+        let asked = waiting(7, "INBOX", 42, into_junk());
+        assert_eq!(
+            what_undo_does_to(
+                &message,
+                &reported(Marked::Kept),
+                WhatTheStoreSays::StillWaiting {
+                    waiting: asked.clone(),
+                    here: here(7, "Junk", 4_000_000_001),
+                }
+            ),
+            OneChange::EndTheWaitingRow(asked)
+        );
+        // Settled in the junk folder: moved back from there.
+        assert_eq!(
+            what_undo_does_to(
+                &message,
+                &reported(Marked::Kept),
+                WhatTheStoreSays::Settled(here(7, "Junk", 310))
+            ),
+            OneChange::Move {
+                from: here(7, "Junk", 310),
+                to: "INBOX".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_redoing_a_report_moves_it_to_the_junk_folder_again() {
+        let message = quarterly_report(WentBy::ItsServer, Some("Junk"));
+        assert_eq!(
+            what_redo_does_to(
+                &message,
+                &reported(Marked::Kept),
+                WhatTheStoreSays::Settled(here(7, "INBOX", 42))
+            ),
+            OneChange::Move {
+                from: here(7, "INBOX", 42),
+                to: "Junk".to_string(),
+            }
+        );
+        assert_eq!(
+            what_redo_does_to(
+                &message,
+                &reported(Marked::NotAsked),
+                WhatTheStoreSays::Settled(here(7, "Junk", 310))
+            ),
+            OneChange::Refused("Quarterly report is already in Junk.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_the_server_holds_a_waiting_message_where_it_was_and_a_settled_one_where_it_is() {
+        let still_waiting = WhatTheStoreSays::StillWaiting {
+            waiting: waiting(7, "INBOX", 42, into_junk()),
+            here: here(7, "Junk", 4_000_000_001),
+        };
+        assert_eq!(
+            where_the_server_has_it(&still_waiting),
+            Some(("INBOX".to_string(), 42))
+        );
+        assert_eq!(
+            where_the_server_has_it(&WhatTheStoreSays::Settled(here(7, "Junk", 310))),
+            Some(("Junk".to_string(), 310))
+        );
+        assert_eq!(where_the_server_has_it(&WhatTheStoreSays::Gone), None);
+        assert_eq!(
+            where_the_server_has_it(&WhatTheStoreSays::BeingToldNow),
+            None
+        );
     }
 
     // ── An action on an item in another module ─────────────────────────────

@@ -256,7 +256,11 @@ Written down so you do not spend time reporting things already on the list.
   move into Spam counts as a report, nobody knows whether any server learns
   from the junk mark, and Microsoft is not told at all. If you try it, tell
   us which sentence you heard, and whether the message and its mark look the
-  same in another mail program or on your phone. Blocking a sender
+  same in another mail program or on your phone. `Ctrl+Z` after a report
+  takes the junk mark off again and marks the messages not junk before they
+  move back, and that has never been tried on a real server either: if you
+  try it, tell us whether the mark is gone in another mail program
+  afterwards. Blocking a sender
   (`Ctrl+Shift+B`) now asks whether to move the mail already here from them
   to the junk folder, and that move has never been tried on a real server
   either. If you try it, tell us the count the question gave and whether the

@@ -10392,8 +10392,9 @@ fn run_a_rule_on_this_folder(
 /// from a list, from the manager's Run on a Folder (#61, 13-44).
 ///
 /// The rule is read back as it was saved, and the folders offered are the
-/// ones the tree shows for the rule's own account, by path, so a folder of
-/// the same path in another account is never reached. Choosing none changes
+/// ones the tree shows for the rule's own account, so a folder of the same
+/// path in another account is never reached, each named as the tree names it
+/// rather than by its path at the server (ledger 752). Choosing none changes
 /// nothing and says nothing. From the count on, the flow is This Folder's.
 fn run_a_rule_on_a_chosen_folder(
     app: AppHandles<'_>,
@@ -10426,7 +10427,7 @@ fn run_a_rule_on_a_chosen_folder(
     let Some(rule) = crate::application::filters::FilterEngine::from_persisted_rule(&stored) else {
         return refuse_a_command(tx, &a_rule_this_version_cannot_run(&stored.name));
     };
-    let mut folders = match folders_in_the_tree(cache, &account.id) {
+    let folders = match folders_in_the_tree(cache, &account.id) {
         Ok(folders) => folders,
         Err(e) => {
             return refuse_a_command(
@@ -10444,20 +10445,53 @@ fn run_a_rule_on_a_chosen_folder(
             &format!("{} has no folders on this computer yet.", account.name),
         );
     }
-    folders.sort_by(|a, b| a.path.cmp(&b.path));
-    let paths: Vec<String> = folders.iter().map(|folder| folder.path.clone()).collect();
-    let Some(folder) = crate::presentation::wx_managers::choose_from_list(
+    let offered = the_folders_by_the_names_the_tree_shows(cache, &account.id, &folders);
+    let names: Vec<String> = offered.iter().map(|(name, _)| name.clone()).collect();
+    let Some((_, folder)) = crate::presentation::wx_managers::choose_from_list(
         frame,
         "Run on a Folder",
         &format!("&Folders in {}:", account.name.replace('&', "&&")),
         "&Count",
-        &paths,
+        &names,
         crate::presentation::theme::current_from_stored_config(),
     )
-    .and_then(|at| folders.get(at)) else {
+    .and_then(|at| offered.get(at)) else {
         return;
     };
     count_what_a_rule_would_change(app, &account, folder, rule);
+}
+
+/// The folders offered, each by the names the folder tree shows for it and
+/// the folders it sits in, decoded, rather than the path the server spells
+/// (ledger 752). Named from every folder the account holds, so a folder under
+/// one that is not downloaded still says where it sits.
+fn the_folders_by_the_names_the_tree_shows<'a>(
+    cache: &MessageCache,
+    account_id: &str,
+    offered: &'a [crate::data::message_cache::CachedFolder],
+) -> Vec<(String, &'a crate::data::message_cache::CachedFolder)> {
+    use crate::application::folders_underneath::{Placed, as_the_tree_names_them};
+    let parents = cache.folder_parents(account_id).unwrap_or_default();
+    let placed: Vec<Placed> = cache
+        .get_folders_for_account(account_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|folder| Placed {
+            parent: parents.get(&folder.path).copied().flatten(),
+            id: folder.id,
+            name: folder.name,
+            path: folder.path,
+        })
+        .collect();
+    as_the_tree_names_them(&placed)
+        .into_iter()
+        .filter_map(|(name, id)| {
+            offered
+                .iter()
+                .find(|folder| folder.id == id)
+                .map(|folder| (name, folder))
+        })
+        .collect()
 }
 
 /// A rule as the chooser lists it: its name, and whether it is switched off,
@@ -20935,7 +20969,7 @@ struct TheMessageList<'a> {
 /// a refusal changes nothing to see.
 fn say_what_the_undo_did(
     frame: &Frame,
-    a11y: &Arc<Accessibility>,
+    a11y: &Accessibility,
     said: &str,
     priority: crate::presentation::accessibility::announcements::Priority,
 ) {
@@ -20987,9 +21021,10 @@ fn take_back_or_do_again(
     a11y: &Arc<Accessibility>,
 ) {
     use crate::application::editing::EditCommand;
+    use crate::application::reporting_junk::a_mark_may_be_on;
     use crate::application::undoing::{
-        Direction, LastAction, OneStep, after_moving_back, nothing_to_redo, nothing_to_undo,
-        redone, undone, what_redo_does, what_undo_does,
+        Direction, LastAction, Moving, nothing_to_redo, nothing_to_undo, redone, undone,
+        what_redo_does, what_undo_does,
     };
     use crate::presentation::accessibility::announcements::Priority;
 
@@ -21032,28 +21067,44 @@ fn take_back_or_do_again(
             })
     };
     if let Some((moving, went)) = moved {
-        let back = move_back_or_again(app, list, cache, direction, &moving, &went);
-        let action = LastAction::Moved {
-            moving,
-            went: back.went,
-        };
-        let said = after_moving_back(&action, direction, back.done, &back.refused);
-        let undone_now = match direction {
-            Direction::Undo => back.done > 0,
-            Direction::Redo => back.done == 0,
-        };
-        let mut step = OneStep::new(action);
-        if undone_now {
-            step.went(Direction::Undo);
+        // A report whose mark may be on at the server: the mark is changed on
+        // a worker first and the messages move once it answers, the report's
+        // own order reversed, so the two cannot reach the server either way
+        // round (13-44.1, D3). One word now; the sentence once they move.
+        if let Moving::Reported { marked, .. } = &moving
+            && a_mark_may_be_on(marked)
+            && let Some((account, places)) =
+                where_a_reports_mark_is_changed(app.state, cache, direction, &went)
+        {
+            say_the_one_word(
+                a11y,
+                match direction {
+                    Direction::Undo => "Undo",
+                    Direction::Redo => "Redo",
+                },
+            );
+            spawn_the_junk_mark_change(
+                app,
+                account,
+                direction,
+                LastAction::Moved { moving, went },
+                places,
+            );
+            return;
         }
-        lock_state(app.state).last_action = Some(step);
-        list.refresh(true, None);
-        refresh_mark_read_wording(frame, toolbar, app.state, list);
-        let priority = match back.done {
-            0 => Priority::High,
-            _ => Priority::Normal,
-        };
-        return say_what_the_undo_did(frame, a11y, &said, priority);
+        carry_out_the_moved_step(
+            AMovedStep {
+                direction,
+                moving,
+                went,
+                the_mark_said: None,
+            },
+            list,
+            messages,
+            frame,
+            a11y,
+        );
+        return;
     }
     let taken = {
         let mut s = lock_state(app.state);
@@ -21090,6 +21141,187 @@ fn take_back_or_do_again(
     list.refresh(true, None);
     refresh_mark_read_wording(frame, toolbar, app.state, list);
     say_what_the_undo_did(frame, a11y, &said, Priority::Normal);
+}
+
+/// A move, a delete or a copy on its way to being taken back or done again,
+/// with the words a change to a report's junk mark adds to its sentence.
+struct AMovedStep {
+    direction: crate::application::undoing::Direction,
+    moving: crate::application::undoing::Moving,
+    went: Vec<crate::application::undoing::WhereItWas>,
+    /// What the server was told about the junk mark, said after the step's
+    /// sentence; nothing where no mark was changed.
+    the_mark_said: Option<String>,
+}
+
+/// Carry a moved step out: each message decided from its row now by
+/// `move_back_or_again`, the step turned only when something was taken back or
+/// done again, and one sentence for the lot, on the status line and aloud.
+///
+/// Called by Undo and Redo at the key, and by the answer to the junk mark
+/// worker once the mark has changed at the server (13-44.1), so both go the
+/// one way.
+fn carry_out_the_moved_step(
+    step: AMovedStep,
+    list: &ListCtrl,
+    messages: TheMessageList<'_>,
+    frame: &Frame,
+    a11y: &Accessibility,
+) {
+    use crate::application::undoing::{Direction, LastAction, OneStep, after_moving_back};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let TheMessageList {
+        app,
+        cache,
+        toolbar,
+    } = messages;
+    let Some(cache) = cache.as_ref() else {
+        return say_what_the_undo_did(
+            frame,
+            a11y,
+            "The mail on this computer is not open.",
+            Priority::High,
+        );
+    };
+    let AMovedStep {
+        direction,
+        moving,
+        went,
+        the_mark_said,
+    } = step;
+    let back = move_back_or_again(app, list, cache, direction, &moving, &went);
+    let action = LastAction::Moved {
+        moving,
+        went: back.went,
+    };
+    let mut said = after_moving_back(&action, direction, back.done, &back.refused);
+    if let Some(the_mark) = the_mark_said {
+        said.push(' ');
+        said.push_str(&the_mark);
+    }
+    let undone_now = match direction {
+        Direction::Undo => back.done > 0,
+        Direction::Redo => back.done == 0,
+    };
+    let mut step = OneStep::new(action);
+    if undone_now {
+        step.went(Direction::Undo);
+    }
+    lock_state(app.state).last_action = Some(step);
+    list.refresh(true, None);
+    refresh_mark_read_wording(frame, toolbar, app.state, list);
+    let priority = match back.done {
+        0 => Priority::High,
+        _ => Priority::Normal,
+    };
+    say_what_the_undo_did(frame, a11y, &said, priority);
+}
+
+/// Where an undo or a redo of a report changes the junk mark: the report's
+/// account and, for each message, the folder and number the server holds it
+/// under now.
+///
+/// Nothing, so no worker starts and the step is carried out as any move is,
+/// when the account is no longer set up, when its mail changes are off, which
+/// the step then refuses in the words a refused move says (D9), or when the
+/// store can place none of the messages. A message the store cannot place is
+/// sent nothing, and the step refuses it in words.
+fn where_a_reports_mark_is_changed(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Arc<MessageCache>,
+    direction: crate::application::undoing::Direction,
+    went: &[crate::application::undoing::WhereItWas],
+) -> Option<(Account, Vec<(String, u32)>)> {
+    use crate::application::moves_waiting::what_the_store_says;
+    use crate::application::undoing::{the_row_to_read, where_the_server_has_it};
+
+    let account_id = &went.first()?.account_id;
+    let account = lock_state(state)
+        .accounts
+        .iter()
+        .find(|account| &account.id == account_id)
+        .cloned()?;
+    crate::service::outward::permitted(
+        crate::application::allowed::allowed_for(&account.id).mail,
+        "move a message",
+    )
+    .ok()?;
+    let places: Vec<(String, u32)> = went
+        .iter()
+        .filter_map(|message| {
+            let row = the_row_to_read(message, direction);
+            let store = what_the_store_says(cache, row, &message.account_id).ok()?;
+            where_the_server_has_it(&store)
+        })
+        .collect();
+    (!places.is_empty()).then_some((account, places))
+}
+
+/// Change a report's junk mark at its account's server, off for Undo and on
+/// again for Redo, then hand the step back to the window to carry out.
+///
+/// On a worker, through the session the account is signed in with, folder by
+/// folder, each folder's answer joined as the report joins them. A session that
+/// could not be opened is a failure the sentence gives the reason for. The
+/// worker decides nothing `reporting_junk` and `undoing` decide, and words
+/// nothing: the window says the one sentence once the messages have moved.
+fn spawn_the_junk_mark_change(
+    app: AppHandles<'_>,
+    account: Account,
+    direction: crate::application::undoing::Direction,
+    action: crate::application::undoing::LastAction,
+    places: Vec<(String, u32)>,
+) {
+    use crate::application::reporting_junk::{self, Marked};
+    use crate::application::undoing::Direction;
+    let AppHandles { tx, rt, .. } = app;
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    rt.spawn_blocking(move || {
+        let answer = handle.block_on(async {
+            let controller = match crate::application::mail_session::the_session_at(&account).await
+            {
+                Ok(controller) => controller,
+                Err(why) => return Marked::Failed(why.to_string()),
+            };
+            let mut by_folder: std::collections::BTreeMap<&str, Vec<u32>> =
+                std::collections::BTreeMap::new();
+            for (folder, uid) in &places {
+                by_folder.entry(folder.as_str()).or_default().push(*uid);
+            }
+            let mut answer = Marked::NotAsked;
+            for (folder, uids) in by_folder {
+                let this_folder = match direction {
+                    Direction::Undo => {
+                        reporting_junk::take_the_junk_mark_off_at_the_server(
+                            &controller,
+                            folder,
+                            &uids,
+                        )
+                        .await
+                    }
+                    Direction::Redo => {
+                        reporting_junk::mark_as_junk_at_the_server(&controller, folder, &uids).await
+                    }
+                };
+                answer =
+                    answer.and(this_folder.unwrap_or_else(|why| Marked::Failed(why.to_string())));
+            }
+            answer
+        });
+        let how_many = places.len();
+        handle.block_on(async {
+            let _ = tx
+                .send(UIUpdate::TheJunkMarkChanged {
+                    direction,
+                    action,
+                    answer,
+                    how_many,
+                })
+                .await;
+        });
+    });
 }
 
 /// What an undo or a redo of a move, a delete or a copy came to: how many
@@ -23066,6 +23298,41 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 move_what_was_reported(AppHandles { state, tx, rt }, msg_list, cache, ready);
             }
         }
+        UIUpdate::TheJunkMarkChanged {
+            direction,
+            action,
+            answer,
+            how_many,
+        } => {
+            // The mark has changed at the server, so the messages move now,
+            // and the one sentence says what the server was told (13-44.1).
+            use crate::application::reporting_junk::{
+                what_setting_the_mark_again_did, what_taking_the_mark_off_did,
+            };
+            use crate::application::undoing::{Direction, LastAction};
+            let the_mark_said = match direction {
+                Direction::Undo => what_taking_the_mark_off_did(*how_many, answer),
+                Direction::Redo => what_setting_the_mark_again_did(answer),
+            };
+            if let LastAction::Moved { moving, went } = action.clone().as_a_report(answer.clone()) {
+                carry_out_the_moved_step(
+                    AMovedStep {
+                        direction: *direction,
+                        moving,
+                        went,
+                        the_mark_said,
+                    },
+                    msg_list,
+                    TheMessageList {
+                        app: AppHandles { state, tx, rt },
+                        cache: message_cache,
+                        toolbar,
+                    },
+                    frame,
+                    a11y,
+                );
+            }
+        }
         UIUpdate::WhatABlockCaught(caught) => {
             // Counted on a worker; asked about and moved here, on the
             // window's thread, where a question can be put (13-25).
@@ -24899,6 +25166,7 @@ fn report_the_chosen_as_junk(
                 junk_name,
                 messages: going,
                 sentence: String::new(),
+                marked: Marked::NotAsked,
             },
         });
     }
@@ -24979,6 +25247,7 @@ fn spawn_junk_marking(app: AppHandles<'_>, reports: Vec<AJunkReport>) {
             let ready = reporting_junk::ReadyToMove {
                 account_id: report.account.id,
                 sentence,
+                marked,
                 ..report.going
             };
             handle.block_on(async {
@@ -25034,6 +25303,16 @@ fn move_what_was_reported(
     // set refused whole has had its refusal said.
     if move_these(app, list, cache, moving, junk, false).is_some() {
         send_status(tx, rt, &ready.sentence);
+        // Move's own path kept the step as a plain move; kept as the report
+        // it was, with what became of the mark, Undo knows to take the mark
+        // off as well as moving the messages back (13-44.1).
+        let kept = lock_state(state)
+            .last_action
+            .as_ref()
+            .map(|step| step.action().clone());
+        if let Some(moved) = kept {
+            remember_the_last_action(state, moved.as_a_report(ready.marked.clone()));
+        }
     }
 }
 
@@ -36419,18 +36698,35 @@ fn block_the_sender(
         );
         return;
     };
+    // The account the message is in, found the way Report as Junk finds it,
+    // not the account that happens to be open: in All Inboxes the two differ,
+    // and the block, its rule and the mail it moves belong to the message's
+    // own (13-44.1, ledger 691).
     let (message, account, accounts) = {
         let held = lock_state(state);
-        (
-            held.selected_message_index
-                .and_then(|at| held.the_loaded_message_the_row_stands_for(at).cloned()),
-            held.active_account_id.clone(),
-            held.accounts.clone(),
-        )
+        let message = held
+            .selected_message_index
+            .and_then(|at| held.the_loaded_message_the_row_stands_for(at).cloned());
+        let account = message.as_ref().and_then(|message| {
+            owner_of(
+                &held.messages,
+                &held.accounts,
+                message.message_id,
+                held.active_account_id.as_deref(),
+            )
+        });
+        (message, account, held.accounts.clone())
     };
-    let (Some(message), Some(account)) = (message, account) else {
+    let Some(message) = message else {
         told(
             "Select the message from the sender to block first.",
+            Priority::High,
+        );
+        return;
+    };
+    let Some(account) = account.map(|owner| owner.id) else {
+        told(
+            "This message is not in an account this program knows about.",
             Priority::High,
         );
         return;

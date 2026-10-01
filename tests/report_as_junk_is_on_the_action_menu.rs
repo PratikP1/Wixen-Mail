@@ -203,6 +203,114 @@ fn the_reports_sentence_replaces_moves(set_move: &str, mover: &str) -> Result<()
     }
 }
 
+// ── Undo of a report, since 13-44.1 ────────────────────────────────────────
+
+/// Edit, Undo and Redo in the message list.
+const THE_CARRYING_OUT: &str = "fn take_back_or_do_again(";
+/// The worker that changes the junk mark for an undo or a redo of a report.
+const THE_MARK_WORKER: &str = "fn spawn_the_junk_mark_change(";
+/// The moved step carried out, at the key or once the mark is changed.
+const THE_MOVED_STEP: &str = "carry_out_the_moved_step(";
+/// Where the window answers the mark worker.
+const THE_WINDOWS_ANSWERS: &str = "fn handle_update(";
+const THE_MARKS_ANSWER: &str = "UIUpdate::TheJunkMarkChanged";
+
+/// The report is remembered as a report, carrying what became of the mark,
+/// once its move is made, rather than as the plain move `move_these` keeps,
+/// so Undo knows to take the mark off.
+fn the_report_is_remembered_as_a_report(mover: &str) -> Result<(), String> {
+    let moved = mover
+        .find("move_these(")
+        .ok_or("the report never asks for the move, so this reads nothing")?;
+    match mover[moved..].contains("as_a_report(") {
+        true => Ok(()),
+        false => Err(
+            "the report is kept as a plain move to the junk folder, so Undo moves it back \
+             and leaves the junk mark on it at the server"
+                .into(),
+        ),
+    }
+}
+
+/// An undo of a report whose mark may be on goes to the mark worker and
+/// returns, so the messages move back only once the mark is off: the mark
+/// and the move cannot reach the server in either order.
+fn an_undo_of_a_report_goes_to_the_worker_first(carrying: &str) -> Result<(), String> {
+    if !carrying.contains("a_mark_may_be_on(") {
+        return Err(
+            "the undo never asks whether the report may have left a mark, so it sends \
+             $NotJunk where the report never marked or never sends it at all"
+                .into(),
+        );
+    }
+    let worker = carrying
+        .find("spawn_the_junk_mark_change(")
+        .ok_or("the undo of a report never starts the mark worker")?;
+    if carrying[..worker].contains(THE_MOVED_STEP) {
+        return Err("the undo moves a report back at the key before the mark worker starts".into());
+    }
+    let moved = carrying[worker..]
+        .find(THE_MOVED_STEP)
+        .map(|at| at + worker)
+        .ok_or("nothing carries a moved step out after the mark worker, so this reads nothing")?;
+    // A bare `return;` ends the worker's branch; the `return` of a
+    // `return carry_out_the_moved_step(...)` would not keep the move from
+    // running at the key.
+    match carrying[worker..moved].contains("return;") {
+        true => Ok(()),
+        false => Err(
+            "the undo moves a report back at the key as well as starting the mark worker, so \
+             the mark and the move reach the server in either order"
+                .into(),
+        ),
+    }
+}
+
+/// The worker opens the account's session and changes the mark, off for
+/// Undo and on for Redo, before it answers the window, and says nothing
+/// itself: the window says the one sentence once the messages have moved.
+fn the_worker_changes_the_mark_before_it_answers(worker: &str) -> Result<(), String> {
+    for change in [
+        "mail_session::the_session_at(",
+        "reporting_junk::take_the_junk_mark_off_at_the_server(",
+        "reporting_junk::mark_as_junk_at_the_server(",
+    ] {
+        comes_before(
+            worker,
+            change,
+            THE_MARKS_ANSWER,
+            "the mark worker answers the window before it changes the mark, so the messages \
+             move before the server is told",
+        )?;
+    }
+    match ["announce(", "send_status(", "say_the_one_word("]
+        .iter()
+        .find(|says| worker.contains(*says))
+    {
+        Some(says) => Err(format!(
+            "the mark worker says something itself through {says}, so the undo is heard twice"
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The window's answer to the mark worker carries the moved step out.
+fn the_answer_carries_the_moved_step_out(answers: &str) -> Result<(), String> {
+    let at = answers.find(THE_MARKS_ANSWER).ok_or(format!(
+        "{THE_MARKS_ANSWER} is not answered, so this reads nothing"
+    ))?;
+    let arm = &answers[at + THE_MARKS_ANSWER.len()..];
+    let arm = &arm[..arm.find("UIUpdate::").unwrap_or(arm.len())];
+    match arm.contains(THE_MOVED_STEP) {
+        true => Ok(()),
+        false => Err(
+            "the answer to the mark worker moves nothing, so Undo takes the mark off and \
+             leaves the messages in the junk folder"
+                .into(),
+        ),
+    }
+}
+
 // ── The checks, each of which a companion hands a wrong state ─────────────
 
 #[test]
@@ -305,6 +413,123 @@ fn test_the_sentence_reading_sees_the_reports_sentence_dropped() {
     let moves_own = "fn move_these() {\n    let said = what_was_done(&chosen, &outcome);\n}\n";
     let why = the_reports_sentence_replaces_moves(moves_own, as_it_should_be).expect_err("both");
     assert!(why.contains("beside the report's"), "{why}");
+}
+
+#[test]
+fn test_a_report_is_remembered_as_a_report_carrying_its_mark() {
+    let mover = body_of(&the_main_window(), THE_MOVE_AFTER).unwrap_or_else(|why| panic!("{why}"));
+    the_report_is_remembered_as_a_report(&mover).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_remembering_reading_sees_a_report_kept_as_a_plain_move() {
+    let as_it_should_be = "fn move_what_was_reported() {\n    if move_these(app, list, cache, \
+                           moving, junk, false).is_some() {\n        send_status(tx, rt, \
+                           &ready.sentence);\n        remember_the_last_action(state, \
+                           moved.as_a_report(ready.marked.clone()));\n    }\n}\n";
+    the_report_is_remembered_as_a_report(as_it_should_be).unwrap_or_else(|why| panic!("{why}"));
+
+    let plain = as_it_should_be.replace("moved.as_a_report(ready.marked.clone())", "moved");
+    let why = the_report_is_remembered_as_a_report(&plain).expect_err("a plain move");
+    assert!(why.contains("plain move"), "{why}");
+}
+
+#[test]
+fn test_an_undo_of_a_report_goes_to_the_mark_worker_before_anything_moves_back() {
+    let carrying =
+        body_of(&the_main_window(), THE_CARRYING_OUT).unwrap_or_else(|why| panic!("{why}"));
+    an_undo_of_a_report_goes_to_the_worker_first(&carrying).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_undo_reading_sees_a_report_moved_back_at_the_key() {
+    let as_it_should_be = "fn take_back_or_do_again() {\n    if a_mark_may_be_on(marked) {\n        \
+                           say_the_one_word(a11y, \"Undo\");\n        \
+                           spawn_the_junk_mark_change(app, account, direction, action, \
+                           places);\n        return;\n    }\n    \
+                           carry_out_the_moved_step(step, list, messages, frame, a11y);\n}\n";
+    an_undo_of_a_report_goes_to_the_worker_first(as_it_should_be)
+        .unwrap_or_else(|why| panic!("{why}"));
+
+    let at_the_key = as_it_should_be.replacen("        return;\n", "", 1);
+    let why = an_undo_of_a_report_goes_to_the_worker_first(&at_the_key)
+        .expect_err("a report moved back at the key");
+    assert!(why.contains("either order"), "{why}");
+
+    let first = as_it_should_be.replacen(
+        "    if a_mark_may_be_on(marked) {\n",
+        "    carry_out_the_moved_step(step, list, messages, frame, a11y);\n    if \
+         a_mark_may_be_on(marked) {\n",
+        1,
+    );
+    let why = an_undo_of_a_report_goes_to_the_worker_first(&first).expect_err("moved first");
+    assert!(why.contains("before the mark worker"), "{why}");
+
+    let never_asked = as_it_should_be.replace("a_mark_may_be_on(marked)", "true");
+    let why = an_undo_of_a_report_goes_to_the_worker_first(&never_asked).expect_err("unasked");
+    assert!(why.contains("may have left a mark"), "{why}");
+}
+
+#[test]
+fn test_the_mark_worker_changes_the_mark_before_it_answers() {
+    let worker = body_of(&the_main_window(), THE_MARK_WORKER).unwrap_or_else(|why| panic!("{why}"));
+    the_worker_changes_the_mark_before_it_answers(&worker).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_worker_reading_sees_an_answer_sent_before_the_mark() {
+    let as_it_should_be = "fn spawn_the_junk_mark_change() {\n    let controller = \
+                           mail_session::the_session_at(&account);\n    let answer = match \
+                           direction {\n        Direction::Undo => \
+                           reporting_junk::take_the_junk_mark_off_at_the_server(&controller, \
+                           folder, &uids),\n        Direction::Redo => \
+                           reporting_junk::mark_as_junk_at_the_server(&controller, folder, \
+                           &uids),\n    };\n    tx.send(UIUpdate::TheJunkMarkChanged { \
+                           direction, action, answer, how_many });\n}\n";
+    the_worker_changes_the_mark_before_it_answers(as_it_should_be)
+        .unwrap_or_else(|why| panic!("{why}"));
+
+    let answered_first = as_it_should_be.replacen(
+        "    let controller =",
+        "    tx.send(UIUpdate::TheJunkMarkChanged { direction, action, answer, how_many });\n    \
+         let controller =",
+        1,
+    );
+    let why = the_worker_changes_the_mark_before_it_answers(&answered_first)
+        .expect_err("an answer before the mark");
+    assert!(why.contains("before it changes the mark"), "{why}");
+
+    let speaking = as_it_should_be.replacen(
+        "    tx.send(",
+        "    send_status(tx, rt, &said);\n    tx.send(",
+        1,
+    );
+    let why = the_worker_changes_the_mark_before_it_answers(&speaking).expect_err("speaking");
+    assert!(why.contains("send_status("), "{why}");
+}
+
+#[test]
+fn test_the_marks_answer_carries_the_moved_step_out() {
+    let answers =
+        body_of(&the_main_window(), THE_WINDOWS_ANSWERS).unwrap_or_else(|why| panic!("{why}"));
+    the_answer_carries_the_moved_step_out(&answers).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_answer_reading_sees_an_arm_that_moves_nothing() {
+    let as_it_should_be = "fn handle_update() {\n    match update {\n        \
+                           UIUpdate::TheJunkMarkChanged { direction, action, answer, how_many } \
+                           => {\n            carry_out_the_moved_step(step, msg_list, messages, \
+                           frame, a11y);\n        }\n        UIUpdate::WhatABlockCaught(caught) \
+                           => {}\n    }\n}\n";
+    the_answer_carries_the_moved_step_out(as_it_should_be).unwrap_or_else(|why| panic!("{why}"));
+
+    let nothing = as_it_should_be.replace(
+        "carry_out_the_moved_step(step, msg_list, messages, frame, a11y);",
+        "let _ = (direction, action, answer, how_many);",
+    );
+    let why = the_answer_carries_the_moved_step_out(&nothing).expect_err("an arm moving nothing");
+    assert!(why.contains("moves nothing"), "{why}");
 }
 
 // ── The built menu bar ─────────────────────────────────────────────────────

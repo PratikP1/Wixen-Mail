@@ -605,7 +605,8 @@ From the Filter Manager (Tools, then Message Filters):
 2. Press **Run on a Folder** (`Alt+R`). The manager saves the rules as you
    left them and closes, so the rule that runs is the rule as saved.
 3. Choose a folder from the list of the account's folders and press
-   **Count** (`Alt+C`).
+   **Count** (`Alt+C`). Each folder is listed by the name the folder tree
+   shows, after the folders it sits in, for example "Work / Projects".
 
 Wixen Mail then counts what the rule would change in that folder, which
 on a large folder can take a moment, and asks before it changes anything,
@@ -1250,7 +1251,18 @@ sentence adds "The junk mark could not be set", with the server's reason.
 
 The move is the same as Move to: it happens on this computer first and the
 server is told in the background, so `Ctrl+Z` in the message list moves the
-messages back. A junk mark already set stays on them.
+messages back. The Edit menu names the step "Undo Report as Junk".
+
+Where the report set the junk mark, Undo takes it off at the server and puts
+the not-junk mark on before the messages move back. At the key you hear
+"Undo"; once the server has answered and the messages are back, one sentence
+says so, for example "Undid Report as Junk on Quarterly report. The server
+was told it is not junk." If the mark could not be taken off, the sentence
+ends by saying so, with the server's reason. On Gmail, and on a server that
+keeps no junk mark, Undo only moves the messages back, because no mark was
+set. `Ctrl+Y` reports them again: the mark goes back on where it was set, then
+the messages return to the junk folder. Taking the mark off has never been
+tried on a real mail server.
 
 Reporting junk is not blocking. A report deals with the messages in front of
 you and tells the provider; a block files everything a sender sends from now
@@ -1284,8 +1296,9 @@ The move is the same as Move to: it happens on this computer first and the
 server is told in the background, and it is refused whole if mail changes
 are off for the account. `Ctrl+Z` in the message list moves the messages back.
 
-A block uses the account you have open. In All Inboxes that may not be the
-account the message came to.
+A block goes to the account the message is in. In All Inboxes that may not
+be the account you have open: the rule, the junk folder and the mail it moves
+all belong to the message's own account.
 
 ### Quick Steps
 

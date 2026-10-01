@@ -205,7 +205,24 @@ fn the_block_items_say_they_are_experimental(app: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The block is written to the account the selected message is in, found
+/// the way Report as Junk finds a message's account, never to the account
+/// that happens to be open: in All Inboxes the two differ (13-44.1, ledger
+/// 691).
+fn the_block_goes_to_the_messages_account(app: &str) -> Result<(), String> {
+    let block = code_of(app, THE_BLOCK)?;
+    first_call(&block, "owner_of", THE_BLOCK)?;
+    match block.contains("active_account_id.clone()") {
+        true => Err(format!(
+            "{THE_BLOCK} takes the open account as the block's, so in All Inboxes the rule \
+             lands in an account the message is not in"
+        )),
+        false => Ok(()),
+    }
+}
+
 fn every_reading(app: &str) -> Result<(), String> {
+    the_block_goes_to_the_messages_account(app)?;
     the_count_is_taken_on_a_worker(app)?;
     the_bound_comes_before_the_question(app)?;
     the_question_comes_before_the_move(app)?;
@@ -245,6 +262,12 @@ fn test_both_block_items_say_the_block_is_experimental() {
         .unwrap_or_else(|why| panic!("{why}"));
 }
 
+#[test]
+fn test_a_block_is_written_to_the_account_the_message_is_in() {
+    the_block_goes_to_the_messages_account(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
 // ── The companions ─────────────────────────────────────────────────────────
 
 /// A window shaped as it should be, cut down to what the readings read.
@@ -262,6 +285,7 @@ const SHAPED: &str = r#"let blocking_menu = Menu::builder()
     .build();
 
 fn block_the_sender(state: &State) {
+    let account = owner_of(&held.messages, &held.accounts, message.message_id, held.active_account_id.as_deref());
     if let Err(why) = cache.create_filter_rule(&rule) {
         return;
     }
@@ -376,6 +400,27 @@ fn test_the_runner_reading_names_an_outcome_that_moves_nothing() {
     let said = the_move_goes_through_the_runner(&planted).expect_err("nothing moves");
 
     assert!(said.contains("no outcome that moves"), "{said}");
+}
+
+#[test]
+fn test_the_account_reading_sees_a_block_written_to_the_open_account() {
+    let open = SHAPED.replacen(
+        "    let account = owner_of(&held.messages, &held.accounts, message.message_id, held.active_account_id.as_deref());",
+        "    let account = (\n        held.active_account_id.clone(),\n        held.accounts.clone(),\n    );",
+        1,
+    );
+    assert_ne!(open, SHAPED, "nothing was planted");
+
+    let said = the_block_goes_to_the_messages_account(&open).expect_err("the open account");
+    assert!(said.contains("never calls owner_of("), "{said}");
+
+    let beside = SHAPED.replacen(
+        "    if let Err(why) = cache.create_filter_rule(&rule) {",
+        "    let account = held.active_account_id.clone();\n    if let Err(why) = cache.create_filter_rule(&rule) {",
+        1,
+    );
+    let said = the_block_goes_to_the_messages_account(&beside).expect_err("both accounts");
+    assert!(said.contains("open account"), "{said}");
 }
 
 #[test]
