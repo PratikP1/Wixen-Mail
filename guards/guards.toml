@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 564 records have arrived since and have not been through it.
+# 568 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -14952,7 +14952,7 @@ red = [
     "test_no_comment_says_a_test_cannot_build_a_window",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 18 },
     { file = "tests/house_style.rs", tests = 74 },
 ]
 
@@ -26401,7 +26401,7 @@ red = [
     "presentation::wx_folder_choice::tests::test_a_grandchild_is_two_deep_and_follows_its_parent_before_the_next_top_row",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 18 },
 ]
 
 # ── A kept folder is ticked in the control's own state, where NVDA reads it ──
@@ -26429,7 +26429,7 @@ red = [
     "test_reading_c_the_dialog_is_a_tree_whose_kept_folder_is_checked_where_nvda_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 18 },
     { file = "tests/a_kept_folder_reads_as_a_checked_check_box.rs", tests = 8 },
 ]
 
@@ -36419,4 +36419,95 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# Report as Junk given its own reading back, the saved name alone. The
+# census refuses it; taken by hand against the library on 2026-10-01 the
+# same break also reddens reporting_junk's two own-domain cases, which a
+# record of one suite cannot name. Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "Report as Junk asks the one check"
+file = "src/application/reporting_junk.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''        match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => AccountKind::Gmail,
+            WhoRunsTheMail::Microsoft => AccountKind::Microsoft,
+            WhoRunsTheMail::SomebodyElse => AccountKind::OtherImap,
+        }'''
+after = '''        match account.provider.as_deref() {
+            Some(provider) if provider.eq_ignore_ascii_case("gmail") => AccountKind::Gmail,
+            Some(provider) if provider.eq_ignore_ascii_case("outlook") => AccountKind::Microsoft,
+            _ => AccountKind::OtherImap,
+        }'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/application/reporting_junk.rs", tests = 31 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The mail check's provider given its own reading back, the address first
+# and the saved name after. The census refuses it; taken by hand against the
+# library the same break also reddens mail_auth's two own-domain cases.
+# Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the mail check signs in as the one check says"
+file = "src/application/mail_auth.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''    WhoRunsTheMail::of(account)
+        .oauth_provider()
+        .map(str::to_string)'''
+after = '''    crate::service::oauth::OAuthService::detect_provider(&account.email).or_else(|| {
+        account
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_lowercase)
+            .filter(|provider| {
+                crate::service::oauth::OAuthService::provider_by_name(provider).is_some()
+            })
+    })'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The browser sign-in reading the address alone again, so the name a token
+# is filed under and the name the mail check reads it back by come from two
+# places, and an account on its own domain cannot sign in through a browser.
+# Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the browser sign-in asks what the mail check asks"
+file = "src/presentation/wx_account_manager.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''    let Some(provider) = provider_of(account) else {'''
+after = '''    let Some(provider) = crate::service::oauth::OAuthService::detect_provider(&account.email) else {'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The folder chooser deciding Gmail by the saved name spelled one way or by
+# Gmail's server, its reading before 13-44.5, which missed a Gmail account
+# saved as "gmail". Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the folder chooser asks the one check"
+file = "src/presentation/wx_app.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''    let is_gmail = WhoRunsTheMail::of(&account) == WhoRunsTheMail::Gmail;'''
+after = '''    let is_gmail = account.provider.as_deref() == Some("Gmail")
+        || account.imap_server.eq_ignore_ascii_case("imap.gmail.com");'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]

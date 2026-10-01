@@ -25906,7 +25906,8 @@ fn choose_folders(
     frame: &Frame,
 ) {
     let AppHandles { state, tx, rt } = app;
-    use crate::presentation::wx_folder_choice::{FolderRow, ask, is_a_gmail_account};
+    use crate::application::who_runs_the_mail::WhoRunsTheMail;
+    use crate::presentation::wx_folder_choice::{FolderRow, ask};
 
     let Some(cache) = cache.clone() else {
         return send_refusal(tx, rt, "The mail on this computer is not open.");
@@ -25976,7 +25977,7 @@ fn choose_folders(
         })
         .collect();
 
-    let is_gmail = is_a_gmail_account(account.provider.as_deref(), &account.imap_server);
+    let is_gmail = WhoRunsTheMail::of(&account) == WhoRunsTheMail::Gmail;
     let Some(changed) = ask(frame, &account.name, is_gmail, &rows) else {
         return;
     };
