@@ -41,12 +41,13 @@ pub fn stored_password(from_store: Option<String>, from_database: &str) -> Store
     StoredPassword::NeedsMoving(from_database.to_string())
 }
 
-/// Remember an account's password.
+/// Remember an account's password. `called` is the account's name, the one
+/// a failure is said with.
 ///
 /// An empty password is a request to forget, not a password to store. Accounts
 /// signing in with OAuth have no password, and an empty entry would be
 /// indistinguishable from one somebody meant to save.
-pub fn store(account_id: &str, password: &str) -> Result<()> {
+pub fn store(account_id: &str, _called: &str, password: &str) -> Result<()> {
     if password.is_empty() {
         return forget(account_id);
     }
@@ -150,9 +151,74 @@ mod tests {
         );
     }
 
+    /// What the store said when it would not do what it was asked, as the
+    /// person hears it.
+    fn said(refused: Result<impl std::fmt::Debug>) -> String {
+        refused.expect_err("the store to refuse").to_string()
+    }
+
+    #[test]
+    fn test_a_password_the_store_will_not_save_is_named_by_its_account_and_not_its_id() {
+        // The id is a long internal code, read aloud a character at a time.
+        secret_store::refuse("the credential store is not available");
+        let saving = said(store("acc-1", "Work", "hunter2"));
+        secret_store::refuse_removals("the entry is locked");
+        let clearing = said(store("acc-1", "Work", ""));
+        secret_store::allow();
+
+        assert!(
+            saving.contains("Could not save the password for Work in the Windows credential store"),
+            "{saving}"
+        );
+        assert!(
+            clearing.contains("Could not remove the password for Work"),
+            "{clearing}"
+        );
+        for sentence in [&saving, &clearing] {
+            assert!(!sentence.contains("acc-1"), "{sentence}");
+            assert!(!sentence.contains("hunter2"), "{sentence}");
+        }
+    }
+
+    #[test]
+    fn test_a_password_with_no_name_to_go_by_is_this_accounts() {
+        secret_store::refuse("the credential store is not available");
+        let saving = said(store("acc-1", "  ", "hunter2"));
+        secret_store::allow();
+
+        assert!(
+            saving.contains("Could not save this account's password in the Windows"),
+            "{saving}"
+        );
+        assert!(!saving.contains("acc-1"), "{saving}");
+    }
+
+    #[test]
+    fn test_a_password_the_store_will_not_give_back_or_let_go_is_this_accounts_and_never_an_id() {
+        // Reading back and forgetting hold the id alone, so they say whose
+        // password it is without naming anybody.
+        secret_store::refuse("the credential store is not available");
+        let reading = said(load("acc-1"));
+        secret_store::refuse_removals("the entry is locked");
+        let forgetting = said(forget("acc-1"));
+        secret_store::allow();
+
+        assert!(
+            reading.contains("Could not read back this account's password"),
+            "{reading}"
+        );
+        assert!(
+            forgetting.contains("Could not remove this account's password"),
+            "{forgetting}"
+        );
+        for sentence in [&reading, &forgetting] {
+            assert!(!sentence.contains("acc-1"), "{sentence}");
+        }
+    }
+
     #[test]
     fn test_a_password_comes_back_the_way_it_went_in() {
-        store("round-trip", "hunter2").unwrap();
+        store("round-trip", "Round trip", "hunter2").unwrap();
 
         assert_eq!(load("round-trip").unwrap().as_deref(), Some("hunter2"));
     }
@@ -167,9 +233,9 @@ mod tests {
         // Switching an account to OAuth clears the password box. Leaving the
         // old one in the store would keep a working credential for an account
         // that is no longer meant to use it.
-        store("switched", "old-password").unwrap();
+        store("switched", "Switched", "old-password").unwrap();
 
-        store("switched", "").unwrap();
+        store("switched", "Switched", "").unwrap();
 
         assert_eq!(load("switched").unwrap(), None);
     }

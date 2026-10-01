@@ -14,7 +14,7 @@ impl MessageCache {
         // empty. Failing here rather than falling back to the database on
         // purpose: a quiet fallback would put the secret in the one place this
         // change exists to keep it out of.
-        credentials::store(&account.id, &account.password)?;
+        credentials::store(&account.id, &account.name, &account.password)?;
 
         let now = Utc::now().to_rfc3339();
 
@@ -172,7 +172,7 @@ impl MessageCache {
         for row in accounts {
             let (in_the_row, mut account) =
                 row.map_err(|e| Error::Other(format!("Failed to parse account: {}", e)))?;
-            account.password = self.password_for(&account.id, &in_the_row);
+            account.password = self.password_for(&account.id, &account.name, &in_the_row);
             result.push(account);
         }
 
@@ -180,8 +180,8 @@ impl MessageCache {
     }
 
     /// An account's password, moving it out of the database if that is still
-    /// where it is.
-    fn password_for(&self, account_id: &str, in_the_row: &str) -> String {
+    /// where it is. `called` is the account's name, for the store's sentences.
+    fn password_for(&self, account_id: &str, called: &str, in_the_row: &str) -> String {
         let in_the_store = credentials::load(account_id).unwrap_or_else(|e| {
             tracing::warn!("Could not read the saved password for {account_id}: {e}");
             None
@@ -206,13 +206,15 @@ impl MessageCache {
                 }
                 password
             }
-            StoredPassword::NeedsMoving(encrypted) => self.move_password(account_id, &encrypted),
+            StoredPassword::NeedsMoving(encrypted) => {
+                self.move_password(account_id, called, &encrypted)
+            }
             StoredPassword::Missing => String::new(),
         }
     }
 
     /// Move a password left over from the version that kept it in the database.
-    fn move_password(&self, account_id: &str, encrypted: &str) -> String {
+    fn move_password(&self, account_id: &str, called: &str, encrypted: &str) -> String {
         let password = match self.decrypt_value(encrypted) {
             Ok(password) => password,
             Err(e) => {
@@ -227,7 +229,7 @@ impl MessageCache {
             }
         };
 
-        if let Err(e) = credentials::store(account_id, &password) {
+        if let Err(e) = credentials::store(account_id, called, &password) {
             // Usable this session, still in the database, and tried again next
             // time. Better than refusing to load the account.
             tracing::warn!(
@@ -705,6 +707,9 @@ mod tests {
             outcome.is_err(),
             "an account whose secrets could not be removed reported a clean delete"
         );
+        // The refusal is spoken, and an account's id is a long internal code.
+        let said = outcome.expect_err("a refusal").to_string();
+        assert!(!said.contains("acc-stuck"), "{said}");
         assert!(
             cache
                 .load_accounts()
@@ -713,6 +718,24 @@ mod tests {
                 .any(|stored| stored.id == "acc-stuck"),
             "the row naming the secrets was removed, so nothing can name them again"
         );
+    }
+
+    #[test]
+    fn test_a_password_the_store_will_not_keep_is_said_with_the_accounts_name() {
+        // The accounts' save is announced, so the sentence names the account
+        // the way the person named it, never by its id or its password.
+        let cache = a_cache("password_the_store_will_not_keep");
+        let mut account = an_account("acc-work", "ada@example.com", "hunter2");
+        account.name = "Work".to_string();
+
+        crate::service::secret_store::refuse("the credential store is not available");
+        let outcome = cache.save_account(&account);
+        crate::service::secret_store::allow();
+
+        let said = outcome.expect_err("a refusal").to_string();
+        assert!(said.contains("the password for Work"), "{said}");
+        assert!(!said.contains("acc-work"), "{said}");
+        assert!(!said.contains("hunter2"), "{said}");
     }
 
     #[test]
