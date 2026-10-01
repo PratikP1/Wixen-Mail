@@ -5768,14 +5768,30 @@ impl WxMailApp {
                         // have its result dropped on the floor, so the dialog
                         // opened blank however much was stored and anything the
                         // user added, edited or deleted was lost on OK.
-                        _ if id == ID_FILTER_MGR => managers::manage_filters(
-                            &state,
-                            &message_cache,
-                            &frame,
-                            &ui_tx,
-                            &runtime,
-                            &a11y,
-                        ),
+                        // Run on a Folder closes the manager with a saved
+                        // rule, which is then run over a folder somebody
+                        // chooses (#61, 13-44).
+                        _ if id == ID_FILTER_MGR => {
+                            if let Some(run) = managers::manage_filters(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            ) {
+                                run_a_rule_on_a_chosen_folder(
+                                    AppHandles {
+                                        state: &state,
+                                        tx: &ui_tx,
+                                        rt: &runtime,
+                                    },
+                                    &message_cache,
+                                    &frame,
+                                    &run,
+                                );
+                            }
+                        }
                         _ if id == ID_BLOCKED_SENDERS => {
                             show_who_is_blocked(
                                 &state,
@@ -10355,23 +10371,93 @@ fn run_a_rule_on_this_folder(
         );
     }
     let names: Vec<String> = stored.iter().map(a_rule_as_the_chooser_names_it).collect();
-    let Some(at) = crate::presentation::wx_managers::choose_from_list(
+    let Some(chosen) = crate::presentation::wx_managers::choose_from_list(
         frame,
         "Run a Rule on This Folder",
         &format!("&Rules in {}:", account.name.replace('&', "&&")),
         "&Count",
         &names,
         crate::presentation::theme::current_from_stored_config(),
-    ) else {
+    )
+    .and_then(|at| stored.get(at)) else {
         return;
     };
-    let Some(rule) = stored
-        .get(at)
-        .and_then(crate::application::filters::FilterEngine::from_persisted_rule)
-    else {
-        return refuse_a_command(tx, &a_rule_this_version_cannot_run(&names[at]));
+    let Some(rule) = crate::application::filters::FilterEngine::from_persisted_rule(chosen) else {
+        return refuse_a_command(tx, &a_rule_this_version_cannot_run(&chosen.name));
     };
     count_what_a_rule_would_change(app, &account, &folder, rule);
+}
+
+/// Run a rule the Filter Manager saved over a folder of its account chosen
+/// from a list, from the manager's Run on a Folder (#61, 13-44).
+///
+/// The rule is read back as it was saved, and the folders offered are the
+/// ones the tree shows for the rule's own account, by path, so a folder of
+/// the same path in another account is never reached. Choosing none changes
+/// nothing and says nothing. From the count on, the flow is This Folder's.
+fn run_a_rule_on_a_chosen_folder(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    run: &managers::RunARuleNow,
+) {
+    let AppHandles { state, tx, .. } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let account = lock_state(state)
+        .accounts
+        .iter()
+        .find(|account| account.id == run.account)
+        .cloned();
+    let Some(account) = account else {
+        return refuse_a_command(tx, "Open an account first.");
+    };
+    let stored = cache
+        .get_filter_rules_for_account(&account.id)
+        .ok()
+        .and_then(|rules| rules.into_iter().find(|rule| rule.id == run.rule_id));
+    let Some(stored) = stored else {
+        return refuse_a_command(
+            tx,
+            "The rule could not be read back after it was saved, so nothing was run.",
+        );
+    };
+    let Some(rule) = crate::application::filters::FilterEngine::from_persisted_rule(&stored) else {
+        return refuse_a_command(tx, &a_rule_this_version_cannot_run(&stored.name));
+    };
+    let mut folders = match folders_in_the_tree(cache, &account.id) {
+        Ok(folders) => folders,
+        Err(e) => {
+            return refuse_a_command(
+                tx,
+                &format!(
+                    "{}'s folders could not be read, so nothing was run: {e}.",
+                    account.name
+                ),
+            );
+        }
+    };
+    if folders.is_empty() {
+        return refuse_a_command(
+            tx,
+            &format!("{} has no folders on this computer yet.", account.name),
+        );
+    }
+    folders.sort_by(|a, b| a.path.cmp(&b.path));
+    let paths: Vec<String> = folders.iter().map(|folder| folder.path.clone()).collect();
+    let Some(folder) = crate::presentation::wx_managers::choose_from_list(
+        frame,
+        "Run on a Folder",
+        &format!("&Folders in {}:", account.name.replace('&', "&&")),
+        "&Count",
+        &paths,
+        crate::presentation::theme::current_from_stored_config(),
+    )
+    .and_then(|at| folders.get(at)) else {
+        return;
+    };
+    count_what_a_rule_would_change(app, &account, folder, rule);
 }
 
 /// A rule as the chooser lists it: its name, and whether it is switched off,
@@ -19693,7 +19779,9 @@ fn open_for_scanning(
             OnReturn::WindowClosed
         }
         ScanTarget::Filters => {
-            managers::manage_filters(state, cache, frame, tx, rt, a11y);
+            // The scan reads the window and closes it; a rule it would run
+            // over a folder is somebody's to ask for, not the scan's.
+            let _ = managers::manage_filters(state, cache, frame, tx, rt, a11y);
             OnReturn::WindowClosed
         }
         ScanTarget::Calendar => {

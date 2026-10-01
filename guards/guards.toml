@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 533 records have arrived since and have not been through it.
+# 535 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -35700,7 +35700,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 15 },
+    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 22 },
 ]
 
 # A rule run by hand whose question is asked without the account's gate, so
@@ -35725,5 +35725,44 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 15 },
+    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 22 },
+]
+
+# The Filter Manager answering a rule to run before it saves, so the rule
+# run over a folder is not the rule as it was left in the window
+# (T-13-44-04). Written 2026-09-30 by 13-44, measured through
+# `scripts/guards.sh --remeasure` against the target.
+[[guard]]
+name = "the Filter Manager saves its rules before it answers one to run"
+file = "src/presentation/managers.rs"
+suite = "a_rule_runs_over_a_folder_when_asked"
+before = '''    let failures = save_what_the_filter_manager_returned(&cache, &account, &stored, updated);'''
+after = '''    if let Some(rule_id) = run_on.clone() {
+        return Some(RunARuleNow { account, rule_id });
+    }
+    let failures = save_what_the_filter_manager_returned(&cache, &account, &stored, updated);'''
+red = [
+    "test_the_manager_saves_the_rules_before_it_answers_one_to_run",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 22 },
+]
+
+# Every manager window given Run on a Folder, so a label or a signature
+# offers to be run over a folder and ends the window for nothing. Written
+# 2026-09-30 by 13-44, measured through `scripts/guards.sh --remeasure`
+# against the target.
+[[guard]]
+name = "only the Filter Manager offers Run on a Folder"
+file = "src/presentation/wx_managers.rs"
+suite = "a_rule_runs_over_a_folder_when_asked"
+before = '''    let run_btn = T::runs_on_a_folder().then(|| {'''
+after = '''    let run_btn = true.then(|| {'''
+red = [
+    "test_the_label_manager_offers_no_run_on_a_folder",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 22 },
 ]

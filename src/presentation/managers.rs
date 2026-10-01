@@ -470,7 +470,22 @@ pub fn save_what_the_signature_manager_returned(
     failures
 }
 
-/// Message filter rules.
+/// A rule the Filter Manager was asked to run over a folder, as it was saved
+/// (#61, 13-44).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunARuleNow {
+    /// The account the manager was opened for, whose rule it is.
+    pub account: String,
+    /// The id the rule is saved under.
+    pub rule_id: String,
+}
+
+/// Message filter rules: the manager opened over the account's rules, and
+/// whatever it hands back saved.
+///
+/// Answers a rule to run when Run on a Folder closed the window. The rules
+/// are saved first, so the rule run is the rule as saved, and a save that
+/// fails is said and nothing runs.
 pub fn manage_filters(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -478,14 +493,20 @@ pub fn manage_filters(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     a11y: &Arc<crate::presentation::accessibility::Accessibility>,
-) {
+) -> Option<RunARuleNow> {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
-        Err(reason) => return send_refusal(tx, rt, reason),
+        Err(reason) => {
+            send_refusal(tx, rt, reason);
+            return None;
+        }
     };
     let stored = match cache.get_filter_rules_for_account(&account) {
         Ok(items) => items,
-        Err(e) => return send_status(tx, rt, &format!("Rules could not be read: {}.", e)),
+        Err(e) => {
+            send_status(tx, rt, &format!("Rules could not be read: {}.", e));
+            return None;
+        }
     };
     let rows: Vec<wx_managers::FilterRule> = stored
         .iter()
@@ -503,14 +524,30 @@ pub fn manage_filters(
         })
         .collect();
 
-    let wx_managers::FilterManagerAction::Updated(updated) =
-        wx_managers::show_filter_manager_dialog(frame, &rows, a11y)
-    else {
-        return;
+    let (updated, run_on) = match wx_managers::show_filter_manager_dialog(frame, &rows, a11y) {
+        wx_managers::FilterManagerAction::None => return None,
+        wx_managers::FilterManagerAction::Updated(updated) => (updated, None),
+        wx_managers::FilterManagerAction::RunOnAFolder { mut rules, which } => {
+            // A rule added in this window has no id until it is saved, and
+            // the run asks for the rule by the id it is saved under.
+            for rule in &mut rules {
+                rule.id = id_or_new(&rule.id, "rule");
+            }
+            let rule_id = rules.get(which).map(|rule| rule.id.clone());
+            (rules, rule_id)
+        }
     };
 
     let failures = save_what_the_filter_manager_returned(&cache, &account, &stored, updated);
-    report(tx, rt, "rules", failures);
+    let Some(rule_id) = run_on else {
+        report(tx, rt, "rules", failures);
+        return None;
+    };
+    if !failures.is_empty() {
+        report(tx, rt, "rules", failures);
+        return None;
+    }
+    Some(RunARuleNow { account, rule_id })
 }
 
 /// Write back what the rule manager returned, and name anything that would not
