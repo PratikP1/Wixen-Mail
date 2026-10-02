@@ -883,8 +883,8 @@ const KEYS_READ_WITH_MODIFIERS: [&str; 6] = [
 /// they hold: measured 2026-10-02 with the windows already on desktops made
 /// for their runs, every one of eight failed runs of
 /// `mark_as_read_says_which_way_it_will_go` and `several_steps_come_back`
-/// came while the person at the machine held Shift, and none of about 330
-/// runs without a modifier held failed.
+/// came while the person at the machine held Shift, and none of the 345
+/// watched runs without a modifier held failed.
 fn keys_sent_with_whatever_modifiers_are_held(path: &str, text: &str) -> Vec<String> {
     let code = code_only(text);
     let names = |token: &str| {
