@@ -198,6 +198,14 @@ it. What the copy buys is narrower: the move can be finished even when the accou
 message came *from* is the one that is not answering, and a large message does not have to
 be downloaded a second time. Deleting the copy loses nothing.
 
+### When a message went into the Trash
+
+Since 2026-10-02 the mail database also notes when each message went into a Trash on this
+computer, and the day each account's Trash was last emptied. An account set to empty its
+Trash after 15 or 30 days uses them to know which messages are due and to empty once a day.
+They are kept with your mail in the `cache` folder and nowhere else, they are not sent
+anywhere, and like everything else in that folder they are not encrypted.
+
 ### Contact groups stay here
 
 A contact group is a name you give to some of the people in your address book, so you can write

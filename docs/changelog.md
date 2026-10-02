@@ -8,6 +8,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Empty the Trash of an IMAP account after 15 or 30 days, chosen per account (GAP-14).**
+  Pratik asked on 2026-09-29 for "a setting to delete mail from local deleted
+  mailbox/trash" for accounts "that are not Gmail or Microsoft". The account editor's
+  connection page has "Empty the Trash (experimental)" (`Alt+Y`), with Never, After 15 days
+  and After 30 days, Never for every account until you choose. Set to a number of days,
+  the first check of the whole account each day takes off the mail server every message
+  that went into its Trash on this computer more than that many days before, the way Delete
+  does inside the Trash, at most 500 a day and the oldest first, and only when Allow
+  Changes lets the account change mail. One sentence says what it did, for example
+  "Emptied 12 messages from Trash in Work that had been there more than 30 days.", on its
+  own announcement topic and on the status bar; with mail changes off, or no folder the
+  account keeps deleted mail in, one sentence says why, once that day. Gmail and Microsoft
+  accounts are not offered it: a line in its place says their provider empties the Trash
+  itself, Gmail after 30 days and Outlook.com after 30 days by Microsoft's own page, and
+  which accounts those are is the one check Report as Junk and sign-in ask. The mail
+  database now notes when each message went into a Trash here, which the privacy page
+  says. The version does not move for this: no build has been cut since 1.0.0-alpha.1.
+  Known limitations: no emptying has met a real mail server; a message already in a Trash
+  when this version first runs counts from that moment, not from when it really went in;
+  a server that cannot remove one message at a time marks it for removal instead, and it
+  is counted as emptied; POP accounts and emptying when Wixen Mail closes come with the
+  next change.
 - **Run a rule over a folder when you ask, hearing first what it would change (#61,
   GAP-12).** #61 asked for "a 'Run on this folder' command in the Filter Manager and on the
   This Folder menu", "a dry run that counts matches and asks before acting", "the same

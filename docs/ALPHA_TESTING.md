@@ -106,7 +106,7 @@ amounts.
 
 | | What it covers | Default |
 |---|---|---|
-| Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, sending read receipts, changing subscriptions, and what your rules do to arriving mail: marking, flagging, labelling, and moving a message to the Trash | **Off** |
+| Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, sending read receipts, changing subscriptions, what your rules do to arriving mail: marking, flagging, labelling, and moving a message to the Trash, and emptying an account's Trash after the days you chose | **Off** |
 | Tasks, contacts and calendar | Sending your changes back to Google or Microsoft | On |
 
 A message that has been sent cannot be recalled, and a message deleted from a
@@ -255,6 +255,13 @@ Written down so you do not spend time reporting things already on the list.
   signed in to one through the browser, checked its mail, reported junk from it
   or opened its folder chooser. If you have one, tell us whether the browser
   sign-in kept, and which sentence Report as Junk said.
+- **Emptying the Trash after 15 or 30 days has never reached a real mail
+  server.** An IMAP account set to it in the account editor (`Alt+Y`) takes
+  what has been in its Trash that long off the server at its first check of
+  the day, and the choice says it is experimental. Nobody has seen it on a real
+  account, on a server that removes one message at a time or on one that can
+  only mark them. If you try it, tell us the sentence you heard and whether the
+  messages are gone from the Trash in another mail program or on your phone.
 - **Report as Junk has reached no real mail server.** Action, Report as
   Junk (`Ctrl+Shift+J`) sets the junk mark where a folder says it keeps one
   and moves the messages to the junk folder, and the menu item's description

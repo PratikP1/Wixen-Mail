@@ -6778,6 +6778,24 @@ requirement was added, so the coverage below stays at 122."
     experimental where it is seen.
   - [S] An emptying at a real mail server, and whether the choice and its sentence are heard
     well, are his.
+  - 13-44.6 on 2026-10-02: an IMAP account that 13-44.5's one check does not call Gmail or
+    Microsoft can be set in the account editor (`Alt+Y`, "Empty the Trash (experimental)") to
+    After 15 days or After 30 days, Never by default; at its first whole-account check of
+    each day, what went into its Trash on this computer more than that long ago is taken off
+    the server through the menu's Delete path, at most 500 and the oldest first, with one
+    sentence; with mail changes off, or no Trash recognised, nothing is emptied and one
+    sentence says why once that day; a Gmail or Microsoft account gets a line saying its
+    provider empties the Trash; the mail database records when a message went into a Trash,
+    additively. Held by `test_an_account_set_to_thirty_days_has_what_went_into_the_trash_more_than_thirty_days_ago_taken_off_the_server`,
+    `test_a_second_check_the_same_day_empties_nothing_more`,
+    `test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left`,
+    `test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day`,
+    `test_an_account_whose_provider_empties_its_trash_is_left_alone` and the rest of
+    `application::emptying_the_trash::tests`, the eight cases of
+    `data::message_cache::in_the_trash::tests`, `tests/the_trash_is_emptied_on_purpose.rs`,
+    `tests/account_edit_protocol_fields.rs`, `tests/one_check_says_who_runs_the_mail.rs` and
+    `tests/nothing_sends_a_flag_change_unasked.rs`. Nothing has met a real server (ledger
+    771). It adds no `[D]` clause, and the box stays for 13-44.7 to tick.
 
 ### The real-account proofs
 
@@ -6968,7 +6986,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-11 | Phase 13 | Done 2026-09-30, 13-23, 13-24, 13-24.1 and 13-40 to 13-42: Quick Steps kept per account, made in the Quick Step Manager, listed on Action, Quick Steps with `Ctrl+Shift+7` to `Ctrl+Shift+9`, and run over the selection through the one runner with one sentence, held by `tests/a_quick_step_runs_over_the_selection.rs`, `tests/the_quick_step_manager_says_what_each_step_does.rs` and `application::quick_steps`' cases; the real server is ledger 745, the ear ledger 746. Until 13-42 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary Quick Steps reuse; 13-24 done 2026-09-28, the five set actions as quiet do-halves a Quick Step's runner calls; 13-24.1 done 2026-09-28, the runner a Quick Step's actions are carried out through, answering what it did for the step's own sentence; 13-40 done 2026-09-30, the steps stored and named per account in a rule's action words, with their refusals, keys and sentence, and nothing yet running one (ledger 742); 13-41 done 2026-09-30, the Quick Step Manager on Action, Quick Steps and the step editor, steps made, changed and put in order and none run yet; otherwise not built", and before that "Not planned, 2026-09-20" |
 | GAP-12 | Phase 13 | Done 2026-10-01, 13-23, 13-24, 13-24.1, 13-43, 13-44 and 13-44.3 (done 2026-10-01, a rule's marks, flags and labels on arriving mail sent to the mail server in the check and a rule's Delete to the Trash there, ledger 678 closed): a rule run over a folder on demand from Action, This Folder, Run a Rule on This Folder and from the Filter Manager's Run on a Folder, counted on a worker, asked about in a native question after the account's gate, and run through the one runner with one sentence, held by `tests/a_rule_runs_over_a_folder_when_asked.rs` and `application::running_a_rule_now`'s cases; the real server is ledger 750, the ear ledger 751. Planned 2026-09-29: 13-44.3 sends a rule's marks, flags and labels on arriving mail to the mail server in the check (ledger 678), and a rule's Delete to the Trash there through the menu's delete path; no `[D]` clause is added. Until 13-44 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; 13-24 done 2026-09-28, the five set actions as quiet do-halves the runner over a folder calls; 13-24.1 done 2026-09-28, the runner a rule over a folder hands its matched messages to, through the gated write paths; 13-43 done 2026-09-30, what a rule would change in a folder counted and the question before a run worded, nothing yet asking it; otherwise not built", and before that "Not planned, 2026-09-20" |
 | GAP-13 | Phase 13 | Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20" |
-| GAP-14 | Phase 13 | Pending |
+| GAP-14 | Phase 13 | Pending; 13-44.6 done 2026-10-02: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft, held by `application::emptying_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledger 771). 13-44.7 ticks it. Until 13-44.6 the row read "Pending" |
 | REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
 | REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |
 

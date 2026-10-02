@@ -141,6 +141,49 @@ says when mail lands; [Getting your mail](#getting-your-mail) says which is
 which. There is no second interval on the Settings screen: the one on the
 account is the one.
 
+### Emptying the Trash
+
+An IMAP account's editor has a choice on its connection page, "Empty the Trash
+(experimental)", reached with `Alt+Y`. It offers Never, After 15 days and After
+30 days, and it is Never for every account until you choose.
+
+With After 15 days or After 30 days, the first time each day that Wixen Mail
+checks the whole account for mail, it takes off the mail server every message
+that went into that account's Trash on this computer more than that many days
+before. The days count from when a message went into the Trash here, not from
+when it arrived. A message already in the Trash when you first ran this version
+counts from that day.
+
+- It takes the messages off the mail server for good, on every device, the way
+  Delete does inside the Trash. Nothing brings them back.
+- It happens only when Allow Changes lets this account change mail. When it
+  does not, nothing is taken, and the check says so once that day.
+- At most 500 messages go in one day, the oldest first. The rest wait for the
+  next day, and the sentence says how many.
+- Only messages stored on this computer are taken. If you chose not to keep the
+  Trash up to date, or it holds more than a check keeps, the rest stay on the
+  server.
+- A server that cannot take one message off at a time is asked to mark it for
+  removal instead, as Delete does there, and it is counted as emptied. Other
+  mail programs may show it struck through until something removes it.
+- If the mail server cannot be reached, the message it was taking waits for the
+  next check, and the rest wait for the next day.
+- An account that does not say which of its folders is its Trash is not
+  emptied. The editor says so beside the choice, and the check says it once
+  that day.
+- A new message arriving in a watched inbox is not a check of the whole
+  account, so it empties nothing.
+
+When it takes something, you hear one sentence for the account, for example:
+"Emptied 12 messages from Trash in Work that had been there more than 30 days."
+
+Gmail and Microsoft accounts are not offered the choice, because their
+providers empty the Trash themselves: Gmail 30 days after a message goes into
+it, Outlook.com after 30 days, and a work or school Microsoft account as its
+organisation has set it. A line in the choice's place says so. Wixen Mail tells
+which accounts those are by their incoming server, their address or the name
+they were saved with, as [Adding an account](#adding-an-account) says.
+
 ### Other tools
 
 The Tools menu also opens:
