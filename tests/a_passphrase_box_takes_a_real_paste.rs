@@ -51,14 +51,23 @@ const WINSTA_ALL_ACCESS: u32 = 0x037F;
 const GENERIC_ALL: u32 = 0x1000_0000;
 const ERROR_ACCESS_DENIED: u32 = 5;
 const HWND_MESSAGE: isize = -3;
+const WAIT_TIMEOUT: u32 = 0x0000_0102;
+const WAIT_FAILED: u32 = 0xFFFF_FFFF;
+const WTS_CURRENT_SESSION: u32 = 0xFFFF_FFFF;
+const WTS_SESSION_INFO_EX: u32 = 25;
+const WTS_SESSIONSTATE_LOCK: u32 = 0;
+const WTS_SESSIONSTATE_UNLOCK: u32 = 1;
 
-/// How many times the clipboard is tried: two seconds in all, which outlasts
-/// a brief hold by another program and only delays the failure while the
-/// session is locked.
+/// How many times the clipboard is tried, and how far apart: two seconds in
+/// all, which outlasts a brief hold by another program and only delays the
+/// failure while the session is locked.
 const TRIES: u32 = 50;
+const BETWEEN_TRIES: Duration = Duration::from_millis(40);
 
-/// The turn every run of this target takes at the logon's test clipboard.
+/// The turn every run of this target takes at the logon's test clipboard,
+/// and the longest one run waits for another.
 const THE_TURN: &str = "Local\\wixen-mail-tests-one-turn-at-the-clipboard";
+const LONGEST_WAIT_FOR_THE_TURN_MS: u32 = 120_000;
 
 /// What the paste puts on the clipboard: long, with spaces, the shape a
 /// password manager's generated passphrase has.
@@ -76,6 +85,8 @@ unsafe extern "system" {
     fn EmptyClipboard() -> i32;
     fn SetClipboardData(format: u32, memory: *mut c_void) -> *mut c_void;
     fn CloseClipboard() -> i32;
+    fn GetOpenClipboardWindow() -> isize;
+    fn GetWindowThreadProcessId(hwnd: isize, process: *mut u32) -> u32;
     fn CreateWindowExW(
         extended_style: u32,
         class: *const u16,
@@ -116,8 +127,21 @@ unsafe extern "system" {
     fn GlobalUnlock(memory: *mut c_void) -> i32;
     fn GetLastError() -> u32;
     fn CreateMutexW(attributes: *const c_void, initial_owner: i32, name: *const u16) -> isize;
+    fn WaitForSingleObject(handle: isize, milliseconds: u32) -> u32;
     fn ReleaseMutex(handle: isize) -> i32;
     fn CloseHandle(handle: isize) -> i32;
+}
+
+#[link(name = "wtsapi32")]
+unsafe extern "system" {
+    fn WTSQuerySessionInformationW(
+        server: isize,
+        session: u32,
+        class: u32,
+        answer: *mut *mut c_void,
+        bytes: *mut u32,
+    ) -> i32;
+    fn WTSFreeMemory(memory: *mut c_void);
 }
 
 fn wide(text: &str) -> Vec<u16> {
@@ -155,12 +179,46 @@ struct Refusal {
 
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = (self.error, self.tries, self.waited);
-        let _ = self.holder.map(|holder| (holder.window, holder.process));
-        if let SessionLock::NotSaid(answer) = &self.session {
-            let _ = answer;
+        let tried = format!(
+            "OpenClipboard answered error {} on each of {} tries over {} ms",
+            self.error,
+            self.tries,
+            self.waited.as_millis()
+        );
+        let nothing_said = "This run says nothing about whether the field takes a paste.";
+        match (&self.session, self.holder) {
+            (SessionLock::Locked, _) => write!(
+                f,
+                "the clipboard is refused while the session is locked: {tried}, and Windows says \
+                 this session is locked. No test can paste while the session is locked. Unlock \
+                 it and run this target again. {nothing_said}"
+            ),
+            (_, Some(holder)) => write!(
+                f,
+                "the clipboard is held by window {:#x} of {}: {tried}. Another run of a test, or \
+                 another program on this logon's test window station, is the likely holder. Let \
+                 it finish and run this target again. {nothing_said}",
+                holder.window,
+                match holder.process {
+                    Some(process) => format!("process {process}"),
+                    None => "a process Windows did not give".to_string(),
+                }
+            ),
+            (SessionLock::Unlocked, None) => write!(
+                f,
+                "the clipboard is refused with the session unlocked and no window named: \
+                 {tried}. Windows says this session is unlocked, so the lock is not the cause, \
+                 and by its account no window holds the clipboard; a holder that opened the \
+                 clipboard without a window cannot be named. Run this target again. \
+                 {nothing_said}"
+            ),
+            (SessionLock::NotSaid(answer), None) => write!(
+                f,
+                "the clipboard is refused and Windows did not say whether the session is \
+                 locked: {tried}, and asking for the lock state answered {answer}. If the \
+                 session is locked, unlock it and run this target again. {nothing_said}"
+            ),
         }
-        write!(f, "")
     }
 }
 
@@ -187,26 +245,89 @@ impl fmt::Display for NoPaste {
 
 /// Whether this session is locked, as Windows answers it.
 fn this_sessions_lock() -> SessionLock {
-    SessionLock::NotSaid("not asked yet".to_string())
+    let mut answer: *mut c_void = std::ptr::null_mut();
+    let mut bytes = 0u32;
+    // SAFETY: Windows writes a buffer it owns into `answer` and its length
+    // into `bytes`; the buffer is copied and then freed once.
+    unsafe {
+        let asked = WTSQuerySessionInformationW(
+            0,
+            WTS_CURRENT_SESSION,
+            WTS_SESSION_INFO_EX,
+            &mut answer,
+            &mut bytes,
+        );
+        if asked == 0 || answer.is_null() {
+            return SessionLock::NotSaid(format!(
+                "WTSQuerySessionInformationW failed with error {}",
+                GetLastError()
+            ));
+        }
+        let copied = std::slice::from_raw_parts(answer as *const u8, bytes as usize).to_vec();
+        WTSFreeMemory(answer);
+        the_lock_in(&copied)
+    }
 }
 
-/// Open the clipboard for `owner`, trying `tries` times, and on the last
-/// refusal say what Windows says about why.
+/// The lock state in a `WTSINFOEXW` answer: its level in the first four
+/// bytes, and the session's flags at byte 16.
+fn the_lock_in(answer: &[u8]) -> SessionLock {
+    let word = |at: usize| {
+        answer
+            .get(at..at + 4)
+            .map(|four| u32::from_le_bytes([four[0], four[1], four[2], four[3]]))
+    };
+    match (word(0), word(16)) {
+        (Some(1), Some(WTS_SESSIONSTATE_LOCK)) => SessionLock::Locked,
+        (Some(1), Some(WTS_SESSIONSTATE_UNLOCK)) => SessionLock::Unlocked,
+        (level, flags) => SessionLock::NotSaid(format!(
+            "{} bytes, level {level:?}, session flags {flags:?}",
+            answer.len()
+        )),
+    }
+}
+
+/// The window Windows names as holding the clipboard, if it names one, and
+/// its process when it gives one.
+fn the_clipboards_holder() -> Option<Holder> {
+    // SAFETY: both calls only read; the process id is written to a local.
+    unsafe {
+        let window = GetOpenClipboardWindow();
+        (window != 0).then(|| {
+            let mut process = 0u32;
+            GetWindowThreadProcessId(window, &mut process);
+            Holder {
+                window,
+                process: (process != 0).then_some(process),
+            }
+        })
+    }
+}
+
+/// Open the clipboard for `owner`, trying `tries` times `BETWEEN_TRIES`
+/// apart, and on the last refusal say what Windows says about why.
 fn open_the_clipboard(owner: isize, tries: u32) -> Result<(), Refusal> {
     let started = Instant::now();
-    // SAFETY: opens the clipboard for a live window or for none.
-    if unsafe { OpenClipboard(owner) } != 0 {
-        return Ok(());
+    let mut tried = 0;
+    loop {
+        tried += 1;
+        // SAFETY: opens the clipboard for a live window or for none.
+        if unsafe { OpenClipboard(owner) } != 0 {
+            return Ok(());
+        }
+        // SAFETY: reads this thread's last error.
+        let error = unsafe { GetLastError() };
+        if tried >= tries {
+            return Err(Refusal {
+                error,
+                tries: tried,
+                waited: started.elapsed(),
+                holder: the_clipboards_holder(),
+                session: this_sessions_lock(),
+            });
+        }
+        std::thread::sleep(BETWEEN_TRIES);
     }
-    // SAFETY: reads this thread's last error.
-    let error = unsafe { GetLastError() };
-    Err(Refusal {
-        error,
-        tries: tries.min(1),
-        waited: started.elapsed(),
-        holder: None,
-        session: this_sessions_lock(),
-    })
 }
 
 // ── The station, the turn and the paste ────────────────────────────────────
@@ -264,6 +385,17 @@ impl OneTurnAtTheClipboard {
             // SAFETY: reads this thread's last error.
             let error = unsafe { GetLastError() };
             return Err(format!("the turn's mutex could not be made: error {error}"));
+        }
+        // SAFETY: a live mutex handle. An abandoned one, left by a run that
+        // ended while holding it, is taken like a released one.
+        let waited = unsafe { WaitForSingleObject(handle, LONGEST_WAIT_FOR_THE_TURN_MS) };
+        if waited == WAIT_TIMEOUT || waited == WAIT_FAILED {
+            // SAFETY: the handle made above, closed once.
+            unsafe { CloseHandle(handle) };
+            return Err(format!(
+                "another run held the turn at the test clipboard for {} s",
+                LONGEST_WAIT_FOR_THE_TURN_MS / 1000
+            ));
         }
         Ok(OneTurnAtTheClipboard(handle))
     }

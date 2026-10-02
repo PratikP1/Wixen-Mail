@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 581 records have arrived since and have not been through it.
+# 584 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -36811,7 +36811,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_passphrase.rs", tests = 2 },
-    { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 2 },
+    { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 11 },
 ]
 
 # The census allowing a file that does not exist, so the real paste target is
@@ -36830,4 +36830,66 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
+]
+
+# A refused clipboard told the lock state without asking Windows, so a locked
+# session and an unlocked one read the same and the case holding the
+# clipboard throughout no longer hears that the session is unlocked. Written
+# 2026-10-02 by 13-44.6.1, measured by hand with
+# `cargo test --no-fail-fast --test a_passphrase_box_takes_a_real_paste`.
+[[guard]]
+name = "a refused clipboard asks Windows whether the session is locked"
+file = "tests/a_passphrase_box_takes_a_real_paste.rs"
+suite = "a_passphrase_box_takes_a_real_paste"
+before = '''fn this_sessions_lock() -> SessionLock {
+    let mut answer: *mut c_void = std::ptr::null_mut();'''
+after = '''fn this_sessions_lock() -> SessionLock {
+    return SessionLock::NotSaid("not asked".to_string());
+    let mut answer: *mut c_void = std::ptr::null_mut();'''
+red = [
+    "test_the_lock_state_is_asked_of_windows_and_answered",
+    "test_a_clipboard_held_throughout_is_refused_naming_the_window_that_held_it",
+]
+tests_last_seen = [
+    { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 11 },
+]
+
+# The clipboard tried once, so a brief hold by another program fails the paste
+# instead of being waited out. The locked sentence counts its tries from the
+# same constant, so it goes red too. Written 2026-10-02 by 13-44.6.1,
+# measured by hand with
+# `cargo test --no-fail-fast --test a_passphrase_box_takes_a_real_paste`.
+[[guard]]
+name = "a brief hold on the clipboard is waited out"
+file = "tests/a_passphrase_box_takes_a_real_paste.rs"
+suite = "a_passphrase_box_takes_a_real_paste"
+before = '''const TRIES: u32 = 50;'''
+after = '''const TRIES: u32 = 1;'''
+red = [
+    "test_a_clipboard_held_briefly_is_waited_for",
+    "test_a_refusal_while_the_session_is_locked_says_the_session_is_locked",
+]
+tests_last_seen = [
+    { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 11 },
+]
+
+# The turn taken without waiting for it, so a second run puts text on the
+# logon's shared test clipboard while the first is still using it. The break
+# skips the wait rather than waiting 0 ms: a 0 ms wait also refuses this
+# target's own harvest whenever the turn case holds the turn when the harvest
+# asks, which would make the red list depend on thread timing. Five runs of
+# the 0 ms break reddened the turn case alone, so the race is rare rather
+# than absent. Written 2026-10-02 by 13-44.6.1, measured by hand with
+# `cargo test --no-fail-fast --test a_passphrase_box_takes_a_real_paste`.
+[[guard]]
+name = "two runs take turns at the clipboard"
+file = "tests/a_passphrase_box_takes_a_real_paste.rs"
+suite = "a_passphrase_box_takes_a_real_paste"
+before = '''        let waited = unsafe { WaitForSingleObject(handle, LONGEST_WAIT_FOR_THE_TURN_MS) };'''
+after = '''        let waited = 0;'''
+red = [
+    "test_a_second_run_waits_its_turn_at_the_clipboard",
+]
+tests_last_seen = [
+    { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 11 },
 ]
