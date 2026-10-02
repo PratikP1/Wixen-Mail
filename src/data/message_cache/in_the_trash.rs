@@ -33,8 +33,9 @@
 //! stamp from then on.
 
 use super::MessageCache;
-use crate::common::Result;
+use crate::common::{Error, Result};
 use chrono::{DateTime, Utc};
+use rusqlite::{OptionalExtension, params};
 
 /// One message stored in a Trash, and when it went in here.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,11 +48,34 @@ pub struct InTheTrash {
     pub since: DateTime<Utc>,
 }
 
+/// A stamp as the triggers write it, `2026-10-02T09:30:00.123Z`.
+fn read_the_stamp(stored: &str) -> Result<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(stored)
+        .map(|since| since.with_timezone(&Utc))
+        .map_err(|e| {
+            Error::Other(format!(
+                "When a message went into the Trash reads {stored:?}: {e}"
+            ))
+        })
+}
+
 impl MessageCache {
     /// When this row went into a Trash here, or `None` when it is in none.
     pub fn in_the_trash_since(&self, row: i64) -> Result<Option<DateTime<Utc>>> {
-        let _ = row;
-        Ok(None)
+        let stored: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT since FROM in_the_trash_since WHERE message_id = ?1",
+                params![row],
+                |found| found.get(0),
+            )
+            .optional()
+            .map_err(|e| {
+                Error::Other(format!(
+                    "When a message went into the Trash could not be read: {e}"
+                ))
+            })?;
+        stored.as_deref().map(read_the_stamp).transpose()
     }
 
     /// What one Trash folder holds that an emptying could take, oldest first.
@@ -59,17 +83,62 @@ impl MessageCache {
     /// Leaves out a row already marked deleted here, which is a delete under
     /// way or done; a row this program filed under a number of its own, which
     /// the server does not hold under that number yet; and a row with a move
-    /// or a delete still waiting to reach the server (D16).
+    /// or a delete still waiting to reach the server (D16). A stamp that
+    /// cannot be read leaves its row out too, and says so in the log: a
+    /// message left in the Trash is the safe end of not knowing.
     pub fn what_has_been_in_the_trash(&self, folder_id: i64) -> Result<Vec<InTheTrash>> {
-        let _ = folder_id;
-        Ok(Vec::new())
+        let could_not = |e: rusqlite::Error| {
+            Error::Other(format!("What is in the Trash could not be read: {e}"))
+        };
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT m.id, m.uid, t.since
+                 FROM messages m JOIN in_the_trash_since t ON t.message_id = m.id
+                 WHERE m.folder_id = ?1 AND m.deleted = 0 AND m.filed_here = 0
+                   AND NOT EXISTS (SELECT 1 FROM moves_waiting w WHERE w.message_row_id = m.id)",
+            )
+            .map_err(could_not)?;
+        let rows = statement
+            .query_map(params![folder_id], |found| {
+                Ok((
+                    found.get::<_, i64>(0)?,
+                    found.get::<_, i64>(1)?,
+                    found.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(could_not)?;
+        let mut held = Vec::new();
+        for row in rows {
+            let (row, uid, since) = row.map_err(could_not)?;
+            match read_the_stamp(&since) {
+                Ok(since) => held.push(InTheTrash {
+                    row,
+                    uid: uid as u32,
+                    since,
+                }),
+                Err(why) => tracing::warn!("A message in the Trash is left there: {why}"),
+            }
+        }
+        // Ordered here rather than by the text, which a stamp written to a
+        // different number of decimal places would put out of order.
+        held.sort_by_key(|in_the_trash| (in_the_trash.since, in_the_trash.row));
+        Ok(held)
     }
 
     /// Say a row went into the Trash at this moment, for a case that needs a
     /// message to have been there a while.
     #[cfg(test)]
     pub fn it_went_into_the_trash_at(&self, row: i64, since: DateTime<Utc>) -> Result<()> {
-        let _ = (row, since);
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO in_the_trash_since (message_id, since) VALUES (?1, ?2)",
+                params![
+                    row,
+                    since.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+                ],
+            )
+            .map_err(|e| Error::Other(format!("The stamp could not be set: {e}")))?;
         Ok(())
     }
 }

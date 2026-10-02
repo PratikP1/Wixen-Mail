@@ -432,6 +432,19 @@ pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your ac
      and like every change Wixen Mail sends it is experimental, because none of it has been \
      run against a real account yet.";
 
+/// What the account editor's choice of when the Trash is emptied says on
+/// itself (13-44.6, D10).
+///
+/// Emptying is the one change this program makes at somebody's provider on a
+/// schedule, with nobody at the key, and nothing can undo it. So it says that
+/// it has never met a real account, what it does and where, that Allow
+/// Changes holds it, and when the days are counted from, which is not when
+/// the message arrived.
+pub const EMPTYING_THE_TRASH_IS_EXPERIMENTAL: &str = "Experimental: this has never been run \
+     against a real account. It takes the messages in this account's Trash off the mail server \
+     for good, on every device, and only when Allow Changes lets this account change mail. The \
+     days count from when a message went into the Trash on this computer.";
+
 /// Everything that has an opinion about what may be changed.
 ///
 /// Kept as one value so the answer is worked out in one place and every

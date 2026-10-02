@@ -2605,6 +2605,71 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create work done once table: {}", e)))?;
 
+        // ── When a message went into a Trash ───────────────────────────────
+        // Read by an emptying of the Trash after the days somebody chose
+        // (13-44.6, D3 and D13), and kept by the store rather than by each
+        // writer, because the writers are several and a later one would
+        // forget. See `in_the_trash` for what each trigger is for. A folder is
+        // a Trash when its stored type reads `trash` ignoring case and space,
+        // as `FolderType::from_stored` reads it. No foreign key: the last
+        // trigger takes a row's stamp when the row goes, and a row replaced
+        // whole, which fires no delete trigger, leaves a stamp that names no
+        // message and is never read. Additive: one table and four triggers,
+        // nothing dropped, nothing renamed.
+        self.conn
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS in_the_trash_since (
+                     message_id INTEGER PRIMARY KEY,
+                     since TEXT NOT NULL
+                 );
+                 CREATE TRIGGER IF NOT EXISTS a_message_is_put_in_the_trash
+                 AFTER INSERT ON messages
+                 WHEN new.folder_id IN (SELECT id FROM folders WHERE lower(trim(folder_type)) = 'trash')
+                 BEGIN
+                     INSERT OR IGNORE INTO in_the_trash_since (message_id, since)
+                     VALUES (new.id, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS a_message_is_moved_into_the_trash
+                 AFTER UPDATE OF folder_id ON messages
+                 WHEN new.folder_id IN (SELECT id FROM folders WHERE lower(trim(folder_type)) = 'trash')
+                  AND old.folder_id NOT IN (SELECT id FROM folders WHERE lower(trim(folder_type)) = 'trash')
+                 BEGIN
+                     INSERT OR REPLACE INTO in_the_trash_since (message_id, since)
+                     VALUES (new.id, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS a_message_is_moved_out_of_the_trash
+                 AFTER UPDATE OF folder_id ON messages
+                 WHEN new.folder_id NOT IN (SELECT id FROM folders WHERE lower(trim(folder_type)) = 'trash')
+                 BEGIN
+                     DELETE FROM in_the_trash_since WHERE message_id = new.id;
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS a_message_in_the_trash_is_forgotten
+                 AFTER DELETE ON messages
+                 BEGIN
+                     DELETE FROM in_the_trash_since WHERE message_id = old.id;
+                 END;",
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to keep when mail went into the Trash: {}", e))
+            })?;
+        // A message already in a Trash when this build first opens the
+        // database counts from that moment, and every later open finds every
+        // such row stamped and adds nothing (D3).
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO in_the_trash_since (message_id, since)
+                 SELECT m.id, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 FROM messages m JOIN folders f ON f.id = m.folder_id
+                 WHERE lower(trim(f.folder_type)) = 'trash'",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to note the mail already in the Trash: {}",
+                    e
+                ))
+            })?;
+
         // ── Task lists ──────────────────────────────────────────────────
         self.conn
             .execute(

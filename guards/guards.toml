@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 571 records have arrived since and have not been through it.
+# 575 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -693,6 +693,10 @@ red = [
     "application::what_rules_tell_the_server::tests::test_the_clauses_say_each_count_and_reason_once_and_the_singular_right",
     "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
     "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
+    # Added 2026-10-02 by 13-44.6, found by --remeasure as predicted: the
+    # sentence an emptying of the Trash says counts through `how_many`, and
+    # under this break reads "Emptied 1 messages".
+    "application::emptying_the_trash::tests::test_one_message_is_said_in_the_singular",
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
@@ -701,6 +705,7 @@ tests_last_seen = [
     { file = "src/application/choosing_messages.rs", tests = 18 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/emptying_the_trash.rs", tests = 6 },
     { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -36602,4 +36607,82 @@ red = [
 tests_last_seen = [
     { file = "src/service/this_machine.rs", tests = 7 },
     { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The trigger that stamps a message moving into a Trash, made to fire on a
+# change of read instead, so a message moved there is never stamped and an
+# emptying never finds it (13-44.6, D13). Written 2026-10-02 by 13-44.6,
+# taken by hand against the whole library first.
+[[guard]]
+name = "a message is stamped the moment it enters a Trash"
+file = "src/data/message_cache/mod.rs"
+before = '''                 CREATE TRIGGER IF NOT EXISTS a_message_is_moved_into_the_trash
+                 AFTER UPDATE OF folder_id ON messages'''
+after = '''                 CREATE TRIGGER IF NOT EXISTS a_message_is_moved_into_the_trash
+                 AFTER UPDATE OF read ON messages'''
+red = [
+    "data::message_cache::in_the_trash::tests::test_a_folder_typed_trash_in_any_case_is_a_trash",
+    "data::message_cache::in_the_trash::tests::test_a_message_moved_into_the_trash_is_stamped_when_it_arrives",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/in_the_trash.rs", tests = 8 },
+    { file = "src/data/message_cache/mod.rs", tests = 23 },
+]
+
+# Due turned round, so what went in recently is emptied and what has been
+# there longest is kept (13-44.6, T-13-44.6-02). Written 2026-10-02 by
+# 13-44.6, taken by hand against the whole library first.
+[[guard]]
+name = "only what went into the Trash more than the days chosen ago is emptied"
+file = "src/application/emptying_the_trash.rs"
+before = '''        .filter(|message| now - message.since > Duration::days(days))'''
+after = '''        .filter(|message| now - message.since < Duration::days(days))'''
+red = [
+    "application::emptying_the_trash::tests::test_a_message_in_the_trash_exactly_the_days_chosen_is_not_yet_due",
+    "application::emptying_the_trash::tests::test_an_account_set_to_thirty_days_has_what_went_into_the_trash_more_than_thirty_days_ago_taken_off_the_server",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 6 },
+]
+
+# The row marked deleted here and never sent, in place of the step the
+# menu's Delete and a rule's Delete share (13-44.6, D4). Taken by hand on
+# 2026-10-02 the same break also reddens the census in
+# tests/nothing_sends_a_flag_change_unasked.rs, which a record of one suite
+# cannot name. Written 2026-10-02 by 13-44.6.
+[[guard]]
+name = "the Trash is emptied through the menu's Delete path, made here first"
+file = "src/application/emptying_the_trash.rs"
+before = '''        let deleted = delete_here_then_at_the_server(server, cache, &asked, "").await;'''
+after = '''        let deleted = DeletedHereThenAtTheServer::Became(
+            cache
+                .delete_message(asked.message_row_id)
+                .map(|()| ForTheChange::Done)?,
+        );'''
+red = [
+    "application::emptying_the_trash::tests::test_an_account_set_to_thirty_days_has_what_went_into_the_trash_more_than_thirty_days_ago_taken_off_the_server",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 6 },
+]
+
+# A second place in the window naming the emptying, planted as a string the
+# reading cannot tell from a call, which is what a second caller looks like
+# to it (13-44.6, T-13-44.6-05). Written 2026-10-02 by 13-44.6, taken by
+# hand against the target first.
+[[guard]]
+name = "only the check empties the Trash"
+file = "src/presentation/wx_app.rs"
+suite = "the_trash_is_emptied_on_purpose"
+before = ''') -> crate::application::emptying_the_trash::WhenTheTrashIsEmptied {
+    crate::data::config::ConfigManager::load_stored()'''
+after = ''') -> crate::application::emptying_the_trash::WhenTheTrashIsEmptied {
+    let _ = "empty_at_a_check(";
+    crate::data::config::ConfigManager::load_stored()'''
+red = [
+    "test_only_the_check_empties_the_trash",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 3 },
 ]

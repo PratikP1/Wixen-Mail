@@ -7,7 +7,10 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
-use crate::application::allowed::{Allowed, READING_SECTION, SETTINGS_SECTION};
+use crate::application::allowed::{
+    Allowed, EMPTYING_THE_TRASH_IS_EXPERIMENTAL, READING_SECTION, SETTINGS_SECTION,
+};
+use crate::application::emptying_the_trash::WhenTheTrashIsEmptied;
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
 use crate::application::mail_auth::{NO_BROWSER_SIGN_IN_HERE, no_sign_in_credentials, provider_of};
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
@@ -948,6 +951,11 @@ struct ImapFields {
     port_label: StaticText,
     port: TextCtrl,
     tls: CheckBox,
+    /// When the Trash is emptied, offered to an IMAP account alone until
+    /// 13-44.7 makes it work on POP. It sits in the Settings section, after
+    /// the box that enables the account, and hides with the rest of IMAP's.
+    empty_the_trash_label: StaticText,
+    empty_the_trash: Choice,
 }
 
 impl ImapFields {
@@ -958,6 +966,8 @@ impl ImapFields {
         self.port_label.show(visible);
         self.port.show(visible);
         self.tls.show(visible);
+        self.empty_the_trash_label.show(visible);
+        self.empty_the_trash.show(visible);
     }
 }
 
@@ -1336,6 +1346,56 @@ fn remember_what_this_account_may_change(account_id: &str, answer: Allowed) -> O
     None
 }
 
+/// The label beside the choice of when this account's Trash is emptied
+/// (13-44.6, D2). Y, one of the two letters of "Empty the Trash" free on the
+/// connection page whichever protocol shows; H, the other, is left for the
+/// next control there.
+const EMPTY_THE_TRASH: &str = "Empt&y the Trash (experimental):";
+
+/// When this account's Trash is emptied, as stored, or Never for a new
+/// account.
+///
+/// Read from the stored settings, the way [`what_this_account_may_change`]
+/// reads its answer and for its reason. A settings file that cannot be read
+/// answers Never and says so in the log: the choice then shows the safe end,
+/// and saving fails the same way and is said.
+fn when_this_accounts_trash_is_emptied(account_id: Option<&str>) -> WhenTheTrashIsEmptied {
+    let Some(account_id) = account_id else {
+        return WhenTheTrashIsEmptied::Never;
+    };
+    match crate::data::config::ConfigManager::load_stored() {
+        Ok(settings) => settings.app_config().trash_emptying_for(account_id),
+        Err(why) => {
+            tracing::warn!("When this account's Trash is emptied could not be read: {why}");
+            WhenTheTrashIsEmptied::Never
+        }
+    }
+}
+
+/// Write down when this account's Trash is emptied, answering what went
+/// wrong, or `None` when nothing did, as
+/// [`remember_what_this_account_may_change`] does.
+fn remember_when_this_accounts_trash_is_emptied(
+    account_id: &str,
+    answer: WhenTheTrashIsEmptied,
+) -> Option<String> {
+    let mut settings = match crate::data::config::ConfigManager::load_stored() {
+        Ok(settings) => settings,
+        Err(why) => {
+            tracing::warn!("When this account's Trash is emptied could not be saved: {why}");
+            return Some(format!("{why}"));
+        }
+    };
+    settings
+        .app_config_mut()
+        .set_trash_emptying_for(account_id, answer);
+    if let Err(why) = settings.save() {
+        tracing::warn!("When this account's Trash is emptied could not be saved: {why}");
+        return Some(format!("{why}"));
+    }
+    None
+}
+
 /// The protocol a live `Choice`'s current selection names.
 ///
 /// A selection wxWidgets has not resolved yet reads as IMAP, the same
@@ -1559,6 +1619,24 @@ fn show_edit(
                 &format!(
                     "What this account may change could not be saved, so it is what it was \
                      before you opened this page. Everything else on this page was kept. \
+                     ({why})"
+                ),
+                Priority::High,
+            );
+        }
+        // The choice, read into its one writer the same way. Read whether or
+        // not it is showing: a POP account's choice is hidden and opened on
+        // what was stored, so writing it back keeps what was there.
+        let chosen = w
+            .empty_the_trash
+            .get_selection()
+            .and_then(|at| WhenTheTrashIsEmptied::ALL.get(at as usize).copied())
+            .unwrap_or_default();
+        if let Some(why) = remember_when_this_accounts_trash_is_emptied(&id, chosen) {
+            let _ = a11y.announce(
+                &format!(
+                    "When this account's Trash is emptied could not be saved, so it is what it \
+                     was before you opened this page. Everything else on this page was kept. \
                      ({why})"
                 ),
                 Priority::High,
@@ -1832,14 +1910,6 @@ pub fn build_account_edit_dialog(
     // L, because T is SMTP Port's on this page; the POP box that also takes
     // L is never shown with it.
     let imap_tls = cb("Use T&LS", true);
-    let imap_fields = ImapFields {
-        section_heading: imap_section_heading,
-        server_label: imap_label,
-        server: imap_f,
-        port_label: imap_port_label,
-        port: imap_port_f,
-        tls: imap_tls,
-    };
 
     let pop_section_heading = section("── POP Settings ──");
     let (pop_label, pop_f) = tf("PO&P Server:", "");
@@ -1955,8 +2025,48 @@ pub fn build_account_edit_dialog(
     };
     // A, because B is Back's.
     let enabled = cb("En&able this account", true);
-    let empty_the_trash = Choice::builder(&dlg).build();
-    empty_the_trash.show(false);
+    // When this account's Trash is emptied (13-44.6), opening on what is
+    // stored for it, which is Never until somebody chooses. Named and
+    // described in one call, the signature choice's pattern, since a second
+    // attach replaces the first. Y, the one letter of "Empty" free on this
+    // page whichever protocol shows (D2).
+    let (empty_the_trash_label, empty_the_trash) = {
+        let l = StaticText::builder(&dlg)
+            .with_label(EMPTY_THE_TRASH)
+            .build();
+        let opens_on = when_this_accounts_trash_is_emptied(existing.map(|a| a.id.as_str()));
+        let c = Choice::builder(&dlg)
+            .with_choices(
+                WhenTheTrashIsEmptied::ALL
+                    .map(|when| when.said().to_string())
+                    .to_vec(),
+            )
+            .with_selection(Some(
+                WhenTheTrashIsEmptied::ALL
+                    .iter()
+                    .position(|when| *when == opens_on)
+                    .unwrap_or(0) as u32,
+            ))
+            .build();
+        set_accessible_name_and_description(
+            &c,
+            &name_from_label(EMPTY_THE_TRASH),
+            EMPTYING_THE_TRASH_IS_EXPERIMENTAL,
+        );
+        fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+        fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        (l, c)
+    };
+    let imap_fields = ImapFields {
+        section_heading: imap_section_heading,
+        server_label: imap_label,
+        server: imap_f,
+        port_label: imap_port_label,
+        port: imap_port_f,
+        tls: imap_tls,
+        empty_the_trash_label,
+        empty_the_trash,
+    };
 
     // ── What this account may change ─────────────────────────────────────
     //

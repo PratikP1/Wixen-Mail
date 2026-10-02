@@ -923,23 +923,38 @@ impl AppConfig {
         }
     }
 
-    /// When this account's Trash is emptied: Never unless somebody chose.
+    /// When this account's Trash is emptied: Never unless somebody chose, and
+    /// Never for a word this build does not know.
     pub fn trash_emptying_for(
         &self,
         account_id: &str,
     ) -> crate::application::emptying_the_trash::WhenTheTrashIsEmptied {
-        let _ = account_id;
-        crate::application::emptying_the_trash::WhenTheTrashIsEmptied::Never
+        self.trash_emptying
+            .get(account_id)
+            .map(|stored| {
+                crate::application::emptying_the_trash::WhenTheTrashIsEmptied::from_stored(stored)
+            })
+            .unwrap_or_default()
     }
 
     /// Write down when this account's Trash is emptied, as the account
-    /// editor answered it.
+    /// editor answered it. Never keeps no row, so an account nobody chose
+    /// for and one somebody set back to Never read the same.
     pub fn set_trash_emptying_for(
         &mut self,
         account_id: &str,
         answer: crate::application::emptying_the_trash::WhenTheTrashIsEmptied,
     ) {
-        let _ = (account_id, answer);
+        use crate::application::emptying_the_trash::WhenTheTrashIsEmptied;
+        match answer {
+            WhenTheTrashIsEmptied::Never => {
+                self.trash_emptying.remove(account_id);
+            }
+            chosen => {
+                self.trash_emptying
+                    .insert(account_id.to_string(), chosen.as_stored().to_string());
+            }
+        }
     }
 
     /// The directory this account looks people up in, if it names one.
@@ -2761,7 +2776,7 @@ mod every_setting_is_acted_on {
     /// Each entry names the file whose control offers it, and that claim is
     /// checked rather than believed, so an entry cannot rot into a lie after
     /// somebody takes the control it points at away.
-    const OFFERED_BY_ANOTHER_SCREEN: [(&str, &str); 4] = [
+    const OFFERED_BY_ANOTHER_SCREEN: [(&str, &str); 5] = [
         // The account manager names the directory an account looks people up
         // in, and which account is the default one to send from. Both are per
         // account, so they belong on the screen that lists accounts.
@@ -2781,6 +2796,10 @@ mod every_setting_is_acted_on {
             "allowed_per_account",
             "src/presentation/wx_account_manager.rs",
         ),
+        // When one account's Trash is emptied (13-44.6), for the same reason:
+        // an answer about one account, on its connection page, and offered
+        // only to an account whose provider does not empty it.
+        ("trash_emptying", "src/presentation/wx_account_manager.rs"),
         // Muting what is read aloud is a menu item with a check on it,
         // `ID_MUTE_CONTENT`, because it is reached in a hurry when somebody
         // walks into the room. A settings page is the wrong place for it.

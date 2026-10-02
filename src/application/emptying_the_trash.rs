@@ -30,12 +30,19 @@
 //! double that keeps folders and writes down what it was asked; phase 14's
 //! ledger line carries a real account.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
-use crate::application::moves_waiting::ReplaysAMove;
+use crate::application::destinations::{DeletedGoesTo, Deleting, where_a_deleted_message_goes};
+use crate::application::moves_waiting::{
+    APushUnderWay, DeletedHereThenAtTheServer, ReplaysAMove, delete_here_then_at_the_server,
+};
+use crate::application::what_rules_tell_the_server::ForTheChange;
 use crate::common::Result;
+use crate::common::types::FolderType;
 use crate::data::message_cache::MessageCache;
 use crate::data::message_cache::in_the_trash::InTheTrash;
+use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
+use crate::service::caldav::how_many;
 
 /// When an account's Trash is emptied, as the account editor offers it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -57,24 +64,38 @@ impl WhenTheTrashIsEmptied {
     /// Read back from the word stored, where a word this build does not know
     /// reads as Never, the safe end (D11).
     pub fn from_stored(stored: &str) -> Self {
-        let _ = stored;
-        Self::Never
+        Self::ALL
+            .into_iter()
+            .find(|when| when.as_stored() == stored)
+            .unwrap_or_default()
     }
 
     /// The word kept in the settings.
     pub fn as_stored(self) -> &'static str {
-        ""
+        match self {
+            Self::Never => "never",
+            Self::After15Days => "after_15_days",
+            Self::After30Days => "after_30_days",
+        }
     }
 
     /// The words the choice shows.
     pub fn said(self) -> &'static str {
-        ""
+        match self {
+            Self::Never => "Never",
+            Self::After15Days => "After 15 days",
+            Self::After30Days => "After 30 days",
+        }
     }
 
     /// How many days a message stays in the Trash before it is due, or
     /// `None` for an answer that empties nothing on a schedule.
     pub fn days(self) -> Option<i64> {
-        None
+        match self {
+            Self::Never => None,
+            Self::After15Days => Some(15),
+            Self::After30Days => Some(30),
+        }
     }
 }
 
@@ -89,24 +110,38 @@ pub struct TheAccount<'a> {
 /// What of the Trash is due: what went in here more than `days` days before
 /// `now`, oldest first.
 pub fn what_is_due(in_the_trash: &[InTheTrash], days: i64, now: DateTime<Utc>) -> Vec<InTheTrash> {
-    let _ = (in_the_trash, days, now);
-    Vec::new()
+    in_the_trash
+        .iter()
+        .filter(|message| now - message.since > Duration::days(days))
+        .cloned()
+        .collect()
 }
 
 /// The one sentence an emptying says for an account, or `None` when it took
-/// nothing (D8).
+/// nothing (D8). The folder's own name, so the sentence names what the tree
+/// shows.
 pub fn what_the_emptying_said(
     folder_name: &str,
     account_name: &str,
     emptied: usize,
     days: i64,
 ) -> Option<String> {
-    let _ = (folder_name, account_name, emptied, days);
-    None
+    (emptied > 0).then(|| {
+        format!(
+            "Emptied {} from {folder_name} in {account_name} that had been there more than \
+             {days} days.",
+            how_many(emptied, "message")
+        )
+    })
 }
 
 /// Empty this account's Trash of what is due, on the check's own session,
 /// and answer the sentence to say, if any.
+///
+/// The Trash is the one the menu's Delete moves to, found the same way
+/// (D9), and each message due is deleted inside it as the menu's Delete
+/// there deletes it: off the server, through the step a rule's Delete
+/// shares. Only messages stored here are taken (D15), oldest first.
 pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     server: &S,
     cache: &MessageCache,
@@ -114,17 +149,57 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     when: WhenTheTrashIsEmptied,
     now: DateTime<Utc>,
 ) -> Result<Option<String>> {
-    let _ = (server, cache, account, when, now);
-    Ok(None)
+    let Some(days) = when.days() else {
+        return Ok(None);
+    };
+    let folders = cache.get_folders_for_account(account.id)?;
+    let DeletedGoesTo::TheTrash(trash_path) = where_a_deleted_message_goes(
+        folders.iter().map(|folder| {
+            (
+                folder.path.as_str(),
+                FolderType::from_stored(&folder.folder_type),
+            )
+        }),
+        "",
+        Deleting::ToTrash,
+    ) else {
+        return Ok(None);
+    };
+    let Some(trash) = folders.iter().find(|folder| folder.path == trash_path) else {
+        return Ok(None);
+    };
+    let due = what_is_due(&cache.what_has_been_in_the_trash(trash.id)?, days, now);
+    let _under_way = APushUnderWay::begins(account.id);
+    let mut emptied = 0;
+    for message in &due {
+        let asked = AWaitingMove {
+            message_row_id: message.row,
+            account_id: account.id.to_string(),
+            from_folder_path: trash.path.clone(),
+            uid: message.uid,
+            what: WhatAWaitingMoveDoes::DeleteOutright,
+            asked_at: now.to_rfc3339(),
+        };
+        // No subject: the line it makes is the menu's, for the eye at the
+        // key, and an emptying says one sentence for the account (D8).
+        let deleted = delete_here_then_at_the_server(server, cache, &asked, "").await;
+        if let DeletedHereThenAtTheServer::Became(ForTheChange::Done) = deleted {
+            emptied += 1;
+        }
+    }
+    Ok(what_the_emptying_said(
+        &trash.name,
+        account.name,
+        emptied,
+        days,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::types::FolderType;
     use crate::data::message_cache::moves_waiting::MarksFirst;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
-    use chrono::Duration;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
 
@@ -391,6 +466,36 @@ mod tests {
         assert_eq!(
             WhenTheTrashIsEmptied::ALL.map(WhenTheTrashIsEmptied::said),
             ["Never", "After 15 days", "After 30 days"]
+        );
+    }
+
+    #[test]
+    fn test_each_account_keeps_its_own_answer_and_never_keeps_no_row() {
+        let mut settings = crate::data::config::AppConfig::default();
+        settings.set_trash_emptying_for("work", WhenTheTrashIsEmptied::After30Days);
+        settings.set_trash_emptying_for("home", WhenTheTrashIsEmptied::After15Days);
+        assert_eq!(
+            settings.trash_emptying_for("work"),
+            WhenTheTrashIsEmptied::After30Days
+        );
+        assert_eq!(
+            settings.trash_emptying_for("home"),
+            WhenTheTrashIsEmptied::After15Days
+        );
+        assert_eq!(
+            settings.trash_emptying_for("nobody chose"),
+            WhenTheTrashIsEmptied::Never
+        );
+
+        settings.set_trash_emptying_for("work", WhenTheTrashIsEmptied::Never);
+        assert_eq!(
+            settings.trash_emptying_for("work"),
+            WhenTheTrashIsEmptied::Never
+        );
+        assert!(
+            !settings.trash_emptying.contains_key("work"),
+            "Never kept a row: {:?}",
+            settings.trash_emptying
         );
     }
 
