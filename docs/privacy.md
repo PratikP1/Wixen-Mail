@@ -160,13 +160,59 @@ The second copy is dropped when a signed message is larger than 25 MB, and when 
 copies use passes 128 MB, the ones read longest ago going first. Two kinds of mail are never
 dropped that way, because there would be no getting them back: mail collected over POP, and
 mail brought in from a file. Once those fill the 128 MB, no further copies are kept, rather
-than existing ones being destroyed to make room. Deleting a message drops its second copy too,
-again except for those two kinds, where dropping it would leave nothing to restore if you
-undeleted the message.
+than existing ones being destroyed to make room. A rule's Delete drops the second copy too,
+again except for those two kinds, because a rule can be written wrong and the message is only
+marked deleted. Taking one of them off this computer drops everything it said, the second copy
+included, as the next section says. Until 2026-10-02 this said any delete kept the second copy
+of those two kinds, so that undeleting would have something to restore; a message taken off
+this computer cannot be undeleted, and since that day it keeps nothing.
 
 Whenever there is no second copy, for any of these reasons, the message says its signature
 could not be checked here, and says plainly that this is not the same as a signature that
 failed.
+
+### Mail taken off this computer keeps nothing it said
+
+Some mail has no copy anywhere but on this computer: mail collected over POP, a copy of a
+message you sent that Wixen Mail filed here, and mail brought in from a file. Since 2026-10-02,
+taking one of those messages off this computer removes what it said from the mail database.
+That happens when:
+
+- an account's "Empty the Trash" setting empties it, after 15 or 30 days or as Wixen Mail
+  closes
+- you use Empty Folder on the Trash
+- you press Delete on a message that is already in the Trash
+- you use Delete Permanently on a message in a folder on this computer
+- you redo any of these
+
+What goes is its text in both forms, its subject, who sent it and who it went to, every other
+header, the form it arrived in, its attachments, the labels you put on it, the message
+identifiers it names and its entry in the search index. An attachment's file goes too, unless
+another message carries the same file, because then the file is that message's as well.
+
+What stays is a row with no words in it: the number the POP server knows the message by, when
+it was downloaded, which account it came from, which folder it was in and its number there.
+Without those, the next check for mail would download the message again, and the account's
+"Then remove it after this many days" setting would lose the day it counts from.
+
+The space the removal frees in the mail database is overwritten rather than left holding the
+old bytes. A search stops finding the message at once. The search index keeps the words on its
+own pages until it rewrites them, which it does at the next check for mail; after that the
+mail database and its write log hold none of the message's words.
+
+What this does not reach:
+
+- Copies that earlier changes to the message left in unused space elsewhere in the mail
+  database. Nothing searches those out.
+- The write log and the search index, until the next check for mail.
+- What your disk keeps of any data that was deleted or written over, which only the disk's own
+  tools can clear.
+- Windows Search's own index, if you let it index your mail. See
+  [One thing uninstalling cannot take back](#one-thing-uninstalling-cannot-take-back).
+- Replies and forwards you wrote, which keep whatever they quoted.
+
+A rule's Delete is different. A rule can be written wrong, so a message a rule deletes is
+marked deleted and keeps its words, as before.
 
 ### A message being moved to another account is kept until the move ends
 

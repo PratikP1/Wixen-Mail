@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 683
+open_count: 685
 waived_count: 0
 fixed_count: 102
-total_count: 785
-last_updated: 2026-10-02T20:45:00.000Z
+total_count: 787
+last_updated: 2026-10-02T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -800,6 +800,8 @@ last_updated: 2026-10-02T20:45:00.000Z
 | 783 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-44.7, the tester's ear: nobody has heard Wixen Mail close with the window going at once and nothing said after it, with and without an account set to When Wixen Mail closes; the Empty the Trash (experimental) choice on a POP account's connection page on Alt+Y with its four answers and its description, which now says what it does on a POP account and as Wixen Mail closes; the sentence a POP account's emptying says at its check ("Emptied 1 message of Old ISP's from the Trash on this computer that had been there more than 30 days."); or the sentences that say, once a day, that the close will not empty an account's Trash and why. Whether each is said once and whole, and whether the choice's name lands on the handle focus reaches on the POP page, is held by the tests only | open |  | 2026-10-02T18:30:00.000Z |  |
 | 784 | 13 | todo | src/application/emptying_the_trash.rs |  | 13-44.7, for phase 14 under REAL-02's delete line: an IMAP account set to When Wixen Mail closes emptied at a real mail server within the five seconds as Wixen Mail closes, the window gone first; a server too slow for the limit, whose waiting delete the next start's first check sends before it lists any folder; and a real POP account set to empty its Trash, with Leave mail on the server on, whose emptied message the next check does not download again and whose removal setting still counts from the first download | open |  | 2026-10-02T18:30:00.000Z |  |
 | 785 | 13 | todo | tests/a_marker_counts_at_the_start_of_any_line.rs |  | 13-44.7, found on its pull request (#153), the first CI run of 13-44.6.1 to 13-44.6.3, none of which pushed: in CI run 37054973323's Test Suite, a_marker_counts_at_the_start_of_any_line failed 1 of 5 and a_signature_follows_the_from_account 14 of 17, each at 300 s, every failure a child on WinSta0 wixen-marker or wixen-signature that printed webview_edge.cpp(609) 'WebView2::WebViewCreated' failed with error 0x80070578 (Invalid window handle) and then ran out its five-minute bound. The mutants job (run 37054973221) failed its unmutated baseline on the marker target the same way, so no mutant of 13-44.7's change was tested. The invitation and meeting targets' children passed on the same runner in 33 s and 36 s; 13-44.6's run 36998846453 passed both failing targets when they ran in-process. Locally all five pass. Neither target is touched by 13-44.7, whose other checks were green. Open for a plan of its own on Pratik's answer: find why an editor's browser control cannot be made in a child on a desktop of its own on the runner, and until then every pull request's Test Suite and mutants job are red for this reason | open |  | 2026-10-02T20:45:00.000Z |  |
+| 786 | 13 | todo | src/application/emptying.rs | 252 | 13-44.8 (its D35), found by its planner and not fixed, for Pratik: Empty Folder's question on the Trash every POP account shares says "They will be taken off this computer for good, and there is no other copy." With Leave mail on the server on, its default, the POP server may still hold those messages, so "there is no other copy" overstates what is lost; the words they said are gone from this computer since 13-44.8 either way. Recommendation: say "and Wixen Mail keeps no other copy", which is true whatever the server holds, and leave the rest of the sentence. The sentence is spoken, so changing it is a pull request with the NVDA run | open |  | 2026-10-02T23:30:00.000Z |  |
+| 787 | 13 | todo | src/data/message_cache/taken_off_this_computer.rs |  | 13-44.8, for phase 14 under REAL-02's delete line: a POP message taken off this computer (Delete in the Trash, Delete Permanently, Empty Folder or the Empty the Trash setting), then the account checked against a real POP server: with Leave mail on the server on, the message is not downloaded again; with Then remove it after this many days set, it still leaves the server on the day counted from its first download; and after that check the mail database and its write log hold none of its words. Held today only by application::pop_sync's test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day against a scripted server and by the byte readings of data::message_cache::taken_off_this_computer | open |  | 2026-10-02T23:30:00.000Z |  |
 
 ````json
 [
@@ -10221,6 +10223,30 @@ last_updated: 2026-10-02T20:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-02T20:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 786,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/emptying.rs",
+    "line": 252,
+    "description": "13-44.8 (its D35), found by its planner and not fixed, for Pratik: Empty Folder's question on the Trash every POP account shares says \"They will be taken off this computer for good, and there is no other copy.\" With Leave mail on the server on, its default, the POP server may still hold those messages, so \"there is no other copy\" overstates what is lost; the words they said are gone from this computer since 13-44.8 either way. Recommendation: say \"and Wixen Mail keeps no other copy\", which is true whatever the server holds, and leave the rest of the sentence. The sentence is spoken, so changing it is a pull request with the NVDA run",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 787,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/data/message_cache/taken_off_this_computer.rs",
+    "line": null,
+    "description": "13-44.8, for phase 14 under REAL-02's delete line: a POP message taken off this computer (Delete in the Trash, Delete Permanently, Empty Folder or the Empty the Trash setting), then the account checked against a real POP server: with Leave mail on the server on, the message is not downloaded again; with Then remove it after this many days set, it still leaves the server on the day counted from its first download; and after that check the mail database and its write log hold none of its words. Held today only by application::pop_sync's test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day against a scripted server and by the byte readings of data::message_cache::taken_off_this_computer",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T23:30:00.000Z",
     "resolved_at": null
   }
 ]

@@ -207,6 +207,14 @@ the server is decided by the account's own "Leave mail on the server after
 downloading it" and "Then remove it after this many days" settings, as before.
 
 - Each account empties only the messages it put in the shared Trash.
+- An emptied message is taken off this computer with its words: its text,
+  subject, sender, attachments and everything else it said are removed from
+  the mail database. What stays is what stops the next check downloading it
+  again: its number on the POP server, when it was downloaded and which
+  account it came from. A search stops finding it at once, and the search
+  index lets go of its words at the next check for mail. The
+  [privacy page](privacy.md#mail-taken-off-this-computer-keeps-nothing-it-said)
+  says what this does not reach.
 - After 15 or 30 days is done at the start of the account's first check of the
   day, before Wixen Mail connects to the POP server, so a server that cannot be
   reached does not stop it. When Wixen Mail closes is done as it closes, POP
@@ -1297,6 +1305,16 @@ message:
   yet. Refresh the folder it went to, and move it back from there.
 - A message whose change is reaching the server at that moment. Try again
   shortly.
+
+Mail kept on this computer alone, which is mail collected over POP, a copy of
+mail you sent filed here, and mail brought in from a file, has no server to
+come back from. Since 2026-10-02, Delete on such a message in the Trash,
+Delete Permanently on one in any folder on this computer, and Empty Folder on
+the Trash take it off this computer with its words, keeping only what stops
+the next check downloading it again, and Undo says it was deleted
+permanently. A search stops finding it at once; the search index lets go of
+its words at the next check for mail. A message a rule deletes keeps its
+words.
 
 Redo (`Ctrl+Y`) does the move, delete or copy again. Undoing a change at the
 server is experimental, and the Undo item's help on the Edit menu says so:
