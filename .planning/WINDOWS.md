@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 682
+open_count: 683
 waived_count: 0
 fixed_count: 102
-total_count: 784
-last_updated: 2026-10-02T18:30:00.000Z
+total_count: 785
+last_updated: 2026-10-02T20:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -799,6 +799,7 @@ last_updated: 2026-10-02T18:30:00.000Z
 | 782 | 13 | todo | tests/a_meeting_change_reaches_the_calendar.rs |  | 13-44.6.3: Alt+R in the meeting change reading was among the targets that failed 13-44's first gate run in the minute after an unlock while somebody typed (13-44 deviation 6). Cause removed by 13-44.6.3 on 2026-10-02: its window tests run in a child of its own executable started on a desktop made for the run, inside the one turn, and Alt+R is posted with Alt alone down. Before: 20 of 20 on the interactive desktop. After, at aad04c6b: 20 of 20 one after another, the child taking about 3 s where a thread moved alone waited 36 s for a browser that never came up | fixed |  | 2026-10-02T16:30:00.000Z | 2026-10-02T16:30:00.000Z |
 | 783 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-44.7, the tester's ear: nobody has heard Wixen Mail close with the window going at once and nothing said after it, with and without an account set to When Wixen Mail closes; the Empty the Trash (experimental) choice on a POP account's connection page on Alt+Y with its four answers and its description, which now says what it does on a POP account and as Wixen Mail closes; the sentence a POP account's emptying says at its check ("Emptied 1 message of Old ISP's from the Trash on this computer that had been there more than 30 days."); or the sentences that say, once a day, that the close will not empty an account's Trash and why. Whether each is said once and whole, and whether the choice's name lands on the handle focus reaches on the POP page, is held by the tests only | open |  | 2026-10-02T18:30:00.000Z |  |
 | 784 | 13 | todo | src/application/emptying_the_trash.rs |  | 13-44.7, for phase 14 under REAL-02's delete line: an IMAP account set to When Wixen Mail closes emptied at a real mail server within the five seconds as Wixen Mail closes, the window gone first; a server too slow for the limit, whose waiting delete the next start's first check sends before it lists any folder; and a real POP account set to empty its Trash, with Leave mail on the server on, whose emptied message the next check does not download again and whose removal setting still counts from the first download | open |  | 2026-10-02T18:30:00.000Z |  |
+| 785 | 13 | todo | tests/a_marker_counts_at_the_start_of_any_line.rs |  | 13-44.7, found on its pull request (#153), the first CI run of 13-44.6.1 to 13-44.6.3, none of which pushed: in CI run 37054973323's Test Suite, a_marker_counts_at_the_start_of_any_line failed 1 of 5 and a_signature_follows_the_from_account 14 of 17, each at 300 s, every failure a child on WinSta0 wixen-marker or wixen-signature that printed webview_edge.cpp(609) 'WebView2::WebViewCreated' failed with error 0x80070578 (Invalid window handle) and then ran out its five-minute bound. The mutants job (run 37054973221) failed its unmutated baseline on the marker target the same way, so no mutant of 13-44.7's change was tested. The invitation and meeting targets' children passed on the same runner in 33 s and 36 s; 13-44.6's run 36998846453 passed both failing targets when they ran in-process. Locally all five pass. Neither target is touched by 13-44.7, whose other checks were green. Open for a plan of its own on Pratik's answer: find why an editor's browser control cannot be made in a child on a desktop of its own on the runner, and until then every pull request's Test Suite and mutants job are red for this reason | open |  | 2026-10-02T20:45:00.000Z |  |
 
 ````json
 [
@@ -10208,6 +10209,18 @@ last_updated: 2026-10-02T18:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-02T18:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 785,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/a_marker_counts_at_the_start_of_any_line.rs",
+    "line": null,
+    "description": "13-44.7, found on its pull request (#153), the first CI run of 13-44.6.1 to 13-44.6.3, none of which pushed: in CI run 37054973323's Test Suite, a_marker_counts_at_the_start_of_any_line failed 1 of 5 and a_signature_follows_the_from_account 14 of 17, each at 300 s, every failure a child on WinSta0 wixen-marker or wixen-signature that printed webview_edge.cpp(609) 'WebView2::WebViewCreated' failed with error 0x80070578 (Invalid window handle) and then ran out its five-minute bound. The mutants job (run 37054973221) failed its unmutated baseline on the marker target the same way, so no mutant of 13-44.7's change was tested. The invitation and meeting targets' children passed on the same runner in 33 s and 36 s; 13-44.6's run 36998846453 passed both failing targets when they ran in-process. Locally all five pass. Neither target is touched by 13-44.7, whose other checks were green. Open for a plan of its own on Pratik's answer: find why an editor's browser control cannot be made in a child on a desktop of its own on the runner, and until then every pull request's Test Suite and mutants job are red for this reason",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T20:45:00.000Z",
     "resolved_at": null
   }
 ]
