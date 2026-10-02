@@ -249,6 +249,12 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
+- **No Google Workspace or Microsoft 365 account on its own domain has been
+  tried.** Wixen Mail now knows one as Gmail or Microsoft by its incoming
+  server, such as `imap.gmail.com` or `outlook.office365.com`, but nobody has
+  signed in to one through the browser, checked its mail, reported junk from it
+  or opened its folder chooser. If you have one, tell us whether the browser
+  sign-in kept, and which sentence Report as Junk said.
 - **Report as Junk has reached no real mail server.** Action, Report as
   Junk (`Ctrl+Shift+J`) sets the junk mark where a folder says it keeps one
   and moves the messages to the junk folder, and the menu item's description

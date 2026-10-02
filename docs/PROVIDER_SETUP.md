@@ -32,6 +32,11 @@ What you get depends on what kind of account it is.
 | Notes | No | No | No |
 | Reminders | No | No | No |
 
+The Gmail and the Outlook, Office 365 columns include Google Workspace and
+Microsoft 365 accounts on their organisation's own domains, when the incoming
+server is Google's or Microsoft's and the account signed in through the
+browser.
+
 **"Any other IMAP or POP account"** means a mail server and nothing else, which
 is what Yahoo, iCloud, ProtonMail Bridge and a self-hosted server are to Wixen
 Mail. They carry mail. Contacts, calendars and tasks made while one of those is
@@ -172,29 +177,49 @@ Microsoft refused it. [Privacy](privacy.md) says what is sent.
 ## Choosing a sign-in method
 
 Wixen Mail signs in to a mailbox one of two ways. The account dialog has a
-checkbox, "Sign in with the provider in a browser (OAuth)", and it is set to
-whichever usually works for the address you typed. You can change it.
+checkbox, "Sign in with the provider in a browser (OAuth)", and it is set from
+the address as you type, to whichever usually works for it. You can change it.
+An address on your organisation's own domain starts with it off; turning it on
+works once the incoming server is Google's or Microsoft's.
+
+The advice next to the password box, and the "Get an app password in your
+browser" button, follow the incoming server once you type one, and the address
+until then:
+
+- A Gmail or Google Workspace account is advised to use an app password, and
+  the button opens Google's page for one.
+- A Microsoft account, Outlook.com or Microsoft 365, is told to turn on the
+  browser sign-in, and the button says the same rather than opening a page.
+  Microsoft no longer accepts a password from a mail program, not even an app
+  password: its page on Exchange Online says "Basic authentication is now
+  disabled in all tenants" and that this "also prevents the use of app
+  passwords", and its page for Outlook.com gives September 16th, 2024 as the
+  day "Basic Authentication no longer available to access any Outlook
+  account". Both read again on 2026-10-01.
 
 ### App password
 
 A password your provider generates for one application, which you can revoke on
 its own without changing the password you sign in with everywhere else. This is
-the default for Gmail and for any provider we do not recognise.
+the default for Gmail and for any provider we do not recognise. It is not
+offered for Microsoft, which stopped accepting app passwords, as above.
 
 It works today, it does not expire, and it does not depend on Wixen Mail being
 registered with anybody. You need two-step verification turned on with your
 provider before they will give you one.
 
 Your ordinary password will not work. Google stopped accepting it for mail
-applications, and Microsoft has stopped for most accounts. Typing it produces
-"authentication failed", which reads like a typo and sends people round the loop
-again, so the account dialog says this next to the password box.
+applications, and Microsoft has stopped accepting any password from a mail
+program. Typing it produces "authentication failed", which reads like a typo
+and sends people round the loop again, so the account dialog says this next to
+the password box.
 
 ### Browser sign-in (OAuth)
 
 You are sent to the provider's own page, you sign in there, and Wixen Mail never
 sees your password. This is the default for Outlook.com addresses, because
-Microsoft has withdrawn password sign-in more widely than Google has.
+Microsoft no longer accepts a password from a mail program, and the only way in
+to any Microsoft mailbox, Microsoft 365 included.
 
 **What this costs, honestly.** Reading mail is what Google calls a restricted
 scope, and an application asking for it has to pass a security assessment before
@@ -277,6 +302,13 @@ verification is on, which is why the direct link is easier.
    password will not work here.
 5. Type the name you want people to see when your mail arrives.
 6. Choose **OK**.
+
+**Google Workspace on your organisation's own domain.** The servers are not
+filled in for an address Wixen Mail does not recognise, so type
+`imap.gmail.com` as the IMAP server and `smtp.gmail.com` as the SMTP server.
+From then on Wixen Mail treats the account as Gmail, by its server. Whether
+your organisation lets Wixen Mail sign in, with an app password or through the
+browser, is its administrator's decision.
 
 ### How Gmail differs, and what Wixen Mail does about it
 
@@ -375,13 +407,20 @@ says what happens on every other provider.
 
 1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
-3. Type your Outlook email address (`user@outlook.com`, `user@hotmail.com`,
-   or your work address). Wixen Mail recognises the domain and fills in the
-   server settings for you:
+3. Type your Outlook email address. For an Outlook.com, Hotmail, Live or MSN
+   address (`user@outlook.com`, `user@hotmail.com`), Wixen Mail recognises the
+   domain and fills in the server settings for you:
    - **IMAP Server:** outlook.office365.com, port 993, TLS
    - **SMTP Server:** smtp.office365.com, port 587, TLS
+
+   For a Microsoft 365 address on your organisation's own domain, nothing is
+   filled in: type `outlook.office365.com` as the IMAP server and
+   `smtp.office365.com`, port 587, as the SMTP server. Wixen Mail then treats
+   the account as Microsoft, by its server.
 4. The browser sign-in checkbox is on by default for Outlook.com addresses.
-   Leave it checked.
+   Leave it checked. For a Microsoft 365 address on your own domain it starts
+   off: turn it on, because Microsoft accepts no password from a mail
+   program.
 5. Type the name you want people to see when your mail arrives.
 6. Choose **OK**. The browser opens immediately to sign in; Wixen Mail never
    sees your password.
@@ -390,14 +429,27 @@ says what happens on every other provider.
 
 - **Personal accounts:** Use outlook.office365.com servers
 - **Business accounts:** Usually use the same servers, but check with IT
-- **Multi-factor authentication:** May require app password for business accounts
+- **Signing in:** Use the browser sign-in. Microsoft no longer accepts a
+  password or an app password from a mail program, so whether Wixen Mail may
+  sign in is your organisation's administrator's decision.
+- **A server name of your organisation's own** that points at Microsoft is not
+  recognised, because Wixen Mail does not look names up. Use
+  `outlook.office365.com` instead.
 
 ### Troubleshooting Outlook
 
 **"Authentication failed" for business account:**
 - Check with IT department for correct server settings
-- May need app password if modern auth is disabled
-- Verify IMAP is enabled for your organization
+- Check that the browser sign-in is on; a password will not work
+- Ask your administrator whether Wixen Mail is allowed to sign in, and whether
+  IMAP is enabled for your organisation
+
+**"Signing in failed" saying neither the server nor the address belongs to
+Google or Microsoft:**
+- Check the IMAP or POP server. It has to be Google's or Microsoft's own name,
+  such as `imap.gmail.com` or `outlook.office365.com`, for the browser sign-in
+  to know where to send you. Or turn the browser sign-in off and enter a
+  password.
 
 **Exchange vs. Office 365:**
 - Office 365 works with these settings

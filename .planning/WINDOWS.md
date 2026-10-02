@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 675
+open_count: 677
 waived_count: 0
 fixed_count: 92
-total_count: 767
-last_updated: 2026-10-01T23:30:00.000Z
+total_count: 769
+last_updated: 2026-10-01T23:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -782,6 +782,8 @@ last_updated: 2026-10-01T23:30:00.000Z
 | 765 | 13 | todo | src/presentation/wx_app.rs |  | 13-44.3, premise 11 (b), read and not run: the check replays waiting moves before waiting flag changes, so a Mark as Read made while mail changes were off, kept in waiting_flag_changes, beside a move waiting for the same message is sent after the move, to the folder and number the message has left, 688's shape in the replay. Recommendation: the waiting move takes the row's waiting marks when it is replayed, as it takes a run's; small, and no plan carries it yet | open |  | 2026-10-01T22:00:00.000Z |  |
 | 766 | 13 | todo | scripts/check.sh |  | 13-44.3, found by CI: tests/flag_names.rs reads every source file for an IMAP flag name spelled outside src/service/protocols/imap/flag.rs, and it is not among guards_that_read_the_whole_tree in scripts/check.sh, so the branch's commits that spelled the seen and flagged names in flag_changes_waiting.rs's tests passed the hook and the pull request's Test Suite refused them. Recommendation: add flag_names to that list, or give it a guard record coupling it to the files it reads; small, and no plan carries it yet | open |  | 2026-10-01T23:00:00.000Z |  |
 | 767 | 13 | unrun-verify | src/application/when_people_are_free.rs | 475 | 13-44.4, the tester's ear: nobody has heard "Saturday at 10 is outside Ada's working day" said for a time inside the working day set in Settings, because it is outside the days and hours Ada set in her own Outlook. Whether it is understood as Ada's own day without the guide, and whether a colleague's own hours putting a time last is noticed at all | open |  | 2026-10-01T23:30:00.000Z |  |
+| 768 | 13 | unrun-verify | src/application/who_runs_the_mail.rs |  | 13-44.5, for phase 14: a Google Workspace account and a Microsoft 365 account on their organisations' own domains, each added with its servers typed by hand (imap.gmail.com and smtp.gmail.com; outlook.office365.com and smtp.office365.com, port 587) and the browser sign-in on. Whether the sign-in is kept and the first check reads the Inbox; Report as Junk on one message (Workspace: moved to Spam with no keyword; Microsoft 365: the sentence saying Microsoft has not been told); and the folder chooser's All Mail sentence on the Workspace one. Nothing in 13-44.5 has met either | open |  | 2026-10-01T23:45:00.000Z |  |
+| 769 | 13 | unrun-verify | src/presentation/wx_account_manager.rs |  | 13-44.5, the tester's ear: nobody has heard the mail check's new sentence for an account at example.com with the browser sign-in on ("... is set to sign in through a browser, but neither its server nor its address belongs to Google or Microsoft ..."); nor, in the account editor, D11's sentence read as the password box's description and said by Get an app password in your browser for an address at outlook.com with the browser sign-in box turned off; nor the advice changing when imap.gmail.com is typed after an address at example.com. No NVDA case reaches any of them | open |  | 2026-10-01T23:45:00.000Z |  |
 
 ````json
 [
@@ -9987,6 +9989,30 @@ last_updated: 2026-10-01T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-01T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 768,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/who_runs_the_mail.rs",
+    "line": null,
+    "description": "13-44.5, for phase 14: a Google Workspace account and a Microsoft 365 account on their organisations' own domains, each added with its servers typed by hand (imap.gmail.com and smtp.gmail.com; outlook.office365.com and smtp.office365.com, port 587) and the browser sign-in on. Whether the sign-in is kept and the first check reads the Inbox; Report as Junk on one message (Workspace: moved to Spam with no keyword; Microsoft 365: the sentence saying Microsoft has not been told); and the folder chooser's All Mail sentence on the Workspace one. Nothing in 13-44.5 has met either",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T23:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 769,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "13-44.5, the tester's ear: nobody has heard the mail check's new sentence for an account at example.com with the browser sign-in on (\"... is set to sign in through a browser, but neither its server nor its address belongs to Google or Microsoft ...\"); nor, in the account editor, D11's sentence read as the password box's description and said by Get an app password in your browser for an address at outlook.com with the browser sign-in box turned off; nor the advice changing when imap.gmail.com is typed after an address at example.com. No NVDA case reaches any of them",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T23:45:00.000Z",
     "resolved_at": null
   }
 ]
