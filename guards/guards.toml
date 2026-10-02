@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 604 records have arrived since and have not been through it.
+# 607 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -36901,7 +36901,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # An ordinary move into a folder every account shares records nobody, so
@@ -36935,7 +36935,7 @@ tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # The owner dropped from the read of the shared Trash, so a POP account's
@@ -37252,9 +37252,12 @@ red = [
     # Added the same day by --remeasure: since the written-back row is
     # indexed, a kept subject is found by a search again.
     "data::message_cache::taken_off_this_computer::tests::test_nothing_keyed_on_a_message_taken_off_is_left",
+    # Added the same day by --remeasure: a kept subject is indexed again,
+    # so the file holds it after the index lets go.
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # The POP identifier left off what a message taken off this computer keeps,
@@ -37282,7 +37285,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/application/pop_sync.rs", tests = 54 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # The soft delete put back in the arm every way of taking a message off
@@ -37315,26 +37318,30 @@ before = '''        conn.pragma_update(None, "secure_delete", 1)'''
 after = '''        conn.pragma_update(None, "secure_delete", 0)'''
 red = [
     "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index",
+    # Added the same day by --remeasure: the compaction switches secure
+    # delete on through the same piece, so the merged pages keep the words.
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # The written-back row left with no search entry, so the index holds fewer
 # entries than there are rows and the next open rebuilds the whole of it
 # (13-44.8, found writing task 1). Written 2026-10-02 by 13-44.8, taken by
-# hand against the whole library first.
+# hand against the whole library first; its anchor rewritten the same day
+# when the count of what the index owes went in after the call.
 [[guard]]
 name = "a message taken off this computer leaves the search index as full as the mail"
 file = "src/data/message_cache/taken_off_this_computer.rs"
 before = '''        self.index_message_for_search(message_id)?;
-        taking.commit().map_err(could_not)'''
-after = '''        taking.commit().map_err(could_not)'''
+        self.owe_a_compaction()?;'''
+after = '''        self.owe_a_compaction()?;'''
 red = [
     "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_leaves_the_search_index_as_full_as_the_mail",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # Secure delete left on after a removal instead of put back as it was found
@@ -37349,5 +37356,57 @@ red = [
     "data::message_cache::taken_off_this_computer::tests::test_overwriting_freed_space_is_put_back_as_it_was_after_a_removal",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The compaction takes no merge step and reports finished, so the search
+# index keeps the words of mail taken off this computer on its pages
+# (13-44.8, D32, T-13-44.8-02). Written 2026-10-02 by 13-44.8, taken by
+# hand against the whole library first.
+[[guard]]
+name = "the search index lets go of the words of mail taken off this computer"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''            if !self.one_merge_step()? {'''
+after = '''            if true {'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_a_compaction_stopped_at_its_limit_stays_owed_and_the_next_one_finishes",
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The settle removes the record whatever its count, so a message taken off
+# while the index was being compacted is never let go of (13-44.8, D32,
+# T-13-44.8-07). Written 2026-10-02 by 13-44.8, taken by hand against the
+# whole library first.
+[[guard]]
+name = "a message taken off during a compaction keeps it owed"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''WHERE id = 1 AND taken_off = ?1",'''
+after = '''WHERE id = 1 OR taken_off = ?1",'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_during_a_compaction_keeps_it_owed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The call taken out of the check, so nothing lets the search index forget
+# what was taken off (13-44.8, D32). Written 2026-10-02 by 13-44.8, taken
+# by hand with `cargo test --no-fail-fast --test
+# mail_taken_off_leaves_no_words_behind`.
+[[guard]]
+name = "every check lets the search index forget what was taken off"
+file = "src/presentation/wx_app.rs"
+suite = "mail_taken_off_leaves_no_words_behind"
+before = '''        the_search_index_forgets_what_was_taken_off();
+        if nothing_went_through {'''
+after = '''        if nothing_went_through {'''
+red = [
+    "test_every_check_lets_the_search_index_forget_what_was_taken_off",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_taken_off_leaves_no_words_behind.rs", tests = 3 },
 ]

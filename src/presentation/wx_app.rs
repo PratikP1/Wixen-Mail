@@ -30603,10 +30603,12 @@ fn spawn_mail_sync(
             say(UIUpdate::MailboxWatchRequested(account.id.clone()));
             nothing_went_through = false;
         }
+        // Before the return below, which a check of POP accounts alone always
+        // takes, so every check reaches it whatever its accounts (13-44.8).
+        the_search_index_forgets_what_was_taken_off();
         if nothing_went_through {
             return;
         }
-        the_search_index_forgets_what_was_taken_off();
         // Every check that went through ends by asking for the download of
         // everything (#20, #23), after the watches, so a download that does
         // not start leaves the inboxes watched. Once for the whole list: the

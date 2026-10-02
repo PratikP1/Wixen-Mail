@@ -63,6 +63,13 @@ fn could_not(e: rusqlite::Error) -> Error {
     ))
 }
 
+/// The words of an error met while letting the search index go.
+fn could_not_compact(e: rusqlite::Error) -> Error {
+    Error::Other(format!(
+        "The search index could not let go of mail taken off this computer: {e}"
+    ))
+}
+
 /// SQLite's `secure_delete` switched on for as long as this lives, and put
 /// back to what it was when it goes, on an error as much as on success.
 struct OverwritingWhatIsFreed<'c> {
@@ -115,24 +122,80 @@ impl MessageCache {
     /// How many messages have been taken off this computer since the search
     /// index last let go of their words, or `None` when it owes nothing.
     pub fn the_index_owes_a_compaction(&self) -> Result<Option<i64>> {
-        Ok(None)
+        self.conn
+            .query_row(
+                "SELECT taken_off FROM search_index_owes_a_compaction WHERE id = 1",
+                [],
+                |owed| owed.get(0),
+            )
+            .optional()
+            .map_err(could_not_compact)
     }
 
     /// Rewrite the search index in steps of [`MERGE_PAGES_A_STEP`] pages,
     /// at most `most_steps` of them, so the pages holding words of mail taken
-    /// off this computer are written again without them.
+    /// off this computer are written again without them. Finished, the write
+    /// log is emptied into the file, so it holds none of them either.
     pub fn compact_the_search_index(&self, most_steps: usize) -> Result<Compacted> {
-        let _ = most_steps;
+        let _overwriting = OverwritingWhatIsFreed::switched_on(&self.conn)?;
+        for step in 1..=most_steps {
+            if !self.one_merge_step()? {
+                self.empty_the_write_log();
+                return Ok(Compacted {
+                    steps: step,
+                    finished: true,
+                });
+            }
+        }
         Ok(Compacted {
-            steps: 0,
+            steps: most_steps,
             finished: false,
         })
+    }
+
+    /// One statement of FTS5's incremental merge, the minus sign asking it
+    /// to merge every segment rather than one level's. Whether it found
+    /// anything to do: FTS5 says it found nothing by changing fewer than two
+    /// rows.
+    fn one_merge_step(&self) -> Result<bool> {
+        let before = self.conn.total_changes();
+        self.conn
+            .execute(
+                "INSERT INTO message_search (message_search, rank) VALUES ('merge', ?1)",
+                [-MERGE_PAGES_A_STEP],
+            )
+            .map_err(could_not_compact)?;
+        Ok(self.conn.total_changes() - before >= 2)
+    }
+
+    /// Copy the write log into the file and truncate it. Another connection
+    /// reading at that moment leaves it as it is until the next check, which
+    /// is said in the log and is not an error.
+    fn empty_the_write_log(&self) {
+        let answered = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                row.get::<_, i64>(0)
+            });
+        match answered {
+            Ok(0) => {}
+            Ok(_) => tracing::info!(
+                "The write log was not emptied because another connection was using the mail \
+                 database; the next check tries again"
+            ),
+            Err(e) => tracing::warn!("The write log could not be emptied: {e}"),
+        }
     }
 
     /// The record of what the index owes removed, but only while no removal
     /// has been made since `owed_when_it_began` was read.
     pub fn settle_the_compaction(&self, owed_when_it_began: i64) -> Result<()> {
-        let _ = owed_when_it_began;
+        self.conn
+            .execute(
+                "DELETE FROM search_index_owes_a_compaction WHERE id = 1 AND taken_off = ?1",
+                [owed_when_it_began],
+            )
+            .map_err(could_not_compact)?;
         Ok(())
     }
 
@@ -144,8 +207,14 @@ impl MessageCache {
     }
 
     fn let_the_index_forget_within(&self, most_steps: usize) -> Result<Option<Compacted>> {
-        let _ = most_steps;
-        Ok(None)
+        let Some(owed) = self.the_index_owes_a_compaction()? else {
+            return Ok(None);
+        };
+        let compacted = self.compact_the_search_index(most_steps)?;
+        if compacted.finished {
+            self.settle_the_compaction(owed)?;
+        }
+        Ok(Some(compacted))
     }
 }
 
@@ -178,7 +247,20 @@ impl MessageCache {
         // every open rebuilds the whole index when it holds fewer entries
         // than there are rows.
         self.index_message_for_search(message_id)?;
+        self.owe_a_compaction()?;
         taking.commit().map_err(could_not)
+    }
+
+    /// Note one more removal the search index has not yet let go of.
+    fn owe_a_compaction(&self) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT INTO search_index_owes_a_compaction (id, taken_off) VALUES (1, 1)
+                 ON CONFLICT(id) DO UPDATE SET taken_off = taken_off + 1",
+                [],
+            )
+            .map_err(could_not)?;
+        Ok(())
     }
 
     /// The kept columns of a row, in the order [`KEPT_WHEN_TAKEN_OFF`]
