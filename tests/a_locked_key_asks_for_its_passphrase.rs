@@ -834,11 +834,10 @@ const KEY_SENDS: [&str; 7] = [
     "keybd_event",
 ];
 
-/// The five whose window holds a browser or whose reading starts a second
+/// The four whose window holds a browser or whose reading starts a second
 /// copy of itself, so a thread moved alone cannot carry them. 13-44.6.3 runs
 /// them in a process of their own on such a desktop and removes this constant.
-const NOT_YET_IN_A_PROCESS_OF_THEIR_OWN: [&str; 5] = [
-    "tests/a_marker_counts_at_the_start_of_any_line.rs",
+const NOT_YET_IN_A_PROCESS_OF_THEIR_OWN: [&str; 4] = [
     "tests/a_signature_follows_the_from_account.rs",
     "tests/the_invitation_is_answered_from_the_reader.rs",
     "tests/a_meeting_change_reaches_the_calendar.rs",
@@ -1023,6 +1022,140 @@ fn test_the_key_census_sees_a_desktop_not_named_for_its_run() {
     );
     assert_eq!(
         keys_sent_off_a_desktop_of_its_run(path, &for_its_run),
+        Vec::<String>::new()
+    );
+}
+
+// ── A key sent into a browser is sent from a child, in the one turn ────────
+//
+// A browser's process starts on its process's desktop, not its thread's, so a
+// target that types into a page cannot move its window thread alone: it runs
+// its window tests in a child of the same executable started on a desktop
+// made for the run. And WebView2 runs one browser per user data folder, named
+// for the executable, so two runs of one target at once share a browser even
+// on two desktops (ledger 761); such a target takes the one turn the clipboard
+// target takes, around its child. Measured 2026-10-02 for 13-44.6.3: the
+// marker, invitation and meeting readings with their window thread moved alone
+// never saw a page come up, and each passed 20 of 20 started whole on a
+// desktop of its own.
+//
+// What it cannot see: a browser is read by the names below, so a new way to
+// build one escapes the rule until it is added to the list. The rule case
+// holds each program function in the list to the program, so a renamed one
+// fails rather than leaving the list reading nothing.
+
+/// What a test building a browser writes, in code: the control, and the two
+/// functions of the program that build a window holding one.
+const BROWSER_BUILDERS: [&str; 3] = [
+    "WebView",
+    "build_compose_dialog",
+    "show_conversation_as_page",
+];
+
+/// Where the program defines each function in `BROWSER_BUILDERS`.
+const BUILDERS_THE_PROGRAM_HAS: [(&str, &str); 2] = [
+    (
+        "src/presentation/wx_compose.rs",
+        "pub fn build_compose_dialog(",
+    ),
+    (
+        "src/presentation/wx_app.rs",
+        "pub fn show_conversation_as_page(",
+    ),
+];
+
+/// What a file names, in code, when it runs its windows in a child and takes
+/// the one turn.
+const IN_A_CHILD_AND_THE_ONE_TURN: [&str; 2] = ["CreateProcessW", "THE_TURN"];
+
+/// A file that sends a key into a window holding a browser without running
+/// it in a child and taking the one turn, as `path: ... without WHAT`.
+fn keys_sent_into_a_browser_on_the_screen(path: &str, text: &str) -> Vec<String> {
+    let code = code_only(text);
+    let names = |token: &str| {
+        code.lines().any(|line| {
+            line.match_indices(token)
+                .any(|(at, _)| stands_alone(line, at, token))
+        })
+    };
+    let sends_a_key = KEY_SENDS.into_iter().any(&names);
+    let builds_a_browser = BROWSER_BUILDERS.into_iter().any(&names);
+    let missing: Vec<&str> = IN_A_CHILD_AND_THE_ONE_TURN
+        .into_iter()
+        .filter(|token| !names(token))
+        .collect();
+    if !sends_a_key || !builds_a_browser || missing.is_empty() {
+        return Vec::new();
+    }
+    vec![format!(
+        "{path}: sends a key into a window holding a browser without {}",
+        missing.join(" and ")
+    )]
+}
+
+#[test]
+fn test_a_key_sender_with_a_browser_runs_in_a_child_and_takes_the_one_turn() {
+    for (file, signature) in BUILDERS_THE_PROGRAM_HAS {
+        let source = std::fs::read_to_string(file)
+            .unwrap_or_else(|why| panic!("{file} could not be read: {why}"));
+        assert!(
+            source.contains(signature),
+            "{file} no longer has {signature}, so the browser rule reads a name nothing builds"
+        );
+    }
+    let files = every_test_target();
+    assert!(
+        files.len() > 100,
+        "read {} files under tests, so the reading found nothing to judge",
+        files.len()
+    );
+
+    let found: Vec<String> = files
+        .iter()
+        .filter(|(path, _)| !NOT_YET_IN_A_PROCESS_OF_THEIR_OWN.contains(&path.as_str()))
+        .flat_map(|(path, text)| keys_sent_into_a_browser_on_the_screen(path, text))
+        .collect();
+
+    assert!(
+        found.is_empty(),
+        "these targets type into a page where a person, a lock or a second run reaches it; \
+         run their window tests in a child on a desktop made for the run and take the one \
+         turn: {found:#?}"
+    );
+}
+
+#[test]
+fn test_the_browser_rule_sees_a_planted_page_typed_into_on_the_screen() {
+    let path = "tests/a_page_typed_into.rs";
+    let types = "    unsafe { PostMessageW(hwnd, WM_CHAR, 0x61, 1) };\n";
+    let neither = format!("fn types(page: &WebView, hwnd: isize) {{\n{types}}}\n");
+    let a_child_alone = format!(
+        "fn types(page: &WebView, hwnd: isize) {{\n    let started = unsafe {{ CreateProcessW() }};\n{types}}}\n"
+    );
+    let both = format!(
+        "fn types(page: &WebView, hwnd: isize) {{\n    let turn = take(THE_TURN);\n    \
+         let started = unsafe {{ CreateProcessW() }};\n{types}}}\n"
+    );
+    let no_browser = format!("fn types(hwnd: isize) {{\n{types}}}\n");
+
+    assert_eq!(
+        keys_sent_into_a_browser_on_the_screen(path, &neither),
+        vec![format!(
+            "{path}: sends a key into a window holding a browser without CreateProcessW and THE_TURN"
+        )]
+    );
+    assert_eq!(
+        keys_sent_into_a_browser_on_the_screen(path, &a_child_alone),
+        vec![format!(
+            "{path}: sends a key into a window holding a browser without THE_TURN"
+        )]
+    );
+    assert_eq!(
+        keys_sent_into_a_browser_on_the_screen(path, &both),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        keys_sent_into_a_browser_on_the_screen(path, &no_browser),
         Vec::<String>::new()
     );
 }

@@ -174,6 +174,45 @@ impl Drop for OneRunAtATime {
     }
 }
 
+// ── The child on a desktop of its own ─────────────────────────────────────
+
+/// Whether Windows says this session is locked, asked of Windows and never
+/// read from the process list.
+#[derive(Debug, Clone, PartialEq)]
+enum SessionLock {
+    Locked,
+    Unlocked,
+    NotSaid(String),
+}
+
+/// How the child run ended.
+#[derive(Debug, Clone, PartialEq)]
+enum ChildEnd {
+    /// It ended by itself with this exit code.
+    Exited(u32),
+    /// It ran past its five minutes and was stopped.
+    StoppedAtTheBound,
+}
+
+/// What the child run left for the parent to judge each window test by.
+#[derive(Debug, Clone, PartialEq)]
+struct ChildRun {
+    /// The desktop it ran on, as `station\desktop`.
+    desktop: String,
+    end: ChildEnd,
+    /// Its standard output and error, as libtest wrote them.
+    output: String,
+    /// What Windows said about the session lock once the child had ended.
+    lock: SessionLock,
+}
+
+/// Whether the child's run says `test` passed, and if not, one sentence
+/// saying what happened instead.
+fn what_the_child_said(test: &str, run: &ChildRun) -> Result<(), String> {
+    let _ = (test, &run.desktop, &run.end, &run.output, &run.lock);
+    Ok(())
+}
+
 thread_local! {
     static FOUND: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
 }
@@ -988,4 +1027,95 @@ fn one_act(run: &Rc<RefCell<Run>>, body_editor: &WebView) -> Phase {
             Phase::Acting
         }
     }
+}
+
+// ── What the child said, as one sentence ──────────────────────────────────
+//
+// The parent passes a window test only on the child's own `ok` line for it,
+// so a verdict is never invented on the way across the process boundary, and
+// every other ending says which it was and what Windows says about the lock.
+
+const A_TEST: &str = "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure";
+
+fn a_child_run(end: ChildEnd, output: &str, lock: SessionLock) -> ChildRun {
+    ChildRun {
+        desktop: "WinSta0\\wixen-marker-1".to_string(),
+        end,
+        output: output.to_string(),
+        lock,
+    }
+}
+
+#[test]
+fn test_a_child_whose_line_says_ok_passes_the_test() {
+    let output = format!("running 5 tests\ntest {A_TEST} ... ok\n\ntest result: ok.\n");
+    let run = a_child_run(ChildEnd::Exited(0), &output, SessionLock::Unlocked);
+
+    assert_eq!(what_the_child_said(A_TEST, &run), Ok(()));
+}
+
+#[test]
+fn test_a_failed_child_quotes_its_failure_and_the_lock() {
+    let output = format!(
+        "running 5 tests\ntest {A_TEST} ... FAILED\n\nfailures:\n\n---- {A_TEST} stdout ----\n\
+         STEP 1: ## on the first line of an empty message\n\
+         1 step(s) did not hold on the real page\n\n\nfailures:\n    {A_TEST}\n\n\
+         test result: FAILED. 4 passed; 1 failed\n"
+    );
+    let run = a_child_run(ChildEnd::Exited(101), &output, SessionLock::Locked);
+
+    let said = what_the_child_said(A_TEST, &run).expect_err("a failed child fails the test");
+
+    assert!(said.contains("STEP 1: ## on the first line"), "{said}");
+    assert!(
+        said.contains("1 step(s) did not hold on the real page"),
+        "{said}"
+    );
+    assert!(!said.contains("test result: FAILED"), "{said}");
+    assert!(
+        said.ends_with("Windows says the session is locked."),
+        "{said}"
+    );
+}
+
+#[test]
+fn test_a_child_stopped_at_its_bound_says_so() {
+    let output = "running 5 tests\nSTEP 1: ## on the first line of an empty message\n";
+    let run = a_child_run(ChildEnd::StoppedAtTheBound, output, SessionLock::Unlocked);
+
+    let said = what_the_child_said(A_TEST, &run).expect_err("a stopped child fails the test");
+
+    assert!(
+        said.contains("did not finish in five minutes and was stopped"),
+        "{said}"
+    );
+    assert!(said.contains("STEP 1: ## on the first line"), "{said}");
+    assert!(
+        said.ends_with("Windows says the session is unlocked."),
+        "{said}"
+    );
+}
+
+#[test]
+fn test_a_child_that_never_reported_the_test_says_so() {
+    let output =
+        format!("running 5 tests\ntest {A_TEST}_and_more ... ok\nthe child stopped here\n");
+    let answer = "WTSQuerySessionInformationW failed with error 87";
+    let run = a_child_run(
+        ChildEnd::Exited(0xC000_0005),
+        &output,
+        SessionLock::NotSaid(answer.to_string()),
+    );
+
+    let said = what_the_child_said(A_TEST, &run).expect_err("an unreported test fails");
+
+    assert!(said.contains(&format!("never reported {A_TEST}")), "{said}");
+    assert!(said.contains("exit code 0xc0000005"), "{said}");
+    assert!(said.contains("the child stopped here"), "{said}");
+    assert!(
+        said.ends_with(&format!(
+            "Windows did not say whether the session is locked: asking answered {answer}."
+        )),
+        "{said}"
+    );
 }
