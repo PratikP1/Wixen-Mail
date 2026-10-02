@@ -1386,13 +1386,13 @@ async fn carry_out_the_moves<M: Mailbox>(
 ///
 /// Through the gated delete the menu's Delete uses, part by part (D10, D11):
 /// where it goes from [`crate::application::destinations::where_a_deleted_message_goes`],
-/// the row into the Trash here and the delete kept in the store the menu's
-/// Delete waits in through [`crate::application::moves_waiting::what_happens_here`],
-/// the send on this check's own session through the replay's own step,
-/// [`crate::application::moves_waiting::replay_one`], and a refusal undone
-/// through [`crate::application::moves_waiting::undo_here`]. A server that
-/// could not be reached leaves the rest made here and waiting, unsent, for
-/// the next check's replay before any folder is read.
+/// then the step an emptying of the Trash shares,
+/// [`crate::application::moves_waiting::delete_here_then_at_the_server`]: the
+/// row into the Trash here and the delete kept in the store the menu's Delete
+/// waits in, the send on this check's own session through the replay's own
+/// step, and a refusal undone. A server that could not be reached leaves the
+/// rest made here and waiting, unsent, for the next check's replay before any
+/// folder is read.
 ///
 /// To the Trash and never off the server: a message already in the Trash is
 /// left where it is with nothing sent and nothing said, and an account whose
@@ -1412,11 +1412,10 @@ async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(
         where_a_deleted_message_goes,
     };
     use crate::application::moves_waiting::{
-        APushUnderWay, NotMadeHere, replay_one, undo_here, what_happens_here,
+        APushUnderWay, DeletedHereThenAtTheServer, NotMadeHere, delete_here_then_at_the_server,
+        what_happens_here,
     };
-    use crate::application::what_rules_tell_the_server::{
-        ForTheChange, what_a_rules_delete_calls_for,
-    };
+    use crate::application::what_rules_tell_the_server::{ForTheChange, Until};
     if deletes.is_empty() {
         return (0, Vec::new());
     }
@@ -1450,6 +1449,12 @@ async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(
         DeletedGoesTo::NoTrashFolderFound => return (0, one_each(NO_TRASH_FOLDER_FOUND.into())),
         DeletedGoesTo::NoFoldersKnownYet => return (0, one_each(NO_FOLDERS_KNOWN_YET.into())),
     };
+    // A change the store will not record is not sent: a rule runs with
+    // nobody at the key to ask the server first (D12).
+    let not_made_here = |not_made: NotMadeHere| match not_made {
+        NotMadeHere::RefusedInWords(words) => words,
+        NotMadeHere::CouldNotBeRecorded(why) => nothing_deleted(&from.name, &why),
+    };
     let _under_way = APushUnderWay::begins(&account_id);
     let mut done = 0;
     let mut could_not = Vec::new();
@@ -1467,28 +1472,20 @@ async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(
         };
         // No subject: the line it shows is the menu's, for the eye at the
         // key, and a check says nothing per message (D7).
-        let made = match what_happens_here(cache, &asked, "") {
-            Ok(made) => made,
-            Err(NotMadeHere::RefusedInWords(words)) => {
-                could_not.push(words);
-                continue;
-            }
-            // A change the store will not record is not sent: a rule runs
-            // with nobody at the key to ask the server first (D12).
-            Err(NotMadeHere::CouldNotBeRecorded(why)) => {
-                could_not.push(nothing_deleted(&from.name, &why));
-                continue;
-            }
-        };
         if !the_server_answers {
-            told.count(ForTheChange::KeptWaiting(
-                crate::application::what_rules_tell_the_server::Until::TheServerCanBeReached,
-            ));
+            match what_happens_here(cache, &asked, "") {
+                Ok(_) => told.count(ForTheChange::KeptWaiting(Until::TheServerCanBeReached)),
+                Err(not_made) => could_not.push(not_made_here(not_made)),
+            }
             continue;
         }
-        let became = match replay_one(controller, cache, &made.kept).await {
-            Ok((replayed, failed)) => what_a_rules_delete_calls_for(&replayed, failed),
-            Err(why) => {
+        let became = match delete_here_then_at_the_server(controller, cache, &asked, "").await {
+            DeletedHereThenAtTheServer::Became(became) => became,
+            DeletedHereThenAtTheServer::NotMadeHere(not_made) => {
+                could_not.push(not_made_here(not_made));
+                continue;
+            }
+            DeletedHereThenAtTheServer::NotSettledHere(why) => {
                 could_not.push(format!(
                     "A message a rule deleted went to {trash} at the server but not here yet: {why}"
                 ));
@@ -1498,11 +1495,7 @@ async fn carry_out_the_deletes<M: Mailbox + ReplaysAMove>(
         match became {
             ForTheChange::Done => done += 1,
             ForTheChange::KeptWaiting(_) => the_server_answers = false,
-            ForTheChange::PutBack(_) => {
-                if let Err(why) = undo_here(cache, &made.kept) {
-                    tracing::warn!("A rule's refused delete could not be put back here: {why}");
-                }
-            }
+            ForTheChange::PutBack(_) => {}
         }
         told.count(became);
     }

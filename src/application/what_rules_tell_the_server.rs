@@ -216,16 +216,18 @@ pub fn what_the_change_calls_for(change: &AChange, answer: Answered<'_>) -> ForT
     }
 }
 
-/// What a rule's Delete calls for, from what the menu's replay answered and
-/// how the failure was read when there was one.
+/// What a delete made here and sent on a check's session calls for, from what
+/// the menu's replay answered and how the failure was read when there was one.
 ///
+/// A rule's Delete asks it, and so does an emptying of the Trash (13-44.6),
+/// through [`crate::application::moves_waiting::delete_here_then_at_the_server`].
 /// The menu's replay already decides what its answer means, in
 /// [`crate::application::moves_waiting::what_a_replay_answered`]; this only
 /// says it in the words the folder's line uses. A server never reached leaves
 /// the delete waiting in the menu's store, for the next check's replay, and a
 /// refusal is put back, by this computer's gate or by the server, since a
 /// waiting delete would stop the account's check (D11).
-pub fn what_a_rules_delete_calls_for(
+pub fn what_a_waiting_delete_calls_for(
     replayed: &Replayed,
     failed: Option<WhyThePushFailed>,
 ) -> ForTheChange {
@@ -1649,7 +1651,7 @@ mod tests {
         ];
         for (replayed, failed, calls_for) in rows {
             assert_eq!(
-                what_a_rules_delete_calls_for(&replayed, failed),
+                what_a_waiting_delete_calls_for(&replayed, failed),
                 calls_for,
                 "{replayed:?} read as {failed:?}"
             );

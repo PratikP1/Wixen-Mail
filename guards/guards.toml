@@ -36194,18 +36194,20 @@ tests_last_seen = [
 # A rule's Delete the server or this computer's gate refused, left in the
 # Trash here while the server still holds the message in the Inbox (D11,
 # T-13-44.3-07). Written 2026-10-01 by 13-44.3, taken by hand against the
-# whole library first.
+# whole library first. Moved on 2026-10-02 by 13-44.6's refactor, with the
+# undo, from carry_out_the_deletes in mail_sync.rs into the step an emptying
+# of the Trash shares, delete_here_then_at_the_server in moves_waiting.rs.
 [[guard]]
 name = "a rule's delete the server refused is put back where it arrived"
-file = "src/application/mail_sync.rs"
-before = '''                if let Err(why) = undo_here(cache, &made.kept) {'''
-after = '''                if let Err(why) = Ok::<(), Error>(()) {'''
+file = "src/application/moves_waiting.rs"
+before = '''        if let Err(why) = undo_here(cache, &made.kept) {'''
+after = '''        if let Err(why) = Ok::<(), Error>(()) {'''
 red = [
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 150 },
+    { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
