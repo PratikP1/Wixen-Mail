@@ -27,10 +27,12 @@
 //! the words stayed in the file.
 
 use super::MessageCache;
-use crate::common::Result;
+use crate::common::{Error, Result};
+use rusqlite::types::Value;
+use rusqlite::{Connection, OptionalExtension};
 
 /// The columns a message taken off this computer keeps, and nothing else.
-pub const KEPT_WHEN_TAKEN_OFF: [&str; 8] = [
+pub const KEPT_WHEN_TAKEN_OFF: &[&str] = &[
     // The row's own number, which the undo reads to refuse, saying the
     // message was deleted permanently.
     "id",
@@ -54,12 +56,135 @@ pub const KEPT_WHEN_TAKEN_OFF: [&str; 8] = [
     "original_account_id",
 ];
 
+/// The words of an error met while taking a message off this computer.
+fn could_not(e: rusqlite::Error) -> Error {
+    Error::Other(format!(
+        "The message could not be taken off this computer: {e}"
+    ))
+}
+
+/// SQLite's `secure_delete` switched on for as long as this lives, and put
+/// back to what it was when it goes, on an error as much as on success.
+struct OverwritingWhatIsFreed<'c> {
+    conn: &'c Connection,
+    found: i64,
+}
+
+impl<'c> OverwritingWhatIsFreed<'c> {
+    fn switched_on(conn: &'c Connection) -> Result<Self> {
+        let found = conn
+            .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
+            .map_err(could_not)?;
+        conn.pragma_update(None, "secure_delete", 1)
+            .map_err(could_not)?;
+        Ok(Self { conn, found })
+    }
+}
+
+impl Drop for OverwritingWhatIsFreed<'_> {
+    fn drop(&mut self) {
+        if let Err(e) = self.conn.pragma_update(None, "secure_delete", self.found) {
+            tracing::warn!("Overwriting freed space could not be put back as it was: {e}");
+        }
+    }
+}
+
 impl MessageCache {
     /// Take a message off this computer, keeping only
     /// [`KEPT_WHEN_TAKEN_OFF`]. A row that is not there is nothing to do.
+    ///
+    /// One transaction: the row is removed, which takes everything keyed on
+    /// it, then written back under the same number with the kept columns,
+    /// `deleted` set, the text columns that may not be empty holding the
+    /// empty string and every other column its default. Writing it back into
+    /// a Trash stamps it as having gone in now, and that stamp goes too.
     pub fn take_off_this_computer(&self, message_id: i64) -> Result<()> {
-        let _ = message_id;
+        let _overwriting = OverwritingWhatIsFreed::switched_on(&self.conn)?;
+        let taking = self.conn.unchecked_transaction().map_err(could_not)?;
+        let Some(kept) = self.what_stays_of(message_id)? else {
+            return Ok(());
+        };
+        self.conn
+            .execute("DELETE FROM messages WHERE id = ?1", [message_id])
+            .map_err(could_not)?;
+        self.write_back(&kept)?;
+        self.conn
+            .execute(
+                "DELETE FROM in_the_trash_since WHERE message_id = ?1",
+                [message_id],
+            )
+            .map_err(could_not)?;
+        taking.commit().map_err(could_not)
+    }
+
+    /// The kept columns of a row, in the order [`KEPT_WHEN_TAKEN_OFF`]
+    /// names them, or `None` when there is no such row.
+    fn what_stays_of(&self, message_id: i64) -> Result<Option<Vec<Value>>> {
+        self.conn
+            .query_row(
+                &format!(
+                    "SELECT {} FROM messages WHERE id = ?1",
+                    KEPT_WHEN_TAKEN_OFF.join(", ")
+                ),
+                [message_id],
+                |row| {
+                    (0..KEPT_WHEN_TAKEN_OFF.len())
+                        .map(|at| row.get(at))
+                        .collect()
+                },
+            )
+            .optional()
+            .map_err(could_not)
+    }
+
+    /// Write a row back holding only what stays, marked deleted.
+    fn write_back(&self, kept: &[Value]) -> Result<()> {
+        let required = self.columns_that_may_not_be_left_out()?;
+        let columns: Vec<&str> = KEPT_WHEN_TAKEN_OFF
+            .iter()
+            .copied()
+            .chain(std::iter::once("deleted"))
+            .chain(required.iter().map(String::as_str))
+            .collect();
+        let values: Vec<String> = (1..=kept.len())
+            .map(|at| format!("?{at}"))
+            .chain(std::iter::once("1".to_string()))
+            .chain(required.iter().map(|_| "''".to_string()))
+            .collect();
+        self.conn
+            .execute(
+                &format!(
+                    "INSERT INTO messages ({}) VALUES ({})",
+                    columns.join(", "),
+                    values.join(", ")
+                ),
+                rusqlite::params_from_iter(kept),
+            )
+            .map_err(could_not)?;
         Ok(())
+    }
+
+    /// The columns of `messages` that refuse a row leaving them out, because
+    /// they may not be null and declare no default, other than those kept.
+    /// Read from the schema, so a column added later is covered without
+    /// anybody remembering.
+    fn columns_that_may_not_be_left_out(&self) -> Result<Vec<String>> {
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT name FROM pragma_table_info('messages')
+                 WHERE \"notnull\" = 1 AND dflt_value IS NULL AND pk = 0",
+            )
+            .map_err(could_not)?;
+        let named: Vec<String> = statement
+            .query_map([], |column| column.get(0))
+            .map_err(could_not)?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(could_not)?;
+        Ok(named
+            .into_iter()
+            .filter(|name| !KEPT_WHEN_TAKEN_OFF.contains(&name.as_str()))
+            .collect())
     }
 
     /// Each column of a row that holds something, outside what a message
@@ -67,7 +192,6 @@ impl MessageCache {
     /// neither the column's declared default nor the empty string.
     #[cfg(test)]
     pub(crate) fn what_a_row_still_holds(&self, message_id: i64) -> Result<Vec<String>> {
-        use crate::common::Error;
         let could_not =
             |e: rusqlite::Error| Error::Other(format!("The row could not be read: {e}"));
         let columns: Vec<(String, Option<String>)> = self

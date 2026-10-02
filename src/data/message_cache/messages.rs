@@ -40,7 +40,8 @@ impl Renumbering {
 /// Mail collected over POP was downloaded once and the server may well have
 /// dropped it; a copy of a sent message filed here was never on a server at
 /// all. Deleting either body destroys the only copy, so the two places that
-/// drop bodies ask this first.
+/// drop bodies ask this first. Taking a message off this computer drops that
+/// only copy on purpose, and does not ask (13-44.8, `taken_off_this_computer`).
 pub(super) const ONLY_COPY_IS_HERE: &str = "(filed_here = 1 OR pop_uidl IS NOT NULL)";
 
 /// The query a folder listing runs, in one place.

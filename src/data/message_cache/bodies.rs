@@ -14,8 +14,9 @@
 //!
 //! Two kinds of message have no server to fetch from: mail collected over POP,
 //! which was downloaded once, and a copy of a sent message filed on this
-//! computer. Their bodies are never evicted and never dropped on a delete,
-//! because this is the only copy.
+//! computer. Their bodies are never evicted and never dropped by a rule's
+//! delete, because this is the only copy. Taking one off this computer drops
+//! that only copy on purpose (13-44.8): see `taken_off_this_computer`.
 //!
 //! The budget is applied at the end of each folder sync, which is the worker
 //! thread rather than the interface one. Before that it was applied nowhere:

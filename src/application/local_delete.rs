@@ -80,7 +80,9 @@ pub fn perform(
             }))
         }
         LocalDelete::RemoveFromThisComputer => {
-            cache.delete_message(message_row_id)?;
+            // There is no other copy, so what it said goes and only what
+            // stops the next check downloading it again stays (13-44.8).
+            cache.take_off_this_computer(message_row_id)?;
             Ok(Some(Outcome {
                 message_left_the_folder: true,
                 said: "Deleted from this computer".to_string(),
