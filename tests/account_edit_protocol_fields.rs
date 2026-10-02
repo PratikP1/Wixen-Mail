@@ -475,10 +475,43 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                 true,
                 &mut wrong,
             );
-            // Not offered to a POP account until 13-44.7 makes it work there.
+            // Offered to a POP account since 13-44.7, whatever its provider,
+            // with the same four answers on the same Alt+Y, and no line about
+            // a provider or a Trash it does not recognise: its Trash is the
+            // one on this computer.
             expect_shown(
-                "POP account, connection page: empty the trash hidden",
+                "POP account, connection page: empty the trash shown",
                 &w.empty_the_trash,
+                true,
+                &mut wrong,
+            );
+            if !labels_showing(&w.dialog)
+                .iter()
+                .any(|label| label == EMPTY_THE_TRASH)
+            {
+                wrong.push((
+                    "POP account, connection page: empty the trash",
+                    format!("{EMPTY_THE_TRASH} is not shown beside the choice"),
+                ));
+            }
+            let offered: Vec<String> = (0..w.empty_the_trash.get_count())
+                .filter_map(|at| w.empty_the_trash.get_string(at))
+                .collect();
+            if offered != FOUR_ANSWERS {
+                wrong.push((
+                    "POP account, connection page: empty the trash",
+                    format!("offers {offered:?}"),
+                ));
+            }
+            expect_shown(
+                "POP account, connection page: the provider's line hidden",
+                &w.trash_left_to_the_provider,
+                false,
+                &mut wrong,
+            );
+            expect_shown(
+                "POP account, connection page: the no-Trash line hidden",
+                &w.no_trash_to_empty,
                 false,
                 &mut wrong,
             );

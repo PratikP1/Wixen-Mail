@@ -2327,6 +2327,106 @@ X-Spam-Flag: YES\r\n\r\nbody";
         );
     }
 
+    /// The Trash every account shares, stored where the program stores it:
+    /// under the reserved id, not under the account's own (D-18). The case
+    /// above builds its Trash under the account, the shape from before D-18,
+    /// which is why it passed while the program downloaded such mail again.
+    fn the_shared_trash(cache: &MessageCache) -> i64 {
+        use crate::application::local_folders;
+        let path = local_folders::local_trash(crate::common::types::Protocol::Pop3)
+            .expect("a POP account keeps its Trash on this computer");
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: local_folders::stored_under(&path, "acct").to_string(),
+                name: "Trash".into(),
+                path,
+                folder_type: "Trash".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the shared Trash")
+    }
+
+    /// One check that downloads one message, which is then moved into the
+    /// shared Trash, as Delete moves it.
+    fn downloaded_and_moved_to_the_shared_trash(raw: &[u8]) -> (TempHome<MessageCache>, i64) {
+        let (cache, folder_id) = a_cache();
+        run(
+            &Scripted::holding(&[(1, "aaa", raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the first check runs");
+        let row = cache
+            .message_row_for_uid(folder_id, 1)
+            .expect("the lookup")
+            .expect("the downloaded message");
+        let trash = the_shared_trash(&cache);
+        cache.move_message(row, trash).expect("the move");
+        (cache, folder_id)
+    }
+
+    #[test]
+    fn test_a_message_moved_to_the_trash_every_account_shares_is_not_downloaded_again() {
+        // Premise 3 of 13-44.7, run: with "Leave mail on the server" on, its
+        // default, a POP message deleted here came back at the next check.
+        let raw = raw_message("Subject: One\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = downloaded_and_moved_to_the_shared_trash(&raw);
+
+        let again = run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the second check runs");
+
+        assert_eq!(
+            again.fetched, 0,
+            "mail moved into the shared Trash was downloaded again"
+        );
+    }
+
+    #[test]
+    fn test_the_download_time_of_a_message_in_the_shared_trash_still_counts_towards_the_policy() {
+        // The removal policy counts from when a message was downloaded, so a
+        // message whose time is lost when it moves is one that never leaves
+        // the server, whatever somebody set.
+        let raw = raw_message("Subject: One\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = downloaded_and_moved_to_the_shared_trash(&raw);
+
+        // What the policy counts from, read before any check runs: a run
+        // alone cannot tell, because a message downloaded again carries a
+        // fresh time of its own and the policy removes that copy instead.
+        assert!(
+            cache
+                .pop_download_times_for_account("acct")
+                .expect("the download times read")
+                .contains_key("aaa"),
+            "a message in the shared Trash lost its download time"
+        );
+        let server = Scripted::holding(&[(1, "aaa", &raw)]);
+        run(
+            &server,
+            &cache,
+            folder_id,
+            AFTER_A_FORTNIGHT,
+            Utc::now() + Duration::days(40),
+        )
+        .expect("the second check runs");
+
+        assert!(
+            server.journal().contains(&Asked::MarkedForDeletion(1)),
+            "a message in the shared Trash, downloaded 40 days ago, was not removed after a \
+             fortnight: {:?}",
+            server.journal()
+        );
+    }
+
     fn downloaded_days_ago(
         uidls: &[&str],
         days: i64,

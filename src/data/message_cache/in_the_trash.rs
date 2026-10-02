@@ -126,6 +126,17 @@ impl MessageCache {
         Ok(held)
     }
 
+    /// What one account put in the Trash every account shares, oldest first
+    /// (13-44.7, D18).
+    pub fn what_this_account_put_in_the_shared_trash(
+        &self,
+        folder_id: i64,
+        account_id: &str,
+    ) -> Result<Vec<InTheTrash>> {
+        let _ = (folder_id, account_id);
+        Ok(Vec::new())
+    }
+
     /// The day this account's Trash was last emptied, on this computer's
     /// clock, or `None` when it never has been.
     ///
@@ -434,6 +445,92 @@ mod tests {
             rows,
             [(older, 2), (newer, 1)],
             "oldest first, and only those two"
+        );
+    }
+
+    /// The Trash every account shares, stored where the program stores it.
+    fn the_shared_trash(cache: &MessageCache) -> i64 {
+        use crate::application::local_folders;
+        let path = local_folders::local_trash(crate::common::types::Protocol::Pop3)
+            .expect("a POP account keeps its Trash on this computer");
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: local_folders::stored_under(&path, THE_ACCOUNT).to_string(),
+                name: "Trash".to_string(),
+                path,
+                folder_type: FolderType::Trash.as_str().to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the shared Trash")
+    }
+
+    fn the_rows_this_account_put_there(
+        cache: &MessageCache,
+        trash: i64,
+        account_id: &str,
+    ) -> Vec<i64> {
+        cache
+            .what_this_account_put_in_the_shared_trash(trash, account_id)
+            .expect("the Trash read")
+            .into_iter()
+            .map(|held| held.row)
+            .collect()
+    }
+
+    #[test]
+    fn test_the_shared_trash_answers_only_for_the_account_a_message_came_from() {
+        let cache = a_cache();
+        let shared = the_shared_trash(&cache);
+        let their_inbox = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "theirs".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: FolderType::Inbox.as_str().to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("their inbox");
+        let mine = a_message_in(&cache, the_folder(&cache, "INBOX"), 1);
+        let theirs = a_message_in(&cache, their_inbox, 2);
+        for row in [mine, theirs] {
+            cache.move_message(row, shared).expect("the move");
+        }
+
+        assert_eq!(
+            the_rows_this_account_put_there(&cache, shared, THE_ACCOUNT),
+            [mine]
+        );
+        assert_eq!(
+            the_rows_this_account_put_there(&cache, shared, "theirs"),
+            [theirs]
+        );
+    }
+
+    #[test]
+    fn test_a_message_in_the_shared_trash_before_this_build_belongs_to_no_account() {
+        // Put there by a build that recorded no owner, which is a row written
+        // straight into the shared Trash. Empty Folder still reaches it, and
+        // no account's setting does (D18).
+        let cache = a_cache();
+        let shared = the_shared_trash(&cache);
+        let before_this_build = a_message_in(&cache, shared, 1);
+        let mine = a_message_in(&cache, the_folder(&cache, "INBOX"), 2);
+        cache.move_message(mine, shared).expect("the move");
+
+        assert_eq!(
+            the_rows_this_account_put_there(&cache, shared, THE_ACCOUNT),
+            [mine]
+        );
+        assert!(
+            cache
+                .message_rows_in(shared)
+                .expect("the folder read")
+                .contains(&before_this_build),
+            "Empty Folder no longer reaches a message nobody owns"
         );
     }
 }

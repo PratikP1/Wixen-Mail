@@ -464,6 +464,21 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     ))
 }
 
+// ── A POP account's Trash, on this computer (13-44.7) ──────────────────────
+
+/// Empty a POP account's Trash on this computer of its own messages that are
+/// due, at the start of its check (D5, D22).
+pub fn empty_the_trash_here_at_a_pop_check(
+    cache: &MessageCache,
+    account: &Account,
+    when: WhenTheTrashIsEmptied,
+    now: DateTime<Utc>,
+    today: NaiveDate,
+) -> Result<Option<String>> {
+    let _ = (cache, account, when, now, today);
+    Ok(None)
+}
+
 // ── When Wixen Mail closes (13-44.7) ───────────────────────────────────────
 
 /// What opens the session an account's Trash is emptied on as Wixen Mail
@@ -663,6 +678,7 @@ async fn empty_one_imap_trash_on_the_way_out<O: OpensTheSessionToEmpty>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::local_folders::DELETING_IS_SWITCHED_OFF;
     use crate::data::message_cache::moves_waiting::MarksFirst;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
     use std::cell::RefCell;
@@ -1793,5 +1809,256 @@ mod tests {
             "On the way out, the Trash in Home: 0 emptied, 0 waiting for the next check, 12 left \
              for the next close."
         );
+    }
+
+    // ── A POP account's Trash, on this computer (13-44.7) ──────────────────
+
+    static OLD_ISP: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up("pop", "Old ISP", Protocol::Pop3));
+    static THE_CLUB: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up("club", "Club", Protocol::Pop3));
+
+    fn the_inbox_path() -> String {
+        format!("{}/Inbox", crate::application::local_folders::LOCAL_PREFIX)
+    }
+
+    /// A store holding each POP account's Inbox on this computer and the
+    /// Trash every account shares, stored where the program stores them,
+    /// answering the shared Trash.
+    fn a_pop_store() -> (tempfile::TempDir, MessageCache, i64) {
+        use crate::application::local_folders;
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        for account in [&*OLD_ISP, &*THE_CLUB] {
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: account.id.clone(),
+                    name: "Inbox".to_string(),
+                    path: the_inbox_path(),
+                    folder_type: FolderType::Inbox.as_str().to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("the inbox");
+        }
+        let path = local_folders::local_trash(Protocol::Pop3).expect("a Trash here");
+        let trash = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: local_folders::stored_under(&path, &OLD_ISP.id).to_string(),
+                name: "Trash".to_string(),
+                path,
+                folder_type: FolderType::Trash.as_str().to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the shared Trash");
+        (dir, cache, trash)
+    }
+
+    fn the_uidl_of(account: &Account, uid: u32) -> String {
+        format!("{}-{uid}", account.id)
+    }
+
+    /// A message this POP account downloaded, deleted here the way Delete
+    /// deletes it, into the shared Trash, `days` ago.
+    fn deleted_here_by(cache: &MessageCache, account: &Account, uid: u32, days: i64) -> i64 {
+        let inbox = cache
+            .get_folder(&account.id, &the_inbox_path())
+            .expect("the folder read")
+            .expect("the inbox is there")
+            .id;
+        let row = cache
+            .upsert_message(&crate::data::message_cache::IncomingMessage {
+                folder_id: inbox,
+                uid,
+                message_id: format!("<{uid}.{}@example.com>", account.id),
+                subject: "Lunch".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-09-19T09:00:00Z".to_string(),
+                internal_date: None,
+                size_bytes: Some(10),
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                server_thread_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: None,
+                pop_uidl: Some(the_uidl_of(account, uid)),
+            })
+            .expect("a downloaded message");
+        crate::application::local_delete::perform(cache, account, row, Deleting::ToTrash)
+            .expect("the delete")
+            .expect("a folder on this computer");
+        cache
+            .it_went_into_the_trash_at(row, Utc::now() - Duration::days(days))
+            .expect("the stamp set");
+        row
+    }
+
+    /// One POP check of an account, as many days after the first as `later`.
+    fn a_pop_check(
+        cache: &MessageCache,
+        account: &Account,
+        when: WhenTheTrashIsEmptied,
+        later: i64,
+    ) -> Option<String> {
+        empty_the_trash_here_at_a_pop_check(
+            cache,
+            account,
+            when,
+            Utc::now() + Duration::days(later),
+            the_first_day() + Duration::days(later),
+        )
+        .expect("the emptying to finish")
+    }
+
+    fn on_close(account: &Account) -> AnAccountToEmpty<'_> {
+        AnAccountToEmpty {
+            account,
+            ..work_on_close()
+        }
+    }
+
+    #[test]
+    fn test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers()
+     {
+        let (_dir, cache, _trash) = a_pop_store();
+        let old = deleted_here_by(&cache, &OLD_ISP, 1, 45);
+        let recent = deleted_here_by(&cache, &OLD_ISP, 2, 10);
+
+        let said = a_pop_check(&cache, &OLD_ISP, THIRTY, 0);
+
+        assert!(is_deleted_here(&cache, old));
+        assert!(!is_deleted_here(&cache, recent));
+        // The identifier is what stops the next check downloading it again.
+        assert!(
+            cache
+                .pop_uidls_for_account(&OLD_ISP.id)
+                .expect("the identifiers read")
+                .contains(&the_uidl_of(&OLD_ISP, 1)),
+            "the emptied message's identifier is no longer this account's"
+        );
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Emptied 1 message of Old ISP's from the Trash on this computer that had been \
+                 there more than 30 days."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash() {
+        let (_dir, cache, _trash) = a_pop_store();
+        let mine = deleted_here_by(&cache, &OLD_ISP, 1, 45);
+        let theirs = deleted_here_by(&cache, &THE_CLUB, 1, 45);
+
+        a_pop_check(&cache, &OLD_ISP, THIRTY, 0);
+
+        assert!(is_deleted_here(&cache, mine));
+        assert!(
+            !is_deleted_here(&cache, theirs),
+            "another account's message in the shared Trash was emptied"
+        );
+    }
+
+    #[test]
+    fn test_a_pop_account_with_deleting_here_off_empties_nothing_and_says_so_once_a_day() {
+        let (_dir, cache, _trash) = a_pop_store();
+        let row = deleted_here_by(&cache, &OLD_ISP, 1, 45);
+        let deleting_off = Account {
+            allow_deleting_here: false,
+            ..OLD_ISP.clone()
+        };
+
+        assert_eq!(
+            a_pop_check(&cache, &deleting_off, THIRTY, 0),
+            Some(format!(
+                "Nothing was emptied from the Trash on this computer for Old ISP. \
+                 {DELETING_IS_SWITCHED_OFF}"
+            ))
+        );
+        assert_eq!(a_pop_check(&cache, &deleting_off, THIRTY, 0), None);
+        assert!(!is_deleted_here(&cache, row));
+
+        // Set to empty as Wixen Mail closes, its check says what the close
+        // will not do, once a day (D26).
+        assert_eq!(
+            a_pop_check(&cache, &deleting_off, ON_CLOSE, 1),
+            Some(format!(
+                "Nothing will be emptied from the Trash on this computer for Old ISP when \
+                 Wixen Mail closes. {DELETING_IS_SWITCHED_OFF}"
+            ))
+        );
+        assert_eq!(a_pop_check(&cache, &deleting_off, ON_CLOSE, 1), None);
+        assert!(!is_deleted_here(&cache, row));
+    }
+
+    #[test]
+    fn test_a_pop_account_is_emptied_with_no_server_to_ask() {
+        let (_dir, cache, _trash) = a_pop_store();
+        let rows = [
+            deleted_here_by(&cache, &OLD_ISP, 1, 45),
+            deleted_here_by(&cache, &OLD_ISP, 2, 0),
+        ];
+        let no_server_at_all = Sessions::of([]);
+
+        let (did_it, _) = closing(
+            &no_server_at_all,
+            &cache,
+            &[on_close(&OLD_ISP)],
+            FIVE_SECONDS,
+        );
+
+        assert!(no_server_at_all.opened().is_empty());
+        for row in rows {
+            assert!(is_deleted_here(&cache, row) && !is_waiting(&cache, row));
+        }
+        assert_eq!(did_it, [did("Old ISP", 2, 0, 0)]);
+    }
+
+    #[test]
+    fn test_closing_empties_a_pop_account_first_and_within_the_deadline() {
+        let (_dir, cache, _trash) = a_pop_store();
+        a_folder(&cache, "Inbox", "INBOX", FolderType::Inbox);
+        let works_trash = a_folder(&cache, "Trash", "Trash", FolderType::Trash);
+        let in_flight = in_the_trash_for(&cache, works_trash, 1, 10);
+        let pop_rows = [
+            deleted_here_by(&cache, &OLD_ISP, 1, 45),
+            deleted_here_by(&cache, &OLD_ISP, 2, 3),
+        ];
+        let sessions = Sessions::of([(
+            THE_ACCOUNT,
+            AServerThatHoldsTheTrash::holding_in_the_trash(&[1]).never_answering_the_delete_of(1),
+        )]);
+        let within = std::time::Duration::from_millis(300);
+
+        // Work is listed first; POP goes first anyway, since it needs no
+        // network and the limit is shared.
+        let (did_it, took) = closing(
+            &sessions,
+            &cache,
+            &[work_on_close(), on_close(&OLD_ISP)],
+            within,
+        );
+
+        assert!(took < within + A_MARGIN, "the close took {took:?}");
+        for row in pop_rows {
+            assert!(is_deleted_here(&cache, row));
+        }
+        assert!(is_deleted_here(&cache, in_flight) && is_waiting(&cache, in_flight));
+        assert_eq!(did_it, [did("Old ISP", 2, 0, 0), did("Work", 0, 1, 0)]);
     }
 }

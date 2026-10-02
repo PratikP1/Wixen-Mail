@@ -305,6 +305,73 @@ fn test_the_reading_refuses_an_emptying_on_the_way_to_the_tray() {
     );
 }
 
+/// The call that empties a POP account's Trash on this computer (13-44.7).
+const THE_POP_EMPTYING: &str = "empty_the_trash_here_at_a_pop_check(";
+
+/// Whether the POP check empties its Trash once, after its folders are made
+/// and before it dials the POP server (D22).
+fn the_pop_check_empties_before_it_dials(window: &str) -> Result<(), String> {
+    let lines = the_shipping_lines(window);
+    let calls: Vec<usize> = (0..lines.len())
+        .filter(|at| lines[*at].contains(THE_POP_EMPTYING))
+        .collect();
+    let [call] = calls.as_slice() else {
+        return Err(format!(
+            "{THE_POP_EMPTYING} is on {} lines of the window, where it should be on one",
+            calls.len()
+        ));
+    };
+    let check = the_block_at(&lines, "fn check_pop_mail(")?;
+    if !check.contains(call) {
+        return Err(format!(
+            "{THE_POP_EMPTYING} is called outside the POP check"
+        ));
+    }
+    let names = |range: std::ops::Range<usize>, what: &str| {
+        range.into_iter().any(|at| lines[at].contains(what))
+    };
+    if !names(check.start..*call, "ensure_local_folders(") {
+        return Err(format!(
+            "{THE_POP_EMPTYING} comes before the folders are made"
+        ));
+    }
+    if names(check.start..*call, "MailController::new()")
+        || !names(*call..check.end, "MailController::new()")
+    {
+        return Err(format!(
+            "{THE_POP_EMPTYING} is not before the POP server is dialled"
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_a_pop_check_empties_its_trash_before_it_dials_the_server() {
+    // D22: emptying a POP account's Trash needs no server, so a server that
+    // cannot be reached must not stop it, and it happens at the check, which
+    // is this program already at work on the account (guardrail 7).
+    let window = fs::read_to_string("src/presentation/wx_app.rs")
+        .expect("the main window")
+        .replace("\r\n", "\n");
+    assert_eq!(the_pop_check_empties_before_it_dials(&window), Ok(()));
+
+    let in_its_place = "fn check_pop_mail(\n\
+                        \x20   let inbox = match ensure_local_folders(&cache, account) {\n\
+                        \x20   match empty_the_trash_here_at_a_pop_check(&cache, account, when, now, today) {\n\
+                        \x20   let controller = MailController::new();\n\
+                        }\n";
+    assert_eq!(the_pop_check_empties_before_it_dials(in_its_place), Ok(()));
+    let after_the_dial = "fn check_pop_mail(\n\
+                          \x20   let inbox = match ensure_local_folders(&cache, account) {\n\
+                          \x20   let controller = MailController::new();\n\
+                          \x20   match empty_the_trash_here_at_a_pop_check(&cache, account, when, now, today) {\n\
+                          }\n";
+    assert!(
+        the_pop_check_empties_before_it_dials(after_the_dial).is_err(),
+        "an emptying after the POP server is dialled was read as in its place"
+    );
+}
+
 /// The text from `opening` to the first line after it that closes a block at
 /// `closing`, which is how a handler or a function ends in the editor.
 fn the_block_from(source: &str, opening: &str, closing: &str) -> Result<String, String> {
