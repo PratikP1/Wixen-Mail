@@ -30,7 +30,11 @@
 #![cfg(windows)]
 
 use std::cell::RefCell;
-use std::ffi::c_void;
+use std::ffi::{OsStr, c_void};
+use std::fmt;
+use std::os::windows::ffi::OsStrExt;
+use std::os::windows::io::AsRawHandle;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::allowed::Allowed;
@@ -60,6 +64,8 @@ const STATE_SYSTEM_UNAVAILABLE: i64 = 0x1;
 const WM_SYSKEYDOWN: u32 = 0x0104;
 const WM_SYSKEYUP: u32 = 0x0105;
 const VK_C: usize = 0x43;
+/// winuser.h: Alt.
+const VK_MENU: usize = 0x12;
 /// The context code, bit 29, which is what makes a key an Alt chord.
 const ALT_HELD: isize = 0x2000_0001;
 /// The same with the previous-state and transition bits a release carries.
@@ -165,6 +171,604 @@ unsafe extern "system" {
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetCurrentThreadId() -> u32;
+}
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was.
+///
+/// The dialog manager reads a key's modifiers from the keyboard state, and a
+/// desktop of the run's own keeps out the keys a person presses but not the
+/// ones they hold: measured 2026-10-02 by 13-44.6.2, every one of eight failed
+/// runs of two key targets came while the person at the machine held Shift.
+/// The key here is posted and read when the loop takes it, so the state is
+/// set before it is posted and cleared once it has been read.
+fn only_these_modifiers_down(down: &[usize]) {
+    let mut held = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(held.as_mut_ptr()) };
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+}
+
+// ── The child on a desktop of its own ─────────────────────────────────────
+//
+// The formatted windows hold browsers, and a browser's process starts on its
+// process's desktop, not on the desktop of the thread that asks for it, so
+// this reading cannot move its window thread alone: measured 2026-10-02, a
+// copy with its thread on a desktop of its own took 34 s, waiting out each
+// browser that never came up. So the window tests run in a child of this same
+// executable started on a desktop made for the run, where nothing a person
+// types arrives, inside the one turn, and the parent passes each only on the
+// child's own `ok` line for it. Started whole that way it passed 20 of 20.
+// The helper is a copy of the one in
+// `tests/a_marker_counts_at_the_start_of_any_line.rs`, where its sentence
+// cases live.
+
+/// Set in the child's environment to the desktop it runs on; a window test
+/// that finds it set runs its body.
+const ON_A_DESKTOP_OF_THEIR_OWN: &str = "WIXEN_TESTS_ON_A_DESKTOP_OF_THEIR_OWN";
+
+/// How long the child may run before it is stopped.
+const THE_CHILDS_BOUND_MS: u32 = 5 * 60 * 1000;
+
+/// The turn every run whose window holds a browser takes around its child,
+/// and that the real paste target takes at the logon's test clipboard: one
+/// kernel object for both, since neither may overlap a second run.
+const THE_TURN: &str = "Local\\wixen-mail-tests-one-turn-at-what-runs-share";
+
+/// How long a parent waits for the turn: the bound a run holding it is
+/// stopped at, and a minute more.
+const LONGEST_WAIT_FOR_THE_TURN_MS: u32 = THE_CHILDS_BOUND_MS + 60_000;
+
+const WAIT_TIMEOUT: u32 = 0x0000_0102;
+const WAIT_FAILED: u32 = 0xFFFF_FFFF;
+const GENERIC_ALL: u32 = 0x1000_0000;
+const UOI_NAME: i32 = 2;
+const HANDLE_FLAG_INHERIT: u32 = 0x0000_0001;
+const STARTF_USESTDHANDLES: u32 = 0x0000_0100;
+const CREATE_UNICODE_ENVIRONMENT: u32 = 0x0000_0400;
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const WTS_CURRENT_SESSION: u32 = 0xFFFF_FFFF;
+const WTS_SESSION_INFO_EX: u32 = 25;
+const WTS_SESSIONSTATE_LOCK: u32 = 0;
+const WTS_SESSIONSTATE_UNLOCK: u32 = 1;
+
+/// processthreadsapi.h: `STARTUPINFOW`.
+#[repr(C)]
+struct StartupInfo {
+    size: u32,
+    reserved: *mut u16,
+    desktop: *mut u16,
+    title: *mut u16,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    columns: u32,
+    rows: u32,
+    fill_attribute: u32,
+    flags: u32,
+    show_window: u16,
+    reserved2_size: u16,
+    reserved2: *mut u8,
+    std_input: isize,
+    std_output: isize,
+    std_error: isize,
+}
+
+/// processthreadsapi.h: `PROCESS_INFORMATION`.
+#[repr(C)]
+#[derive(Default)]
+struct ProcessInformation {
+    process: isize,
+    thread: isize,
+    process_id: u32,
+    thread_id: u32,
+}
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn CreateDesktopW(
+        name: *const u16,
+        device: *const u16,
+        mode: *const c_void,
+        flags: u32,
+        access: u32,
+        attributes: *const c_void,
+    ) -> isize;
+    fn CloseDesktop(desktop: isize) -> i32;
+    fn GetProcessWindowStation() -> isize;
+    fn GetUserObjectInformationW(
+        object: isize,
+        index: i32,
+        info: *mut u16,
+        length: u32,
+        needed: *mut u32,
+    ) -> i32;
+    fn GetKeyboardState(state: *mut u8) -> i32;
+    fn SetKeyboardState(state: *const u8) -> i32;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn CreateMutexW(attributes: *const c_void, initial_owner: i32, name: *const u16) -> isize;
+    fn WaitForSingleObject(handle: isize, milliseconds: u32) -> u32;
+    fn ReleaseMutex(handle: isize) -> i32;
+    fn CloseHandle(handle: isize) -> i32;
+    fn GetLastError() -> u32;
+    fn SetHandleInformation(handle: isize, mask: u32, flags: u32) -> i32;
+    fn CreateProcessW(
+        application: *const u16,
+        command_line: *mut u16,
+        process_attributes: *const c_void,
+        thread_attributes: *const c_void,
+        inherit_handles: i32,
+        creation_flags: u32,
+        environment: *const c_void,
+        current_directory: *const u16,
+        startup: *const StartupInfo,
+        information: *mut ProcessInformation,
+    ) -> i32;
+    fn GetExitCodeProcess(process: isize, code: *mut u32) -> i32;
+    fn TerminateProcess(process: isize, code: u32) -> i32;
+}
+
+#[link(name = "wtsapi32")]
+unsafe extern "system" {
+    fn WTSQuerySessionInformationW(
+        server: isize,
+        session: u32,
+        class: u32,
+        answer: *mut *mut c_void,
+        bytes: *mut u32,
+    ) -> i32;
+    fn WTSFreeMemory(memory: *mut c_void);
+}
+
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// What a failed call says, with Windows' error for it.
+fn failed(call: &str) -> String {
+    // SAFETY: reads this thread's last error and nothing else.
+    format!("{call} failed with error {}", unsafe { GetLastError() })
+}
+
+/// Whether Windows says this session is locked, asked of Windows and never
+/// read from the process list.
+#[derive(Debug, Clone, PartialEq)]
+enum SessionLock {
+    Locked,
+    Unlocked,
+    NotSaid(String),
+}
+
+/// Whether this session is locked, as Windows answers it.
+fn this_sessions_lock() -> SessionLock {
+    let mut answer: *mut c_void = std::ptr::null_mut();
+    let mut bytes = 0u32;
+    // SAFETY: Windows writes a buffer it owns into `answer` and its length
+    // into `bytes`; the buffer is copied and then freed once.
+    unsafe {
+        let asked = WTSQuerySessionInformationW(
+            0,
+            WTS_CURRENT_SESSION,
+            WTS_SESSION_INFO_EX,
+            &mut answer,
+            &mut bytes,
+        );
+        if asked == 0 || answer.is_null() {
+            return SessionLock::NotSaid(format!(
+                "WTSQuerySessionInformationW failed with error {}",
+                GetLastError()
+            ));
+        }
+        let copied = std::slice::from_raw_parts(answer as *const u8, bytes as usize).to_vec();
+        WTSFreeMemory(answer);
+        the_lock_in(&copied)
+    }
+}
+
+/// The lock state in a `WTSINFOEXW` answer: its level in the first four
+/// bytes, and the session's flags at byte 16.
+fn the_lock_in(answer: &[u8]) -> SessionLock {
+    let word = |at: usize| {
+        answer
+            .get(at..at + 4)
+            .map(|four| u32::from_le_bytes([four[0], four[1], four[2], four[3]]))
+    };
+    match (word(0), word(16)) {
+        (Some(1), Some(WTS_SESSIONSTATE_LOCK)) => SessionLock::Locked,
+        (Some(1), Some(WTS_SESSIONSTATE_UNLOCK)) => SessionLock::Unlocked,
+        (level, flags) => SessionLock::NotSaid(format!(
+            "{} bytes, level {level:?}, session flags {flags:?}",
+            answer.len()
+        )),
+    }
+}
+
+/// The one turn, held by the parent from before its child starts until the
+/// child has ended, and released on the thread that took it.
+///
+/// WebView2 runs one browser process per user data folder, and the folder is
+/// named for the executable, so two runs of this target at once would share
+/// one browser, even on two desktops (ledger 761). It is taken in the parent
+/// and never in the body the child runs, since the child would otherwise wait
+/// on a turn its own parent holds.
+struct TheOneTurn(isize);
+
+impl TheOneTurn {
+    fn take() -> Result<Self, String> {
+        let name = wide(THE_TURN);
+        // SAFETY: a null-terminated name and no security attributes.
+        let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        if handle == 0 {
+            return Err(failed("CreateMutexW for the one turn"));
+        }
+        // SAFETY: a live mutex handle. An abandoned one, left by a run that
+        // ended while holding it, is taken like a released one.
+        let waited = unsafe { WaitForSingleObject(handle, LONGEST_WAIT_FOR_THE_TURN_MS) };
+        if waited == WAIT_TIMEOUT || waited == WAIT_FAILED {
+            // SAFETY: the handle made above, closed once.
+            unsafe { CloseHandle(handle) };
+            return Err(format!(
+                "another run held the one turn for {} s",
+                LONGEST_WAIT_FOR_THE_TURN_MS / 1000
+            ));
+        }
+        Ok(TheOneTurn(handle))
+    }
+}
+
+impl Drop for TheOneTurn {
+    fn drop(&mut self) {
+        // SAFETY: the handle this turn took, released on the thread that took it.
+        unsafe {
+            ReleaseMutex(self.0);
+            CloseHandle(self.0);
+        }
+    }
+}
+
+/// A desktop made for this run on the window station the process is on,
+/// closed when dropped.
+struct ADesktopOfItsOwn {
+    handle: isize,
+    /// As `CreateProcessW` takes it: `station\desktop`.
+    full_name: String,
+}
+
+impl ADesktopOfItsOwn {
+    fn make(short: &str) -> Result<Self, String> {
+        let station = the_window_stations_name()?;
+        let name = format!("wixen-{short}-{}", std::process::id());
+        // SAFETY: the name is null-terminated and every other pointer is
+        // null, which CreateDesktopW takes as "none".
+        let handle = unsafe {
+            CreateDesktopW(
+                wide(&name).as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                GENERIC_ALL,
+                std::ptr::null(),
+            )
+        };
+        if handle == 0 {
+            return Err(failed("CreateDesktopW"));
+        }
+        Ok(ADesktopOfItsOwn {
+            handle,
+            full_name: format!("{station}\\{name}"),
+        })
+    }
+}
+
+impl Drop for ADesktopOfItsOwn {
+    fn drop(&mut self) {
+        // SAFETY: the handle made in `make`, closed once.
+        unsafe { CloseDesktop(self.handle) };
+    }
+}
+
+/// The name of the window station this process is on, read rather than
+/// written, since a runner may not be on `WinSta0`.
+fn the_window_stations_name() -> Result<String, String> {
+    let mut buffer = [0u16; 256];
+    let mut needed = 0u32;
+    // SAFETY: the buffer's length is passed in bytes, and the station handle
+    // is the process's own, which Windows owns and is never closed here.
+    let read = unsafe {
+        GetUserObjectInformationW(
+            GetProcessWindowStation(),
+            UOI_NAME,
+            buffer.as_mut_ptr(),
+            (buffer.len() * 2) as u32,
+            &mut needed,
+        )
+    };
+    if read == 0 {
+        return Err(failed("GetUserObjectInformationW for the window station"));
+    }
+    let end = buffer
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(buffer.len());
+    Ok(String::from_utf16_lossy(&buffer[..end]))
+}
+
+/// This process's environment with `ON_A_DESKTOP_OF_THEIR_OWN` set to
+/// `desktop`, as the block `CreateProcessW` takes.
+fn the_childs_environment(desktop: &str) -> Vec<u16> {
+    let mut block = Vec::new();
+    let ours = OsStr::new(ON_A_DESKTOP_OF_THEIR_OWN);
+    let theirs = std::env::vars_os().filter(|(key, _)| key.as_os_str() != ours);
+    for (key, value) in theirs.chain(std::iter::once((ours.into(), desktop.into()))) {
+        block.extend(key.encode_wide());
+        block.push(u16::from(b'='));
+        block.extend(value.encode_wide());
+        block.push(0);
+    }
+    block.push(0);
+    block
+}
+
+/// Run this executable whole, with no filter, on a desktop made for the run,
+/// and say how it ended.
+fn the_child_run(short: &str) -> ChildRun {
+    let started = std::time::Instant::now();
+    let desktop = ADesktopOfItsOwn::make(short);
+    let full_name = desktop
+        .as_ref()
+        .map_or_else(|_| format!("wixen-{short}"), |it| it.full_name.clone());
+    let (end, output) = desktop
+        .and_then(|desktop| run_in_the_one_turn(&desktop))
+        .unwrap_or_else(|why| (ChildEnd::NeverStarted(why), String::new()));
+    println!(
+        "the child ran on {full_name} for {} s and {end}",
+        started.elapsed().as_secs()
+    );
+    ChildRun {
+        desktop: full_name,
+        end,
+        output,
+        lock: this_sessions_lock(),
+    }
+}
+
+/// Take the one turn, run the child on `desktop` with its output written to
+/// a file, let the turn go once it has ended, and hand back how it ended and
+/// what it wrote.
+fn run_in_the_one_turn(desktop: &ADesktopOfItsOwn) -> Result<(ChildEnd, String), String> {
+    let folder = tempfile::tempdir().map_err(|why| format!("the child's output folder: {why}"))?;
+    let output = folder.path().join("child.txt");
+    let turn = TheOneTurn::take()?;
+    let end = run_and_wait(desktop, &output);
+    drop(turn);
+    let said = std::fs::read(&output)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
+    Ok((end?, said))
+}
+
+/// Start the child on `desktop` with its output written to `output`, wait at
+/// most `THE_CHILDS_BOUND_MS`, and say how it ended.
+fn run_and_wait(desktop: &ADesktopOfItsOwn, output: &Path) -> Result<ChildEnd, String> {
+    let file = std::fs::File::create(output).map_err(|why| format!("the child's output: {why}"))?;
+    let handle = file.as_raw_handle() as isize;
+    // SAFETY: a live file handle this function owns; only its flag changes.
+    if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) } == 0 {
+        return Err(failed("SetHandleInformation"));
+    }
+    let me = std::env::current_exe().map_err(|why| format!("this test's own path: {why}"))?;
+    let mut command_line = wide(&format!("\"{}\"", me.display()));
+    let mut desktop_name = wide(&desktop.full_name);
+    let environment = the_childs_environment(&desktop.full_name);
+    let startup = StartupInfo {
+        size: std::mem::size_of::<StartupInfo>() as u32,
+        reserved: std::ptr::null_mut(),
+        desktop: desktop_name.as_mut_ptr(),
+        title: std::ptr::null_mut(),
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 0,
+        rows: 0,
+        fill_attribute: 0,
+        flags: STARTF_USESTDHANDLES,
+        show_window: 0,
+        reserved2_size: 0,
+        reserved2: std::ptr::null_mut(),
+        std_input: 0,
+        std_output: handle,
+        std_error: handle,
+    };
+    let mut child = ProcessInformation::default();
+    // SAFETY: every string is null-terminated and outlives the call, the
+    // environment block ends in two nulls, and Windows writes `child`.
+    let made = unsafe {
+        CreateProcessW(
+            std::ptr::null(),
+            command_line.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            1,
+            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+            environment.as_ptr() as *const c_void,
+            std::ptr::null(),
+            &startup,
+            &mut child,
+        )
+    };
+    if made == 0 {
+        return Err(failed("CreateProcessW"));
+    }
+    drop(file);
+    let ended = the_end_of(&child);
+    // SAFETY: the two handles CreateProcessW handed back, closed once.
+    unsafe {
+        CloseHandle(child.thread);
+        CloseHandle(child.process);
+    }
+    ended
+}
+
+/// Wait for the child at most `THE_CHILDS_BOUND_MS`, stopping it there.
+fn the_end_of(child: &ProcessInformation) -> Result<ChildEnd, String> {
+    // SAFETY: a live process handle.
+    match unsafe { WaitForSingleObject(child.process, THE_CHILDS_BOUND_MS) } {
+        WAIT_TIMEOUT => {
+            // SAFETY: a live process handle; the wait lets it finish going.
+            unsafe {
+                TerminateProcess(child.process, 1);
+                WaitForSingleObject(child.process, 10_000);
+            }
+            Ok(ChildEnd::StoppedAtTheBound)
+        }
+        WAIT_FAILED => Err(failed("WaitForSingleObject on the child")),
+        _ => {
+            let mut code = 0u32;
+            // SAFETY: a live process handle that has ended.
+            if unsafe { GetExitCodeProcess(child.process, &mut code) } == 0 {
+                return Err(failed("GetExitCodeProcess"));
+            }
+            Ok(ChildEnd::Exited(code))
+        }
+    }
+}
+
+/// Whether this window test was run in a child on a desktop made for the
+/// run, which is so in the parent; there it fails, with one sentence saying
+/// why, unless the child's line for it says ok. In the child it answers
+/// false and the test runs its body.
+fn ran_in_a_child_on_a_desktop_of_its_own(test: &str) -> bool {
+    if std::env::var_os(ON_A_DESKTOP_OF_THEIR_OWN).is_some() {
+        return false;
+    }
+    static THE_CHILD: OnceLock<ChildRun> = OnceLock::new();
+    let run = THE_CHILD.get_or_init(|| the_child_run("invitation"));
+    if let Err(why) = what_the_child_said(test, run) {
+        panic!("{why}");
+    }
+    true
+}
+
+/// How the child run ended.
+#[derive(Debug, Clone, PartialEq)]
+enum ChildEnd {
+    /// It ended by itself with this exit code.
+    Exited(u32),
+    /// It ran past its five minutes and was stopped.
+    StoppedAtTheBound,
+    /// It never started, for this reason.
+    NeverStarted(String),
+}
+
+impl fmt::Display for ChildEnd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChildEnd::Exited(code) => write!(f, "exited with exit code {code:#x}"),
+            ChildEnd::StoppedAtTheBound => {
+                write!(f, "did not finish in five minutes and was stopped")
+            }
+            ChildEnd::NeverStarted(why) => write!(f, "never started: {why}"),
+        }
+    }
+}
+
+impl fmt::Display for SessionLock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SessionLock::Locked => write!(f, "Windows says the session is locked."),
+            SessionLock::Unlocked => write!(f, "Windows says the session is unlocked."),
+            SessionLock::NotSaid(answer) => write!(
+                f,
+                "Windows did not say whether the session is locked: asking answered {answer}."
+            ),
+        }
+    }
+}
+
+/// What the child run left for the parent to judge each window test by.
+#[derive(Debug, Clone, PartialEq)]
+struct ChildRun {
+    /// The desktop it ran on, as `station\desktop`.
+    desktop: String,
+    end: ChildEnd,
+    /// Its standard output and error, as libtest wrote them.
+    output: String,
+    /// What Windows said about the session lock once the child had ended.
+    lock: SessionLock,
+}
+
+/// How many lines of the child's output a sentence quotes when the test's
+/// own failure block is not there to quote.
+const LINES_QUOTED_FROM_THE_END: usize = 20;
+
+/// Whether the child's run says `test` passed, and if not, one sentence
+/// saying what happened instead, ending with what Windows says about the
+/// lock.
+fn what_the_child_said(test: &str, run: &ChildRun) -> Result<(), String> {
+    let line = |verdict: &str| format!("test {test} ... {verdict}");
+    let said = |line: &str| run.output.lines().any(|it| it.trim_end() == line);
+    let where_ = format!("the child run on {}", run.desktop);
+    let lock = &run.lock;
+    if said(&line("ok")) {
+        return Ok(());
+    }
+    if said(&line("FAILED")) {
+        let block = the_failure_block(test, &run.output).unwrap_or_else(|| {
+            format!(
+                "(no failure block for it; its output ends: {})",
+                the_end_of_the_output(&run.output)
+            )
+        });
+        return Err(format!("{test} failed in {where_}:\n{block}\n{lock}"));
+    }
+    match &run.end {
+        ChildEnd::StoppedAtTheBound => Err(format!(
+            "{where_} {}, so {test} has no result; its output ends:\n{}\n{lock}",
+            run.end,
+            the_end_of_the_output(&run.output)
+        )),
+        end => Err(format!(
+            "{where_} {end} and never reported {test}; its output ends:\n{}\n{lock}",
+            the_end_of_the_output(&run.output)
+        )),
+    }
+}
+
+/// The block libtest writes for a failed test: from its `---- NAME stdout
+/// ----` line to the next such line or the list of failures after them.
+fn the_failure_block(test: &str, output: &str) -> Option<String> {
+    let header = format!("---- {test} stdout ----");
+    let mut lines = output.lines().skip_while(|line| line.trim_end() != header);
+    let first = lines.next()?;
+    let rest =
+        lines.take_while(|line| !line.starts_with("---- ") && line.trim_end() != "failures:");
+    let block: Vec<&str> = std::iter::once(first).chain(rest).collect();
+    Some(block.join("\n").trim_end().to_string())
+}
+
+/// The last lines of the child's output, or a sentence saying it wrote none.
+fn the_end_of_the_output(output: &str) -> String {
+    let lines: Vec<&str> = output.lines().collect();
+    if lines.is_empty() {
+        return "(it wrote nothing)".to_string();
+    }
+    let from = lines.len().saturating_sub(LINES_QUOTED_FROM_THE_END);
+    lines[from..].join("\n")
 }
 
 /// What a button sends its parent when it is clicked, sent to the parent
@@ -518,6 +1122,9 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 }
             };
             let text = tab.text.get_handle() as isize;
+            // Alt alone down while the loop translates the key, and nothing
+            // down once it has been read.
+            only_these_modifiers_down(&[VK_MENU]);
             // SAFETY: a live window of this thread; the key goes through the
             // window's own loop, which is what a real key does.
             unsafe {
@@ -559,6 +1166,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                         }
                         return;
                     }
+                    only_these_modifiers_down(&[]);
                     // SAFETY: asks this thread's own queue.
                     let focus_after_alt_c = unsafe { GetFocus() };
                     let pressed_by_alt_c = pressed.borrow().clone();
@@ -736,6 +1344,11 @@ fn complain(what: &str, wrong: &[String]) {
 
 #[test]
 fn test_an_answerable_invitation_has_three_named_described_buttons() {
+    if ran_in_a_child_on_a_desktop_of_its_own(
+        "test_an_answerable_invitation_has_three_named_described_buttons",
+    ) {
+        return;
+    }
     complain(
         "on the invitation's buttons",
         &what_is_wrong_with_the_buttons(&the_harvest().invitation_tab),
@@ -744,6 +1357,11 @@ fn test_an_answerable_invitation_has_three_named_described_buttons() {
 
 #[test]
 fn test_the_buttons_come_after_the_bar_and_before_the_message() {
+    if ran_in_a_child_on_a_desktop_of_its_own(
+        "test_the_buttons_come_after_the_bar_and_before_the_message",
+    ) {
+        return;
+    }
     complain(
         "on where the buttons are",
         &what_is_wrong_with_the_order(&the_harvest().invitation_tab),
@@ -752,6 +1370,11 @@ fn test_the_buttons_come_after_the_bar_and_before_the_message() {
 
 #[test]
 fn test_alt_c_in_the_message_presses_accept_once_for_the_message_the_tab_shows() {
+    if ran_in_a_child_on_a_desktop_of_its_own(
+        "test_alt_c_in_the_message_presses_accept_once_for_the_message_the_tab_shows",
+    ) {
+        return;
+    }
     let harvest = the_harvest();
     assert_eq!(
         harvest.pressed_by_alt_c,
@@ -783,6 +1406,11 @@ fn test_alt_c_in_the_message_presses_accept_once_for_the_message_the_tab_shows()
 
 #[test]
 fn test_a_cancellation_has_no_buttons_and_its_bar_says_why() {
+    if ran_in_a_child_on_a_desktop_of_its_own(
+        "test_a_cancellation_has_no_buttons_and_its_bar_says_why",
+    ) {
+        return;
+    }
     let harvest = the_harvest();
     assert!(
         the_buttons(&harvest.cancellation_tab).is_empty(),
@@ -803,6 +1431,9 @@ fn test_a_cancellation_has_no_buttons_and_its_bar_says_why() {
 
 #[test]
 fn test_the_reading_refuses_a_greyed_button() {
+    if ran_in_a_child_on_a_desktop_of_its_own("test_the_reading_refuses_a_greyed_button") {
+        return;
+    }
     let wrong = what_is_wrong_with_the_buttons(&the_harvest().with_a_greyed_button);
     assert!(
         wrong.iter().any(|why| why.contains("is greyed")),
@@ -836,6 +1467,11 @@ fn what_is_wrong_with_the_formatted_order(controls: &[Control]) -> Vec<String> {
 
 #[test]
 fn test_the_formatted_window_has_the_three_buttons_after_the_page() {
+    if ran_in_a_child_on_a_desktop_of_its_own(
+        "test_the_formatted_window_has_the_three_buttons_after_the_page",
+    ) {
+        return;
+    }
     let harvest = the_harvest();
     complain(
         "on the formatted window's buttons",
@@ -849,6 +1485,11 @@ fn test_the_formatted_window_has_the_three_buttons_after_the_page() {
 
 #[test]
 fn test_a_press_in_the_formatted_window_answers_the_message_it_shows() {
+    if ran_in_a_child_on_a_desktop_of_its_own(
+        "test_a_press_in_the_formatted_window_answers_the_message_it_shows",
+    ) {
+        return;
+    }
     assert_eq!(
         the_harvest().pressed_in_the_formatted_window,
         vec![(THE_FORMATTED_ROW, Answer::Declined)],
@@ -858,6 +1499,10 @@ fn test_a_press_in_the_formatted_window_answers_the_message_it_shows() {
 
 #[test]
 fn test_a_conversation_of_two_messages_has_no_buttons() {
+    if ran_in_a_child_on_a_desktop_of_its_own("test_a_conversation_of_two_messages_has_no_buttons")
+    {
+        return;
+    }
     // One row of buttons over two messages would be heard as answering both.
     let harvest = the_harvest();
     assert!(

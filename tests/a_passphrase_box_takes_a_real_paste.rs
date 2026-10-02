@@ -65,8 +65,12 @@ const TRIES: u32 = 50;
 const BETWEEN_TRIES: Duration = Duration::from_millis(40);
 
 /// The turn every run of this target takes at the logon's test clipboard,
-/// and the longest one run waits for another.
-const THE_TURN: &str = "Local\\wixen-mail-tests-one-turn-at-the-clipboard";
+/// and the longest one run waits for another. The four targets whose window
+/// holds a browser take the same turn around the child that runs their
+/// window tests, since two runs of one of them at once would share its
+/// browser (13-44.6.3, ledger 761): one kernel object for both uses, named
+/// for what it guards.
+const THE_TURN: &str = "Local\\wixen-mail-tests-one-turn-at-what-runs-share";
 const LONGEST_WAIT_FOR_THE_TURN_MS: u32 = 120_000;
 
 /// What the paste puts on the clipboard: long, with spaces, the shape a
