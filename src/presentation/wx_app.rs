@@ -27187,6 +27187,26 @@ fn check_pop_mail(
         Err(e) => return fail(format!("Could not set up the folders: {e}")),
     };
 
+    // The Trash on this computer of an account somebody set to be emptied
+    // (13-44.7, D22): after the folders are made and before the POP server is
+    // dialled, since it needs no server and one that cannot be reached must
+    // not stop it. One sentence for the account; the log names the account
+    // and never a subject.
+    match crate::application::emptying_the_trash::empty_the_trash_here_at_a_pop_check(
+        &cache,
+        account,
+        when_the_trash_is_emptied(&account.id),
+        chrono::Utc::now(),
+        chrono::Local::now().date_naive(),
+    ) {
+        Ok(Some(said)) => {
+            tracing::info!("The Trash of {} was emptied: {said}", account.name);
+            say(UIUpdate::TheTrashWasEmptied(said));
+        }
+        Ok(None) => {}
+        Err(why) => tracing::warn!("The Trash of {} could not be emptied: {why}", account.name),
+    }
+
     say(UIUpdate::ConnectionStatusChanged(
         ConnectionStatus::Connecting,
     ));

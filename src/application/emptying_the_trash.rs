@@ -36,6 +36,8 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 
 use crate::application::allowed::SETTINGS_SECTION;
 use crate::application::destinations::{DeletedGoesTo, Deleting, where_a_deleted_message_goes};
+use crate::application::local_delete;
+use crate::application::local_folders::{self, LocalDelete};
 use crate::application::moves_waiting::{
     APushUnderWay, DeletedHereThenAtTheServer, ReplaysAMove, delete_here_then_at_the_server,
 };
@@ -267,11 +269,38 @@ pub fn what_the_emptying_said(
     days: i64,
     came_to: &WhatTheEmptyingCameTo,
 ) -> Option<String> {
+    the_emptying_in_words(
+        &format!("from {folder_name} in {account_name}"),
+        days,
+        came_to,
+    )
+}
+
+/// The one sentence a POP account's emptying says, naming the account and
+/// saying the Trash is the one on this computer (13-44.7, D5).
+fn what_emptying_here_said(
+    account_name: &str,
+    days: i64,
+    came_to: &WhatTheEmptyingCameTo,
+) -> Option<String> {
+    the_emptying_in_words(
+        &format!("of {account_name}'s from the Trash on this computer"),
+        days,
+        came_to,
+    )
+}
+
+/// The sentence, with where the messages were emptied from in words.
+fn the_emptying_in_words(
+    emptied_from: &str,
+    days: i64,
+    came_to: &WhatTheEmptyingCameTo,
+) -> Option<String> {
     if *came_to == WhatTheEmptyingCameTo::default() {
         return None;
     }
     let emptied = format!(
-        "Emptied {} from {folder_name} in {account_name} that had been there more than {days} days",
+        "Emptied {} {emptied_from} that had been there more than {days} days",
         how_many(came_to.emptied, "message")
     );
     let kept_waiting = (came_to.kept_waiting > 0).then(|| {
@@ -467,7 +496,21 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
 // ── A POP account's Trash, on this computer (13-44.7) ──────────────────────
 
 /// Empty a POP account's Trash on this computer of its own messages that are
-/// due, at the start of its check (D5, D22).
+/// due, at the start of its check, before the POP server is dialled, and
+/// answer the sentence to say, if any (D5, D22).
+///
+/// The Trash is the one every account shares, where Delete moves a POP
+/// message, and only what this account put there is taken (D18). Each
+/// message goes through [`local_delete::perform`], the delete Empty Folder
+/// uses there: marked deleted here, keeping its identifier and its download
+/// time, so the next check does not download it again and the account's own
+/// removal setting still counts from it. The POP server is never asked. A
+/// refusal, "Let me delete mail on this computer" off, ends it with one
+/// sentence. Once a day and at most [`AT_MOST_IN_A_DAY`], as an IMAP
+/// account's check is.
+///
+/// Set to When Wixen Mail closes, a check empties nothing and says, once a
+/// day, only what will stop the close emptying it (D23, D26).
 pub fn empty_the_trash_here_at_a_pop_check(
     cache: &MessageCache,
     account: &Account,
@@ -475,8 +518,102 @@ pub fn empty_the_trash_here_at_a_pop_check(
     now: DateTime<Utc>,
     today: NaiveDate,
 ) -> Result<Option<String>> {
-    let _ = (cache, account, when, now, today);
-    Ok(None)
+    if when == WhenTheTrashIsEmptied::Never {
+        return Ok(None);
+    }
+    if cache.the_trash_was_last_emptied_on(&account.id)? == Some(today) {
+        return Ok(None);
+    }
+    let Some(trash) = the_trash_here_of(cache, account)? else {
+        return Ok(None);
+    };
+    let Some(days) = when.days() else {
+        let why = why_closing_will_not_empty_the_trash_here(&trash, account);
+        if why.is_some() {
+            cache.the_trash_was_emptied_on(&account.id, today)?;
+        }
+        return Ok(why);
+    };
+    cache.the_trash_was_emptied_on(&account.id, today)?;
+    let due = what_is_due(
+        &cache.what_this_account_put_in_the_shared_trash(trash.id, &account.id)?,
+        days,
+        now,
+    );
+    let mut came_to = WhatTheEmptyingCameTo::default();
+    let mut tried = 0;
+    for message in due.iter().take(AT_MOST_IN_A_DAY) {
+        tried += 1;
+        match take_it_off_this_computer(cache, account, message.row)? {
+            TakenHere::Emptied => came_to.emptied += 1,
+            TakenHere::Refused(why) => {
+                return Ok(Some(format!(
+                    "Nothing was emptied from the Trash on this computer for {}. {why}",
+                    account.name
+                )));
+            }
+            TakenHere::NotOnThisComputer => came_to.left_for_another_day += 1,
+        }
+    }
+    came_to.left_for_another_day += due.len() - tried;
+    Ok(what_emptying_here_said(&account.name, days, &came_to))
+}
+
+/// The Trash on this computer an account's deleted mail goes to, the one
+/// every account shares, or `None` when it keeps none here or it has not
+/// been made yet.
+fn the_trash_here_of(cache: &MessageCache, account: &Account) -> Result<Option<CachedFolder>> {
+    let Some(path) = local_folders::local_trash(account.protocol()) else {
+        return Ok(None);
+    };
+    cache.get_folder(local_folders::stored_under(&path, &account.id), &path)
+}
+
+/// What one delete on this computer came to.
+enum TakenHere {
+    Emptied,
+    /// Refused, with the words the refusal gave.
+    Refused(String),
+    /// Not a folder on this computer after all, so nothing was done.
+    NotOnThisComputer,
+}
+
+/// Take one message out of a Trash on this computer through the delete
+/// Empty Folder uses, deciding nothing it decides.
+fn take_it_off_this_computer(
+    cache: &MessageCache,
+    account: &Account,
+    message_row_id: i64,
+) -> Result<TakenHere> {
+    Ok(
+        match local_delete::perform(cache, account, message_row_id, Deleting::ToTrash)? {
+            Some(outcome) if outcome.message_left_the_folder => TakenHere::Emptied,
+            Some(refused) => TakenHere::Refused(refused.said),
+            None => TakenHere::NotOnThisComputer,
+        },
+    )
+}
+
+/// What a check says of a POP account set to When Wixen Mail closes whose
+/// Trash on this computer the close will not empty, in the words the delete
+/// itself refuses with (D26).
+fn why_closing_will_not_empty_the_trash_here(
+    trash: &CachedFolder,
+    account: &Account,
+) -> Option<String> {
+    match local_folders::deleting(
+        &trash.path,
+        account.protocol(),
+        Deleting::ToTrash,
+        account.allow_deleting_here,
+    ) {
+        Some(LocalDelete::Refuse(why)) => Some(format!(
+            "Nothing will be emptied from the Trash on this computer for {} when Wixen Mail \
+             closes. {why}",
+            account.name
+        )),
+        _ => None,
+    }
 }
 
 // ── When Wixen Mail closes (13-44.7) ───────────────────────────────────────
@@ -565,14 +702,38 @@ impl WhatTheCloseDid {
 
 impl AnAccountToEmpty<'_> {
     /// Whether closing empties this account's Trash: set to When Wixen Mail
-    /// closes, a Trash this program empties, and Allow Changes letting it
-    /// change mail (D23, D26). A refusal is not said here; the account's
-    /// check says it.
+    /// closes, a Trash this program empties, and, for a Trash at a server,
+    /// Allow Changes letting it change mail (D23, D26). A POP account's
+    /// Trash is on this computer and its own delete answers for it. A
+    /// refusal is not said here; the account's check says it.
     fn is_emptied_on_the_way_out(&self) -> bool {
         self.answer == WhenTheTrashIsEmptied::WhenWixenMailCloses
             && self.who_empties == WhoEmptiesTheTrash::ThisProgram
-            && outward::permitted(self.allowed_mail, "empty the Trash").is_ok()
+            && (self.is_emptied_here()
+                || outward::permitted(self.allowed_mail, "empty the Trash").is_ok())
     }
+
+    /// Whether its Trash is on this computer, which is a POP account's.
+    fn is_emptied_here(&self) -> bool {
+        self.account.protocol() == Protocol::Pop3
+    }
+}
+
+/// What one account's emptying at close came to, for the log, with a
+/// failure written there rather than ending the close.
+fn the_close_did(
+    account: &Account,
+    emptying: Result<Option<WhatTheCloseDid>>,
+) -> Option<WhatTheCloseDid> {
+    emptying
+        .inspect_err(|why| {
+            tracing::warn!(
+                "The Trash of {} could not be emptied on the way out: {why}",
+                account.name
+            );
+        })
+        .ok()
+        .flatten()
 }
 
 /// Empty, as Wixen Mail closes, the Trash of every account set to When Wixen
@@ -585,27 +746,67 @@ impl AnAccountToEmpty<'_> {
 /// start's first check replays before it lists anything, and the rest stay
 /// in the Trash, untouched, for the next close. One answer per account
 /// whose Trash held something, for the log; nothing is said (D21).
+///
+/// POP accounts first, since their Trash is on this computer and needs no
+/// network, so a quiet server cannot spend the limit before them (D22).
 pub(crate) async fn empty_on_the_way_out<O: OpensTheSessionToEmpty>(
     opener: &O,
     cache: &MessageCache,
     accounts: &[AnAccountToEmpty<'_>],
     deadline: tokio::time::Instant,
 ) -> Vec<WhatTheCloseDid> {
-    let mut did = Vec::new();
-    for to_empty in accounts
+    let (here, at_a_server): (Vec<&AnAccountToEmpty<'_>>, Vec<&AnAccountToEmpty<'_>>) = accounts
         .iter()
         .filter(|to_empty| to_empty.is_emptied_on_the_way_out())
-    {
-        match empty_one_imap_trash_on_the_way_out(opener, cache, to_empty.account, deadline).await {
-            Ok(Some(one)) => did.push(one),
-            Ok(None) => {}
-            Err(why) => tracing::warn!(
-                "The Trash of {} could not be emptied on the way out: {why}",
-                to_empty.account.name
-            ),
-        }
+        .partition(|to_empty| to_empty.is_emptied_here());
+    let mut did: Vec<WhatTheCloseDid> = here
+        .into_iter()
+        .filter_map(|to_empty| {
+            the_close_did(
+                to_empty.account,
+                empty_one_trash_here_on_the_way_out(cache, to_empty.account, deadline),
+            )
+        })
+        .collect();
+    for to_empty in at_a_server {
+        let emptying =
+            empty_one_imap_trash_on_the_way_out(opener, cache, to_empty.account, deadline).await;
+        did.extend(the_close_did(to_empty.account, emptying));
     }
     did
+}
+
+/// One POP account's Trash on this computer, of its own messages, emptied
+/// through the delete Empty Folder uses, the deadline read before each.
+fn empty_one_trash_here_on_the_way_out(
+    cache: &MessageCache,
+    account: &Account,
+    deadline: tokio::time::Instant,
+) -> Result<Option<WhatTheCloseDid>> {
+    let Some(trash) = the_trash_here_of(cache, account)? else {
+        return Ok(None);
+    };
+    let in_the_trash = cache.what_this_account_put_in_the_shared_trash(trash.id, &account.id)?;
+    if in_the_trash.is_empty() {
+        return Ok(None);
+    }
+    let mut came_to = WhatTheEmptyingCameTo::default();
+    for message in &in_the_trash {
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        match take_it_off_this_computer(cache, account, message.row)? {
+            TakenHere::Emptied => came_to.emptied += 1,
+            // Said at the account's check, once a day (D26).
+            TakenHere::Refused(_) => break,
+            TakenHere::NotOnThisComputer => {}
+        }
+    }
+    Ok(Some(WhatTheCloseDid::of(
+        &account.name,
+        in_the_trash.len(),
+        &came_to,
+    )))
 }
 
 /// One IMAP account's Trash, emptied at the server within the deadline,
@@ -678,9 +879,9 @@ async fn empty_one_imap_trash_on_the_way_out<O: OpensTheSessionToEmpty>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::local_folders::DELETING_IS_SWITCHED_OFF;
     use crate::data::message_cache::moves_waiting::MarksFirst;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
+    use local_folders::DELETING_IS_SWITCHED_OFF;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
 

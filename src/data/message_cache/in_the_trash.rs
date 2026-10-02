@@ -87,6 +87,29 @@ impl MessageCache {
     /// cannot be read leaves its row out too, and says so in the log: a
     /// message left in the Trash is the safe end of not knowing.
     pub fn what_has_been_in_the_trash(&self, folder_id: i64) -> Result<Vec<InTheTrash>> {
+        self.in_the_trash_put_there_by(folder_id, None)
+    }
+
+    /// What one account put in the Trash every account shares, oldest first,
+    /// by the record a move into a shared folder writes (13-44.7, D18), with
+    /// the same rows left out as [`Self::what_has_been_in_the_trash`]. A row
+    /// moved there before that record existed belongs to no account and is
+    /// never answered here; Empty Folder still reaches it.
+    pub fn what_this_account_put_in_the_shared_trash(
+        &self,
+        folder_id: i64,
+        account_id: &str,
+    ) -> Result<Vec<InTheTrash>> {
+        self.in_the_trash_put_there_by(folder_id, Some(account_id))
+    }
+
+    /// What a Trash holds that an emptying could take, of every account's
+    /// or of one account's.
+    fn in_the_trash_put_there_by(
+        &self,
+        folder_id: i64,
+        account_id: Option<&str>,
+    ) -> Result<Vec<InTheTrash>> {
         let could_not = |e: rusqlite::Error| {
             Error::Other(format!("What is in the Trash could not be read: {e}"))
         };
@@ -96,11 +119,12 @@ impl MessageCache {
                 "SELECT m.id, m.uid, t.since
                  FROM messages m JOIN in_the_trash_since t ON t.message_id = m.id
                  WHERE m.folder_id = ?1 AND m.deleted = 0 AND m.filed_here = 0
+                   AND (?2 IS NULL OR m.original_account_id = ?2)
                    AND NOT EXISTS (SELECT 1 FROM moves_waiting w WHERE w.message_row_id = m.id)",
             )
             .map_err(could_not)?;
         let rows = statement
-            .query_map(params![folder_id], |found| {
+            .query_map(params![folder_id, account_id], |found| {
                 Ok((
                     found.get::<_, i64>(0)?,
                     found.get::<_, i64>(1)?,
@@ -124,17 +148,6 @@ impl MessageCache {
         // different number of decimal places would put out of order.
         held.sort_by_key(|in_the_trash| (in_the_trash.since, in_the_trash.row));
         Ok(held)
-    }
-
-    /// What one account put in the Trash every account shares, oldest first
-    /// (13-44.7, D18).
-    pub fn what_this_account_put_in_the_shared_trash(
-        &self,
-        folder_id: i64,
-        account_id: &str,
-    ) -> Result<Vec<InTheTrash>> {
-        let _ = (folder_id, account_id);
-        Ok(Vec::new())
     }
 
     /// The day this account's Trash was last emptied, on this computer's
