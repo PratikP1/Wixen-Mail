@@ -834,16 +834,6 @@ const KEY_SENDS: [&str; 7] = [
     "keybd_event",
 ];
 
-/// The four whose window holds a browser or whose reading starts a second
-/// copy of itself, so a thread moved alone cannot carry them. 13-44.6.3 runs
-/// them in a process of their own on such a desktop and removes this constant.
-const NOT_YET_IN_A_PROCESS_OF_THEIR_OWN: [&str; 4] = [
-    "tests/a_signature_follows_the_from_account.rs",
-    "tests/the_invitation_is_answered_from_the_reader.rs",
-    "tests/a_meeting_change_reaches_the_calendar.rs",
-    "tests/every_spin_control_names_the_field_a_person_types_in.rs",
-];
-
 /// Every key a file sends in code on a desktop it did not make for its run,
 /// as `path: sends TOKEN on a desktop it did not make for its run`.
 fn keys_sent_off_a_desktop_of_its_run(path: &str, text: &str) -> Vec<String> {
@@ -913,7 +903,6 @@ fn test_no_target_sends_a_key_with_whatever_modifiers_are_held() {
 
     let found: Vec<String> = files
         .iter()
-        .filter(|(path, _)| !NOT_YET_IN_A_PROCESS_OF_THEIR_OWN.contains(&path.as_str()))
         .flat_map(|(path, text)| keys_sent_with_whatever_modifiers_are_held(path, text))
         .collect();
 
@@ -964,7 +953,6 @@ fn test_no_target_sends_a_key_outside_a_desktop_made_for_its_run() {
 
     let found: Vec<String> = files
         .iter()
-        .filter(|(path, _)| !NOT_YET_IN_A_PROCESS_OF_THEIR_OWN.contains(&path.as_str()))
         .flat_map(|(path, text)| keys_sent_off_a_desktop_of_its_run(path, text))
         .collect();
 
@@ -1112,7 +1100,6 @@ fn test_a_key_sender_with_a_browser_runs_in_a_child_and_takes_the_one_turn() {
 
     let found: Vec<String> = files
         .iter()
-        .filter(|(path, _)| !NOT_YET_IN_A_PROCESS_OF_THEIR_OWN.contains(&path.as_str()))
         .flat_map(|(path, text)| keys_sent_into_a_browser_on_the_screen(path, text))
         .collect();
 
