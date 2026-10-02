@@ -46,6 +46,7 @@ pub mod shared_folders;
 mod signatures;
 pub mod signed_original;
 mod tags;
+pub mod taken_off_this_computer;
 pub mod taking_back;
 pub mod tasks;
 pub mod waiting_flag_changes;
@@ -3672,6 +3673,29 @@ impl MessageCache {
                  END;",
             )
             .map_err(|e| Error::Other(format!("Failed to keep the search indexes tidy: {}", e)))?;
+
+        // Whether the mail search index still holds the words of mail taken
+        // off this computer, and how many removals it has had since it last
+        // let go of them (13-44.8, D32). One row at most. A record rather
+        // than a question asked of the index, because a contentless index
+        // cannot be asked cheaply what its pages still hold: letting go is
+        // rewriting the whole of it. A count rather than a flag, so a
+        // removal made while a compaction runs keeps the work owed.
+        // Additive: one table.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS search_index_owes_a_compaction (
+                     id INTEGER PRIMARY KEY CHECK (id = 1),
+                     taken_off INTEGER NOT NULL
+                 )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create the record of what the search index owes: {}",
+                    e
+                ))
+            })?;
 
         // Indexes for performance
         let indexes = [

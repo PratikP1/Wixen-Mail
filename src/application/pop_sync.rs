@@ -2427,6 +2427,64 @@ X-Spam-Flag: YES\r\n\r\nbody";
         );
     }
 
+    #[test]
+    fn test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day()
+    {
+        // 13-44.8, D30: taken off this computer, the message keeps its
+        // identifier and its download time and nothing it said, so the next
+        // check neither downloads it again nor loses the day the removal
+        // setting counts from.
+        use crate::application::destinations::Deleting;
+        let raw = raw_message("Subject: Quillwort\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = downloaded_and_moved_to_the_shared_trash(&raw);
+        let row = cache
+            .message_rows_in(the_shared_trash(&cache))
+            .expect("the Trash read")
+            .into_iter()
+            .next()
+            .expect("the message in the Trash");
+        let mut account =
+            crate::data::account::Account::new("Old ISP".to_string(), "me@example.com".to_string());
+        account.id = "acct".to_string();
+        account.protocol = crate::common::types::Protocol::Pop3.as_str().to_string();
+
+        crate::application::local_delete::perform(&cache, &account, row, Deleting::ToTrash)
+            .expect("the delete")
+            .expect("a folder on this computer");
+        assert_eq!(
+            cache.what_a_row_still_holds(row).expect("the row read"),
+            Vec::<String>::new(),
+            "the message was not taken off this computer"
+        );
+
+        let again = run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the next check runs");
+        assert_eq!(again.fetched, 0, "it was downloaded again");
+
+        let server = Scripted::holding(&[(1, "aaa", &raw)]);
+        let later = run(
+            &server,
+            &cache,
+            folder_id,
+            AFTER_A_FORTNIGHT,
+            Utc::now() + Duration::days(40),
+        )
+        .expect("a check forty days on runs");
+        assert_eq!(later.fetched, 0, "it was downloaded again");
+        assert_eq!(
+            later.removed_from_server,
+            1,
+            "it did not leave the server on its day: {:?}",
+            server.journal()
+        );
+    }
+
     fn downloaded_days_ago(
         uidls: &[&str],
         days: i64,

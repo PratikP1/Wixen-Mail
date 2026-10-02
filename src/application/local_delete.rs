@@ -80,7 +80,9 @@ pub fn perform(
             }))
         }
         LocalDelete::RemoveFromThisComputer => {
-            cache.delete_message(message_row_id)?;
+            // There is no other copy, so what it said goes and only what
+            // stops the next check downloading it again stays (13-44.8).
+            cache.take_off_this_computer(message_row_id)?;
             Ok(Some(Outcome {
                 message_left_the_folder: true,
                 said: "Deleted from this computer".to_string(),
@@ -653,23 +655,26 @@ mod tests {
     }
 
     #[test]
-    fn test_a_message_deleted_outright_keeps_its_number_and_its_text_on_this_computer() {
+    fn test_a_message_deleted_outright_keeps_its_number_and_loses_its_words() {
         // What "off this computer" really means here, pinned because the words
-        // said about it were wrong once. The row is marked deleted, so it
-        // leaves every list, every count and every search. It is not removed:
+        // said about it were wrong once (13-44.8, D27 and D30). The row stays
+        // under its own number, marked deleted, so it leaves every list, every
+        // count and every search, and it keeps only what
+        // `KEPT_WHEN_TAKEN_OFF` names:
         //
-        //  - the number the POP server knows it by stays, and it has to. That
+        //  - the number the POP server knows it by, which has to stay. That
         //    number is the whole of how the next check knows this message has
-        //    already been seen. Take the row away and the message is
-        //    downloaded again, which is the bug the "stays deleted" work fixed.
-        //  - the text stays too, deliberately. Mail collected over POP was
-        //    downloaded once and there is no server to fetch it back from.
+        //    already been seen. Take it away and the message is downloaded
+        //    again, which is the bug the "stays deleted" work fixed.
+        //  - when it was downloaded, whose it was and where it was, for the
+        //    removal setting and the undo's refusal.
         //
-        // So the message is gone from the program and still in the database
-        // file, which is not encrypted. Nothing in the product brings it back
-        // and nothing in the product clears it. Anything said to the person
-        // has to match this.
-        let cache = a_cache("outright_leaves_the_text");
+        // Its text, subject, sender and everything else it said go, because
+        // nothing can bring it back: the database file is not encrypted, and
+        // keeping the words of mail somebody took off this computer for good
+        // was keeping them for nobody. Anything said to the person has to
+        // match this.
+        let cache = a_cache("outright_loses_the_words");
         let account = a_pop_account();
         its_folders(&cache, &account);
         let inbox = a_folder(
@@ -696,13 +701,14 @@ mod tests {
              downloads the message again"
         );
         assert_eq!(
-            cache
-                .get_message_body(row)
-                .expect("the lookup")
-                .and_then(|body| body.body_plain)
-                .as_deref(),
-            Some("The words that were in it"),
-            "the only copy of the text was destroyed"
+            cache.get_message_body(row).expect("the lookup"),
+            None,
+            "the text of a message taken off this computer is still here"
+        );
+        assert_eq!(
+            cache.what_a_row_still_holds(row).expect("the row read"),
+            Vec::<String>::new(),
+            "the row of a message taken off this computer still holds what it said"
         );
     }
 

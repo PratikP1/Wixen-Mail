@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 598 records have arrived since and have not been through it.
+# 607 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -718,7 +718,7 @@ tests_last_seen = [
     { file = "src/application/choosing_messages.rs", tests = 18 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -5359,7 +5359,7 @@ red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
 ]
 
 # ── A subscription change nothing had ever sent ─────────────────────────────
@@ -12754,7 +12754,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 15 },
@@ -16845,7 +16845,7 @@ red = [
     "application::pop_sync::tests::test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
 ]
 
 # ── What a message says about its own form, and who is told ──────────────────
@@ -33703,7 +33703,7 @@ red = [
     "application::pop_sync::tests::test_a_check_says_a_rule_named_a_label_the_account_does_not_have",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
 ]
 
 # A do-half that says something: Star's sentence said from inside the
@@ -36241,7 +36241,7 @@ red = [
     "application::pop_sync::tests::test_a_pop_rule_that_deletes_still_marks_the_message_deleted_here",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
 ]
 
 # A run's move that carries no keyword for the labels the run puts on, so
@@ -36673,9 +36673,12 @@ red = [
     "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
     "application::emptying_the_trash::tests::test_a_pop_account_with_deleting_here_off_empties_nothing_and_says_so_once_a_day",
     "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash",
+    # Added 2026-10-02 by 13-44.8, found by --remeasure: its tracer's case
+    # empties a due message the same way.
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # The row marked deleted here and never sent, in place of the step the
@@ -36707,7 +36710,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # A second place in the window naming the emptying, planted as a string the
@@ -36749,7 +36752,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # Allow Changes read as open whatever the account's answer, so an emptying
@@ -36765,7 +36768,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # Every IMAP account answered as one this program empties, so a Gmail or
@@ -36787,7 +36790,7 @@ red = [
     "application::emptying_the_trash::tests::test_each_answer_of_the_one_check_says_who_empties_the_trash",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # The day's bound dropped, so a Trash of thousands is emptied in one check
@@ -36806,7 +36809,7 @@ red = [
     "application::emptying_the_trash::tests::test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # The limit taken off the wait for each delete at close, so a server that
@@ -36831,7 +36834,7 @@ red = [
     "application::emptying_the_trash::tests::test_closing_empties_a_pop_account_first_and_within_the_deadline",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # The window left on the screen while the Trash is emptied at close, so a
@@ -36870,7 +36873,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
 ]
 
 # The account a row came from no longer counted by the identifier query, so
@@ -36888,11 +36891,17 @@ after = '''                 WHERE f.account_id = ?1
 red = [
     "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
     "application::pop_sync::tests::test_a_message_moved_to_the_trash_every_account_shares_is_not_downloaded_again",
+    # Added 2026-10-02 by 13-44.8, found by --remeasure: a message taken
+    # off this computer is still counted by the same query.
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said",
+    "application::pop_sync::tests::test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day",
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_is_still_mail_its_account_has_had",
 ]
 tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
-    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # An ordinary move into a folder every account shares records nobody, so
@@ -36915,12 +36924,18 @@ red = [
     "application::pop_sync::tests::test_the_download_time_of_a_message_in_the_shared_trash_still_counts_towards_the_policy",
     "data::message_cache::in_the_trash::tests::test_a_message_in_the_shared_trash_before_this_build_belongs_to_no_account",
     "data::message_cache::in_the_trash::tests::test_the_shared_trash_answers_only_for_the_account_a_message_came_from",
+    # Added 2026-10-02 by 13-44.8, found by --remeasure: its cases move a
+    # message into the shared Trash before taking it off.
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said",
+    "application::pop_sync::tests::test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day",
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_is_still_mail_its_account_has_had",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
-    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
 ]
 
 # The owner dropped from the read of the shared Trash, so a POP account's
@@ -36939,8 +36954,8 @@ red = [
     "data::message_cache::in_the_trash::tests::test_the_shared_trash_answers_only_for_the_account_a_message_came_from",
 ]
 tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
-    { file = "src/application/emptying_the_trash.rs", tests = 32 },
 ]
 
 # The POP server dialled before the Trash is emptied, as the reading sees
@@ -37213,4 +37228,185 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
+]
+
+# The subject kept when a message is taken off this computer, so the words
+# of mail with no other copy stay in the database file (13-44.8, D27, D30,
+# T-13-44.8-01). The keep-only reading is blind to this break, because it
+# reads every column outside the list it is given; its companion, the
+# case holding the subject empty and the file case see it. Written
+# 2026-10-02 by 13-44.8, taken by hand against the whole library first.
+[[guard]]
+name = "a message taken off this computer keeps none of what it said"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''    "original_account_id",
+];'''
+after = '''    "original_account_id",
+    "subject",
+];'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_is_still_mail_its_account_has_had",
+    "data::message_cache::taken_off_this_computer::tests::test_taking_a_message_off_twice_changes_nothing_the_second_time",
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index",
+    "data::message_cache::taken_off_this_computer::tests::test_the_reading_sees_a_column_that_still_holds_something",
+    # Added the same day by --remeasure: since the written-back row is
+    # indexed, a kept subject is found by a search again.
+    "data::message_cache::taken_off_this_computer::tests::test_nothing_keyed_on_a_message_taken_off_is_left",
+    # Added the same day by --remeasure: a kept subject is indexed again,
+    # so the file holds it after the index lets go.
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The POP identifier left off what a message taken off this computer keeps,
+# so the next check downloads it again (13-44.8, D30, T-13-44.8-03).
+# Written 2026-10-02 by 13-44.8, taken by hand against the whole library
+# first.
+[[guard]]
+name = "a message taken off this computer still stops the next check downloading it"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''    // The number the POP server knows it by. Without it the next check
+    // downloads the message again.
+    "pop_uidl",
+'''
+after = '''    // The number the POP server knows it by. Without it the next check
+    // downloads the message again.
+'''
+red = [
+    "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said",
+    "application::local_delete::tests::test_a_message_deleted_outright_keeps_its_number_and_loses_its_words",
+    "application::pop_sync::tests::test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day",
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_is_still_mail_its_account_has_had",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/local_delete.rs", tests = 15 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The soft delete put back in the arm every way of taking a message off
+# this computer goes through, so it is only marked deleted and keeps its
+# words (13-44.8, D28). Written 2026-10-02 by 13-44.8, taken by hand
+# against the whole library first.
+[[guard]]
+name = "Delete in a folder on this computer takes the words off, not only the place"
+file = "src/application/local_delete.rs"
+before = '''            cache.take_off_this_computer(message_row_id)?;'''
+after = '''            cache.delete_message(message_row_id)?;'''
+red = [
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said",
+    "application::local_delete::tests::test_a_message_deleted_outright_keeps_its_number_and_loses_its_words",
+    "application::pop_sync::tests::test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/local_delete.rs", tests = 15 },
+    { file = "src/application/pop_sync.rs", tests = 54 },
+]
+
+# Secure delete left off for the removal, so the bytes it frees keep the
+# message's words in the file (13-44.8, D31, T-13-44.8-01). Written
+# 2026-10-02 by 13-44.8, taken by hand against the whole library first.
+[[guard]]
+name = "the bytes a message taken off this computer frees are overwritten"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''        conn.pragma_update(None, "secure_delete", 1)'''
+after = '''        conn.pragma_update(None, "secure_delete", 0)'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index",
+    # Added the same day by --remeasure: the compaction switches secure
+    # delete on through the same piece, so the merged pages keep the words.
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The written-back row left with no search entry, so the index holds fewer
+# entries than there are rows and the next open rebuilds the whole of it
+# (13-44.8, found writing task 1). Written 2026-10-02 by 13-44.8, taken by
+# hand against the whole library first; its anchor rewritten the same day
+# when the count of what the index owes went in after the call.
+[[guard]]
+name = "a message taken off this computer leaves the search index as full as the mail"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''        self.index_message_for_search(message_id)?;
+        self.owe_a_compaction()?;'''
+after = '''        self.owe_a_compaction()?;'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_leaves_the_search_index_as_full_as_the_mail",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# Secure delete left on after a removal instead of put back as it was found
+# (13-44.8, D31). Written 2026-10-02 by 13-44.8, taken by hand against the
+# whole library first.
+[[guard]]
+name = "secure delete is put back as it was after a message is taken off this computer"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''        if let Err(e) = self.conn.pragma_update(None, "secure_delete", self.found) {'''
+after = '''        if let Err(e) = self.conn.pragma_update(None, "secure_delete", 1) {'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_overwriting_freed_space_is_put_back_as_it_was_after_a_removal",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The compaction takes no merge step and reports finished, so the search
+# index keeps the words of mail taken off this computer on its pages
+# (13-44.8, D32, T-13-44.8-02). Written 2026-10-02 by 13-44.8, taken by
+# hand against the whole library first.
+[[guard]]
+name = "the search index lets go of the words of mail taken off this computer"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''            if !self.one_merge_step()? {'''
+after = '''            if true {'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_a_compaction_stopped_at_its_limit_stays_owed_and_the_next_one_finishes",
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The settle removes the record whatever its count, so a message taken off
+# while the index was being compacted is never let go of (13-44.8, D32,
+# T-13-44.8-07). Written 2026-10-02 by 13-44.8, taken by hand against the
+# whole library first.
+[[guard]]
+name = "a message taken off during a compaction keeps it owed"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''WHERE id = 1 AND taken_off = ?1",'''
+after = '''WHERE id = 1 OR taken_off = ?1",'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_during_a_compaction_keeps_it_owed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+]
+
+# The call taken out of the check, so nothing lets the search index forget
+# what was taken off (13-44.8, D32). Written 2026-10-02 by 13-44.8, taken
+# by hand with `cargo test --no-fail-fast --test
+# mail_taken_off_leaves_no_words_behind`.
+[[guard]]
+name = "every check lets the search index forget what was taken off"
+file = "src/presentation/wx_app.rs"
+suite = "mail_taken_off_leaves_no_words_behind"
+before = '''        the_search_index_forgets_what_was_taken_off();
+        if nothing_went_through {'''
+after = '''        if nothing_went_through {'''
+red = [
+    "test_every_check_lets_the_search_index_forget_what_was_taken_off",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_taken_off_leaves_no_words_behind.rs", tests = 3 },
 ]

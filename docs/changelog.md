@@ -703,6 +703,29 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Mail taken off this computer keeps none of its words (GAP-14).** Pratik's answer of
+  2026-09-30: emptying a POP account's Trash drops the message text from the database too,
+  keeping only what stops the message being downloaded again. A message kept on this
+  computer alone, which is mail collected over POP, a copy of sent mail filed here or mail
+  brought in from a file, is now taken off this computer with its words whenever it leaves
+  for good: the Trash emptied by its setting or as Wixen Mail closes, Empty Folder on the
+  Trash, Delete on a message in the Trash, Delete Permanently in a folder on this computer,
+  and a redo of any of them. Its text, subject, sender and recipients, every other header,
+  the form it arrived in, its attachments and their files where no other message carries
+  the same file, its labels, the identifiers it names and its search entry are removed.
+  What stays is a row holding its number on the POP server, when it was downloaded, which
+  account it came from and where it was, so the next check does not download it again and
+  "Then remove it after this many days" still counts from its download. The freed space in
+  the mail database is overwritten, and the search index lets go of the words at the next
+  check for mail, in short steps. This changes what the entry "Deleting does not erase"
+  under Delete works on a POP account described. A rule's Delete still marks a message
+  deleted and keeps its words, because a rule can be written wrong. Nothing new is said or
+  shown. The version does not move: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: copies that earlier changes left in unused space of the mail database are
+  not searched out; the write log and the search index hold the words until the next check
+  for mail; Windows Search's own index, if you let it index your mail, keeps its copy until
+  it is rebuilt; a disk's own copies of deleted data are out of reach; replies and forwards
+  keep what they quoted. None of this has run against a real POP server.
 - **Closing Wixen Mail takes the window away at once, before it signs off.** The window
   used to stay on the screen for the up to three seconds the sign-off takes, which by ear is
   a window that has stopped answering. It now goes first, then any Trash set to be emptied
@@ -9891,7 +9914,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   server to fetch it back from. Nothing clears either yet, and the sentence
   after a delete says "Deleted from this computer" without saying any of this.
   If you delete mail because somebody else will use the machine, that is not
-  what this does.
+  what this does. Since 2026-10-02 this paragraph is true only of a rule's
+  Delete: Delete again from the Trash, Delete Permanently and emptying the
+  Trash take the message off this computer with its words and keep only its
+  number on the POP server, when it was downloaded and whose it was. See
+  "Mail taken off this computer keeps none of its words" under Changed.
 
 - **A message deleted on a POP account stays deleted.** Checking for mail asked
   one folder what had already been downloaded, so anything moved to the Trash

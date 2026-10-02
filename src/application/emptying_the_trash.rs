@@ -2161,6 +2161,58 @@ mod tests {
     }
 
     #[test]
+    fn test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said() {
+        // The tracer of 13-44.8 (D27): emptied by the setting, the message
+        // keeps only what stops the next check downloading it again.
+        use crate::data::message_cache::CachedAttachment;
+        use crate::data::message_cache::attachment_content::AttachmentWithContent;
+        let (_dir, cache, _trash) = a_pop_store();
+        let due = deleted_here_by(&cache, &OLD_ISP, 1, 45);
+        cache
+            .save_message_body(due, Some("The minutes of the meeting."), None)
+            .expect("its text");
+        cache
+            .replace_attachments_with_content(
+                due,
+                &[AttachmentWithContent {
+                    described: CachedAttachment {
+                        id: 0,
+                        message_id: due,
+                        filename: "minutes.txt".to_string(),
+                        mime_type: "text/plain".to_string(),
+                        size: 7,
+                        content_id: None,
+                        description: Default::default(),
+                    },
+                    content: Some(b"minutes".to_vec()),
+                }],
+            )
+            .expect("its file");
+
+        a_pop_check(&cache, &OLD_ISP, THIRTY, 0);
+
+        assert_eq!(
+            cache.what_a_row_still_holds(due).expect("the row read"),
+            Vec::<String>::new(),
+            "the emptied message still holds what it said"
+        );
+        assert_eq!(cache.get_message_body(due).expect("the lookup"), None);
+        assert!(
+            cache
+                .attachments_with_content(due)
+                .expect("the attachments read")
+                .is_empty()
+        );
+        assert!(
+            cache
+                .pop_uidls_for_account(&OLD_ISP.id)
+                .expect("the identifiers read")
+                .contains(&the_uidl_of(&OLD_ISP, 1)),
+            "the emptied message's identifier is no longer this account's"
+        );
+    }
+
+    #[test]
     fn test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash() {
         let (_dir, cache, _trash) = a_pop_store();
         let mine = deleted_here_by(&cache, &OLD_ISP, 1, 45);

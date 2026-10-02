@@ -6871,6 +6871,22 @@ requirement was added, so the coverage below stays at 122."
     plans together offer every answer Pratik named on every kind of account he named. Nothing
     has met a real server (ledgers 771 and 784), and nothing has been heard (ledgers 770 and
     783). It adds no `[D]` clause.
+  - 13-44.8 on 2026-10-02, on Pratik's answer of 2026-09-30: a message kept on this computer
+    alone, emptied from the Trash by the setting or as Wixen Mail closes, by Empty Folder,
+    by Delete in the Trash or by Delete Permanently, or a redo of either, keeps only its POP
+    identifier, download time, owner, folder and number, marked deleted; everything else it
+    said goes through the schema's cascades under secure delete, and the search index lets
+    go of the words at the next check for mail in steps of 64 pages, settled only when no
+    removal came meanwhile. A rule's Delete is unchanged. Held by the fourteen cases of
+    `data::message_cache::taken_off_this_computer::tests`;
+    `test_a_message_deleted_outright_keeps_its_number_and_loses_its_words` in
+    `application::local_delete::tests` (15 cases, one renamed);
+    `test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said` in
+    `application::emptying_the_trash::tests` (33);
+    `test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day`
+    in `application::pop_sync::tests` (54); and the three readings of
+    `tests/mail_taken_off_leaves_no_words_behind.rs`. Nothing has met a real POP server
+    (ledger 787). It adds no `[D]` clause and the box stays ticked.
 
 ### The real-account proofs
 
@@ -6911,6 +6927,10 @@ carries phase 12. Sending is proven; the rest is not.
     `application::allowed`'s default moved per proven path and the four warning surfaces
     reworded, on his word.
   - [S] Every proof is his account's; the order of the four lines is his to confirm.
+  - 13-44.8 on 2026-10-02: the delete line also owes the Trash emptied at a real server and
+    a POP message taken off this computer and not downloaded again, ledgers 771, 784 and
+    787, each written "for phase 14 under REAL-02's delete line"; named here because phase
+    14 has no plan or README on disk to carry them yet.
 
 ## v2 Requirements
 
@@ -7061,7 +7081,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-11 | Phase 13 | Done 2026-09-30, 13-23, 13-24, 13-24.1 and 13-40 to 13-42: Quick Steps kept per account, made in the Quick Step Manager, listed on Action, Quick Steps with `Ctrl+Shift+7` to `Ctrl+Shift+9`, and run over the selection through the one runner with one sentence, held by `tests/a_quick_step_runs_over_the_selection.rs`, `tests/the_quick_step_manager_says_what_each_step_does.rs` and `application::quick_steps`' cases; the real server is ledger 745, the ear ledger 746. Until 13-42 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary Quick Steps reuse; 13-24 done 2026-09-28, the five set actions as quiet do-halves a Quick Step's runner calls; 13-24.1 done 2026-09-28, the runner a Quick Step's actions are carried out through, answering what it did for the step's own sentence; 13-40 done 2026-09-30, the steps stored and named per account in a rule's action words, with their refusals, keys and sentence, and nothing yet running one (ledger 742); 13-41 done 2026-09-30, the Quick Step Manager on Action, Quick Steps and the step editor, steps made, changed and put in order and none run yet; otherwise not built", and before that "Not planned, 2026-09-20" |
 | GAP-12 | Phase 13 | Done 2026-10-01, 13-23, 13-24, 13-24.1, 13-43, 13-44 and 13-44.3 (done 2026-10-01, a rule's marks, flags and labels on arriving mail sent to the mail server in the check and a rule's Delete to the Trash there, ledger 678 closed): a rule run over a folder on demand from Action, This Folder, Run a Rule on This Folder and from the Filter Manager's Run on a Folder, counted on a worker, asked about in a native question after the account's gate, and run through the one runner with one sentence, held by `tests/a_rule_runs_over_a_folder_when_asked.rs` and `application::running_a_rule_now`'s cases; the real server is ledger 750, the ear ledger 751. Planned 2026-09-29: 13-44.3 sends a rule's marks, flags and labels on arriving mail to the mail server in the check (ledger 678), and a rule's Delete to the Trash there through the menu's delete path; no `[D]` clause is added. Until 13-44 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; 13-24 done 2026-09-28, the five set actions as quiet do-halves the runner over a folder calls; 13-24.1 done 2026-09-28, the runner a rule over a folder hands its matched messages to, through the gated write paths; 13-43 done 2026-09-30, what a rule would change in a folder counted and the question before a run worded, nothing yet asking it; otherwise not built", and before that "Not planned, 2026-09-20" |
 | GAP-13 | Phase 13 | Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20" |
-| GAP-14 | Phase 13 | Complete 2026-10-02, 13-44.6 and 13-44.7: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft (13-44.6), When Wixen Mail closes within five seconds with the window gone first, and POP accounts emptied on this computer only, of their own messages, with ledger 753's re-download fixed (13-44.7), held by `application::emptying_the_trash::tests`, `application::pop_sync::tests`, `data::message_cache::in_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledgers 771 and 784). Until 13-44.7 the row read "Pending; 13-44.6 done 2026-10-02", and until 13-44.6 "Pending" |
+| GAP-14 | Phase 13 | Complete 2026-10-02, 13-44.6, 13-44.7 and 13-44.8: a message kept on this computer alone and taken off it keeps only what stops it being downloaded again, its words gone from the mail database once the next check has let the search index go (13-44.8, ledger 787). Until 13-44.8 the row read "Complete 2026-10-02, 13-44.6 and 13-44.7: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft (13-44.6), When Wixen Mail closes within five seconds with the window gone first, and POP accounts emptied on this computer only, of their own messages, with ledger 753's re-download fixed (13-44.7), held by `application::emptying_the_trash::tests`, `application::pop_sync::tests`, `data::message_cache::in_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledgers 771 and 784)." Until 13-44.7 it read "Pending; 13-44.6 done 2026-10-02", and until 13-44.6 "Pending" |
 | REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
 | REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |
 
