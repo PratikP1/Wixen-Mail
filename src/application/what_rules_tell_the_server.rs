@@ -132,7 +132,9 @@ pub enum Until {
 }
 
 impl Until {
-    fn in_words(self) -> &'static str {
+    /// The reason in the words a clause ends with, which an emptying of the
+    /// Trash says too (13-44.6).
+    pub fn in_words(self) -> &'static str {
         match self {
             Until::ChangingMailIsAllowed => "changing mail is allowed",
             Until::TheServerCanBeReached => "the mail server can be reached",
@@ -149,7 +151,9 @@ pub enum Because {
 }
 
 impl Because {
-    fn in_words(self) -> &'static str {
+    /// The reason in the words a clause ends with, which an emptying of the
+    /// Trash says too (13-44.6).
+    pub fn in_words(self) -> &'static str {
         match self {
             Because::ChangingMailIsNotAllowed => "changing mail is not allowed",
             Because::TheServerCouldNotBeReached => "the mail server could not be reached",

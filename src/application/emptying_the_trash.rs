@@ -34,11 +34,12 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 
+use crate::application::allowed::SETTINGS_SECTION;
 use crate::application::destinations::{DeletedGoesTo, Deleting, where_a_deleted_message_goes};
 use crate::application::moves_waiting::{
     APushUnderWay, DeletedHereThenAtTheServer, ReplaysAMove, delete_here_then_at_the_server,
 };
-use crate::application::what_rules_tell_the_server::{Because, ForTheChange};
+use crate::application::what_rules_tell_the_server::{Because, ForTheChange, Until};
 use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::Result;
 use crate::common::types::{FolderType, Protocol};
@@ -46,6 +47,7 @@ use crate::data::message_cache::MessageCache;
 use crate::data::message_cache::in_the_trash::InTheTrash;
 use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
 use crate::service::caldav::how_many;
+use crate::service::outward;
 
 /// When an account's Trash is emptied, as the account editor offers it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -124,16 +126,42 @@ pub fn who_empties_the_trash(
     protocol: Protocol,
     who_runs_it: WhoRunsTheMail,
 ) -> WhoEmptiesTheTrash {
-    let _ = (protocol, who_runs_it);
-    WhoEmptiesTheTrash::ThisProgram
+    match (protocol, who_runs_it) {
+        (Protocol::Pop3, _) | (Protocol::Imap, WhoRunsTheMail::SomebodyElse) => {
+            WhoEmptiesTheTrash::ThisProgram
+        }
+        (Protocol::Imap, WhoRunsTheMail::Gmail) => WhoEmptiesTheTrash::Gmail,
+        (Protocol::Imap, WhoRunsTheMail::Microsoft) => WhoEmptiesTheTrash::Microsoft,
+    }
 }
 
 /// The line the account editor shows in place of the choice, for an
-/// account whose provider empties its Trash itself.
+/// account whose provider empties its Trash itself (D2).
+///
+/// Google's from its help page 7401, read on 2026-09-29: "After 30 days:
+/// The message is permanently deleted." Microsoft's from its page "Recover
+/// and restore deleted items in Outlook", read on 2026-10-02: "Email is
+/// automatically deleted from your Deleted Items folder after 30 days", in
+/// its section on Outlook.com and Outlook on the web; an organisation's own
+/// policy decides for a work or school account, as the same page says.
 pub fn the_provider_empties_it(who: WhoEmptiesTheTrash) -> Option<&'static str> {
-    let _ = who;
-    None
+    match who {
+        WhoEmptiesTheTrash::ThisProgram => None,
+        WhoEmptiesTheTrash::Gmail => Some(
+            "Gmail empties this account's Trash itself, 30 days after a message goes into it, \
+             so Wixen Mail leaves it alone.",
+        ),
+        WhoEmptiesTheTrash::Microsoft => Some(
+            "Microsoft empties this account's Deleted Items itself: Outlook.com after 30 days, \
+             and a work or school account as its organisation has set it, so Wixen Mail leaves \
+             it alone.",
+        ),
+    }
 }
+
+/// The most one emptying takes, the oldest first: the most a check keeps of
+/// one folder (D14). What is due beyond it waits for the next day.
+pub const AT_MOST_IN_A_DAY: usize = crate::application::mail_sync::INITIAL_FETCH_LIMIT;
 
 /// What is said of an account none of whose folders is its Trash, in the
 /// account editor and once a day at its check (D9).
@@ -164,6 +192,47 @@ pub struct WhatTheEmptyingCameTo {
     pub put_back: BTreeMap<Because, usize>,
 }
 
+/// Whether an emptying goes on to the next message due.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Next {
+    GoOn,
+    /// The server could not be reached, so the rest are left untouched for
+    /// the next day rather than queued for the next check to replay before
+    /// it lists anything (D14).
+    StopForToday,
+}
+
+impl WhatTheEmptyingCameTo {
+    /// Count what one delete came to, and say whether to go on.
+    fn count(&mut self, deleted: DeletedHereThenAtTheServer) -> Next {
+        match deleted {
+            DeletedHereThenAtTheServer::Became(ForTheChange::Done) => self.emptied += 1,
+            DeletedHereThenAtTheServer::Became(ForTheChange::KeptWaiting(_)) => {
+                self.kept_waiting += 1;
+                return Next::StopForToday;
+            }
+            DeletedHereThenAtTheServer::Became(ForTheChange::PutBack(because)) => {
+                *self.put_back.entry(because).or_default() += 1;
+            }
+            // Nothing changed here and nothing was sent, so it is due again
+            // at the next day's first check.
+            DeletedHereThenAtTheServer::NotMadeHere(not_made) => {
+                tracing::warn!(
+                    "A message due to be emptied from the Trash was left there: {not_made}"
+                );
+                self.left_for_another_day += 1;
+            }
+            // The server took it; only this computer's record of that did
+            // not settle, and the next read of the Trash forgets the row.
+            DeletedHereThenAtTheServer::NotSettledHere(why) => {
+                tracing::warn!("A message emptied from the Trash was not settled here: {why}");
+                self.emptied += 1;
+            }
+        }
+        Next::GoOn
+    }
+}
+
 /// What of the Trash is due: what went in here more than `days` days before
 /// `now`, oldest first.
 pub fn what_is_due(in_the_trash: &[InTheTrash], days: i64, now: DateTime<Utc>) -> Vec<InTheTrash> {
@@ -174,22 +243,62 @@ pub fn what_is_due(in_the_trash: &[InTheTrash], days: i64, now: DateTime<Utc>) -
         .collect()
 }
 
-/// The one sentence an emptying says for an account, or `None` when it took
-/// nothing (D8). The folder's own name, so the sentence names what the tree
+/// The one sentence an emptying says for an account, or `None` when nothing
+/// was due (D8). The folder's own name, so the sentence names what the tree
 /// shows.
+///
+/// After the count, one clause for each other thing that happened, each with
+/// its own count and the reason last, in the words a rule's changes use for
+/// the same reasons (13-44.3), and no verb that has to agree with the count.
 pub fn what_the_emptying_said(
     folder_name: &str,
     account_name: &str,
     days: i64,
     came_to: &WhatTheEmptyingCameTo,
 ) -> Option<String> {
-    (came_to.emptied > 0).then(|| {
+    if *came_to == WhatTheEmptyingCameTo::default() {
+        return None;
+    }
+    let emptied = format!(
+        "Emptied {} from {folder_name} in {account_name} that had been there more than {days} days",
+        how_many(came_to.emptied, "message")
+    );
+    let kept_waiting = (came_to.kept_waiting > 0).then(|| {
         format!(
-            "Emptied {} from {folder_name} in {account_name} that had been there more than \
-             {days} days.",
-            how_many(came_to.emptied, "message")
+            "{} kept waiting until {}",
+            how_many(came_to.kept_waiting, "message"),
+            Until::TheServerCanBeReached.in_words()
         )
-    })
+    });
+    let put_back = came_to.put_back.iter().map(|(because, count)| {
+        format!(
+            "{} put back because {}",
+            how_many(*count, "message"),
+            because.in_words()
+        )
+    });
+    let left = (came_to.left_for_another_day > 0).then(|| {
+        format!(
+            "{} left for the next day",
+            how_many(came_to.left_for_another_day, "more message")
+        )
+    });
+    let clauses: Vec<String> = std::iter::once(emptied)
+        .chain(kept_waiting)
+        .chain(put_back)
+        .chain(left)
+        .collect();
+    Some(format!("{}.", clauses.join("; ")))
+}
+
+/// What the check says when Allow Changes keeps this account's Trash as it
+/// is, once a day. Worded here rather than taken from `outward::refusal`,
+/// whose words are about sending and deleting at a key.
+fn nothing_emptied_with_changes_off(folder_name: &str, account_name: &str) -> String {
+    format!(
+        "Nothing was emptied from {folder_name} in {account_name}, because {SETTINGS_SECTION} \
+         does not let this account change mail."
+    )
 }
 
 /// Empty this account's Trash of what is due, on the check's own session,
@@ -198,7 +307,15 @@ pub fn what_the_emptying_said(
 /// The Trash is the one the menu's Delete moves to, found the same way
 /// (D9), and each message due is deleted inside it as the menu's Delete
 /// there deletes it: off the server, through the step a rule's Delete
-/// shares. Only messages stored here are taken (D15), oldest first.
+/// shares. Only messages stored here are taken (D15), oldest first, at most
+/// [`AT_MOST_IN_A_DAY`].
+///
+/// Once a day per account, at its first check of `today` on this
+/// computer's clock (D7). The day is used by an emptying, by nothing being
+/// due, by finding no Trash and by meeting Allow Changes closed, so each is
+/// said at most once a day; it is not used by an account this program does
+/// not empty, nor by one that has never listed its folders, which says
+/// nothing (D9).
 pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     server: &S,
     cache: &MessageCache,
@@ -208,12 +325,17 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     now: DateTime<Utc>,
     today: NaiveDate,
 ) -> Result<Option<String>> {
-    let _ = (allowed_mail, today);
-    let Some(days) = when.days() else {
+    let Some(days) = when
+        .days()
+        .filter(|_| account.who_empties == WhoEmptiesTheTrash::ThisProgram)
+    else {
         return Ok(None);
     };
+    if cache.the_trash_was_last_emptied_on(account.id)? == Some(today) {
+        return Ok(None);
+    }
     let folders = cache.get_folders_for_account(account.id)?;
-    let DeletedGoesTo::TheTrash(trash_path) = where_a_deleted_message_goes(
+    let trash = match where_a_deleted_message_goes(
         folders.iter().map(|folder| {
             (
                 folder.path.as_str(),
@@ -222,16 +344,32 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
         }),
         "",
         Deleting::ToTrash,
-    ) else {
-        return Ok(None);
+    ) {
+        DeletedGoesTo::NoFoldersKnownYet => return Ok(None),
+        DeletedGoesTo::TheTrash(trash_path) => {
+            folders.iter().find(|folder| folder.path == trash_path)
+        }
+        DeletedGoesTo::NoTrashFolderFound | DeletedGoesTo::OffTheServer => None,
     };
-    let Some(trash) = folders.iter().find(|folder| folder.path == trash_path) else {
-        return Ok(None);
+    cache.the_trash_was_emptied_on(account.id, today)?;
+    let Some(trash) = trash else {
+        return Ok(Some(format!(
+            "Nothing was emptied in {}. {NO_TRASH_TO_EMPTY}",
+            account.name
+        )));
     };
+    if outward::permitted(allowed_mail, "empty the Trash").is_err() {
+        return Ok(Some(nothing_emptied_with_changes_off(
+            &trash.name,
+            account.name,
+        )));
+    }
     let due = what_is_due(&cache.what_has_been_in_the_trash(trash.id)?, days, now);
     let _under_way = APushUnderWay::begins(account.id);
     let mut came_to = WhatTheEmptyingCameTo::default();
-    for message in &due {
+    let mut tried = 0;
+    for message in due.iter().take(AT_MOST_IN_A_DAY) {
+        tried += 1;
         let asked = AWaitingMove {
             message_row_id: message.row,
             account_id: account.id.to_string(),
@@ -243,10 +381,11 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
         // No subject: the line it makes is the menu's, for the eye at the
         // key, and an emptying says one sentence for the account (D8).
         let deleted = delete_here_then_at_the_server(server, cache, &asked, "").await;
-        if let DeletedHereThenAtTheServer::Became(ForTheChange::Done) = deleted {
-            came_to.emptied += 1;
+        if came_to.count(deleted) == Next::StopForToday {
+            break;
         }
     }
+    came_to.left_for_another_day += due.len() - tried;
     Ok(what_the_emptying_said(
         &trash.name,
         account.name,

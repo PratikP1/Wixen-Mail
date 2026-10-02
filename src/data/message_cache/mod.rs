@@ -2616,6 +2616,23 @@ impl MessageCache {
         // whole, which fires no delete trigger, leaves a stamp that names no
         // message and is never read. Additive: one table and four triggers,
         // nothing dropped, nothing renamed.
+        // And the day each account's Trash last had its turn, so an emptying
+        // and each reason it could not happen is said at most once a day
+        // (D7). Additive: one table.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS trash_last_emptied (
+                     account_id TEXT PRIMARY KEY,
+                     on_day TEXT NOT NULL
+                 )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create the table of when each Trash was emptied: {}",
+                    e
+                ))
+            })?;
         self.conn
             .execute_batch(
                 "CREATE TABLE IF NOT EXISTS in_the_trash_since (

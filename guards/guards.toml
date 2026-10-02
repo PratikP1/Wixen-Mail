@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 575 records have arrived since and have not been through it.
+# 579 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -695,8 +695,18 @@ red = [
     "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
     # Added 2026-10-02 by 13-44.6, found by --remeasure as predicted: the
     # sentence an emptying of the Trash says counts through `how_many`, and
-    # under this break reads "Emptied 1 messages".
+    # under this break reads "Emptied 1 messages". Its clauses, added by the
+    # same plan's second task, count through it too, and a count of none
+    # reads "1 message" under this break.
+    "application::emptying_the_trash::tests::test_a_delete_the_server_refuses_is_put_back_in_the_trash",
+    "application::emptying_the_trash::tests::test_a_message_whose_delete_is_still_waiting_is_left_for_another_day",
+    "application::emptying_the_trash::tests::test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched",
+    "application::emptying_the_trash::tests::test_an_account_that_has_never_listed_its_folders_says_nothing",
+    "application::emptying_the_trash::tests::test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left",
     "application::emptying_the_trash::tests::test_one_message_is_said_in_the_singular",
+    "application::emptying_the_trash::tests::test_the_next_day_empties_what_has_come_due_since",
+    "application::emptying_the_trash::tests::test_the_sentence_says_each_count_and_reason_once_and_the_singular_right",
+    "application::emptying_the_trash::tests::test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so",
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
@@ -705,7 +715,7 @@ tests_last_seen = [
     { file = "src/application/choosing_messages.rs", tests = 18 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/emptying_the_trash.rs", tests = 6 },
+    { file = "src/application/emptying_the_trash.rs", tests = 20 },
     { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -36640,9 +36650,20 @@ after = '''        .filter(|message| now - message.since < Duration::days(days))
 red = [
     "application::emptying_the_trash::tests::test_a_message_in_the_trash_exactly_the_days_chosen_is_not_yet_due",
     "application::emptying_the_trash::tests::test_an_account_set_to_thirty_days_has_what_went_into_the_trash_more_than_thirty_days_ago_taken_off_the_server",
+    # Added the same day by the plan's second task, found by --remeasure:
+    # every case of it that empties something reads what is due.
+    "application::emptying_the_trash::tests::test_a_delete_the_server_refuses_is_put_back_in_the_trash",
+    "application::emptying_the_trash::tests::test_a_message_whose_delete_is_still_waiting_is_left_for_another_day",
+    "application::emptying_the_trash::tests::test_a_second_check_the_same_day_empties_nothing_more",
+    "application::emptying_the_trash::tests::test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched",
+    "application::emptying_the_trash::tests::test_an_account_that_has_never_listed_its_folders_says_nothing",
+    "application::emptying_the_trash::tests::test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left",
+    "application::emptying_the_trash::tests::test_the_next_day_empties_what_has_come_due_since",
+    "application::emptying_the_trash::tests::test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so",
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 6 },
+    { file = "src/application/emptying_the_trash.rs", tests = 20 },
 ]
 
 # The row marked deleted here and never sent, in place of the step the
@@ -36661,9 +36682,20 @@ after = '''        let deleted = DeletedHereThenAtTheServer::Became(
         );'''
 red = [
     "application::emptying_the_trash::tests::test_an_account_set_to_thirty_days_has_what_went_into_the_trash_more_than_thirty_days_ago_taken_off_the_server",
+    # Added the same day by the plan's second task, found by --remeasure:
+    # every case of it that sends a delete, or counts one, goes through the
+    # shared step.
+    "application::emptying_the_trash::tests::test_a_delete_the_server_refuses_is_put_back_in_the_trash",
+    "application::emptying_the_trash::tests::test_a_message_whose_delete_is_still_waiting_is_left_for_another_day",
+    "application::emptying_the_trash::tests::test_a_second_check_the_same_day_empties_nothing_more",
+    "application::emptying_the_trash::tests::test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched",
+    "application::emptying_the_trash::tests::test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left",
+    "application::emptying_the_trash::tests::test_the_next_day_empties_what_has_come_due_since",
+    "application::emptying_the_trash::tests::test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so",
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 6 },
+    { file = "src/application/emptying_the_trash.rs", tests = 20 },
 ]
 
 # A second place in the window naming the emptying, planted as a string the
@@ -36684,5 +36716,76 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 3 },
+    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 4 },
+]
+
+# The day an account's Trash last had its turn never matched, so every
+# check empties again and says again, the flood guardrail 5 forbids
+# (13-44.6, D7, T-13-44.6-04). Written 2026-10-02 by 13-44.6, taken by hand
+# against the whole library first.
+[[guard]]
+name = "an emptying at a check uses one day"
+file = "src/application/emptying_the_trash.rs"
+before = '''    if cache.the_trash_was_last_emptied_on(account.id)? == Some(today) {'''
+after = '''    if cache.the_trash_was_last_emptied_on(account.id)? == Some(NaiveDate::MIN) {'''
+red = [
+    "application::emptying_the_trash::tests::test_a_second_check_the_same_day_empties_nothing_more",
+    "application::emptying_the_trash::tests::test_an_account_with_no_trash_is_left_alone_and_says_so_once_a_day",
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+]
+
+# Allow Changes read as open whatever the account's answer, so an emptying
+# dials a server it was told not to change (13-44.6, D4, T-13-44.6-01).
+# Written 2026-10-02 by 13-44.6, taken by hand against the whole library
+# first.
+[[guard]]
+name = "with mail changes off nothing is emptied"
+file = "src/application/emptying_the_trash.rs"
+before = '''    if outward::permitted(allowed_mail, "empty the Trash").is_err() {'''
+after = '''    if outward::permitted(true, "empty the Trash").is_err() {'''
+red = [
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+]
+
+# Every IMAP account answered as one this program empties, so a Gmail or
+# Microsoft account is offered the choice and emptied here against what its
+# provider does (13-44.6, D12, T-13-44.6-07). Taken by hand on 2026-10-02
+# the same break also reddens tests/account_edit_protocol_fields.rs, whose
+# Gmail account then shows the choice and not the provider's line, which a
+# record of one suite cannot name; the census in
+# tests/one_check_says_who_runs_the_mail.rs stays green, since the function
+# still asks the check. Written 2026-10-02 by 13-44.6.
+[[guard]]
+name = "Gmail and Microsoft are left to empty their own Trash"
+file = "src/application/emptying_the_trash.rs"
+before = '''        (Protocol::Imap, WhoRunsTheMail::Gmail) => WhoEmptiesTheTrash::Gmail,
+        (Protocol::Imap, WhoRunsTheMail::Microsoft) => WhoEmptiesTheTrash::Microsoft,'''
+after = '''        (Protocol::Imap, WhoRunsTheMail::Gmail) => WhoEmptiesTheTrash::ThisProgram,
+        (Protocol::Imap, WhoRunsTheMail::Microsoft) => WhoEmptiesTheTrash::ThisProgram,'''
+red = [
+    "application::emptying_the_trash::tests::test_each_answer_of_the_one_check_says_who_empties_the_trash",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+]
+
+# The day's bound dropped, so a Trash of thousands is emptied in one check
+# and the check takes minutes (13-44.6, D14, T-13-44.6-04). Written
+# 2026-10-02 by 13-44.6, taken by hand against the whole library first.
+[[guard]]
+name = "no more than five hundred go in a day"
+file = "src/application/emptying_the_trash.rs"
+before = '''    for message in due.iter().take(AT_MOST_IN_A_DAY) {'''
+after = '''    for message in due.iter() {'''
+red = [
+    "application::emptying_the_trash::tests::test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 20 },
 ]

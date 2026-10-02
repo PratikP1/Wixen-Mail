@@ -30455,8 +30455,13 @@ fn spawn_mail_sync(
                     crate::application::emptying_the_trash::TheAccount {
                         id: &account.id,
                         name: &account.name,
-                        who_empties:
-                            crate::application::emptying_the_trash::WhoEmptiesTheTrash::ThisProgram,
+                        // The one check of 13-44.5 says who runs this
+                        // account's mail, and a Gmail or Microsoft account is
+                        // left to its provider (D12).
+                        who_empties: crate::application::emptying_the_trash::who_empties_the_trash(
+                            crate::common::types::Protocol::Imap,
+                            crate::application::who_runs_the_mail::WhoRunsTheMail::of(&account),
+                        ),
                     },
                     when_the_trash_is_emptied(&account.id),
                     crate::application::allowed::allowed_for(&account.id).mail,

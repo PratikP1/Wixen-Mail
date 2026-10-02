@@ -133,13 +133,42 @@ impl MessageCache {
     /// Trash or met Allow Changes closed, so an emptying and each refusal is
     /// said at most once a day (D7).
     pub fn the_trash_was_last_emptied_on(&self, account_id: &str) -> Result<Option<NaiveDate>> {
-        let _ = account_id;
-        Ok(None)
+        let stored: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT on_day FROM trash_last_emptied WHERE account_id = ?1",
+                params![account_id],
+                |found| found.get(0),
+            )
+            .optional()
+            .map_err(|e| {
+                Error::Other(format!(
+                    "When the Trash was last emptied could not be read: {e}"
+                ))
+            })?;
+        stored
+            .map(|day| {
+                NaiveDate::parse_from_str(&day, "%Y-%m-%d").map_err(|e| {
+                    Error::Other(format!(
+                        "When the Trash was last emptied reads {day:?}: {e}"
+                    ))
+                })
+            })
+            .transpose()
     }
 
     /// Write down that this account's Trash had its turn on this day.
     pub fn the_trash_was_emptied_on(&self, account_id: &str, day: NaiveDate) -> Result<()> {
-        let _ = (account_id, day);
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO trash_last_emptied (account_id, on_day) VALUES (?1, ?2)",
+                params![account_id, day.format("%Y-%m-%d").to_string()],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "When the Trash was emptied could not be written: {e}"
+                ))
+            })?;
         Ok(())
     }
 
