@@ -170,28 +170,25 @@ fn type_into(box_: &TextCtrl, words: &str) {
 }
 
 fn type_into_window(window: isize, words: &str) {
+    let before = only_these_modifiers_down(&[]);
     for unit in words.encode_utf16() {
         // SAFETY: a live window on this thread; the message carries a
         // character and no pointer.
         unsafe { SendMessageW(window, WM_CHAR, usize::from(unit), PRESSED) };
     }
+    put_back_the_keyboard_state(&before);
 }
 
 /// Control held while `letter` is pressed in the box: the key-down and the
-/// control character Windows makes of it, then the release. Control is set
-/// in this thread's keyboard state and put back afterwards.
+/// control character Windows makes of it, then the release. Control alone of
+/// the modifiers is set in this thread's keyboard state, and the state is
+/// put back afterwards.
 fn press_with_control(box_: &TextCtrl, letter: u8) {
     press_with_control_in(handle(box_), letter);
 }
 
 fn press_with_control_in(window: isize, letter: u8) {
-    let mut before = [0u8; 256];
-    // SAFETY: the buffer is the 256 bytes the call writes.
-    unsafe { GetKeyboardState(before.as_mut_ptr()) };
-    let mut held = before;
-    held[VK_CONTROL] = 0x80;
-    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
-    unsafe { SetKeyboardState(held.as_ptr()) };
+    let before = only_these_modifiers_down(&[VK_CONTROL]);
     let control_character = usize::from(letter - b'A' + 1);
     // SAFETY: a live window on this thread; the messages carry numbers only.
     unsafe {
@@ -199,8 +196,7 @@ fn press_with_control_in(window: isize, letter: u8) {
         SendMessageW(window, WM_CHAR, control_character, PRESSED);
         SendMessageW(window, WM_KEYUP, usize::from(letter), RELEASED);
     }
-    // SAFETY: as above, the state read at the start.
-    unsafe { SetKeyboardState(before.as_ptr()) };
+    put_back_the_keyboard_state(&before);
 }
 
 /// winuser.h: Shift, and the left Shift key Windows sets beside it.
@@ -223,8 +219,35 @@ fn as_if_the_person_held_shift() -> [u8; 256] {
 }
 
 fn put_back_the_keyboard_state(before: &[u8; 256]) {
-    // SAFETY: as above, the state read before Shift was set down.
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
     unsafe { SetKeyboardState(before.as_ptr()) };
+}
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, and hand back the state before.
+///
+/// wxWidgets reads a key's modifiers from this state, and a desktop of the
+/// run's own keeps out the keys a person presses but not the ones they hold:
+/// measured 2026-10-02, every one of eight failed runs of this file and
+/// `mark_as_read_says_which_way_it_will_go` came while the person at the
+/// machine held Shift.
+fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
 }
 
 fn counter_on(bind: impl FnOnce(Rc<Cell<u32>>)) -> Rc<Cell<u32>> {

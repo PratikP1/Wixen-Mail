@@ -349,15 +349,34 @@ fn press(control: isize, digit: u8) {
     }
 }
 
-/// Ctrl and Shift set down in this thread's keyboard state; the state
-/// before is handed back so it can be put back.
+/// Ctrl and Shift, and no other modifier, set down in this thread's keyboard
+/// state; the state before is handed back so it can be put back.
 fn ctrl_and_shift_held_in_this_thread() -> [u8; 256] {
+    only_these_modifiers_down(&[VK_CONTROL, VK_SHIFT])
+}
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, and hand back the state before.
+///
+/// wxWidgets reads a key's modifiers from this state, and a desktop of the
+/// run's own keeps out the keys a person presses but not the ones they hold:
+/// measured 2026-10-02, every one of eight failed runs of two key targets
+/// came while the person at the machine held Shift. An Alt held there would
+/// make these keys Ctrl+Shift+Alt and reach no step.
+fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
     let mut before = [0u8; 256];
     // SAFETY: the buffer is the 256 bytes the call writes.
     unsafe { GetKeyboardState(before.as_mut_ptr()) };
     let mut held = before;
-    held[VK_CONTROL] = 0x80;
-    held[VK_SHIFT] = 0x80;
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
     // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
     unsafe { SetKeyboardState(held.as_ptr()) };
     before

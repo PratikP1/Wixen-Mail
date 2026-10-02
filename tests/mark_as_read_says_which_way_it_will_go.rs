@@ -159,8 +159,34 @@ fn as_if_the_person_held_shift() -> [u8; 256] {
 }
 
 fn put_back_the_keyboard_state(before: &[u8; 256]) {
-    // SAFETY: as above, the state read before Shift was set down.
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
     unsafe { SetKeyboardState(before.as_ptr()) };
+}
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, and hand back the state before.
+///
+/// wxWidgets reads a key's modifiers from this state, and a desktop of the
+/// run's own keeps out the keys a person presses but not the ones they hold:
+/// measured 2026-10-02, every one of eight failed runs of this file and
+/// `several_steps_come_back` came while the person at the machine held Shift.
+fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
 }
 
 #[link(name = "kernel32")]
@@ -283,12 +309,14 @@ fn msaa_name_of(hwnd: isize, child_id: i64) -> Result<String, String> {
 /// whether or not the key-down was consumed, because that is the order the
 /// loop sends them in; a consumed key-down is what makes the window eat it.
 fn press_m(hwnd: isize) {
+    let before = only_these_modifiers_down(&[]);
     // SAFETY: `hwnd` is a live window on this thread, built by the caller.
     unsafe {
         SendMessageW(hwnd, WM_KEYDOWN, VK_M, 1);
         SendMessageW(hwnd, WM_CHAR, usize::from(b'm'), 1);
         SendMessageW(hwnd, WM_KEYUP, VK_M, 0xC000_0001_u32 as i32 as isize);
     }
+    put_back_the_keyboard_state(&before);
 }
 
 /// One list of the three rows, the first selected and focused, with `letter`

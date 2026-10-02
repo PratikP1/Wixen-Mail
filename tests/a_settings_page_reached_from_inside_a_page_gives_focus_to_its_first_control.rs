@@ -83,9 +83,37 @@ unsafe extern "system" {
         attributes: *const u8,
     ) -> isize;
     fn SetThreadDesktop(desktop: isize) -> i32;
+    fn GetKeyboardState(state: *mut u8) -> i32;
+    fn SetKeyboardState(state: *const u8) -> i32;
 }
 
 const GENERIC_ALL: u32 = 0x1000_0000;
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, and hand back the state before.
+///
+/// wxWidgets reads a key's modifiers from this state, and a desktop of the
+/// run's own keeps out the keys a person presses but not the ones they hold:
+/// measured 2026-10-02, every one of eight failed runs of two key targets
+/// came while the person at the machine held Shift.
+fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
+}
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
@@ -203,6 +231,7 @@ fn first_tab_stop_under(panel: isize) -> Option<Named> {
 /// `tests/the_settings_tab_row_says_each_tab_once.rs` uses.
 fn press(hwnd: isize, key: usize) {
     const KF_EXTENDED: isize = 0x0100 << 16;
+    only_these_modifiers_down(&[]);
     // SAFETY: `hwnd` is a live window on this thread, built by the caller.
     unsafe {
         SendMessageW(hwnd, WM_KEYDOWN, key, 1 | KF_EXTENDED);
