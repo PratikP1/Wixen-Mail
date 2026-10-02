@@ -9,16 +9,17 @@
 //! lands on is found by asking Windows which window has focus, not by
 //! assuming.
 //!
-//! **Paste is proven with a real paste, on a clipboard of its own.** WCAG
-//! 3.3.8 asks that a secret can come from a password manager rather than from
-//! memory, and the way a field gets that wrong is by refusing a paste. So text
-//! is put on the clipboard and `WM_PASTE` sent to the field, the message
-//! Ctrl+V and a password manager both end in. The clipboard belongs to a
-//! window station, so this process makes a window station and a desktop of
-//! its own before anything is built, and every window here lives there. The
-//! clipboard of whoever runs the tests is never read or written, and none of
-//! these windows appears on their screen. A companion builds a field that
-//! refuses a paste and is caught by the same reading.
+//! **The paste is proven in a target of its own, and nothing here opens the
+//! clipboard.** WCAG 3.3.8 asks that the field take a paste, and that is read
+//! with a real paste in `tests/a_passphrase_box_takes_a_real_paste.rs`. It
+//! lived here until 13-44.6.1. Windows refuses the clipboard to every program
+//! while the session is locked, the gate runs this target on every commit
+//! touching `src/presentation/wx_app.rs`, and one refused clipboard failed the
+//! four readings below that never needed it (ledger 716). This process still
+//! makes a window station and a desktop of its own before anything is built,
+//! so none of these windows appears on the screen of whoever runs the tests.
+//! A census at the end keeps every target but the real paste off the
+//! clipboard.
 //!
 //! **The key is never real.** An integration test is built without the
 //! library's test backing, so unlocking a real key here would reach the
@@ -42,19 +43,12 @@ const WS_VISIBLE: isize = 0x1000_0000;
 const ES_PASSWORD: isize = 0x0020;
 const VT_I4: u16 = 3;
 const CHILDID_SELF: i64 = 0;
-const WM_PASTE: u32 = 0x0302;
-const CF_UNICODETEXT: u32 = 13;
-const GMEM_MOVEABLE: u32 = 0x0002;
 const WINSTA_ALL_ACCESS: u32 = 0x037F;
 const GENERIC_ALL: u32 = 0x1000_0000;
 
 /// MSAA roles (oleacc.h).
 const ROLE_SYSTEM_PUSHBUTTON: i64 = 0x2b;
 const ROLE_SYSTEM_TEXT: i64 = 0x2a;
-
-/// What the paste puts on the clipboard: long, with spaces, the shape a
-/// password manager's generated passphrase has.
-const PASTED: &str = "correct horse battery staple, pasted";
 
 const WHOSE: &str = "Ada Lovelace <ada@example.com>";
 
@@ -132,11 +126,6 @@ unsafe extern "system" {
     fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn GetFocus() -> isize;
-    fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
-    fn OpenClipboard(owner: isize) -> i32;
-    fn EmptyClipboard() -> i32;
-    fn SetClipboardData(format: u32, memory: *mut c_void) -> *mut c_void;
-    fn CloseClipboard() -> i32;
     fn CreateWindowStationW(
         name: *const u16,
         flags: u32,
@@ -157,9 +146,6 @@ unsafe extern "system" {
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
-    fn GlobalAlloc(flags: u32, bytes: usize) -> *mut c_void;
-    fn GlobalLock(memory: *mut c_void) -> *mut c_void;
-    fn GlobalUnlock(memory: *mut c_void) -> i32;
     fn GetLastError() -> u32;
 }
 
@@ -183,9 +169,8 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// Move this thread onto a desktop in a window station of this process's
-/// own, so the clipboard it writes is not the clipboard of whoever runs the
-/// tests and no window it makes reaches their screen.
+/// Move this thread onto a desktop in a window station that is not the one
+/// of whoever runs the tests, so no window it makes reaches their screen.
 ///
 /// Must run before the first window of the process is made, since a thread
 /// with a window cannot change desktop.
@@ -219,34 +204,6 @@ fn a_desktop_of_its_own() -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// Put `text` on this window station's clipboard, owned by `owner`.
-fn put_on_the_clipboard(owner: isize, text: &str) -> Result<(), String> {
-    let units = wide(text);
-    // SAFETY: the memory is sized for the text and its terminator, written
-    // while locked, and handed to the clipboard, which owns it from then on.
-    unsafe {
-        if OpenClipboard(owner) == 0 {
-            return Err("OpenClipboard failed".to_string());
-        }
-        EmptyClipboard();
-        let memory = GlobalAlloc(GMEM_MOVEABLE, units.len() * 2);
-        let placed = !memory.is_null() && {
-            let at = GlobalLock(memory) as *mut u16;
-            if !at.is_null() {
-                std::ptr::copy_nonoverlapping(units.as_ptr(), at, units.len());
-                GlobalUnlock(memory);
-            }
-            !at.is_null() && !SetClipboardData(CF_UNICODETEXT, memory).is_null()
-        };
-        CloseClipboard();
-        if placed {
-            Ok(())
-        } else {
-            Err("the text could not be put on the clipboard".to_string())
-        }
-    }
 }
 
 thread_local! {
@@ -368,26 +325,12 @@ fn read_the_controls(dialog: &Dialog) -> Result<Vec<Control>, String> {
         .collect()
 }
 
-/// What a paste from the clipboard puts in a field: `PASTED` put on the
-/// clipboard, `WM_PASTE` sent, and the field's text read back.
-fn what_a_paste_puts_in(field: &TextCtrl) -> Result<String, String> {
-    let handle = field.get_handle() as isize;
-    put_on_the_clipboard(handle, PASTED)?;
-    // SAFETY: a live edit control on this thread; WM_PASTE takes no pointers.
-    unsafe { SendMessageW(handle, WM_PASTE, 0, 0) };
-    Ok(field.get_value())
-}
-
 /// Everything read out of the window session, as plain values.
 #[derive(Debug)]
 struct Harvest {
     controls: Vec<Control>,
     focused: Option<Control>,
-    pasted: String,
-    ok: Option<String>,
-    cancel: Option<String>,
     asked_again: Vec<Control>,
-    refused_a_paste: String,
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -410,29 +353,16 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     0 => None,
                     hwnd => Some(control_at(hwnd)?),
                 };
-                let pasted = what_a_paste_puts_in(&asking.field)?;
-                let ok = asking.answer(ID_OK);
-                let cancel = asking.answer(ID_CANCEL);
                 asking.dialog.destroy();
 
                 let again = build(&frame, WHOSE, Some(THAT_DID_NOT_OPEN_IT));
                 let asked_again = read_the_controls(&again.dialog)?;
-
-                // The companion: a field that refuses a paste, read the same way.
-                let refusing = TextCtrl::builder(&again.dialog)
-                    .with_style(TextCtrlStyle::Password | TextCtrlStyle::ReadOnly)
-                    .build();
-                let refused_a_paste = what_a_paste_puts_in(&refusing)?;
                 again.dialog.destroy();
 
                 Ok(Harvest {
                     controls,
                     focused,
-                    pasted,
-                    ok,
-                    cancel,
                     asked_again,
-                    refused_a_paste,
                 })
             })();
             if let Ok(mut slot) = outcome.lock() {
@@ -543,22 +473,6 @@ fn test_asked_again_after_a_wrong_passphrase_it_says_so_first() {
     );
 }
 
-#[test]
-fn test_a_pasted_passphrase_is_taken_and_ok_hands_it_back() {
-    let harvest = the_harvest();
-
-    assert_eq!(harvest.pasted, PASTED, "the field refused a paste");
-    assert_eq!(harvest.ok.as_deref(), Some(PASTED));
-    assert_eq!(harvest.cancel, None, "Cancel handed back what was typed");
-}
-
-#[test]
-fn test_the_paste_reading_sees_a_field_that_refuses_one() {
-    // The companion. A reading that always found the text would pass the
-    // case above whatever the field did with a paste.
-    assert_eq!(the_harvest().refused_a_paste, "");
-}
-
 // ── Only a reader window asks, read as text ────────────────────────────────
 //
 // The open path lives in the main window's own functions, with its cache and
@@ -647,4 +561,247 @@ fn test_the_reading_refuses_a_preview_that_asks() {
         found.iter().any(|it| it.contains("the preview asks")),
         "the reading accepted a preview that asks: {found:?}"
     );
+}
+
+// ── Only the real paste opens the clipboard ────────────────────────────────
+//
+// Windows refuses the clipboard to every program while the session is locked,
+// so a target that opens it fails on a locked machine whatever its code does
+// (ledger 716). The one reading that needs a real clipboard lives in
+// `tests/a_passphrase_box_takes_a_real_paste.rs`, and this census keeps every
+// other target off it. It lives here because the record on the main window
+// runs this target on every commit touching `src/presentation/wx_app.rs`.
+//
+// What it cannot see: a new file under `tests/` alone reaches it only at the
+// phase's full gate and on CI, since the gate couples no file under `tests/`
+// to another target; a clipboard reached through a public function further
+// down; and a Ctrl+V posted as keys. It reads code only, with comments and
+// literals blanked, so a sentence about the clipboard is never a hit.
+
+const THE_REAL_PASTE: &str = "tests/a_passphrase_box_takes_a_real_paste.rs";
+
+/// What a test reaching the clipboard writes, in code.
+const CLIPBOARD_CALLS: [&str; 12] = [
+    "OpenClipboard",
+    "SetClipboardData",
+    "GetClipboardData",
+    "EmptyClipboard",
+    "WM_PASTE",
+    "WM_COPY",
+    "WM_CUT",
+    "Clipboard::",
+    "TheDesktop::this_one",
+    ".paste()",
+    ".copy()",
+    ".cut()",
+];
+
+fn is_identifier(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+fn blank(c: char) -> char {
+    if c == '\n' { '\n' } else { ' ' }
+}
+
+/// Where Rust source is, for blanking what is not code.
+#[derive(Clone, Copy)]
+enum Within {
+    Code,
+    LineComment,
+    BlockComment(u32),
+    Literal,
+    RawLiteral(usize),
+}
+
+/// How many `#` follow a raw string's `r` at `at`, when what is there opens
+/// a raw string rather than naming an identifier.
+fn opens_a_raw_literal(chars: &[char], at: usize) -> Option<usize> {
+    let before = |back: usize| at.checked_sub(back).map(|i| chars[i]);
+    let starts_a_token = match before(1) {
+        Some('b') => before(2).is_none_or(|c| !is_identifier(c)),
+        Some(c) => !is_identifier(c),
+        None => true,
+    };
+    if chars.get(at) != Some(&'r') || !starts_a_token {
+        return None;
+    }
+    let hashes = chars[at + 1..].iter().take_while(|&&c| c == '#').count();
+    (chars.get(at + 1 + hashes) == Some(&'"')).then_some(hashes)
+}
+
+/// Whether the `"` at `at` and the `hashes` after it close a raw string.
+fn closes_a_raw_literal(chars: &[char], at: usize, hashes: usize) -> bool {
+    let after = &chars[at + 1..];
+    chars[at] == '"' && after.len() >= hashes && after[..hashes].iter().all(|&c| c == '#')
+}
+
+/// How long the character literal at `at` is, or `None` for a lifetime.
+fn a_character_literal_at(chars: &[char], at: usize) -> Option<usize> {
+    match chars.get(at + 1) {
+        Some('\\') => chars
+            .get(at + 3..)?
+            .iter()
+            .position(|&c| c == '\'')
+            .map(|closes| closes + 4),
+        Some(_) if chars.get(at + 2) == Some(&'\'') => Some(3),
+        _ => None,
+    }
+}
+
+/// A Rust file's text with every comment and literal blanked to spaces and
+/// its line breaks kept, so what is left is code and each line keeps its
+/// number.
+fn code_only(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut code = String::with_capacity(text.len());
+    let mut within = Within::Code;
+    let mut at = 0;
+    while at < chars.len() {
+        let (c, next) = (chars[at], chars.get(at + 1).copied());
+        let (taken, now) = match within {
+            Within::Code => match (c, next) {
+                ('/', Some('/')) => (2, Within::LineComment),
+                ('/', Some('*')) => (2, Within::BlockComment(1)),
+                ('"', _) => (1, Within::Literal),
+                ('r', _) => match opens_a_raw_literal(&chars, at) {
+                    Some(hashes) => (hashes + 2, Within::RawLiteral(hashes)),
+                    None => (0, Within::Code),
+                },
+                ('\'', _) => match a_character_literal_at(&chars, at) {
+                    Some(length) => (length, Within::Code),
+                    None => (0, Within::Code),
+                },
+                _ => (0, Within::Code),
+            },
+            Within::LineComment if c == '\n' => (1, Within::Code),
+            Within::LineComment => (1, Within::LineComment),
+            Within::BlockComment(depth) => match (c, next) {
+                ('*', Some('/')) if depth == 1 => (2, Within::Code),
+                ('*', Some('/')) => (2, Within::BlockComment(depth - 1)),
+                ('/', Some('*')) => (2, Within::BlockComment(depth + 1)),
+                _ => (1, within),
+            },
+            Within::Literal => match c {
+                '\\' => (2, Within::Literal),
+                '"' => (1, Within::Code),
+                _ => (1, Within::Literal),
+            },
+            Within::RawLiteral(hashes) if closes_a_raw_literal(&chars, at, hashes) => {
+                (hashes + 1, Within::Code)
+            }
+            Within::RawLiteral(_) => (1, within),
+        };
+        match taken {
+            0 => {
+                code.push(c);
+                at += 1;
+            }
+            _ => {
+                let end = (at + taken).min(chars.len());
+                code.extend(chars[at..end].iter().map(|&c| blank(c)));
+                at = end;
+            }
+        }
+        within = now;
+    }
+    code
+}
+
+/// Whether `token` stands on its own at `at` in `line`, rather than inside a
+/// longer name such as `WM_COPYDATA`.
+fn stands_alone(line: &str, at: usize, token: &str) -> bool {
+    let before = line[..at].chars().next_back();
+    let after = line[at + token.len()..].chars().next();
+    let edge_ok = |edge: Option<char>, side: Option<char>| match (edge, side) {
+        (Some(e), Some(s)) if is_identifier(e) => !is_identifier(s),
+        _ => true,
+    };
+    edge_ok(token.chars().next(), before) && edge_ok(token.chars().next_back(), after)
+}
+
+/// Every clipboard call in one file's code, as `path:line token`.
+fn clipboard_calls_in(path: &str, text: &str) -> Vec<String> {
+    let code = code_only(text);
+    let mut hits = Vec::new();
+    for (index, line) in code.lines().enumerate() {
+        for token in CLIPBOARD_CALLS {
+            let found = line
+                .match_indices(token)
+                .any(|(at, _)| stands_alone(line, at, token));
+            if found {
+                hits.push(format!("{path}:{} {token}", index + 1));
+            }
+        }
+    }
+    hits
+}
+
+/// Every `.rs` file directly under `tests/`, as path and text.
+fn every_test_target() -> Vec<(String, String)> {
+    let entries = std::fs::read_dir("tests").expect("the tests directory");
+    let mut files: Vec<(String, String)> = entries
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.is_file() && path.extension().is_some_and(|it| it == "rs"))
+        .map(|path| {
+            let name = path.file_name().map(|it| it.to_string_lossy().into_owned());
+            let shown = format!("tests/{}", name.unwrap_or_default());
+            let text = std::fs::read_to_string(&path).expect("a test file read as text");
+            (shown, text)
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+#[test]
+fn test_no_target_but_the_real_paste_opens_the_clipboard() {
+    let files = every_test_target();
+    assert!(
+        files.len() > 100,
+        "read {} files under tests, so the reading found nothing to judge",
+        files.len()
+    );
+
+    let found: Vec<String> = files
+        .iter()
+        .filter(|(path, _)| path != THE_REAL_PASTE)
+        .flat_map(|(path, text)| clipboard_calls_in(path, text))
+        .collect();
+
+    assert!(
+        found.is_empty(),
+        "these targets reach the clipboard, which Windows refuses while the session is locked; \
+         only {THE_REAL_PASTE} may: {found:#?}"
+    );
+}
+
+#[test]
+fn test_the_real_paste_target_is_where_the_clipboard_is_opened() {
+    let text = std::fs::read_to_string(THE_REAL_PASTE)
+        .unwrap_or_else(|why| panic!("{THE_REAL_PASTE} could not be read: {why}"));
+
+    let found = clipboard_calls_in(THE_REAL_PASTE, &text);
+
+    for token in ["OpenClipboard", "WM_PASTE"] {
+        assert!(
+            found.iter().any(|hit| hit.ends_with(&format!(" {token}"))),
+            "{THE_REAL_PASTE} has no {token} in code, so the census allows a file that does not use it: {found:#?}"
+        );
+    }
+}
+
+#[test]
+fn test_the_clipboard_census_sees_a_call_planted_in_another_target() {
+    let path = "tests/a_window_reading_that_pastes.rs";
+    let in_code = "fn reads() {\n    let opened = unsafe { OpenClipboard(0) };\n}\n";
+    let in_a_comment = "fn reads() {\n    // OpenClipboard(0) is never called here\n}\n";
+    let in_a_literal = "fn reads() {\n    let said = \"OpenClipboard(0)\";\n    let raw = r#\"WM_PASTE \"\"#;\n}\n";
+
+    assert_eq!(
+        clipboard_calls_in(path, in_code),
+        vec![format!("{path}:2 OpenClipboard")]
+    );
+    assert_eq!(clipboard_calls_in(path, in_a_comment), Vec::<String>::new());
+    assert_eq!(clipboard_calls_in(path, in_a_literal), Vec::<String>::new());
 }
