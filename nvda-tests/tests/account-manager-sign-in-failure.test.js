@@ -9,10 +9,11 @@
 //
 // The account this drives exists only for this scan: a fresh profile has no
 // accounts of its own, so `--scan-target accounts` opens the dialog on one
-// synthesised account, turned on for OAuth and addressed at a domain
-// nothing in `service::oauth` recognises. That is what makes "Sign In
-// Again" fail on the spot, with no network and no real credentials: see
-// `scan_only_account` beside `open_for_scanning` in
+// synthesised account, turned on for OAuth, whose server and address name
+// neither Google nor Microsoft, so the one check in
+// `src/application/who_runs_the_mail.rs` answers somebody else. That is what
+// makes "Sign In Again" fail on the spot, with no network and no real
+// credentials: see `scan_only_account` beside `open_for_scanning` in
 // `src/presentation/wx_app.rs`.
 
 "use strict";
@@ -33,10 +34,11 @@ const RESULT_NAME = "account-manager-sign-in-failure";
 // rather than guessed:
 //   said_and_shown(&status, a11y, &format!("Signing in failed: {msg}"), ...)
 // where `msg` is the reason `run_oauth_flow` gives up. The fixture account's
-// address is not one `OAuthService::detect_provider` recognises, so `msg` is
+// server and address name neither Google nor Microsoft, so the one check
+// answers somebody else and `msg` is `mail_auth::NO_BROWSER_SIGN_IN_HERE`,
 // that function's first, network-free refusal.
 const SIGN_IN_FAILED = "Signing in failed";
-const WHY_IT_FAILED = "not one Wixen Mail can sign in to through a browser";
+const WHY_IT_FAILED = "can sign in through a browser only to a Gmail or Microsoft account";
 
 // The fixture account's own name, set in `scan_only_account`. Hearing it
 // confirms the row NVDA is looking at really is the synthesised one, not an

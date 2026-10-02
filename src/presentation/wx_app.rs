@@ -20245,9 +20245,11 @@ fn open_for_scanning(
 }
 
 /// One account that exists only for the scan and for a screen-reader-driven
-/// test: OAuth turned on, addressed at a domain nothing in `service::oauth`
-/// recognises as a provider, so "Sign In Again" fails locally and at once
-/// rather than reaching a network or opening a browser.
+/// test: OAuth turned on, with no server and an address at a domain, neither
+/// of which names Google or Microsoft, so the one check in
+/// `application::who_runs_the_mail` answers somebody else and "Sign In Again"
+/// fails locally and at once rather than reaching a network or opening a
+/// browser.
 ///
 /// A separate function rather than built inline where `open_for_scanning`
 /// uses it, so the one property that matters, that signing in to it cannot
@@ -25904,7 +25906,8 @@ fn choose_folders(
     frame: &Frame,
 ) {
     let AppHandles { state, tx, rt } = app;
-    use crate::presentation::wx_folder_choice::{FolderRow, ask, is_a_gmail_account};
+    use crate::application::who_runs_the_mail::WhoRunsTheMail;
+    use crate::presentation::wx_folder_choice::{FolderRow, ask};
 
     let Some(cache) = cache.clone() else {
         return send_refusal(tx, rt, "The mail on this computer is not open.");
@@ -25974,7 +25977,7 @@ fn choose_folders(
         })
         .collect();
 
-    let is_gmail = is_a_gmail_account(account.provider.as_deref(), &account.imap_server);
+    let is_gmail = WhoRunsTheMail::of(&account) == WhoRunsTheMail::Gmail;
     let Some(changed) = ask(frame, &account.name, is_gmail, &rows) else {
         return;
     };
@@ -31800,7 +31803,7 @@ mod scan_only_account_tests {
             "\"Sign In Again\" only acts on an account with OAuth turned on"
         );
         assert!(
-            crate::service::oauth::OAuthService::detect_provider(&account.email).is_none(),
+            crate::application::mail_auth::provider_of(&account).is_none(),
             "a recognised provider would try a real network connection instead of \
              failing at once"
         );

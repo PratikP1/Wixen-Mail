@@ -90,6 +90,15 @@ fixed list of waits until the same day.
 5. Type the name you want people to see when your mail arrives.
 6. Choose **OK**.
 
+An address on your organisation's own domain, such as a Google Workspace or
+Microsoft 365 address, gets no servers filled in, so type them. When the
+incoming server is Google's, such as `imap.gmail.com`, or Microsoft's, such
+as `outlook.office365.com`, Wixen Mail treats the account as Gmail or
+Microsoft everywhere, including signing in through the browser, which
+Microsoft 365 needs. The advice beside the password box and the "Get an app
+password in your browser" button follow the incoming server once you type
+one.
+
 [Setting up your provider](PROVIDER_SETUP.md) has the exact settings and
 app-password steps for Gmail, Outlook.com and Office 365, Yahoo, iCloud, and
 ProtonMail Bridge, and what to do for a provider not listed there.
@@ -1258,6 +1267,13 @@ which:
 | Gmail | The messages move to Spam, which Google's own help page says is the report | "3 messages moved to Spam, which tells Google they are junk." |
 | A mail server that keeps no junk mark | The messages move to the junk folder, and nothing else can be told | "3 messages moved to Junk. This server does not keep a junk mark, so only the folder says they are junk." |
 | Outlook.com or Microsoft 365 | The messages move to Junk Email | "3 messages moved to Junk Email. Microsoft offers no supported way for a mail program to report junk, so Microsoft has not been told." |
+
+Wixen Mail knows an account is Gmail or Microsoft by its incoming server
+first, then its address, then the provider it was set up with. So a Google
+Workspace account on its own domain whose incoming server is
+`imap.gmail.com` gets the Gmail row, and a Microsoft 365 account on its own
+domain whose incoming server is `outlook.office365.com` gets the Outlook.com
+or Microsoft 365 row.
 
 Microsoft's only way for a program to report junk is a preview interface it
 does not support in production, and it needs permission to read and change

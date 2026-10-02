@@ -189,17 +189,6 @@ pub fn handles_by_row<H: Copy>(
     by_row.into_iter().collect()
 }
 
-/// Whether an account is Gmail, by either fact the account row carries: the
-/// provider it was made through, or the server it points at.
-///
-/// Both, because an account added by hand to `imap.gmail.com` has no
-/// provider, and one made through the provider list has the provider whatever
-/// its server spelling. The host is compared ignoring case because a host
-/// name is one.
-pub fn is_a_gmail_account(provider: Option<&str>, imap_server: &str) -> bool {
-    provider == Some("Gmail") || imap_server.eq_ignore_ascii_case("imap.gmail.com")
-}
-
 /// The one sentence the dialog adds when Gmail did not list All Mail.
 ///
 /// Only for Gmail, and only when no listed folder holds every message: a
@@ -508,28 +497,6 @@ mod tests {
 
         assert_eq!(handles_by_row(&placed, &['a']), None);
         assert_eq!(handles_by_row(&placed, &['a', 'b', 'c']), None);
-    }
-
-    #[test]
-    fn test_an_account_made_through_the_provider_list_is_gmail_by_its_provider() {
-        assert!(is_a_gmail_account(Some("Gmail"), "imap.gmail.com"));
-        assert!(is_a_gmail_account(Some("Gmail"), "imap.example.org"));
-    }
-
-    #[test]
-    fn test_an_account_pointed_at_gmails_server_is_gmail_whatever_the_case_of_the_host() {
-        assert!(is_a_gmail_account(None, "imap.gmail.com"));
-        assert!(is_a_gmail_account(None, "IMAP.Gmail.com"));
-        assert!(is_a_gmail_account(Some("Custom"), "imap.gmail.com"));
-    }
-
-    #[test]
-    fn test_an_account_on_another_server_with_another_provider_is_not_gmail() {
-        assert!(!is_a_gmail_account(None, "imap.example.org"));
-        assert!(!is_a_gmail_account(
-            Some("Outlook"),
-            "outlook.office365.com"
-        ));
     }
 
     #[test]

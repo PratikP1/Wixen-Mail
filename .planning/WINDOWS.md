@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 675
+open_count: 677
 waived_count: 0
 fixed_count: 92
-total_count: 767
-last_updated: 2026-10-01T23:30:00.000Z
+total_count: 769
+last_updated: 2026-10-01T23:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -730,7 +730,7 @@ last_updated: 2026-10-01T23:30:00.000Z
 | 713 | 13 | todo | src/application/identities.rs | 172 | 13-33: other addresses are kept per account and managed from the Account Manager, and nothing offers them yet. Compose's From list still lists each account's own address alone, so the_from_list and who_it_goes_out_from have no caller outside tests. 13-34 keeps the chosen address on the outbox and drafts, and 13-35 builds the From list from the_from_list and closes this. 13-35 on 2026-09-29: open_compose builds the list with the_from_list over the accounts and the store's other addresses, read in a built window by tests/the_from_list_chooses_who_sends.rs, and who_it_goes_out_from is reached from sending and filing through 13-34's rows | fixed |  | 2026-09-29T06:45:00.000Z | 2026-09-29T10:32:21.000Z |
 | 714 | 13 | todo | src/application/identities.rs |  | 13-33, phase 13 decision 34 (RESEARCH-3 question 11): Gmail's own Send mail as list could be read with the permission the account already has and offered without typing. Typed addresses came first; reading Gmail's list is later work with no plan yet | open |  | 2026-09-29T06:45:00.000Z |  |
 | 715 | 13 | unrun-verify | src/presentation/wx_identities.rs | 109 | 13-33, the tester's ear: nobody has heard Other Addresses to Send From. From the Account Manager, Alt+O on a saved account: whether the title, the line saying a provider may refuse an address and the list named Other addresses are read; Add, an address that is not one and OK, whether the sentence is heard and focus is heard landing back in Address; Move Down, whether where the address went is heard; and Alt+O on an account added in the same visit, whether the sentence saying to close and reopen the Account Manager is heard | open |  | 2026-09-29T06:45:00.000Z |  |
-| 716 | 13 | todo | tests/a_locked_key_asks_for_its_passphrase.rs | 225 | 13-33: the paste reading fails six cases with "OpenClipboard failed" whenever the Windows session is locked. OpenClipboard answers error 5, access denied, on the interactive window station and on a new one alike while LockApp and LogonUI run, measured 2026-09-29 with a throwaway program, and the target passes once the session is unlocked; 13-25 read the same failure as a flake. It held 13-33's full gate for about ninety minutes. Recommended: the message names the error code and says the session may be locked, so a locked machine reads as a place the test cannot run rather than a paste that broke | open |  | 2026-09-29T06:45:00.000Z |  |
+| 716 | 13 | todo | tests/a_locked_key_asks_for_its_passphrase.rs | 225 | 13-33: the paste reading fails six cases with "OpenClipboard failed" whenever the Windows session is locked. OpenClipboard answers error 5, access denied, on the interactive window station and on a new one alike while LockApp and LogonUI run, measured 2026-09-29 with a throwaway program, and the target passes once the session is unlocked; 13-25 read the same failure as a flake. It held 13-33's full gate for about ninety minutes. Recommended: the message names the error code and says the session may be locked, so a locked machine reads as a place the test cannot run rather than a paste that broke. Added 2026-10-02 by 13-44.5: LockApp.exe's presence is not a lock signal. Windows keeps it resident and suspended after an unlock, so a wait for it to leave the process list never ends; 13-44.5 polled it for about six hours after the session was unlocked. A direct OpenClipboard attempt, such as running this target alone, is the test that means something | open |  | 2026-09-29T06:45:00.000Z |  |
 | 717 | 13 | todo | src/presentation/wx_app.rs | 18104 | 13-34: the Outbox and the drafts keep the address and name a message was written from, and sending and filing a draft use them, and nothing writes one yet. put_in_the_outbox and save_as_draft pass None for both, so every message still goes out from its account's own address and name, exactly as before. 13-35's composer writes the address chosen in its From list and closes this; its premise 1 names it. 13-35 on 2026-09-29: put_in_the_outbox and save_as_draft write the address and name of the entry chosen through identities::who_sends, none for an account's own, held by presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_named_sender_reaches_the_wire_as_a_bare_address, which reads the row and the server's MAIL FROM | fixed |  | 2026-09-29T08:50:00.000Z | 2026-09-29T10:32:21.000Z |
 | 718 | 13 | unrun-verify | src/application/identities.rs |  | 13-35, phase 14: no provider has been asked to send from an other address. Gmail with an address set up under Send mail as and one not set up, and Exchange Online or Microsoft 365 with an address the account may send as and one it may not: whether each goes, what the recipient sees in From, and which sentence is said when a provider refuses (RESEARCH-3 A2 and A3). The guide and the alpha page say a provider may refuse or replace such an address | open |  | 2026-09-29T10:32:21.000Z |  |
 | 719 | 13 | unrun-verify | src/presentation/wx_compose.rs |  | 13-35, the tester's ear: nobody has heard compose's From list since it offers other addresses. Whether it is read as From with the entry, whether an other address is heard as "help@example.com, another address on Work", whether moving From onto another account's address says "Signature changed to" and its name, and whether moving between one account's own address and its other address says nothing. The name was read on MSAA at the handle focus reaches; the UI Automation reading is the Accessibility scan's | open |  | 2026-09-29T10:32:21.000Z |  |
@@ -782,6 +782,8 @@ last_updated: 2026-10-01T23:30:00.000Z
 | 765 | 13 | todo | src/presentation/wx_app.rs |  | 13-44.3, premise 11 (b), read and not run: the check replays waiting moves before waiting flag changes, so a Mark as Read made while mail changes were off, kept in waiting_flag_changes, beside a move waiting for the same message is sent after the move, to the folder and number the message has left, 688's shape in the replay. Recommendation: the waiting move takes the row's waiting marks when it is replayed, as it takes a run's; small, and no plan carries it yet | open |  | 2026-10-01T22:00:00.000Z |  |
 | 766 | 13 | todo | scripts/check.sh |  | 13-44.3, found by CI: tests/flag_names.rs reads every source file for an IMAP flag name spelled outside src/service/protocols/imap/flag.rs, and it is not among guards_that_read_the_whole_tree in scripts/check.sh, so the branch's commits that spelled the seen and flagged names in flag_changes_waiting.rs's tests passed the hook and the pull request's Test Suite refused them. Recommendation: add flag_names to that list, or give it a guard record coupling it to the files it reads; small, and no plan carries it yet | open |  | 2026-10-01T23:00:00.000Z |  |
 | 767 | 13 | unrun-verify | src/application/when_people_are_free.rs | 475 | 13-44.4, the tester's ear: nobody has heard "Saturday at 10 is outside Ada's working day" said for a time inside the working day set in Settings, because it is outside the days and hours Ada set in her own Outlook. Whether it is understood as Ada's own day without the guide, and whether a colleague's own hours putting a time last is noticed at all | open |  | 2026-10-01T23:30:00.000Z |  |
+| 768 | 13 | unrun-verify | src/application/who_runs_the_mail.rs |  | 13-44.5, for phase 14: a Google Workspace account and a Microsoft 365 account on their organisations' own domains, each added with its servers typed by hand (imap.gmail.com and smtp.gmail.com; outlook.office365.com and smtp.office365.com, port 587) and the browser sign-in on. Whether the sign-in is kept and the first check reads the Inbox; Report as Junk on one message (Workspace: moved to Spam with no keyword; Microsoft 365: the sentence saying Microsoft has not been told); and the folder chooser's All Mail sentence on the Workspace one. Nothing in 13-44.5 has met either | open |  | 2026-10-01T23:45:00.000Z |  |
+| 769 | 13 | unrun-verify | src/presentation/wx_account_manager.rs |  | 13-44.5, the tester's ear: nobody has heard the mail check's new sentence for an account at example.com with the browser sign-in on ("... is set to sign in through a browser, but neither its server nor its address belongs to Google or Microsoft ..."); nor, in the account editor, D11's sentence read as the password box's description and said by Get an app password in your browser for an address at outlook.com with the browser sign-in box turned off; nor the advice changing when imap.gmail.com is typed after an address at example.com. No NVDA case reaches any of them | open |  | 2026-10-01T23:45:00.000Z |  |
 
 ````json
 [
@@ -9371,7 +9373,7 @@ last_updated: 2026-10-01T23:30:00.000Z
     "phase": "13",
     "file": "tests/a_locked_key_asks_for_its_passphrase.rs",
     "line": 225,
-    "description": "13-33: the paste reading fails six cases with \"OpenClipboard failed\" whenever the Windows session is locked. OpenClipboard answers error 5, access denied, on the interactive window station and on a new one alike while LockApp and LogonUI run, measured 2026-09-29 with a throwaway program, and the target passes once the session is unlocked; 13-25 read the same failure as a flake. It held 13-33's full gate for about ninety minutes. Recommended: the message names the error code and says the session may be locked, so a locked machine reads as a place the test cannot run rather than a paste that broke",
+    "description": "13-33: the paste reading fails six cases with \"OpenClipboard failed\" whenever the Windows session is locked. OpenClipboard answers error 5, access denied, on the interactive window station and on a new one alike while LockApp and LogonUI run, measured 2026-09-29 with a throwaway program, and the target passes once the session is unlocked; 13-25 read the same failure as a flake. It held 13-33's full gate for about ninety minutes. Recommended: the message names the error code and says the session may be locked, so a locked machine reads as a place the test cannot run rather than a paste that broke. Added 2026-10-02 by 13-44.5: LockApp.exe's presence is not a lock signal. Windows keeps it resident and suspended after an unlock, so a wait for it to leave the process list never ends; 13-44.5 polled it for about six hours after the session was unlocked. A direct OpenClipboard attempt, such as running this target alone, is the test that means something",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T06:45:00.000Z",
@@ -9987,6 +9989,30 @@ last_updated: 2026-10-01T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-01T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 768,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/who_runs_the_mail.rs",
+    "line": null,
+    "description": "13-44.5, for phase 14: a Google Workspace account and a Microsoft 365 account on their organisations' own domains, each added with its servers typed by hand (imap.gmail.com and smtp.gmail.com; outlook.office365.com and smtp.office365.com, port 587) and the browser sign-in on. Whether the sign-in is kept and the first check reads the Inbox; Report as Junk on one message (Workspace: moved to Spam with no keyword; Microsoft 365: the sentence saying Microsoft has not been told); and the folder chooser's All Mail sentence on the Workspace one. Nothing in 13-44.5 has met either",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T23:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 769,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "13-44.5, the tester's ear: nobody has heard the mail check's new sentence for an account at example.com with the browser sign-in on (\"... is set to sign in through a browser, but neither its server nor its address belongs to Google or Microsoft ...\"); nor, in the account editor, D11's sentence read as the password box's description and said by Get an app password in your browser for an address at outlook.com with the browser sign-in box turned off; nor the advice changing when imap.gmail.com is typed after an address at example.com. No NVDA case reaches any of them",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T23:45:00.000Z",
     "resolved_at": null
   }
 ]

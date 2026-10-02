@@ -9,7 +9,7 @@
 
 use crate::application::allowed::{Allowed, READING_SECTION, SETTINGS_SECTION};
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
-use crate::application::mail_auth::no_sign_in_credentials;
+use crate::application::mail_auth::{NO_BROWSER_SIGN_IN_HERE, no_sign_in_credentials, provider_of};
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
 // The one wording for a refusal when nothing was chosen (#75). This window
 // said it five ways, one per button, and the button is not what somebody
@@ -19,9 +19,10 @@ use crate::application::directory_sign_in::{
 };
 use crate::application::identities::{NOT_SAVED_YET, NOWHERE_TO_KEEP_THEM};
 use crate::application::status_sentences::{Thing, nothing_chosen};
+use crate::application::who_runs_the_mail::{WhatIsKnown, WhoRunsTheMail};
 use crate::common::types::Protocol;
 use crate::data::MessageCache;
-use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
+use crate::data::account::{Account, oauth_is_default};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
@@ -43,10 +44,22 @@ use crate::service::directory::{self, Directory};
 const APP_PASSWORD_HINT: &str = "Password: use an app password, not your ordinary one. \
 Turn on two-step verification with your provider first, then generate one for mail. \
 See Setting up a provider in Help.";
+
+/// What to say in place of the app password advice when Microsoft runs the
+/// mail: Microsoft's own pages say no password reaches its mailboxes over
+/// IMAP or POP, app passwords included. The box is named the way this
+/// editor labels it.
+pub const MICROSOFT_ASKS_FOR_THE_BROWSER: &str = "Microsoft does not let mail programs sign in \
+     with a password, not even an app password. Turn on Sign in with the provider in a \
+     browser. See Setting up a provider in Help.";
+
+/// What Get App Password says when there is no page to open.
+const ASK_YOUR_PROVIDER: &str =
+    "Enter your email address first, or ask your provider where it hands out app passwords.";
 use crate::presentation::status_line::{said_and_shown, shown_and_signalled};
 use crate::presentation::wx_identities::show_identity_manager;
 use crate::presentation::wx_managers::get_selected;
-use crate::service::oauth::{AuthManager, OAuthService};
+use crate::service::oauth::AuthManager;
 use crate::service::oauth_credentials;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -823,7 +836,7 @@ pub fn set_active_selected(
 /// The accessible name given to the password box, whatever it holds.
 const PASSWORD_BOX_NAME: &str = "Password";
 
-/// The sentence to read after the password box's name, for this address.
+/// The sentence to read after the password box's name, for what is typed.
 ///
 /// The same advice the hint under the email box shows. Attached rather than
 /// announced: the hint under the email box is rewritten on every keystroke
@@ -831,24 +844,88 @@ const PASSWORD_BOX_NAME: &str = "Password";
 /// over them, over and over. A description is read once, when the box takes
 /// focus, so it reaches somebody working by ear without flooding them.
 ///
-/// Asks [`offers_app_passwords`] rather than listing the domains again. Four
-/// lists of the same provider domains already exist in this file and the
-/// module it calls into; a fifth is how they come apart.
-fn password_box_description(email: &str) -> Option<&'static str> {
-    offers_app_passwords(email).then_some(APP_PASSWORD_HINT)
+/// Asks the one check with the address and the incoming server typed and no
+/// saved name, so the advice follows the server once one is typed and the
+/// address until then (Pratik, 2026-09-30). Gmail is told to use an app
+/// password; Microsoft is told to use the browser sign-in, because no
+/// password reaches its mailboxes any more.
+fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server,
+        address,
+        recorded_provider: None,
+    });
+    match who {
+        WhoRunsTheMail::Gmail => Some(APP_PASSWORD_HINT),
+        WhoRunsTheMail::Microsoft => Some(MICROSOFT_ASKS_FOR_THE_BROWSER),
+        WhoRunsTheMail::SomebodyElse => None,
+    }
 }
 
-/// Give the password box a name, and this address's app-password advice as
-/// its description when there is any.
+/// Where Get App Password sends somebody, by the same check as the advice:
+/// Google's page to open, or the sentence to say when there is none.
+fn where_to_get_an_app_password(
+    address: &str,
+    incoming_server: &str,
+) -> std::result::Result<&'static str, &'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server,
+        address,
+        recorded_provider: None,
+    });
+    match (who.app_password_url(), who) {
+        (Some(page), _) => Ok(page),
+        (None, WhoRunsTheMail::Microsoft) => Err(MICROSOFT_ASKS_FOR_THE_BROWSER),
+        (None, _) => Err(ASK_YOUR_PROVIDER),
+    }
+}
+
+/// Give the password box a name, and the app password advice as its
+/// description when there is any.
 ///
 /// One call, never a name and then a description: attaching a second
 /// accessible object replaces the first, so calling both in sequence would
 /// leave only the description and the box would announce with no name at
 /// all.
-fn describe_password_box(field: &TextCtrl, email: &str) {
-    match password_box_description(email) {
+fn describe_password_box(field: &TextCtrl, advice: Option<&str>) {
+    match advice {
         Some(hint) => set_accessible_name_and_description(field, PASSWORD_BOX_NAME, hint),
         None => set_accessible_name(field, PASSWORD_BOX_NAME),
+    }
+}
+
+/// Write the app password advice for what is typed, in the two places it
+/// goes: the hint under the address box, shown and not said, and the
+/// password box's description. One function, so the two never disagree.
+///
+/// With the browser sign-in box on, the hint says the browser will open
+/// instead.
+fn show_the_password_advice(
+    auth_hint: &StaticText,
+    pass_f: &TextCtrl,
+    address: &str,
+    incoming_server: &str,
+    browser_sign_in: bool,
+) {
+    let advice = password_box_description(address, incoming_server);
+    auth_hint.set_label(match (browser_sign_in, advice) {
+        (true, _) => "Signs in through the browser when you save.",
+        (false, Some(advice)) => advice,
+        (false, None) => "",
+    });
+    describe_password_box(pass_f, advice);
+}
+
+/// What is typed in the server box of the protocol chosen, the server the
+/// account will read its mail from.
+fn the_incoming_server_typed(
+    protocol_choice: &Choice,
+    imap_f: &TextCtrl,
+    pop_f: &TextCtrl,
+) -> String {
+    match selected_protocol(protocol_choice) {
+        Protocol::Pop3 => pop_f.get_value(),
+        Protocol::Imap => imap_f.get_value(),
     }
 }
 
@@ -2068,13 +2145,14 @@ pub fn build_account_edit_dialog(
         );
         enabled.set_value(a.enabled);
         use_oauth_cb.set_value(a.use_oauth);
-        if a.use_oauth {
-            auth_hint.set_label("Signs in through the browser when you save.");
-        } else if offers_app_passwords(&a.email) {
-            auth_hint.set_label(APP_PASSWORD_HINT);
-        }
     }
-    describe_password_box(&pass_f, existing.map(|a| a.email.as_str()).unwrap_or(""));
+    show_the_password_advice(
+        &auth_hint,
+        &pass_f,
+        &email_f.get_value(),
+        &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
+        use_oauth_cb.get_value(),
+    );
 
     // Auto-detect provider and update hint on email change.
     //
@@ -2102,23 +2180,52 @@ pub fn build_account_edit_dialog(
                 // provider, and say what to do about it either way. Somebody
                 // who wants the other one can still change it: this moves the
                 // checkbox, it does not lock it.
+                // The servers are filled first, so the check reads what was
+                // filled.
                 use_oauth_cb.set_value(oauth_is_default(&email));
-                if use_oauth_cb.get_value() {
-                    auth_hint.set_label("Signs in through the browser when you save.");
-                } else if offers_app_passwords(&email) {
-                    auth_hint.set_label(APP_PASSWORD_HINT);
-                } else {
-                    auth_hint.set_label("");
-                }
-                describe_password_box(&pass_f, &email);
+                show_the_password_advice(
+                    &auth_hint,
+                    &pass_f,
+                    &email,
+                    &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
+                    use_oauth_cb.get_value(),
+                );
             }
         }
     });
 
+    // The advice follows the incoming server once one is typed, so both
+    // server boxes write it too, and so do the protocol choice and the
+    // browser sign-in box below. Shown and not said, for the address box's
+    // reason above: it is rewritten on every keystroke, and the password
+    // box's description reaches somebody working by ear when that box takes
+    // focus.
+    imap_f.on_text_changed(move |_| {
+        show_the_password_advice(
+            &auth_hint,
+            &pass_f,
+            &email_f.get_value(),
+            &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
+            use_oauth_cb.get_value(),
+        );
+    });
+    pop_f.on_text_changed(move |_| {
+        show_the_password_advice(
+            &auth_hint,
+            &pass_f,
+            &email_f.get_value(),
+            &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
+            use_oauth_cb.get_value(),
+        );
+    });
+
     get_app_password.on_click({
         let a11y = Arc::clone(a11y);
-        move |_| match app_password_url(&email_f.get_value()) {
-            Some(url) => {
+        move |_| match where_to_get_an_app_password(
+            &email_f.get_value(),
+            &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
+        ) {
+            Ok(url) => {
                 if open::that(url).is_err() {
                     // Saying the address rather than only that it failed, so
                     // the page is still reachable by typing it.
@@ -2130,12 +2237,7 @@ pub fn build_account_edit_dialog(
                     );
                 }
             }
-            None => said_and_shown(
-                &auth_hint,
-                &a11y,
-                "Enter your email address first, or ask your provider where it hands out app passwords.",
-                Priority::High,
-            ),
+            Err(sentence) => said_and_shown(&auth_hint, &a11y, sentence, Priority::High),
         }
     });
 
@@ -2149,6 +2251,13 @@ pub fn build_account_edit_dialog(
         let d = dlg;
         move |_| {
             show_protocol_fields(imap_fields, pop_fields, selected_protocol(&protocol_choice));
+            show_the_password_advice(
+                &auth_hint,
+                &pass_f,
+                &email_f.get_value(),
+                &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
+                use_oauth_cb.get_value(),
+            );
             d.layout();
         }
     });
@@ -2156,6 +2265,13 @@ pub fn build_account_edit_dialog(
         let d = dlg;
         move |_| {
             password_fields.set_visible(!use_oauth_cb.get_value());
+            show_the_password_advice(
+                &auth_hint,
+                &pass_f,
+                &email_f.get_value(),
+                &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
+                use_oauth_cb.get_value(),
+            );
             d.layout();
         }
     });
@@ -2619,19 +2735,15 @@ fn how_the_sign_in_failed(error: &crate::common::Error) -> OAuthFlowResult {
     }
 }
 
-/// Run the OAuth2 flow automatically: detect provider, load built-in
-/// credentials, open browser, capture redirect, exchange tokens.
+/// Run the OAuth2 flow automatically: ask the one check which provider the
+/// account signs in through, load built-in credentials, open browser,
+/// capture redirect, exchange tokens.
+///
+/// The provider comes from the same function the mail check reads the token
+/// back with, so the name a token is filed under is the name it is found by.
 fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
-    let provider = match OAuthService::detect_provider(&account.email) {
-        Some(p) => p,
-        None => {
-            return OAuthFlowResult::Failed(
-                "This address is not one Wixen Mail can sign in to through a browser. Turn \
-                 the browser sign-in off and enter a password, or see Setting up a provider \
-                 in Help."
-                    .into(),
-            );
-        }
+    let Some(provider) = provider_of(account) else {
+        return OAuthFlowResult::Failed(NO_BROWSER_SIGN_IN_HERE.into());
     };
 
     // Load app-level credentials (env vars / config file / compile-time defaults)
@@ -2789,14 +2901,16 @@ mod tests {
             ));
         }
 
-        // Five, and the reason each of them stays quiet is written above the
-        // box that rewrites them. Any more than that is a new one nobody
-        // decided about.
+        // One, in show_the_password_advice, and the reason it stays quiet is
+        // written above the address box's handler. It was five until
+        // 2026-10-01, when the five writes became that one function; a
+        // ceiling left at five would have let four new silent writes through
+        // unseen. Any more than one is a new one nobody decided about.
         let quiet_hints = screen.matches("auth_hint.set_label(").count();
-        if quiet_hints > 5 {
+        if quiet_hints > 1 {
             wrong.push(format!(
                 "{quiet_hints} writes to the hint under the email box are silent, and only \
-                 the five rewritten as somebody types may be"
+                 the one rewritten as somebody types may be"
             ));
         }
 
@@ -2960,42 +3074,107 @@ mod tests {
         // would read a paragraph over somebody typing. That left the advice
         // reaching nobody working by ear. A description read once, when the
         // password box takes focus, is the fix.
-        assert_eq!(
-            password_box_description("me@gmail.com"),
-            Some(APP_PASSWORD_HINT),
-            "Gmail offers app passwords, so the box should carry the advice"
-        );
-        assert_eq!(
-            password_box_description("me@outlook.com"),
-            Some(APP_PASSWORD_HINT),
-            "Outlook offers app passwords, so the box should carry the advice"
-        );
-        assert_eq!(
-            password_box_description("me@example.com"),
-            None,
-            "an ordinary address gets no app-password advice"
-        );
-        assert_eq!(
-            password_box_description(""),
-            None,
-            "no address typed yet is not an address that offers app passwords"
-        );
+        //
+        // The one check decides, by the incoming server once one is typed and
+        // by the address until then, and an account Microsoft runs is told to
+        // use the browser sign-in, since no password reaches it.
+        let googles_page = Ok("https://myaccount.google.com/apppasswords");
+        for (row, address, server, advice, button) in [
+            (
+                "a Gmail address, no server yet",
+                "me@gmail.com",
+                "",
+                Some(APP_PASSWORD_HINT),
+                googles_page,
+            ),
+            (
+                "a Workspace account on Gmail's server",
+                "me@mycompany.com",
+                "imap.gmail.com",
+                Some(APP_PASSWORD_HINT),
+                googles_page,
+            ),
+            (
+                "a Gmail address on a server that names nobody",
+                "me@gmail.com",
+                "imap.example.com",
+                Some(APP_PASSWORD_HINT),
+                googles_page,
+            ),
+            (
+                "an Outlook.com address, no server yet",
+                "me@outlook.com",
+                "",
+                Some(MICROSOFT_ASKS_FOR_THE_BROWSER),
+                Err(MICROSOFT_ASKS_FOR_THE_BROWSER),
+            ),
+            (
+                "a Microsoft 365 account on its own domain",
+                "me@contoso.com",
+                "outlook.office365.com",
+                Some(MICROSOFT_ASKS_FOR_THE_BROWSER),
+                Err(MICROSOFT_ASKS_FOR_THE_BROWSER),
+            ),
+            (
+                "an ordinary server",
+                "me@example.com",
+                "imap.example.com",
+                None,
+                Err(ASK_YOUR_PROVIDER),
+            ),
+            (
+                "an ordinary address, no server yet",
+                "me@example.com",
+                "",
+                None,
+                Err(ASK_YOUR_PROVIDER),
+            ),
+            ("nothing typed", "", "", None, Err(ASK_YOUR_PROVIDER)),
+        ] {
+            assert_eq!(
+                password_box_description(address, server),
+                advice,
+                "{row}: the password box's advice"
+            );
+            assert_eq!(
+                where_to_get_an_app_password(address, server),
+                button,
+                "{row}: Get App Password"
+            );
+        }
     }
 
     #[test]
-    fn test_the_password_box_description_is_attached_in_both_places_the_hint_is_shown() {
-        // The visible hint under the email box is written in two places: once
-        // for an account already on file, once as somebody types a new
-        // address. The password box's description has to be attached in the
-        // same two places, or opening an existing account would show the
-        // visible hint and describe the password box to nobody until the
-        // address was retyped.
+    fn test_the_password_advice_is_written_wherever_what_it_reads_can_change() {
+        // The advice reads the address, the server box of the protocol
+        // chosen and the browser sign-in box, so it is written when an
+        // account on file opens and whenever any of those changes. One
+        // function writes both the hint and the password box's description,
+        // so the two cannot disagree, and an account opened from the list is
+        // described before the address is retyped.
         let screen = the_account_manager();
-        let calls = screen.matches("describe_password_box(&pass_f").count();
+        let calls = screen.matches("describe_password_box(").count()
+            - screen.matches("fn describe_password_box(").count();
         assert_eq!(
-            calls, 2,
-            "expected two calls attaching the password box's description, \
-             found {calls}"
+            calls, 1,
+            "expected one call attaching the password box's description, found {calls}"
+        );
+        let advice = screen
+            .split("fn show_the_password_advice(")
+            .nth(1)
+            .and_then(|after| after.split("\n}\n").next())
+            .unwrap_or_default();
+        assert!(
+            advice.contains("describe_password_box("),
+            "the description is not attached where the hint is written"
+        );
+        let writers = screen.matches("show_the_password_advice(").count()
+            - screen.matches("fn show_the_password_advice(").count();
+        assert_eq!(
+            writers, 6,
+            "expected the advice written when an account opens and from the address box, \
+             both server boxes, the protocol choice and the browser sign-in box, found \
+             {writers}"
         );
     }
 

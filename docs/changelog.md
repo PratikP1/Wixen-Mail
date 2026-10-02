@@ -657,6 +657,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **One check decides whether an account is Gmail or Microsoft, so Google Workspace and
+  Microsoft 365 accounts on their own domains are recognised, experimental (#54, GAP-06).**
+  It reads the incoming server first, then the address, then the provider the account was
+  set up with, and Report as Junk, the folder chooser and signing in all ask it. Until now
+  each decided for itself, and an account on its organisation's own domain was Gmail to one
+  and nobody to the next. Now an account whose incoming server is `imap.gmail.com` is Gmail
+  and one on `outlook.office365.com` is Microsoft: it can sign in through the browser, and
+  it is offered contacts, the calendar and tasks, and for Microsoft notes in OneNote and
+  people search, the way a Gmail or Outlook.com account is. An account the browser sign-in
+  cannot place now hears why: the Account Manager says "Wixen Mail can sign in through a
+  browser only to a Gmail or Microsoft account, and neither this account's server nor its
+  address belongs to Google or Microsoft", with what to check, and a mail check names the
+  account and the Account Manager in place of "no provider is recorded". The advice next to
+  the password box and the "Get an app password in your browser" button follow the incoming
+  server once one is typed, and the address until then. A Microsoft account is told to turn
+  on the browser sign-in rather than to use an app password, and the button no longer opens
+  Microsoft's page for personal accounts, because Microsoft no longer accepts a password
+  from a mail program, app passwords included. Send Feedback's report names an account
+  "Gmail" or "Microsoft" by the same check, "Microsoft" where it said "Outlook". The version
+  does not move for this: no build has been cut since 1.0.0-alpha.1. Known limitations:
+  nothing here has met a real Workspace or Microsoft 365 account; a server name of your
+  organisation's own that points at Google or Microsoft is not recognised, so use the
+  provider's own name; an account whose server names the other provider than its address
+  now follows its server, so it may ask you to sign in again; and the browser sign-in box is
+  still set from the address alone, on purpose, so it never moves under somebody who chose.
 - **Find when everyone is free judges a colleague by their own working hours, experimental
   (#57, ledger 711).** Microsoft's answer gives the days and hours each colleague set in
   their own Outlook, and the time zone they keep them in. Until now only the zone was read,
@@ -1160,6 +1185,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Report as Junk no longer tells a Microsoft 365 account its messages were "reported as
+  junk" (#54, GAP-06).** An account on its organisation's own domain was read by the
+  provider it was set up with, which is empty for one typed in by hand, so it heard
+  "reported as junk" when Microsoft had not been told. It now hears that Microsoft has not
+  been told. The folder chooser also missed a Gmail account saved with its provider spelled
+  in lower case, and now says its All Mail sentence for it. The version does not move for
+  this: no build has been cut since 1.0.0-alpha.1.
 - **What a rule does to arriving mail reaches your mail server, and the next check keeps it
   (ledger 678, GAP-12).** A rule's Mark as read, Mark as unread, Flag, Unflag and Add a label
   were made on this computer only, so the next check read the message from the server and

@@ -22,6 +22,7 @@
 //! its own.
 
 use crate::application::blocking::BlockedMailGoesTo;
+use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::service::caldav::how_many;
@@ -40,17 +41,19 @@ pub enum AccountKind {
 }
 
 impl AccountKind {
-    /// Which kind this account is: POP first, whatever its provider, since a
-    /// Gmail account collecting over POP has no Spam folder here to move into;
-    /// then the provider the account was set up with.
+    /// Which kind this account is: POP first, whatever runs it, since a Gmail
+    /// account collecting over POP has no Spam folder here to move into; then
+    /// whoever the one check says runs its mail, so a Workspace or Microsoft
+    /// 365 account on its own domain is reported the way Gmail or Microsoft
+    /// is.
     pub fn of(account: &Account) -> Self {
         if account.protocol() == crate::common::types::Protocol::Pop3 {
             return AccountKind::Pop;
         }
-        match account.provider.as_deref() {
-            Some(provider) if provider.eq_ignore_ascii_case("gmail") => AccountKind::Gmail,
-            Some(provider) if provider.eq_ignore_ascii_case("outlook") => AccountKind::Microsoft,
-            _ => AccountKind::OtherImap,
+        match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => AccountKind::Gmail,
+            WhoRunsTheMail::Microsoft => AccountKind::Microsoft,
+            WhoRunsTheMail::SomebodyElse => AccountKind::OtherImap,
         }
     }
 }
@@ -406,6 +409,44 @@ mod tests {
             AccountKind::of(&an_account("imap", None)),
             AccountKind::OtherImap
         );
+    }
+
+    #[test]
+    fn test_a_workspace_account_on_its_own_domain_is_reported_the_way_gmail_is() {
+        // Its address and its saved name say nothing; its server is Google's.
+        let mut workspace = an_account("imap", None);
+        workspace.imap_server = "imap.gmail.com".to_string();
+        let kind = AccountKind::of(&workspace);
+
+        assert_eq!(kind, AccountKind::Gmail);
+        assert_eq!(
+            what_a_report_does(
+                kind,
+                BlockedMailGoesTo::TheJunkFolder("[Gmail]/Spam"),
+                Ok(())
+            ),
+            Report::MarkThenMove {
+                junk: "[Gmail]/Spam".to_string(),
+                mark: false
+            },
+            "Google learns from the move, so no keyword is sent"
+        );
+        assert_eq!(
+            what_reporting_did(kind, 3, "Spam", 0, &Marked::NotAsked),
+            "3 messages moved to Spam, which tells Google they are junk."
+        );
+    }
+
+    #[test]
+    fn test_a_microsoft_365_account_on_its_own_domain_says_microsoft_was_not_told() {
+        let mut work = an_account("imap", None);
+        work.imap_server = "outlook.office365.com".to_string();
+        let kind = AccountKind::of(&work);
+
+        assert_eq!(kind, AccountKind::Microsoft);
+        let said = what_reporting_did(kind, 3, "Junk Email", 0, &Marked::Kept);
+        assert!(said.contains("Microsoft has not been told"), "{said}");
+        assert!(!said.contains("reported as junk"), "{said}");
     }
 
     // ── What a report does ────────────────────────────────────────────────

@@ -18,6 +18,7 @@
 //! Nothing here reads an address, a name or a message. The accounts are
 //! described by the kind of mail they are, never by what they are called.
 
+use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::data::account::Account;
 
 /// The screen readers known by their process, in the order one is named
@@ -127,18 +128,25 @@ pub fn file_version_text(most_significant: u32, least_significant: u32) -> Strin
 
 /// The kinds of account set up, without their addresses.
 ///
-/// The provider's name when the account was made from a preset, otherwise
-/// the protocol it reads mail with; each kind once, in the accounts' order.
+/// "Gmail" or "Microsoft" where the one check says so, so a Workspace or
+/// Microsoft 365 account on its own domain is named by who runs its mail.
+/// Only for an account somebody else runs is the name it was saved with
+/// read, after the check, and otherwise the protocol it reads mail with;
+/// each kind once, in the accounts' order.
 pub fn providers(accounts: &[Account]) -> Vec<String> {
     let mut kinds: Vec<String> = Vec::new();
     for account in accounts {
-        let kind = account
-            .provider
-            .as_deref()
-            .map(str::trim)
-            .filter(|provider| !provider.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| account.protocol().as_str().to_uppercase());
+        let kind = match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => "Gmail".to_string(),
+            WhoRunsTheMail::Microsoft => "Microsoft".to_string(),
+            WhoRunsTheMail::SomebodyElse => account
+                .provider
+                .as_deref()
+                .map(str::trim)
+                .filter(|provider| !provider.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| account.protocol().as_str().to_uppercase()),
+        };
         if !kinds.contains(&kind) {
             kinds.push(kind);
         }
@@ -505,10 +513,29 @@ mod tests {
             id: "b".to_string(),
             ..gmail.clone()
         };
+        // Named by the one check, so an account on its own domain is named by
+        // who runs its mail and a saved "Outlook" is Microsoft.
+        let mut workspace = Account::new("Work".to_string(), "dana@mycompany.com".to_string());
+        workspace.imap_server = "imap.gmail.com".to_string();
+        let mut microsoft_365 = Account::new("Work".to_string(), "dana@contoso.com".to_string());
+        microsoft_365.imap_server = "outlook.office365.com".to_string();
+        let mut outlook = Account::new("Home".to_string(), "dana@outlook.com".to_string());
+        outlook.provider = Some("Outlook".to_string());
+        let mut yahoo = Account::new("Old".to_string(), "dana@yahoo.com".to_string());
+        yahoo.imap_server = "imap.mail.yahoo.com".to_string();
+        yahoo.provider = Some("Yahoo".to_string());
 
-        let named = providers(&[gmail, pop, second_gmail]);
+        let named = providers(&[
+            gmail,
+            pop,
+            second_gmail,
+            workspace,
+            microsoft_365,
+            outlook,
+            yahoo,
+        ]);
 
-        assert_eq!(named, names(&["Gmail", "POP3"]));
+        assert_eq!(named, names(&["Gmail", "POP3", "Microsoft", "Yahoo"]));
         assert!(
             !named.iter().any(|n| n.contains('@') || n.contains("Work")),
             "{named:?}"

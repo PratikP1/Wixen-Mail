@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 559 records have arrived since and have not been through it.
+# 571 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -681,6 +681,18 @@ red = [
     # by 13-24.1 and 13-42.
     "application::acting_on_a_set::tests::test_one_message_is_said_in_the_singular",
     "application::quick_steps::tests::test_what_a_step_did_is_its_name_and_what_was_done",
+    # Added 2026-10-01 by 13-44.5, found by --remeasure rather than predicted:
+    # 13-44.3's clauses for what a rule told the server count through
+    # `how_many`, in a file this record had never named.
+    "application::what_rules_tell_the_server::tests::test_a_label_the_server_could_not_be_asked_about_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
+    "application::what_rules_tell_the_server::tests::test_a_mark_the_server_refuses_is_put_back_here",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+    "application::what_rules_tell_the_server::tests::test_the_clauses_say_each_count_and_reason_once_and_the_singular_right",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
+    "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
@@ -693,9 +705,10 @@ tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/quick_steps.rs", tests = 27 },
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/application/undoing.rs", tests = 35 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 170 },
@@ -3955,7 +3968,7 @@ tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -8547,7 +8560,7 @@ red = [
     "application::mail_auth::tests::test_the_missing_credentials_sentence_is_worded_once_and_names_the_way_out",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_auth.rs", tests = 10 },
+    { file = "src/application/mail_auth.rs", tests = 13 },
 ]
 
 # Measured by hand on 2026-08-13. The account manager screen answers the same
@@ -8637,11 +8650,20 @@ tests_last_seen = [
 [[guard]]
 name = "the password box's description carries the app password advice for the right addresses"
 file = "src/presentation/wx_account_manager.rs"
-before = """fn password_box_description(email: &str) -> Option<&'static str> {
-    offers_app_passwords(email).then_some(APP_PASSWORD_HINT)
+before = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server,
+        address,
+        recorded_provider: None,
+    });
+    match who {
+        WhoRunsTheMail::Gmail => Some(APP_PASSWORD_HINT),
+        WhoRunsTheMail::Microsoft => Some(MICROSOFT_ASKS_FOR_THE_BROWSER),
+        WhoRunsTheMail::SomebodyElse => None,
+    }
 }"""
-after = """fn password_box_description(email: &str) -> Option<&'static str> {
-    let _ = email;
+after = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let _ = (address, incoming_server);
     None
 }"""
 red = [
@@ -14939,7 +14961,7 @@ red = [
     "test_no_comment_says_a_test_cannot_build_a_window",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 18 },
     { file = "tests/house_style.rs", tests = 74 },
 ]
 
@@ -26388,7 +26410,7 @@ red = [
     "presentation::wx_folder_choice::tests::test_a_grandchild_is_two_deep_and_follows_its_parent_before_the_next_top_row",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 18 },
 ]
 
 # ── A kept folder is ticked in the control's own state, where NVDA reads it ──
@@ -26416,7 +26438,7 @@ red = [
     "test_reading_c_the_dialog_is_a_tree_whose_kept_folder_is_checked_where_nvda_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 18 },
     { file = "tests/a_kept_folder_reads_as_a_checked_check_box.rs", tests = 8 },
 ]
 
@@ -33536,7 +33558,7 @@ red = [
     "application::reporting_junk::tests::test_a_server_that_keeps_keywords_has_not_junk_taken_off_before_junk_goes_on",
 ]
 tests_last_seen = [
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
 ]
 
 # The mark goes to the message in the folder its number belongs to, so the
@@ -35817,7 +35839,7 @@ red = [
     "application::reporting_junk::tests::test_taking_the_mark_off_takes_junk_off_before_not_junk_goes_on",
 ]
 tests_last_seen = [
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
 ]
 
 # An undo asking the server about the mark after a report that never set
@@ -35833,7 +35855,7 @@ red = [
     "application::reporting_junk::tests::test_the_server_is_asked_about_the_mark_only_where_the_report_may_have_left_one",
 ]
 tests_last_seen = [
-    { file = "src/application/reporting_junk.rs", tests = 29 },
+    { file = "src/application/reporting_junk.rs", tests = 31 },
 ]
 
 # Undo of a report moved back at the key, with no mark worker before it, so
@@ -36309,4 +36331,273 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/when_people_are_free.rs", tests = 60 },
+]
+
+# The address asked before the server, so a Hotmail address on Gmail's
+# server is Microsoft and a Workspace account's mailbox is judged by the
+# name on its address rather than where the mail is. Written 2026-10-01 by
+# 13-44.5.
+[[guard]]
+name = "the server decides who runs the mail before the address does"
+file = "src/application/who_runs_the_mail.rs"
+before = '''        by_the_server(known.incoming_server)
+            .or_else(|| by_the_address(known.address))'''
+after = '''        by_the_address(known.address)
+            .or_else(|| by_the_server(known.incoming_server))'''
+red = [
+    "application::who_runs_the_mail::tests::test_the_server_says_who_runs_the_mail_whatever_the_address",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
+]
+
+# A host matched by `contains`, so `imap.gmail.com.example.net` and
+# `notgmail.com` are read as Google's and a sign-in token could be sent to
+# them (T-13-PK-01). Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "a server is Google's or Microsoft's only under their own domains"
+file = "src/application/who_runs_the_mail.rs"
+before = '''        host == *domain
+            || host
+                .strip_suffix(domain)
+                .is_some_and(|rest| rest.ends_with('.'))'''
+after = '''        host.contains(domain)'''
+red = [
+    "application::who_runs_the_mail::tests::test_a_server_named_like_google_or_microsoft_but_not_under_their_domains_is_nobodys",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
+]
+
+# The saved name compared exactly, so the editor's "Gmail" and "Outlook",
+# which every account made through it carries, name nobody. Written
+# 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the recorded name is read ignoring case and space"
+file = "src/application/who_runs_the_mail.rs"
+before = '''    let name = name.trim();
+    if name.eq_ignore_ascii_case("gmail") {
+        Some(WhoRunsTheMail::Gmail)
+    } else if name.eq_ignore_ascii_case("outlook") {'''
+after = '''    if name == "gmail" {
+        Some(WhoRunsTheMail::Gmail)
+    } else if name == "outlook" {'''
+red = [
+    # Added later the same day, found by --remeasure rather than predicted:
+    # once the sign-in asked the check, an account saved as "Gmail" on its own
+    # domain and one saved as "Outlook" lost their sign-in under this break.
+    "application::looking_people_up::tests::test_microsoft_is_asked_for_an_outlook_account_signed_in_through_the_browser",
+    "application::mail_auth::tests::test_a_workspace_account_on_its_own_domain_is_found_by_its_provider",
+    "application::who_runs_the_mail::tests::test_every_account_an_old_reading_called_gmail_or_microsoft_is_still_called_so",
+    "application::who_runs_the_mail::tests::test_with_neither_the_recorded_name_decides_ignoring_case_and_space",
+]
+tests_last_seen = [
+    { file = "src/application/looking_people_up.rs", tests = 43 },
+    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
+]
+
+# The outgoing server read when no incoming one is typed, so a mailbox kept
+# elsewhere that sends through Microsoft is called Microsoft. Written
+# 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the outgoing server is not read"
+file = "src/application/who_runs_the_mail.rs"
+before = '''            Protocol::Pop3 => &account.pop_server,
+            Protocol::Imap => &account.imap_server,
+        };'''
+after = '''            Protocol::Pop3 => &account.pop_server,
+            Protocol::Imap if account.imap_server.is_empty() => &account.smtp_server,
+            Protocol::Imap => &account.imap_server,
+        };'''
+red = [
+    "application::who_runs_the_mail::tests::test_the_outgoing_server_says_nothing_about_who_runs_the_mail",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
+]
+
+# The scan account given Gmail's server, so the one check calls it Gmail and
+# "Sign In Again" in a scan or an NVDA run opens a browser and reaches a
+# network instead of failing at once. Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the scan account's sign-in stays on this computer"
+file = "src/presentation/wx_app.rs"
+before = '''        "scan-target@example.com".to_string(),
+    );
+    account.use_oauth = true;'''
+after = '''        "scan-target@example.com".to_string(),
+    );
+    account.imap_server = "imap.gmail.com".to_string();
+    account.use_oauth = true;'''
+red = [
+    "presentation::wx_app::scan_only_account_tests::test_the_scan_fixture_cannot_reach_a_real_provider",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# Report as Junk given its own reading back, the saved name alone. The
+# census refuses it; taken by hand against the library on 2026-10-01 the
+# same break also reddens reporting_junk's two own-domain cases, which a
+# record of one suite cannot name. Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "Report as Junk asks the one check"
+file = "src/application/reporting_junk.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''        match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => AccountKind::Gmail,
+            WhoRunsTheMail::Microsoft => AccountKind::Microsoft,
+            WhoRunsTheMail::SomebodyElse => AccountKind::OtherImap,
+        }'''
+after = '''        match account.provider.as_deref() {
+            Some(provider) if provider.eq_ignore_ascii_case("gmail") => AccountKind::Gmail,
+            Some(provider) if provider.eq_ignore_ascii_case("outlook") => AccountKind::Microsoft,
+            _ => AccountKind::OtherImap,
+        }'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/application/reporting_junk.rs", tests = 31 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The mail check's provider given its own reading back, the address first
+# and the saved name after. The census refuses it; taken by hand against the
+# library the same break also reddens mail_auth's two own-domain cases.
+# Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the mail check signs in as the one check says"
+file = "src/application/mail_auth.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''    WhoRunsTheMail::of(account)
+        .oauth_provider()
+        .map(str::to_string)'''
+after = '''    crate::service::oauth::OAuthService::detect_provider(&account.email).or_else(|| {
+        account
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_lowercase)
+            .filter(|provider| {
+                crate::service::oauth::OAuthService::provider_by_name(provider).is_some()
+            })
+    })'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The browser sign-in reading the address alone again, so the name a token
+# is filed under and the name the mail check reads it back by come from two
+# places, and an account on its own domain cannot sign in through a browser.
+# Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the browser sign-in asks what the mail check asks"
+file = "src/presentation/wx_account_manager.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''    let Some(provider) = provider_of(account) else {'''
+after = '''    let Some(provider) = crate::service::oauth::OAuthService::detect_provider(&account.email) else {'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The folder chooser deciding Gmail by the saved name spelled one way or by
+# Gmail's server, its reading before 13-44.5, which missed a Gmail account
+# saved as "gmail". Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the folder chooser asks the one check"
+file = "src/presentation/wx_app.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = '''    let is_gmail = WhoRunsTheMail::of(&account) == WhoRunsTheMail::Gmail;'''
+after = '''    let is_gmail = account.provider.as_deref() == Some("Gmail")
+        || account.imap_server.eq_ignore_ascii_case("imap.gmail.com");'''
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The account editor handing the check an empty server, so the advice goes
+# by the address alone and a Workspace account typed onto imap.gmail.com is
+# told nothing (Pratik's answer of 2026-09-30). Written 2026-10-01 by
+# 13-44.5.
+[[guard]]
+name = "the account editor hands the check the server typed"
+file = "src/presentation/wx_account_manager.rs"
+before = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server,"""
+after = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server: "","""
+red = [
+    "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# Microsoft given the page for personal accounts' app passwords, which
+# Microsoft's own pages say no longer reach IMAP or POP (D11, T-13-PK-06).
+# Taken by hand, it also reddens the account editor's description case,
+# whose Get App Password rows read the same answer. Written 2026-10-01 by
+# 13-44.5.
+[[guard]]
+name = "only Google's page is offered for an app password"
+file = "src/application/who_runs_the_mail.rs"
+before = """            WhoRunsTheMail::Microsoft | WhoRunsTheMail::SomebodyElse => None,"""
+after = """            WhoRunsTheMail::Microsoft => Some("https://account.live.com/proofs/AppPassword"),
+            WhoRunsTheMail::SomebodyElse => None,"""
+red = [
+    "application::who_runs_the_mail::tests::test_only_googles_page_is_offered_for_an_app_password",
+    "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# The feedback report naming accounts by the saved name alone again, so a
+# Workspace account is "IMAP" and a saved "Outlook" is "Outlook". The census
+# refuses it; taken by hand against the library the same break also
+# reddens this_machine's account kinds case. Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the feedback report names an account's kind by the one check"
+file = "src/service/this_machine.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = """        let kind = match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => "Gmail".to_string(),
+            WhoRunsTheMail::Microsoft => "Microsoft".to_string(),
+            WhoRunsTheMail::SomebodyElse => account
+                .provider
+                .as_deref()
+                .map(str::trim)
+                .filter(|provider| !provider.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| account.protocol().as_str().to_uppercase()),
+        };"""
+after = """        let kind = account
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|provider| !provider.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| account.protocol().as_str().to_uppercase());"""
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/service/this_machine.rs", tests = 7 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]

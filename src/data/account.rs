@@ -140,14 +140,17 @@ fn default_account_color() -> String {
 
 /// Whether browser sign-in is the better default for this address.
 ///
-/// A default, not a rule. Both providers also accept an app password, which is
-/// a password generated for one application and revocable on its own, and for
-/// Google that is the path that works without the application being through
-/// Google verification. Forcing OAuth on a Gmail address left anybody without
-/// access to a verified client unable to add their own mail at all.
+/// A default, not a rule, read from the address alone on purpose so it never
+/// moves under somebody who chose (Pratik, 2026-09-30). Google also accepts
+/// an app password, which is a password generated for one application and
+/// revocable on its own, and that is the path that works without the
+/// application being through Google verification. Forcing OAuth on a Gmail
+/// address left anybody without access to a verified client unable to add
+/// their own mail at all.
 ///
-/// Microsoft defaults to OAuth because it has withdrawn password sign-in more
-/// widely than Google has, so an app password there fails more often than not.
+/// Microsoft defaults to OAuth because it no longer accepts a password from
+/// a mail program at all, app passwords included: its page on the
+/// deprecation of Basic authentication in Exchange Online, read 2026-09-30.
 pub fn oauth_is_default(email: &str) -> bool {
     email
         .split('@')
@@ -157,53 +160,6 @@ pub fn oauth_is_default(email: &str) -> bool {
             matches!(
                 d.as_str(),
                 "outlook.com" | "hotmail.com" | "live.com" | "msn.com"
-            )
-        })
-        .unwrap_or(false)
-}
-
-/// Where this provider hands out app passwords.
-///
-/// The page is three levels into account settings and does not come up from
-/// searching the settings for "app password", so the account dialog offers to
-/// open it rather than describing where it is. Finding the page is the whole
-/// difficulty of this route; the password itself is a paste.
-///
-/// `None` for anywhere we do not know, which is most providers: sending
-/// somebody to a guessed URL is worse than telling them to look.
-pub fn app_password_url(email: &str) -> Option<&'static str> {
-    email
-        .split('@')
-        .nth(1)
-        .and_then(|d| match d.to_lowercase().as_str() {
-            "gmail.com" | "googlemail.com" => Some("https://myaccount.google.com/apppasswords"),
-            "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
-                Some("https://account.live.com/proofs/AppPassword")
-            }
-            _ => None,
-        })
-}
-
-/// Whether this address belongs to a provider that offers app passwords.
-///
-/// Decides whether to tell somebody how to get one. Both providers require
-/// two-step verification on the account first, and an organisation
-/// administrator can switch app passwords off, so the guidance says where to
-/// look rather than promising what will be there.
-pub fn offers_app_passwords(email: &str) -> bool {
-    email
-        .split('@')
-        .nth(1)
-        .map(|d| {
-            let d = d.to_lowercase();
-            matches!(
-                d.as_str(),
-                "gmail.com"
-                    | "googlemail.com"
-                    | "outlook.com"
-                    | "hotmail.com"
-                    | "live.com"
-                    | "msn.com"
             )
         })
         .unwrap_or(false)
@@ -516,58 +472,6 @@ mod tests {
         assert!(!oauth_is_default("user@yahoo.com"));
         assert!(!oauth_is_default("user@custom.com"));
         assert!(!oauth_is_default("not-an-address"));
-    }
-
-    #[test]
-    fn test_both_big_providers_are_known_to_offer_app_passwords() {
-        assert!(offers_app_passwords("user@gmail.com"));
-        assert!(offers_app_passwords("user@outlook.com"));
-        assert!(!offers_app_passwords("user@custom.com"));
-    }
-
-    #[test]
-    fn test_the_app_password_page_is_known_for_the_providers_that_have_one() {
-        assert_eq!(
-            app_password_url("user@gmail.com"),
-            Some("https://myaccount.google.com/apppasswords")
-        );
-        assert_eq!(
-            app_password_url("user@googlemail.com"),
-            Some("https://myaccount.google.com/apppasswords")
-        );
-        assert!(app_password_url("user@hotmail.com").is_some());
-    }
-
-    #[test]
-    fn test_an_unknown_provider_gets_no_guessed_page() {
-        // Sending somebody to a URL we invented is worse than telling them to
-        // go and look, because it looks authoritative and wastes the trip.
-        assert_eq!(app_password_url("user@custom.com"), None);
-        assert_eq!(app_password_url("not-an-address"), None);
-        assert_eq!(app_password_url(""), None);
-    }
-
-    #[test]
-    fn test_every_provider_offering_app_passwords_says_where_to_get_one() {
-        // The two answers have to agree: a dialog that says "use an app
-        // password" and cannot say where is the state this was meant to fix.
-        for address in [
-            "user@gmail.com",
-            "user@googlemail.com",
-            "user@outlook.com",
-            "user@hotmail.com",
-            "user@live.com",
-            "user@msn.com",
-        ] {
-            assert!(
-                offers_app_passwords(address),
-                "{address} is no longer known to offer app passwords"
-            );
-            assert!(
-                app_password_url(address).is_some(),
-                "{address} offers app passwords with nowhere to get one"
-            );
-        }
     }
 
     #[test]
