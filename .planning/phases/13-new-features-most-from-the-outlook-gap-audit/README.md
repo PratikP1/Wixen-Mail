@@ -26,7 +26,7 @@ carry:
 
 - The waves collided across ranges: 13-35 and 13-37 both sat at wave 37,
   13-36 and 13-38 at 38, and 13-37 sat below its own dependency. Every plan
-  from 13-37 on moved two waves later, so the waves run 1 to 69 with no
+  from 13-37 on moved two waves later, so the waves run 1 to 72 with no
   two plans on one.
 - The 13-24 split had not reached the plans that call the runner. 13-40,
   13-42, 13-43 and 13-44 now depend on 13-24.1, load its summary, and say
@@ -164,26 +164,31 @@ ledger entry a plan carries for one of the four answers.
 | 13-44.4 | 57 | A colleague Microsoft places is judged by their own working days and hours from getSchedule, everybody else by the working day set here; ledger 711 closed | GAP-08 | yes | nothing |
 | 13-44.5 | 58 | One check says whether an account is Gmail or Microsoft, by its incoming server, then its address, then the name it was saved with; Report as Junk, the folder chooser and sign-in ask it, so Workspace and Microsoft 365 accounts on their own domains are recognised and can sign in through the browser; on Pratik's answer to decision 140, the account editor's app password advice and Get App Password button ask it once a server is typed, an account it calls Microsoft is told to use the browser sign-in (decision 150), and Send Feedback's list of account kinds asks it | GAP-06 | yes | nothing |
 | 13-44.6 | 59 | Empty the Trash, per account on Alt+Y in the account editor and marked experimental: an IMAP account the one check of 13-44.5 does not call Gmail or Microsoft, set to After 15 days or After 30 days, has what went into its Trash here that long ago taken off the server through the menu's Delete path at its first check of the day, at most 500, with one sentence; Gmail and Microsoft accounts are told their provider empties it; the mail database records when a message went into a Trash | GAP-14 | yes | nothing |
-| 13-44.7 | 60 | When Wixen Mail closes, with the window gone first and five seconds for every account, nothing lost; POP accounts emptied on this computer only, of their own messages; a POP message moved to the Trash no longer downloaded again (ledger 753 closed); GAP-14 ticked | GAP-14 | yes | nothing |
-| 13-44.8 | 61 | Emptying a POP Trash, Empty Folder on the Trash, Delete in the Trash and Delete Permanently take a message kept on this computer alone off it with its words, keeping only its POP identifier, when it was downloaded, whose it was and where; the freed space is overwritten and the search index lets go at the next check | GAP-14 | no, unless its premise 9 finds 13-44.7's description saying the text stays | nothing |
-| 13-44.9 | 62 | Measures, at 12,872 and 200,000 messages, what taking mail off still leaves in the mail database file and its write log, and what secure delete on every write (off, fast and on) and a compacting command (VACUUM, and incremental vacuum) cost in time, temporary disk and waiting; the figures on the measurements page, a recommendation by a rule written beforehand, and a ledger entry asking Pratik to choose; builds neither | GAP-14 | no | nothing |
-| 13-45 | 63 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
-| 13-46 | 64 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
-| 13-47 | 65 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
-| 13-48 | 66 | `.msg` through both import commands | GAP-13 | yes | nothing |
-| 13-49 | 67 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
-| 13-50 | 68 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
-| 13-51 | 69 | The pages, the listening lines, the closing read of GAP-01 to GAP-14, and `scripts/check.sh all` once by hand before its merge | all fourteen | yes | reports where (a) to (d) stand |
+| 13-44.6.1 | 60 | The passphrase box's real paste in a test target of its own that says why a refused clipboard was refused (the session locked as Windows reports it, another window holding it, or neither), runs taking turns at the shared test clipboard, the dialog's reading opening no clipboard, and a census keeping other targets off it, so a locked Windows session no longer fails them; ledger 716 | GAP-03 | no | nothing |
+| 13-44.6.2 | 61 | The ten tests that send keys to plain controls, and the directory sign-in, build their windows on a desktop made for each run, where nothing a person types, no locked session and no second run reaches them; a census beside the clipboard census keeps every key sender off the interactive desktop; ledger 580 | FOUND-23 | no | nothing |
+| 13-44.6.3 | 62 | The five tests that send keys and hold a browser or read from a second copy of themselves run their window tests in a child process on a desktop made for each run; the four with a browser take 13-44.6.1's turn, renamed for what it guards, and the marker reading's own turn goes; a failed child says why and what Windows says about the lock; ledger 761 | FOUND-23 | no | nothing |
+| 13-44.7 | 63 | When Wixen Mail closes, with the window gone first and five seconds for every account, nothing lost; POP accounts emptied on this computer only, of their own messages; a POP message moved to the Trash no longer downloaded again (ledger 753 closed); GAP-14 ticked | GAP-14 | yes | nothing |
+| 13-44.8 | 64 | Emptying a POP Trash, Empty Folder on the Trash, Delete in the Trash and Delete Permanently take a message kept on this computer alone off it with its words, keeping only its POP identifier, when it was downloaded, whose it was and where; the freed space is overwritten and the search index lets go at the next check | GAP-14 | no, unless its premise 9 finds 13-44.7's description saying the text stays | nothing |
+| 13-44.9 | 65 | Measures, at 12,872 and 200,000 messages, what taking mail off still leaves in the mail database file and its write log, and what secure delete on every write (off, fast and on) and a compacting command (VACUUM, and incremental vacuum) cost in time, temporary disk and waiting; the figures on the measurements page, a recommendation by a rule written beforehand, and a ledger entry asking Pratik to choose; builds neither | GAP-14 | no | nothing |
+| 13-45 | 66 | One folder out as a bare mailbox file (Alt+F, then F) | GAP-13 | yes | nothing |
+| 13-46 | 67 | One folder out as loose message files (Alt+F, then X) | GAP-13 | yes | nothing |
+| 13-47 | 68 | The `.msg` reader | GAP-13 | no | (a) checkpoint |
+| 13-48 | 69 | `.msg` through both import commands | GAP-13 | yes | nothing |
+| 13-49 | 70 | The pages say which export is built and why `.pst` export is not; GAP-13 ticked, #53 closed | GAP-13 | yes | nothing |
+| 13-50 | 71 | Imported messages keep their files (a conditional plan, in) | GAP-13 | yes | nothing |
+| 13-51 | 72 | The pages, the listening lines, the closing read of GAP-01 to GAP-14, and `scripts/check.sh all` once by hand before its merge | all fourteen | yes | reports where (a) to (d) stand |
 
-Fifty-seven plans push and twelve do not (13-02, 13-12, 13-16, 13-19,
-13-20, 13-34, 13-36.2, 13-40, 13-43, 13-44.8, 13-44.9, 13-47). Four carry a checkpoint (13-03, 13-20, 13-28,
+Fifty-seven plans push and fifteen do not (13-02, 13-12, 13-16, 13-19,
+13-20, 13-34, 13-36.2, 13-40, 13-43, 13-44.6.1, 13-44.6.2, 13-44.6.3,
+13-44.8, 13-44.9, 13-47). Four carry a checkpoint (13-03, 13-20, 13-28,
 13-47, each `autonomous: false`), and each stops only when its executor's
 brief does not carry Pratik's answer.
 
 **Requirement coverage.** GAP-01 by 13-02 to 13-04 (ticked by 13-04);
 GAP-02 by 13-01 and 13-05 to 13-09 (the box ticked by 13-08, #47 closed by
 13-09); GAP-03 by 13-16, 13-17 and 13-17.1 (ticked by 13-17.1), and 13-36.1
-for the key list's dates (ledger 649); GAP-04 by 13-10 to 13-13 (ticked by
+for the key list's dates (ledger 649), and 13-44.6.1 for its paste proof moved
+to a test target of its own (ledger 716); GAP-04 by 13-10 to 13-13 (ticked by
 13-13), 13-21.1 and 13-21.2 for times written in another zone (ledger 632),
 13-21.3 for mail brought before 13-10 (ledger 633), 13-36.2 for a meeting
 answered before its calendar check (ledger 154), and 13-36.3 and 13-36.4 for
@@ -207,6 +212,9 @@ rule's marks, flags and labels on arriving mail reaching the server (ledger
 the tick for emptied mail's words taken off this computer, and 13-44.9
 after it for measuring what that leaves and what reaching it would cost.
 13-51 reads all fourteen clause by clause and stands or corrects each tick.
+13-44.6.2 and 13-44.6.3 serve no GAP requirement: they move the tests that send keys onto
+desktops made for each run, and name phase 12's FOUND-23, whose commit gate those tests stalled,
+with a dated line each and no `[D]` clause.
 
 **The issues.** Closed from the merge commit: #45 (13-04), #47 (13-09), #58
 (13-39), #60 (13-42), #61 (13-44), #53 (13-49). Commented on from the merge
@@ -225,7 +233,7 @@ lists on 2026-09-24. A wave is a set of plans sharing no file, and with the
 files the project writes by rule added to every list (`CLAUDE.md`, "Add the
 files this project writes by rule to every plan's `files_modified`") no two
 plans are disjoint. So the phase is a chain: each plan depends on the one
-before it, and the waves run 1 to 69 in plan order.
+before it, and the waves run 1 to 72 in plan order.
 
 - **Keyboard basics first** (13-01 to 13-09). Undo and Print are small,
   touch every surface, and every later plan that adds a text box or a
@@ -1058,6 +1066,81 @@ more, carried by a plan already written:
     13-39 when it stopped that plan's merge. 13-44.2 carries its fix as a
     task of its own, its cause found before anything changes and step 8c's
     assertions never loosened (13-44.2, D8 and premise 9).
+
+When 13-44.6.1 was written on 2026-10-02, on Pratik's answer that day:
+
+158. Pratik's answer of 2026-10-02, "yes.", to a durable fix for ledger
+    716, so the tests that use the clipboard run whether or not the
+    Windows session is locked, instead of failing with "OpenClipboard
+    failed". Windows refuses the clipboard to every program while the
+    session is locked, so a real paste can only be proven while it is
+    unlocked; 13-44.6.1 keeps that one reading and makes everything else
+    run either way (13-44.6.1, D1).
+
+The planner's choices under that answer, each for him to overrule; an
+overrule is a change to 13-44.6.1 before it runs:
+
+159. The paste into the passphrase box stays a real paste: text put on a
+    clipboard and the paste message sent to Windows' own password box.
+    No program code is put between the box and a paste so that a test can
+    hand it text, because the test would then prove that code instead of
+    the box a password manager pastes into (13-44.6.1, D2).
+160. The dialog's reading opens no clipboard and keeps running on every
+    change to the main window; the real paste moves to a test target of
+    its own, run when the passphrase dialog changes, at the phase's
+    closing gate and on CI. While the session is locked it fails in about
+    two seconds with a sentence saying the session is locked, never
+    passing and never waiting for an unlock. The overrule is to have a
+    locked run leave the real paste to CI, which is a check that skips
+    itself (13-44.6.1, D3, D4, D6).
+161. Two runs of the paste target at once take turns at the test
+    clipboard that every process of one Windows logon shares, and a
+    census keeps every other test target off the clipboard. The census
+    runs with the dialog's reading, which most commits reach, rather
+    than in the checks that read the whole tree, sparing the 29 guard
+    records that would need measuring again (13-44.6.1, D7, D8).
+
+When 13-44.6.2 and 13-44.6.3 were written on 2026-10-02, on Pratik's answer that day:
+
+162. Pratik's answer of 2026-10-02, "yes to moving the plan as well as others.", to
+    whether the tests that type keys get the same treatment as the clipboard test: they fail
+    on a locked session and in the minute after an unlock while somebody types, which stopped
+    the merges of 13-44 and 13-44.5 and, earlier, 13-39. He also accepted the clipboard plan's
+    choice that a refused check fails fast with its cause named rather than skipping
+    (13-44.6.2 and 13-44.6.3, D1).
+
+The planner's choices under that answer, each for him to overrule; an overrule is a change to
+13-44.6.2 or 13-44.6.3 before it runs:
+
+163. No test keeps a reading of real keyboard input. None sends one today: every test that
+    types posts or sends its own messages to its own controls, and real keys are the NVDA
+    cases' to prove (13-44.6.2, D2).
+164. Every test that sends a key or a click builds its windows on a desktop made for its
+    run, on the window station it is already on. Nothing a person types reaches those
+    windows, none is put in front of the person or read by the screen reader, and two runs at
+    once share nothing. A new window station was measured and not used, because a posted
+    Alt+letter pressed nothing there (13-44.6.2, D4).
+165. The five that cannot move their window thread alone, because their window holds a
+    browser or their reading starts a second copy of itself, run their window tests in a
+    child process started on such a desktop, and each test passes only on its own line from
+    the child (13-44.6.3, D2).
+166. No test asks whether somebody is typing, since none sends keys where typing reaches; the
+    session lock is asked only to name the cause when a child run fails. The overrule is to
+    keep a target on the interactive desktop and ask both questions before it (13-44.6.2 D5,
+    13-44.6.3 D5 and D6).
+167. The four with a browser take the clipboard plan's turn, its mutex renamed for what it
+    now guards, and the marker reading's own turn goes, so there is one turn, not two
+    (13-44.6.3, D7; ledger 761).
+168. A census beside the clipboard census refuses a key sender that builds no desktop for its
+    run, and a key sender holding a browser without a child and the turn. It runs with the
+    dialog's reading, which most commits reach; the overrule is a target of its own, reached
+    at the phase's full gate and on CI (13-44.6.2 D7, 13-44.6.3 D8).
+169. A count taken while nobody types cannot show this failure, since it needs a person at
+    the keyboard: before, the ten plain-control targets were 20 of 20 each on the
+    interactive desktop and the marker reading 3 of 9 with somebody at the machine. So both
+    plans measure 20 runs and 20 rounds of two at once after, ledger the attended and locked
+    runs as unrun rather than claim them, and close ledgers 580 and 761 as their causes
+    removed, not as measured fixed (13-44.6.2 D9, 13-44.6.3 D9).
 
 ## Four things that wait on Pratik
 
