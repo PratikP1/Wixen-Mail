@@ -203,6 +203,30 @@ fn press_with_control_in(window: isize, letter: u8) {
     unsafe { SetKeyboardState(before.as_ptr()) };
 }
 
+/// winuser.h: Shift, and the left Shift key Windows sets beside it.
+const VK_SHIFT: usize = 0x10;
+const VK_LSHIFT: usize = 0xA0;
+
+/// Shift set down in this thread's keyboard state, as Windows leaves it
+/// when the person at the machine is holding Shift; the state before is
+/// handed back so it can be put back.
+fn as_if_the_person_held_shift() -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    held[VK_SHIFT] = 0x80;
+    held[VK_LSHIFT] = 0x80;
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
+}
+
+fn put_back_the_keyboard_state(before: &[u8; 256]) {
+    // SAFETY: as above, the state read before Shift was set down.
+    unsafe { SetKeyboardState(before.as_ptr()) };
+}
+
 fn counter_on(bind: impl FnOnce(Rc<Cell<u32>>)) -> Rc<Cell<u32>> {
     let count = Rc::new(Cell::new(0));
     bind(Rc::clone(&count));
@@ -273,6 +297,18 @@ fn take_the_readings(frame: &Frame, harvest: &mut Harvest) {
     );
     press_with_control(&box_, b'Y');
     harvest.insert("the box after Ctrl+Y", box_.get_value());
+
+    // The same Ctrl+Z with Shift left down in this thread's keyboard state,
+    // the way a person holding Shift left it (ledger 580's shape).
+    set_anew(&box_, "");
+    type_into(&box_, "gamma delta");
+    let before = as_if_the_person_held_shift();
+    press_with_control(&box_, b'Z');
+    put_back_the_keyboard_state(&before);
+    harvest.insert(
+        "the box after Ctrl+Z with Shift left down",
+        box_.get_value(),
+    );
 
     take_the_combo_box_readings(&panel, harvest);
     take_the_dialog_readings(frame, harvest);
@@ -610,6 +646,21 @@ fn test_ctrl_z_in_the_box_undoes_one_step_and_the_box_does_not_undo_again() {
 #[test]
 fn test_ctrl_y_in_the_box_puts_the_step_back() {
     assert_eq!(reading("the box after Ctrl+Y"), "alpha beta");
+}
+
+#[test]
+fn test_ctrl_z_holds_when_the_person_at_the_machine_holds_shift() {
+    // On 2026-10-02 every failed run of this file came while the person at
+    // the machine held Shift, its windows already on a desktop of their
+    // own: Ctrl+Shift+Z is left alone (it is Undo Send in the main window),
+    // so the control character reached the box and its own undo emptied it.
+    // Here Shift is left down in the thread's keyboard state on purpose: the
+    // key is sent with the modifiers it means, so a Shift somebody holds
+    // changes nothing.
+    assert_eq!(
+        reading("the box after Ctrl+Z with Shift left down"),
+        "gamma "
+    );
 }
 
 #[test]

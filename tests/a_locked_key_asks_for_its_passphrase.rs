@@ -865,6 +865,95 @@ fn keys_sent_off_a_desktop_of_its_run(path: &str, text: &str) -> Vec<String> {
         .collect()
 }
 
+/// What a test sending a key writes, in code, where the modifiers the key is
+/// read with decide what it does. A click carries no modifiers.
+const KEYS_READ_WITH_MODIFIERS: [&str; 6] = [
+    "WM_KEYDOWN",
+    "WM_SYSKEYDOWN",
+    "WM_CHAR",
+    "WM_SYSCHAR",
+    "SendInput",
+    "keybd_event",
+];
+
+/// Every key a file sends in code without first setting which modifiers
+/// are down, as `path: sends TOKEN with whatever modifiers are held`.
+///
+/// A desktop of its own keeps a person's key presses away and not the keys
+/// they hold: measured 2026-10-02 with the windows already on desktops made
+/// for their runs, every one of eight failed runs of
+/// `mark_as_read_says_which_way_it_will_go` and `several_steps_come_back`
+/// came while the person at the machine held Shift, and none of about 330
+/// runs without a modifier held failed.
+fn keys_sent_with_whatever_modifiers_are_held(path: &str, text: &str) -> Vec<String> {
+    let code = code_only(text);
+    let names = |token: &str| {
+        code.lines().any(|line| {
+            line.match_indices(token)
+                .any(|(at, _)| stands_alone(line, at, token))
+        })
+    };
+    if names("only_these_modifiers_down") {
+        return Vec::new();
+    }
+    KEYS_READ_WITH_MODIFIERS
+        .into_iter()
+        .filter(|token| names(token))
+        .map(|token| format!("{path}: sends {token} with whatever modifiers are held"))
+        .collect()
+}
+
+#[test]
+fn test_no_target_sends_a_key_with_whatever_modifiers_are_held() {
+    let files = every_test_target();
+    assert!(
+        files.len() > 100,
+        "read {} files under tests, so the reading found nothing to judge",
+        files.len()
+    );
+
+    let found: Vec<String> = files
+        .iter()
+        .filter(|(path, _)| !NOT_YET_IN_A_PROCESS_OF_THEIR_OWN.contains(&path.as_str()))
+        .flat_map(|(path, text)| keys_sent_with_whatever_modifiers_are_held(path, text))
+        .collect();
+
+    assert!(
+        found.is_empty(),
+        "these targets send keys read with whatever Shift, Control or Alt the person at the \
+         machine holds; set the modifiers each key means with only_these_modifiers_down: \
+         {found:#?}"
+    );
+}
+
+#[test]
+fn test_the_modifier_census_sees_a_sender_that_sets_no_modifiers() {
+    let path = "tests/a_reading_that_types.rs";
+    let leaves_them =
+        "fn types(hwnd: isize) {\n    unsafe { SendMessageW(hwnd, WM_KEYDOWN, 0x0D, 1) };\n}\n";
+    let sets_them = format!(
+        "fn types(hwnd: isize) {{\n    only_these_modifiers_down(&[]);\n{}}}\n",
+        "    unsafe { SendMessageW(hwnd, WM_KEYDOWN, 0x0D, 1) };\n"
+    );
+    let clicks =
+        "fn clicks(hwnd: isize) {\n    unsafe { SendMessageW(hwnd, BM_CLICK, 0, 0) };\n}\n";
+
+    assert_eq!(
+        keys_sent_with_whatever_modifiers_are_held(path, leaves_them),
+        vec![format!(
+            "{path}: sends WM_KEYDOWN with whatever modifiers are held"
+        )]
+    );
+    assert_eq!(
+        keys_sent_with_whatever_modifiers_are_held(path, &sets_them),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        keys_sent_with_whatever_modifiers_are_held(path, clicks),
+        Vec::<String>::new()
+    );
+}
+
 #[test]
 fn test_no_target_sends_a_key_outside_a_desktop_made_for_its_run() {
     let files = every_test_target();
