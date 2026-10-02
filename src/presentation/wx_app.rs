@@ -21952,9 +21952,7 @@ fn emptying_the_trash_on_the_way_out(
     let to_empty: Vec<AnAccountToEmpty<'_>> = accounts
         .iter()
         .map(|account| AnAccountToEmpty {
-            id: &account.id,
-            name: &account.name,
-            protocol: account.protocol(),
+            account,
             answer: when_the_trash_is_emptied(&account.id),
             who_empties: who_empties_the_trash(account.protocol(), WhoRunsTheMail::of(account)),
             allowed_mail: crate::application::allowed::allowed_for(&account.id).mail,

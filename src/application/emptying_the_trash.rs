@@ -43,6 +43,7 @@ use crate::application::what_rules_tell_the_server::{Because, ForTheChange, Unti
 use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::Result;
 use crate::common::types::{FolderType, Protocol};
+use crate::data::account::Account;
 use crate::data::message_cache::in_the_trash::InTheTrash;
 use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
 use crate::data::message_cache::{CachedFolder, MessageCache};
@@ -500,10 +501,10 @@ impl OpensTheSessionToEmpty for crate::application::mail_session::TheAccountsSet
 /// lets it be emptied.
 #[derive(Debug, Clone, Copy)]
 pub struct AnAccountToEmpty<'a> {
-    pub id: &'a str,
-    /// What the log calls it.
-    pub name: &'a str,
-    pub protocol: Protocol,
+    /// The account as it is set up here, whole, because a POP account's
+    /// Trash is emptied through the delete Empty Folder uses, which reads
+    /// its protocol and whether it may delete mail on this computer.
+    pub account: &'a Account,
     /// What the account editor stored for its Trash.
     pub answer: WhenTheTrashIsEmptied,
     /// Who empties its Trash, from the one check.
@@ -576,16 +577,16 @@ pub(crate) async fn empty_on_the_way_out<O: OpensTheSessionToEmpty>(
     deadline: tokio::time::Instant,
 ) -> Vec<WhatTheCloseDid> {
     let mut did = Vec::new();
-    for account in accounts
+    for to_empty in accounts
         .iter()
-        .filter(|account| account.is_emptied_on_the_way_out())
+        .filter(|to_empty| to_empty.is_emptied_on_the_way_out())
     {
-        match empty_one_imap_trash_on_the_way_out(opener, cache, account, deadline).await {
+        match empty_one_imap_trash_on_the_way_out(opener, cache, to_empty.account, deadline).await {
             Ok(Some(one)) => did.push(one),
             Ok(None) => {}
             Err(why) => tracing::warn!(
                 "The Trash of {} could not be emptied on the way out: {why}",
-                account.name
+                to_empty.account.name
             ),
         }
     }
@@ -598,10 +599,10 @@ pub(crate) async fn empty_on_the_way_out<O: OpensTheSessionToEmpty>(
 async fn empty_one_imap_trash_on_the_way_out<O: OpensTheSessionToEmpty>(
     opener: &O,
     cache: &MessageCache,
-    account: &AnAccountToEmpty<'_>,
+    account: &Account,
     deadline: tokio::time::Instant,
 ) -> Result<Option<WhatTheCloseDid>> {
-    let TheTrashHere::Found(trash) = the_trash_of(cache, account.id)? else {
+    let TheTrashHere::Found(trash) = the_trash_of(cache, &account.id)? else {
         return Ok(None);
     };
     let in_the_trash = cache.what_has_been_in_the_trash(trash.id)?;
@@ -609,16 +610,16 @@ async fn empty_one_imap_trash_on_the_way_out<O: OpensTheSessionToEmpty>(
         return Ok(None);
     }
     let mut came_to = WhatTheEmptyingCameTo::default();
-    match tokio::time::timeout_at(deadline, opener.session_for(account.id)).await {
+    match tokio::time::timeout_at(deadline, opener.session_for(&account.id)).await {
         Ok(Ok(session)) => {
-            let _under_way = APushUnderWay::begins(account.id);
+            let _under_way = APushUnderWay::begins(&account.id);
             for message in &in_the_trash {
                 if tokio::time::Instant::now() >= deadline {
                     break;
                 }
                 let asked = AWaitingMove {
                     message_row_id: message.row,
-                    account_id: account.id.to_string(),
+                    account_id: account.id.clone(),
                     from_folder_path: trash.path.clone(),
                     uid: message.uid,
                     what: WhatAWaitingMoveDoes::DeleteOutright,
@@ -653,7 +654,7 @@ async fn empty_one_imap_trash_on_the_way_out<O: OpensTheSessionToEmpty>(
         ),
     }
     Ok(Some(WhatTheCloseDid::of(
-        account.name,
+        &account.name,
         in_the_trash.len(),
         &came_to,
     )))
@@ -1524,12 +1525,24 @@ mod tests {
             .id
     }
 
+    /// An account set up here, under this id, read with this protocol.
+    fn an_account_set_up(id: &str, name: &str, protocol: Protocol) -> Account {
+        Account {
+            id: id.to_string(),
+            protocol: protocol.as_str().to_string(),
+            ..Account::new(name.to_string(), "me@example.com".to_string())
+        }
+    }
+
+    static WORK: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up(THE_ACCOUNT, "Work", Protocol::Imap));
+    static HOME: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up("home", "Home", Protocol::Imap));
+
     /// Work, an IMAP account set to empty its Trash as Wixen Mail closes.
     fn work_on_close() -> AnAccountToEmpty<'static> {
         AnAccountToEmpty {
-            id: THE_ACCOUNT,
-            name: "Work",
-            protocol: Protocol::Imap,
+            account: &WORK,
             answer: ON_CLOSE,
             who_empties: WhoEmptiesTheTrash::ThisProgram,
             allowed_mail: true,
@@ -1538,8 +1551,7 @@ mod tests {
 
     fn home(answer: WhenTheTrashIsEmptied) -> AnAccountToEmpty<'static> {
         AnAccountToEmpty {
-            id: "home",
-            name: "Home",
+            account: &HOME,
             answer,
             ..work_on_close()
         }
