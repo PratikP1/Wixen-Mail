@@ -30606,12 +30606,45 @@ fn spawn_mail_sync(
         if nothing_went_through {
             return;
         }
+        the_search_index_forgets_what_was_taken_off();
         // Every check that went through ends by asking for the download of
         // everything (#20, #23), after the watches, so a download that does
         // not start leaves the inboxes watched. Once for the whole list: the
         // window decides whether one is already running, paused or waiting.
         say(UIUpdate::DownloadRequested);
     });
+}
+
+/// Let the search index forget the words of mail taken off this computer,
+/// on the check's worker, once a check (13-44.8, D32).
+///
+/// Its own cache, opened the way the check's loop opens one. One log line
+/// with the steps and whether it finished, or the error, and nothing when
+/// nothing was owed; never a word of a message.
+fn the_search_index_forgets_what_was_taken_off() {
+    let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+        return;
+    };
+    let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+        Ok(cache) => cache,
+        Err(e) => {
+            tracing::warn!("The search index could not be opened to let go of mail taken off: {e}");
+            return;
+        }
+    };
+    match cache.let_the_search_index_forget_what_was_taken_off() {
+        Ok(None) => {}
+        Ok(Some(compacted)) => tracing::info!(
+            "The search index let go of mail taken off this computer in {} steps, {}",
+            compacted.steps,
+            if compacted.finished {
+                "finished"
+            } else {
+                "to go on at the next check"
+            }
+        ),
+        Err(e) => tracing::warn!("The search index could not let go of mail taken off: {e}"),
+    }
 }
 
 /// Spawn contacts sync on a blocking thread (MessageCache is not Send).

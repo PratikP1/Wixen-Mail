@@ -89,6 +89,66 @@ impl Drop for OverwritingWhatIsFreed<'_> {
     }
 }
 
+/// How many of the search index's pages one step of letting go rewrites.
+///
+/// One step is one statement, and other writers wait only for that long.
+/// Measured by 13-44.8's planner at 200,000 messages: steps of this size
+/// took at most 0.07 s each, and the whole index took about 1,200 of them.
+pub const MERGE_PAGES_A_STEP: i64 = 64;
+
+/// The most steps one check spends letting the search index go; a pass that
+/// reaches it stays owed and the next check carries on. About eight times
+/// what the planner measured for the whole index at 200,000 messages, so
+/// only a far larger mailbox ever meets it.
+pub const MOST_COMPACTION_STEPS: usize = 10_000;
+
+/// What one pass of letting the search index go came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Compacted {
+    /// How many steps it took, the last one included.
+    pub steps: usize,
+    /// Whether the index has nothing left to rewrite.
+    pub finished: bool,
+}
+
+impl MessageCache {
+    /// How many messages have been taken off this computer since the search
+    /// index last let go of their words, or `None` when it owes nothing.
+    pub fn the_index_owes_a_compaction(&self) -> Result<Option<i64>> {
+        Ok(None)
+    }
+
+    /// Rewrite the search index in steps of [`MERGE_PAGES_A_STEP`] pages,
+    /// at most `most_steps` of them, so the pages holding words of mail taken
+    /// off this computer are written again without them.
+    pub fn compact_the_search_index(&self, most_steps: usize) -> Result<Compacted> {
+        let _ = most_steps;
+        Ok(Compacted {
+            steps: 0,
+            finished: false,
+        })
+    }
+
+    /// The record of what the index owes removed, but only while no removal
+    /// has been made since `owed_when_it_began` was read.
+    pub fn settle_the_compaction(&self, owed_when_it_began: i64) -> Result<()> {
+        let _ = owed_when_it_began;
+        Ok(())
+    }
+
+    /// Let the search index forget the words of mail taken off this
+    /// computer, when it owes that, in at most [`MOST_COMPACTION_STEPS`]
+    /// steps. `None` when nothing was owed.
+    pub fn let_the_search_index_forget_what_was_taken_off(&self) -> Result<Option<Compacted>> {
+        self.let_the_index_forget_within(MOST_COMPACTION_STEPS)
+    }
+
+    fn let_the_index_forget_within(&self, most_steps: usize) -> Result<Option<Compacted>> {
+        let _ = most_steps;
+        Ok(None)
+    }
+}
+
 impl MessageCache {
     /// Take a message off this computer, keeping only
     /// [`KEPT_WHEN_TAKEN_OFF`]. A row that is not there is nothing to do.
@@ -714,5 +774,129 @@ mod tests {
             .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
             .expect("the setting read");
         assert_eq!(after, as_it_was, "the removal left secure delete changed");
+    }
+
+    // ── The search index letting go (13-44.8, D32) ─────────────────────────
+
+    /// How many copies of a word the database file and its write log hold,
+    /// read as bytes, ignoring case.
+    fn copies_on_disk(cache: &TempHome<MessageCache>, word: &str) -> usize {
+        ["message_cache.db", "message_cache.db-wal"]
+            .iter()
+            .filter_map(|name| std::fs::read(cache.path().join(name)).ok())
+            .map(|bytes| {
+                bytes
+                    .windows(word.len())
+                    .filter(|window| window.eq_ignore_ascii_case(word.as_bytes()))
+                    .count()
+            })
+            .sum()
+    }
+
+    #[test]
+    fn test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        cache.take_off_this_computer(row).expect("taken off");
+        for word in [ITS_SUBJECT_WORD, ITS_BODY_WORD] {
+            assert!(
+                the_tables_holding_in_the_file(&cache, word).contains("message_search_data"),
+                "{word} was not in the index's pages, so this case cannot see it go"
+            );
+        }
+
+        cache
+            .let_the_search_index_forget_what_was_taken_off()
+            .expect("the index let go");
+
+        for word in [ITS_SUBJECT_WORD, ITS_BODY_WORD] {
+            assert_eq!(
+                copies_on_disk(&cache, word),
+                0,
+                "{word} is still in the database file or its write log"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_compaction_is_owed_after_a_removal_and_settled_after_it_finishes() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        assert_eq!(cache.the_index_owes_a_compaction().expect("read"), None);
+
+        cache.take_off_this_computer(row).expect("taken off");
+        assert_eq!(cache.the_index_owes_a_compaction().expect("read"), Some(1));
+
+        let compacted = cache
+            .let_the_search_index_forget_what_was_taken_off()
+            .expect("the index let go")
+            .expect("something was owed");
+        assert!(compacted.finished, "{compacted:?}");
+        assert_eq!(cache.the_index_owes_a_compaction().expect("read"), None);
+    }
+
+    #[test]
+    fn test_a_message_taken_off_during_a_compaction_keeps_it_owed() {
+        let cache = a_cache();
+        let first = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        let second = a_pop_message_in_the_trash(&cache, "bbb", b"another file");
+        cache.take_off_this_computer(first).expect("taken off");
+        let owed_when_it_began = cache
+            .the_index_owes_a_compaction()
+            .expect("read")
+            .expect("owed");
+
+        cache
+            .take_off_this_computer(second)
+            .expect("taken off meanwhile");
+        cache
+            .settle_the_compaction(owed_when_it_began)
+            .expect("the settle");
+
+        assert_eq!(
+            cache.the_index_owes_a_compaction().expect("read"),
+            Some(owed_when_it_began + 1),
+            "a removal made while the index was let go was settled with it"
+        );
+    }
+
+    #[test]
+    fn test_nothing_is_compacted_when_nothing_is_owed() {
+        let cache = a_cache();
+        a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+
+        assert_eq!(
+            cache
+                .let_the_search_index_forget_what_was_taken_off()
+                .expect("asked"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_compaction_stopped_at_its_limit_stays_owed_and_the_next_one_finishes() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        cache.take_off_this_computer(row).expect("taken off");
+
+        let cut_short = cache
+            .let_the_index_forget_within(1)
+            .expect("one step")
+            .expect("something was owed");
+        assert_eq!(
+            cut_short,
+            Compacted {
+                steps: 1,
+                finished: false
+            }
+        );
+        assert_eq!(cache.the_index_owes_a_compaction().expect("read"), Some(1));
+
+        let the_rest = cache
+            .let_the_search_index_forget_what_was_taken_off()
+            .expect("the rest")
+            .expect("still owed");
+        assert!(the_rest.finished, "{the_rest:?}");
+        assert_eq!(cache.the_index_owes_a_compaction().expect("read"), None);
     }
 }
