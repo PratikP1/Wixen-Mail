@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 589 records have arrived since and have not been through it.
+# 591 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29478,7 +29478,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 88 },
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 1 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
 ]
 
 # The first character typed after a closing inline delimiter is plain. The
@@ -29505,7 +29505,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 88 },
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 1 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
 ]
 
 # The browser is the first thing in the formatted message window that takes
@@ -32706,7 +32706,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_passphrase.rs", tests = 2 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
 ]
 
 # A single message opened in a reader window no longer asking for the
@@ -32727,7 +32727,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
 ]
 
 # A PGP signature said to hold once a key in the list is the one it names,
@@ -36829,7 +36829,7 @@ red = [
     "test_the_real_paste_target_is_where_the_clipboard_is_opened",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
 ]
 
 # A refused clipboard told the lock state without asking Windows, so a locked
@@ -36930,7 +36930,7 @@ red = [
     "test_the_key_census_sees_a_desktop_not_named_for_its_run",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
 ]
 
 # The modifier census lets every file through, so a target sending keys
@@ -36949,7 +36949,7 @@ red = [
     "test_the_modifier_census_sees_a_sender_that_sets_no_modifiers",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
 ]
 
 # M pressed with the keyboard state as it stands rather than with no
@@ -36997,4 +36997,45 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/several_steps_come_back.rs", tests = 19 },
+]
+
+# The sentence a child run turns into loses what Windows says about the
+# session lock. The plan expected the failed and bound cases to go red; the
+# never-reported case ends with the lock too and goes red with them. The ok
+# case and the window test stay green. Written 2026-10-02 by 13-44.6.3,
+# measured by hand with
+# `cargo test --no-fail-fast --test a_marker_counts_at_the_start_of_any_line`.
+[[guard]]
+name = "a child run that fails says what Windows answers about the lock"
+file = "tests/a_marker_counts_at_the_start_of_any_line.rs"
+suite = "a_marker_counts_at_the_start_of_any_line"
+before = '''    let where_ = format!("the child run on {}", run.desktop);
+    let lock = &run.lock;'''
+after = '''    let where_ = format!("the child run on {}", run.desktop);
+    let lock = "";'''
+red = [
+    "test_a_failed_child_quotes_its_failure_and_the_lock",
+    "test_a_child_stopped_at_its_bound_says_so",
+    "test_a_child_that_never_reported_the_test_says_so",
+]
+tests_last_seen = [
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
+]
+
+# The browser rule stops asking for the one turn, so a target typing into a
+# page from a child but outside the turn passes it. The planted companion
+# goes red; the rule itself stays green, since the marker reading names both.
+# Written 2026-10-02 by 13-44.6.3, measured by hand with
+# `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+[[guard]]
+name = "a key sender holding a browser runs in a child and takes the one turn"
+file = "tests/a_locked_key_asks_for_its_passphrase.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = '''const IN_A_CHILD_AND_THE_ONE_TURN: [&str; 2] = ["CreateProcessW", "THE_TURN"];'''
+after = '''const IN_A_CHILD_AND_THE_ONE_TURN: [&str; 1] = ["CreateProcessW"];'''
+red = [
+    "test_the_browser_rule_sees_a_planted_page_typed_into_on_the_screen",
+]
+tests_last_seen = [
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
 ]
