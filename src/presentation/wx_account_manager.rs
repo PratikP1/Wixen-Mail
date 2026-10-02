@@ -7,7 +7,13 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
-use crate::application::allowed::{Allowed, READING_SECTION, SETTINGS_SECTION};
+use crate::application::allowed::{
+    Allowed, EMPTYING_THE_TRASH_IS_EXPERIMENTAL, READING_SECTION, SETTINGS_SECTION,
+};
+use crate::application::destinations::{DeletedGoesTo, Deleting, where_a_deleted_message_goes};
+use crate::application::emptying_the_trash::{
+    NO_TRASH_TO_EMPTY, WhenTheTrashIsEmptied, the_provider_empties_it, who_empties_the_trash,
+};
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
 use crate::application::mail_auth::{NO_BROWSER_SIGN_IN_HERE, no_sign_in_credentials, provider_of};
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
@@ -961,6 +967,76 @@ impl ImapFields {
     }
 }
 
+/// When the Trash is emptied, and the two lines that stand in its place or
+/// beside it (13-44.6). In the Settings section after the box that enables
+/// the account. A group of its own rather than part of IMAP's, because what
+/// shows depends on who runs the account's mail as well as on its protocol,
+/// and [`show_who_empties_the_trash`] is the one place that decides it.
+#[derive(Clone, Copy)]
+struct TrashFields {
+    label: StaticText,
+    choice: Choice,
+    left_to_the_provider: StaticText,
+    /// Worded only for an account none of whose stored folders is its Trash,
+    /// by [`say_whether_the_trash_is_recognised`]; empty otherwise.
+    no_trash: StaticText,
+}
+
+impl TrashFields {
+    fn hide(&self) {
+        self.label.show(false);
+        self.choice.show(false);
+        self.left_to_the_provider.show(false);
+        self.no_trash.show(false);
+    }
+}
+
+/// Show, on the connection page, the choice of when the Trash is emptied or
+/// the line saying the provider does it, as the one check of 13-44.5 says
+/// for what is typed (D12).
+///
+/// The IMAP server box and the address box, and no recorded name: OK writes
+/// the recorded name from the address alone, so a name an earlier build
+/// stored does not survive the save, and reading it here would show a line
+/// the check would not agree with once the account was saved. Nothing on a
+/// POP account until 13-44.7 makes emptying work there. Called when the page
+/// opens and whenever the protocol or the IMAP server changes, so it never
+/// offers the choice to an account somebody has just typed Gmail's server
+/// into. Shows nothing while the identity page is open.
+fn show_who_empties_the_trash(w: &AccountEditWidgets) {
+    let fields = w.trash_fields;
+    fields.hide();
+    let on_the_connection_page = w.protocol_choice.is_shown();
+    let on_imap = selected_protocol(&w.protocol_choice) == Protocol::Imap;
+    if !on_the_connection_page || !on_imap {
+        w.dialog.layout();
+        return;
+    }
+    let who = who_empties_the_trash(
+        Protocol::Imap,
+        WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+            incoming_server: &w.imap_f.get_value(),
+            address: &w.email_f.get_value(),
+            recorded_provider: None,
+        }),
+    );
+    match the_provider_empties_it(who) {
+        Some(line) => {
+            fields.left_to_the_provider.set_label(line);
+            set_accessible_name(&fields.left_to_the_provider, line);
+            fields.left_to_the_provider.show(true);
+        }
+        None => {
+            fields.label.show(true);
+            fields.choice.show(true);
+            fields
+                .no_trash
+                .show(!fields.no_trash.get_label().is_empty());
+        }
+    }
+    w.dialog.layout();
+}
+
 /// The fields for reading mail over POP3, shown only when the account does.
 /// See [`ImapFields`] for why they are hidden together rather than left
 /// blank.
@@ -1336,6 +1412,56 @@ fn remember_what_this_account_may_change(account_id: &str, answer: Allowed) -> O
     None
 }
 
+/// The label beside the choice of when this account's Trash is emptied
+/// (13-44.6, D2). Y, one of the two letters of "Empty the Trash" free on the
+/// connection page whichever protocol shows; H, the other, is left for the
+/// next control there.
+const EMPTY_THE_TRASH: &str = "Empt&y the Trash (experimental):";
+
+/// When this account's Trash is emptied, as stored, or Never for a new
+/// account.
+///
+/// Read from the stored settings, the way [`what_this_account_may_change`]
+/// reads its answer and for its reason. A settings file that cannot be read
+/// answers Never and says so in the log: the choice then shows the safe end,
+/// and saving fails the same way and is said.
+fn when_this_accounts_trash_is_emptied(account_id: Option<&str>) -> WhenTheTrashIsEmptied {
+    let Some(account_id) = account_id else {
+        return WhenTheTrashIsEmptied::Never;
+    };
+    match crate::data::config::ConfigManager::load_stored() {
+        Ok(settings) => settings.app_config().trash_emptying_for(account_id),
+        Err(why) => {
+            tracing::warn!("When this account's Trash is emptied could not be read: {why}");
+            WhenTheTrashIsEmptied::Never
+        }
+    }
+}
+
+/// Write down when this account's Trash is emptied, answering what went
+/// wrong, or `None` when nothing did, as
+/// [`remember_what_this_account_may_change`] does.
+fn remember_when_this_accounts_trash_is_emptied(
+    account_id: &str,
+    answer: WhenTheTrashIsEmptied,
+) -> Option<String> {
+    let mut settings = match crate::data::config::ConfigManager::load_stored() {
+        Ok(settings) => settings,
+        Err(why) => {
+            tracing::warn!("When this account's Trash is emptied could not be saved: {why}");
+            return Some(format!("{why}"));
+        }
+    };
+    settings
+        .app_config_mut()
+        .set_trash_emptying_for(account_id, answer);
+    if let Err(why) = settings.save() {
+        tracing::warn!("When this account's Trash is emptied could not be saved: {why}");
+        return Some(format!("{why}"));
+    }
+    None
+}
+
 /// The protocol a live `Choice`'s current selection names.
 ///
 /// A selection wxWidgets has not resolved yet reads as IMAP, the same
@@ -1388,6 +1514,12 @@ pub struct AccountEditWidgets {
     pub allow_mail_here: CheckBox,
     pub allow_personal_information_here: CheckBox,
     pub allow_reading_here: CheckBox,
+    /// When this account's Trash is emptied (13-44.6).
+    pub empty_the_trash: Choice,
+    /// In its place for an account whose provider empties its Trash itself.
+    pub trash_left_to_the_provider: StaticText,
+    /// Beside it for an account none of whose folders is its Trash.
+    pub no_trash_to_empty: StaticText,
     pub next: Button,
     pub back: Button,
     pub ok: Button,
@@ -1401,6 +1533,7 @@ pub struct AccountEditWidgets {
     imap_fields: ImapFields,
     pop_fields: PopFields,
     password_fields: PasswordFields,
+    trash_fields: TrashFields,
 }
 
 /// Move from the identity page to the connection and sign-in page: hide the
@@ -1419,6 +1552,7 @@ pub fn advance_to_connection_page(w: &AccountEditWidgets) {
         w.pop_fields,
         selected_protocol(&w.protocol_choice),
     );
+    show_who_empties_the_trash(w);
     w.password_fields.set_visible(!w.use_oauth_cb.get_value());
     w.next.show(false);
     w.back.show(true);
@@ -1426,6 +1560,43 @@ pub fn advance_to_connection_page(w: &AccountEditWidgets) {
     w.ok.set_default();
     w.dialog.layout();
     w.protocol_choice.set_focus();
+}
+
+/// Say beside the choice of when the Trash is emptied whether this account
+/// has a Trash Wixen Mail recognises: `Some(false)` when its folders are
+/// known and none of them is one, `None` when they are not known yet.
+pub fn say_whether_the_trash_is_recognised(w: &AccountEditWidgets, recognised: Option<bool>) {
+    let said = match recognised {
+        Some(false) => NO_TRASH_TO_EMPTY,
+        Some(true) | None => "",
+    };
+    w.no_trash_to_empty.set_label(said);
+    set_accessible_name(&w.no_trash_to_empty, said);
+    show_who_empties_the_trash(w);
+}
+
+/// Whether this account's stored folders include a Trash, the way Delete
+/// finds one (D9): `None` when no folders are stored yet, since not knowing
+/// is not the same as having none.
+fn whether_the_trash_is_recognised(cache: &MessageCache, account_id: &str) -> Option<bool> {
+    let folders = cache
+        .get_folders_for_account(account_id)
+        .inspect_err(|e| tracing::warn!("This account's folders could not be read: {e}"))
+        .ok()?;
+    match where_a_deleted_message_goes(
+        folders.iter().map(|folder| {
+            (
+                folder.path.as_str(),
+                crate::common::types::FolderType::from_stored(&folder.folder_type),
+            )
+        }),
+        "",
+        Deleting::ToTrash,
+    ) {
+        DeletedGoesTo::NoFoldersKnownYet => None,
+        DeletedGoesTo::NoTrashFolderFound => Some(false),
+        DeletedGoesTo::TheTrash(_) | DeletedGoesTo::OffTheServer => Some(true),
+    }
 }
 
 /// Move from the connection and sign-in page back to the identity page, and
@@ -1437,6 +1608,7 @@ pub fn return_to_identity_page(w: &AccountEditWidgets) {
     w.imap_fields.set_visible(false);
     w.pop_fields.set_visible(false);
     w.password_fields.set_visible(false);
+    w.trash_fields.hide();
     w.identity_fields.set_visible(true);
     w.next.show(true);
     w.back.show(false);
@@ -1512,6 +1684,14 @@ fn show_edit(
         .map(|(_, choices)| choices.clone())
         .unwrap_or_default();
     let w = build_account_edit_dialog(parent, existing, a11y, palette, &offered);
+    // Whether this account's Trash is recognised needs its stored folders,
+    // which the builder does not hold; a new account has none yet.
+    if let (Some(cache), Some(account)) = (signatures, existing) {
+        say_whether_the_trash_is_recognised(
+            &w,
+            whether_the_trash_is_recognised(cache, &account.id),
+        );
+    }
     if w.dialog.show_modal() == ID_OK {
         // The spin control's range starts at one, so nothing is lost.
         let interval = w.interval_f.value().unsigned_abs();
@@ -1557,6 +1737,24 @@ fn show_edit(
                 &format!(
                     "What this account may change could not be saved, so it is what it was \
                      before you opened this page. Everything else on this page was kept. \
+                     ({why})"
+                ),
+                Priority::High,
+            );
+        }
+        // The choice, read into its one writer the same way. Read whether or
+        // not it is showing: a POP account's choice is hidden and opened on
+        // what was stored, so writing it back keeps what was there.
+        let chosen = w
+            .empty_the_trash
+            .get_selection()
+            .and_then(|at| WhenTheTrashIsEmptied::ALL.get(at as usize).copied())
+            .unwrap_or_default();
+        if let Some(why) = remember_when_this_accounts_trash_is_emptied(&id, chosen) {
+            let _ = a11y.announce(
+                &format!(
+                    "When this account's Trash is emptied could not be saved, so it is what it \
+                     was before you opened this page. Everything else on this page was kept. \
                      ({why})"
                 ),
                 Priority::High,
@@ -1830,14 +2028,6 @@ pub fn build_account_edit_dialog(
     // L, because T is SMTP Port's on this page; the POP box that also takes
     // L is never shown with it.
     let imap_tls = cb("Use T&LS", true);
-    let imap_fields = ImapFields {
-        section_heading: imap_section_heading,
-        server_label: imap_label,
-        server: imap_f,
-        port_label: imap_port_label,
-        port: imap_port_f,
-        tls: imap_tls,
-    };
 
     let pop_section_heading = section("── POP Settings ──");
     let (pop_label, pop_f) = tf("PO&P Server:", "");
@@ -1953,6 +2143,64 @@ pub fn build_account_edit_dialog(
     };
     // A, because B is Back's.
     let enabled = cb("En&able this account", true);
+    // When this account's Trash is emptied (13-44.6), opening on what is
+    // stored for it, which is Never until somebody chooses. Named and
+    // described in one call, the signature choice's pattern, since a second
+    // attach replaces the first. Y, the one letter of "Empty" free on this
+    // page whichever protocol shows (D2).
+    let (empty_the_trash_label, empty_the_trash) = {
+        let l = StaticText::builder(&dlg)
+            .with_label(EMPTY_THE_TRASH)
+            .build();
+        let opens_on = when_this_accounts_trash_is_emptied(existing.map(|a| a.id.as_str()));
+        let c = Choice::builder(&dlg)
+            .with_choices(
+                WhenTheTrashIsEmptied::ALL
+                    .map(|when| when.said().to_string())
+                    .to_vec(),
+            )
+            .with_selection(Some(
+                WhenTheTrashIsEmptied::ALL
+                    .iter()
+                    .position(|when| *when == opens_on)
+                    .unwrap_or(0) as u32,
+            ))
+            .build();
+        set_accessible_name_and_description(
+            &c,
+            &name_from_label(EMPTY_THE_TRASH),
+            EMPTYING_THE_TRASH_IS_EXPERIMENTAL,
+        );
+        fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+        fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        (l, c)
+    };
+    // In the choice's place for an account whose provider empties its Trash
+    // itself, and beside it for one none of whose folders is its Trash. Each
+    // alone in its row, worded and named on both channels with its whole
+    // text when it is given one, the way the allowed note below is named.
+    let a_line_of_its_own = || -> StaticText {
+        let n = StaticText::builder(&dlg).with_label("").build();
+        leave_the_cell_empty(&fields);
+        fields.add(&n, 0, SizerFlag::Expand | SizerFlag::All, 4);
+        n
+    };
+    let trash_left_to_the_provider = a_line_of_its_own();
+    let no_trash_to_empty = a_line_of_its_own();
+    let trash_fields = TrashFields {
+        label: empty_the_trash_label,
+        choice: empty_the_trash,
+        left_to_the_provider: trash_left_to_the_provider,
+        no_trash: no_trash_to_empty,
+    };
+    let imap_fields = ImapFields {
+        section_heading: imap_section_heading,
+        server_label: imap_label,
+        server: imap_f,
+        port_label: imap_port_label,
+        port: imap_port_f,
+        tls: imap_tls,
+    };
 
     // ── What this account may change ─────────────────────────────────────
     //
@@ -2100,6 +2348,9 @@ pub fn build_account_edit_dialog(
         allow_mail_here,
         allow_personal_information_here,
         allow_reading_here,
+        empty_the_trash,
+        trash_left_to_the_provider,
+        no_trash_to_empty,
         next,
         back,
         ok,
@@ -2109,6 +2360,7 @@ pub fn build_account_edit_dialog(
         imap_fields,
         pop_fields,
         password_fields,
+        trash_fields,
     };
 
     // The account's own values are where each box's history starts, so Undo
@@ -2200,6 +2452,8 @@ pub fn build_account_edit_dialog(
     // reason above: it is rewritten on every keystroke, and the password
     // box's description reaches somebody working by ear when that box takes
     // focus.
+    // And whether the choice of when the Trash is emptied, or the line
+    // saying the provider empties it, shows (13-44.6).
     imap_f.on_text_changed(move |_| {
         show_the_password_advice(
             &auth_hint,
@@ -2208,6 +2462,7 @@ pub fn build_account_edit_dialog(
             &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
             use_oauth_cb.get_value(),
         );
+        show_who_empties_the_trash(&w);
     });
     pop_f.on_text_changed(move |_| {
         show_the_password_advice(
@@ -2258,6 +2513,7 @@ pub fn build_account_edit_dialog(
                 &the_incoming_server_typed(&protocol_choice, &imap_f, &pop_f),
                 use_oauth_cb.get_value(),
             );
+            show_who_empties_the_trash(&w);
             d.layout();
         }
     });

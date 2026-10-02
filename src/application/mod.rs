@@ -43,6 +43,7 @@ pub mod draft_message;
 pub mod due;
 pub mod editing;
 pub mod emptying;
+pub mod emptying_the_trash;
 pub mod encrypted_mail;
 pub mod event_alerts;
 pub mod export_tree;

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 677
+open_count: 680
 waived_count: 0
 fixed_count: 92
-total_count: 769
-last_updated: 2026-10-01T23:45:00.000Z
+total_count: 772
+last_updated: 2026-10-02T12:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -784,6 +784,9 @@ last_updated: 2026-10-01T23:45:00.000Z
 | 767 | 13 | unrun-verify | src/application/when_people_are_free.rs | 475 | 13-44.4, the tester's ear: nobody has heard "Saturday at 10 is outside Ada's working day" said for a time inside the working day set in Settings, because it is outside the days and hours Ada set in her own Outlook. Whether it is understood as Ada's own day without the guide, and whether a colleague's own hours putting a time last is noticed at all | open |  | 2026-10-01T23:30:00.000Z |  |
 | 768 | 13 | unrun-verify | src/application/who_runs_the_mail.rs |  | 13-44.5, for phase 14: a Google Workspace account and a Microsoft 365 account on their organisations' own domains, each added with its servers typed by hand (imap.gmail.com and smtp.gmail.com; outlook.office365.com and smtp.office365.com, port 587) and the browser sign-in on. Whether the sign-in is kept and the first check reads the Inbox; Report as Junk on one message (Workspace: moved to Spam with no keyword; Microsoft 365: the sentence saying Microsoft has not been told); and the folder chooser's All Mail sentence on the Workspace one. Nothing in 13-44.5 has met either | open |  | 2026-10-01T23:45:00.000Z |  |
 | 769 | 13 | unrun-verify | src/presentation/wx_account_manager.rs |  | 13-44.5, the tester's ear: nobody has heard the mail check's new sentence for an account at example.com with the browser sign-in on ("... is set to sign in through a browser, but neither its server nor its address belongs to Google or Microsoft ..."); nor, in the account editor, D11's sentence read as the password box's description and said by Get an app password in your browser for an address at outlook.com with the browser sign-in box turned off; nor the advice changing when imap.gmail.com is typed after an address at example.com. No NVDA case reaches any of them | open |  | 2026-10-01T23:45:00.000Z |  |
+| 770 | 13 | unrun-verify | src/presentation/wx_account_manager.rs |  | 13-44.6, the tester's ear: nobody has heard the account editor's Empty the Trash (experimental) choice on Alt+Y with its description, the line in its place on a Gmail or Microsoft account, the line saying Wixen Mail cannot empty a Trash it does not recognise, the sentence an emptying says once a day ("Emptied 12 messages from Trash in Work that had been there more than 30 days.") with its clauses, or the sentence for Allow Changes closed. Whether each is said once and whole, and whether the choice's name lands on the handle focus reaches under NVDA, is what to hear. No NVDA case reaches any of them | open |  | 2026-10-02T12:00:00.000Z |  |
+| 771 | 13 | todo | src/application/emptying_the_trash.rs |  | 13-44.6, for phase 14 under REAL-02's delete line: an IMAP account set to After 15 or 30 days emptied at a real mail server, one with UIDPLUS and one without; the rows marked deleted here forgotten at the next read of the Trash; the next day's first check emptying what came due since; a server refusing one message, and one dropped part way, whose waiting delete the next check's replay sends | open |  | 2026-10-02T12:00:00.000Z |  |
+| 772 | 13 | todo | src/application/moves_waiting.rs |  | 13-44.6, D17, for Pratik: on a server without UIDPLUS MailController::delete_message marks a message deleted and leaves it, because a bare EXPUNGE would take every message anybody flagged, and the replay's delete_it answers Ok for both outcomes and only logs which, so an emptying counts a message marked and left as emptied, and the menu's Delete inside the Trash says the same for both. The question: should the replay tell the two apart, so an emptying's sentence can say how many were only marked for removal? Recommendation: yes, hand the Deletion back from delete_it through replay_one and give the sentence a clause for it; it changes what the menu's Delete in the Trash says too, so it belongs in a plan of its own | open |  | 2026-10-02T12:00:00.000Z |  |
 
 ````json
 [
@@ -10013,6 +10016,42 @@ last_updated: 2026-10-01T23:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-01T23:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 770,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "13-44.6, the tester's ear: nobody has heard the account editor's Empty the Trash (experimental) choice on Alt+Y with its description, the line in its place on a Gmail or Microsoft account, the line saying Wixen Mail cannot empty a Trash it does not recognise, the sentence an emptying says once a day (\"Emptied 12 messages from Trash in Work that had been there more than 30 days.\") with its clauses, or the sentence for Allow Changes closed. Whether each is said once and whole, and whether the choice's name lands on the handle focus reaches under NVDA, is what to hear. No NVDA case reaches any of them",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 771,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/emptying_the_trash.rs",
+    "line": null,
+    "description": "13-44.6, for phase 14 under REAL-02's delete line: an IMAP account set to After 15 or 30 days emptied at a real mail server, one with UIDPLUS and one without; the rows marked deleted here forgotten at the next read of the Trash; the next day's first check emptying what came due since; a server refusing one message, and one dropped part way, whose waiting delete the next check's replay sends",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 772,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/application/moves_waiting.rs",
+    "line": null,
+    "description": "13-44.6, D17, for Pratik: on a server without UIDPLUS MailController::delete_message marks a message deleted and leaves it, because a bare EXPUNGE would take every message anybody flagged, and the replay's delete_it answers Ok for both outcomes and only logs which, so an emptying counts a message marked and left as emptied, and the menu's Delete inside the Trash says the same for both. The question: should the replay tell the two apart, so an emptying's sentence can say how many were only marked for removal? Recommendation: yes, hand the Deletion back from delete_it through replay_one and give the sentence a clause for it; it changes what the menu's Delete in the Trash says too, so it belongs in a plan of its own",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T12:00:00.000Z",
     "resolved_at": null
   }
 ]

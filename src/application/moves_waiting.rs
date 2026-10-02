@@ -75,6 +75,9 @@ use crate::application::mail_across_accounts::{
     resume_from_the_held_bytes, resume_the_append, why_it_cannot_be_finished_from_here,
 };
 use crate::application::server_delete::after_a_move_across_accounts;
+use crate::application::what_rules_tell_the_server::{
+    ForTheChange, what_a_waiting_delete_calls_for,
+};
 use crate::common::{Error, Result};
 use crate::data::message_cache::MessageCache;
 use crate::data::message_cache::moves_waiting::{AWaitingMove, MarksFirst, WhatAWaitingMoveDoes};
@@ -679,6 +682,56 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
     }
     let failed = answer.as_ref().err().map(why_the_push_failed);
     Ok((what_it_means, failed))
+}
+
+/// What one delete, made here and then sent on a session already open, came
+/// to.
+#[derive(Debug)]
+pub(crate) enum DeletedHereThenAtTheServer {
+    /// Not made here, so nothing was sent.
+    NotMadeHere(NotMadeHere),
+    /// Made here and sent, and what the answer calls for, already done here:
+    /// a refusal is back where it was, and a server never reached leaves the
+    /// delete waiting for the next check's replay.
+    Became(ForTheChange),
+    /// Sent, and the row could not be settled here afterwards.
+    NotSettledHere(Error),
+}
+
+/// Make a delete here, send it on this session, and put it back here if it
+/// was refused.
+///
+/// The menu's own parts, one message at a time, for a delete nobody is at the
+/// key for: a rule's Delete in the check that brought the message (13-44.3,
+/// D11) and an emptying of the Trash at a check (13-44.6, D4). The row changes
+/// here first and the delete is kept in the store the menu's Delete waits in,
+/// through [`what_happens_here`]; it goes on the session the caller holds,
+/// through [`replay_one`]; what the answer calls for is decided by
+/// [`crate::application::what_rules_tell_the_server::what_a_waiting_delete_calls_for`];
+/// and a refusal is undone through [`undo_here`]. The caller holds an
+/// [`APushUnderWay`] for the account while it runs, as the replay does.
+pub(crate) async fn delete_here_then_at_the_server<S: ReplaysAMove>(
+    server: &S,
+    cache: &MessageCache,
+    asked: &AWaitingMove,
+    subject: &str,
+) -> DeletedHereThenAtTheServer {
+    let made = match what_happens_here(cache, asked, subject) {
+        Ok(made) => made,
+        Err(not_made) => return DeletedHereThenAtTheServer::NotMadeHere(not_made),
+    };
+    let became = match replay_one(server, cache, &made.kept).await {
+        Ok((replayed, failed)) => what_a_waiting_delete_calls_for(&replayed, failed),
+        Err(why) => return DeletedHereThenAtTheServer::NotSettledHere(why),
+    };
+    if let ForTheChange::PutBack(_) = became {
+        // Said in the log, as a rule's refused delete always was: nobody is
+        // at the key to hear it.
+        if let Err(why) = undo_here(cache, &made.kept) {
+            tracing::warn!("A refused delete could not be put back here: {why}");
+        }
+    }
+    DeletedHereThenAtTheServer::Became(became)
 }
 
 /// Send the marks a waiting move carries, if it carries any, from the
