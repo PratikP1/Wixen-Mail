@@ -18,6 +18,7 @@ pub mod held_alerts;
 pub mod held_conflicts;
 pub mod how_it_arrived;
 mod identities;
+pub mod in_the_trash;
 mod messages;
 pub mod moves_in_flight;
 pub mod moves_waiting;

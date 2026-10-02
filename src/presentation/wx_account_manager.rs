@@ -1388,6 +1388,8 @@ pub struct AccountEditWidgets {
     pub allow_mail_here: CheckBox,
     pub allow_personal_information_here: CheckBox,
     pub allow_reading_here: CheckBox,
+    /// When this account's Trash is emptied (13-44.6).
+    pub empty_the_trash: Choice,
     pub next: Button,
     pub back: Button,
     pub ok: Button,
@@ -1953,6 +1955,8 @@ pub fn build_account_edit_dialog(
     };
     // A, because B is Back's.
     let enabled = cb("En&able this account", true);
+    let empty_the_trash = Choice::builder(&dlg).build();
+    empty_the_trash.show(false);
 
     // ── What this account may change ─────────────────────────────────────
     //
@@ -2100,6 +2104,7 @@ pub fn build_account_edit_dialog(
         allow_mail_here,
         allow_personal_information_here,
         allow_reading_here,
+        empty_the_trash,
         next,
         back,
         ok,

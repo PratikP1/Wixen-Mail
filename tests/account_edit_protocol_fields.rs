@@ -32,6 +32,9 @@ use wxdragon::prelude::*;
 /// same run from being made, and a failure names exactly which one it was.
 type Wrong = Vec<(&'static str, String)>;
 
+/// The label beside the choice of when the Trash is emptied (13-44.6, D2).
+const EMPTY_THE_TRASH: &str = "Empt&y the Trash (experimental):";
+
 fn expect_shown(name: &'static str, widget: &impl WxWidget, want: bool, into: &mut Wrong) {
     let got = widget.is_shown();
     if got != want {
@@ -204,6 +207,7 @@ fn expect_no_connection_field_shown(name: &'static str, w: &AccountEditWidgets, 
             &w.allow_personal_information_here,
         ),
         ("fetch message text for this account", &w.allow_reading_here),
+        ("empty the trash", &w.empty_the_trash),
     ] {
         if widget.is_shown() {
             into.push((name, format!("{field} is shown on the identity page")));
@@ -361,6 +365,43 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                     wrong.push((name, format!("unavailable and does not say so: {label:?}")));
                 }
             }
+            // When this account's Trash is emptied (13-44.6): offered to an
+            // IMAP account the one check does not call Gmail or Microsoft, on
+            // Alt+Y, with its three answers, and opening on Never for an
+            // account nobody has chosen for.
+            expect_shown(
+                "connection page, IMAP account: empty the trash shown",
+                &w.empty_the_trash,
+                true,
+                &mut wrong,
+            );
+            if !labels_showing(&w.dialog)
+                .iter()
+                .any(|label| label == EMPTY_THE_TRASH)
+            {
+                wrong.push((
+                    "connection page, IMAP account: empty the trash",
+                    format!("{EMPTY_THE_TRASH} is not shown beside the choice"),
+                ));
+            }
+            let offered: Vec<String> = (0..w.empty_the_trash.get_count())
+                .filter_map(|at| w.empty_the_trash.get_string(at))
+                .collect();
+            if offered != ["Never", "After 15 days", "After 30 days"] {
+                wrong.push((
+                    "connection page, IMAP account: empty the trash",
+                    format!("offers {offered:?}"),
+                ));
+            }
+            if w.empty_the_trash.get_selection() != Some(0) {
+                wrong.push((
+                    "connection page, a new account: empty the trash",
+                    format!(
+                        "opens on {:?}, not on Never",
+                        w.empty_the_trash.get_string_selection()
+                    ),
+                ));
+            }
             expect_shown("connection page: Next hidden", &w.next, false, &mut wrong);
             expect_shown("connection page: Back shown", &w.back, true, &mut wrong);
             expect_shown("connection page: OK shown", &w.ok, true, &mut wrong);
@@ -418,6 +459,13 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                 "POP account, connection page: leave-on-server shown",
                 &w.pop_leave,
                 true,
+                &mut wrong,
+            );
+            // Not offered to a POP account until 13-44.7 makes it work there.
+            expect_shown(
+                "POP account, connection page: empty the trash hidden",
+                &w.empty_the_trash,
+                false,
                 &mut wrong,
             );
             expect_every_letter_its_own(

@@ -277,9 +277,12 @@ fn test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail() {
     // rule's moves and before the flags are read back, through the replay's
     // own steps; nothing else sends a rule's delete, and the replay's steps
     // are called by the replay and by the one step a check's delete shares,
-    // which the check's delete alone calls.
+    // which a rule's Delete and an emptying of the Trash (13-44.6, D4) call
+    // and nothing else does.
     let check = fs::read_to_string("src/application/mail_sync.rs").expect("the check");
     let replay = fs::read_to_string("src/application/moves_waiting.rs").expect("the waiting moves");
+    let emptying =
+        fs::read_to_string("src/application/emptying_the_trash.rs").expect("the emptying");
     assert_eq!(
         the_one_call_in_the_check(
             &check,
@@ -292,6 +295,7 @@ fn test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail() {
     let callers_of = |called: &str| {
         let mut callers = the_functions_calling(&replay, called);
         callers.extend(the_functions_calling(&check, called));
+        callers.extend(the_functions_calling(&emptying, called));
         callers.sort();
         callers
     };
@@ -305,7 +309,7 @@ fn test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail() {
     );
     assert_eq!(
         callers_of(THE_SHARED_DELETE),
-        ["carry_out_the_deletes"],
+        ["carry_out_the_deletes", "empty_at_a_check"],
         "a delete made here and sent on a check's session is called from somewhere new; \
          read this test's comment"
     );

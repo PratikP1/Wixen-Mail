@@ -575,6 +575,15 @@ pub enum UIUpdate {
     /// a closure on a background thread, which is where the folder summary
     /// used to be built and where nothing could reach it.
     FolderWasRenumbered(String),
+    /// An account's Trash was emptied at a check, or could not be, in one
+    /// finished sentence for the account (13-44.6, D8).
+    ///
+    /// Separate from [`Self::StatusUpdated`] for the reason
+    /// [`Self::FolderWasRenumbered`] is: mail leaving somebody's account for
+    /// good with nobody at the key is not something to lose to the next
+    /// progress line. The words are worked out by
+    /// `emptying_the_trash::what_the_emptying_said`, where a test reads them.
+    TheTrashWasEmptied(String),
     /// A folder that was open has gone, so nothing should still name it.
     ///
     /// Sent by a worker that took a folder off the server, before the tree is

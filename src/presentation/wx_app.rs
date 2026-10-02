@@ -23195,6 +23195,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // a longer sentence about the same event.
             let _ = a11y.announce_topic(said, Priority::Normal, "renumbered");
         }
+        UIUpdate::TheTrashWasEmptied(said) => {
+            // Shown and said, once per account per day (13-44.6, D8). Its
+            // own topic for the reason the renumbering above has one: mail
+            // left somebody's account for good, or could not, with nobody at
+            // the key, and "status" would lose it to the next step. Normal,
+            // for the same reason: not progress, and not the answer to a key.
+            frame.set_status_text(said, 0);
+            let _ = a11y.announce_topic(said, Priority::Normal, "trash");
+        }
         UIUpdate::OutboxSendResult {
             queue_id,
             success,
@@ -29470,6 +29479,18 @@ fn folder_arrival_update(folder_id: i64, fetched: usize) -> Option<UIUpdate> {
 /// settings file that cannot be read answers All, which is the answer that
 /// loses nothing. A change on the Permissions tab applies from the next
 /// check, because a worker reads it once.
+/// When this account's Trash is emptied, as the account editor stored it.
+///
+/// A settings file that cannot be read answers Never, the safe end: an
+/// emptying cannot be undone, so not knowing the answer is not an answer.
+fn when_the_trash_is_emptied(
+    account_id: &str,
+) -> crate::application::emptying_the_trash::WhenTheTrashIsEmptied {
+    crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().trash_emptying_for(account_id))
+        .unwrap_or_default()
+}
+
 fn how_much_message_text_stays() -> crate::application::keeping_message_text::TextKept {
     crate::data::config::ConfigManager::load_stored()
         .map(|stored| {
@@ -30417,6 +30438,36 @@ fn spawn_mail_sync(
                     // rest, and naming it is the difference between a fixable
                     // problem and a sync that quietly did less than it said.
                     Err(e) => problems.push(format!("{}: {}", folder.name, e)),
+                }
+            }
+
+            // The Trash of an account somebody set to be emptied after 15 or
+            // 30 days (13-44.6), here and nowhere else: after its folders are
+            // read, so the store knows what the Trash holds, and before the
+            // tree is read back, on this check's own session (D7). A check of
+            // one folder, which is what a watch waking asks for, has not read
+            // the Trash and leaves it alone. One sentence for the account;
+            // the log names the account and never a subject.
+            if only.is_none() {
+                match handle.block_on(crate::application::emptying_the_trash::empty_at_a_check(
+                    controller.as_ref(),
+                    &cache,
+                    crate::application::emptying_the_trash::TheAccount {
+                        id: &account.id,
+                        name: &account.name,
+                    },
+                    when_the_trash_is_emptied(&account.id),
+                    chrono::Utc::now(),
+                )) {
+                    Ok(Some(said)) => {
+                        tracing::info!("The Trash of {} was emptied: {said}", account.name);
+                        say(UIUpdate::TheTrashWasEmptied(said));
+                    }
+                    Ok(None) => {}
+                    Err(why) => {
+                        tracing::warn!("The Trash of {} could not be emptied: {why}", account.name);
+                        problems.push(format!("emptying the Trash: {why}"));
+                    }
                 }
             }
 

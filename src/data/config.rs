@@ -363,6 +363,17 @@ pub struct AppConfig {
     /// has never seen cannot be got wrong by one of them forgetting a field.
     #[serde(default)]
     pub directories: HashMap<String, crate::service::directory::Directory>,
+    /// When each account's Trash is emptied, by account id, as a stored word
+    /// (13-44.6, D11).
+    ///
+    /// Kept here rather than on `Account`, for the reason `allowed_per_account`
+    /// above gives. Offered by the account editor, read through
+    /// `trash_emptying_for` and written through `set_trash_emptying_for`,
+    /// which keeps no row for Never, so an account nobody chose for has none.
+    /// A word this build does not know reads as Never, the safe end, because
+    /// emptying the Trash cannot be undone.
+    #[serde(default)]
+    pub trash_emptying: HashMap<String, String>,
     /// Whether a change to a contact goes to every address book that has that
     /// contact, or only to the one it came from.
     ///
@@ -819,6 +830,7 @@ impl Default for AppConfig {
             message_text_kept: default_message_text_kept(),
             allowed_per_account: HashMap::new(),
             directories: HashMap::new(),
+            trash_emptying: HashMap::new(),
             send_contact_changes_everywhere: default_true(),
             last_filed_into: HashMap::new(),
             read_receipts: crate::application::receipts::Policy::Never
@@ -909,6 +921,25 @@ impl AppConfig {
             self.allowed_per_account
                 .insert(account_id.to_string(), narrowed_here);
         }
+    }
+
+    /// When this account's Trash is emptied: Never unless somebody chose.
+    pub fn trash_emptying_for(
+        &self,
+        account_id: &str,
+    ) -> crate::application::emptying_the_trash::WhenTheTrashIsEmptied {
+        let _ = account_id;
+        crate::application::emptying_the_trash::WhenTheTrashIsEmptied::Never
+    }
+
+    /// Write down when this account's Trash is emptied, as the account
+    /// editor answered it.
+    pub fn set_trash_emptying_for(
+        &mut self,
+        account_id: &str,
+        answer: crate::application::emptying_the_trash::WhenTheTrashIsEmptied,
+    ) {
+        let _ = (account_id, answer);
     }
 
     /// The directory this account looks people up in, if it names one.
