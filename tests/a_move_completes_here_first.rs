@@ -621,10 +621,58 @@ mod the_built_tree {
     const WM_KEYUP: u32 = 0x0101;
     const VK_RETURN: usize = 0x0D;
 
+    const UOI_NAME: i32 = 2;
+
     #[link(name = "user32")]
     unsafe extern "system" {
         fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
+        fn GetThreadDesktop(thread: u32) -> isize;
+        fn GetUserObjectInformationW(
+            object: isize,
+            index: i32,
+            info: *mut u16,
+            length: u32,
+            needed: *mut u32,
+        ) -> i32;
     }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentThreadId() -> u32;
+        fn GetLastError() -> u32;
+    }
+
+    /// The name of the desktop the calling thread's windows are made on.
+    fn the_desktop_this_thread_is_on() -> Result<String, String> {
+        let mut buffer = [0u16; 256];
+        let mut needed = 0u32;
+        // SAFETY: the buffer's length is passed in bytes and the handle is
+        // this thread's own desktop, which Windows owns.
+        let read = unsafe {
+            GetUserObjectInformationW(
+                GetThreadDesktop(GetCurrentThreadId()),
+                UOI_NAME,
+                buffer.as_mut_ptr(),
+                (buffer.len() * 2) as u32,
+                &mut needed,
+            )
+        };
+        if read == 0 {
+            // SAFETY: reads this thread's last error and nothing else.
+            return Err(format!("GetUserObjectInformationW failed: {}", unsafe {
+                GetLastError()
+            }));
+        }
+        let end = buffer
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(buffer.len());
+        Ok(String::from_utf16_lossy(&buffer[..end]))
+    }
+
+    /// The desktop the window session ran on, read inside it and kept
+    /// beside the measurement rather than in it.
+    static READ_ON: OnceLock<Result<String, String>> = OnceLock::new();
 
     /// What the control did with Enter on a collapsed parent.
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -694,6 +742,7 @@ mod the_built_tree {
         let result = {
             let outcome = outcome.clone();
             wxdragon::main(move |app| {
+                let _ = READ_ON.set(the_desktop_this_thread_is_on());
                 let frame = Frame::builder().build();
                 let taken = measure(&frame);
                 if let Ok(mut slot) = outcome.lock() {
@@ -739,6 +788,24 @@ mod the_built_tree {
             },
             "measured 2026-09-19 on this machine's comctl32 through wxWidgets 3.3.2: Enter \
              raises the activation and neither expands the row nor moves off it"
+        );
+    }
+
+    #[test]
+    fn test_the_built_tree_is_read_on_a_desktop_made_for_this_run() {
+        // The Enter above is sent to a tree nobody can type into and no
+        // second run can share: a desktop made for this run, named for its
+        // process, which is never the desktop a person's keys land on.
+        let _ = the_measurement();
+        let read_on = READ_ON
+            .get()
+            .expect("the window session ran and read its desktop")
+            .as_ref()
+            .unwrap_or_else(|why| panic!("the session's desktop could not be read: {why}"));
+        assert_eq!(
+            read_on,
+            &format!("wixen-move-tree-{}", std::process::id()),
+            "the built tree was read on the desktop {read_on:?}"
         );
     }
 }
