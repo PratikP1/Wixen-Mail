@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 585 records have arrived since and have not been through it.
+# 586 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32706,7 +32706,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_passphrase.rs", tests = 2 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 12 },
 ]
 
 # A single message opened in a reader window no longer asking for the
@@ -32727,7 +32727,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 12 },
 ]
 
 # A PGP signature said to hold once a key in the list is the one it names,
@@ -36829,7 +36829,7 @@ red = [
     "test_the_real_paste_target_is_where_the_clipboard_is_opened",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 12 },
 ]
 
 # A refused clipboard told the lock state without asking Windows, so a locked
@@ -36912,4 +36912,23 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+]
+
+# The key census stops asking that a desktop be named for its run, so a
+# target making one desktop with a fixed name, which two runs at once share,
+# passes it. The fixed-name companion goes red; the census itself stays
+# green, since every sender on the tree now names its desktop with its
+# process id. Written 2026-10-02 by 13-44.6.2, measured by hand with
+# `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+[[guard]]
+name = "a key sent from a test is sent on a desktop made for its run"
+file = "tests/a_locked_key_asks_for_its_passphrase.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = '''    if names("CreateDesktopW") && names("process::id()") {'''
+after = '''    if names("CreateDesktopW") {'''
+red = [
+    "test_the_key_census_sees_a_desktop_not_named_for_its_run",
+]
+tests_last_seen = [
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 12 },
 ]
